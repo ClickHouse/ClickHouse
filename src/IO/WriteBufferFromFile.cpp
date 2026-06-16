@@ -3,6 +3,7 @@
 #include <cerrno>
 
 #include <Common/ProfileEvents.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 
 #include <IO/WriteBufferFromFile.h>
@@ -81,17 +82,8 @@ WriteBufferFromFile::~WriteBufferFromFile()
     if (fd < 0)
         return;
 
-    try
-    {
-        if (!canceled)
-            finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    [[maybe_unused]]  int err = ::close(fd);
 
-    [[maybe_unused]] int err = ::close(fd);
     /// Everything except for EBADF should be ignored in dtor, since all of
     /// others (EINTR/EIO/ENOSPC/EDQUOT) could be possible during writing to
     /// fd, and then write already failed and the error had been reported to
@@ -106,7 +98,7 @@ void WriteBufferFromFile::finalizeImpl()
     if (fd < 0)
         return;
 
-    next();
+    WriteBufferFromFileDescriptor::finalizeImpl();
 }
 
 

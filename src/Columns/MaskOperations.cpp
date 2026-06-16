@@ -5,6 +5,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/IDataType.h>
+
 #include <algorithm>
 
 namespace DB
@@ -24,7 +26,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
 
     ssize_t from = data.size() - 1;
     ssize_t index = mask.size() - 1;
-    data.resize(mask.size());
+    data.resize_exact(mask.size());
     while (index >= 0)
     {
         if (!!mask[index] ^ inverted)
@@ -63,6 +65,7 @@ INSTANTIATE(Int32)
 INSTANTIATE(Int64)
 INSTANTIATE(Int128)
 INSTANTIATE(Int256)
+INSTANTIATE(BFloat16)
 INSTANTIATE(Float32)
 INSTANTIATE(Float64)
 INSTANTIATE(Decimal32)
@@ -70,6 +73,7 @@ INSTANTIATE(Decimal64)
 INSTANTIATE(Decimal128)
 INSTANTIATE(Decimal256)
 INSTANTIATE(DateTime64)
+INSTANTIATE(Time64)
 INSTANTIATE(char *)
 INSTANTIATE(UUID)
 INSTANTIATE(IPv4)
@@ -97,7 +101,7 @@ static size_t extractMaskNumericImpl(
         if (!mask[i])
             continue;
 
-        UInt8 value;
+        UInt8 value = 0;
         if (null_bytemap && (*null_bytemap)[i])
         {
             value = null_value;
@@ -133,7 +137,7 @@ static bool extractMaskNumeric(
         return false;
 
     const auto & data = numeric_column->getData();
-    size_t ones_count;
+    size_t ones_count = 0;
     ones_count = extractMaskNumericImpl<inverted>(mask, data, null_value, null_bytemap, nulls);
 
     mask_info.has_ones = ones_count > 0;
@@ -148,7 +152,7 @@ static MaskInfo extractMaskFromConstOrNull(
     UInt8 null_value,
     PaddedPODArray<UInt8> * nulls = nullptr)
 {
-    UInt8 value;
+    UInt8 value = 0;
     if (column->onlyNull())
     {
         value = null_value;
@@ -190,7 +194,7 @@ static MaskInfo extractMaskImpl(
         return extractMaskImpl<inverted>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
     }
 
-    MaskInfo mask_info;
+    MaskInfo mask_info{};
 
     if (!(extractMaskNumeric<inverted, UInt8>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, UInt16>(mask, column, null_value, null_bytemap, nulls, mask_info)
@@ -200,6 +204,7 @@ static MaskInfo extractMaskImpl(
           || extractMaskNumeric<inverted, Int16>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, Int32>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, Int64>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, BFloat16>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, Float32>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, Float64>(mask, column, null_value, null_bytemap, nulls, mask_info)))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column {} to mask.", column->getName());

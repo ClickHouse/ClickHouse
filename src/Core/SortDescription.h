@@ -33,23 +33,45 @@ struct FillColumnDescription
     DataTypePtr fill_to_type;
     Field fill_step;        /// Default = +1 or -1 according to direction
     std::optional<IntervalKind> step_kind;
+    Field fill_staleness;   /// Default = Null - should not be considered
+    std::optional<IntervalKind> staleness_kind;
 
-    using StepFunction = std::function<void(Field &)>;
+    using StepFunction = std::function<void(Field &, Int64 jumps_count)>;
     StepFunction step_func;
+    StepFunction staleness_step_func;
 };
 
 /// Description of the sorting rule by one column.
 struct SortColumnDescription
 {
+    std::string alias;
     std::string column_name; /// The name of the column.
-    int direction;           /// 1 - ascending, -1 - descending.
-    int nulls_direction;     /// 1 - NULLs and NaNs are greater, -1 - less.
+    int direction{1};           /// 1 - ascending, -1 - descending.
+    int nulls_direction{1};     /// 1 - NULLs and NaNs are greater, -1 - less.
                              /// To achieve NULLS LAST, set it equal to direction, to achieve NULLS FIRST, set it opposite.
     std::shared_ptr<Collator> collator; /// Collator for locale-specific comparison of strings
-    bool with_fill;
+    bool with_fill{};
     FillColumnDescription fill_description;
 
     SortColumnDescription() = default;
+
+    explicit SortColumnDescription(
+        std::string alias_,
+        std::string column_name_,
+        int direction_ = 1,
+        int nulls_direction_ = 1,
+        const std::shared_ptr<Collator> & collator_ = nullptr,
+        bool with_fill_ = false,
+        const FillColumnDescription & fill_description_ = {})
+        : alias(std::move(alias_))
+        , column_name(std::move(column_name_))
+        , direction(direction_)
+        , nulls_direction(nulls_direction_)
+        , collator(collator_)
+        , with_fill(with_fill_)
+        , fill_description(fill_description_)
+    {
+    }
 
     explicit SortColumnDescription(
         std::string column_name_,
@@ -117,7 +139,7 @@ using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumn
 class SortDescription : public std::vector<SortColumnDescription>
 {
 public:
-    /// Can be safely casted into JITSortDescriptionFunc
+    /// Can be safely cast into JITSortDescriptionFunc
     void * compiled_sort_description = nullptr;
     std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
     size_t min_count_to_compile_sort_description = 3;
@@ -129,6 +151,13 @@ public:
 /// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs);
 
+/// The leading run of `description` whose column names all belong to `columns` (compared as a set) and
+/// are ordered by value. A collated column is ordered by its collation key, not by value, so equal
+/// values are not adjacent; it stops the prefix (in-order DISTINCT / LIMIT BY rely on value-adjacency).
+/// If the result has `columns.size()` entries, then `columns` -- in any order -- form such a prefix, so
+/// grouping by them yields contiguous groups.
+SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns);
+
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.
   */
@@ -137,7 +166,17 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 /// Outputs user-readable description into `out`.
 void dumpSortDescription(const SortDescription & description, WriteBuffer & out);
 
+struct ExplainFormatSettings;
+void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings);
+
 std::string dumpSortDescription(const SortDescription & description);
 
 JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description);
+
+class WriteBuffer;
+class ReadBuffer;
+
+void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out);
+void deserializeSortDescription(SortDescription & sort_description, ReadBuffer & in);
+
 }

@@ -6,6 +6,7 @@
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/levenshteinDistance.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -24,7 +25,7 @@ namespace
 
 struct NetworkInterfaces : public boost::noncopyable
 {
-    ifaddrs * ifaddr;
+    ifaddrs * ifaddr{};
     NetworkInterfaces()
     {
         if (getifaddrs(&ifaddr) == -1)
@@ -33,7 +34,7 @@ struct NetworkInterfaces : public boost::noncopyable
 
     bool hasAddress(const Poco::Net::IPAddress & address) const
     {
-        ifaddrs * iface;
+        ifaddrs * iface = nullptr;
         for (iface = ifaddr; iface != nullptr; iface = iface->ifa_next)
         {
             /// Point-to-point (VPN) addresses may have NULL ifa_addr
@@ -132,7 +133,7 @@ size_t getHostNamePrefixDistance(const std::string & local_hostname, const std::
 
 size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const std::string & host)
 {
-    return levenshteinDistance(local_hostname, host);
+    return levenshteinDistanceCaseInsensitive(local_hostname, host);
 }
 
 }

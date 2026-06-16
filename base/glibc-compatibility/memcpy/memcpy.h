@@ -181,7 +181,14 @@ tail:
             /// Aligned unrolled copy. We will use half of available SSE registers.
             /// It's not possible to have both src and dst aligned.
             /// So, we will use aligned stores and unaligned loads.
-            __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+            __m128i c0;
+            __m128i c1;
+            __m128i c2;
+            __m128i c3;
+            __m128i c4;
+            __m128i c5;
+            __m128i c6;
+            __m128i c7;
 
             while (size >= 128)
             {

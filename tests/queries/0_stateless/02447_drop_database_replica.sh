@@ -11,7 +11,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 db="rdb_$CLICKHOUSE_DATABASE"
 
-$CLICKHOUSE_CLIENT -q "system flush logs"
+$CLICKHOUSE_CLIENT -q "system flush logs query_log"
 $CLICKHOUSE_CLIENT -q "create database $db engine=Replicated('/test/$CLICKHOUSE_DATABASE/rdb', 's1', 'r1')"
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "create table $db.t as system.query_log"   # Suppress style check: current_database=$CLICKHOUSE_DATABASE
 $CLICKHOUSE_CLIENT -q "show tables from $db"
@@ -48,7 +48,8 @@ echo 'timeout on active'
 db9="${db}_9"
 REPLICA_UUID=$($CLICKHOUSE_CLIENT -q "select serverUUID()")
 if ! [[ $REPLICA_UUID =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-  echo "Weird UUID ${REPLICA_UUID}"
+    echo "Weird UUID ${REPLICA_UUID}"
+    exit 1
 fi
 $CLICKHOUSE_CLIENT -q "create database $db9 engine=Replicated('/test/${CLICKHOUSE_DATABASE}/rdb', 's9', 'r9')"
 $CLICKHOUSE_CLIENT -q "detach database $db9"

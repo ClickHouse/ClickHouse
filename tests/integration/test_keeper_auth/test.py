@@ -1,14 +1,13 @@
 import time
 
 import pytest
-from kazoo.client import KazooClient, KazooState
 from kazoo.exceptions import (
     AuthFailedError,
     InvalidACLError,
     KazooException,
     NoAuthError,
 )
-from kazoo.security import ACL, make_acl, make_digest_acl
+from kazoo.security import make_acl
 
 from helpers import keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -38,11 +37,7 @@ def started_cluster():
 
 
 def get_fake_zk(timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip("node") + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, "node", timeout=timeout)
 
 
 def get_genuine_zk():
@@ -90,6 +85,7 @@ def test_remove_acl(started_cluster, get_zk):
                     admin=False,
                 )
             ],
+            ephemeral=True,
         )
         auth_connection.create(
             "/test_remove_acl2",
@@ -105,11 +101,13 @@ def test_remove_acl(started_cluster, get_zk):
                     admin=False,
                 )
             ],
+            ephemeral=True,
         )
         auth_connection.create(
             "/test_remove_acl3",
             b"dataX",
             acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", all=True)],
+            ephemeral=True,
         )
 
         auth_connection.delete("/test_remove_acl2")
@@ -128,6 +126,7 @@ def test_remove_acl(started_cluster, get_zk):
                     admin=False,
                 )
             ],
+            ephemeral=True,
         )
 
         acls, stat = auth_connection.get_acls("/test_remove_acl3")
@@ -150,15 +149,23 @@ def test_digest_auth_basic(started_cluster, get_zk):
         auth_connection = get_zk()
         auth_connection.add_auth("digest", "user1:password1")
 
-        auth_connection.create("/test_no_acl", b"")
         auth_connection.create(
-            "/test_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_no_acl",
+            b"",
+            ephemeral=True,
+        )
+        auth_connection.create(
+            "/test_all_acl",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
+            ephemeral=True,
         )
         # Consistent with zookeeper, accept generated digest
         auth_connection.create(
             "/test_all_digest_acl",
             b"dataX",
             acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", all=True)],
+            ephemeral=True,
         )
 
         assert auth_connection.get("/test_all_acl")[0] == b"data"
@@ -203,7 +210,11 @@ def test_digest_auth_basic(started_cluster, get_zk):
             no_auth_connection.get("/test_all_digest_acl")
 
         # but can access some non restricted nodes
-        no_auth_connection.create("/some_allowed_node", b"data")
+        no_auth_connection.create(
+            "/some_allowed_node",
+            b"data",
+            ephemeral=True,
+        )
 
         # auth added, go on
         no_auth_connection.add_auth("digest", "user1:password1")
@@ -219,20 +230,25 @@ def test_super_auth(started_cluster):
     auth_connection = get_fake_zk()
     try:
         auth_connection.add_auth("digest", "user1:password1")
-        auth_connection.create("/test_super_no_acl", b"")
         auth_connection.create(
-            "/test_super_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_super_no_acl",
+            b"",
+            ephemeral=True,
         )
-    finally:
-        zk_stop_and_close(auth_connection)
+        auth_connection.create(
+            "/test_super_all_acl",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
+            ephemeral=True,
+        )
 
-    super_connection = get_fake_zk()
-    try:
+        super_connection = get_fake_zk()
         super_connection.add_auth("digest", "super:admin")
         for path in ["/test_super_no_acl", "/test_super_all_acl"]:
             super_connection.set(path, b"value")
             assert super_connection.get(path)[0] == b"value"
     finally:
+        zk_stop_and_close(auth_connection)
         zk_stop_and_close(super_connection)
 
 
@@ -249,7 +265,10 @@ def test_digest_auth_multiple(started_cluster, get_zk):
         auth_connection.add_auth("digest", "user3:password3")
 
         auth_connection.create(
-            "/test_multi_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_multi_all_acl",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
+            ephemeral=True,
         )
 
         one_auth_connection = get_zk()
@@ -332,9 +351,12 @@ def test_partial_auth(started_cluster, get_zk):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
         with pytest.raises(NoAuthError):
-            auth_connection.create("/test_partial_acl_create/subnode")
+            auth_connection.create(
+                "/test_partial_acl_create/subnode",
+            )
 
         auth_connection.create(
             "/test_partial_acl_set",
@@ -350,6 +372,7 @@ def test_partial_auth(started_cluster, get_zk):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
         with pytest.raises(NoAuthError):
             auth_connection.set("/test_partial_acl_set", b"X")
@@ -370,10 +393,27 @@ def test_partial_auth(started_cluster, get_zk):
                 )
             ],
         )
-        auth_connection.create("/test_partial_acl_delete/subnode")
+        auth_connection.create(
+            "/test_partial_acl_delete/subnode",
+        )
         with pytest.raises(NoAuthError):
             auth_connection.delete("/test_partial_acl_delete/subnode")
     finally:
+        auth_connection.delete("/test_partial_acl/subnode")
+        auth_connection.delete("/test_partial_acl")
+        acl = make_acl(
+            "auth",
+            "",
+            read=True,
+            write=True,
+            create=True,
+            delete=True,
+            admin=True,
+        )
+        auth_connection.set_acls("/test_partial_acl_delete", acls=[acl])
+        auth_connection.set_acls("/test_partial_acl_delete/subnode", acls=[acl])
+        auth_connection.delete("/test_partial_acl_delete/subnode")
+        auth_connection.delete("/test_partial_acl_delete")
         zk_stop_and_close(auth_connection)
 
 
@@ -466,6 +506,7 @@ def test_bad_auth_9(started_cluster):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
@@ -489,6 +530,7 @@ def test_bad_auth_10(started_cluster):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
@@ -506,6 +548,7 @@ def test_bad_auth_11(started_cluster):
                     "", "", read=True, write=False, create=True, delete=True, admin=True
                 )
             ],
+            ephemeral=True,
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
@@ -529,6 +572,7 @@ def test_bad_auth_12(started_cluster):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
@@ -552,9 +596,208 @@ def test_bad_auth_13(started_cluster):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
+
+
+def test_world_anyone_specific_permissions(started_cluster):
+    """Test that world:anyone ACLs support specific permissions instead of granting all permissions"""
+    connection = None
+    no_auth_connection = None
+
+    try:
+        connection = get_fake_zk()
+        connection.add_auth("digest", "user1:password1")
+
+        # Create node with world:anyone read-only permission
+        connection.create(
+            "/test_world_anyone_read_only",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=True,
+                    write=False,
+                    create=False,
+                    delete=False,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Create node with world:anyone write-only permission
+        connection.create(
+            "/test_world_anyone_write_only",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=False,
+                    write=True,
+                    create=False,
+                    delete=False,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Create node with world:anyone create-only permission
+        connection.create(
+            "/test_world_anyone_create_only",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=False,
+                    write=False,
+                    create=True,
+                    delete=False,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Create node with world:anyone delete-only permission and auth all permission
+        connection.create(
+            "/test_world_anyone_delete_only",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=False,
+                    write=False,
+                    create=False,
+                    delete=True,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Create child node for testing delete permission on parent
+        connection.create(
+            "/test_world_anyone_delete_only/child",
+            b"child_data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=False,
+                    write=False,
+                    create=False,
+                    delete=True,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Create node with world:anyone admin-only permission
+        connection.create(
+            "/test_world_anyone_admin_only",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=False,
+                    write=False,
+                    create=False,
+                    delete=False,
+                    admin=True,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Test with a new unauthenticated connection
+        no_auth_connection = get_fake_zk()
+
+        # Test read-only permissions
+        assert no_auth_connection.get("/test_world_anyone_read_only")[0] == b"data"
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_world_anyone_read_only", b"new_data")
+
+        # Test write-only permissions
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_world_anyone_write_only")
+        no_auth_connection.set("/test_world_anyone_write_only", b"new_data")
+
+        # Test create-only permissions
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_world_anyone_create_only")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_world_anyone_create_only", b"new_data")
+        # Create operation should work
+        no_auth_connection.create("/test_world_anyone_create_only/new_child", b"child")
+
+        # Test delete-only permissions
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_world_anyone_delete_only")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_world_anyone_delete_only", b"new_data")
+        # Delete operation should work
+        no_auth_connection.delete("/test_world_anyone_delete_only/child")
+
+        # Test admin-only permissions
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_world_anyone_admin_only")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_world_anyone_admin_only", b"new_data")
+        # Admin operations (like get_acls, set_acls) should work
+        acls, stat = no_auth_connection.get_acls("/test_world_anyone_admin_only")
+        assert len(acls) == 2
+        assert acls[0].id.scheme == "world"
+        assert acls[0].id.id == "anyone"
+        assert acls[0].perms == 16  # Admin permission only
+
+        # Test combined permissions
+        connection.create(
+            "/test_world_anyone_read_write",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=True,
+                    write=True,
+                    create=False,
+                    delete=False,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Should be able to read and write, but not create or delete
+        assert no_auth_connection.get("/test_world_anyone_read_write")[0] == b"data"
+        no_auth_connection.set("/test_world_anyone_read_write", b"updated_data")
+        assert (
+            no_auth_connection.get("/test_world_anyone_read_write")[0]
+            == b"updated_data"
+        )
+
+        # Cleanup created nodes
+        connection.delete("/test_world_anyone_create_only/new_child")
+        connection.delete("/test_world_anyone_create_only")
+        connection.delete("/test_world_anyone_delete_only")
+        connection.delete("/test_world_anyone_read_only")
+        connection.delete("/test_world_anyone_write_only")
+        connection.delete("/test_world_anyone_admin_only")
+        connection.delete("/test_world_anyone_read_write")
+
+    finally:
+        zk_stop_and_close(connection)
+        zk_stop_and_close(no_auth_connection)
 
 
 def test_auth_snapshot(started_cluster):
@@ -567,19 +810,26 @@ def test_auth_snapshot(started_cluster):
         connection.add_auth("digest", "user1:password1")
 
         connection.create(
-            "/test_snapshot_acl", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_snapshot_acl",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
         )
 
         connection1 = get_fake_zk()
         connection1.add_auth("digest", "user2:password2")
 
         connection1.create(
-            "/test_snapshot_acl1", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_snapshot_acl1",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
         )
 
         connection2 = get_fake_zk()
 
-        connection2.create("/test_snapshot_acl2", b"data")
+        connection2.create(
+            "/test_snapshot_acl2",
+            b"data",
+        )
 
         for i in range(100):
             connection.create(
@@ -626,6 +876,11 @@ def test_auth_snapshot(started_cluster):
         with pytest.raises(NoAuthError):
             connection2.get("/test_snapshot_acl1")
     finally:
+        for i in range(100):
+            connection.delete(f"/test_snapshot_acl/path{i}")
+        connection.delete("/test_snapshot_acl")
+        connection.delete("/test_snapshot_acl1")
+        connection.delete("/test_snapshot_acl2")
         zk_stop_and_close(connection)
         zk_stop_and_close(connection1)
         zk_stop_and_close(connection2)
@@ -641,7 +896,10 @@ def test_get_set_acl(started_cluster, get_zk):
         auth_connection.add_auth("digest", "username2:secret2")
 
         auth_connection.create(
-            "/test_set_get_acl", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_set_get_acl",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
+            ephemeral=True,
         )
 
         acls, stat = auth_connection.get_acls("/test_set_get_acl")

@@ -93,7 +93,8 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix, /// path to "http_handlers.my_handler_1"
-    const AsynchronousMetrics & asynchronous_metrics);
+    const AsynchronousMetrics & asynchronous_metrics,
+    std::unordered_map<String, String> & common_headers);
 
 /// Makes a HTTP Handler factory to handle requests for prometheus metrics as a part of the default HTTP rule in the <http_handlers> section.
 /// Expects a configuration like this:

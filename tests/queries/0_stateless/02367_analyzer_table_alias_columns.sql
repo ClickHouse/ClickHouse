@@ -6,7 +6,7 @@ CREATE TABLE test_table
     id UInt64,
     alias_value_1 ALIAS id + alias_value_2 + 1,
     alias_value_2 ALIAS id + 5
-) ENGINE=TinyLog;
+) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO test_table VALUES (0);
 
@@ -19,7 +19,7 @@ CREATE TABLE test_table
     id UInt64,
     value String,
     alias_value ALIAS ((id + 1) AS inside_value) + inside_value
-) ENGINE=TinyLog;
+) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO test_table VALUES (0, 'Value');
 
@@ -32,7 +32,7 @@ CREATE TABLE test_table
     id UInt64,
     value String,
     alias_value ALIAS ((id + 1) AS value) + value
-) ENGINE=TinyLog;
+) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO test_table VALUES (0, 'Value');
 

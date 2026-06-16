@@ -1,10 +1,11 @@
 ---
-slug: /en/sql-reference/window-functions/last_value
-sidebar_label: last_value
+description: 'Documentation for the last_value window function'
+sidebar_label: 'last_value'
 sidebar_position: 4
+slug: /sql-reference/window-functions/last_value
+title: 'last_value'
+doc_type: 'reference'
 ---
-
-# last_value
 
 Returns the last value evaluated within its ordered frame. By default, NULL arguments are skipped, however the `RESPECT NULLS` modifier can be used to override this behaviour.
 
@@ -23,6 +24,8 @@ Alias: `anyLast`.
 :::note
 Using the optional modifier `RESPECT NULLS` after `first_value(column_name)` will ensure that `NULL` arguments are not skipped.
 See [NULL processing](../aggregate-functions/index.md/#null-processing) for more information.
+
+Alias: `lastValueRespectNulls`
 :::
 
 For more detail on window function syntax see: [Window Functions - Syntax](./index.md/#syntax).
@@ -33,11 +36,9 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 **Example**
 
-In this example the `last_value` function is used to find the highest paid footballer from a fictional dataset of salaries of Premier League football players.
+In this example the `last_value` function is used to find the lowest paid footballer from a fictional dataset of salaries of Premier League football players.
 
-Query:
-
-```sql
+```sql title="Query"
 DROP TABLE IF EXISTS salaries;
 CREATE TABLE salaries
 (
@@ -48,7 +49,7 @@ CREATE TABLE salaries
 )
 Engine = Memory;
 
-INSERT INTO salaries FORMAT Values
+INSERT INTO salaries FORMAT VALUES
     ('Port Elizabeth Barbarians', 'Gary Chen', 196000, 'F'),
     ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
     ('Port Elizabeth Barbarians', 'Michael Stanley', 100000, 'D'),
@@ -58,15 +59,13 @@ INSERT INTO salaries FORMAT Values
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
-```sql
+```sql title="Query"
 SELECT player, salary,
        last_value(player) OVER (ORDER BY salary DESC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS lowest_paid_player
 FROM salaries;
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌─player──────────┬─salary─┬─lowest_paid_player─┐
 1. │ Gary Chen       │ 196000 │ Michael Stanley    │
 2. │ Robert George   │ 195000 │ Michael Stanley    │

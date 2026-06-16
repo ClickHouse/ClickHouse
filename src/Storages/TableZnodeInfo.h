@@ -4,6 +4,8 @@
 #include <Storages/RenamingRestrictions.h>
 #include <Databases/LoadingStrictnessLevel.h>
 
+#include <memory>
+
 namespace zkutil
 {
 class ZooKeeper;
@@ -17,6 +19,8 @@ struct StorageID;
 class ASTCreateQuery;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
+class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
 
 /// Helper for replicated tables that use zookeeper for coordination among replicas.
 /// Handles things like:

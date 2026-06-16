@@ -28,7 +28,7 @@ namespace ErrorCodes
  * of a child is set to vruntime of "start" of the last request. This guarantees immediate processing
  * of at least single request of newly activated children and thus best isolation and scheduling latency.
  */
-class FairPolicy : public ISchedulerNode
+class FairPolicy final : public ISchedulerNode
 {
     /// Scheduling state of a child
     struct Item
@@ -47,6 +47,23 @@ public:
     explicit FairPolicy(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
+
+    FairPolicy(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
+        : ISchedulerNode(event_queue_, info_)
+    {}
+
+    ~FairPolicy() override
+    {
+        // We need to clear `parent` in all children to avoid dangling references
+        while (!children.empty())
+            removeChild(children.begin()->second.get());
+    }
+
+    const String & getTypeName() const override
+    {
+        static String type_name("fair");
+        return type_name;
+    }
 
     bool equals(ISchedulerNode * other) override
     {
@@ -98,7 +115,7 @@ public:
                     break;
                 }
             }
-            assert(found);
+            chassert(found);
             if (child_idx < heap_size) // Detach of active child requires deactivation at first
             {
                 heap_size--;
@@ -147,7 +164,7 @@ public:
             if (request)
             {
                 // SFQ fairness invariant: system vruntime equals last served request start-time
-                assert(current.vruntime >= system_vruntime);
+                chassert(current.vruntime >= system_vruntime);
                 system_vruntime = current.vruntime;
 
                 // By definition vruntime is amount of consumed resource (cost) divided by weight

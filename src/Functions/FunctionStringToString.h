@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name, bool is_injective = false>
-class FunctionStringToString : public IFunction
+class FunctionStringToString final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -55,6 +55,13 @@ public:
                 arguments[0]->getName(), getName());
 
         return arguments[0];
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        /// In case of default implementation for Dynamic always return String even for FixedString types
+        /// to avoid Dynamic result of this function.
+        return std::make_shared<DataTypeString>();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

@@ -27,16 +27,18 @@ class CollapsingSortedAlgorithm final : public IMergingAlgorithmWithSharedChunks
 {
 public:
     CollapsingSortedAlgorithm(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         SortDescription description_,
         const String & sign_column,
         bool only_positive_sign_, /// For select final. Skip rows with sum(sign) < 0.
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_,
         LoggerPtr log_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
-        bool use_average_block_sizes = false);
+        bool use_average_block_sizes = false,
+        bool throw_if_invalid_sign_ = false);
 
     const char * getName() const override { return "CollapsingSortedAlgorithm"; }
     Status merge() override;
@@ -44,6 +46,7 @@ public:
 private:
     const size_t sign_column_number;
     const bool only_positive_sign;
+    const bool throw_if_invalid_sign;
 
     static constexpr size_t max_row_refs = 4; /// first_negative, last_positive, last, current.
     RowRef first_negative_row;
@@ -52,6 +55,7 @@ private:
 
     size_t count_positive = 0;    /// The number of positive rows for the current primary key.
     size_t count_negative = 0;    /// The number of negative rows for the current primary key.
+    size_t count_invalid = 0;     /// The number of rows with invalid sign values for the current primary key.
     bool last_is_positive = false;  /// true if the last row for the current primary key is positive.
 
     /// Fields specific for VERTICAL merge algorithm.
@@ -61,7 +65,10 @@ private:
     size_t last_positive_pos = 0;                  /// Row number of last_positive
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
-    size_t count_incorrect_data = 0;    /// To prevent too many error messages from writing to the log.
+    /// To prevent too many error messages from writing to the log.
+    size_t count_incorrect_data = 0;
+    size_t count_invalid_sign = 0;
+
     LoggerPtr log;
 
     void reportIncorrectData();

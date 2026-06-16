@@ -1,11 +1,12 @@
 #include <iomanip>
 #include <gtest/gtest.h>
 #include <Common/CacheBase.h>
+#include <Common/CurrentMetrics.h>
 
 TEST(SIEVECache, set)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto sieve_cache = SimpleCacheBase("SIEVE", /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto sieve_cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
     sieve_cache.set(1, std::make_shared<int>(2));
     sieve_cache.set(2, std::make_shared<int>(3));
 
@@ -18,7 +19,7 @@ TEST(SIEVECache, set)
 TEST(SIEVECache, update)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto sieve_cache = SimpleCacheBase("SIEVE", /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto sieve_cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
     sieve_cache.set(1, std::make_shared<int>(2));
     sieve_cache.set(1, std::make_shared<int>(3));
     auto val = sieve_cache.get(1);
@@ -29,7 +30,7 @@ TEST(SIEVECache, update)
 TEST(SIEVECache, get)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto sieve_cache = SimpleCacheBase("SIEVE", /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto sieve_cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
     sieve_cache.set(1, std::make_shared<int>(2));
     sieve_cache.set(2, std::make_shared<int>(3));
     SimpleCacheBase::MappedPtr value = sieve_cache.get(1);
@@ -49,7 +50,7 @@ struct ValueWeight
 TEST(SIEVECache, evictOnSize)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t>;
-    auto sieve_cache = SimpleCacheBase("SIEVE", /*max_size_in_bytes*/ 20, /*max_count*/ 3, /*size_ratio*/ 0.5);
+    auto sieve_cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 20, /*max_count*/ 3, /*size_ratio*/ 0.5);
     sieve_cache.set(1, std::make_shared<size_t>(2));
     sieve_cache.set(2, std::make_shared<size_t>(3));
     sieve_cache.set(3, std::make_shared<size_t>(4));
@@ -65,7 +66,7 @@ TEST(SIEVECache, evictOnSize)
 TEST(SIEVECache, evictOnWeight)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto sieve_cache = SimpleCacheBase("SIEVE", /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto sieve_cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
     sieve_cache.set(1, std::make_shared<size_t>(2));
     sieve_cache.set(2, std::make_shared<size_t>(3));
     sieve_cache.set(3, std::make_shared<size_t>(4));
@@ -90,7 +91,7 @@ TEST(SIEVECache, evictOnWeight)
 TEST(SIEVECache, getOrSet)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto sieve_cache = SimpleCacheBase("SIEVE", /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+    auto sieve_cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
     size_t x = 10;
     auto load_func = [&] { return std::make_shared<size_t>(x); };
     auto [value, loaded] = sieve_cache.getOrSet(1, load_func);
@@ -114,7 +115,7 @@ void assertQueue(const std::vector<int> & queue, const std::vector<int> expected
 TEST(SIEVECache, ComplexEvictTest)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto sieve_cache = SimpleCacheBase("SIEVE", /*max_size_in_bytes*/ 20, /*max_count*/ 7, /*size_ratio*/ 0.5);
+    auto sieve_cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 20, /*max_count*/ 7, /*size_ratio*/ 0.5);
 
     // Adding elements to the cache
     sieve_cache.set(1, std::make_shared<size_t>(2)); // visited = 0

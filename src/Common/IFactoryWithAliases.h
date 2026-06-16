@@ -34,7 +34,7 @@ protected:
         return name;
     }
 
-    std::unordered_map<String, String> case_insensitive_name_mapping;
+    std::unordered_map<String, String> case_insensitive_name_mapping{};
 
 public:
     /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
@@ -120,7 +120,7 @@ public:
         auto it = case_insensitive_name_mapping.find(Poco::toLower(name));
         if (it != case_insensitive_name_mapping.end())
             return it->second;
-        return name;
+        return name;  /// NOLINT(bugprone-return-const-ref-from-parameter)
     }
 
     ~IFactoryWithAliases() override = default;
@@ -134,10 +134,10 @@ private:
     virtual String getFactoryName() const = 0;
 
     /// Alias map to data_types from previous two maps
-    AliasMap aliases;
+    AliasMap aliases{};
 
     /// Case insensitive aliases
-    AliasMap case_insensitive_aliases;
+    AliasMap case_insensitive_aliases{};
 };
 
 }

@@ -9,9 +9,9 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Core/UUID.h>
-#include <Interpreters/ClientInfo.h>
 #include <base/scope_guard.h>
 #include <Common/SettingsChanges.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace Poco { class Logger; }
@@ -30,12 +30,9 @@ struct Settings;
 struct SettingsProfilesInfo;
 class SettingsChanges;
 class AccessControl;
-class IAST;
 struct IAccessEntity;
-using ASTPtr = std::shared_ptr<IAST>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
-
 
 class ContextAccess : public std::enable_shared_from_this<ContextAccess>
 {
@@ -59,6 +56,9 @@ public:
     /// The function returns nullptr if there is no filter to apply.
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
+#if CLICKHOUSE_CLOUD
+    std::shared_ptr<const EnabledMaskingPolicies> getEnabledMaskingPolicies() const;
+#endif
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
@@ -132,6 +132,13 @@ public:
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
 
+    /// Checks access of grants with parameter where a filter can be applied.
+    /// For example, for `GRANT READ ON S3('s3://foo.*') TO user` calling `checkAccess(READ, "S3")` will throw an error
+    /// because we are checking for `READ` permissions for all possible URLs.
+    ///
+    /// But calling `checkAccessWithFilter(READ, "S3", "s3://foo/bar.csv")` will succeed, because we have just enough rights.
+    void checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
+
     static AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control);
 
     ContextAccess(const AccessControl & access_control_, const Params & params_);
@@ -143,6 +150,7 @@ private:
     void initialize();
     void setUser(const UserPtr & user_) const TSA_REQUIRES(mutex);
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const TSA_REQUIRES(mutex);
+    void findRowPoliciesOfInitialUser() const TSA_REQUIRES(mutex);
     void calculateAccessRights() const TSA_REQUIRES(mutex);
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
@@ -196,6 +204,7 @@ private:
     mutable UserPtr user TSA_GUARDED_BY(mutex);
     mutable String user_name TSA_GUARDED_BY(mutex);
     mutable scope_guard subscription_for_user_change TSA_GUARDED_BY(mutex);
+    mutable scope_guard subscription_for_initial_user_change TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRoles> enabled_roles TSA_GUARDED_BY(mutex);
     mutable scope_guard subscription_for_roles_changes TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRolesInfo> roles_info TSA_GUARDED_BY(mutex);
@@ -203,6 +212,9 @@ private:
     mutable std::shared_ptr<const AccessRights> access_with_implicit TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> enabled_row_policies TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user TSA_GUARDED_BY(mutex);
+#if CLICKHOUSE_CLOUD
+    mutable std::shared_ptr<const EnabledMaskingPolicies> enabled_masking_policies TSA_GUARDED_BY(mutex);
+#endif
     mutable std::shared_ptr<const EnabledQuota> enabled_quota TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledSettings> enabled_settings TSA_GUARDED_BY(mutex);
 };
@@ -239,6 +251,9 @@ public:
     /// The function returns nullptr if there is no filter to apply.
     ALWAYS_INLINE RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const { return access->getRowPolicyFilter(database, table_name, filter_type); }
 
+#if CLICKHOUSE_CLOUD
+    ALWAYS_INLINE std::shared_ptr<const EnabledMaskingPolicies> getEnabledMaskingPolicies() const { return access->getEnabledMaskingPolicies(); }
+#endif
     /// Returns the quota to track resource consumption.
     ALWAYS_INLINE std::shared_ptr<const EnabledQuota> getQuota() const { return access->getQuota(); }
     ALWAYS_INLINE std::optional<QuotaUsage> getQuotaUsage() const { return access->getQuotaUsage(); }
@@ -311,6 +326,9 @@ public:
     ALWAYS_INLINE void checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const { access->checkGranteeIsAllowed(grantee_id, grantee); }
     /// Checks if grantees are allowed for the current user, throws an exception if not.
     ALWAYS_INLINE void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const { access->checkGranteesAreAllowed(grantee_ids); }
+
+    /// Checks access of grants with parameter where a filter can be applied.
+    ALWAYS_INLINE void checkAccessWithFilter(const AccessFlags & flags, std::string_view parameter, std::string_view filter) const { access->checkAccessWithFilter(context, flags, parameter, filter); }
 
 private:
     ContextAccessPtr access;

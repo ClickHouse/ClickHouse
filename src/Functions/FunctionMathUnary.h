@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Core/callOnTypeIndex.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionMathUnary : public IFunction
+class FunctionMathUnary final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -57,6 +57,11 @@ private:
         return argument;
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return Impl::always_returns_float64 ? std::make_shared<DataTypeFloat64>() : nullptr;
+    }
+
     template <typename T, typename ReturnType>
     static void executeInIterations(const T * src_data, ReturnType * dst_data, size_t size)
     {
@@ -65,7 +70,7 @@ private:
             /// Process all data as a whole and use FastOps implementation
 
             /// If the argument is integer, convert to Float64 beforehand
-            if constexpr (!std::is_floating_point_v<T>)
+            if constexpr (!is_floating_point<T>)
             {
                 PODArray<Float64> tmp_vec(size);
                 for (size_t i = 0; i < size; ++i)
@@ -83,6 +88,11 @@ private:
             const size_t rows_remaining = size % Impl::rows_per_iteration;
             const size_t rows_size = size - rows_remaining;
 
+            /// When rows_per_iteration == 1, the loop body is a scalar function
+            /// call (e.g. exp2, sin). The compiler may aggressively unroll this
+            /// on higher march targets, bloating i-cache for zero throughput
+            /// gain since the bottleneck is the call itself.
+#pragma clang loop unroll(disable)
             for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
                 Impl::execute(&src_data[i], &dst_data[i]);
 
@@ -147,7 +157,7 @@ private:
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
-            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !std::is_floating_point_v<Type>, Float64, Type>;
+            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !is_floating_point<Type>, Float64, Type>;
             using ColVecType = ColumnVectorOrDecimal<Type>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());

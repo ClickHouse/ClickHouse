@@ -1,5 +1,6 @@
--- Tags: long, zookeeper, no-replicated-database
+-- Tags: long, zookeeper, no-replicated-database, no-async-insert
 -- Tag no-replicated-database: Fails due to additional replicas or shards
+-- Tag no-async-insert: Async insert calculate block_id differently, it takes all inserted data into account
 
 SET insert_keeper_fault_injection_probability=0;
 DROP TABLE IF EXISTS partitioned_table SYNC;

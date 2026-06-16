@@ -1,14 +1,8 @@
 #include <Common/Scheduler/Nodes/ClassifiersConfig.h>
 
-#include <Common/Exception.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int RESOURCE_NOT_FOUND;
-}
 
 ClassifierDescription::ClassifierDescription(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
@@ -31,9 +25,11 @@ ClassifiersConfig::ClassifiersConfig(const Poco::Util::AbstractConfiguration & c
 
 const ClassifierDescription & ClassifiersConfig::get(const String & classifier_name)
 {
+    static ClassifierDescription empty;
     if (auto it = classifiers.find(classifier_name); it != classifiers.end())
         return it->second;
-    throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Unknown workload classifier '{}' to access resources", classifier_name);
+    else
+        return empty;
 }
 
 }

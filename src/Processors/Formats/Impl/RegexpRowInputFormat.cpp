@@ -22,6 +22,9 @@ RegexpFieldExtractor::RegexpFieldExtractor(const FormatSettings & format_setting
     if (regexp_str.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The regular expression is not set for the `Regexp` format. It requires setting the value of the `format_regexp` setting.");
 
+    if (!regexp.ok())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid regular expression '{}' for the `Regexp` format: {}", regexp_str, regexp.error());
+
     size_t fields_count = regexp.NumberOfCapturingGroups();
     matched_fields.resize(fields_count);
     re2_arguments.resize(fields_count);
@@ -74,13 +77,13 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
 }
 
 RegexpRowInputFormat::RegexpRowInputFormat(
-    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : RegexpRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
 {
 }
 
 RegexpRowInputFormat::RegexpRowInputFormat(
-    std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    std::unique_ptr<PeekableReadBuffer> buf_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, *buf_, std::move(params_))
     , buf(std::move(buf_))
     , format_settings(format_settings_)
@@ -173,6 +176,7 @@ void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr 
 }
 
 
+void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatRegexp(FormatFactory & factory)
 {
     factory.registerInputFormat("Regexp", [](
@@ -181,8 +185,79 @@ void registerInputFormatRegexp(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
     {
-        return std::make_shared<RegexpRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<RegexpRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
     });
+
+    factory.setDocumentation("Regexp", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✗      |       |
+
+## Description {#description}
+
+The `Regex` format parses every line of imported data according to the provided regular expression.
+
+**Usage**
+
+The regular expression from [format_regexp](/operations/settings/settings-formats.md/#format_regexp) setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
+
+Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`.
+
+The content of every matched subpattern is parsed with the method of corresponding data type, according to [format_regexp_escaping_rule](/operations/settings/settings-formats.md/#format_regexp_escaping_rule) setting.
+
+If the regular expression does not match the line and [format_regexp_skip_unmatched](/operations/settings/settings-formats.md/#format_regexp_escaping_rule) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
+
+## Example usage {#example-usage}
+
+Consider the file `data.tsv`:
+
+```text title="data.tsv"
+id: 1 array: [1,2,3] string: str1 date: 2020-01-01
+id: 2 array: [1,2,3] string: str2 date: 2020-01-02
+id: 3 array: [1,2,3] string: str3 date: 2020-01-03
+```
+and table `imp_regex_table`:
+
+```sql title="Query"
+CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, date Date) ENGINE = Memory;
+```
+
+We'll insert the data from the aforementioned file into the table above using the following query:
+
+```bash title="Query"
+$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0 FORMAT Regexp;"
+```
+
+We can now `SELECT` the data from the table to see how the `Regex` format parsed the data from the file:
+
+```sql title="Query"
+SELECT * FROM imp_regex_table;
+```
+
+```text title="Response"
+┌─id─┬─array───┬─string─┬───────date─┐
+│  1 │ [1,2,3] │ str1   │ 2020-01-01 │
+│  2 │ [1,2,3] │ str2   │ 2020-01-02 │
+│  3 │ [1,2,3] │ str3   │ 2020-01-03 │
+└────┴─────────┴────────┴────────────┘
+```
+
+## Format settings {#format-settings}
+
+When working with the `Regexp` format, you can use the following settings:
+
+- `format_regexp` — [String](/sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
+- `format_regexp_escaping_rule` — [String](/sql-reference/data-types/string.md). The following escaping rules are supported:
+
+  - CSV (similarly to [CSV](/interfaces/formats/CSV)
+  - JSON (similarly to [JSONEachRow](/interfaces/formats/JSONEachRow)
+  - Escaped (similarly to [TSV](/interfaces/formats/TabSeparated)
+  - Quoted (similarly to [Values](/interfaces/formats/Values)
+  - Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/interfaces/formats/TabSeparated)
+
+- `format_regexp_skip_unmatched` — [UInt8](/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
+)DOCS_MD"});
 }
 
 static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
@@ -222,11 +297,13 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
     return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
+void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("Regexp", &segmentationEngine);
 }
 
+void registerRegexpSchemaReader(FormatFactory & factory);
 void registerRegexpSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Regexp", [](ReadBuffer & buf, const FormatSettings & settings)

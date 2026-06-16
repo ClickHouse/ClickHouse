@@ -1,14 +1,24 @@
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/AccessType.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
-
-#include <boost/range/algorithm_ext/erase.hpp>
+#include <unordered_set>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INVALID_GRANT;
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
     void formatOptions(bool grant_option, bool is_partial_revoke, String & result)
@@ -133,18 +143,54 @@ void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
     buffer << ")";
 }
 
-void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) const
+void AccessRightsElement::formatFilter(WriteBuffer & buffer) const
 {
-    buffer << (hilite ? IAST::hilite_keyword : "") << "ON " << (hilite ? IAST::hilite_none : "");
+    buffer << "(" << backQuoteIfNeed(filter) << ")";
+}
+
+void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
+{
+    auto is_enabled_user_name_access_type = true;
+    auto is_enabled_read_write_grants = true;
+    if (const auto context = Context::getGlobalContextInstance())
+    {
+        const auto & access_control = context->getAccessControl();
+        is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
+        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+    }
+
+    buffer << "ON ";
     if (isGlobalWithParameter())
     {
-        if (anyParameter())
-            buffer << "*";
+        /// Special check for backward compatibility.
+        /// If `enable_user_name_access_type` is set to false, we will dump `GRANT CREATE USER ON *` as `GRANT CREATE USER ON *.*`.
+        /// This will allow us to run old replicas in the same cluster.
+        if (access_flags.getParameterType() == AccessFlags::USER_NAME
+            && !is_enabled_user_name_access_type)
+        {
+            if (!anyParameter())
+                LOG_WARNING(getLogger("AccessRightsElement"),
+                    "Converting {} to *.* because the setting `enable_user_name_access_type` is `false`. "
+                    "Consider turning this setting on, if your cluster contains no replicas older than 25.1",
+                    parameter);
+
+            buffer << "*.*";
+        }
         else
         {
-            buffer << backQuoteIfNeed(parameter);
-            if (wildcard)
+            if (anyParameter())
                 buffer << "*";
+            else
+            {
+                buffer << backQuoteIfNeed(parameter);
+                if (wildcard)
+                    buffer << "*";
+                else
+                {
+                    if (hasFilter() && is_enabled_read_write_grants)
+                        formatFilter(buffer);
+                }
+            }
         }
     }
     else if (anyDatabase())
@@ -159,7 +205,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
         if (columns.empty() && wildcard)
             buffer << "*";
     }
-    else
+    else if (!database.empty())
     {
         buffer << backQuoteIfNeed(database);
 
@@ -167,6 +213,10 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
             buffer << "*";
 
         buffer << ".*";
+    }
+    else
+    {
+        buffer << "*";
     }
 }
 
@@ -211,24 +261,130 @@ AccessRightsElement::AccessRightsElement(
 {
 }
 
-void AccessRightsElement::eraseNonGrantable()
+AccessFlags AccessRightsElement::getGrantableFlags() const
 {
     if (isGlobalWithParameter() && !anyParameter())
-        access_flags &= AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
     else if (!anyColumn())
-        access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnColumnLevel();
     else if (!anyTable())
-        access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnTableLevel();
     else if (!anyDatabase())
-        access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnDatabaseLevel();
     else
-        access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnGlobalLevel();
+}
+
+void AccessRightsElement::throwIfNotGrantable() const
+{
+    if (empty())
+        return;
+    auto grantable_flags = getGrantableFlags();
+    if (grantable_flags)
+    {
+        if (!anyColumn() && (anyTable() || anyDatabase()))
+        {
+            // Specifying specific columns with a wildcard for a database/table is grammatically valid, but not logically valid
+            throw Exception(ErrorCodes::INVALID_GRANT, "{} on wildcards cannot be granted on the column level", access_flags.toString());
+        }
+        return;
+    }
+
+    if (!anyColumn())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the column level", access_flags.toString());
+    if (!anyTable())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the table level", access_flags.toString());
+    if (!anyDatabase())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the database level", access_flags.toString());
+    if (!anyParameter())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the global with parameter level", access_flags.toString());
+
+    throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", access_flags.toString());
+}
+
+void AccessRightsElement::eraseNotGrantable()
+{
+    access_flags = getGrantableFlags();
 }
 
 void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
 {
     if (isEmptyDatabase())
         database = current_database;
+}
+
+void AccessRightsElement::replaceDeprecated()
+{
+    if (!access_flags)
+        return;
+
+    if (access_flags.toAccessTypes().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceDeprecated() was called on an access element with multiple access flags: {}", access_flags.toString());
+
+    static const auto deprecated_source_types = [] {
+        std::unordered_set<AccessType> result;
+        #define ADD_DEPRECATED_SOURCE_TYPE(name, alias) result.insert(AccessType::name);
+        APPLY_FOR_SOURCE(ADD_DEPRECATED_SOURCE_TYPE)
+        #undef ADD_DEPRECATED_SOURCE_TYPE
+        return result;
+    }();
+
+    const auto current_access_type = access_flags.toAccessTypes()[0];
+    if (deprecated_source_types.contains(current_access_type))
+    {
+        if (!anyDatabase())
+            /// This will leave statements like `REVOKE S3 ON system.*` untouched
+            /// These statements will be deleted afterwards with `eraseNotGrantable()`
+            return;
+        access_flags = AccessType::READ | AccessType::WRITE;
+        parameter = DB::toString(current_access_type);
+    }
+    else if (current_access_type == AccessType::SOURCES)
+    {
+        access_flags = AccessType::READ | AccessType::WRITE;
+    }
+}
+
+void AccessRightsElement::makeBackwardCompatible()
+{
+    static const auto string_to_accessType = [] {
+        std::unordered_map<std::string, AccessType> result;
+        /// Insert both the spaced form (e.g. "ARROW FLIGHT" from replaceDeprecated())
+        /// and the canonical form (e.g. "ARROW_FLIGHT" from unifySource() in the parser).
+        #define ADD_BACKWARD_COMPAT_SOURCE(name, alias) \
+            result.emplace(DB::toString(AccessType::name), AccessType::name); \
+            result.emplace(#name, AccessType::name);
+        APPLY_FOR_SOURCE(ADD_BACKWARD_COMPAT_SOURCE)
+        #undef ADD_BACKWARD_COMPAT_SOURCE
+        return result;
+    }();
+
+    auto is_enabled_read_write_grants = false;
+    if (const auto context = Context::getGlobalContextInstance())
+    {
+        const auto & access_control = context->getAccessControl();
+        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+    }
+
+    if (!is_enabled_read_write_grants)
+    {
+        if (access_flags == AccessType::READ || access_flags == AccessType::WRITE || access_flags == (AccessType::READ | AccessType::WRITE))
+        {
+            if (anyParameter())
+            {
+                access_flags = AccessType::SOURCES;
+            }
+            else
+            {
+                auto it = string_to_accessType.find(parameter);
+                if (it != string_to_accessType.end())
+                {
+                    access_flags = it->second;
+                    parameter.clear();
+                }
+            }
+        }
+    }
 }
 
 String AccessRightsElement::toString() const { return toStringImpl(*this, true); }
@@ -251,13 +407,25 @@ bool AccessRightsElements::sameOptions() const
     return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });
 }
 
-void AccessRightsElements::eraseNonGrantable()
+void AccessRightsElements::throwIfNotGrantable() const
+{
+    for (const auto & element : *this)
+        element.throwIfNotGrantable();
+}
+
+void AccessRightsElements::eraseNotGrantable()
 {
     std::erase_if(*this, [](AccessRightsElement & element)
     {
-        element.eraseNonGrantable();
+        element.eraseNotGrantable();
         return element.empty();
     });
+}
+
+void AccessRightsElements::replaceDeprecated()
+{
+    for (auto & element : *this)
+        element.replaceDeprecated();
 }
 
 void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
@@ -268,5 +436,67 @@ void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 
 String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
+
+void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
+{
+    bool no_output = true;
+    /// Track which access flags have already been output within the current group
+    /// to avoid duplicate keywords after backward-compatible conversion
+    /// (e.g., READ ON FILE and WRITE ON FILE both become FILE after makeBackwardCompatible).
+    AccessFlags group_flags;
+
+    for (size_t i = 0; i != size(); ++i)
+    {
+        auto element = (*this)[i];
+        element.makeBackwardCompatible();
+
+        auto keywords = element.access_flags.toKeywords();
+        if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
+            continue;
+
+        /// Deduplicate keywords only for table-wide grants (anyColumn()).
+        /// Column-scoped grants (e.g., SELECT(a), SELECT(b)) must output each
+        /// keyword+column combination even when the access flag is the same.
+        auto output_keywords = keywords;
+        if (element.anyColumn())
+        {
+            output_keywords = (element.access_flags - group_flags).toKeywords();
+            group_flags |= element.access_flags;
+        }
+
+        for (const auto & keyword : output_keywords)
+        {
+            if (!std::exchange(no_output, false))
+                buffer << ", ";
+
+            buffer << keyword;
+            if (!element.anyColumn())
+                element.formatColumnNames(buffer);
+        }
+
+        bool next_element_on_same_db_and_table = false;
+        if (i != size() - 1)
+        {
+            /// Compare backward-compatible versions of both elements so that
+            /// the parameter field (cleared by makeBackwardCompatible) matches on both sides.
+            auto next_element = (*this)[i + 1];
+            next_element.makeBackwardCompatible();
+            if (element.sameDatabaseAndTableAndParameter(next_element))
+            {
+                next_element_on_same_db_and_table = true;
+            }
+        }
+
+        if (!next_element_on_same_db_and_table)
+        {
+            buffer << " ";
+            element.formatONClause(buffer);
+            group_flags = {};
+        }
+    }
+
+    if (no_output)
+        buffer << "USAGE ON " << "*.*";
+}
 
 }

@@ -1,0 +1,32 @@
+1
+2
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_cast_bug)
+        Indexes:
+          PrimaryKey
+            Keys:
+              val
+            Condition: (val not in [0, 0])
+            Parts: 2/3
+            Granules: 2/3
+            Search Algorithm: generic exclusion search
+          Ranges: 2
+1
+2
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + (Projection + (WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))))))
+      Filter (((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))))))[split])
+        ReadFromMergeTree (default.t_materialize_bug)
+        Indexes:
+          PrimaryKey
+            Keys:
+              val
+            Condition: (val not in [0, 0])
+            Parts: 2/3
+            Granules: 2/3
+            Search Algorithm: generic exclusion search
+          Ranges: 2

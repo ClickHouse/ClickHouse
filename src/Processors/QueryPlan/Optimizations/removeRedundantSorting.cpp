@@ -4,10 +4,15 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
+#include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
@@ -16,8 +21,10 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+
 
 namespace DB::QueryPlanOptimizations
 {
@@ -60,10 +67,16 @@ public:
 
         if (typeid_cast<LimitStep *>(current_step)
             || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<OffsetStep *>(current_step) /// (2) OFFSET on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FillingStep *>(current_step) /// (3) if ORDER BY is with FILL WITH, it is non-removable
-            || typeid_cast<SortingStep *>(current_step) /// (4) ORDER BY will change order of previous sorting
-            || typeid_cast<AggregatingStep *>(current_step)) /// (5) aggregation change order
+            || typeid_cast<NegativeLimitStep *>(current_step) /// negative LIMIT depends on order, so the ORDER BY is non-removable
+            || typeid_cast<NegativeLimitByStep *>(current_step) /// negative LIMIT BY depends on order, so the ORDER BY is non-removable
+            || typeid_cast<FractionalLimitStep *>(current_step) /// (2) FractionalLimit Steps on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<FractionalOffsetStep *>(current_step) /// (3) FractionalOffset Steps on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<OffsetStep *>(current_step) /// (4) OFFSET on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<NegativeOffsetStep *>(current_step) /// negative OFFSET depends on order, so the ORDER BY is non-removable
+            || typeid_cast<FillingStep *>(current_step) /// (5) if ORDER BY is with FILL WITH, it is non-removable
+            || typeid_cast<SortingStep *>(current_step) /// (6) ORDER BY will change order of previous sorting
+            || typeid_cast<AggregatingStep *>(current_step) /// (7) aggregation change order
+            )
         {
             logStep("nodes_affect_order/push", current_node);
             nodes_affect_order.push_back(current_node);
@@ -100,7 +113,7 @@ private:
         }
 
         /// sorting removed, so need to update sorting traits for upstream steps
-        const DataStream * input_stream = &parent_node->children.front()->step->getOutputStream();
+        const SharedHeader * input_header = &parent_node->children.front()->step->getOutputHeader();
         chassert(parent_node == (stack.rbegin() + 1)->node); /// skip element on top of stack since it's sorting which was just removed
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {
@@ -119,8 +132,8 @@ private:
                 break;
             }
 
-            trans->updateInputStream(*input_stream);
-            input_stream = &trans->getOutputStream();
+            trans->updateInputHeader(*input_header);
+            input_header = &trans->getOutputHeader();
 
             /// update sorting properties though stack until reach node which affects order (inclusive)
             if (node == nodes_affect_order.back())

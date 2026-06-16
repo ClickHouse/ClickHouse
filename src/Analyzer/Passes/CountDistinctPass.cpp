@@ -3,6 +3,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <DataTypes/IDataType.h>
+
 #include <Interpreters/Context.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -38,13 +40,13 @@ public:
 
         /// Check that query has only SELECT clause
         if (!query_node || (query_node->hasWith() || query_node->hasPrewhere() || query_node->hasWhere() || query_node->hasGroupBy() ||
-            query_node->hasHaving() || query_node->hasWindow() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
+            query_node->hasHaving() || query_node->hasWindow() || query_node->hasQualify() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
             query_node->hasLimitBy() || query_node->hasLimit() || query_node->hasOffset()))
             return;
 
         /// Check that query has only single table expression
         auto join_tree_node_type = query_node->getJoinTree()->getNodeType();
-        if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
+        if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
 
         /// Check that query has only single node in projection
@@ -55,7 +57,7 @@ public:
         /// Check that query single projection node is `countDistinct` function
         auto & projection_node = projection_nodes[0];
         auto * function_node = projection_node->as<FunctionNode>();
-        if (!function_node)
+        if (!function_node || function_node->hasWindow())
             return;
 
         auto lower_function_name = Poco::toLower(function_node->getFunctionName());
@@ -64,13 +66,18 @@ public:
 
         /// Check that `countDistinct` function has single COLUMN argument
         auto & count_distinct_arguments_nodes = function_node->getArguments().getNodes();
-        if (count_distinct_arguments_nodes.size() != 1 && count_distinct_arguments_nodes[0]->getNodeType() != QueryTreeNodeType::COLUMN)
+        if (count_distinct_arguments_nodes.size() != 1 || count_distinct_arguments_nodes[0]->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
 
         auto & count_distinct_argument_column = count_distinct_arguments_nodes[0];
         if (count_distinct_argument_column->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
         auto & count_distinct_argument_column_typed = count_distinct_argument_column->as<ColumnNode &>();
+
+        /// `countDistinct`/`uniqExact` skip NULLs, but `GROUP BY` on a Nullable column produces a NULL group
+        /// that `count` would include. Skip the rewrite for nullable arguments to preserve semantics.
+        if (isNullableOrLowCardinalityNullable(count_distinct_argument_column_typed.getColumnType()))
+            return;
 
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column
         auto subquery = std::make_shared<QueryNode>(Context::createCopy(query_node->getContext()));

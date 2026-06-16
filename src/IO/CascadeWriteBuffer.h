@@ -1,6 +1,10 @@
 #pragma once
-#include <functional>
+
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteBuffer.h>
+
+#include <functional>
+#include <vector>
 
 
 namespace DB
@@ -27,23 +31,21 @@ class CascadeWriteBuffer : public WriteBuffer
 {
 public:
 
-    using WriteBufferPtrs = std::vector<WriteBufferPtr>;
     using WriteBufferConstructor = std::function<WriteBufferPtr (const WriteBufferPtr & prev_buf)>;
-    using WriteBufferConstructors = std::vector<WriteBufferConstructor>;
+    using WriteBufferConstructors = VectorWithMemoryTracking<WriteBufferConstructor>;
+    using WriteBufferPtrs = VectorWithMemoryTracking<WriteBufferPtr>;
 
     explicit CascadeWriteBuffer(WriteBufferPtrs && prepared_sources_, WriteBufferConstructors && lazy_sources_ = {});
 
     void nextImpl() override;
 
     /// Should be called once
-    void getResultBuffers(WriteBufferPtrs & res);
+    WriteBufferPtrs getResultBuffers();
 
     const WriteBuffer * getCurrentBuffer() const
     {
         return curr_buffer;
     }
-
-    ~CascadeWriteBuffer() override;
 
 private:
 

@@ -7,7 +7,7 @@
 #include <base/find_symbols.h>
 #include <base/preciseExp10.h>
 
-#define JSON_MAX_DEPTH 100
+constexpr size_t JSON_MAX_DEPTH = 100;
 
 
 #pragma clang diagnostic push
@@ -606,7 +606,7 @@ std::string JSON::getString() const
                         checkPos(s + 4);
                         std::string hex(s, 4);
                         s += 3;
-                        int unicode;
+                        int unicode = {};
                         try
                         {
                             unicode = Poco::NumberParser::parseHex(hex);

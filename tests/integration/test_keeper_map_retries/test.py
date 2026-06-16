@@ -13,6 +13,7 @@ node = cluster.add_instance(
     main_configs=["configs/enable_keeper_map.xml"],
     user_configs=["configs/keeper_retries.xml"],
     with_zookeeper=True,
+    keeper_required_feature_flags=["multi_read"],
     stay_alive=True,
 )
 

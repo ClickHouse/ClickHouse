@@ -57,7 +57,7 @@ DROP TABLE partitioned_table;
 DROP TABLE mv_table;
 
 
-SELECT 'with incorrect ussage of user deduplication token';
+SELECT 'with incorrect usage of user deduplication token';
 
 CREATE TABLE partitioned_table
     (key Int64, value String)

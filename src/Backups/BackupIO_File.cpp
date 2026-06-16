@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_File.h>
+#include <Common/checkStackSize.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
@@ -33,7 +34,7 @@ UInt64 BackupReaderFile::getFileSize(const String & file_name)
     return fs::file_size(root_path / file_name);
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderFile::readFile(const String & file_name)
 {
     return createReadBufferFromFileBase(root_path / file_name, read_settings);
 }
@@ -106,20 +107,38 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
 void BackupWriterFile::removeFile(const String & file_name)
 {
     (void)fs::remove(root_path / file_name);
-    if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        (void)fs::remove(root_path);
 }
 
-void BackupWriterFile::removeFiles(const Strings & file_names)
+void BackupWriterFile::removeEmptyDirectories()
 {
-    for (const auto & file_name : file_names)
-        (void)fs::remove(root_path / file_name);
-    if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        (void)fs::remove(root_path);
+    if (root_path.empty())
+        return;
+
+    removeEmptyDirectoriesImpl(root_path);
 }
 
-void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                        bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
+{
+    checkStackSize();
+
+    if (!fs::is_directory(current_dir))
+        return;
+
+    if (fs::is_empty(current_dir))
+    {
+        (void)fs::remove(current_dir);
+        return;
+    }
+
+    for (const auto & it : std::filesystem::directory_iterator{current_dir})
+        removeEmptyDirectoriesImpl(it.path());
+
+    if (fs::is_empty(current_dir))
+        (void)fs::remove(current_dir);
+}
+
+void BackupWriterFile::copyFileFromDisk(
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// std::filesystem::copy() can copy from the filesystem only, and can't do throttling or copy a part of the file.
     bool has_throttling = static_cast<bool>(read_settings.local_throttler);

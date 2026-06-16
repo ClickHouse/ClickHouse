@@ -141,7 +141,17 @@ void WriteBufferValidUTF8::nextImpl()
 
 WriteBufferValidUTF8::~WriteBufferValidUTF8()
 {
-    finalize();
+    if (!canceled)
+    {
+        try
+        {
+            finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 void WriteBufferValidUTF8::finalizeImpl()
@@ -153,11 +163,12 @@ void WriteBufferValidUTF8::finalizeImpl()
     if (working_buffer.begin() != memory.data())
     {
         const char * p = memory.data();
+        const char * end = working_buffer.begin();
 
-        while (p < pos)
+        while (p < end)
         {
             UInt8 len = length_of_utf8_sequence[static_cast<const unsigned char>(*p)];
-            if (p + len > pos)
+            if (p + len > end)
             {
                 /// Incomplete sequence. Skip one byte.
                 putReplacement();

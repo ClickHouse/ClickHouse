@@ -7,11 +7,11 @@
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/Scheduler/ResourceLink.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
 #include <condition_variable>
+#include <exception>
 #include <mutex>
 
 
@@ -95,6 +95,10 @@ public:
             // lock(mutex) is not required because `Finished` request cannot be used by the scheduler thread
             chassert(state == Finished);
             state = Enqueued;
+            // `Request` is reused (e.g. via `Request::local()` thread-local instance), so a stale `exception`
+            // left over from a previous failed request must be cleared. Otherwise `wait()` would observe it and
+            // spuriously throw even though this (new) request was granted via `execute()`.
+            exception = {};
             ResourceRequest::reset(cost_);
             estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
         }
@@ -109,13 +113,18 @@ public:
             dequeued_cv.notify_one();
         }
 
-        void wait()
+        // This function is executed inside scheduler thread and wakes thread that issued this `request`.
+        // That thread will throw an exception.
+        void failed(const std::exception_ptr & ptr) override
         {
-            CurrentMetrics::Increment scheduled(metrics->scheduled_count);
-            auto timer = CurrentThread::getProfileEvents().timer(metrics->wait_microseconds);
             std::unique_lock lock(mutex);
-            dequeued_cv.wait(lock, [this] { return state == Dequeued; });
+            chassert(state == Enqueued);
+            state = Dequeued;
+            exception = ptr;
+            dequeued_cv.notify_one();
         }
+
+        void wait();
 
         void finish(ResourceCost real_cost_, ResourceLink link_)
         {
@@ -127,6 +136,23 @@ public:
             ResourceRequest::finish();
             ProfileEvents::increment(metrics->requests);
             ProfileEvents::increment(metrics->cost, real_cost_);
+        }
+
+        // Restore a reused request to the `Finished` state after a `ResourceGuard` constructor failed
+        // (either `enqueue()` or `wait()` threw). Because the constructor is unwinding, `~ResourceGuard()`
+        // will not run, so this is the only chance to make the thread-local instance reusable; otherwise the
+        // next request enqueued on this thread would hit `chassert(state == Finished)`.
+        void recoverAfterConstructorFailure(ResourceLink link_)
+        {
+            if (state == Enqueued)
+                // `enqueue()` threw before the request entered the scheduler (e.g. the queue is being
+                // destructed). The request was never linked into a queue and `enqueueRequestUsingBudget`
+                // has rolled back its budget transaction, so just restore the state.
+                state = Finished;
+            else if (state == Dequeued)
+                // `wait()` threw: the request was failed by the scheduler. Finish it as the destructor would;
+                // `ResourceRequest::finish()` is a no-op for a failed request.
+                finish(0, link_);
         }
 
         void assertFinished()
@@ -151,6 +177,7 @@ public:
         std::mutex mutex;
         std::condition_variable dequeued_cv;
         RequestState state = Finished;
+        std::exception_ptr exception;
     };
 
     /// Creates pending request for resource; blocks while resource is not available (unless `Lock::Defer`)
@@ -162,9 +189,21 @@ public:
             link.reset(); // Ignore zero-cost requests
         else if (link)
         {
-            request.enqueue(cost, link);
-            if (type == Lock::Default)
-                request.wait();
+            try
+            {
+                request.enqueue(cost, link);
+                if (type == Lock::Default)
+                    request.wait();
+            }
+            catch (...)
+            {
+                // The constructor is propagating an exception (the request failed in `enqueue()` or `wait()`),
+                // so `~ResourceGuard()` will not run. Restore the reused thread-local `Request` to the `Finished`
+                // state here, mirroring the cleanup the `Lock::Defer` path performs via `~ResourceGuard()`.
+                request.recoverAfterConstructorFailure(link);
+                link.reset();
+                throw;
+            }
         }
     }
 

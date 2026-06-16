@@ -75,11 +75,16 @@
 template <typename Derived>
 class COW : public boost::intrusive_ref_counter<Derived>
 {
+    friend Derived;
+
 private:
     Derived * derived() { return static_cast<Derived *>(this); }
     const Derived * derived() const { return static_cast<const Derived *>(this); }
 
-protected:
+    COW() = default;
+    COW(const COW&) = default;
+
+public:
     template <typename T>
     class mutable_ptr : public boost::intrusive_ptr<T> /// NOLINT
     {
@@ -108,10 +113,8 @@ protected:
         mutable_ptr(std::nullptr_t) {} /// NOLINT
     };
 
-public:
     using MutablePtr = mutable_ptr<Derived>;
 
-protected:
     template <typename T>
     class immutable_ptr : public boost::intrusive_ptr<const T> /// NOLINT
     {
@@ -152,7 +155,6 @@ protected:
         immutable_ptr(std::nullptr_t) {} /// NOLINT
     };
 
-public:
     using Ptr = immutable_ptr<Derived>;
 
     template <typename... Args>
@@ -271,13 +273,21 @@ public:
 template <typename Base, typename Derived>
 class COWHelper : public Base
 {
+    friend Derived;
+
 private:
     Derived * derived() { return static_cast<Derived *>(this); }
     const Derived * derived() const { return static_cast<const Derived *>(this); }
 
+    COWHelper() = default;
+    COWHelper(const COWHelper &) = default;
+
 public:
     using Ptr = typename Base::template immutable_ptr<Derived>;
     using MutablePtr = typename Base::template mutable_ptr<Derived>;
+
+    Ptr getPtr() const { return static_cast<Ptr>(derived()); }
+    MutablePtr getPtr() { return static_cast<MutablePtr>(derived()); }
 
     template <typename... Args>
     static MutablePtr create(Args &&... args) { return MutablePtr(new Derived(std::forward<Args>(args)...)); }

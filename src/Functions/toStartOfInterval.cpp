@@ -7,15 +7,25 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <IO/WriteHelpers.h>
 #include <algorithm>
-
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_extended_results_for_datetime_functions;
+}
+
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -25,196 +35,44 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
 
-class FunctionToStartOfInterval : public IFunction
+enum class ToStartOfIntervalOverload
+{
+    Default,    /// toStartOfInterval(time, interval) or toStartOfInterval(time, interval, timezone)
+    Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
+};
+
+class FunctionToStartOfInterval final : public IFunction
 {
 private:
-    enum class Overload
-    {
-        Default,    /// toStartOfInterval(time, interval) or toStartOfInterval(time, interval, timezone)
-        Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
-    };
-    mutable Overload overload;
+    ToStartOfIntervalOverload overload;
 
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
-
     static constexpr auto name = "toStartOfInterval";
+
+    explicit FunctionToStartOfInterval(ToStartOfIntervalOverload overload_)
+        : overload(overload_)
+    {
+    }
+
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+    /// The Origin overload checks that origin <= time_arg for every row. The LowCardinality
+    /// dictionary always contains a default value (epoch/0) which would violate this check.
+    bool canBeExecutedOnDefaultArguments() const override { return overload != ToStartOfIntervalOverload::Origin; }
     bool hasInformationAboutMonotonicity() const override { return true; }
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
-        bool value_is_date = false;
-        auto check_first_argument = [&]
-        {
-            const DataTypePtr & type_arg1 = arguments[0].type;
-            if (!isDateOrDate32(type_arg1) && !isDateTime(type_arg1) && !isDateTime64(type_arg1))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64",
-                    type_arg1->getName(), getName());
-            value_is_date = isDate(type_arg1);
-        };
-
-        const DataTypeInterval * interval_type = nullptr;
-
-        enum class ResultType : uint8_t
-        {
-            Date,
-            Date32,
-            DateTime,
-            DateTime64
-        };
-
-        ResultType result_type;
-        auto check_second_argument = [&]
-        {
-            const DataTypePtr & type_arg2 = arguments[1].type;
-
-            interval_type = checkAndGetDataType<DataTypeInterval>(type_arg2.get());
-            if (!interval_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 2nd argument of function {}, expected a time interval",
-                    type_arg2->getName(), getName());
-
-            overload = Overload::Default;
-
-            /// Determine result type for default overload (no origin)
-            switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
-            {
-                case IntervalKind::Kind::Nanosecond:
-                case IntervalKind::Kind::Microsecond:
-                case IntervalKind::Kind::Millisecond:
-                    result_type = ResultType::DateTime64;
-                    break;
-                case IntervalKind::Kind::Second:
-                case IntervalKind::Kind::Minute:
-                case IntervalKind::Kind::Hour:
-                case IntervalKind::Kind::Day: /// weird why Day leads to DateTime but too afraid to change it
-                    result_type = ResultType::DateTime;
-                    break;
-                case IntervalKind::Kind::Week:
-                case IntervalKind::Kind::Month:
-                case IntervalKind::Kind::Quarter:
-                case IntervalKind::Kind::Year:
-                    result_type = ResultType::Date;
-                    break;
-            }
-        };
-
-        auto check_third_argument = [&]
-        {
-            const DataTypePtr & type_arg3 = arguments[2].type;
-            if (isString(type_arg3))
-            {
-                if (value_is_date && result_type == ResultType::Date)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
-                        getName(), interval_type->getKind().toString());
-            }
-            else if (isDateOrDate32OrDateTimeOrDateTime64(type_arg3))
-            {
-                overload = Overload::Origin;
-                const DataTypePtr & type_arg1 = arguments[0].type;
-                if (isDate(type_arg1) && isDate(type_arg3))
-                    result_type = ResultType::Date;
-                else if (isDate32(type_arg1) && isDate32(type_arg3))
-                    result_type = ResultType::Date32;
-                else if (isDateTime(type_arg1) && isDateTime(type_arg3))
-                    result_type = ResultType::DateTime;
-                else if (isDateTime64(type_arg1) && isDateTime64(type_arg3))
-                    result_type = ResultType::DateTime64;
-                else
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
-            }
-            else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 3rd argument of function {}. "
-                    "This argument is optional and must be a constant String with timezone name or a Date/Date32/DateTime/DateTime64 with a constant origin",
-                    type_arg3->getName(), getName());
-        };
-
-        auto check_fourth_argument = [&]
-        {
-            if (overload != Overload::Origin) /// sanity check
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 3rd argument of function {}. "
-                    "The third argument must a Date/Date32/DateTime/DateTime64 with a constant origin",
-                    arguments[2].type->getName(), getName());
-
-            const DataTypePtr & type_arg4 = arguments[3].type;
-            if (!isString(type_arg4))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 4th argument of function {}. "
-                    "This argument is optional and must be a constant String with timezone name",
-                    type_arg4->getName(), getName());
-            if (value_is_date && result_type == ResultType::Date)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
-                    getName(), interval_type->getKind().toString());
-        };
-
-        if (arguments.size() == 2)
-        {
-            check_first_argument();
-            check_second_argument();
-        }
-        else if (arguments.size() == 3)
-        {
-            check_first_argument();
-            check_second_argument();
-            check_third_argument();
-        }
-        else if (arguments.size() == 4)
-        {
-            check_first_argument();
-            check_second_argument();
-            check_third_argument();
-            check_fourth_argument();
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, must be 2, 3 or 4",
-                getName(), arguments.size());
-        }
-
-        switch (result_type)
-        {
-            case ResultType::Date:
-                return std::make_shared<DataTypeDate>();
-            case ResultType::Date32:
-                return std::make_shared<DataTypeDate32>();
-            case ResultType::DateTime:
-            {
-                const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
-            }
-            case ResultType::DateTime64:
-            {
-                UInt32 scale = 0;
-                if (isDateTime64(arguments[0].type) && overload == Overload::Origin)
-                {
-                    scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
-                    if (assert_cast<const DataTypeDateTime64 &>(*arguments[2].type.get()).getScale() != scale)
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same scale", getName());
-                }
-                if (interval_type->getKind() == IntervalKind::Kind::Nanosecond)
-                    scale = 9;
-                else if (interval_type->getKind() == IntervalKind::Kind::Microsecond)
-                    scale = 6;
-                else if (interval_type->getKind() == IntervalKind::Kind::Millisecond)
-                    scale = 3;
-
-                const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
-                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
-            }
-        }
-
-        std::unreachable();
+        /// Not called through the overload resolver path.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} should only be used through the overload resolver", getName());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
@@ -223,14 +81,14 @@ public:
         const auto & interval_column = arguments[1];
 
         ColumnWithTypeAndName origin_column;
-        if (overload == Overload::Origin)
+        if (overload == ToStartOfIntervalOverload::Origin)
             origin_column = arguments[2];
 
-        const DateLUTImpl * time_zone_tmp;
+        const DateLUTImpl * time_zone_tmp = nullptr;
 
         if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
         {
-            const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
+            const size_t time_zone_arg_num = (overload == ToStartOfIntervalOverload::Default) ? 2 : 3;
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
         }
         else /// As we convert date to datetime and perform calculation, we don't need to take the timezone into account, so we set it to default
@@ -283,15 +141,27 @@ private:
             auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(
+                    assert_cast<const DataTypeDateTime64 &>(time_column_type),
+                    *time_column_vec,
+                    interval_column,
+                    origin_column,
+                    result_type,
+                    time_zone,
+                    static_cast<UInt16>(scale));
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64", getName());
     }
 
     template <typename ReturnType, typename TimeDataType, typename TimeColumnType>
     ColumnPtr dispatchForIntervalColumn(
-        const TimeDataType & time_data_type, const TimeColumnType & time_column, const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column,
-        const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale = 1) const
+        const TimeDataType & time_data_type,
+        const TimeColumnType & time_column,
+        const ColumnWithTypeAndName & interval_column,
+        const ColumnWithTypeAndName & origin_column,
+        const DataTypePtr & result_type,
+        const DateLUTImpl & time_zone,
+        UInt16 scale = 1) const
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
@@ -389,11 +259,11 @@ private:
 
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
 
-            UInt64 origin = origin_column.column->get64(0);
+            Int64 origin = origin_column.column->getInt(0);
             for (size_t i = 0; i != size; ++i)
             {
-                UInt64 time_arg = time_data[i];
-                if (origin > static_cast<size_t>(time_arg))
+                Int64 time_arg = time_data[i];
+                if (origin > time_arg)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
 
                 if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds or milli-, micro-, nanoseconds.
@@ -413,9 +283,9 @@ private:
                     origin /= SECONDS_PER_DAY;
                 }
 
-                result_data[i] = 0;
-                result_data[i] += (result_scale < origin_scale) ? (origin + offset) / scale_diff : (origin + offset) * scale_diff;
-            }
+                result_data[i] = (result_scale < origin_scale) ? static_cast<ResultDataType::FieldType>((origin + offset) / scale_diff)
+                                                               : static_cast<ResultDataType::FieldType>((origin + offset) * scale_diff);
+        }
         }
         else // Overload: Default
         {
@@ -427,9 +297,301 @@ private:
     }
 };
 
+
+class FunctionToStartOfIntervalOverloadResolver final : public IFunctionOverloadResolver
+{
+public:
+    static constexpr auto name = "toStartOfInterval";
+
+    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionToStartOfIntervalOverloadResolver>(context_); }
+
+    explicit FunctionToStartOfIntervalOverloadResolver(ContextPtr context_)
+        : enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
+    {
+    }
+
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        bool value_is_date = false;
+        auto check_first_argument = [&]
+        {
+            const DataTypePtr & type_arg1 = arguments[0].type;
+            if (!isDateOrDate32(type_arg1) && !isDateTime(type_arg1) && !isDateTime64(type_arg1))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64",
+                    type_arg1->getName(), getName());
+            value_is_date = isDate(type_arg1);
+        };
+
+        const DataTypeInterval * interval_type = nullptr;
+
+        enum class ResultType : uint8_t
+        {
+            Date,
+            Date32,
+            DateTime,
+            DateTime64
+        };
+
+        ResultType result_type = ResultType::Date;
+        ToStartOfIntervalOverload overload = ToStartOfIntervalOverload::Default;
+        auto check_second_argument = [&]
+        {
+            const DataTypePtr & type_arg2 = arguments[1].type;
+
+            interval_type = checkAndGetDataType<DataTypeInterval>(type_arg2.get());
+            if (!interval_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of 2nd argument of function {}, expected a time interval",
+                    type_arg2->getName(), getName());
+
+            overload = ToStartOfIntervalOverload::Default;
+
+            /// Determine result type for default overload (no origin)
+            switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
+            {
+                case IntervalKind::Kind::Nanosecond:
+                case IntervalKind::Kind::Microsecond:
+                case IntervalKind::Kind::Millisecond:
+                    result_type = ResultType::DateTime64;
+                    break;
+                case IntervalKind::Kind::Second:
+                case IntervalKind::Kind::Minute:
+                case IntervalKind::Kind::Hour:
+                case IntervalKind::Kind::Day: /// weird why Day leads to DateTime but too afraid to change it
+                    result_type = ResultType::DateTime;
+                    break;
+                case IntervalKind::Kind::Week:
+                case IntervalKind::Kind::Month:
+                case IntervalKind::Kind::Quarter:
+                case IntervalKind::Kind::Year:
+                    result_type = ResultType::Date;
+                    break;
+            }
+
+            if (enable_extended_results_for_datetime_functions)
+            {
+                if (result_type == ResultType::Date)
+                    result_type = ResultType::Date32;
+                else if (result_type == ResultType::DateTime)
+                    result_type = ResultType::DateTime64;
+            }
+        };
+
+        auto check_third_argument = [&]
+        {
+            const DataTypePtr & type_arg3 = arguments[2].type;
+            if (isString(type_arg3))
+            {
+                if (value_is_date && result_type == ResultType::Date)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
+                        getName(), interval_type->getKind().toString());
+            }
+            else if (isDateOrDate32OrDateTimeOrDateTime64(type_arg3))
+            {
+                overload = ToStartOfIntervalOverload::Origin;
+                const DataTypePtr & type_arg1 = arguments[0].type;
+                if (isDate(type_arg1) && isDate(type_arg3))
+                    result_type = ResultType::Date;
+                else if (isDate32(type_arg1) && isDate32(type_arg3))
+                    result_type = ResultType::Date32;
+                else if (isDateTime(type_arg1) && isDateTime(type_arg3))
+                    result_type = ResultType::DateTime;
+                else if (isDateTime64(type_arg1) && isDateTime64(type_arg3))
+                    result_type = ResultType::DateTime64;
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
+            }
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 3rd argument of function {}. "
+                    "This argument is optional and must be a constant String with timezone name or a Date/Date32/DateTime/DateTime64 with a constant origin",
+                    type_arg3->getName(), getName());
+        };
+
+        auto check_fourth_argument = [&]
+        {
+            if (overload != ToStartOfIntervalOverload::Origin) /// sanity check
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 3rd argument of function {}. "
+                    "The third argument must be a Date/Date32/DateTime/DateTime64 with a constant origin",
+                    arguments[2].type->getName(), getName());
+
+            const DataTypePtr & type_arg4 = arguments[3].type;
+            if (!isString(type_arg4))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 4th argument of function {}. "
+                    "This argument is optional and must be a constant String with timezone name",
+                    type_arg4->getName(), getName());
+            if (value_is_date && result_type == ResultType::Date)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
+                    getName(), interval_type->getKind().toString());
+        };
+
+        if (arguments.size() == 2)
+        {
+            check_first_argument();
+            check_second_argument();
+        }
+        else if (arguments.size() == 3)
+        {
+            check_first_argument();
+            check_second_argument();
+            check_third_argument();
+        }
+        else if (arguments.size() == 4)
+        {
+            check_first_argument();
+            check_second_argument();
+            check_third_argument();
+            check_fourth_argument();
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, must be 2, 3 or 4",
+                getName(), arguments.size());
+        }
+
+        switch (result_type)
+        {
+            case ResultType::Date:
+                return std::make_shared<DataTypeDate>();
+            case ResultType::Date32:
+                return std::make_shared<DataTypeDate32>();
+            case ResultType::DateTime:
+            {
+                const size_t time_zone_arg_num = (overload == ToStartOfIntervalOverload::Default) ? 2 : 3;
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
+            }
+            case ResultType::DateTime64:
+            {
+                UInt32 scale = 0;
+                if (isDateTime64(arguments[0].type) && overload == ToStartOfIntervalOverload::Origin)
+                {
+                    scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
+                    if (assert_cast<const DataTypeDateTime64 &>(*arguments[2].type.get()).getScale() != scale)
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same scale", getName());
+                }
+                if (interval_type->getKind() == IntervalKind::Kind::Nanosecond)
+                    scale = 9;
+                else if (interval_type->getKind() == IntervalKind::Kind::Microsecond)
+                    scale = 6;
+                else if (interval_type->getKind() == IntervalKind::Kind::Millisecond)
+                    scale = 3;
+
+                const size_t time_zone_arg_num = (overload == ToStartOfIntervalOverload::Default) ? 2 : 3;
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
+            }
+        }
+
+        std::unreachable();
+    }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    {
+        /// buildImpl receives original arguments which may still have Nullable and/or LowCardinality
+        /// wrappers, because the framework only unwraps these for getReturnTypeImpl, not for buildImpl.
+        auto args = createBlockWithNestedColumns(arguments);
+        for (auto & arg : args)
+        {
+            arg.type = recursiveRemoveLowCardinality(arg.type);
+            arg.column = recursiveRemoveLowCardinality(arg.column);
+        }
+
+        ToStartOfIntervalOverload overload = ToStartOfIntervalOverload::Default;
+        if (args.size() >= 3 && isDateOrDate32OrDateTimeOrDateTime64(args[2].type))
+            overload = ToStartOfIntervalOverload::Origin;
+
+        auto function = std::make_shared<FunctionToStartOfInterval>(overload);
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
+    }
+
+private:
+    const bool enable_extended_results_for_datetime_functions;
+};
+
+}
+
 REGISTER_FUNCTION(ToStartOfInterval)
 {
-    factory.registerFunction<FunctionToStartOfInterval>();
+    {
+        FunctionDocumentation::Description description = R"(
+This function generalizes other `toStartOf*()` functions with `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])` syntax.
+
+For example,
+- `toStartOfInterval(t, INTERVAL 1 YEAR)` returns the same as `toStartOfYear(t)`,
+- `toStartOfInterval(t, INTERVAL 1 MONTH)` returns the same as `toStartOfMonth(t)`,
+- `toStartOfInterval(t, INTERVAL 1 DAY)` returns the same as `toStartOfDay(t)`,
+- `toStartOfInterval(t, INTERVAL 15 MINUTE)` returns the same as `toStartOfFifteenMinutes(t)`.
+
+The calculation is performed relative to specific points in time:
+
+| Interval    | Start                  |
+|-------------|------------------------|
+| YEAR        | year 0                 |
+| QUARTER     | 1900 Q1                |
+| MONTH       | 1900 January           |
+| WEEK        | 1970, 1st week (01-05) |
+| DAY         | 1970-01-01             |
+| HOUR        | (*)                    |
+| MINUTE      | 1970-01-01 00:00:00    |
+| SECOND      | 1970-01-01 00:00:00    |
+| MILLISECOND | 1970-01-01 00:00:00    |
+| MICROSECOND | 1970-01-01 00:00:00    |
+| NANOSECOND  | 1970-01-01 00:00:00    |
+(*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
+hour values between 1 and 23 are useful.
+
+If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
+
+The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function.
+        )";
+        FunctionDocumentation::Syntax syntax = R"(
+toStartOfInterval(value, INTERVAL x unit[, time_zone])
+toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
+        )";
+        FunctionDocumentation::Arguments arguments = {
+            {"value", "Date or date with time value to round down.", {"Date", "DateTime", "DateTime64"}},
+            {"x", "Interval length number."},
+            {"unit", "Interval unit: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND."},
+            {"time_zone", "Optional. Time zone name as a string."},
+            {"origin", "Optional. Origin point for calculation (second overload only)."}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the start of the interval containing the input value.", {"DateTime"}};
+        FunctionDocumentation::Examples examples = {
+            {"Basic interval rounding", R"(
+SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
+            )",
+            R"(
+┌─toStartOfInt⋯alMonth(1))─┐
+│               2023-01-01 │
+└──────────────────────────┘
+            )"},
+            {"Using origin point", R"(
+SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'))
+            )",
+            R"(
+┌─toStartOfInt⋯14:35:30'))─┐
+│      2023-01-01 14:44:30 │
+└──────────────────────────┘
+            )"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionToStartOfIntervalOverloadResolver>(documentation);
+    }
     factory.registerAlias("time_bucket", "toStartOfInterval", FunctionFactory::Case::Insensitive);
     factory.registerAlias("date_bin", "toStartOfInterval", FunctionFactory::Case::Insensitive);
 }

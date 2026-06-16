@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 /// See CustomWeekTransforms.h
 template <typename ToDataType, typename Transform>
-class FunctionCustomWeekToSomething : public IFunctionCustomWeek<Transform>
+class FunctionCustomWeekToSomething final : public IFunctionCustomWeek<Transform>
 {
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
@@ -20,6 +20,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         this->checkArguments(arguments, /*is_result_type_date_or_date32*/ false, Transform::value_may_be_string);
+        return std::make_shared<ToDataType>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<ToDataType>();
     }
 

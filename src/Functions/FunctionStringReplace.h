@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 template <typename Impl, typename Name>
-class FunctionStringReplace : public IFunction
+class FunctionStringReplace final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -42,6 +42,11 @@ public:
 
         validateFunctionArguments(*this, arguments, args);
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 

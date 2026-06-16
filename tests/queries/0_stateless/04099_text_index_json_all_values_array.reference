@@ -1,0 +1,34 @@
+-- Equality on JSON subcolumn
+SELECT id FROM tab WHERE data.title::String = '["foo","bar"]' ORDER BY id
+0
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["["foo","bar"]"])
+Parts: 1/1
+Granules: 1/4
+-- Equality without index
+SELECT id FROM tab WHERE data.title::String = '["foo","bar"]' ORDER BY id
+0
+-- JSONAllValues hasAllTokens
+SELECT id FROM tab WHERE hasAllTokens(JSONAllValues(data), ['foo', 'bar']) ORDER BY id
+0
+3
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["bar", "foo"])
+Parts: 1/1
+Granules: 2/4
+-- JSONAllValues hasAllTokens without index
+SELECT id FROM tab WHERE hasAllTokens(JSONAllValues(data), ['foo', 'bar']) ORDER BY id
+0
+3
+-- JSONAllValues hasAnyTokens
+SELECT id FROM tab WHERE hasAnyTokens(JSONAllValues(data), ['foo', 'bar']) ORDER BY id
+0
+3
+Description: text GRANULARITY 100000000
+Condition: (mode: Any; tokens: ["bar", "foo"])
+Parts: 1/1
+Granules: 2/4
+-- JSONAllValues hasAnyTokens without index
+SELECT id FROM tab WHERE hasAnyTokens(JSONAllValues(data), ['foo', 'bar']) ORDER BY id
+0
+3

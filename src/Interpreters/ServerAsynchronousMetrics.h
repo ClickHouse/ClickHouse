@@ -13,6 +13,7 @@ public:
     ServerAsynchronousMetrics(
         ContextPtr global_context_,
         unsigned update_period_seconds,
+        bool update_heavy_metrics_,
         unsigned heavy_metrics_update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
         bool update_jemalloc_epoch_,
@@ -24,6 +25,7 @@ private:
     void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) override;
     void logImpl(AsynchronousMetricValues & new_values) override;
 
+    bool update_heavy_metrics;
     const Duration heavy_metric_update_period;
     TimePoint heavy_metric_previous_update_time;
     double heavy_update_interval = 0.;
@@ -34,9 +36,22 @@ private:
         size_t detached_by_user;
     };
 
-    DetachedPartsStats detached_parts_stats{};
+    struct MutationStats
+    {
+        /// For keeping track of the number of pending mutations that are over the maximum execution time
+        /// which is controlled by the max_pending_mutations_execution_time_to_warn setting.
+        size_t pending_mutations_over_execution_time;
+        size_t pending_mutations;
+    };
 
-    void updateDetachedPartsStats();
+    DetachedPartsStats detached_parts_stats{};
+    MutationStats mutation_stats{};
+
+    /// Previous values for the ReaderExecutorModeledCostMsPerRequestedMiB interval delta.
+    UInt64 prev_reader_executor_cost_us = 0;
+    UInt64 prev_reader_executor_requested_bytes = 0;
+
+    void updateMutationAndDetachedPartsStats();
     void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
 

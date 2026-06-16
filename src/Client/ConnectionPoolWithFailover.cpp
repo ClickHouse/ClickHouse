@@ -94,7 +94,7 @@ ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
     const auto [states, pools, error_decrease_time] = getPoolExtendedStates();
     // NOTE: to avoid data races do not touch any data of ConnectionPoolWithFailover or PoolWithFailoverBase in the code below.
 
-    assert(states.size() == pools.size());
+    chassert(states.size() == pools.size());
 
     ConnectionPoolWithFailover::Status result;
     result.reserve(states.size());
@@ -128,8 +128,9 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(
     std::optional<bool> skip_unavailable_endpoints,
     GetPriorityForLoadBalancing::Func priority_func)
 {
+    bool force_connected = skip_unavailable_endpoints.value_or(false);
     TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
-    { return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback); };
+    { return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback, force_connected); };
 
     std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
 
@@ -208,7 +209,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     size_t min_entries = skip_unavailable_endpoints.value() ? 0 : 1;
 
     size_t max_tries = settings[Setting::connections_with_failover_max_tries];
-    size_t max_entries;
+    size_t max_entries = 0;
     if (pool_mode == PoolMode::GET_ALL)
     {
         min_entries = nested_pools.size();
@@ -243,7 +244,8 @@ ConnectionPoolWithFailover::tryGetEntry(
         std::string & fail_message,
         const Settings & settings,
         const QualifiedTableName * table_to_check,
-        [[maybe_unused]] AsyncCallback async_callback)
+        [[maybe_unused]] AsyncCallback async_callback,
+        bool force_connected)
 {
 #if defined(OS_LINUX)
     if (async_callback)
@@ -251,7 +253,8 @@ ConnectionPoolWithFailover::tryGetEntry(
         ConnectionEstablisherAsync connection_establisher_async(pool, &timeouts, settings, log, table_to_check);
         while (true)
         {
-            connection_establisher_async.resume();
+            connection_establisher_async.resumeConnectionWithForceOption(force_connected);
+
             if (connection_establisher_async.isFinished())
                 break;
 
@@ -270,7 +273,7 @@ ConnectionPoolWithFailover::tryGetEntry(
 
     ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, table_to_check);
     TryResult result;
-    connection_establisher.run(result, fail_message);
+    connection_establisher.run(result, fail_message, force_connected);
     return result;
 }
 

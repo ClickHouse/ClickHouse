@@ -34,6 +34,7 @@ LEFT JOIN
    FROM appointment_events
    WHERE _status in ('Created', 'Transferred')
    GROUP BY _appointment_id ) B USING _appointment_id
-WHERE A._set_at = B.max_set_at;
+WHERE A._set_at = B.max_set_at
+ORDER BY ALL;
 
 DROP TABLE appointment_events;

@@ -1,6 +1,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Common/Exception.h>
@@ -56,7 +57,7 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
         if (async_callback)
         {
             socket.setBlocking(false);
-            SCOPE_EXIT(socket.setBlocking(true));
+            SCOPE_EXIT_SAFE(socket.setBlocking(true));
             bool secure = socket.secure();
             bytes_read = socket.impl()->receiveBytes(ptr, static_cast<int>(size));
 
@@ -101,6 +102,13 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
 
 bool ReadBufferFromPocoSocketBase::nextImpl()
 {
+    if (handshake_timeout_milliseconds > 0 && handshake_stopwatch.elapsedMilliseconds() > handshake_timeout_milliseconds)
+        throw NetException(
+            ErrorCodes::SOCKET_TIMEOUT,
+            "Handshake timeout exceeded ({} milliseconds, peer: {})",
+            handshake_timeout_milliseconds,
+            peer_address.toString());
+
     if (internal_buffer.size() > INT_MAX)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
 
@@ -132,7 +140,7 @@ ReadBufferFromPocoSocketBase::ReadBufferFromPocoSocketBase(Poco::Net::Socket & s
     read_event = read_event_;
 }
 
-bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds) const
+bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds)
 {
     /// For secure socket it is important to check if any remaining data available in underlying decryption buffer -
     /// read always retrieves the whole encrypted frame from the wire and puts it into underlying buffer while returning only requested size -
@@ -144,6 +152,24 @@ bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds) const
     bool res = socket.impl()->poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
     ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
     return res;
+}
+
+void ReadBufferFromPocoSocketBase::setReceiveTimeout(size_t receive_timeout_microseconds)
+{
+    socket.setReceiveTimeout(Poco::Timespan(receive_timeout_microseconds, 0));
+}
+
+void ReadBufferFromPocoSocketBase::setHandshakeTimeout(size_t timeout_milliseconds)
+{
+    handshake_timeout_milliseconds = timeout_milliseconds;
+    if (handshake_timeout_milliseconds > 0)
+        handshake_stopwatch.restart();
+}
+
+void ReadBufferFromPocoSocketBase::clearHandshakeTimeout()
+{
+    handshake_timeout_milliseconds = 0;
+    handshake_stopwatch.stop();
 }
 
 }

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 
 #include <Common/Exception.h>
+#include <Common/StackTrace.h>
 #include <boost/algorithm/string/join.hpp>
 
 namespace DB
@@ -26,11 +27,11 @@ void checkMutationStatus(std::optional<MergeTreeMutationStatus> & status, const 
         throw Exception(
             ErrorCodes::UNFINISHED,
             "Exception happened during execution of mutation{} '{}' with part '{}' reason: '{}'. This error maybe retryable or not. "
-            "In case of unretryable error, mutation can be killed with KILL MUTATION query",
+            "In case of unretryable error, mutation can be killed with KILL MUTATION query \n\n{}\n",
             mutation_ids.size() > 1 ? "s" : "",
             boost::algorithm::join(mutation_ids, ", "),
             status->latest_failed_part,
-            status->latest_fail_reason);
+            status->latest_fail_reason, StackTrace().toString());
     }
 }
 

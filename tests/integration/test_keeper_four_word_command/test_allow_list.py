@@ -1,8 +1,8 @@
-import socket
 import time
 
 import pytest
 
+import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -19,8 +19,6 @@ node3 = cluster.add_instance(
     main_configs=["configs/keeper_config_with_allow_list_all.xml"],
     stay_alive=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -66,19 +64,11 @@ def wait_nodes():
 
 
 def get_keeper_socket(nodename):
-    hosts = cluster.get_instance_ip(nodename)
-    client = socket.socket()
-    client.settimeout(10)
-    client.connect((hosts, 9181))
-    return client
+    return keeper_utils.get_keeper_socket(cluster, nodename)
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def close_keeper_socket(cli):
@@ -100,12 +90,8 @@ def send_cmd(node_name, command="ruok"):
 
 
 def test_allow_list(started_cluster):
-    client = None
-    try:
-        wait_nodes()
-        assert send_cmd(node1.name) == "imok"
-        assert send_cmd(node1.name, command="mntr") == ""
-        assert send_cmd(node2.name) == "imok"
-        assert send_cmd(node3.name) == "imok"
-    finally:
-        close_keeper_socket(client)
+    wait_nodes()
+    assert send_cmd(node1.name) == "imok"
+    assert send_cmd(node1.name, command="mntr") == ""
+    assert send_cmd(node2.name) == "imok"
+    assert send_cmd(node3.name) == "imok"

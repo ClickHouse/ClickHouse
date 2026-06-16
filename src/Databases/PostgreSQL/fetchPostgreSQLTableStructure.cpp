@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -43,7 +44,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     {
         std::string query = fmt::format(
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
-            postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema));
+            postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(std::get<0>(table_name));
@@ -58,7 +59,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     {
         std::string query = fmt::format(
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
-            quoteString(schema));
+            quoteStringPostgreSQL(schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(schema + '.' + std::get<0>(table_name));
@@ -101,28 +102,43 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
     else if (type.starts_with("timestamp"))
         res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
-        res = std::make_shared<DataTypeDate>();
+        res = std::make_shared<DataTypeDate32>();
     else if (type == "uuid")
         res = std::make_shared<DataTypeUUID>();
     else if (type.starts_with("numeric"))
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,
         /// there will be Numeric(x, y), otherwise just Numeric
-        UInt32 precision, scale;
+        UInt32 precision = 0;
+        UInt32 scale = 0;
         if (type.ends_with(")"))
         {
-            res = DataTypeFactory::instance().get(type);
-            precision = getDecimalPrecision(*res);
-            scale = getDecimalScale(*res);
+            /// Parse precision and scale directly from e.g. "numeric(78,0)" instead of going
+            /// through DataTypeFactory, because Decimal rejects a precision above 76 before we
+            /// get a chance to map it to Int256.
+            auto open_bracket_pos = type.find('(');
+            std::string args = type.substr(open_bracket_pos + 1, type.size() - open_bracket_pos - 2);
+            auto comma_pos = args.find(',');
+            std::string precision_str = args.substr(0, comma_pos);
+            boost::trim(precision_str);
+            precision = parse<UInt32>(precision_str);
+            if (comma_pos != std::string::npos)
+            {
+                std::string scale_str = args.substr(comma_pos + 1);
+                boost::trim(scale_str);
+                scale = parse<UInt32>(scale_str);
+            }
 
-            if (precision <= DecimalUtils::max_precision<Decimal32>)
-                res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal64>)
-                res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal128>)
-                res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal256>)
-                res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+            if (precision <= DecimalUtils::max_precision<Decimal256>)
+                /// createDecimal validates the precision/scale (in particular it rejects scale > precision,
+                /// e.g. numeric(5, 7)) and dispatches to the smallest Decimal type that fits the precision.
+                res = createDecimal<DataTypeDecimal>(precision, scale);
+            else if (scale == 0)
+                /// PostgreSQL numeric with precision higher than Decimal256 supports (76 digits) and no
+                /// fractional part (e.g. numeric(78, 0), used to store 256-bit integers). It cannot be
+                /// represented as a ClickHouse Decimal, so use Int256. Values that do not fit into Int256
+                /// are rejected at insert time (see insertPostgreSQLValue).
+                res = std::make_shared<DataTypeInt256>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
         }
@@ -256,7 +272,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "PostgreSQL cannot infer dimensions of an empty array: {}.{}",
+                    "PostgreSQL cannot infer dimensions of an empty array: {}.{}. Make sure no empty array values in the first row.",
                     postgres_table,
                     postgres_column);
             }
@@ -297,15 +313,22 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 {
     PostgreSQLTableStructure table;
 
-    auto where = fmt::format("relname = {}", quoteString(postgres_table));
+    auto where = fmt::format("relname = {}", quoteStringPostgreSQL(postgres_table));
 
     where += postgres_schema.empty()
         ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')"
-        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteString(postgres_schema));
+        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
 
     std::string columns_part;
     if (!columns.empty())
         columns_part = fmt::format(" AND attname IN ('{}')", boost::algorithm::join(columns, "','"));
+
+    /// Bypassing the error of the missing column `attgenerated` in the system table `pg_attribute` for PostgreSQL versions below 12.
+    /// This trick involves executing a special query to the DBMS in advance to obtain the correct line with comment /// if column has GENERATED.
+    /// The result of the query will be the name of the column `attgenerated` or an empty string declaration for PostgreSQL version 11 and below.
+    /// This change does not degrade the function's performance but restores support for older versions and fix ERROR: column "attgenerated" does not exist.
+    pqxx::result gen_result{tx.exec("select case when current_setting('server_version_num')::int < 120000 then '''''' else 'attgenerated' end as generated")};
+    std::string generated = gen_result[0][0].as<std::string>();
 
     std::string query = fmt::format(
            "SELECT attname AS name, " /// column name
@@ -315,11 +338,11 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "atttypid as type_id, "
            "atttypmod as type_modifier, "
            "attnum as att_num, "
-           "attgenerated as generated " /// if column has GENERATED
+           "{} as generated " /// if column has GENERATED
            "FROM pg_attribute "
            "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) {}"
            "AND NOT attisdropped AND attnum > 0 "
-           "ORDER BY attnum ASC", where, columns_part);
+           "ORDER BY attnum ASC", generated, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
     auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
     table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
@@ -406,8 +429,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and t.relnamespace = (select oid from pg_namespace where nspname = {}) "
             "and ix.indisreplident = 't' " /// index is is replica identity index
             "ORDER BY a.attname", /// column name
-            quoteString(postgres_table),
-            (postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema))
+            quoteStringPostgreSQL(postgres_table),
+            (postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema))
         );
 
         table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
