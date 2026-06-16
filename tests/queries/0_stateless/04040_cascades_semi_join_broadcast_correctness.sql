@@ -12,6 +12,13 @@ SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
+-- Pin the plan-shaping optimizations (to their defaults) so randomized settings cannot
+-- change the asserted plan. query_plan_optimize_join_order_randomize must stay off.
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_join_swap_table = 'auto';
+SET query_plan_convert_outer_join_to_inner_join = 1;
+SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
+SET query_plan_merge_filter_into_join_condition = 1;
 SET param__internal_cascades_cluster_node_count = 4;
 -- Low sequential_weight so broadcast's higher per-node sequential cost doesn't
 -- dominate.  With a tiny filter table, broadcast is clearly cheaper on network.

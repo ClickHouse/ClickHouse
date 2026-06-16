@@ -87,6 +87,19 @@ SET rewrite_in_to_join = 1;
 SET correlated_subqueries_use_in_memory_buffer = 0;
 SET allow_experimental_correlated_subqueries = 1;
 SET query_plan_join_swap_table = 0;
+-- Pin the plan-shaping optimizations (to their defaults) so randomized settings cannot
+-- change the asserted plan. query_plan_optimize_join_order_randomize must stay off.
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_convert_outer_join_to_inner_join = 1;
+SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
+SET query_plan_merge_filter_into_join_condition = 1;
+SET query_plan_merge_filters = 1;
+SET query_plan_remove_unused_columns = 1;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
+SET optimize_extract_common_expressions = 1;
+SET optimize_syntax_fuse_functions = 1;
+SET enable_join_transitive_predicates = 1;
 SET send_logs_level = 'error';
 
 -- Simulate 20 node cluster, and set cost weights to optimize for lower sequential time, i.e. more parallelism
