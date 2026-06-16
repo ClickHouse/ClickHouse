@@ -61,7 +61,7 @@ mvtEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 - `tile_x` — Tile column index, in the range `[0, 2^zoom - 1]`. [`UInt32`](../../data-types/int-uint.md).
 - `tile_y` — Tile row index, in the range `[0, 2^zoom - 1]`. [`UInt32`](../../data-types/int-uint.md).
 - `extent` — Optional tile extent in pixels per side, in the range `[1, 2147483647]`. Defaults to `4096`, the Mapbox Vector Tile default. [`UInt32`](../../data-types/int-uint.md).
-- `buffer` — Optional clip buffer in pixels, in the range `[0, 2147483647]`. Defaults to `256`. [`UInt32`](../../data-types/int-uint.md).
+- `buffer` — Optional clip buffer in pixels, in the range `[0, 2147483647]`. Defaults to `1`. [`UInt32`](../../data-types/int-uint.md).
 - `clip` — Optional flag; when nonzero (the default) the geometry is clipped to the tile plus buffer. [`UInt8`](../../data-types/int-uint.md).
 
 **Returned value**
@@ -242,13 +242,16 @@ The clip drops geometry outside the tile, so even a loose bounding-box predicate
 the result.
 
 ```sql
-WITH mvtTileBBox({z:UInt8}, {x:UInt32}, {y:UInt32}, 0.0625) AS bb   -- margin = 256 / 4096
+WITH
+    1 AS buffer,
+    4096 AS extent,
+    mvtTileBBox({z:UInt8}, {x:UInt32}, {y:UInt32}, buffer / extent) AS bounding_box   -- margin matches the clip buffer
 SELECT mvtEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64))
 FROM
 (
     SELECT mvtEncodeGeom((lon, lat)::Point, {z:UInt8}, {x:UInt32}, {y:UInt32}) AS geom, count() AS cluster_count
     FROM points
-    WHERE lon BETWEEN bb.1 AND bb.3 AND lat BETWEEN bb.2 AND bb.4   -- index-using prefilter
+    WHERE lon BETWEEN bounding_box.1 AND bounding_box.3 AND lat BETWEEN bounding_box.2 AND bounding_box.4   -- index-using prefilter
     GROUP BY geom
 )
 SETTINGS allow_suspicious_types_in_group_by = 1

@@ -145,7 +145,7 @@ public:
     static constexpr auto name = "mvtEncodeGeom";
 
     static constexpr UInt64 default_extent = 4096;
-    static constexpr UInt64 default_buffer = 256;
+    static constexpr UInt64 default_buffer = 1;
     static constexpr Int64 max_extent_or_buffer = std::numeric_limits<Int32>::max();
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMvtEncodeGeom>(); }
@@ -450,7 +450,7 @@ Supported input geometry types are `Point`, `LineString`, `MultiLineString`, `Ri
         {"tile_x", "Tile column index, in the range `[0, 2^zoom - 1]`.", {"UInt32"}},
         {"tile_y", "Tile row index, in the range `[0, 2^zoom - 1]`.", {"UInt32"}},
         {"extent", "Optional tile extent in pixels per side. Defaults to `4096`.", {"UInt32"}},
-        {"buffer", "Optional clip buffer in pixels. Defaults to `256`.", {"UInt32"}},
+        {"buffer", "Optional clip buffer in pixels. Defaults to `1`.", {"UInt32"}},
         {"clip", "Optional flag; when nonzero (default) the geometry is clipped to the tile plus buffer.", {"UInt8"}},
     };
     FunctionDocumentation::ReturnedValue returned_value
