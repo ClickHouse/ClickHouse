@@ -1151,6 +1151,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
 
+        /// If the IN set source subquery is shared with another part of the query tree (e.g. it
+        /// aliases a FROM table expression), use an independent copy: planning the shared node can
+        /// mutate it in place and invalidate the set's PreparedSets key (its tree hash).
+        if ((in_second_argument->getNodeType() == QueryTreeNodeType::QUERY
+             || in_second_argument->getNodeType() == QueryTreeNodeType::UNION)
+            && in_second_argument.use_count() > 1)
+        {
+            in_second_argument = in_second_argument->clone();
+        }
+
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
