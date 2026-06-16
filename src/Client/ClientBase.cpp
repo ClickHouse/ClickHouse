@@ -472,7 +472,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     /// except for plain `SET` queries which are still parsed with `ParserQuery` so
     /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
     /// without being locked into JSON-only input.
-    if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(pos, end))
+    if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(pos, end, settings[Setting::max_query_size]))
     {
         if (!settings[Setting::allow_experimental_json_ast_dialect])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -506,8 +506,15 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
                     bool in_string = false;
                     bool escaped = false;
                     const char * q = p;
+                    /// Bound the scan by `max_query_size` here too: in multiquery mode the guard below
+                    /// only runs once `json_end` is known, so an oversized or unclosed JSON object
+                    /// would otherwise make us walk the whole remaining script before failing.
+                    const size_t scan_max_query_size = settings[Setting::max_query_size];
                     for (; q < end; ++q)
                     {
+                        if (scan_max_query_size != 0 && static_cast<size_t>(q - p) > scan_max_query_size)
+                            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                                "Max query size exceeded (can be increased with the `max_query_size` setting)");
                         const char c = *q;
                         if (in_string)
                         {

@@ -1196,7 +1196,7 @@ static BlockIO executeQueryImpl(
             /// applied only to the JSON-deserialization branch — otherwise a session with
             /// `dialect = clickhouse_json` and `allow_experimental_json_ast_dialect = 0`
             /// cannot execute `SET dialect = 'clickhouse'` to recover.
-            if (isClickHouseJSONSetEscape(begin, end))
+            if (isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
             {
                 ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
                 out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);

@@ -25,6 +25,6 @@ void countJSONDeserializationElement();
 /// `dialect = clickhouse_json` is active so users can still send `SET dialect = ...`
 /// queries in plain SQL to switch back to another dialect, instead of being locked
 /// into JSON-only input.
-bool isClickHouseJSONSetEscape(const char * begin, const char * end);
+bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size);
 
 }

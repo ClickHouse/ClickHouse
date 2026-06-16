@@ -414,13 +414,15 @@ void countJSONDeserializationElement()
     ++json_deser_current_elements;
 }
 
-bool isClickHouseJSONSetEscape(const char * begin, const char * end)
+bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size)
 {
     /// In the `clickhouse_json` dialect, a leading `SET` query is an escape hatch back to a
     /// SQL dialect. Detect it via the lexer so that leading SQL comments and whitespace are
     /// skipped exactly as normal parsing would (e.g. `-- switch back\nSET dialect = 'clickhouse'`
     /// or `/* */ SET ...`), rather than only stripping ASCII whitespace.
-    Lexer lexer(begin, end);
+    /// `max_query_size` bounds the lexer so that an oversized leading comment cannot make it scan
+    /// far past the per-query limit before the caller's own `max_query_size` guard runs.
+    Lexer lexer(begin, end, max_query_size);
     Token token = lexer.nextToken();
     while (!token.isEnd() && !token.isError() && !token.isSignificant())
         token = lexer.nextToken();
