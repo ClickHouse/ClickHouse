@@ -1,0 +1,18 @@
+--- JSONEachRow: normal rows parse fine ---
+20	20971520
+--- JSONEachRow: schema inference rejects oversized object ---
+1
+--- JSONEachRow: schema inference works for normal rows ---
+20	190
+--- JSONAsString: oversized object is rejected ---
+1
+--- JSONAsString: normal rows still parse ---
+20
+--- JSONAsObject: oversized object is rejected ---
+1
+--- JSONAsObject: normal rows still parse ---
+20
+--- JSON (with metadata): large value still parses ---
+1048576
+--- JSON (no-metadata fallback): normal rows still parse ---
+20	20971520

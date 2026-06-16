@@ -428,10 +428,17 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONStringsEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONLines", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("NDJSON", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    auto creator = [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
+    {
+        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        {
+            return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
+        };
+    };
+    factory.registerFileSegmentationEngineCreator("JSONEachRow", creator);
+    factory.registerFileSegmentationEngineCreator("JSONStringsEachRow", creator);
+    factory.registerFileSegmentationEngineCreator("JSONLines", creator);
+    factory.registerFileSegmentationEngineCreator("NDJSON", creator);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);

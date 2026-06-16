@@ -484,7 +484,7 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf);
 
 /// Similar to readJSONObjectPossiblyInvalid but avoids copying the data if JSON object fits into current read buffer
 /// If copying is unavoidable, it copies data into provided object_buffer and returns string_view to it.
-std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer);
+std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer, size_t max_size = 0);
 
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
@@ -499,6 +499,7 @@ struct NullOutput
     void append(const char *) {}
     void append(const char *, const char *) {}
     void push_back(char) {} /// NOLINT
+    size_t size() const { return 0; }
 };
 
 template <typename ReturnType>

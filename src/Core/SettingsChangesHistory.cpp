@@ -418,6 +418,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"input_format_json_max_object_size", 512 * 1024 * 1024, 512 * 1024 * 1024, "New setting to limit the maximum size of a single JSON object in bytes"},
             {"output_format_json_quote_64bit_integers", true, false, "Disable quoting of the 64 bit integers in JSON by default"},
             {"show_data_lake_catalogs_in_system_tables", true, true, "New setting"},
             {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
