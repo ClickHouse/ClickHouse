@@ -1281,9 +1281,9 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     }
 
     LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flush to disk", s.get_last_log_idx());
-    /// `push` leaves `snapshot_task` intact on both `false` (queue finished) and throw
-    /// (`emplaceImpl` can throw before the noexcept move). Route both no-enqueue outcomes to the
-    /// same inline cleanup so `when_done(false)` fires once instead of leaving it unfulfilled.
+    /// Move, not copy: a copy would leave a second `KeeperStorageSnapshot` reference whose
+    /// destruction at function exit could run `~KeeperStorageSnapshot` off the storage lock.
+    /// `push` only consumes the task when it returns true, so the fallback below is safe.
     bool pushed = false;
     try
     {
@@ -1303,6 +1303,8 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
         LOG_WARNING(log, "Cannot push snapshot task into queue");
         /// Run cleanup inline so snapshot mode is disabled and `when_done(false)` fires once.
         snapshot_cleanup_transferred = true;
+        /// push returned false, so the task was not consumed; the use-after-move is unreachable.
+        /// NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
         snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/true);
     }
 }

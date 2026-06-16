@@ -145,7 +145,7 @@ using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
 
 struct SnapshotMoveCandidate
 {
-    uint64_t log_idx;
+    uint64_t log_idx = 0;
     SnapshotFileInfoPtr file_info;
     DiskPtr source_disk;
     std::string source_path;

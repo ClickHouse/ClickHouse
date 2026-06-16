@@ -1609,7 +1609,7 @@ TEST(KeeperMemorySnapshotApplyTest, QueuedSameIndexCreateAdoptsRegisteredInstall
         /// Capture the install's unique file name and arm the disk to fail any write to it.
         auto registered_files = snapshotFilesForIdx("./snapshots", 5);
         ASSERT_EQ(registered_files.size(), 1u);
-        const std::string registered_name = registered_files.at(0);
+        const std::string & registered_name = registered_files.at(0);
         throwing_disk->setFailPathPrefix(registered_name);
         throwing_disk->arm();
         nuraft::snapshot s5_create(5, 0, std::make_shared<nuraft::cluster_config>());
@@ -2193,7 +2193,7 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsLatestIndexDuplicatesForR
         ASSERT_NE(restored.storage, nullptr);
         EXPECT_TRUE(restored.storage->container.contains("/latest_valid"));
     }
-    catch (...)
+    catch (...) // Ok: exception means the registered copy is corrupt; we use the boolean to drive the recovery path below
     {
         registered_copy_is_valid = false;
     }
@@ -2264,7 +2264,7 @@ TEST(KeeperSnapshotManagerCleanupTest, StartupScanKeepsRetainedIndexDuplicatesFo
         ASSERT_NE(restored.storage, nullptr);
         EXPECT_TRUE(restored.storage->container.contains("/drill_valid"));
     }
-    catch (...)
+    catch (...) // Ok: exception means the registered copy is corrupt; we use the boolean to drive the recovery path below
     {
         registered_copy_is_valid = false;
     }

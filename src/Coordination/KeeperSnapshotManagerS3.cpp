@@ -25,10 +25,6 @@
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Errors.h>
 
-#include <filesystem>
-
-namespace fs = std::filesystem;
-
 namespace DB
 {
 
