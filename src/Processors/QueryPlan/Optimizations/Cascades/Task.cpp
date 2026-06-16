@@ -26,7 +26,12 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
         auto best = group->getBestImplementation(required_properties, cost_config);
         if (best.expression)
         {
-            bool group_fully_processed = group->isExplored() && group->isOptimizedFor(required_properties);
+            /// Stage 3 (enforcers) must have run too: otherwise a local best added in stage 2
+            /// short-circuits here and enforcer-built distributed plans (e.g. GatherExchange to
+            /// satisfy {1 node}) are never generated or costed.
+            bool group_fully_processed = group->isExplored()
+                && group->isOptimizedFor(required_properties)
+                && group->isEnforcedFor(required_properties);
             bool within_budget = std::isfinite(cost_limit)
                 && best.cost.subtree_cost.total(cost_config) <= cost_limit;
             if (group_fully_processed || within_budget)
