@@ -15,6 +15,7 @@
 #include <Common/setThreadName.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -186,7 +187,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         }
 
         /// Should be written from writeSuffix()
-        assert(!mono_chunk);
+        chassert(!mono_chunk);
     }
 
     writeChunk(chunk, port_kind);
@@ -811,6 +812,7 @@ void PrettyBlockOutputFormat::onRowsReadBeforeUpdate()
     total_rows = getRowsReadBefore();
 }
 
+void registerOutputFormatPretty(FormatFactory & factory);
 void registerOutputFormatPretty(FormatFactory & factory)
 {
     /// Various combinations are available under their own names, e.g. PrettyCompactNoEscapesMonoBlock.

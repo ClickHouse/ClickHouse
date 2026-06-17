@@ -62,6 +62,7 @@ size_t LineAsStringRowInputFormat::countRows(size_t max_block_size)
     return num_rows;
 }
 
+void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory)
 {
     factory.registerInputFormat("LineAsString", [](
@@ -102,12 +103,14 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
     return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
+void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
 void registerFileSegmentationEngineLineAsString(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("LineAsString", &segmentationEngine);
 }
 
 
+void registerLineAsStringSchemaReader(FormatFactory & factory);
 void registerLineAsStringSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("LineAsString", [](

@@ -92,7 +92,9 @@ public:
     QueryPlan();
     ~QueryPlan();
     QueryPlan(QueryPlan &&) noexcept;
-    QueryPlan & operator=(QueryPlan &&) noexcept;
+    /// Not noexcept: move-assignment appends the QueryPlanResourceHolder, which allocates and can
+    /// throw. The move constructor stays noexcept because it steals the holder instead of appending.
+    QueryPlan & operator=(QueryPlan &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
     void addStep(QueryPlanStepPtr step);
@@ -134,6 +136,8 @@ public:
         bool header = false;
         /// Show remote pipelines for distributed query.
         bool distributed = false;
+        /// Compact repeated processor chains.
+        bool compact_repeated_processor_chains = false;
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;

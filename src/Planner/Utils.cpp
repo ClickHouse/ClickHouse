@@ -3,6 +3,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -207,6 +208,50 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
     /// But CTE is defined only for top-level query part, so may not be sent.
     /// Removing cte_name forces subquery to be always printed.
     auto ast = queryNodeToSelectQuery(query_node, /*set_subquery_cte_name=*/false);
+
+    /// Strip duplicate projection aliases when the duplicate has a different body
+    /// from a previous occurrence with the same alias.
+    ///
+    /// `SELECT *` over joined subqueries with overlapping column names and
+    /// `joined_subquery_requires_alias = 0` produces projections like
+    /// `__table1.name AS name, __table3.name AS name` — the same alias bound to
+    /// different bodies. Re-resolving the dispatched AST on a remote replica
+    /// trips `MULTIPLE_EXPRESSIONS_FOR_ALIAS`. Stripping the alias on the later
+    /// occurrence is safe because the user-visible column names come from the
+    /// coordinator's projection metadata, not the AST sent to the receiver.
+    ///
+    /// Same-alias-same-body duplicates (e.g. three identical `__table1.v AS v`
+    /// projections produced by `SELECT td.v, td.k, td.v, tl.v, tl.k, td.v` over a
+    /// JOIN) are kept intact: stripping their aliases would rename them to
+    /// `__table1.v` and break position-by-name lookup of the source stream on the
+    /// receiver, which manifests as `THERE_IS_NO_COLUMN`.
+    ///
+    /// See https://github.com/ClickHouse/ClickHouse/issues/74324.
+    if (auto * select_query = ast->as<ASTSelectQuery>())
+    {
+        if (auto projection_ast = select_query->select())
+        {
+            std::unordered_map<String, IASTHash> alias_to_first_body_hash;
+            for (auto & child : projection_ast->children)
+            {
+                auto * with_alias = dynamic_cast<ASTWithAlias *>(child.get());
+                if (!with_alias)
+                    continue;
+                const auto & alias = with_alias->alias;
+                if (alias.empty())
+                    continue;
+
+                /// `getTreeHash(ignore_aliases=true)` ignores aliases at every
+                /// level of the subtree, so it is a body-only hash regardless of
+                /// what alias is currently set on this node.
+                const auto body_hash = child->getTreeHash(/*ignore_aliases=*/true);
+                auto [it, inserted] = alias_to_first_body_hash.emplace(alias, body_hash);
+                if (!inserted && it->second != body_hash)
+                    with_alias->setAlias(String());
+            }
+        }
+    }
+
     return ast;
 }
 

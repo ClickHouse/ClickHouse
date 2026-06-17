@@ -8,8 +8,6 @@ title: 'iceberg'
 doc_type: 'reference'
 ---
 
-# iceberg Table Function {#iceberg-table-function}
-
 Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
 
 ## Syntax {#syntax}

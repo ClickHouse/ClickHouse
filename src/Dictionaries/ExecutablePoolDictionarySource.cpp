@@ -190,6 +190,7 @@ std::string ExecutablePoolDictionarySource::toString() const
     return "ExecutablePool size: " + std::to_string(pool_size) + " command: " + configuration.command;
 }
 
+void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory);
 void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,

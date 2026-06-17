@@ -10,7 +10,7 @@ namespace DB
 namespace
 {
 
-class FunctionCurrentQueryID : public IFunction
+class FunctionCurrentQueryID final : public IFunction
 {
 public:
     static constexpr auto name = "currentQueryID";

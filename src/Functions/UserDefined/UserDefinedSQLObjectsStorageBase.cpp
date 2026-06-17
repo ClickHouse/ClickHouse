@@ -55,9 +55,9 @@ bool UserDefinedSQLObjectsStorageBase::has(const String & object_name) const
     return tryGet(object_name) != nullptr;
 }
 
-std::vector<std::string> UserDefinedSQLObjectsStorageBase::getAllObjectNames() const
+Strings UserDefinedSQLObjectsStorageBase::getAllObjectNames() const
 {
-    std::vector<std::string> object_names;
+    Strings object_names;
 
     std::lock_guard lock(mutex);
     object_names.reserve(object_name_to_create_object_map.size());
@@ -140,9 +140,9 @@ std::unique_lock<std::recursive_mutex> UserDefinedSQLObjectsStorageBase::getLock
     return std::unique_lock{mutex};
 }
 
-void UserDefinedSQLObjectsStorageBase::setAllObjects(const std::vector<std::pair<String, ASTPtr>> & new_objects)
+void UserDefinedSQLObjectsStorageBase::setAllObjects(const VectorWithMemoryTracking<std::pair<String, ASTPtr>> & new_objects)
 {
-    std::unordered_map<String, ASTPtr> normalized_functions;
+    UnorderedMapWithMemoryTracking<String, ASTPtr> normalized_functions;
     for (const auto & [function_name, create_query] : new_objects)
         normalized_functions[function_name] = normalizeCreateFunctionQuery(*create_query, getContext());
 
@@ -150,10 +150,10 @@ void UserDefinedSQLObjectsStorageBase::setAllObjects(const std::vector<std::pair
     object_name_to_create_object_map = std::move(normalized_functions);
 }
 
-std::vector<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllObjects() const
+VectorWithMemoryTracking<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllObjects() const
 {
     std::lock_guard lock{mutex};
-    std::vector<std::pair<String, ASTPtr>> all_objects;
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> all_objects;
     all_objects.reserve(object_name_to_create_object_map.size());
     std::copy(object_name_to_create_object_map.begin(), object_name_to_create_object_map.end(), std::back_inserter(all_objects));
     return all_objects;

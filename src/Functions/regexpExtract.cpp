@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 namespace
 {
-class FunctionRegexpExtract : public IFunction
+class FunctionRegexpExtract final : public IFunction
 {
 public:
     static constexpr auto name = "regexpExtract";

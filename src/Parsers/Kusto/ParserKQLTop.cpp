@@ -49,7 +49,7 @@ bool ParserKQLTop::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr order_expression_list;
 
     Tokens sort_tokens(sort_expr.data(), sort_expr.data() + sort_expr.size(), 0, true);
-    IParser::Pos sort_pos(sort_tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos sort_pos(sort_tokens, pos);
 
     if (!order_list.parse(sort_pos, order_expression_list, expected))
         return false;
@@ -63,7 +63,7 @@ bool ParserKQLTop::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         element_has_explicit_dir.reserve(order_expression_list->children.size());
 
         Tokens split_tokens(sort_expr.data(), sort_expr.data() + sort_expr.size(), 0, true);
-        IParser::Pos split_pos(split_tokens, pos.max_depth, pos.max_backtracks);
+        IParser::Pos split_pos(split_tokens, pos);
         int depth = 0;
         bool seen_asc_desc = false;
         while (isValidKQLPos(split_pos))
@@ -108,7 +108,7 @@ bool ParserKQLTop::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Set limit
     ASTPtr limit_length;
     Tokens limit_tokens(limit_str.data(), limit_str.data() + limit_str.size(), 0, true);
-    IParser::Pos limit_pos(limit_tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos limit_pos(limit_tokens, pos);
 
     if (!ParserExpressionWithOptionalAlias(false).parse(limit_pos, limit_length, expected))
         return false;

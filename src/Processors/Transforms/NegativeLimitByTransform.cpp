@@ -1,3 +1,4 @@
+#include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Processors/Port.h>
@@ -187,7 +188,7 @@ void NegativeLimitByTransform::consumeImpl(
     for (UInt64 row = 0; row < num_rows; ++row)
     {
         auto emplace_result = state.emplaceKey(method.data, row, *data.aggregates_pool);
-        size_t group_idx;
+        size_t group_idx = 0;
         if (emplace_result.isInserted()) /// New grouping key
         {
             group_idx = group_windows.size();
@@ -228,10 +229,15 @@ void NegativeLimitByTransform::consume(Chunk chunk)
         return;
     }
 
+    Columns normalized_cols;
+    normalized_cols.reserve(key_positions.size());
     ColumnRawPtrs key_columns;
     key_columns.reserve(key_positions.size());
     for (size_t pos : key_positions)
-        key_columns.push_back(cols[pos].get());
+    {
+        normalized_cols.push_back(removeSpecialRepresentations(cols[pos]));
+        key_columns.push_back(normalized_cols.back().get());
+    }
 
     switch (data.type)
     {

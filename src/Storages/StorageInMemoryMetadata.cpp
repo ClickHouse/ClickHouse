@@ -1,3 +1,4 @@
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Access/AccessControl.h>
@@ -19,6 +20,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 
 namespace DB
@@ -43,6 +45,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
     , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
     , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
+    , add_minmax_index_for_block_number_column(other.add_minmax_index_for_block_number_column)
+    , add_minmax_index_for_block_offset_column(other.add_minmax_index_for_block_offset_column)
     , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
@@ -77,6 +81,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
     add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
     add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
+    add_minmax_index_for_block_number_column = other.add_minmax_index_for_block_number_column;
+    add_minmax_index_for_block_offset_column = other.add_minmax_index_for_block_offset_column;
     escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
@@ -952,4 +958,40 @@ void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column
             ++index_it;
     }
 }
+
+void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr context)
+{
+    auto add_for = [&](const String & column_name, bool enabled)
+    {
+        if (!enabled)
+            return;
+
+        for (const auto & index : secondary_indices)
+            if (!index.column_names.empty() && index.column_names.front() == column_name && index.type == "minmax")
+                return;
+
+        const auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
+        MergeTreeIndexFactory::instance().validate(index, false);
+
+        secondary_indices.push_back(std::move(index));
+    };
+
+    add_for(BlockNumberColumn::name, add_minmax_index_for_block_number_column);
+    add_for(BlockOffsetColumn::name, add_minmax_index_for_block_offset_column);
+}
+
+void StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns()
+{
+    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
+    {
+        if (!index_it->isImplicitlyCreated() || index_it->type != "minmax" || index_it->column_names.size() != 1)
+            ++index_it;
+        else if (isVirtualColumn(index_it->column_names.front()))
+            index_it = secondary_indices.erase(index_it);
+        else
+            ++index_it;
+    }
+}
+
 }

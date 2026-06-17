@@ -24,7 +24,14 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 
-namespace DB::QueryPlanOptimizations
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace QueryPlanOptimizations
 {
 
 /// Clone only the filter computation sub-DAG from a larger DAG.
@@ -73,6 +80,16 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
         }
     }
 
+    /// `createNonIntersectingPlan` must guarantee that `is_deleted_column` is in the
+    /// upstream header. Throw rather than passing a null pointer to `addFunction` —
+    /// any future regression in the upstream invariant should surface, not turn into UB.
+    if (!col_node)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Lazy FINAL optimization: column `{}` is missing from the non-intersecting reading step header. "
+            "This is a bug in `createNonIntersectingPlan`.",
+            is_deleted_column);
+
     const auto * zero_node = &dag.addColumn(
         ColumnWithTypeAndName(DataTypeUInt8().createColumnConst(1, Field(UInt8(0))), std::make_shared<DataTypeUInt8>(), "__is_deleted_zero"));
 
@@ -83,6 +100,27 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
 
     plan.addStep(std::make_unique<FilterStep>(
         plan.getCurrentHeader(), std::move(dag), "__is_deleted_filter", /*remove_filter_column=*/ true));
+}
+
+/// Ensure `column_name` (if present as a DAG input) is also exposed as a DAG output,
+/// so that `ActionsDAG::updateHeader` does not erase it from the block.
+/// Used by the lazy-FINAL non-intersecting plan to keep the `is_deleted` column
+/// available for the downstream `is_deleted = 0` filter, even when prewhere/row-level
+/// filter has consumed it.
+static bool exposeInputAsDAGOutput(ActionsDAG & dag, const String & column_name)
+{
+    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    bool added = false;
+    for (const auto * input : dag.getInputs())
+    {
+        if (input->result_name == column_name && !outputs.contains(input))
+        {
+            dag.getOutputs().push_back(input);
+            added = true;
+            break;
+        }
+    }
+    return added;
 }
 
 /// Create a non-FINAL ReadFromMergeTree plan for non-intersecting parts,
@@ -109,6 +147,50 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
         {
             columns.push_back(merging_params.is_deleted_column);
             is_deleted_added = true;
+        }
+
+        /// If the prewhere or row-level filter on the ORIGINAL (FINAL) reading step
+        /// consumed `is_deleted` as an input but did not expose it as an output,
+        /// the column is missing from the read step's output header. Two consequences
+        /// for the non-intersecting plan we are about to build:
+        ///   1. `addIsDeletedFilter` reads `is_deleted` from the read step's output,
+        ///      so we must keep the column in the output of `non_final_reading`.
+        ///   2. The non-intersecting plan is later unioned with the FINAL plan
+        ///      (whose output also lacks `is_deleted` for the same prewhere reason).
+        ///      To keep the two union branches header-compatible, `addIsDeletedFilter`
+        ///      must then drop `is_deleted` from its output.
+        ///
+        /// Clone the filter info(s) before mutating to avoid affecting the original
+        /// reading step's prewhere/row-level filter (shared via `getQueryInfo()`).
+        const auto & original_output_header = reading_step->getOutputHeader();
+        const bool is_deleted_in_original_output
+            = original_output_header && original_output_header->has(merging_params.is_deleted_column);
+        if (!is_deleted_in_original_output)
+        {
+            bool exposed = false;
+            if (non_final_query_info.prewhere_info)
+            {
+                auto cloned_prewhere = std::make_shared<PrewhereInfo>(non_final_query_info.prewhere_info->clone());
+                exposed |= exposeInputAsDAGOutput(cloned_prewhere->prewhere_actions, merging_params.is_deleted_column);
+                non_final_query_info.prewhere_info = std::move(cloned_prewhere);
+            }
+            if (non_final_query_info.row_level_filter)
+            {
+                const auto & original = *non_final_query_info.row_level_filter;
+                auto cloned_row_level = std::make_shared<FilterDAGInfo>();
+                cloned_row_level->actions = original.actions.clone();
+                cloned_row_level->column_name = original.column_name;
+                cloned_row_level->do_remove_column = original.do_remove_column;
+                exposed |= exposeInputAsDAGOutput(cloned_row_level->actions, merging_params.is_deleted_column);
+                non_final_query_info.row_level_filter = std::move(cloned_row_level);
+            }
+
+            /// If we successfully re-exposed `is_deleted` in the prewhere/row-level
+            /// filter outputs, the column will be present in `non_final_reading`'s
+            /// output header. We must drop it again after `addIsDeletedFilter` has
+            /// done its work, to keep header parity with the FINAL branch.
+            if (exposed)
+                is_deleted_added = true;
         }
     }
 
@@ -605,4 +687,5 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     query_plan.replaceNodeWithPlan(read_node, std::move(result_plan), expected_header);
 }
 
+}
 }

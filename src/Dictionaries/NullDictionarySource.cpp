@@ -33,6 +33,7 @@ std::string NullDictionarySource::toString() const
 }
 
 
+void registerDictionarySourceNull(DictionarySourceFactory & factory);
 void registerDictionarySourceNull(DictionarySourceFactory & factory)
 {
     auto create_table_source

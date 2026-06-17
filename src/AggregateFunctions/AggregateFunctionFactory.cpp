@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
@@ -228,7 +229,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// and could fail to reattach a table because decodeDataType() would reconstruct a type different from the one
         /// recorded in the column metadata; or fail on parallel replicas under serialize_query_plan=1 because the replica's
         /// decodeDataType() would reconstruct a type different from the one the coordinator sent in the plan.)
-        /// NOTE: Check for function->getParameters().empty() is here because some aggregation functions (kolmogorovSmirnovTest, mannWhitneyUTest) drop their parameters completely.
+        ///
+        /// TODO: Some aggregation functions (at least `kolmogorovSmirnovTest`, `mannWhitneyUTest`, `groupArrayMovingSum`, `groupArrayMovingAvg`)
+        /// drop their parameters completely, so the check below has to tolerate `function->getParameters().empty()`.
+        /// They should be fixed to preserve their parameters like every other aggregation function.
         chassert(function && (function->getParameters().empty() || function->getParameters() == parameters),
             "function->getParameters() must equal the parameters passed to the factory");
 
@@ -273,7 +277,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
         auto combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         /// Same invariant as above.
-        chassert(combined_function && combined_function->getParameters() == parameters,
+        chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
             "function->getParameters() must equal the parameters passed to the factory");
         return combined_function;
     }

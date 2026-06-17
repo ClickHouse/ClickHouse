@@ -45,7 +45,7 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 /// Returns two vectors of total size equal to the number of columns in the header.
 /// The first vector (size of `inputs.size()`) contains positions of the inputs in the header.
 /// The second vector contains other positions (sorted).
-std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
     std::unordered_map<std::string, std::list<size_t>> name_to_position;
     for (size_t i = 0; i < header.columns(); ++i)
@@ -74,7 +74,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(c
 /// Step is always Filter or Expression
 struct PlanStepWithRequiredDAGPositions
 {
-    IQueryPlanStep * step;
+    IQueryPlanStep * step = nullptr;
     /// Positions correspond to the outputs of the internal DAG.
     /// For the FilterStep, it is before the removal of filter columns.
     std::vector<bool> required_positions;
@@ -83,7 +83,7 @@ struct PlanStepWithRequiredDAGPositions
 /// Returns a boolean mask which indicate if the header column is required.
 /// The required_output_positions is the same mask for the output header.
 /// The number of DAG outputs may differ from required_output_positions.size().
-std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
+static std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
 {
     std::unordered_set<const ActionsDAG::Node *> required_nodes;
     std::stack<const ActionsDAG::Node *> stack;
@@ -126,7 +126,7 @@ std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block
 }
 
 /// Add filter column to required_output_positions.
-void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_positions, const FilterStep & filter_step)
+static void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_positions, const FilterStep & filter_step)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
@@ -160,7 +160,7 @@ struct SplitExpressionStepResult
 
 /// Split if ActionsDAG can produce unused pair of input/output which only changes the order.
 /// Remove them from the DAG.
-void removeDanglingNodes(ActionsDAG & dag)
+static void removeDanglingNodes(ActionsDAG & dag)
 {
     std::unordered_set<const ActionsDAG::Node *> used_nodes;
     for (const auto & node : dag.getNodes())
@@ -187,7 +187,7 @@ void removeDanglingNodes(ActionsDAG & dag)
 /// It's useful because the main branch of lazy materialization can return more columns than actually required.
 /// As an example, for the query `select a from table prewhere b > 0 order by c limit 1`, only column `c` is required for ORDER BY,
 /// but the column `a` is returned as well (it's needed for PREWHERE).
-void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std::unordered_set<const ActionsDAG::Node *> & nodes)
+static void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std::unordered_set<const ActionsDAG::Node *> & nodes)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
     struct Frame
@@ -242,7 +242,7 @@ void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std::unord
 }
 
 /// required_outputs are outputs of ActionsDAG, however required_inputs are inputs corresponding to the step input header.
-SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
+static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
 {
     const auto & expression = expression_step.getExpression();
     const auto & inputs = expression.getInputs();
@@ -297,7 +297,7 @@ struct SplitFilterResult
     std::vector<bool> available_input_positions;
 };
 
-SplitFilterResult splitFilterStep(const FilterStep & filter_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
+static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
@@ -358,10 +358,10 @@ SplitFilterResult splitFilterStep(const FilterStep & filter_step, const std::vec
     return { std::move(filter_dag_info), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
-ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
+static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
 {
-    bool added_part_starting_offset;
-    bool added_part_offset;
+    bool added_part_starting_offset = false;
+    bool added_part_offset = false;
     reading_step.addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
     ActionsDAG dag;
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
@@ -400,6 +400,31 @@ static ReadFromMergeTree * findReadingStep(QueryPlan::Node & node, StepStack & b
     return nullptr;
 }
 
+static bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node * node)
+{
+    while (!node->children.empty())
+    {
+        if (const auto * expr_step = typeid_cast<ExpressionStep *>(node->step.get()))
+        {
+            if (expr_step->getExpression().hasArrayJoin())
+                return false;
+        }
+        else if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
+        {
+            if (filter_step->getExpression().hasArrayJoin())
+                return false;
+        }
+        else
+        {
+            return false;
+        }
+
+        node = node->children.front();
+    }
+
+    return true;
+}
+
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization)
 {
     if (root.children.size() != 1)
@@ -434,6 +459,9 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         return false;
 
     if (!canUseLazyMaterializationForReadingStep(reading_step))
+        return false;
+
+    if (!allExpressionsSuitableForLazyMaterialization(sorting_node->children.front()))
         return false;
 
     const auto & sorting_header = *sorting_step->getOutputHeader();

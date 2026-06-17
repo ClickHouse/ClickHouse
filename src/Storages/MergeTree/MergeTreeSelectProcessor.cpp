@@ -277,6 +277,13 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
                 data_part->index_granularity->getMarksCount(),
                 data_part->index_granularity->hasFinalMark(),
                 res.read_mark_ranges));
+
+            /// Some rows survived PREWHERE, but individual granules within this batch may
+            /// still have been fully filtered out. Record those granules immediately so that
+            /// future queries can skip them without waiting for an entire batch to be zero.
+            if (prewhere_info && !res.unmatched_mark_ranges.empty()
+                && !current_task.readersChainCanSkipMarksBeforePrewhere())
+                current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
         }
 
         return ChunkAndProgress{
@@ -284,7 +291,13 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             .is_finished = false, .read_mark_ranges = std::move(res.read_mark_ranges)};
     }
 
-    if (reader_settings.use_query_condition_cache && prewhere_info)
+    /// Suppress PREWHERE attribution when a reader earlier in the chain (skip-index or projection-index)
+    /// can skip whole marks before PREWHERE evaluates them. In that case `res.read_mark_ranges` may
+    /// include marks that were filtered by the index, and recording them under the PREWHERE predicate's
+    /// hash would poison the QueryConditionCache: later queries that share the same PREWHERE predicate
+    /// hash would skip those marks even though the predicate alone matches their rows. See Issue #104781.
+    if (reader_settings.use_query_condition_cache && prewhere_info
+        && !current_task.readersChainCanSkipMarksBeforePrewhere())
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
     return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
@@ -361,8 +374,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         {
             if (!task || algorithm->needNewTask(*task))
             {
-                /// Update the query condition cache for filters in PREWHERE stage
-                if (reader_settings.use_query_condition_cache && task && prewhere_info)
+                /// Update the query condition cache for filters in PREWHERE stage.
+                /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
+                /// could have filtered marks before PREWHERE saw them, to avoid attributing those
+                /// marks to the PREWHERE predicate hash. See Issue #104781.
+                if (reader_settings.use_query_condition_cache && task && prewhere_info
+                    && !task->readersChainCanSkipMarksBeforePrewhere())
                 {
                     for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
                     {

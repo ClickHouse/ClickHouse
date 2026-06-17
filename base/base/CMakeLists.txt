@@ -22,6 +22,7 @@ set (SRCS
     itoa.cpp
     JSON.cpp
     mremap.cpp
+    openpty.cpp
     phdr_cache.cpp
     preciseExp10.cpp
     shift10.cpp

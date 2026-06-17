@@ -58,7 +58,8 @@ enum class LakeFormat
 {
     All = 0,
     Iceberg = 1,
-    DeltaLake = 2
+    DeltaLake = 2,
+    Paimon = 3
 };
 
 enum class LakeStorage
@@ -162,7 +163,7 @@ public:
     uint32_t replica_counter = 0;
     uint32_t shard_counter = 0;
     uint32_t backup_number = 0;
-    DatabaseEngineValues deng;
+    DatabaseEngineValues deng{};
     DetachStatus attached = DetachStatus::ATTACHED;
     IntegrationCall integration = IntegrationCall::None;
     /// For DataLakeCatalog
@@ -318,6 +319,16 @@ public:
     bool isIcebergLocalEngine() const;
 
     bool isAnyIcebergEngine() const;
+
+    bool isPaimonS3Engine() const;
+
+    bool isPaimonAzureEngine() const;
+
+    bool isPaimonLocalEngine() const;
+
+    bool isAnyPaimonEngine() const;
+
+    bool isAnyLakeEngine() const;
 
     bool isOnS3() const;
 

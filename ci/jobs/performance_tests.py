@@ -1525,12 +1525,26 @@ def main():
     if Path(f"{perf_wd}/logs.tar.zst").is_file():
         files_to_attach.append(f"{perf_wd}/logs.tar.zst")
 
-    Result.create_from(
+    result = Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=files_to_attach + [f"{perf_wd}/report/all-query-metrics.tsv"],
         info=message,
-    ).complete_job()
+    )
+    if info.pr_number:
+        dashboard_link = (
+            f"https://performance.ci.clickhouse.com/runs?q={info.pr_number}"
+        )
+    else:
+        dashboard_link = (
+            f"https://performance.ci.clickhouse.com/runs?scope=master&q={(info.sha or '')[:12]}"
+        )
+    result.set_label(
+        "Performance dashboard",
+        link=dashboard_link,
+        hint="Combined performance dashboard for this run (all shards, amd + arm)",
+    )
+    result.complete_job()
 
 
 if __name__ == "__main__":

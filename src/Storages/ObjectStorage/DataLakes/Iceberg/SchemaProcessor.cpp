@@ -71,9 +71,10 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String
     if (type_str == "list")
     {
         auto element_id = type->getValue<Int64>(Iceberg::f_element_id);
+        auto element_name = Nested::concatenateName(current_path, "element");
         if (type->isObject(Iceberg::f_element))
-            traverseComplexType(type->getObject(Iceberg::f_element), result, current_path);
-        result[current_path] = element_id;
+            traverseComplexType(type->getObject(Iceberg::f_element), result, element_name);
+        result[element_name] = element_id;
         return;
     }
     if (type_str == "struct")
@@ -185,8 +186,8 @@ bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Obj
 std::pair<size_t, size_t> parseDecimal(const String & type_name)
 {
     DB::ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-    size_t precision;
-    size_t scale;
+    size_t precision = 0;
+    size_t scale = 0;
     readIntText(precision, buf);
     skipWhitespaceIfAny(buf);
     assertChar(',', buf);
@@ -326,7 +327,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name, bool
     if (type_name.starts_with("fixed[") && type_name.ends_with(']'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 6, type_name.end() - 1));
-        size_t n;
+        size_t n = 0;
         readIntText(n, buf);
         return std::make_shared<DataTypeFixedString>(n);
     }

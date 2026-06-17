@@ -16,6 +16,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -56,7 +57,7 @@ LatLng toH3LatLng(const SphericalPointInRadians & point)
 
 /// Takes a geometry (Ring, Polygon or MultiPolygon) and returns an array of H3 hexagons that cover this geometry.
 /// The geometry should be in spherical coordinates as it is in GeoJSON.
-class FunctionH3PolygonToCells : public IFunction
+class FunctionH3PolygonToCells final : public IFunction
 {
 public:
     static constexpr auto name = "h3PolygonToCells";
@@ -148,7 +149,7 @@ public:
                 const_multi_polygon = to_multi_polygon(std::move(geometries[0]));
 
             /// Reuse buffer across rows to avoid repeated allocations
-            std::vector<H3Index> hindex_vec;
+            VectorWithMemoryTracking<H3Index> hindex_vec;
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {
@@ -170,16 +171,16 @@ public:
 
                 for (const auto & polygon : multi_polygon)
                 {
-                    std::vector<LatLng> exterior;
+                    VectorWithMemoryTracking<LatLng> exterior;
                     exterior.reserve(polygon.outer().size());
                     for (const auto & point : polygon.outer())
                         exterior.push_back(toH3LatLng(toRadianPoint(point)));
 
-                    std::vector<std::vector<LatLng>> holes;
+                    VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holes;
                     holes.reserve(polygon.inners().size());
                     for (const auto & inner : polygon.inners())
                     {
-                        std::vector<LatLng> hole;
+                        VectorWithMemoryTracking<LatLng> hole;
                         hole.reserve(inner.size());
                         for (const auto & point : inner)
                             hole.push_back(toH3LatLng(toRadianPoint(point)));
@@ -226,19 +227,19 @@ private:
     {
     private:
         // Store the polygon data
-        std::vector<LatLng> mainLoopVerts;
-        std::vector<std::vector<LatLng>> holeVerts;
+        VectorWithMemoryTracking<LatLng> mainLoopVerts;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holeVerts;
 
         // Temporary storage for C-style structs
-        mutable GeoLoop mutableMainLoop;
-        mutable GeoPolygon mutablePolygon;
-        mutable std::vector<GeoLoop> mutableHoles;
+        mutable GeoLoop mutableMainLoop{};
+        mutable GeoPolygon mutablePolygon{};
+        mutable VectorWithMemoryTracking<GeoLoop> mutableHoles;
 
     public:
         // Constructor to create from C++ data
         explicit GeoPolygonContainer(
-            std::vector<LatLng> && mainLoop,
-            std::vector<std::vector<LatLng>> && holes = {})
+            VectorWithMemoryTracking<LatLng> && mainLoop,
+            VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> && holes = {})
             : mainLoopVerts(std::move(mainLoop)), holeVerts(std::move(holes)) {}
 
         // Method to get C-style GeoPolygon pointer

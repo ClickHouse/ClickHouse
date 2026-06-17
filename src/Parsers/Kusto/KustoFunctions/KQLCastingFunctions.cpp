@@ -127,7 +127,7 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         try
         {
-            auto result = kqlCallToExpression("time", {arg}, pos.max_depth, pos.max_backtracks);
+            auto result = kqlCallToExpression("time", {arg}, pos);
             out = fmt::format("{}", result);
         }
         catch (const Exception &)
@@ -150,7 +150,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     String res;
     int scale = 0;
-    int precision;
+    int precision = 0;
 
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
     {

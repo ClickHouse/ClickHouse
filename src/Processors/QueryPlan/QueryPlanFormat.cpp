@@ -40,7 +40,7 @@ namespace QueryPlanFormat
     constexpr std::string_view TABLE_PREFIX = "__table";
 
     /// Matches `__table<digits>.` at position pos, returns the position after the dot or 0 on mismatch.
-    size_t matchTablePrefix(std::string_view name, size_t pos)
+    static size_t matchTablePrefix(std::string_view name, size_t pos)
     {
         if (!name.substr(pos).starts_with(TABLE_PREFIX))
             return 0;
@@ -145,7 +145,7 @@ namespace QueryPlanFormat
         out << '\n';
     }
 
-    PrettyColumnName formatFilterPretty(
+    static PrettyColumnName formatFilterPretty(
         const ActionsDAG & dag,
         const String & column_name,
         const std::unordered_map<String, PrettyColumnName> & pretty_names,

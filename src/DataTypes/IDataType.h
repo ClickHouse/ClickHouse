@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <Common/COW.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <memory>
@@ -23,7 +24,6 @@ using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 class ReadBuffer;
 class WriteBuffer;
 
-class IDataType;
 struct FormatSettings;
 
 class IColumn;
@@ -32,18 +32,7 @@ using MutableColumnPtr = COW<IColumn>::MutablePtr;
 
 class Field;
 
-using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
-
 struct NameAndTypePair;
-
-struct DataTypeWithConstInfo
-{
-    DataTypePtr type;
-    bool is_const;
-};
-
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;

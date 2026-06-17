@@ -708,6 +708,16 @@ private:
         return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
     }
 
+    /// Wait for a future with progress-based timeout using session_timeout_ms.
+    /// On each iteration, waits up to session_timeout_ms for the future. If it
+    /// becomes ready, returns true. Otherwise, checks if the server made progress
+    /// (any received data via `getLastReceivedTimestamp`). If yes, waits another full
+    /// session_timeout_ms. If no progress for a full session_timeout_ms — gives up.
+    /// Worst-case latency: session_timeout_ms after no progress before returning false.
+    /// Defense-in-depth: only fires if the receive thread is stuck.
+    template <typename T>
+    bool waitForFutureWithProgress(std::future<T> & future) const;
+
     std::unique_ptr<Coordination::IKeeper> impl;
     mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
 
@@ -727,7 +737,7 @@ private:
 
     AtomicStopwatch session_uptime;
 
-    int32_t session_node_version;
+    int32_t session_node_version{};
 
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> reconnect_task;
 };

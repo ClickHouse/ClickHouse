@@ -1,0 +1,10 @@
+<clickhouse>
+    <!-- Under sanitizer builds, in-flush symbolization (SymbolIndex::findSymbol +
+         tryDemangle + AddressToLineCache) is too slow to keep up with the sample rate
+         from the global + per-query profilers. The trace_log flush thread falls
+         behind, backlog grows, and tests that issue SYSTEM FLUSH LOGS can wait
+         minutes. Resolve symbols on read instead via addressToSymbol/addressToLine. -->
+    <trace_log>
+        <symbolize>false</symbolize>
+    </trace_log>
+</clickhouse>

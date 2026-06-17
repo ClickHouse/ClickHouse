@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Block.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -38,7 +39,7 @@ struct NamePair
 
 using NamePairs = std::vector<NamePair>;
 
-InConversion buildInConversion(
+static InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
@@ -93,7 +94,7 @@ InConversion buildInConversion(
     auto future_set = std::make_shared<FutureSetFromSubquery>(
         get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
 
-    ColumnPtr set_col = ColumnSet::create(1, future_set);
+    ColumnPtr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 1);
     const ActionsDAG::Node * in_rhs_arg =
         &lhs_dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
 

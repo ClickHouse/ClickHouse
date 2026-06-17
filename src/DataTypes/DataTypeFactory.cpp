@@ -220,7 +220,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
     }
     else
     {
-        assert(creator);
+        chassert(creator);
         data_type = (*creator)(parameters);
     }
 

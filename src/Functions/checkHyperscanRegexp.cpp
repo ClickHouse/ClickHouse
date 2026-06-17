@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void checkHyperscanRegexp(const std::vector<std::string_view> & regexps, size_t max_hyperscan_regexp_length, size_t max_hyperscan_regexp_total_length)
+void checkHyperscanRegexp(const VectorWithMemoryTracking<std::string_view> & regexps, size_t max_hyperscan_regexp_length, size_t max_hyperscan_regexp_total_length)
 {
     if (max_hyperscan_regexp_length > 0 || max_hyperscan_regexp_total_length > 0)
     {
@@ -33,7 +33,7 @@ namespace
 
 bool isLargerThanFifty(std::string_view str)
 {
-    int number;
+    int number = 0;
     auto [_, ec] = std::from_chars(str.data(), str.data() + str.size(), number);
     if (ec != std::errc())
         return false;

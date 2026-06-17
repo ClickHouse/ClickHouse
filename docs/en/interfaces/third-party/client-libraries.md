@@ -8,8 +8,6 @@ title: 'Client Libraries from Third-party Developers'
 doc_type: 'reference'
 ---
 
-# Client libraries from third-party developers
-
 :::note
 ClickHouse Inc does **not** maintain the libraries listed below and hasn't done any extensive testing to ensure their quality.
 :::
@@ -79,7 +77,6 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn't done 
 ### C# {#c}
 - [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
 - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
-- [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
 - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
 ### Elixir {#elixir}
 - [clickhousex](https://github.com/appodeal/clickhousex/)

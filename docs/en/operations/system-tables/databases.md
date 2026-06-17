@@ -34,7 +34,7 @@ The `name` column from this system table is used for implementing the `SHOW DATA
 
 Create a database.
 
-```sql
+```sql title="Query"
 CREATE DATABASE test;
 ```
 

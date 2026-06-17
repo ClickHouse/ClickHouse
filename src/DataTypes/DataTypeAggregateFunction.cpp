@@ -12,6 +12,9 @@
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/transformTypesRecursively.h>
+#include <Common/FieldVisitorToCastedLiteral.h>
+#include <Parsers/parseFieldFromCastedLiteral.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -29,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
@@ -103,11 +105,25 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (!parameters.empty())
     {
         stream << '(';
-        for (size_t i = 0, size = parameters.size(); i < size; ++i)
+        if (function->shouldPrintParametersWithTypes())
         {
-            if (i)
-                stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+            FieldVisitorToCastedLiteral visitor;
+            for (size_t i = 0, size = parameters.size(); i < size; ++i)
+            {
+                if (i)
+                    stream << ", ";
+                stream << applyVisitor(visitor, parameters[i]);
+            }
+        }
+        else
+        {
+            FieldVisitorToString visitor;
+            for (size_t i = 0, size = parameters.size(); i < size; ++i)
+            {
+                if (i)
+                    stream << ", ";
+                stream << applyVisitor(visitor, parameters[i]);
+            }
         }
         stream << ')';
     }
@@ -227,6 +243,25 @@ SerializationPtr DataTypeAggregateFunction::doGetSerialization(const Serializati
 }
 
 
+namespace
+{
+
+/// Extract a single AggregateFunction parameter value from its AST node.
+Field parseAggregateFunctionParameter(const ASTPtr & param_ast, const String & function_name)
+{
+    try
+    {
+        return parseFieldFromCastedLiteral(param_ast);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while parsing aggregate function '{}'", function_name);
+        throw;
+    }
+}
+
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     String function_name;
@@ -271,17 +306,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             params_row.resize(parameters.size());
 
             for (size_t i = 0; i < parameters.size(); ++i)
-            {
-                const auto * literal = parameters[i]->as<ASTLiteral>();
-                if (!literal)
-                    throw Exception(
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
-                        "Parameters to aggregate functions must be literals. "
-                        "Got parameter '{}' for function '{}'",
-                        parameters[i]->formatForErrorMessage(), function_name);
-
-                params_row[i] = literal->value;
-            }
+                params_row[i] = parseAggregateFunctionParameter(parameters[i], function_name);
         }
     }
     else if (auto opt_name = tryGetIdentifierName(data_type_ast))

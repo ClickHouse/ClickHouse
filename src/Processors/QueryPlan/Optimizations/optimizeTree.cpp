@@ -84,6 +84,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
+        optimization_settings.read_in_order_through_join,
+        optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
     };
 
@@ -195,6 +197,8 @@ void optimizeTreeSecondPass(
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
+        optimization_settings.read_in_order_through_join,
+        optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
     };
 
@@ -361,11 +365,20 @@ void optimizeTreeSecondPass(
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
+            if (optimization_settings.aggregate_partitions_independently)
+                optimizeAggregationPerPartition(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.limit_by_partitions_independently)
+                optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
+
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.push_limit_by_into_sort)
+                pushLimitByIntoSort(frame_node);
         });
 
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.

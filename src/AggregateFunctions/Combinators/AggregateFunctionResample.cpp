@@ -69,8 +69,8 @@ public:
 
         if (which.isNativeInt() || which.isEnum() || which.isInterval())
         {
-            Int64 begin;
-            Int64 end;
+            Int64 begin = 0;
+            Int64 end = 0;
 
             // notice: UInt64 -> Int64 may lead to overflow
             if (!params[params.size() - 3].tryGet<Int64>(begin))
@@ -97,6 +97,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>());
