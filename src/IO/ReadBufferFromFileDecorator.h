@@ -29,6 +29,12 @@ public:
 
     std::optional<size_t> tryGetFileSize() override;
 
+    /// The swap-based `nextImpl` calls `impl->next()` while `impl` may still have pending data,
+    /// tripping `ReadBuffer::next`'s `chassert(!hasPendingData)` under set()+next(). Force the
+    /// `read(dest, n)` fallback, which drains via `eof() -> next()` at the outer level. Inherited
+    /// by `BoundedReadBuffer`.
+    bool supportsExternalBufferMode() const override { return false; }
+
 protected:
     std::unique_ptr<SeekableReadBuffer> impl;
     String file_name;

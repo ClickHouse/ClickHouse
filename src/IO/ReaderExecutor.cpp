@@ -36,6 +36,32 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
+/// Read `chunk` bytes from `buf` straight into `dest` with no intermediate copy when the buffer
+/// honors an external buffer (set()+next() read directly into `dest`); short positive `next`
+/// returns are looped so a partial fill never surfaces. Buffers that own a fixed-size internal
+/// buffer (async, mmap, O_DIRECT) cannot accept an arbitrary `dest`, so fall back to read().
+/// Returns the bytes read; less than `chunk` only at EOF.
+static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
+{
+    if (buf.supportsExternalBufferMode())
+    {
+        size_t total = 0;
+        while (total < chunk)
+        {
+            buf.set(dest + total, chunk - total);
+            if (!buf.next())
+                break;
+            const size_t got = buf.available();
+            if (got == 0)
+                break;
+            buf.position() = buf.buffer().end();
+            total += got;
+        }
+        return total;
+    }
+    return buf.read(dest, chunk);
+}
+
 void ReaderExecutor::Stats::add(Counter c, UInt64 value)
 {
     values[c] += value;
@@ -114,7 +140,7 @@ size_t ReaderExecutor::LongConnection::readInto(char * dst, size_t want)
 {
     if (want == 0)
         return 0;
-    const size_t got = buffer->read(dst, want);
+    const size_t got = readIntoBlock(*buffer, dst, want);
     current_position += got;
     return got;
 }
@@ -230,7 +256,7 @@ size_t ReaderExecutor::readOneShot(const StoredObject & object, size_t object_of
     if (object_offset > 0)
         buffer->seek(static_cast<off_t>(object_offset), SEEK_SET);
     stats.add(Stats::SourceRequests);
-    return buffer->read(dst, want);
+    return readIntoBlock(*buffer, dst, want);
 }
 
 void ReaderExecutor::dropLong()
