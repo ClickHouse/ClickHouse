@@ -374,7 +374,8 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
     const StorageMetadataPtr & metadata_snapshot,
     bool materialize_skip_indexes,
     const String & exclude_indexes_string,
-    const Settings & settings)
+    const Settings & settings,
+    const MergeTreeSettings & merge_tree_settings)
 {
     MergeTreeIndices indices;
     if (!materialize_skip_indexes)
@@ -402,7 +403,7 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
         if (is_virtual_column_index(index))
             continue;
 
-        indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
+        indices.emplace_back(MergeTreeIndexFactory::instance().get(index, merge_tree_settings));
     }
 
     return indices;
@@ -732,7 +733,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         metadata_snapshot,
         global_settings[Setting::materialize_skip_indexes_on_insert],
         global_settings[Setting::exclude_materialize_skip_indexes_on_insert].toString(),
-        global_settings);
+        global_settings,
+        *data_settings);
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
@@ -1192,7 +1194,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         projection.metadata,
         query_settings[Setting::materialize_skip_indexes_on_insert],
         query_settings[Setting::exclude_materialize_skip_indexes_on_insert].toString(),
-        query_settings);
+        query_settings,
+        *data.getSettings());
 
     return writeProjectionPartImpl(
         projection.name, false /* is_temp */, parent_part, data, log, std::move(block), projection, std::move(indices), merge_is_needed);
@@ -1214,7 +1217,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection.metadata,
         (*table_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge],
         (*table_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString(),
-        context->getSettingsRef());
+        context->getSettingsRef(),
+        *table_settings);
 
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
     auto new_part = writeProjectionPartImpl(
