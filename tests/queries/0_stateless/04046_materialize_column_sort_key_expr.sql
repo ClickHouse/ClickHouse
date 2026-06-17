@@ -181,3 +181,25 @@ ALTER TABLE t_mat_ttl_recalc MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
 SELECT delete_ttl_info_min = (SELECT c2 + INTERVAL 1 DAY FROM t_mat_ttl_recalc LIMIT 1)
     FROM system.parts WHERE table = 't_mat_ttl_recalc' AND active AND database = currentDatabase();
 DROP TABLE t_mat_ttl_recalc;
+
+-- Case 17: The CollapsingMergeTree sign column is a merge-semantic key column even when it is not in
+-- ORDER BY. UPDATE of it is refused via getKeyColumns; MATERIALIZE COLUMN rewrites it just the same,
+-- so it must be refused too — otherwise the collapsing semantics of existing data would be corrupted.
+DROP TABLE IF EXISTS t_mat_sign;
+CREATE TABLE t_mat_sign (a Int, sign Int8 MATERIALIZED 1) ENGINE = CollapsingMergeTree(sign) ORDER BY a;
+ALTER TABLE t_mat_sign MATERIALIZE COLUMN sign; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_sign;
+
+-- Case 18: Same for the ReplacingMergeTree version column.
+DROP TABLE IF EXISTS t_mat_version;
+CREATE TABLE t_mat_version (a Int, ver UInt32 MATERIALIZED 1) ENGINE = ReplacingMergeTree(ver) ORDER BY a;
+ALTER TABLE t_mat_version MATERIALIZE COLUMN ver; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_version;
+
+-- Case 19: A stored MATERIALIZED column computed from the materialized column is itself the engine
+-- sign column. Recomputing the source column would recompute the sign, so it must be refused for the
+-- same reason as the direct sign-column case.
+DROP TABLE IF EXISTS t_mat_dep_sign;
+CREATE TABLE t_mat_dep_sign (a Int, c2 Int MATERIALIZED a, s Int8 MATERIALIZED c2) ENGINE = CollapsingMergeTree(s) ORDER BY a;
+ALTER TABLE t_mat_dep_sign MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_dep_sign;
