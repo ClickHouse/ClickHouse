@@ -38,20 +38,6 @@ SerializationPtr SerializationReplicated::create(const SerializationPtr & nested
     return ISerialization::pooled(getHash(nested_), [&] { return new SerializationReplicated(nested_); });
 }
 
-/// Holds the replicated column state (index, nested column) after it was compacted to remove unreferenced data.
-/// Needed to make sure the nested serializer's state is built from the already compacted column.
-struct SerializeBinaryBulkStateReplicated : public ISerialization::SerializeBinaryBulkState
-{
-    SerializeBinaryBulkStateReplicated(ColumnIndex compacted_index_, ColumnPtr compacted_nested_column_)
-        : compacted_index(std::move(compacted_index_)), compacted_nested_column(std::move(compacted_nested_column_))
-    {
-    }
-
-    ColumnIndex compacted_index;
-    ColumnPtr compacted_nested_column;
-    ISerialization::SerializeBinaryBulkStatePtr nested_state;
-};
-
 ISerialization::KindStack SerializationReplicated::getKindStack() const
 {
     auto kind_stack = nested->getKindStack();
@@ -98,13 +84,11 @@ void SerializationReplicated::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::ReplicatedElements);
-    const auto & column_replicated = assert_cast<const ColumnReplicated &>(column);
-    ColumnIndex compacted_index(column_replicated.getIndexesColumn()->cloneResized(column_replicated.getIndexesColumn()->size()));
-    ColumnPtr compacted_nested_column = compacted_index.removeUnusedRowsInIndexedData(column_replicated.getNestedColumn());
-    auto replicated_state = std::make_shared<SerializeBinaryBulkStateReplicated>(std::move(compacted_index), std::move(compacted_nested_column));
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(&column))
+        nested->serializeBinaryBulkStatePrefix(*column_replicated->getNestedColumn(), settings, state);
+    else
+        nested->serializeBinaryBulkStatePrefix(column, settings, state);
 
-    nested->serializeBinaryBulkStatePrefix(*replicated_state->compacted_nested_column, settings, replicated_state->nested_state);
-    state = std::move(replicated_state);
     settings.path.pop_back();
 }
 
@@ -123,7 +107,7 @@ void SerializationReplicated::serializeBinaryBulkWithMultipleStreams(
     if (const size_t size = column.size(); limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    auto * replicated_state = checkAndGetState<SerializeBinaryBulkStateReplicated>(state);
+    const auto & column_replicated = assert_cast<const ColumnReplicated &>(column);
 
     settings.path.push_back(Substream::ReplicatedIndexes);
     auto * indexes_stream = settings.getter(settings.path);
@@ -131,8 +115,6 @@ void SerializationReplicated::serializeBinaryBulkWithMultipleStreams(
 
     if (!indexes_stream)
         return;
-
-    auto & [compacted_index, compacted_nested_column, nested_state] = *replicated_state;
 
     /// We write ColumnReplicated data in the following format:
     /// - number of rows in column
@@ -142,22 +124,22 @@ void SerializationReplicated::serializeBinaryBulkWithMultipleStreams(
     /// - data of nested column
 
     writeVarUInt(UInt64(limit), *indexes_stream);
-    auto size_of_indexes_type = compacted_index.getSizeOfIndexType();
+    auto size_of_indexes_type = column_replicated.getIndexes().getSizeOfIndexType();
     writeBinaryLittleEndian(UInt8(size_of_indexes_type), *indexes_stream);
 
     switch (size_of_indexes_type)
     {
         case sizeof(UInt8):
-            SerializationNumber<UInt8>::create()->serializeBinaryBulk(*compacted_index.getIndexes(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt8>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt16):
-            SerializationNumber<UInt16>::create()->serializeBinaryBulk(*compacted_index.getIndexes(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt16>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt32):
-            SerializationNumber<UInt32>::create()->serializeBinaryBulk(*compacted_index.getIndexes(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt32>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt64):
-            SerializationNumber<UInt64>::create()->serializeBinaryBulk(*compacted_index.getIndexes(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt64>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnReplicated: {}", size_of_indexes_type);
@@ -170,17 +152,16 @@ void SerializationReplicated::serializeBinaryBulkWithMultipleStreams(
     if (!elements_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationReplicated elements.");
 
-    writeVarUInt(UInt64(compacted_nested_column->size()), *elements_stream);
-    nested->serializeBinaryBulkWithMultipleStreams(*compacted_nested_column, 0, 0, settings, nested_state);
+    writeVarUInt(UInt64(column_replicated.getNestedColumn()->size()), *elements_stream);
+    nested->serializeBinaryBulkWithMultipleStreams(*column_replicated.getNestedColumn(), 0, 0, settings, state);
 }
 
 void SerializationReplicated::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * replicated_state = checkAndGetState<SerializeBinaryBulkStateReplicated>(state);
     settings.path.push_back(Substream::ReplicatedElements);
-    nested->serializeBinaryBulkStateSuffix(settings, replicated_state->nested_state);
+    nested->serializeBinaryBulkStateSuffix(settings, state);
     settings.path.pop_back();
 }
 
