@@ -1278,6 +1278,14 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
     /// treated as LZ4 (which a malformed batch could otherwise pass off if its payload happens to decode
     /// as valid LZ4). An if-chain (not a `switch`) so an out-of-range value — which the FlatBuffers enum
     /// can still carry — is handled without tripping `-Wcovered-switch-default`.
+    /// The Arrow body compression layout decoded below (a per-buffer 8-byte uncompressed-length prefix) is
+    /// only defined for `BodyCompressionMethod_BUFFER`. Reject any other (malformed or future) method
+    /// instead of decoding the buffer prefixes/offsets under the wrong layout.
+    if (batch.compression()->method() != flatbuf::BodyCompressionMethod_BUFFER)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unsupported Arrow IPC body compression method {}", static_cast<int>(batch.compression()->method()));
+
     const auto compression_type = batch.compression()->codec();
     CompressionCodec codec = CompressionCodec::Lz4Frame;
     if (compression_type == flatbuf::CompressionType_LZ4_FRAME)
