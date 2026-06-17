@@ -22,6 +22,10 @@
 # reader prefetches the next range of its own task during `MergeTreeReaderWide::readRows` regardless of
 # the pool budget (gated only by `remote_filesystem_read_prefetch`), so it stays > 0 even when the pool
 # admits nothing.
+#
+# `filesystem_prefetch_step_marks = 1` splits the part into one task per mark, so the pool has
+# look-ahead tasks to pre-schedule. Without it the whole small part is a single task that the reading
+# thread consumes directly, so the pool never pre-prefetches and the counter is 0 regardless of budget.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -42,7 +46,8 @@ SET max_threads = 1,
     enable_filesystem_cache = 0,
     use_uncompressed_cache = 0,
     max_read_buffer_size_remote_fs = '16Mi',
-    prefetch_buffer_size = 1;
+    prefetch_buffer_size = 1,
+    filesystem_prefetch_step_marks = 1;
 
 -- Budget below the 16 MiB effective buffer: the pool must admit no prefetch task.
 SELECT * FROM test FORMAT Null SETTINGS filesystem_prefetch_max_memory_usage = '1Mi', log_comment = '04337_deny_budget_below_buffer';
