@@ -56,6 +56,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool output_format_arrow_unsupported_types_as_binary;
+    extern const SettingsBool allow_experimental_pipe_syntax;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -1502,7 +1503,14 @@ arrow::Status ArrowFlightServer::DoAction(
             /// We only call executeQuery for SELECT-like queries (to infer the result schema).
             /// For other queries (INSERT, SET, DDL, etc.), parsing is sufficient — executing
             /// them would cause side effects (e.g. inserting rows or changing settings).
-            ParserQuery parser(substituted_query.data() + substituted_query.size());
+            /// Keep pipe-syntax support consistent with the normal `executeQuery` path: a session with
+            /// `allow_experimental_pipe_syntax = 1` must be able to validate a `FROM ... |> ...` prepared
+            /// statement here too, not just execute it through `executeQuery`.
+            ParserQuery parser(
+                substituted_query.data() + substituted_query.size(),
+                /*allow_settings_after_format_in_insert_=*/ false,
+                /*implicit_select_=*/ false,
+                /*allow_pipe_syntax_=*/ query_context->getSettingsRef()[Setting::allow_experimental_pipe_syntax]);
             auto ast = parseQuery(
                 parser, substituted_query,
                 query_context->getSettingsRef()[Setting::max_query_size],
