@@ -326,7 +326,8 @@ constexpr std::array<std::string_view, 5> supported_geojson_geometry_types
 
 /// Read the `type`, `coordinates`, and `geometries` members of a geometry object into strings (the
 /// opening `{` must already be consumed). `coordinates` and `geometries` are buffered verbatim so
-/// member order does not matter; any other member is skipped.
+/// member order does not matter; any other member is skipped. A repeated `type`, `coordinates`, or
+/// `geometries` member is rejected as a duplicate rather than letting a later value silently win.
 void readGeometryMembers(
     ReadBuffer & buf,
     const FormatSettings::JSON & json_settings,
@@ -334,11 +335,35 @@ void readGeometryMembers(
     String & raw_coordinates,
     String & raw_geometries)
 {
+    bool has_type = false;
+    bool has_coordinates = false;
+    bool has_geometries = false;
     forEachFieldInJSONObject(buf, json_settings, [&](const String & key)
     {
-        if (key == "type") { readJSONString(geo_type, buf, json_settings); return true; }
-        if (key == "coordinates") { readJSONField(raw_coordinates, buf, json_settings); return true; }
-        if (key == "geometries") { readJSONField(raw_geometries, buf, json_settings); return true; }
+        if (key == "type")
+        {
+            if (has_type)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'type' field in a geometry");
+            readJSONString(geo_type, buf, json_settings);
+            has_type = true;
+            return true;
+        }
+        if (key == "coordinates")
+        {
+            if (has_coordinates)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'coordinates' field in a geometry");
+            readJSONField(raw_coordinates, buf, json_settings);
+            has_coordinates = true;
+            return true;
+        }
+        if (key == "geometries")
+        {
+            if (has_geometries)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'geometries' field in a geometry");
+            readJSONField(raw_geometries, buf, json_settings);
+            has_geometries = true;
+            return true;
+        }
         return false;
     });
 }
