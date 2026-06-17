@@ -141,7 +141,7 @@ def test_drop_table_with_detached_flag(start_cluster):
     table_name = "test_table"
     create_table(replica1, table_name)
 
-    disk_path = replica1.query("select path from system.disks").strip()
+    disk_path = replica1.query("SELECT path FROM system.disks WHERE name = 'default'").strip()
     metadata_path = replica1.query(
         f"SELECT metadata_path FROM system.tables WHERE table='{table_name}'"
     ).split()[0]
