@@ -198,7 +198,13 @@ public:
     void addAliases(const NamesWithAliases & aliases);
 
     /// Add alias actions. Also specify result columns order in outputs.
-    void project(const NamesWithAliases & projection);
+    /// `keep_inputs` are INPUT nodes that must be preserved even if no output depends on them after
+    /// the internal `removeUnusedActions`. They are forwarded as its `used_inputs`. Used by the
+    /// planner to keep constants observed from the source (e.g. a view subquery result): such a
+    /// constant gets re-created as a free-standing COLUMN output by constant folding, which orphans
+    /// its INPUT; keeping the INPUT lets the column keep propagating upstream as a required input so
+    /// it stays in the stream (needed at distributed stage boundaries). Empty by default.
+    void project(const NamesWithAliases & projection, const std::unordered_set<const Node *> & keep_inputs = {});
 
     /// Add input for every column from sample_block which is not mapped to existing input.
     void appendInputsForUnusedColumns(const Block & sample_block);

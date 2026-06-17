@@ -87,8 +87,14 @@ public:
 
     /** Finalize step output columns and remove unnecessary input columns.
       * If actions dag node has same name as child input column, it is added to actions output nodes.
+      *
+      * `source_const_inputs` names INPUT nodes carrying a constant value observed from the source
+      * (e.g. a view subquery result, identified as constant columns of the join-tree header). They
+      * are kept even if constant folding would otherwise orphan and erase them, so the column keeps
+      * propagating upstream as a required input and stays in the stream at distributed stage
+      * boundaries. Query-tree literals are not included, so they stay foldable.
       */
-    void finalizeInputAndOutputColumns(const NameSet & child_input_columns);
+    void finalizeInputAndOutputColumns(const NameSet & child_input_columns, const NameSet & source_const_inputs);
 
     /// Dump step into buffer
     void dump(WriteBuffer & buffer) const;
@@ -214,8 +220,8 @@ public:
         return &steps.back()->getAvailableOutputColumns();
     }
 
-    /// Finalize chain
-    void finalize();
+    /// Finalize chain. See `ActionsChainStep::finalizeInputAndOutputColumns` for `source_const_inputs`.
+    void finalize(const NameSet & source_const_inputs = {});
 
     /// Dump chain into buffer
     void dump(WriteBuffer & buffer) const;

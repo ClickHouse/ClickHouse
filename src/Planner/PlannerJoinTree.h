@@ -20,6 +20,11 @@ struct JoinTreeQueryPlan
     std::set<std::string> used_row_policies{};
     UsefulSets useful_sets{};
     std::unordered_map<const QueryNode *, const QueryPlan::Node *> query_node_to_plan_step_mapping{};
+    /// Names of constant columns produced by the join tree (read + computed alias columns). These are
+    /// constants observed from the source that the planner cannot re-create at another plan position,
+    /// so the expression chain must keep them flowing rather than fold-and-drop them (otherwise a
+    /// distributed shard fails to deliver a column the initiator expects at the stage boundary).
+    NameSet source_constants{};
 };
 
 /// Build JOIN TREE query plan for query node

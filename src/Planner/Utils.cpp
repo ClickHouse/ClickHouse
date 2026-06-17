@@ -340,10 +340,9 @@ std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
-    bool use_column_identifier_as_action_node_name,
-    bool duplicate_const_columns)
+    bool use_column_identifier_as_action_node_name)
 {
-    ActionsDAG action_dag(input_columns, duplicate_const_columns);
+    ActionsDAG action_dag(input_columns);
     PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set, use_column_identifier_as_action_node_name);
     auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(action_dag, expression_node);
     action_dag.getOutputs() = std::move(expression_dag_index_nodes);

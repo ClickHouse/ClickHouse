@@ -188,10 +188,14 @@ private:
     LimitByAnalysisResult limit_by_analysis_result;
 };
 
-/// Build expression analysis result for query tree, join tree input columns and planner context
+/// Build expression analysis result for query tree, join tree input columns and planner context.
+/// `source_constants` are identifiers of constant columns returned by the join tree (see
+/// `JoinTreeQueryPlan::source_constants`); the expression chain keeps them flowing instead of
+/// folding-and-dropping them, so a distributed shard delivers every constant the initiator expects.
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info);
+    const PlannerQueryProcessingInfo & planner_query_processing_info,
+    const NameSet & source_constants = {});
 
 }

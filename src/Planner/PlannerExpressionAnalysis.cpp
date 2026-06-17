@@ -60,13 +60,7 @@ std::optional<FilterAnalysisResult> analyzeFilter(
 {
     FilterAnalysisResult result;
 
-    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
-        filter_expression_node,
-        input_columns,
-        planner_context,
-        correlated_columns_set,
-        /*use_column_identifier_as_action_node_name=*/ true,
-        /*duplicate_const_columns=*/ false);
+    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context, correlated_columns_set);
 
     result.filter_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     result.filter_actions->dag = std::move(filter_expression_dag);
@@ -330,7 +324,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(
     PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
 
     ActionsAndProjectInputsFlagPtr before_window_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    before_window_actions->dag = ActionsDAG(input_columns, /*duplicate_const_columns=*/ false);
+    before_window_actions->dag = ActionsDAG(input_columns);
     before_window_actions->dag.getOutputs().clear();
 
     std::unordered_set<std::string_view> before_window_actions_output_node_names;
@@ -459,9 +453,7 @@ ProjectionAnalysisResult analyzeProjection(
         query_node.getProjectionNode(),
         input_columns,
         planner_context,
-        correlated_columns_set,
-        /*use_column_identifier_as_action_node_name=*/ true,
-        /*duplicate_const_columns=*/ false);
+        correlated_columns_set);
 
     auto projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     projection_actions->dag = std::move(projection_actions_dag);
@@ -515,7 +507,7 @@ SortAnalysisResult analyzeSort(
     ActionsChain & actions_chain)
 {
     auto before_sort_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    before_sort_actions->dag = ActionsDAG(input_columns, /*duplicate_const_columns=*/ false);
+    before_sort_actions->dag = ActionsDAG(input_columns);
     auto & before_sort_actions_outputs = before_sort_actions->dag.getOutputs();
     before_sort_actions_outputs.clear();
 
@@ -566,7 +558,7 @@ SortAnalysisResult analyzeSort(
         /// However, we materialize ORDER BY columns in case of WITH FILL, and it causes a name-collision.
         /// If we take getLastStepAvailableOutputColumns list, it may return non-materialized constants,
         /// so here we add materialized ORDER BY columns manually, and append everything else after.
-        ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns(), /*duplicate_const_columns=*/ false);
+        ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns());
         for (const auto & out : actions_chain.getLastStepAvailableOutputColumns())
             if (!before_sort_actions_dag_output_node_names.contains(out.name))
                 before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
@@ -608,9 +600,7 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
         query_node.getLimitByNode(),
         input_columns,
         planner_context,
-        correlated_columns_set,
-        /*use_column_identifier_as_action_node_name=*/ true,
-        /*duplicate_const_columns=*/ false);
+        correlated_columns_set);
     correlated_subtrees.assertEmpty("in LIMIT BY expression");
 
     auto before_limit_by_actions = std::make_shared<ActionsAndProjectInputsFlag>();
@@ -643,7 +633,8 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info)
+    const PlannerQueryProcessingInfo & planner_query_processing_info,
+    const NameSet & source_constants)
 {
     auto & query_node = query_tree->as<QueryNode &>();
 
@@ -841,7 +832,17 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     }
 
     auto project_names_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    project_names_actions->dag = ActionsDAG(project_names_input, /*duplicate_const_columns=*/ false);
+    project_names_actions->dag = ActionsDAG(project_names_input);
+
+    /// `project` calls `removeUnusedActions`, which re-creates a source constant as a free-standing
+    /// COLUMN output and would otherwise orphan and erase its INPUT; keeping the INPUT lets the column
+    /// keep propagating upstream as a required input so it stays in the stream at distributed stage
+    /// boundaries. Only the constants the storage actually returned (`source_constants`) qualify;
+    /// query-tree literals and re-creatable alias constants must stay foldable.
+    std::unordered_set<const ActionsDAG::Node *> keep_inputs;
+    for (const auto * input : project_names_actions->dag.getInputs())
+        if (input->column && source_constants.contains(input->result_name))
+            keep_inputs.insert(input);
 
     if (query_node.hasInterpolate())
     {
@@ -855,15 +856,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             if (interpolate_names.contains(alias))
                 name = alias;
 
-        project_names_actions->dag.project(project_names);
+        project_names_actions->dag.project(project_names, keep_inputs);
     }
     else
-        project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases);
+        project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases, keep_inputs);
 
     project_names_actions->project_input = true;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(project_names_actions));
 
-    actions_chain.finalize();
+    actions_chain.finalize(source_constants);
 
     projection_analysis_result.project_names_actions = std::move(project_names_actions);
 
