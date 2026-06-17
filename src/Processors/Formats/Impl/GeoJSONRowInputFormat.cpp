@@ -704,6 +704,8 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     {
         if (key == "type")
         {
+            if (has_type)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'type' field in a feature");
             String type;
             readJSONString(type, buf, format_settings.json);
             if (type != "Feature")
