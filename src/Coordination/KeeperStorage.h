@@ -349,7 +349,7 @@ public:
         void rollback(int64_t rollback_zxid);
         void rollback(std::list<Delta> rollback_deltas);
 
-        UncommittedNodeRef getNode(std::string_view path, bool should_lock_storage = true) const;
+        UncommittedNodeRef getNode(std::string_view path) const;
 
         void rollbackDelta(const Delta & delta);
 
@@ -360,7 +360,7 @@ public:
 
         void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
-        std::shared_ptr<Node> tryGetNodeFromStorage(std::string_view path, bool should_lock_storage = true) const;
+        std::shared_ptr<Node> tryGetNodeFromStorage(std::string_view path) const;
 
         std::unordered_map<int64_t, std::unordered_set<int64_t>> closed_sessions_to_zxids;
 
