@@ -35,7 +35,10 @@ public:
     };
 
     /// Reads the metadata of the next message. Returns false on end-of-stream (the EOS marker or eof).
-    bool readNextMessage(Message & out);
+    /// `max_metadata_length`, when non-negative, caps the message's metadata size — pass the footer
+    /// `Block.metaDataLength` in the file format so a malformed footer cannot drive a huge metadata
+    /// allocation; the stream format leaves it at the default (the absolute `MAX_REASONABLE` ceiling).
+    bool readNextMessage(Message & out, int64_t max_metadata_length = -1);
 
     /// Reads the message body (`body_length` bytes) into `body`, leaving the buffer positioned right after it.
     void readBody(int64_t body_length, PODArray<char> & body);

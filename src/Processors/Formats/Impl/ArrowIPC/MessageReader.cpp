@@ -5,6 +5,8 @@
 #include <IO/ReadBuffer.h>
 #include <IO/NetUtils.h>
 
+#include <algorithm>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -37,7 +39,7 @@ int32_t readInt32LE(ReadBuffer & in)
 
 }
 
-bool MessageReader::readNextMessage(Message & out)
+bool MessageReader::readNextMessage(Message & out, int64_t max_metadata_length)
 {
     if (in.eof())
         return false;
@@ -56,7 +58,13 @@ bool MessageReader::readNextMessage(Message & out)
     if (metadata_length == 0)
         return false;
 
-    if (metadata_length < 0 || metadata_length > MAX_REASONABLE_METADATA_LENGTH)
+    /// In the file format the footer's `Block.metaDataLength` is the authoritative size of this message's
+    /// metadata section, so cap the metadata read by it (when given): otherwise a malformed footer could
+    /// advertise a tiny block while the length prefix at its offset declares a much larger metadata message,
+    /// driving an allocation of up to `MAX_REASONABLE_METADATA_LENGTH` before the body-length check runs.
+    const int64_t metadata_cap
+        = max_metadata_length < 0 ? MAX_REASONABLE_METADATA_LENGTH : std::min<int64_t>(max_metadata_length, MAX_REASONABLE_METADATA_LENGTH);
+    if (metadata_length < 0 || metadata_length > metadata_cap)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow IPC stream: implausible message metadata length {}", metadata_length);
 
     metadata_storage.resize(metadata_length);

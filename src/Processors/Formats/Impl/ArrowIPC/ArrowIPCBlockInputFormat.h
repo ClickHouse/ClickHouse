@@ -100,7 +100,7 @@ private:
     SeekableReadBuffer * seekable = nullptr;
     String file_data;                       /// Owns the bytes when the input had to be loaded into memory.
     std::unique_ptr<ReadBuffer> memory_buffer;
-    struct BlockInfo { Int64 offset = 0; Int64 body_length = 0; };
+    struct BlockInfo { Int64 offset = 0; Int64 metadata_length = 0; Int64 body_length = 0; };
     std::vector<BlockInfo> record_batch_blocks;
     size_t record_batch_current = 0;
 

@@ -226,6 +226,12 @@ void ArrowIPCBlockInputFormat::prepareReader()
     else
         prepareFileReader();
 
+    /// The read was cancelled while buffering a non-seekable input (`prepareFileReader` bailed out before
+    /// parsing): leave `arrow_schema` unset and return without dereferencing it. `read` then sees
+    /// `is_stopped` and returns an empty chunk — a clean cancellation rather than a truncated-file error.
+    if (is_stopped)
+        return;
+
     /// GeoParquet geometry columns (schema-level "geo" metadata) are decoded from WKB/WKT into geo types.
     if (format_settings.parquet.allow_geoparquet_parser)
     {
@@ -319,6 +325,11 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         WriteBufferFromString out(file_data, AppendModeTag{});
         copyData(*in, out, is_stopped);
         out.finalize();
+        /// `copyData` returns early when the read was cancelled, leaving `file_data` partial. Do not parse
+        /// that truncated buffer as an Arrow file — bail out and let `prepareReader`/`read` finish cleanly
+        /// (matching the library path, which returned without parsing after a cancelled `asArrowFile`).
+        if (is_stopped)
+            return;
         file_size = file_data.size();
         auto in_memory = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
         seekable = in_memory.get(); /// `ReadBufferFromMemory` is a `SeekableReadBuffer` (implicit upcast).
@@ -329,7 +340,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
     ArrowIPC::ArrowFileFooter footer = ArrowIPC::readArrowFileFooter(*seekable, file_size);
     arrow_schema = std::move(footer.schema);
     for (const auto & block : footer.record_batch_blocks)
-        record_batch_blocks.push_back({block.offset, block.body_length});
+        record_batch_blocks.push_back({block.offset, block.metadata_length, block.body_length});
 
     /// For count-only reads, the row count comes from the record-batch metadata (`batch->length()`), so
     /// no record batch is ever decoded and the dictionaries are never needed. Skip decoding the
@@ -347,7 +358,10 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         {
             seekable->seek(block.offset, SEEK_SET);
             ArrowIPC::MessageReader::Message msg;
-            if (!message_reader->readNextMessage(msg) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_DictionaryBatch)
+            /// Bound the metadata read by the footer block's declared metadata size, so a malformed footer
+            /// cannot make the reader allocate a huge metadata buffer from the length prefix at `block.offset`.
+            if (!message_reader->readNextMessage(msg, block.metadata_length)
+                || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_DictionaryBatch)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a dictionary batch in the Arrow file");
             /// The footer block fixes this message's body size; a message claiming a different (e.g. huge)
             /// body length is corrupt and would otherwise force reading past the footer-declared boundary.
@@ -754,7 +768,8 @@ Chunk ArrowIPCBlockInputFormat::readFile()
     seekable->seek(block.offset, SEEK_SET);
 
     ArrowIPC::MessageReader::Message msg;
-    if (!message_reader->readNextMessage(msg) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_RecordBatch)
+    /// Bound the metadata read by the footer block's declared metadata size (see the dictionary loop).
+    if (!message_reader->readNextMessage(msg, block.metadata_length) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_RecordBatch)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a record batch in the Arrow file");
     /// The footer block fixes this message's body size; a message claiming a different (e.g. huge) body
     /// length is corrupt and would otherwise force a large allocation reading past the block boundary.

@@ -142,7 +142,7 @@ bool isUUIDField(const ArrowField & field);
 struct ArrowFileBlock
 {
     int64_t offset = 0;
-    int32_t metadata_length = 0; /// only set/used when writing the footer
+    int32_t metadata_length = 0; /// the block's metadata section size; bounds the message metadata read
     int64_t body_length = 0;
 };
 

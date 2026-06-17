@@ -802,10 +802,12 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     result.schema = parseSchema(*footer->schema());
     if (footer->dictionaries())
         for (const auto * block : *footer->dictionaries())
-            result.dictionary_blocks.push_back({.offset = block->offset(), .metadata_length = 0, .body_length = block->bodyLength()});
+            result.dictionary_blocks.push_back(
+                {.offset = block->offset(), .metadata_length = block->metaDataLength(), .body_length = block->bodyLength()});
     if (footer->recordBatches())
         for (const auto * block : *footer->recordBatches())
-            result.record_batch_blocks.push_back({.offset = block->offset(), .metadata_length = 0, .body_length = block->bodyLength()});
+            result.record_batch_blocks.push_back(
+                {.offset = block->offset(), .metadata_length = block->metaDataLength(), .body_length = block->bodyLength()});
     return result;
 }
 
