@@ -60,7 +60,11 @@ std::string determineDefaultTimeZone()
 
         if (*tz_env_var == ':')
             ++tz_env_var;
-        else if (*tz_env_var == '\0')
+
+        /// An empty TZ value (including a bare ":") means UTC, the same as in glibc.
+        /// Without this, the empty path resolves to the time zone database directory itself,
+        /// and reading it as a file fails with "Is a directory". See #68920.
+        if (*tz_env_var == '\0')
             return "UTC";
 
         tz_file_path = tz_env_var;
@@ -83,7 +87,7 @@ std::string determineDefaultTimeZone()
         /// Read symlink but not transitive.
         /// Example:
         ///  /etc/localtime -> /usr/share/zoneinfo//UTC
-        ///  /usr/share/zoneinfo//UTC -> UTC
+        ///  /usr/share/zoneinfo//UTC -> UCT
         /// But the preferred time zone name is pointed by the first link (UTC), and the second link is just an internal detail.
         if (FS::isSymlink(tz_file_path))
         {
@@ -104,7 +108,7 @@ std::string determineDefaultTimeZone()
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
 
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-                return relative_path.string();
+                return tz_name.empty() ? relative_path.string() : tz_name;
         }
 
         /// Try the same with full symlinks resolution
