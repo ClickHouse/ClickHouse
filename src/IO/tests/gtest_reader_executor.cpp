@@ -1,6 +1,7 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/LocalSourceReader.h>
 #include <IO/LongConnectionLimit.h>
+#include <IO/PipelineReadBuffer.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <Common/CurrentThread.h>
@@ -108,6 +109,45 @@ protected:
             }
         }
         return out;
+    }
+
+    /// ProfileEvents gathered from one `overReadScan` run.
+    struct ScanCounts
+    {
+        ProfileEvents::Count source_requests = 0;
+        ProfileEvents::Count opened = 0;
+        ProfileEvents::Count hits = 0;
+    };
+
+    /// Drive a PipelineReadBuffer over `objects` in the compressed reader's access pattern: read a
+    /// full `block` from each mark, with marks advancing by `mark_step < block` so each read seeks
+    /// back into the previous (over-read) window. PipelineReadBuffer absorbs those in-buffer seeks,
+    /// so the executor sees a forward-only scan and a held connection stays reusable. Returns the
+    /// executor's ProfileEvents for the run (collected in an isolated ThreadGroup).
+    ScanCounts overReadScan(
+        const StoredObjects & objects, size_t total, size_t block, size_t mark_step,
+        std::shared_ptr<LongConnectionLimit> limit)
+    {
+        TestThreadGroup tg;
+        auto ex = std::make_unique<ReaderExecutor>(
+            std::make_shared<LocalSourceReader>(), objects, block,
+            std::move(limit), /*min_bytes_for_seek=*/64 * 1024, /*max_tail_for_drain=*/64 * 1024);
+        PipelineReadBuffer buf(std::move(ex));
+
+        std::vector<char> window(block);
+        for (size_t mark = 0; mark + block <= total; mark += mark_step)
+        {
+            buf.seek(static_cast<off_t>(mark), SEEK_SET);
+            buf.readStrict(window.data(), block);
+            bool ok = true;
+            for (size_t i = 0; i < block && ok; ++i)
+                ok = static_cast<unsigned char>(window[i]) == patternByte(mark + i);
+            EXPECT_TRUE(ok) << "data mismatch in window at mark " << mark;
+        }
+
+        return {tg.get(ProfileEvents::ReaderExecutorSourceRequests),
+                tg.get(ProfileEvents::LongConnectionOpened),
+                tg.get(ProfileEvents::LongConnectionHits)};
     }
 };
 
@@ -341,6 +381,52 @@ TEST_F(ReaderExecutorTest, SequentialScanOpensAndReusesConnection)
     EXPECT_GE(tg.get(ProfileEvents::LongConnectionHits), 1u);
     /// Forward-scan connections are read to their bound, so none are abandoned.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
+}
+
+TEST_F(ReaderExecutorTest, InBufferSeekIsServedWithoutRefetch)
+{
+    /// Regression for PipelineReadBuffer::seek absorbing in-buffer seeks. A seek whose target is
+    /// already inside the working buffer must be served by repositioning, not by re-seeking the
+    /// executor (which refetches the block). The compressed reader does exactly this -- over-read a
+    /// block, then seek back to a mark inside it -- and a refetch there both wastes a request and,
+    /// because a held source connection is forward-only, breaks long-connection reuse. Without the
+    /// absorption this issues 2 source requests instead of 1.
+    TestThreadGroup tg;
+    constexpr size_t size = 64 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    auto ex = std::make_unique<ReaderExecutor>(
+        std::make_shared<LocalSourceReader>(), objects, /*block_size=*/16 * 1024);
+    PipelineReadBuffer buf(std::move(ex));
+
+    /// Fetch one window [0, 16K) and partly consume it (one source request).
+    std::vector<char> head(8 * 1024);
+    buf.readStrict(head.data(), head.size());
+    ASSERT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
+
+    /// Seek back to an offset still inside [0, 16K) and read: served from the buffer, no refetch.
+    buf.seek(2048, SEEK_SET);
+    char c = 0;
+    buf.readStrict(&c, 1);
+    EXPECT_EQ(static_cast<unsigned char>(c), patternByte(2048));
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
+}
+
+TEST_F(ReaderExecutorTest, LongConnectionsReduceSourceRequestsOnScan)
+{
+    /// Long connections are active and reused on a scan (opened + Hits > 0), and the KPI: a held
+    /// connection issues far fewer source requests than a fresh one-shot per window. Driven through
+    /// PipelineReadBuffer in the compressed reader's over-read / seek-back pattern.
+    constexpr size_t size = 64 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    const auto with_long = overReadScan(objects, size, /*block=*/4096, /*mark_step=*/2048,
+        std::make_shared<LongConnectionLimit>(4));
+    const auto stateless = overReadScan(objects, size, 4096, 2048, /*limit=*/nullptr);
+
+    EXPECT_GE(with_long.opened, 1u);
+    EXPECT_GE(with_long.hits, 1u);
+    EXPECT_EQ(stateless.opened, 0u);
+    EXPECT_GT(stateless.source_requests, 0u);
+    EXPECT_LT(with_long.source_requests, stateless.source_requests);
 }
 
 TEST_F(ReaderExecutorTest, CapacityZeroAlwaysFallsBack)

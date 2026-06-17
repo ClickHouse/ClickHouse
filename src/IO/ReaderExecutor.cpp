@@ -175,8 +175,12 @@ bool ReaderExecutor::tryOpenLong(const StoredObject & object, size_t object_offs
         return false;
     }
 
-    /// Bound the held GET to the predicted forward reach (object-local), clamped to the
-    /// object end so a known-size connection completes and returns pool-reusable.
+    /// Bound the held GET to the predicted forward reach (`clampReach` of the estimator), kept
+    /// object-local and clamped to the object end. The estimate adapts: a long contiguous run
+    /// grows it toward the whole object, while sparse access keeps it small -- so the connection
+    /// reads ahead only as far as the pattern predicts (no full-object over-read when just a
+    /// slice is used). Reuse spans this bound; once the read runs past it the connection completes
+    /// (pool-reusable) and the next window opens a fresh, longer one as the run keeps growing.
     const size_t forward = clampReach(continuity_tracker.predictedReach(), position) - position;
     size_t read_until_obj = object_offset + forward;
     if (!offset_map.hasUnknownSize())
