@@ -156,6 +156,25 @@ ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
     return std::make_shared<ExpressionActions>(std::move(dag));
 }
 
+bool hasUnbuiltSubquerySet(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (future_set && !future_set->get())
+            return true;
+    }
+
+    return false;
+}
+
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block)
 {
     Block block_with_filter = block;
