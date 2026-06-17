@@ -2175,7 +2175,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -2936,6 +2936,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 ? mat_subquery->as<QueryNode>()->getProjectionColumns()
                                 : mat_subquery->as<UnionNode>()->computeProjectionColumns();
 
+
                             NamesAndTypesList columns;
                             for (const auto & col : proj_cols)
                                 columns.emplace_back(col.name, col.type);
@@ -3172,12 +3173,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            auto it = scope_ptr->nullable_group_by_keys.find(node);
-            if (it != scope_ptr->nullable_group_by_keys.end())
+            if (!scope_ptr->nullable_group_by_keys.empty())
             {
-                node = it->node->clone();
-                node->convertToNullable();
-                break;
+                auto it = scope_ptr->nullable_group_by_keys.find(node);
+                if (it != scope_ptr->nullable_group_by_keys.end())
+                {
+                    node = it->node->clone();
+                    node->convertToNullable();
+                    break;
+                }
             }
 
             /// Check parent scopes until find current query scope.
