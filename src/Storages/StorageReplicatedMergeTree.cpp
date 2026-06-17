@@ -4832,17 +4832,18 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         if (!broken_part_info.contains(part->info))
             continue;
 
+        const auto storage_metadata = getInMemoryMetadataPtr(getContext(), false);
         if (broken_part_info == part->info)
         {
             chassert(!broken_part);
             chassert(!storage_init);
             part->was_removed_as_broken = true;
-            part->makeCloneInDetached("broken", getInMemoryMetadataPtr(getContext(), false), /*disk_transaction*/ {});
+            part->makeCloneInDetached("broken", storage_metadata, /*disk_transaction*/ {});
             broken_part = part;
         }
         else
         {
-            part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr(getContext(), false), /*disk_transaction*/ {});
+            part->makeCloneInDetached("covered-by-broken", storage_metadata, /*disk_transaction*/ {});
         }
         detached_parts.push_back(part->name);
     }
@@ -9672,7 +9673,8 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
     {
         /// Optimistic check that for compatible destination table structure.
-        checkTableStructure(to, getInMemoryMetadataPtr(getContext(), false), /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
+        const auto storage_metadata = getInMemoryMetadataPtr(getContext(), false);
+        checkTableStructure(to, storage_metadata, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
     }
 
     PinnedPartUUIDs src_pins;

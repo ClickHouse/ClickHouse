@@ -398,10 +398,11 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
         /* async_insert */ false);
 
     auto table = interpreter.getTable(insert_query);
+    const auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,
         table,
-        table->getInMemoryMetadataPtr(query_context, false),
+        metadata_snapshot,
         query_context,
         /* no_destination */false,
         insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns]);

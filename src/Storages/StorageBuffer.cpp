@@ -858,7 +858,8 @@ void StorageBuffer::flushAndPrepareForShutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(getContext(), false), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        optimize(nullptr /*query*/, metadata_snapshot, {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
     }
     catch (...)
     {

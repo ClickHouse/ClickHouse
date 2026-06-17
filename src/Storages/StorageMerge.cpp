@@ -409,10 +409,11 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
             if (table && table.get() != this)
             {
                 ++selected_table_size;
+                const auto table_metadata = table->getInMemoryMetadataPtr(local_context, false);
                 stage_in_source_tables = std::max(
                     stage_in_source_tables,
                     table->getQueryProcessingStage(local_context, to_stage,
-                        table->getStorageSnapshot(table->getInMemoryMetadataPtr(local_context, false), local_context), query_info));
+                        table->getStorageSnapshot(table_metadata, local_context), query_info));
             }
 
             iterator->next();
@@ -1338,7 +1339,8 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     std::shared_ptr<DB::IStorage> storage,
     ContextPtr local_context)
 {
-    storage_metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
+    const auto storage_metadata = storage->getInMemoryMetadataPtr(local_context, false);
+    storage_metadata_snapshot = storage_metadata;
     auto storage_columns = storage_metadata_snapshot->getColumns();
     auto needed_columns = storage_columns.getAll();
 

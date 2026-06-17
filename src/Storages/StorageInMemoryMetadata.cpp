@@ -1024,7 +1024,7 @@ const StorageInMemoryMetadata & StorageMetadataHandle::operator*() const &
     return *metadata;
 }
 
-StorageMetadataHandle::operator StorageMetadataPtr() const
+StorageMetadataHandle::operator StorageMetadataPtr() const &
 {
     return metadata;
 }

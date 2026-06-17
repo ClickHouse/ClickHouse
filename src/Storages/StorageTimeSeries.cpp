@@ -411,7 +411,8 @@ bool StorageTimeSeries::optimize(
         if (isInnerTable(target_kind))
         {
             auto inner_table = getTargetTable(target_kind, local_context);
-            optimized |= inner_table->optimize(query, inner_table->getInMemoryMetadataPtr(local_context, false), partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
+            const auto inner_metadata = inner_table->getInMemoryMetadataPtr(local_context, false);
+            optimized |= inner_table->optimize(query, inner_metadata, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
         }
     }
 

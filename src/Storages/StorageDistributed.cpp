@@ -1405,8 +1405,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
+    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, cluster, src_storage_cluster.getInMemoryMetadataPtr(local_context, false));
+        predicate, filter.get(), local_context, cluster, storage_metadata);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;

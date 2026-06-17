@@ -760,9 +760,9 @@ StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
     if (info.isPatch())
         return storage.getPatchPartMetadata(*columns_description, info.getPartitionId(), storage.getContext());
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     if (!parent_part)
-        return metadata_snapshot;
+        return StorageMetadataPtr(metadata_snapshot);
 
     return metadata_snapshot->projections.get(getProjectionName()).metadata;
 }
@@ -1962,7 +1962,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
     NamesAndTypesList cols;
     cols.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
 
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     auto alter_conversions = std::make_shared<AlterConversions>();
@@ -3012,7 +3012,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     NamesAndTypesList cols;
     cols.emplace_back(column);
 
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     /// We need to read only prefixes, so no data will be read.

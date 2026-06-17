@@ -593,9 +593,10 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
     auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
     const auto & read_settings = backup_entries_collector.getReadSettings();
 
+    const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
-        getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false),
+        metadata_snapshot,
         data.get(),
         data_path_in_backup,
         tmp_data,

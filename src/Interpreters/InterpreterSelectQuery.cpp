@@ -646,7 +646,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
-            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        {
+            const auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
+            metadata_snapshot = in_memory_metadata;
+        }
 
         if (options.only_analyze)
             storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);

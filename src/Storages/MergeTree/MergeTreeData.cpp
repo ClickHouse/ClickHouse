@@ -5058,7 +5058,8 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         }
     }
 
-    if (hasTextIndexMaterialization(commands, getInMemoryMetadataPtr(getContext(), false)))
+    const auto text_index_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (hasTextIndexMaterialization(commands, text_index_metadata_snapshot))
     {
         auto data_parts = getDataPartsVectorForInternalUsage();
 
@@ -5850,7 +5851,8 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part)
 void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & part_to_detach)
 {
     LOG_INFO(log, "Cloning part {} to unexpected_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
-    part_to_detach->makeCloneInDetached("unexpected", getInMemoryMetadataPtr(getContext(), false), /*disk_transaction*/ {});
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    part_to_detach->makeCloneInDetached("unexpected", metadata_snapshot, /*disk_transaction*/ {});
 
     auto lock = lockParts();
     part_to_detach->is_unexpected_local_part = true;
@@ -10419,8 +10421,9 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     mutation_settings.recalculate_dependencies_of_updated_columns = false;
 
+    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     MutationsInterpreter interpreter(
-        shared_from_this(), getInMemoryMetadataPtr(query_context, false),
+        shared_from_this(), metadata_snapshot,
         commands_to_run, query_context, mutation_settings);
 
     auto pipeline_builder = interpreter.execute();
@@ -10850,7 +10853,7 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
 
 StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
-    auto base = [&]() -> StorageMetadataPtr
+    auto base = [&]() -> StorageMetadataHandle
     {
         if (bypass_metadata_cache)
             return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
@@ -10866,7 +10869,8 @@ StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_con
         if (it != cache->end())
             return it->second;
 
-        return cache->emplace(this, IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache)).first->second;
+        const StorageMetadataHandle metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        return cache->emplace(this, metadata).first->second;
     }();
 
     /// Let's return copy of storage metadata to catch lifetime bugs where reference to underlying metadata field was stored without pointer to metadata.

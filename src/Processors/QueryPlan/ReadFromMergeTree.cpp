@@ -4912,7 +4912,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     MergeTreeData & table = *merge_tree;
     MergeTreeDataSelectExecutor executor(table);
 
-    StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(table.getInMemoryMetadataPtr(ctx.context, false), ctx.context);
+    const auto metadata_snapshot = table.getInMemoryMetadataPtr(ctx.context, false);
+    StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
     auto step = executor.readFromParts(

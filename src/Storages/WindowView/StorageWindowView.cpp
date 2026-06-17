@@ -551,11 +551,12 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     UInt32 w_start = addTime(watermark, window_kind, -window_num_units, *time_zone);
 
     auto inner_table = getInnerTable();
+    const auto inner_table_metadata = inner_table->getInMemoryMetadataPtr(getContext(), false);
     InterpreterSelectQuery fetch(
         inner_fetch_query,
         getContext(),
         inner_table,
-        inner_table->getInMemoryMetadataPtr(getContext(), false),
+        inner_table_metadata,
         SelectQueryOptions(QueryProcessingStage::FetchColumns));
 
     auto builder = fetch.buildQueryPipeline();
@@ -643,11 +644,12 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     TemporaryTableHolder blocks_storage(getContext(), creator);
 
+    const auto blocks_storage_metadata = blocks_storage.getTable()->getInMemoryMetadataPtr(getContext(), false);
     InterpreterSelectQuery select(
         getFinalQuery(),
         getContext(),
         blocks_storage.getTable(),
-        blocks_storage.getTable()->getInMemoryMetadataPtr(getContext(), false),
+        blocks_storage_metadata,
         SelectQueryOptions(QueryProcessingStage::Complete));
 
     builder = select.buildQueryPipeline();
@@ -1604,11 +1606,12 @@ void StorageWindowView::writeIntoWindowView(
     };
     TemporaryTableHolder blocks_storage(local_context, creator);
 
+    const auto blocks_storage_metadata = blocks_storage.getTable()->getInMemoryMetadataPtr(local_context, false);
     InterpreterSelectQuery select_block(
         window_view.getMergeableQuery(),
         local_context,
         blocks_storage.getTable(),
-        blocks_storage.getTable()->getInMemoryMetadataPtr(local_context, false),
+        blocks_storage_metadata,
         QueryProcessingStage::WithMergeableState);
 
     builder = select_block.buildQueryPipeline();

@@ -81,10 +81,11 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 
 MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info, LoggerPtr log_)
     : storage(storage_info.storage)
-    , table_description(StorageMetadataPtr(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false))->getSampleBlock())
+    , metadata_snapshot(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false))
+    , table_description(metadata_snapshot->getSampleBlock())
     , columns_attributes(storage_info.attributes)
-    , column_names(StorageMetadataPtr(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false))->getColumns().getNamesOfPhysical())
-    , array_info(createArrayInfos(StorageMetadataPtr(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false))->getColumns().getAllPhysical(), table_description))
+    , column_names(metadata_snapshot->getColumns().getNamesOfPhysical())
+    , array_info(createArrayInfos(metadata_snapshot->getColumns().getAllPhysical(), table_description))
 {
     auto columns_num = table_description.sample_block.columns();
     /// +2 because of _sign and _version columns

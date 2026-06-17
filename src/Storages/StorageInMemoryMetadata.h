@@ -360,7 +360,8 @@ public:
     const StorageInMemoryMetadata * operator->() const && = delete;
     const StorageInMemoryMetadata & operator*() const && = delete;
 
-    operator StorageMetadataPtr() const; /// NOLINT(google-explicit-constructor)
+    operator StorageMetadataPtr() const &; /// NOLINT(google-explicit-constructor)
+    operator StorageMetadataPtr() const && = delete; /// NOLINT(google-explicit-constructor)
 
     explicit operator bool() const;
     bool operator==(std::nullptr_t) const;
