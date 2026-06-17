@@ -1,8 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: failpoint is used which can force DelayedSource on other tests
 
-SET enable_group_by_top_k_optimization=0;
-
 DROP TABLE IF EXISTS 02863_delayed_source;
 
 CREATE TABLE 02863_delayed_source(a Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/02863_delayed_source/{replica}', 'r1') ORDER BY a;
