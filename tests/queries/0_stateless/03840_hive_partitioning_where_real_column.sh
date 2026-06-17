@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # Test for https://github.com/ClickHouse/ClickHouse/issues/107380
 # Reading hive partitioned files must work when WHERE filters a real (non-virtual)
 # column while a hive partition column is also selected.
