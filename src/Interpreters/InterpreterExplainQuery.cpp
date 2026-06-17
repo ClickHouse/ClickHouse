@@ -37,6 +37,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sources/RemoteSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -69,6 +70,10 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsBool make_distributed_plan;
 }
 
 namespace ErrorCodes
@@ -83,28 +88,6 @@ namespace ErrorCodes
 
 namespace
 {
-    bool planHasDistributedStep(const QueryPlan & plan)
-    {
-        std::vector<const QueryPlan::Node *> stack;
-        if (const auto * root = plan.getRootNode())
-            stack.push_back(root);
-
-        while (!stack.empty())
-        {
-            const auto * node = stack.back();
-            stack.pop_back();
-
-            const auto name = node->step->getName();
-            if (name == "ReadFromRemote" || name == "ReadFromRemoteParallelReplicas" || name == "ReadFromCluster")
-                return true;
-
-            for (const auto * child : node->children)
-                stack.push_back(child);
-        }
-
-        return false;
-    }
-
     /// Walk the AST and expand parameterized view "table function" calls into their inlined,
     /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
     ///
@@ -1012,6 +995,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is currently supported for EXPLAIN ANALYZE query");
 
+            /// Distributed query planning rewrites the plan into exchange/remote steps, which EXPLAIN ANALYZE cannot execute here.
+            if (query_context->getSettingsRef()[Setting::make_distributed_plan])
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
+
             auto settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
             QueryPlan plan;
             ContextPtr context;
@@ -1020,7 +1009,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             Stopwatch watch;
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
-
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
@@ -1033,14 +1021,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             planning_ns += watch.elapsed();
 
-            if (planHasDistributedStep(plan))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "The current version of EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
-
             auto optimization_settings = QueryPlanOptimizationSettings(context);
 
-            optimization_settings.is_explain = true;
             optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
 
             watch.restart();
@@ -1053,13 +1035,43 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context), false);
             planning_ns += watch.elapsed();
 
-            pipeline_builder->setSinks([](const SharedHeader & header, Pipe::StreamType)-> ProcessorPtr
-            {
-                return std::make_shared<EmptySink>(header);
-            });
-
             watch.restart();
             auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+
+            auto to_complete = options.to_stage == QueryProcessingStage::Complete;
+            auto quota = (!options.ignore_quota && to_complete) ? context->getQuota() : nullptr;
+
+            if (!options.ignore_limits)
+            {
+                StreamLocalLimits limits;
+
+                limits.mode = LimitsMode::LIMITS_CURRENT;
+                const auto & query_settings = context->getSettingsRef();
+                limits.size_limits = SizeLimits(
+                                query_settings[Setting::max_result_rows],
+                                query_settings[Setting::max_result_bytes],
+                                query_settings[Setting::result_overflow_mode]);
+                if (to_complete)
+                    pipeline.setLimitsAndQuota(limits, quota);
+            }
+
+            if (quota)
+                pipeline.setQuota(quota);
+
+            pipeline.complete(std::make_shared<EmptySink>(pipeline.getSharedHeader()));
+
+            /// Inspect the materialized pipeline rather than the plan: remote execution always shows up as one of
+            /// these sources, including when it comes from nested sub-plans the plan walk would miss.
+            for (const auto & processor : pipeline.getProcessors())
+            {
+                const auto * proc_ptr = processor.get();
+                if (dynamic_cast<const RemoteSource *>(proc_ptr)
+                    || dynamic_cast<const RemoteTotalsSource *>(proc_ptr)
+                    || dynamic_cast<const RemoteExtremesSource *>(proc_ptr))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
+            }
+
             planning_ns += watch.elapsed();
 
             pipeline.setMeasureStepWallClock(true);
@@ -1067,9 +1079,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             CompletedPipelineExecutor executor(pipeline);
 
             watch.restart();
-            /// TODO: this function might throw -- wrap into try catch loop
             executor.execute();
-
             UInt64 execute_ns = watch.elapsed();
 
             UInt64 total_time_ns = planning_ns + execute_ns;
