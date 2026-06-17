@@ -4501,6 +4501,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 backQuoteIfNeed(command.column_name),
                 uk_list_str());
         }
+
+        /// Block ALTERs that derive a data-rewriting mutation (CLEAR COLUMN,
+        /// converting MODIFY, ...): the mutation rewrites the part without
+        /// rebuilding the dense index. TODO(unique-key): rebuild it, then relax.
+        auto uk_mutation_commands = commands.getMutationCommands(
+            new_metadata, settings[Setting::materialize_ttl_after_modify], local_context);
+        if (!uk_mutation_commands.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Mutations are not yet supported on tables with UNIQUE KEY: ALTER '{}' "
+                "would rewrite part data without rebuilding the dense index.",
+                uk_mutation_commands.ast()->formatForErrorMessage());
     }
 
     removeImplicitStatistics(new_metadata.columns);
@@ -5075,9 +5086,8 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 
-    /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
-    /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
-    /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
+    /// UNIQUE KEY tables reject all mutations for now: a mutation rewrites the
+    /// part without rebuilding the dense index. TODO(unique-key): rebuild it.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
     {
         const auto & uk_column_names = uk_metadata->getUniqueKeyColumns();
@@ -5105,6 +5115,14 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "and CLEAR would rewrite stored values without going through UNIQUE KEY dedup, "
                     "producing duplicate live keys. UNIQUE KEY columns: ({}).",
                     command.column_name, fmt::join(uk_column_names, ", "));
+
+            /// EMPTY / ALTER_WITHOUT_MUTATION don't rewrite parts; everything else does.
+            if (command.type != MutationCommand::EMPTY
+                && command.type != MutationCommand::ALTER_WITHOUT_MUTATION)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Mutations are not yet supported on tables with UNIQUE KEY: they would "
+                    "rewrite the part without rebuilding its dense index. UNIQUE KEY columns: ({}).",
+                    fmt::join(uk_column_names, ", "));
         }
     }
 

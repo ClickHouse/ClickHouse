@@ -90,23 +90,16 @@ void SSTProbeTargetPart::findRowIndexBatch(
 {
     out.assign(encoded_keys.size(), std::nullopt);
 
-    /// Fail closed: a target that cannot read its index must not report misses.
-    /// `NOT_FOUND` must mean "no active part holds the key", never "could not
-    /// read this part" — a silent miss here could let a duplicate key through
-    /// once INSERT enforcement is wired. (A catchable error, not a
-    /// `LOGICAL_ERROR` abort: it surfaces an unreadable index, and on a build
-    /// without RocksDB the handle is always invalid.)
+    /// Fail closed: `NOT_FOUND` must mean "no active part holds the key", never
+    /// "could not read this part" — a silent miss could let a duplicate through.
     if (!handle.valid)
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
             "UNIQUE KEY SST probe target has no readable index (invalid reader handle)");
 
 #if USE_ROCKSDB
-    /// A fresh iterator per call: `SSTProbeTargetPart` is shared as a
-    /// `shared_ptr<const>`, so a cached/mutable iterator would race across
-    /// concurrent probes on the same target. A per-call iterator keeps the
-    /// target thread-safe by construction (the perf layer can revisit this).
-    /// The SST's embedded bloom filter short-circuits absent keys inside
-    /// RocksDB; `Seek` lands at >= key, so the exact-equality compare is required.
+    /// Fresh iterator per call: the target is shared as `shared_ptr<const>`, so a
+    /// cached iterator would race across concurrent probes. `Seek` lands at >= key,
+    /// so the exact-equality compare is required.
     rocksdb::ReadOptions read_opts;
     std::unique_ptr<rocksdb::Iterator> it(handle.reader->NewIterator(read_opts));
 
@@ -118,11 +111,9 @@ void SSTProbeTargetPart::findRowIndexBatch(
         {
             auto value_slice = it->value();
             const UInt64 row_number = decodeRowNumberBE(value_slice.data(), value_slice.size());
-            /// The decoded row number is used directly as `_part_offset` into the
-            /// part's columns. An out-of-range offset (corrupt or incompatible SST)
-            /// would read past the part's rows, so fail closed. `part` is null only
-            /// in unit tests that exercise the lookup in isolation; production
-            /// targets carry the part (see the ctor contract).
+            /// `row_number` is used directly as `_part_offset`; an out-of-range
+            /// offset (corrupt/incompatible SST) would read past the part, so fail
+            /// closed. `part` is null only in isolation unit tests.
             /// TODO(unique-key): the production probe-target factory must pass a
             /// non-null part so this bound is enforced once INSERT probe is wired.
             if (part && row_number >= part->rows_count)
@@ -133,10 +124,8 @@ void SSTProbeTargetPart::findRowIndexBatch(
         }
         else if (!it->status().ok())
         {
-            /// A genuine miss leaves the iterator OK (positioned past the key or
-            /// off the end); a non-OK status is an SST read error and must not be
-            /// silently reported as "not found" — that could let a duplicate key
-            /// through. Mirror `StorageEmbeddedRocksDB`'s throw-on-non-OK.
+            /// A genuine miss leaves the iterator OK; a non-OK status is an SST read
+            /// error and must not be reported as "not found".
             throw Exception(ErrorCodes::ROCKSDB_ERROR,
                 "SSTProbeTargetPart: error seeking UNIQUE KEY SST: {}", it->status().ToString());
         }

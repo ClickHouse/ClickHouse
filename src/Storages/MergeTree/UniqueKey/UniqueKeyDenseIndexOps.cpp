@@ -48,52 +48,10 @@ namespace Setting
 namespace
 {
 
-/// True when the sorted SST writer can take `block` as-is — UK columns
-/// form a non-Nullable prefix of ORDER BY.
-bool isPrefixWriterEligible(
-    const Names & uk_names, const Names & sort_names,
-    const std::vector<bool> & sort_reverse_flags, const Block & block)
-{
-    if (uk_names.size() > sort_names.size())
-        return false;
-    for (size_t i = 0; i < uk_names.size(); ++i)
-        if (uk_names[i] != sort_names[i])
-            return false;
-    /// The prefix writer trusts the block's physical order; a descending ORDER BY
-    /// column on the UK prefix would feed RocksDB decreasing keys. Fall back to the
-    /// unsorted writer (it re-sorts ascending) whenever any prefix column is DESC.
-    for (size_t i = 0; i < uk_names.size(); ++i)
-        if (i < sort_reverse_flags.size() && sort_reverse_flags[i])
-            return false;
-    for (const auto & name : uk_names)
-        if (block.getByName(name).type->isNullable())
-            return false;
-    return true;
-}
-
 /// Half-written staging file left by an interrupted `SSTIndexWriter::finalizeToStorage`
 /// (mirrors its private `FILE_NAME + ".tmp"` staging name).
 const std::string SST_STAGING_FILE_NAME = std::string(SSTIndexWriter::FILE_NAME) + ".tmp";
 
-}
-
-
-UInt64 UniqueKeyDenseIndexOps::writeDenseIndex(
-    IDataPartStorage & storage,
-    const Block & block,
-    const Names & uk_names,
-    const Names & sort_names,
-    const std::vector<bool> & sort_reverse_flags,
-    const IColumn::Permutation * permutation,
-    UInt64 max_encoded_size,
-    ContextPtr context)
-{
-    if (uk_names.empty())
-        return 0;
-
-    if (isPrefixWriterEligible(uk_names, sort_names, sort_reverse_flags, block))
-        return SSTIndexWriter::writeFromBlock(storage, block, uk_names, permutation, max_encoded_size, context);
-    return SSTIndexWriter::writeFromBlockUnsorted(storage, block, uk_names, permutation, max_encoded_size, context);
 }
 
 
@@ -110,7 +68,7 @@ void UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
     /// throws SUPPORT_IS_DISABLED without RocksDB: a UNIQUE KEY INSERT that cannot
     /// build the dense index fails closed rather than publishing a part with no
     /// `unique_key_index.sst`. (UK-INSERT stateless tests carry `no-fasttest`.)
-    writeDenseIndex(
+    SSTIndexWriter::write(
         storage,
         block,
         metadata_snapshot->getUniqueKeyColumns(),
@@ -210,7 +168,7 @@ void UniqueKeyDenseIndexOps::rebuildIfMissing(MutableDataPartPtr & part) const
 
         const UInt64 rows = accumulated.rows();
         const auto max_encoded_size = data.getContext()->getSettingsRef()[Setting::unique_key_max_encoded_size];
-        writeDenseIndex(
+        SSTIndexWriter::write(
             storage,
             accumulated,
             uk_names,

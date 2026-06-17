@@ -36,20 +36,6 @@ public:
 
     /// ===== Stateless write path (static) =====
 
-    /// Writes the dense index (`unique_key_index.sst`) from `block`. Dispatches
-    /// to the sorted writer when `uk_names` is a non-Nullable prefix of
-    /// `sort_names`, the unsorted writer otherwise. Returns 0 (no-op) when
-    /// `uk_names` is empty.
-    static UInt64 writeDenseIndex(
-        IDataPartStorage & storage,
-        const Block & block,
-        const Names & uk_names,
-        const Names & sort_names,
-        const std::vector<bool> & sort_reverse_flags,
-        const IColumn::Permutation * permutation,
-        UInt64 max_encoded_size,
-        ContextPtr context);
-
     /// INSERT-path entry point. Times the write with the
     /// `UniqueKeySSTWriteMicroseconds` ProfileEvent. The caller
     /// (`MergeTreeDataWriter`) must check `hasUniqueKey()` before calling.

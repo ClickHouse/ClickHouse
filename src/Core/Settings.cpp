@@ -7932,9 +7932,9 @@ Maximum size (in bytes) of the order-preserving binary encoding of a single `UNI
 Selects the UNIQUE KEY write-path probe implementation. Currently only a single-threaded
 baseline exists, so `auto` and `simple` both resolve to it.
 
-Reserved: this setting has no effect yet. The INSERT write path that constructs the probe is
-not part of this slice, so the value is not read until UNIQUE KEY INSERT is wired in a later
-release; it is declared now so the lever ships with the implementation.
+Reserved: this setting has no effect yet — the value is not read until the UNIQUE KEY INSERT
+write path that constructs the probe is wired up. Declared now so the lever ships with the
+implementation.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.

@@ -3,8 +3,10 @@
 --
 -- A merge would produce an output part without a `unique_key_index.sst` and
 -- drop the input parts' delete bitmaps, so the merge-selection path skips
--- UNIQUE KEY tables entirely. Both background merges and explicit OPTIMIZE
--- must leave the parts uncoalesced.
+-- UNIQUE KEY tables entirely. This test exercises the OPTIMIZE path only:
+-- OPTIMIZE FINAL must be a no-op and must surface the guard's reason under
+-- optimize_throw_if_noop. Background merges share the same selector guard and
+-- are not exercised here.
 
 SET allow_experimental_unique_key = 1;
 SET async_insert = 0;
@@ -31,6 +33,11 @@ OPTIMIZE TABLE uk_no_merge FINAL;
 
 SELECT 'parts_after_optimize' AS step, count() AS active_parts
 FROM system.parts WHERE database = currentDatabase() AND table = 'uk_no_merge' AND active;
+
+-- The no-op is *caused* by the merge-disable guard, not an empty selection:
+-- under optimize_throw_if_noop the guard's CANNOT_SELECT reason surfaces as
+-- CANNOT_ASSIGN_OPTIMIZE (388).
+OPTIMIZE TABLE uk_no_merge FINAL SETTINGS optimize_throw_if_noop = 1; -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 
 -- Data is fully readable regardless of part fan-out.
 SELECT 'row_count' AS step, count() AS rows FROM uk_no_merge;

@@ -5640,6 +5640,9 @@ bool StorageReplicatedMergeTree::fetchPart(
     {
         part = get_part();
 
+        /// TODO(unique-key): a fetched part skips rebuildIfMissing. Same-version
+        /// sources send the SST; a legacy/no-SST source activates an indexless
+        /// part until restart rebuilds it.
         if (!to_detached)
         {
             Transaction transaction(*this, NO_TRANSACTION_RAW);

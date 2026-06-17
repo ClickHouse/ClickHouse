@@ -221,9 +221,8 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     const auto settings = data.getSettings();
     const auto metadata_snapshot = data.getInMemoryMetadataPtr(context, false);
 
-    /// TODO(unique-key): build the dense index at merge finalization instead of
-    /// skipping merges (merge-output-index PR). No partition is mergeable while
-    /// merges stay disabled for UNIQUE KEY tables; see `selectPartsToMerge`.
+    /// Merges are disabled for UNIQUE KEY tables, so no partition is mergeable.
+    /// TODO(unique-key): build the dense index at merge finalization, then re-enable.
     if (metadata_snapshot && metadata_snapshot->hasUniqueKey())
         return {};
 
@@ -286,11 +285,9 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const auto settings = data.getSettings();
     const auto metadata_snapshot = data.getInMemoryMetadataPtr(context, false);
 
-    /// TODO(unique-key): build the dense index at merge finalization instead of
-    /// skipping merges (merge-output-index PR). A merge currently produces an
-    /// output part with no `unique_key_index.sst` and drops the input parts'
-    /// delete bitmaps; until the merge writer materializes both, never merge a
-    /// UNIQUE KEY table's parts.
+    /// Merges are disabled for UNIQUE KEY tables: a merge output part would have
+    /// no `unique_key_index.sst` and would drop the input parts' delete bitmaps.
+    /// TODO(unique-key): materialize both at merge finalization, then re-enable.
     if (metadata_snapshot && metadata_snapshot->hasUniqueKey())
         return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
@@ -358,9 +355,9 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     bool final,
     bool optimize_skip_merged_partitions)
 {
-    /// TODO(unique-key): build the dense index at merge finalization instead of
-    /// skipping merges (merge-output-index PR). Covers explicit OPTIMIZE on a
-    /// UNIQUE KEY table — the merge output would lack the dense index sidecar.
+    /// Merges are disabled for UNIQUE KEY tables (explicit OPTIMIZE path): the
+    /// merge output would lack the `unique_key_index.sst` sidecar.
+    /// TODO(unique-key): build the dense index at merge finalization, then re-enable.
     if (metadata_snapshot && metadata_snapshot->hasUniqueKey())
         return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,

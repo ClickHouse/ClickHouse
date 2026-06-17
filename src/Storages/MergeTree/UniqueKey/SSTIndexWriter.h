@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 
 namespace DB
@@ -43,6 +44,20 @@ public:
 
     /// Bloom filter bits-per-key. 10 → ~1% FPR.
     static constexpr double BLOOM_BITS_PER_KEY = 10.0;
+
+    /// Dense-index entry point. Empty `uk_names` → no-op (returns 0). Otherwise
+    /// dispatches to `writeFromBlock` when the block is already sorted by UK
+    /// (UK is a non-Nullable ascending prefix of ORDER BY), else
+    /// `writeFromBlockUnsorted` (re-sorts ascending).
+    static UInt64 write(
+        IDataPartStorage & part_storage,
+        const Block & block,
+        const Names & uk_names,
+        const Names & sort_names,
+        const std::vector<bool> & sort_reverse_flags,
+        const IColumn::Permutation * permutation,
+        UInt64 max_encoded_size,
+        ContextPtr context);
 
     /// Build an SST from a Block whose UK columns are in encoded-key order
     /// after applying `permutation` (or block order if null). O(N).

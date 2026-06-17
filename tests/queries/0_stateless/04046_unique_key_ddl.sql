@@ -118,6 +118,11 @@ ALTER TABLE uk_t MODIFY ORDER BY (id); -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE uk_t DELETE WHERE id = 1; -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE uk_t UPDATE v = 'x' WHERE id = 1; -- { serverError SUPPORT_IS_DISABLED }
 
+-- 13b. Any other part-rewriting mutation is also blocked: it would rewrite the
+-- part without rebuilding the dense index (interim until merge/mutation writes it).
+ALTER TABLE uk_t MATERIALIZE COLUMN v; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE uk_t CLEAR COLUMN v; -- { serverError SUPPORT_IS_DISABLED }
+
 -- 14. All ALTER ... PARTITION operations are blocked on UK tables.
 CREATE TABLE uk_t_src (id UInt64, user_id UInt32, v String)
 ENGINE = MergeTree
