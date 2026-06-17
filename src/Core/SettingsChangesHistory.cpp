@@ -59,12 +59,16 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
             {"enable_writes_to_query_cache_disk", false, false, "New setting to allow storing query result cache entries on disk."},
             {"enable_reads_from_query_cache_disk", false, false, "New setting to allow reading query result cache entries from disk."},
+            {"optimize_limit_by_function_keys", false, true, "New setting that eliminates LIMIT BY keys that are functions of other LIMIT BY keys."},
+            {"optimize_injective_functions_in_limit_by", false, true, "New setting that replaces injective functions by their arguments in the LIMIT BY keys."},
             {"optimize_rewrite_has_to_in", false, true, "New setting"},
             {"unique_key_max_encoded_size", 256, 256, "New setting: maximum size (bytes) of the order-preserving binary encoding of a single UNIQUE KEY row"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
+            {"enable_identifier_resolve_cache", false, true, "New setting to control the identifier resolution cache in the query analyzer"},
             {"optimize_limit_by_in_order", false, true, "New setting to optimize `LIMIT BY` queries when `BY` columns are a prefix of the table's sorting key."},
             {"analyzer_compatibility_prefer_alias_over_subcolumn", false, false, "New compatibility setting"},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
+            {"output_format_always_write_decimal_point_in_float_and_decimal", false, false, "New setting to always print a decimal point for floating-point and Decimal numbers in text formats, even when the value is a whole number."},
             {"output_format_pretty_use_nbsp_for_padding", false, false, "New setting. When enabled, padding in `Pretty` output is rendered with `U+00A0` so it survives copy-paste through tools that compress runs of regular spaces."},
             {"use_reader_executor", false, false, "New experimental setting to route reads through the new pipeline ReaderExecutor instead of the legacy matryoshka of read buffers."},
             {"function_base58_max_input_size", 0, 10000, "New setting that limits the input size of `base58Encode`, `base58Decode` and `tryBase58Decode` (whose conversion is quadratic in the input length) to 10 KB by default. The compatibility value `0` disables the limit, restoring the previous behavior of accepting arbitrarily large inputs."},
@@ -1244,6 +1248,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"allow_tuple_element_aggregation", false, false, "New setting"},
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
+            {"materialize_projections_on_insert", true, true, "New setting"},
+            {"materialize_projections_on_merge", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
