@@ -958,8 +958,8 @@ void MergeTreeData::checkProperties(
         allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indices];
 
     /// For ALTER, allow_minmax_index_for_json_table_setting is the post-ALTER durable table setting.
-    /// Query setting may suppress the current validation, but cannot leave JSON minmax index metadata
-    /// without a durable table-level allowance.
+    /// Query setting may suppress the current validation, but cannot create JSON minmax index metadata
+    /// without an already effective table-level allowance.
     const bool current_table_allows_minmax_index_for_json = (*getSettings())[MergeTreeSetting::allow_minmax_index_for_json];
     const bool table_allows_minmax_index_for_json = allow_minmax_index_for_json_table_setting.value_or(
         current_table_allows_minmax_index_for_json);
@@ -1047,6 +1047,38 @@ void MergeTreeData::checkProperties(
     {
         std::unordered_set<String> indices_names;
         std::unordered_set<String> columns_with_text_indexes;
+        auto same_json_minmax_index_existed = [&](const IndexDescription & new_index)
+        {
+            if (!old_metadata.secondary_indices.has(new_index.name))
+                return false;
+
+            const auto & old_index = old_metadata.secondary_indices.getByName(new_index.name);
+            if (old_index.type != "minmax")
+                return false;
+
+            const bool same_definition = old_index.definition_ast && new_index.definition_ast
+                && old_index.definition_ast->getTreeHash(/* ignore_aliases= */ true)
+                    == new_index.definition_ast->getTreeHash(/* ignore_aliases= */ true);
+            if (!same_definition)
+                return false;
+
+            for (const auto & idx_column : old_index.sample_block)
+            {
+                bool has_json = false;
+                auto check_json = [&](const IDataType & type)
+                {
+                    if (isObject(type))
+                        has_json = true;
+                };
+                check_json(*idx_column.type);
+                idx_column.type->forEachChild(check_json);
+
+                if (has_json)
+                    return true;
+            }
+
+            return false;
+        };
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -1085,6 +1117,14 @@ void MergeTreeData::checkProperties(
                                         "{} data type of column {} is not allowed in minmax index when only query-level setting "
                                         "'allow_minmax_index_for_json = 1' is enabled. Use MergeTree table setting "
                                         "'allow_minmax_index_for_json = 1' to make this compatibility escape hatch persistent",
+                                        idx_column.type->getName(), idx_column.name);
+                                }
+
+                                if (!current_table_allows_minmax_index_for_json && !same_json_minmax_index_existed(index))
+                                {
+                                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "{} data type of column {} is not allowed in a new minmax index because MergeTree table setting "
+                                        "'allow_minmax_index_for_json = 1' must already be effective before creating such an index",
                                         idx_column.type->getName(), idx_column.name);
                                 }
                             }

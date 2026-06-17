@@ -79,12 +79,17 @@ ALTER TABLE t_json_minmax_forbidden
     ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
     MODIFY SETTING allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
 
--- Should succeed: the query-level setting suppresses validation of the current ALTER,
--- and MODIFY SETTING makes the escape hatch persistent for the table.
+-- Should fail: even with query-level setting, the table-level setting must already
+-- be effective before a new JSON minmax index is created.
 ALTER TABLE t_json_minmax_forbidden
     ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
     MODIFY SETTING allow_minmax_index_for_json = 1
-    SETTINGS allow_minmax_index_for_json = 1;
+    SETTINGS allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
+
+-- Should succeed: table-level setting is already effective before adding the index.
+ALTER TABLE t_json_minmax_forbidden MODIFY SETTING allow_minmax_index_for_json = 1;
+ALTER TABLE t_json_minmax_forbidden
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
@@ -105,12 +110,17 @@ ALTER TABLE t_json_minmax_forbidden_replicated
     ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
     MODIFY SETTING allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
 
--- Should succeed: the query-level setting suppresses validation of the current ALTER,
--- and MODIFY SETTING makes the escape hatch persistent for the table.
+-- Should fail: even with query-level setting, the table-level setting must already
+-- be effective before a new replicated JSON minmax index is written to Keeper.
 ALTER TABLE t_json_minmax_forbidden_replicated
     ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
     MODIFY SETTING allow_minmax_index_for_json = 1
-    SETTINGS allow_minmax_index_for_json = 1;
+    SETTINGS allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
+
+-- Should succeed: table-level setting is already effective before adding the index.
+ALTER TABLE t_json_minmax_forbidden_replicated MODIFY SETTING allow_minmax_index_for_json = 1;
+ALTER TABLE t_json_minmax_forbidden_replicated
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated SYNC;
 
