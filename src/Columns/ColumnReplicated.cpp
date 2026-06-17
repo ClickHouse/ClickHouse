@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -776,7 +777,7 @@ void compactReplicatedColumns(Columns & columns)
     {
         ColumnPtr shared_index;
         Columns nested_columns;
-        std::vector<size_t> positions;
+        VectorWithMemoryTracking<size_t> positions;
     };
 
     UnorderedMapWithMemoryTracking<const IColumn *, IndexWithNestedColumns> index_to_nested_cols_map;
