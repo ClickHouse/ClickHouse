@@ -1,26 +1,11 @@
--- `GROUP BY ... LIMIT` without `ORDER BY` (Pattern 2) has no downstream sort to
--- rank stale partially-aggregated groups below complete ones, so the heap is
--- only sound when evicted keys are erased from the hash table.  The optimizer
--- marks Pattern 2 with `requires_pruning`, and the aggregator disables the heap
--- at runtime for methods whose hash table cannot erase.
---
--- Any LIMIT-many groups are a valid Pattern 2 answer, so the checks below do
--- not pin which groups are returned; they verify that every returned group
--- carries its complete aggregate (count of matches against the full,
--- non-optimized aggregation).
+-- Pattern 2 (`GROUP BY ... LIMIT` without `ORDER BY`) is only sound when evicted keys
+-- are erased from the hash table; the heap is disabled at runtime for methods that
+-- cannot erase. Checks verify every returned group carries its complete aggregate.
 
 SET max_threads = 1;
--- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
--- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
--- gate the optimization off for the limits used here; pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
--- The trivial analyzer pass handles `GROUP BY ... LIMIT` via `max_rows_to_group_by`
--- and hides the plan-level Pattern 2; disable it to exercise the heap path.
 SET optimize_trivial_group_by_limit_query = 0;
--- Pattern 2 (no ORDER BY) is disabled when external aggregation can spill, since
--- a spilled-then-evicted key would surface an incomplete group in the unsorted
--- LIMIT. Pin spilling off (the default ratio is non-zero) to exercise the path.
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
 SELECT 'Pattern 2 plan is marked with requires_pruning';

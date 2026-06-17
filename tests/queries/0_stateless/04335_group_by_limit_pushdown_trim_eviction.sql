@@ -1,17 +1,10 @@
 -- Correctness of the top-K heap under heavy eviction, across aggregation methods.
--- Keys arrive in descending order while ORDER BY is ascending, so every new key
--- displaces the heap boundary and the trim/eviction path (including hash-table
--- pruning and aggregate-state destruction) runs constantly.  Each key appears in
--- two passes; rows of the second pass arrive after the key was evicted, so a
--- wrong eviction (erasing the wrong hash-table entry or destroying a live state)
--- shows up as a wrong aggregate value for the surviving keys.
+-- Keys arrive descending while ORDER BY is ascending, so the trim/eviction path runs
+-- constantly; a wrong eviction surfaces as a wrong aggregate for the surviving keys.
 
 SET enable_group_by_top_k_optimization = 1;
--- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
--- gate the optimization off for the limits used here; pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET max_threads = 1;
--- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
 
 SELECT 'UInt32 key (key32)';
@@ -80,13 +73,10 @@ SELECT k, uniqExact(v) FROM (SELECT toUInt32(999 - (number % 1000)) AS k, number
 SELECT 'Const-key block arriving after its key was evicted';
 SELECT k, count(), sum(v) FROM (SELECT 2::UInt32 AS k, 1 AS v FROM numbers(5) UNION ALL SELECT 1::UInt32, 1 FROM numbers(5) UNION ALL SELECT 2::UInt32, 1 FROM numbers(5)) GROUP BY k ORDER BY k ASC LIMIT 1;
 
--- Guard against the environment silently disabling the optimization (e.g. via a
--- profile setting), which would degrade the comparisons above to off-vs-off.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';
 
--- Runtime guard: the queries above must have actually exercised the heap's
--- skip and eviction machinery, not just carried the plan annotation.
+-- Runtime guard: the queries above must have actually exercised skip and eviction.
 SELECT 'heap_engaged_guard';
 SYSTEM FLUSH LOGS query_log;
 SELECT sum(ProfileEvents['AggregationTopKRowsSkipped']) > 0, sum(ProfileEvents['AggregationTopKKeysEvicted']) > 0

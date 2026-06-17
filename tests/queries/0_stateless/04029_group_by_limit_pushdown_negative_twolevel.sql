@@ -1,12 +1,10 @@
--- Tests for correctness of the enable_group_by_top_k_optimization optimization.
--- Part 3: edge cases, negative tests, and two-level hash table conversion.
+-- Correctness of enable_group_by_top_k_optimization: edge cases, negative tests, two-level hash table conversion.
 
 -- Tags: no-parallel-replicas, long, no-sanitizers
 
--- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
+-- CI profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
--- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
--- gate the optimization off for the limits used here; pin it.
+-- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 
 SET enable_group_by_top_k_optimization = 1;
@@ -28,9 +26,6 @@ SELECT
     number
 FROM numbers(50000);
 
--- =====================
--- Test with LIMIT offset (LIMIT 5, 10)
--- =====================
 SELECT 'limit_with_offset';
 SELECT k_u64, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 5, 10
@@ -40,9 +35,6 @@ SELECT k_u64, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 5, 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Test with multiple aggregate functions
--- =====================
 SELECT 'multiple_aggregates';
 SELECT k_u32, count(), sum(val), min(val), max(val), avg(val)
 FROM t_gbylimit GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
@@ -52,12 +44,7 @@ SELECT k_u32, count(), sum(val), min(val), max(val), avg(val)
 FROM t_gbylimit GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Negative tests: optimization must NOT be applied in these cases.
--- We verify that results still match (the optimization gracefully disables).
--- =====================
-
--- DESC order
+-- Negative tests: optimization must NOT apply, but results must still match.
 SELECT 'desc_order';
 SELECT k_u64, count()
 FROM t_gbylimit GROUP BY k_u64 ORDER BY k_u64 DESC LIMIT 10
@@ -67,16 +54,13 @@ SELECT k_u64, count()
 FROM t_gbylimit GROUP BY k_u64 ORDER BY k_u64 DESC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- WITH TOTALS (overflow_row): the optimization should NOT be applied.
--- Totals rows propagate through subqueries, so we use a materializing
--- CTE to strip them before comparing.
+-- WITH TOTALS: a materializing CTE strips totals rows before comparing.
 SELECT 'negative_with_totals';
 WITH
     a AS (SELECT k_u32, count() AS cnt FROM t_gbylimit GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1),
     b AS (SELECT k_u32, count() AS cnt FROM t_gbylimit GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0)
 SELECT count() FROM (SELECT * FROM a EXCEPT SELECT * FROM b);
 
--- HAVING (FilterStep breaks pattern)
 SELECT 'negative_having';
 SELECT k_u32, count() AS cnt
 FROM t_gbylimit GROUP BY k_u32 HAVING cnt > 1 ORDER BY k_u32 ASC LIMIT 10
@@ -86,7 +70,6 @@ SELECT k_u32, count() AS cnt
 FROM t_gbylimit GROUP BY k_u32 HAVING cnt > 1 ORDER BY k_u32 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- ORDER BY aggregate (not GROUP BY key): add tie-breaker for determinism
 SELECT 'negative_order_by_aggregate';
 SELECT k_u32, count() AS cnt
 FROM t_gbylimit GROUP BY k_u32 ORDER BY cnt DESC, k_u32 ASC LIMIT 10
@@ -96,7 +79,6 @@ SELECT k_u32, count() AS cnt
 FROM t_gbylimit GROUP BY k_u32 ORDER BY cnt DESC, k_u32 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- Multiple GROUP BY keys
 SELECT 'negative_multi_key';
 SELECT k_u32, k_u64, count()
 FROM t_gbylimit GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10
@@ -106,10 +88,7 @@ SELECT k_u32, k_u64, count()
 FROM t_gbylimit GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Test two-level hash table conversion (happens with high cardinality).
--- The bounded heap must survive the single-to-two-level migration.
--- =====================
+-- The bounded heap must survive the single-to-two-level hash table migration.
 SELECT 'two_level';
 SELECT number, count()
 FROM numbers(2000000) GROUP BY number ORDER BY number ASC LIMIT 10
@@ -119,9 +98,6 @@ SELECT number, count()
 FROM numbers(2000000) GROUP BY number ORDER BY number ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Test two-level with String key
--- =====================
 SELECT 'two_level_string';
 SELECT toString(number) AS k, count()
 FROM numbers(2000000) GROUP BY k ORDER BY k ASC LIMIT 10
@@ -133,7 +109,6 @@ SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit;
 
--- Guard against the environment silently disabling the optimization (e.g. via a
--- profile setting), which would degrade the comparisons above to off-vs-off.
+-- Guard against the environment silently disabling the optimization.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';

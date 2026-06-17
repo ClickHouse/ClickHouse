@@ -1,31 +1,17 @@
--- The top-K heap freezes itself once it has observed many rows while full but
--- has never skipped or evicted (i.e. the number of distinct keys equals the
--- LIMIT): the per-row boundary check is then pure overhead.  These tests pin
--- freeze correctness - results must match the non-optimized plan, including
--- when smaller keys arrive after the heap froze - and assert the freeze path
--- actually ran (AggregationTopKHeapsFrozen > 0).
---
--- Freeze needs skipped_rows == 0, evicted_keys == 0 and a full heap, so the
--- distinct-key count during the observation window must equal the LIMIT: fewer
--- never fills the heap, more makes it skip/evict.
+-- The top-K heap freezes once it has observed many rows while full but never skipped
+-- or evicted (distinct-key count == LIMIT). Results must match the non-optimized plan,
+-- including when smaller keys arrive after the freeze, and the freeze path must run.
 
 SET enable_group_by_top_k_optimization = 1;
--- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
--- gate the optimization off for the limits used here; pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET max_threads = 1;
--- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
 SET optimize_trivial_group_by_limit_query = 0;
--- Pattern 2 disables external aggregation itself, but pin spilling off so the
--- freeze window is deterministic.
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
 SELECT 'Pattern 1 freeze then smaller keys: result matches non-optimized';
--- First 400K rows use exactly LIMIT (3) distinct keys {1000,1001,1002}, so the
--- heap fills but never skips/evicts and freezes (threshold 256K rows, blocks
--- <= 100K so the freeze fires inside the warm-up); the rest introduce smaller
--- keys {0..99} that are the true top-3.  A frozen heap must not drop them.
+-- First 400K rows fill the heap with exactly LIMIT (3) keys so it freezes; later rows
+-- introduce smaller keys that are the true top-3, which a frozen heap must not drop.
 SELECT count() FROM
 (
     SELECT k, count() AS c FROM (SELECT if(number < 400000, 1000 + number % 3, number % 100)::UInt32 AS k FROM numbers(600000)) GROUP BY k ORDER BY k ASC LIMIT 3
@@ -56,9 +42,6 @@ SELECT count(), countIf(complete) FROM
 SELECT 'Eviction-heavy stream must not freeze (results stay top-K correct)';
 SELECT k, count() FROM (SELECT toUInt32(999999 - number) % 1000000 AS k FROM numbers(1000000)) GROUP BY k ORDER BY k ASC LIMIT 3;
 
--- Prove the freeze path actually ran (the cardinality == LIMIT cases above must
--- have frozen at least one heap); otherwise this test could pass with adaptive
--- freezing dead.
 SELECT 'freeze path ran';
 SYSTEM FLUSH LOGS query_log;
 SELECT sum(ProfileEvents['AggregationTopKHeapsFrozen']) > 0

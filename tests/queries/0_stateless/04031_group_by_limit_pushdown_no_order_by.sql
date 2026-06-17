@@ -1,18 +1,11 @@
--- Tests for correctness of the enable_group_by_top_k_optimization optimization.
--- Part 5: GROUP BY ... LIMIT without ORDER BY.
---
--- When there is no ORDER BY, the optimization uses all GROUP BY keys for the
--- heap, and any N groups are a valid result. We test:
---   (a) the number of returned rows equals LIMIT
---   (b) aggregate values match the full (unoptimized) aggregation for each group
---   (c) the optimization fires (via EXPLAIN)
+-- Correctness of enable_group_by_top_k_optimization for GROUP BY ... LIMIT without ORDER BY.
+-- Without ORDER BY any N groups are valid, so we check row count and per-group aggregate values.
 
 -- Tags: no-parallel-replicas, long
 
--- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
+-- CI profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
--- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
--- gate the optimization off for the limits used here; pin it.
+-- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 
 SET enable_group_by_top_k_optimization = 1;
@@ -37,17 +30,12 @@ SELECT
     number
 FROM numbers(100000);
 
--- =====================
--- Test 1: Single-column GROUP BY without ORDER BY.
--- Verify row count and aggregate correctness.
--- =====================
 SELECT 'single_key_row_count';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM t_gbylimit_noob GROUP BY a LIMIT 10
     SETTINGS enable_group_by_top_k_optimization = 1
 );
 
--- Verify every returned group has correct aggregates by joining with unoptimized result.
 SELECT 'single_key_aggregates';
 SELECT count() FROM (
     SELECT a, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY a LIMIT 10
@@ -59,9 +47,6 @@ LEFT JOIN (
 ) AS full USING (a)
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
--- =====================
--- Test 2: Composite (two-column) GROUP BY without ORDER BY.
--- =====================
 SELECT 'composite_two_key_row_count';
 SELECT count() FROM (
     SELECT a, b, count() AS cnt FROM t_gbylimit_noob GROUP BY a, b LIMIT 15
@@ -79,9 +64,6 @@ LEFT JOIN (
 ) AS full USING (a, b)
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
--- =====================
--- Test 3: Three-column GROUP BY without ORDER BY.
--- =====================
 SELECT 'composite_three_key_row_count';
 SELECT count() FROM (
     SELECT a, b, c, count() AS cnt FROM t_gbylimit_noob GROUP BY a, b, c LIMIT 20
@@ -99,9 +81,6 @@ LEFT JOIN (
 ) AS full USING (a, b, c)
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
--- =====================
--- Test 4: Nullable GROUP BY key without ORDER BY.
--- =====================
 SELECT 'nullable_key_row_count';
 SELECT count() FROM (
     SELECT d, count() AS cnt FROM t_gbylimit_noob GROUP BY d LIMIT 10
@@ -109,7 +88,7 @@ SELECT count() FROM (
 );
 
 SELECT 'nullable_key_aggregates';
--- Use IS NOT DISTINCT FROM for the join condition because USING/= treats NULL != NULL.
+-- IS NOT DISTINCT FROM is used in the join because USING/= treats NULL != NULL.
 SELECT count() FROM (
     SELECT d, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY d LIMIT 10
     SETTINGS enable_group_by_top_k_optimization = 1
@@ -120,9 +99,6 @@ LEFT JOIN (
 ) AS full ON optimized.d IS NOT DISTINCT FROM full.d
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
--- =====================
--- Test 5: String GROUP BY key without ORDER BY.
--- =====================
 SELECT 'string_key_row_count';
 SELECT count() FROM (
     SELECT c, count() AS cnt FROM t_gbylimit_noob GROUP BY c LIMIT 10
@@ -140,38 +116,25 @@ LEFT JOIN (
 ) AS full USING (c)
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
--- =====================
--- Test 6: GROUP BY ... LIMIT with OFFSET, no ORDER BY.
--- The heap retains limit + offset groups.
--- =====================
 SELECT 'with_offset_row_count';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM t_gbylimit_noob GROUP BY a LIMIT 5, 10
     SETTINGS enable_group_by_top_k_optimization = 1
 );
 
--- =====================
--- Test 7: LIMIT larger than number of groups.
 -- GROUP BY a has 500 groups; LIMIT 1000 should return all 500.
--- =====================
 SELECT 'limit_exceeds_groups';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM t_gbylimit_noob GROUP BY a LIMIT 1000
     SETTINGS enable_group_by_top_k_optimization = 1
 );
 
--- =====================
--- Test 8: LIMIT 1 (minimal limit).
--- =====================
 SELECT 'limit_one_row_count';
 SELECT count() FROM (
     SELECT a, b, count() AS cnt FROM t_gbylimit_noob GROUP BY a, b LIMIT 1
     SETTINGS enable_group_by_top_k_optimization = 1
 );
 
--- =====================
--- Test 9: High-cardinality (two-level hash table) without ORDER BY.
--- =====================
 SELECT 'two_level_row_count';
 SELECT count() FROM (
     SELECT
@@ -201,10 +164,7 @@ LEFT JOIN (
 ) AS full USING (x, y)
 WHERE optimized.cnt != full.cnt;
 
--- =====================
--- Test 10: Negative case — WITH TOTALS should not trigger optimization.
--- Verify it still produces correct output.
--- =====================
+-- Negative case: WITH TOTALS should not trigger the optimization.
 SELECT 'negative_with_totals';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM t_gbylimit_noob GROUP BY a WITH TOTALS LIMIT 10
@@ -213,10 +173,7 @@ SELECT count() FROM (
 
 DROP TABLE t_gbylimit_noob;
 
--- Guard against the environment silently disabling the optimization (e.g. via a
--- profile setting), which would degrade the comparisons above to off-vs-off.
--- The trivial analyzer pass handles `GROUP BY ... LIMIT` ahead of the plan-level
--- Pattern 2, so disable it for the plan-shape check.  Pattern 2 is also gated off
--- when external aggregation can spill, so pin that off (default ratio is non-zero).
+-- Guard against the environment silently disabling the optimization.
+-- The trivial analyzer pass and external aggregation are disabled so Pattern 2 is exercised.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k LIMIT 5 SETTINGS optimize_trivial_group_by_limit_query = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0) WHERE explain LIKE '%Top-K%';

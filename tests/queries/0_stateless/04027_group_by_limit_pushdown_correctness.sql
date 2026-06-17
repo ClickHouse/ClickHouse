@@ -1,12 +1,10 @@
--- Tests for correctness of the enable_group_by_top_k_optimization optimization.
--- Part 1: integer key types (UInt8..UInt256).
+-- Correctness of enable_group_by_top_k_optimization for integer key types (UInt8..UInt256).
 
 -- Tags: no-parallel-replicas, long
 
--- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
+-- CI profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
--- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
--- gate the optimization off for the limits used here; pin it.
+-- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 
 SET enable_group_by_top_k_optimization = 1;
@@ -36,9 +34,6 @@ SELECT
     number
 FROM numbers(50000);
 
--- =====================
--- key8 (UInt8, 256 possible values)
--- =====================
 SELECT 'key8';
 SELECT k_u8, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u8 ORDER BY k_u8 ASC LIMIT 10
@@ -48,9 +43,6 @@ SELECT k_u8, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u8 ORDER BY k_u8 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- key16 (UInt16)
--- =====================
 SELECT 'key16';
 SELECT k_u16, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u16 ORDER BY k_u16 ASC LIMIT 10
@@ -60,9 +52,6 @@ SELECT k_u16, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u16 ORDER BY k_u16 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- key32 (UInt32)
--- =====================
 SELECT 'key32';
 SELECT k_u32, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
@@ -72,9 +61,6 @@ SELECT k_u32, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- key64 (UInt64)
--- =====================
 SELECT 'key64';
 SELECT k_u64, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 10
@@ -84,9 +70,6 @@ SELECT k_u64, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- keys128 (UInt128)
--- =====================
 SELECT 'keys128';
 SELECT k_u128, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u128 ORDER BY k_u128 ASC LIMIT 10
@@ -96,9 +79,6 @@ SELECT k_u128, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u128 ORDER BY k_u128 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- keys256 (UInt256)
--- =====================
 SELECT 'keys256';
 SELECT k_u256, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u256 ORDER BY k_u256 ASC LIMIT 10
@@ -110,7 +90,6 @@ SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit;
 
--- Guard against the environment silently disabling the optimization (e.g. via a
--- profile setting), which would degrade the comparisons above to off-vs-off.
+-- Guard against the environment silently disabling the optimization.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';

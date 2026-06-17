@@ -15,52 +15,22 @@
 namespace DB
 {
 
-/** A bounded heap that tracks the top-K best keys according to the query's
-  * `ORDER BY` semantics.
-  *
-  * Supports both single-column and composite (multi-column) keys.
-  * For composite keys, the heap stores a `ColumnTuple` of sub-columns
-  * and performs lexicographic comparison with per-column direction and
-  * NULLS direction.
-  *
-  * The heap itself is a plain `std::vector<size_t>` of row indices into
-  * `heap_column`, manipulated through `std::push_heap` / `std::pop_heap` /
-  * `std::make_heap` with a transient comparator.  The boundary element (the
-  * worst kept key, which would be evicted next) sits at the front.
-  *
-  * Using a bare vector instead of `std::priority_queue` keeps move and
-  * move-assignment defaultable: there is no comparator instance with a
-  * back-pointer to the owning heap that would have to be rebuilt.
+/** A bounded heap tracking the top-K best keys by the query's `ORDER BY`.
+  * Supports single-column and composite (`ColumnTuple`) keys; the worst kept
+  * key (evicted next) sits at the front of `heap_indices`.
   */
 struct TopKAggregationHeap
 {
-    /// Column holding the key values currently in the heap.
-    /// For single-column keys this is a plain column; for composite keys it is a `ColumnTuple`.
     MutableColumnPtr heap_column;
 
-    /// Per-column ORDER BY directions.
     std::vector<int> directions;
 
-    /// Per-column NULLS/NaNs directions.
     std::vector<int> nulls_directions;
 
-    /// True when the heap stores composite (multi-column) keys via `ColumnTuple`.
     bool is_composite = false;
 
-    /// True when the heap tracks only a prefix of the GROUP BY keys (`ORDER BY`
-    /// uses fewer columns than `GROUP BY`).  An evicted prefix does not identify
-    /// a single hash-table entry — every entry sharing the prefix matches — so
-    /// hash-table pruning must be skipped in this mode.
     bool is_prefix_mode = false;
 
-    /// A heap that has observed many rows without ever skipping one or
-    /// evicting a key is pure overhead — e.g. when the number of distinct
-    /// keys does not exceed the LIMIT, every row pays the boundary comparison
-    /// and none is ever rejected.  In that state the hash table holds every
-    /// group with a complete aggregate state, exactly as if the heap had been
-    /// off, so it is safe to freeze it: the caller stops consulting and
-    /// feeding the heap (routing to the `top_k = false` code path), which
-    /// preserves the invariant for the rest of the aggregation.
     bool frozen = false;
     UInt64 observed_rows = 0;
     UInt64 skipped_rows = 0;
@@ -75,9 +45,6 @@ struct TopKAggregationHeap
             && observed_rows >= freeze_observation_threshold
             && skipped_rows == 0
             && evicted_keys == 0
-            /// Only freeze when full: a heap below capacity does not run
-            /// boundary checks, and keeping it allows the optimization to
-            /// engage if the key cardinality grows later.
             && heap_indices.size() >= capacity;
     }
 
@@ -95,8 +62,6 @@ struct TopKAggregationHeap
     TopKAggregationHeap(TopKAggregationHeap &&) noexcept = default;
     TopKAggregationHeap & operator=(TopKAggregationHeap &&) noexcept = default;
 
-    /// `total_group_by_keys` is the total number of `GROUP BY` key columns;
-    /// when `heap_key_count < total_group_by_keys`, the heap is in prefix mode.
     void initIfNeeded(
         const ColumnRawPtrs & key_columns,
         size_t heap_key_count,
@@ -127,10 +92,6 @@ struct TopKAggregationHeap
 
     size_t size() const { return heap_indices.size(); }
 
-    /// Returns true if the source key at `source_row` is worse than the current boundary
-    /// (the heap root), meaning it should be skipped.
-    /// Precondition: heap is non-empty. Callers guard with `size() >= top_k_keys`,
-    /// and `top_k_keys >= 1` whenever the top-k path is active.
     bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         chassert(!heap_indices.empty());
@@ -140,12 +101,6 @@ struct TopKAggregationHeap
         return sourceAboveHeap(*source_columns[0], source_row, boundary);
     }
 
-    /// Same as above, but for callers that have a raw typed pointer to the
-    /// source column data (`AggregationMethodOneNumber`).  When the heap was
-    /// initialised with a known numeric column type, this bypasses the virtual
-    /// `IColumn::compareAt` dispatch.  Otherwise (composite or unknown numeric
-    /// type) it transparently falls back to the virtual path;
-    /// `source_typed_data` may be `nullptr` to opt out.
     bool shouldSkip(const void * source_typed_data, const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         if (should_skip_numeric_fn && source_typed_data)
@@ -156,14 +111,6 @@ struct TopKAggregationHeap
         return shouldSkip(source_columns, source_row);
     }
 
-    /// Batched variant of the typed-numeric skip check: fills
-    /// `skip_bitmap[begin..end)` against the current boundary with a single
-    /// indirect call instead of one per row.  Decisions stay valid under
-    /// mid-block boundary movement because the boundary only improves (a push
-    /// displaces it with a better key, a trim pops the worst entries): a row
-    /// marked skippable remains skippable, and a row marked admissible is at
-    /// worst admitted unnecessarily.  Returns nullptr when no typed fast path
-    /// is available; the caller falls back to the per-row check.
     const UInt8 * fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end)
     {
         if (!fill_skip_bitmap_fn || !source_typed_data)
@@ -174,7 +121,6 @@ struct TopKAggregationHeap
         return skip_bitmap.data();
     }
 
-    /// Push a new key from `source_columns[source_row]` into the heap.
     void push(const ColumnRawPtrs & source_columns, size_t source_row)
     {
         size_t new_idx = 0;
@@ -200,16 +146,6 @@ struct TopKAggregationHeap
         return heap_indices.size() > compaction_threshold;
     }
 
-    /// Trim the heap back to `capacity` by popping excess elements, calling `on_evict`
-    /// for each evicted element's index in `heap_column`, then compact the column to
-    /// reclaim dead slots. This batches O(0.5 * capacity) pops and one column filter
-    /// instead of doing a pop+erase per row.
-    ///
-    /// `on_evict` receives the `heap_column` index of each evicted key and is responsible
-    /// for erasing it from the hash table and destroying aggregate states if needed.
-    /// The caller decides whether pruning is possible (see
-    /// `Aggregator::trimHeapAndPruneHashTable`) and passes a no-op callback otherwise.
-    /// Returns the number of evicted keys.
     template <typename EvictCallback>
     size_t trimAndCompact(EvictCallback && on_evict)
     {
@@ -220,14 +156,9 @@ struct TopKAggregationHeap
             std::pop_heap(heap_indices.begin(), heap_indices.end(), cmp);
             const size_t candidate = heap_indices.back();
 
-            /// Never evict a key that ties with the boundary.  Distinct keys can
-            /// compare equal (-0.0/+0.0, NaN payloads), and an equal
-            /// key is a legitimate member of the top-K result - the downstream
-            /// LIMIT may break the tie either way.  Evicting it would destroy
-            /// its aggregate state while later rows for it are re-admitted
-            /// (they also tie with the boundary), surfacing an incomplete
-            /// group.  Everything still in the heap is equal or better than the
-            /// front, so stop trimming and retry once the heap grows further.
+            /// Never evict a key that ties with the boundary: it is a legitimate
+            /// top-K member and evicting it would destroy a group whose later rows
+            /// get re-admitted, surfacing an incomplete aggregate.
             const size_t new_front = heap_indices.front();
             if (!cmp(candidate, new_front) && !cmp(new_front, candidate))
             {
@@ -242,7 +173,6 @@ struct TopKAggregationHeap
         }
         evicted_keys += evicted_count;
 
-        /// Compact the `heap_column`: filter out dead slots and remap indices.
         const size_t col_size = heap_column->size();
         if (col_size <= heap_indices.size())
             return evicted_count;
@@ -251,7 +181,6 @@ struct TopKAggregationHeap
         for (size_t idx : heap_indices)
             filter[idx] = 1;
 
-        /// `old_to_new[old_idx] = new_idx`; entries for dead slots are never read.
         std::vector<size_t> old_to_new(col_size);
         size_t new_idx = 0;
         for (size_t i = 0; i < col_size; ++i)
@@ -262,9 +191,6 @@ struct TopKAggregationHeap
 
         heap_column->filter(filter);
 
-        /// Each remapped index resolves to the same physical data as before, and
-        /// the comparator reads column data through the index, so the heap
-        /// invariant is preserved by construction — no `std::make_heap` needed.
         for (auto & idx : heap_indices)
             idx = old_to_new[idx];
 
@@ -272,11 +198,8 @@ struct TopKAggregationHeap
     }
 
 private:
-    /// `capacity` (= `top_k_keys`) is `limit + offset` and can approach the full
-    /// `size_t` range, so cap the eager reservation; the column grows on demand.
-    static constexpr size_t max_preallocated_rows = 1ULL << 20;  /// 1 Mi rows
+    static constexpr size_t max_preallocated_rows = 1ULL << 20;
 
-    /// Set `capacity` and derive `compaction_threshold` as 1.5x it, without overflow.
     void setCapacity(size_t cap)
     {
         capacity = cap;
@@ -294,7 +217,6 @@ private:
         return hint;
     }
 
-    /// Initialize for a single-column key.
     void init(
         const IColumn & source_column,
         size_t cap,
@@ -313,8 +235,6 @@ private:
         initNumericSkipFn();
     }
 
-    /// Initialize for composite (multi-column) keys.
-    /// The heap stores a `ColumnTuple` of cloned-empty sub-columns.
     void init(
         const ColumnRawPtrs & source_columns,
         size_t cap,
@@ -343,23 +263,17 @@ private:
 
         heap_indices.clear();
         heap_indices.reserve(reserve_hint);
-        /// Composite keys never use the typed numeric fast paths.
         should_skip_numeric_fn = nullptr;
         numeric_cmp_fn = nullptr;
         fill_skip_bitmap_fn = nullptr;
     }
 
-    /// Compare a row in `source_column` against a row in `heap_column` (single-column case).
-    /// Returns true if source row is worse than the heap row in `ORDER BY` order.
     bool sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const
     {
         const int cmp = compareColumns(source_column, source_row, *heap_column, heap_row, 0);
         return directions[0] * cmp > 0;
     }
 
-    /// Compare a composite source key against a row in the heap's `ColumnTuple`.
-    /// Performs lexicographic comparison with per-column `ORDER BY` semantics.
-    /// Returns true if source row is worse than the heap row in `ORDER BY` order.
     bool sourceAboveHeapComposite(const ColumnRawPtrs & source_columns, size_t source_row, size_t heap_row) const
     {
         const auto & tuple = assert_cast<const ColumnTuple &>(*heap_column);
@@ -369,11 +283,9 @@ private:
             if (cmp != 0)
                 return directions[i] * cmp > 0;
         }
-        return false;  /// equal keys are not above the heap boundary
+        return false;
     }
 
-    /// Lexicographic comparison of two rows within the heap's `ColumnTuple`.
-    /// Returns negative if `a` should be ordered before `b`, positive if after, zero if equal.
     int compareHeapRowsComposite(size_t a, size_t b) const
     {
         const auto & tuple = assert_cast<const ColumnTuple &>(*heap_column);
@@ -387,22 +299,11 @@ private:
         return 0;
     }
 
-    /// Compare a row in `lhs` against a row in `rhs` honoring the NULLS direction
-    /// stored at position `column_index`.  Encapsulates the `compareAt` call used
-    /// in three places.
     int compareColumns(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row, size_t column_index) const
     {
         return lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[column_index]);
     }
 
-    /// Comparator for the heap algorithms.  The worst kept element sits at the
-    /// front, so we return true when `a` should be below `b` in `ORDER BY` order.
-    /// The struct stores only a back-pointer; it is constructed transiently at
-    /// each `std::*_heap` call and never persisted as a member of the heap.
-    ///
-    /// When a typed numeric fast path is installed at init time (single-column,
-    /// plain numeric), `numeric_cmp_fn` is dispatched directly,
-    /// avoiding the virtual `IColumn::compareAt` call on every comparison.
     struct HeapComparator
     {
         const TopKAggregationHeap * owner;
@@ -420,31 +321,19 @@ private:
         }
     };
 
-    /// Type-erased function pointer for the numeric skip fast path.
-    /// Resolved once at init time based on `heap_column->getDataType()`.
-    /// Takes `(self, raw_key_data, row_index)` and returns true if the row should be skipped.
     using ShouldSkipNumericFn = bool (*)(const TopKAggregationHeap &, const void *, size_t);
     ShouldSkipNumericFn should_skip_numeric_fn = nullptr;
 
-    /// Type-erased function pointer for the numeric heap-comparator fast path.
-    /// Resolved alongside `should_skip_numeric_fn` for the same set of types.
-    /// Returns true when row `a` is worse than row `b` in `ORDER BY` order —
-    /// matching `HeapComparator::operator()` semantics.
     using NumericCmpFn = bool (*)(const TopKAggregationHeap &, size_t, size_t);
     NumericCmpFn numeric_cmp_fn = nullptr;
 
-    /// Type-erased function pointer for the batched skip check; resolved
-    /// alongside the other numeric fast paths.
     using FillSkipBitmapFn = void (*)(const TopKAggregationHeap &, const void *, size_t, size_t, UInt8 *);
     FillSkipBitmapFn fill_skip_bitmap_fn = nullptr;
 
-    /// Reused across batches by `fillSkipBitmap`.
     std::vector<UInt8> skip_bitmap;
 
-    /// Typed implementation of the numeric skip comparison.
-    /// `ActualKeyType` is the real column element type (e.g., `Int32` for `RegionID`).
-    /// The source data pointer is reinterpreted from the hash key type (always unsigned)
-    /// to the actual column type — safe because they have the same size and bit layout.
+    /// `source_data` is reinterpreted from the hash key type (always unsigned) to
+    /// the actual column type — safe because they share size and bit layout.
     template <typename ActualKeyType>
     static bool shouldSkipNumericImpl(const TopKAggregationHeap & self, const void * source_data, size_t source_row)
     {
@@ -454,8 +343,6 @@ private:
         return self.directions[0] * CompareHelper<ActualKeyType>::compare(src[source_row], heap_data[boundary_row], self.nulls_directions[0]) > 0;
     }
 
-    /// Typed implementation of the heap comparator for single-column numeric keys.
-    /// Reads the heap column's raw data directly, skipping the virtual `compareAt`.
     template <typename ActualKeyType>
     static bool heapCompareNumericImpl(const TopKAggregationHeap & self, size_t a, size_t b)
     {
@@ -463,9 +350,6 @@ private:
         return self.directions[0] * CompareHelper<ActualKeyType>::compare(data[a], data[b], self.nulls_directions[0]) < 0;
     }
 
-    /// Typed implementation of the batched skip check.  The boundary is loaded
-    /// once and the loop is free of indirect calls, so the compiler can keep
-    /// it tight (and vectorize it for types with branchless comparison).
     template <typename ActualKeyType>
     static void fillSkipBitmapImpl(const TopKAggregationHeap & self, const void * source_data, size_t begin, size_t end, UInt8 * bitmap)
     {
@@ -478,7 +362,6 @@ private:
             bitmap[i] = direction * CompareHelper<ActualKeyType>::compare(src[i], boundary, nulls_direction) > 0;
     }
 
-    /// Install the numeric fast paths for the given column element type.
     template <typename ActualKeyType>
     void resolveNumericFastPath()
     {
@@ -487,8 +370,6 @@ private:
         fill_skip_bitmap_fn = &fillSkipBitmapImpl<ActualKeyType>;
     }
 
-    /// Resolve the typed numeric fast paths for `shouldSkip` and the heap comparator.
-    /// Called once at init time from the single-column `init`.
     void initNumericSkipFn()
     {
         should_skip_numeric_fn = nullptr;
@@ -517,11 +398,9 @@ private:
         }
     }
 
-    /// Heap of row indices into `heap_column`, maintained via `std::*_heap`.
-    /// `heap_indices.front()` is the worst (root) element under the comparator.
     std::vector<size_t> heap_indices;
-    size_t capacity = 0;              /// target heap size (= `top_k_keys`)
-    size_t compaction_threshold = 0;  /// heap size at which to trigger trim+compact (1.5x capacity)
+    size_t capacity = 0;
+    size_t compaction_threshold = 0;
 };
 
 }

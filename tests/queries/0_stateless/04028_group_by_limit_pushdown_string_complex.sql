@@ -1,12 +1,10 @@
--- Tests for correctness of the enable_group_by_top_k_optimization optimization.
--- Part 2: string, complex, nullable, and low-cardinality key types.
+-- Correctness of enable_group_by_top_k_optimization for string, complex, nullable, and low-cardinality keys.
 
 -- Tags: no-parallel-replicas, long
 
--- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
+-- CI profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
--- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
--- gate the optimization off for the limits used here; pin it.
+-- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 
 SET enable_group_by_top_k_optimization = 1;
@@ -38,9 +36,6 @@ SELECT
     number
 FROM numbers(50000);
 
--- =====================
--- key_string (String)
--- =====================
 SELECT 'key_string';
 SELECT k_str, count(), sum(val)
 FROM t_gbylimit GROUP BY k_str ORDER BY k_str ASC LIMIT 10
@@ -50,9 +45,6 @@ SELECT k_str, count(), sum(val)
 FROM t_gbylimit GROUP BY k_str ORDER BY k_str ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- key_fixed_string (FixedString)
--- =====================
 SELECT 'key_fixed_string';
 SELECT k_fstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_fstr ORDER BY k_fstr ASC LIMIT 10
@@ -62,9 +54,6 @@ SELECT k_fstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_fstr ORDER BY k_fstr ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- serialized (Tuple)
--- =====================
 SELECT 'serialized';
 SELECT k_tup, count(), sum(val)
 FROM t_gbylimit GROUP BY k_tup ORDER BY k_tup ASC LIMIT 10
@@ -74,9 +63,6 @@ SELECT k_tup, count(), sum(val)
 FROM t_gbylimit GROUP BY k_tup ORDER BY k_tup ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- nullable_key32 (Nullable(UInt32))
--- =====================
 SELECT 'nullable_key32';
 SELECT k_nu32, count(), sum(val)
 FROM t_gbylimit GROUP BY k_nu32 ORDER BY k_nu32 ASC LIMIT 10
@@ -86,9 +72,6 @@ SELECT k_nu32, count(), sum(val)
 FROM t_gbylimit GROUP BY k_nu32 ORDER BY k_nu32 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- nullable_key_string (Nullable(String))
--- =====================
 SELECT 'nullable_key_string';
 SELECT k_nstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_nstr ORDER BY k_nstr ASC LIMIT 10
@@ -98,9 +81,6 @@ SELECT k_nstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_nstr ORDER BY k_nstr ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- low_cardinality_key64 (LowCardinality(UInt64))
--- =====================
 SELECT 'low_cardinality_key64';
 SELECT k_lcu64, count(), sum(val)
 FROM t_gbylimit GROUP BY k_lcu64 ORDER BY k_lcu64 ASC LIMIT 10
@@ -110,9 +90,6 @@ SELECT k_lcu64, count(), sum(val)
 FROM t_gbylimit GROUP BY k_lcu64 ORDER BY k_lcu64 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- low_cardinality_key_string (LowCardinality(String))
--- =====================
 SELECT 'low_cardinality_key_string';
 SELECT k_lcstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_lcstr ORDER BY k_lcstr ASC LIMIT 10
@@ -124,7 +101,6 @@ SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit;
 
--- Guard against the environment silently disabling the optimization (e.g. via a
--- profile setting), which would degrade the comparisons above to off-vs-off.
+-- Guard against the environment silently disabling the optimization.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';

@@ -1,10 +1,8 @@
--- A `LIMIT` close to the `size_t` range used to make the top-K heap reserve
--- `1.5 * limit` rows up front, which the allocator rejected with "Too large
--- size passed to allocator". Such a limit keeps every group, so the optimized
--- result must match the unoptimized one.
+-- A `LIMIT` near the `size_t` range once made the heap reserve `1.5 * limit` rows
+-- up front and hit "Too large size passed to allocator". Such a limit keeps every
+-- group, so the optimized result must match the unoptimized one.
 
 SET max_threads = 1;
--- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
 SET optimize_trivial_group_by_limit_query = 0;
 

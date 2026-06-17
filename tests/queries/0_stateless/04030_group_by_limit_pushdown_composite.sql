@@ -1,12 +1,10 @@
--- Tests for correctness of the enable_group_by_top_k_optimization optimization.
--- Part 4: composite (multi-column) GROUP BY keys and ORDER BY prefix matching.
+-- Correctness of enable_group_by_top_k_optimization for composite GROUP BY keys and ORDER BY prefix matching.
 
 -- Tags: no-parallel-replicas, long
 
--- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
+-- CI profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
--- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
--- gate the optimization off for the limits used here; pin it.
+-- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 
 SET enable_group_by_top_k_optimization = 1;
@@ -31,10 +29,6 @@ SELECT
     number
 FROM numbers(100000);
 
--- =====================
--- Composite key: GROUP BY a, b ORDER BY a, b LIMIT N
--- Exact match of ORDER BY and GROUP BY keys (two integers).
--- =====================
 SELECT 'composite_two_int';
 SELECT a, b, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, b ORDER BY a, b ASC LIMIT 10
@@ -44,10 +38,6 @@ SELECT a, b, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, b ORDER BY a, b ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Composite key: GROUP BY a, c ORDER BY a, c LIMIT N
--- Mixed types (UInt32 + String).
--- =====================
 SELECT 'composite_int_string';
 SELECT a, c, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, c ORDER BY a, c ASC LIMIT 10
@@ -57,10 +47,6 @@ SELECT a, c, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, c ORDER BY a, c ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Composite key: GROUP BY a, b, c ORDER BY a, b, c LIMIT N
--- Three-column key.
--- =====================
 SELECT 'composite_three_keys';
 SELECT a, b, c, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, b, c ORDER BY a, b, c ASC LIMIT 10
@@ -70,9 +56,6 @@ SELECT a, b, c, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, b, c ORDER BY a, b, c ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Composite key with Nullable: GROUP BY a, d ORDER BY a, d LIMIT N
--- =====================
 SELECT 'composite_nullable';
 SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a, d ASC LIMIT 10
@@ -82,12 +65,7 @@ SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a, d ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Prefix ORDER BY: GROUP BY a, b ORDER BY a LIMIT N
--- Heap tracks only `a`; all `b` values for matching `a` are kept.
--- Each `a` value has exactly 2 `b` sub-groups, so LIMIT 10 = 5 full `a` values
--- and falls exactly on a group boundary.
--- =====================
+-- Prefix ORDER BY: heap tracks only `a`; all `b` values for a matching `a` are kept.
 SELECT 'prefix_one_of_two';
 SELECT * FROM (
     SELECT a, b, count() AS cnt, sum(val) AS s
@@ -101,11 +79,6 @@ SELECT * FROM (
     SETTINGS enable_group_by_top_k_optimization = 0
 ) ORDER BY a, b ASC;
 
--- =====================
--- Prefix ORDER BY: GROUP BY a, b, c ORDER BY a LIMIT N
--- One prefix column out of three GROUP BY keys.
--- Each `a` has 6 sub-groups, so LIMIT 12 = 2 full `a` values.
--- =====================
 SELECT 'prefix_one_of_three';
 SELECT * FROM (
     SELECT a, b, c, count() AS cnt
@@ -119,11 +92,6 @@ SELECT * FROM (
     SETTINGS enable_group_by_top_k_optimization = 0
 ) ORDER BY a, b, c ASC;
 
--- =====================
--- Prefix ORDER BY: GROUP BY a, b, c ORDER BY a, b LIMIT N
--- Two prefix columns out of three GROUP BY keys.
--- Each (a, b) pair has 3 sub-groups (c values). LIMIT 12 = 4 full (a, b) pairs.
--- =====================
 SELECT 'prefix_two_of_three';
 SELECT * FROM (
     SELECT a, b, c, count() AS cnt
@@ -137,11 +105,6 @@ SELECT * FROM (
     SETTINGS enable_group_by_top_k_optimization = 0
 ) ORDER BY a, b, c ASC;
 
--- =====================
--- Prefix ORDER BY with LIMIT offset: GROUP BY a, b ORDER BY a LIMIT 4, 6
--- Each `a` has 2 sub-groups. LIMIT 4, 6 = skip 4 (a=0,1) take 6 (a=2,3,4).
--- Both offset and limit align with `a` boundaries.
--- =====================
 SELECT 'prefix_with_offset';
 SELECT * FROM (
     SELECT a, b, count() AS cnt, sum(val) AS s
@@ -155,10 +118,6 @@ SELECT * FROM (
     SETTINGS enable_group_by_top_k_optimization = 0
 ) ORDER BY a, b ASC;
 
--- =====================
--- Composite key with high cardinality (two-level hash table).
--- GROUP BY a, b ORDER BY a, b LIMIT N on high-cardinality data.
--- =====================
 SELECT 'composite_two_level';
 SELECT
     (number % 100000)::UInt32 AS x,
@@ -174,11 +133,6 @@ SELECT
 FROM numbers(2000000) GROUP BY x, y ORDER BY x, y ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Prefix ORDER BY with high cardinality (two-level hash table).
--- GROUP BY x, y ORDER BY x LIMIT N.
--- Each x has 2 y sub-groups, so LIMIT 10 = 5 full x values.
--- =====================
 SELECT 'prefix_two_level';
 SELECT * FROM (
     SELECT
@@ -198,9 +152,6 @@ SELECT * FROM (
     SETTINGS enable_group_by_top_k_optimization = 0
 ) ORDER BY x, y ASC;
 
--- =====================
--- Nullable key with NULLS FIRST (ASC): NULLs should appear before non-NULL values.
--- =====================
 SELECT 'nullable_nulls_first_asc';
 SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS FIRST LIMIT 5
@@ -210,9 +161,6 @@ SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS FIRST LIMIT 5
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Nullable key with NULLS LAST (ASC): NULLs should appear after all non-NULL values.
--- =====================
 SELECT 'nullable_nulls_last_asc';
 SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS LAST LIMIT 5
@@ -222,9 +170,6 @@ SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS LAST LIMIT 5
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Nullable key with NULLS FIRST (DESC): NULLs should appear before non-NULL values.
--- =====================
 SELECT 'nullable_nulls_first_desc';
 SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS FIRST LIMIT 5
@@ -234,9 +179,6 @@ SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS FIRST LIMIT 5
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Nullable key with NULLS LAST (DESC): NULLs should appear after all non-NULL values.
--- =====================
 SELECT 'nullable_nulls_last_desc';
 SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS LAST LIMIT 5
@@ -246,9 +188,6 @@ SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS LAST LIMIT 5
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Composite key with NULLS FIRST: GROUP BY a, d ORDER BY a, d ASC NULLS FIRST LIMIT N
--- =====================
 SELECT 'composite_nullable_nulls_first';
 SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS FIRST LIMIT 10
@@ -258,9 +197,6 @@ SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS FIRST LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- =====================
--- Composite key with NULLS LAST: GROUP BY a, d ORDER BY a, d ASC NULLS LAST LIMIT N
--- =====================
 SELECT 'composite_nullable_nulls_last';
 SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST LIMIT 10
@@ -272,7 +208,6 @@ SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit_comp;
 
--- Guard against the environment silently disabling the optimization (e.g. via a
--- profile setting), which would degrade the comparisons above to off-vs-off.
+-- Guard against the environment silently disabling the optimization.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';
