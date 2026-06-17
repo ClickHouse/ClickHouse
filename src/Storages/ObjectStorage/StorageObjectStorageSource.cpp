@@ -12,6 +12,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageParallelListingIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ParallelListingGlobPredicate.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -1277,85 +1278,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     }
 
     return impl;
-}
-
-namespace
-{
-
-/// Splits a path into its non-empty components separated by '/'.
-std::vector<std::string> splitPathComponents(const std::string & path)
-{
-    std::vector<std::string> parts;
-    size_t pos = 0;
-    while (pos < path.size())
-    {
-        size_t next = path.find('/', pos);
-        if (next == std::string::npos)
-            next = path.size();
-        if (next > pos)
-            parts.emplace_back(path.substr(pos, next - pos));
-        pos = next + 1;
-    }
-    return parts;
-}
-
-/// Builds the predicate used by the parallel listing walk to decide whether a discovered
-/// "directory" (a common prefix, always ending with '/') can possibly contain a key matching
-/// `glob_path`, so that whole non-matching subtrees are pruned instead of listed.
-///
-/// Each '/'-separated glob segment is compiled into a matcher for a single path component (glob
-/// wildcards '*'/'?' never cross '/'). A directory at depth d is descended into iff each of its d
-/// components matches the corresponding glob segment and there is room below it for the file-name
-/// segment (d < number of glob segments).
-///
-/// The predicate is intentionally conservative: it returns `true` whenever it cannot be sure a
-/// directory is irrelevant (e.g. a '{...}' selector that spans a '/'), because the per-file regexp
-/// `FullMatch` in `nextUnlocked` still guarantees that only truly matching keys are emitted.
-/// `glob_path` must not contain the recursive wildcard "**".
-std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::string & glob_path)
-{
-    auto glob_segments = splitPathComponents(glob_path);
-
-    /// If a '{...}' selector spans a '/', the per-component split is not meaningful: descend always.
-    for (const auto & segment : glob_segments)
-    {
-        if (std::count(segment.begin(), segment.end(), '{') != std::count(segment.begin(), segment.end(), '}'))
-            return [](const std::string &) { return true; };
-    }
-
-    if (glob_segments.empty())
-        return [](const std::string &) { return true; };
-
-    auto segment_matchers = std::make_shared<std::vector<std::shared_ptr<const re2::RE2>>>();
-    segment_matchers->reserve(glob_segments.size());
-    for (const auto & segment : glob_segments)
-    {
-        auto re = std::make_shared<const re2::RE2>(makeRegexpPatternFromGlobs(segment));
-        if (!re->ok())
-            return [](const std::string &) { return true; };
-        segment_matchers->push_back(std::move(re));
-    }
-
-    const size_t num_segments = glob_segments.size();
-    return [segment_matchers, num_segments](const std::string & common_prefix) -> bool
-    {
-        auto components = splitPathComponents(common_prefix);
-        const size_t depth = components.size();
-
-        /// Files under a directory at `depth` levels have at least `depth + 1` components, while a
-        /// matching key has exactly `num_segments` components; so there must be room below.
-        if (depth >= num_segments)
-            return false;
-
-        for (size_t i = 0; i < depth; ++i)
-        {
-            if (!re2::RE2::FullMatch(components[i], *(*segment_matchers)[i]))
-                return false;
-        }
-        return true;
-    };
-}
-
 }
 
 StorageObjectStorageSource::GlobIterator::GlobIterator(

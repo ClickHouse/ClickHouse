@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageParallelListingIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ParallelListingGlobPredicate.h>
+#include <Common/parseGlobs.h>
+#include <Common/re2.h>
 
 #include <atomic>
 #include <algorithm>
@@ -302,6 +305,50 @@ TEST(ObjectStorageParallelListing, Pruning)
     auto got = drain(iterator);
     std::sort(got.begin(), got.end());
     EXPECT_EQ(got, expectedUnder(s3, "root/keep/"));
+}
+
+TEST(ObjectStorageParallelListing, DirectoryMarkerMatchesTrailingSlashGlob)
+{
+    /// A "directory marker" object whose key itself ends with '/' (e.g. `root/dir/`, as created by some
+    /// S3 tools). For glob `root/*/` the serial iterator returns the marker (the full regexp matches it),
+    /// so the parallel walk driven by the real `makeShouldDescendPredicate` must surface it too: S3 returns
+    /// `root/dir/` only as a `CommonPrefixes` entry when listing `root/`, and as a `Contents` entry when its
+    /// own prefix is listed, so the predicate must descend into a common prefix that is itself a match.
+    FakeS3 s3;
+    s3.page_size = 100;
+    s3.add("root/dir/");           /// directory-marker object that matches `root/*/`
+    s3.add("root/dir/file.csv");   /// a regular file below it (does not match `root/*/`)
+    s3.add("root/dir2/");          /// another matching marker
+    s3.add("root/other/x.csv");    /// a sibling directory with no marker (does not match)
+    s3.finalize();
+
+    const std::string glob = "root/*/";
+    const re2::RE2 matcher(makeRegexpPatternFromGlobs(glob));
+    ASSERT_TRUE(matcher.ok());
+
+    /// What serial listing yields: every key under the prefix that the full glob regexp accepts.
+    std::vector<std::string> expected;
+    for (const auto & key : s3.keys)
+        if (re2::RE2::FullMatch(key, matcher))
+            expected.push_back(key);
+    std::sort(expected.begin(), expected.end());
+    ASSERT_EQ(expected, (std::vector<std::string>{"root/dir/", "root/dir2/"}));
+
+    for (size_t threads : {1, 2, 4, 16, 64})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "root/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeShouldDescendPredicate(glob));
+        auto listed = drain(iterator);
+
+        /// The walk may legitimately emit extra non-matching keys (the downstream per-file matcher drops
+        /// them); the invariant is that every glob-matching key is produced exactly once.
+        std::vector<std::string> matched;
+        for (const auto & key : listed)
+            if (re2::RE2::FullMatch(key, matcher))
+                matched.push_back(key);
+        std::sort(matched.begin(), matched.end());
+        EXPECT_EQ(matched, expected) << "threads=" << threads;
+    }
 }
 
 TEST(ObjectStorageParallelListing, ExceptionPropagates)
