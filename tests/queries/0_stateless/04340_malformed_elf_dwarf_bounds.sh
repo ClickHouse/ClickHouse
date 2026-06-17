@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # no-fasttest: the DWARF format requires the DWARF parser, which is not built in fasttest.
+# no-msan: the DWARF input format is not built under MSan (LLVM, which the DWARF parser depends on, is excluded from MSan builds), so the format is unknown there.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
