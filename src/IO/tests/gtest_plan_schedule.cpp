@@ -311,7 +311,7 @@ TEST(PlanScheduleRetrieves, BridgedEmbeddedHitStaysRemoteOverRead)
 }
 
 /// A user range resident in a SLOWER tier is promoted up into the faster tier
-/// that misses it (HandedRope, no remote).
+/// that misses it (HandedChain, no remote).
 TEST(PlanScheduleRetrieves, PromoteFromSlowerTier)
 {
     auto g = geometry(0, 8, {
@@ -320,10 +320,10 @@ TEST(PlanScheduleRetrieves, PromoteFromSlowerTier)
     });
     auto s = describe(g, {0, 8});  // request [0,8), served from fs, promoted to page
 
-    // No remote retrieve (fully resident in fs); one HandedRope promote into page.
+    // No remote retrieve (fully resident in fs); one HandedChain promote into page.
     size_t promotes = 0;
     for (const auto & r : s.retrieves)
-        if (r.source == PlanSchedule::Source::HandedRope)
+        if (r.source == PlanSchedule::Source::HandedChain)
         {
             ++promotes;
             EXPECT_EQ(r.upper_source_tier, CacheTier::FilesystemCache);

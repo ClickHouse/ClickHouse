@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 
-PageCacheRopeBuffer::PageCacheRopeBuffer(PageCache::MappedPtr cell_)
+PageCacheChainedBuffer::PageCacheChainedBuffer(PageCache::MappedPtr cell_)
     : cell(std::move(cell_))
 {
 }
@@ -26,9 +26,9 @@ PageCacheReader::PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracki
 {
 }
 
-Rope PageCacheReader::read(ByteRange sub)
+ChainedBuffers PageCacheReader::read(ByteRange sub)
 {
-    Rope result;
+    ChainedBuffers result;
 
     /// Clamp `sub` to this buffer's own range: a `read` outside `range_member`
     /// would otherwise reach into a neighbouring hit's cells.
@@ -55,8 +55,8 @@ Rope PageCacheReader::read(ByteRange sub)
         size_t offset_in_cell = overlap_start - block_range.offset;
         size_t overlap_size = overlap_end - overlap_start;
 
-        auto buf = std::make_shared<PageCacheRopeBuffer>(held.cell);
-        result.append(RopeNode{std::move(buf), offset_in_cell, overlap_size, overlap_start});
+        auto buf = std::make_shared<PageCacheChainedBuffer>(held.cell);
+        result.append(ChainedBufferNode{std::move(buf), offset_in_cell, overlap_size, overlap_start});
     }
     return result;
 }
@@ -85,7 +85,7 @@ bool PageCacheWriter::complete() const
     return committed_ranges.subtract(range_member).empty();
 }
 
-size_t PageCacheWriter::write(Rope data)
+size_t PageCacheWriter::write(ChainedBuffers data)
 {
     /// A bypass tier populates nothing - skip before any `getOrSet`.
     if (bypass_if_missing)
@@ -126,7 +126,7 @@ size_t PageCacheWriter::write(Rope data)
                 /// The cell expects block-relative layout: data must start at
                 /// the block boundary and have no internal gaps. Partial-at-end
                 /// (EOF) is fine.
-                Rope slice = data.slice(block_range);
+                ChainedBuffers slice = data.slice(block_range);
                 ByteRange covered = slice.range();
                 size_t pos = covered.size;
                 if (pos > 0)
@@ -180,9 +180,9 @@ size_t PageCacheWriter::write(Rope data)
     return bytes_written;
 }
 
-Rope PageCacheWriter::read(ByteRange sub)
+ChainedBuffers PageCacheWriter::read(ByteRange sub)
 {
-    Rope result;
+    ChainedBuffers result;
 
     /// Clamp to this buffer's range (its adopted cells only back `range_member`).
     {
@@ -208,8 +208,8 @@ Rope PageCacheWriter::read(ByteRange sub)
         size_t offset_in_cell = overlap_start - block_range.offset;
         size_t overlap_size = overlap_end - overlap_start;
 
-        auto buf = std::make_shared<PageCacheRopeBuffer>(block.cell);
-        result.append(RopeNode{std::move(buf), offset_in_cell, overlap_size, overlap_start});
+        auto buf = std::make_shared<PageCacheChainedBuffer>(block.cell);
+        result.append(ChainedBufferNode{std::move(buf), offset_in_cell, overlap_size, overlap_start});
     }
     return result;
 }

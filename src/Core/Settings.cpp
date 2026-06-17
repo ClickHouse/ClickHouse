@@ -760,7 +760,7 @@ Use the `ReaderExecutor`-based read pipeline instead of the matryoshka `ReadBuff
     DECLARE(UInt64, reader_executor_window_size, 8388608, R"(
 Read-ahead window size for the experimental `ReaderExecutor` (`use_reader_executor`) at normal memory pressure.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_block_size, 1048576, R"(
-Rope-node / block size for the experimental `ReaderExecutor`; also the window used for live and local reads.)", EXPERIMENTAL) \
+Chained-buffer node / block size for the experimental `ReaderExecutor`; also the window used for live and local reads.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_min_bytes_for_seek, 2097152, R"(
 Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is skipped on the open source connection (bridged / read through) instead of issuing a separate source read or reopening. Set near the bandwidth/request cost breakeven so bridging stays cost-positive.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_max_tail_for_drain, 1048576, R"(

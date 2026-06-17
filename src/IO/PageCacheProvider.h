@@ -9,17 +9,16 @@
 namespace DB
 {
 
-/// RopeBuffer backed by a PageCache cell. Zero-copy: the shared_ptr pins the
+/// ChainedBuffer backed by a PageCache cell. Zero-copy: the shared_ptr pins the
 /// cell, and data() points directly into the cache's mmap arena.
-class PageCacheRopeBuffer : public RopeBuffer
+class PageCacheChainedBuffer : public ChainedBuffer
 {
 public:
-    explicit PageCacheRopeBuffer(PageCache::MappedPtr cell_);
+    explicit PageCacheChainedBuffer(PageCache::MappedPtr cell_);
 
     char * data() override { return cell->data(); }
     const char * data() const override { return cell->data(); }
     size_t size() const override { return cell->size(); }
-    void transferTo(MemoryTracker * /* new_tracker */) override {}
 
 private:
     PageCache::MappedPtr cell;
@@ -44,7 +43,7 @@ public:
 
     ByteRange range() const override { return range_member; }
     size_t readable() const override { return range_member.end(); }
-    Rope read(ByteRange sub) override;
+    ChainedBuffers read(ByteRange sub) override;
 
 private:
     ByteRange range_member;
@@ -71,8 +70,8 @@ public:
     ByteRange range() const override { return range_member; }
     const IntervalSet & committed() const override { return committed_ranges; }
     bool complete() const override;
-    size_t write(Rope data) override;
-    Rope read(ByteRange sub) override;
+    size_t write(ChainedBuffers data) override;
+    ChainedBuffers read(ByteRange sub) override;
 
 private:
     struct AdoptedBlock

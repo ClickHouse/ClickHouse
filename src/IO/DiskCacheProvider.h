@@ -67,7 +67,7 @@ public:
 
     ByteRange range() const override { return hit_range; }
     size_t readable() const override;
-    Rope read(ByteRange sub) override;
+    ChainedBuffers read(ByteRange sub) override;
 
 private:
     std::shared_ptr<FileSegmentsHolder> holder;
@@ -100,8 +100,8 @@ public:
     ByteRange range() const override { return aligned_range; }
     const IntervalSet & committed() const override { return committed_ranges; }
     bool complete() const override;
-    size_t write(Rope data) override;
-    Rope read(ByteRange sub) override;
+    size_t write(ChainedBuffers data) override;
+    ChainedBuffers read(ByteRange sub) override;
     CacheWriter::CacheSegmentPin pin(size_t frontier) const override;
 
 private:

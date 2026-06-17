@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/CoverageMap.h>
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <IO/ICacheProvider.h>
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -27,7 +27,7 @@ struct PlanSchedule
     {
         Remote,          /// a source connection (may bridge small resident holes)
         UpperCacheRead,  /// read a FillOnly range from a faster resident tier, no remote
-        HandedRope,      /// promote: bytes already in hand (the served rope), written up
+        HandedChain,      /// promote: bytes already in hand (the served chain), written up
     };
 
     /// The typed decomposition of the fill region (purpose x residency), one
@@ -59,8 +59,8 @@ struct PlanSchedule
         ByteRange range;                              /// physical, plan coords
         Source source = Source::Remote;
         /// The tier the bytes are read from, for the non-`Remote` sources:
-        /// `UpperCacheRead` reads its `range` from this tier; `HandedRope`
-        /// records the tier the served rope came from.
+        /// `UpperCacheRead` reads its `range` from this tier; `HandedChain`
+        /// records the tier the served chain came from.
         CacheTier upper_source_tier{};
         VectorWithMemoryTracking<WriteTarget> into;   /// cells to populate
         bool retain_for_serve = false;                /// User range vs FillOnly

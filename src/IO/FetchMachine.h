@@ -40,7 +40,7 @@ enum class StepResult : uint8_t
 /// The protocol half of a fetch machine - everything the runner needs to
 /// schedule, revoke, interrupt and join one, with no knowledge of what the
 /// steps do. `ReaderExecutor::FetchMachine` inherits this and adds the payload
-/// (connection cluster, fetched rope, job-local stats, ...).
+/// (connection cluster, fetched chain, job-local stats, ...).
 struct MachineBase
 {
     virtual ~MachineBase() = default;

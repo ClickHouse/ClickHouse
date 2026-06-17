@@ -8,7 +8,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/ReadSettings.h>
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <IO/PageCacheProvider.h>
 #include <Core/Defines.h>
 #include <Common/PageCache.h>
@@ -119,7 +119,7 @@ namespace
 
 /// Mock pool that runs every submitted job synchronously on the calling
 /// thread and returns a `Done`-state handle (the machine then holds the
-/// produced rope). Eliminates worker-thread timing from prefetch-related tests.
+/// produced chain). Eliminates worker-thread timing from prefetch-related tests.
 class SyncPrefetchPool : public PrefetchThreadPool
 {
 public:
@@ -189,13 +189,13 @@ TEST(ReaderExecutor, ReadSingleObjectNoCaches)
     executor_options.window_size = 512;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
-    auto rope = executor.readNextWindow();
-    EXPECT_FALSE(rope.empty());
-    EXPECT_EQ(rope.range().offset, 0);
-    EXPECT_EQ(rope.range().size, 512);
+    auto chain = executor.readNextWindow();
+    EXPECT_FALSE(chain.empty());
+    EXPECT_EQ(chain.range().offset, 0);
+    EXPECT_EQ(chain.range().size, 512);
 
     size_t total = 0;
-    for (const auto & node : rope.getNodes())
+    for (const auto & node : chain.getNodes())
     {
         for (size_t i = 0; i < node.size; ++i)
             EXPECT_EQ(node.data()[i], 'A');
@@ -227,12 +227,12 @@ TEST(ReaderExecutor, ReadMultiObject)
     executor_options.window_size = 400;
     ReaderExecutor executor(source, objects, {}, executor_options);
 
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().offset, 0);
-    EXPECT_EQ(rope.range().size, 400);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().offset, 0);
+    EXPECT_EQ(chain.range().size, 400);
 
     size_t pos = 0;
-    for (const auto & node : rope.getNodes())
+    for (const auto & node : chain.getNodes())
     {
         for (size_t i = 0; i < node.size; ++i)
         {
@@ -259,10 +259,10 @@ TEST(ReaderExecutor, Seek)
     ReaderExecutor executor(source, objects, {}, executor_options);
 
     executor.seek(500);
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().offset, 500);
-    EXPECT_EQ(rope.range().size, 100);
-    EXPECT_EQ(rope.getNodes()[0].data()[0], 'Z');
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().offset, 500);
+    EXPECT_EQ(chain.range().size, 100);
+    EXPECT_EQ(chain.getNodes()[0].data()[0], 'Z');
 }
 
 namespace
@@ -295,9 +295,9 @@ public:
     ByteRange range() const override { return range_member; }
     size_t readable() const override { return range_member.end(); }
 
-    Rope read(ByteRange sub) override
+    ChainedBuffers read(ByteRange sub) override
     {
-        Rope result;
+        ChainedBuffers result;
         const size_t lo = std::max(sub.offset, range_member.offset);
         const size_t hi = std::min(sub.end(), range_member.end());
         if (lo >= hi)
@@ -311,11 +311,11 @@ public:
             if (it == storage.end())
                 continue;
             const auto & data = it->second;
-            auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
+            auto buf = std::make_shared<OwnedChainedBuffer>(data.size());
             std::memcpy(buf->data(), data.data(), data.size());
-            Rope block_rope;
-            block_rope.append(RopeNode{buf, 0, data.size(), b * block_size});
-            result.append(block_rope.slice(ByteRange{lo, hi - lo}));
+            ChainedBuffers block_chain;
+            block_chain.append(ChainedBufferNode{buf, 0, data.size(), b * block_size});
+            result.append(block_chain.slice(ByteRange{lo, hi - lo}));
         }
         return result;
     }
@@ -341,7 +341,7 @@ public:
     const IntervalSet & committed() const override { return committed_ranges; }
     bool complete() const override { return committed_ranges.subtract(range_member).empty(); }
 
-    size_t write(Rope data) override
+    size_t write(ChainedBuffers data) override
     {
         size_t bytes_written = 0;
         for (size_t offset = range_member.offset; offset < range_member.end(); offset += block_size)
@@ -358,7 +358,7 @@ public:
 
             if (!storage.contains(b))
             {
-                Rope slice = data.slice(block_range);
+                ChainedBuffers slice = data.slice(block_range);
                 String content;
                 content.resize(slice.totalBytes());
                 slice.copyTo(content.data(), block_range);
@@ -371,9 +371,9 @@ public:
         return bytes_written;
     }
 
-    Rope read(ByteRange sub) override
+    ChainedBuffers read(ByteRange sub) override
     {
-        Rope result;
+        ChainedBuffers result;
         const size_t lo = std::max(sub.offset, range_member.offset);
         const size_t hi = std::min(sub.end(), range_member.end());
         if (lo >= hi)
@@ -387,11 +387,11 @@ public:
             if (it == storage.end())
                 continue;
             const auto & data = it->second;
-            auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
+            auto buf = std::make_shared<OwnedChainedBuffer>(data.size());
             std::memcpy(buf->data(), data.data(), data.size());
-            Rope block_rope;
-            block_rope.append(RopeNode{buf, 0, data.size(), b * block_size});
-            result.append(block_rope.slice(ByteRange{lo, hi - lo}));
+            ChainedBuffers block_chain;
+            block_chain.append(ChainedBufferNode{buf, 0, data.size(), b * block_size});
+            result.append(block_chain.slice(ByteRange{lo, hi - lo}));
         }
         return result;
     }
@@ -494,8 +494,8 @@ TEST(ReaderExecutor, CacheMissPopulatesCache)
     ReaderExecutor executor(source, objects, {cache}, executor_options);
 
     /// First read: miss, fetches from source, populates cache
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().size, 512);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().size, 512);
     EXPECT_TRUE(cache->hasBlock(0));
 
     /// Second read
@@ -531,11 +531,11 @@ TEST(ReaderExecutor, CacheHitSkipsSource)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 512;
     ReaderExecutor executor(alt_source, objects, {cache}, executor_options);
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().size, 512);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().size, 512);
 
     /// Should have gotten 'S' from cache, not 'Z' from alt_source
-    EXPECT_EQ(rope.getNodes()[0].data()[0], 'S');
+    EXPECT_EQ(chain.getNodes()[0].data()[0], 'S');
 }
 
 TEST(ReaderExecutor, PrefetchTriggersOnReadNextWindow)
@@ -602,10 +602,10 @@ TEST(ReaderExecutor, PrefetchBoxRoundTripServesAllBytes)
 
         while (true)
         {
-            auto rope = executor.readNextWindow();
-            if (rope.empty())
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
                 break;
-            for (const auto & node : rope.getNodes())
+            for (const auto & node : chain.getNodes())
                 result.append(node.data(), node.size);
             /// The cluster lives in exactly one place (foreground or the in-flight job),
             /// so at most one connection slot is ever active - never two.
@@ -621,15 +621,15 @@ TEST(ReaderExecutor, SeekInsidePrefetchedWindow)
     /// After the first window read, a prefetch is in flight for [500, 1000).
     /// Seeking to 750 (inside the prefetched range) must:
     ///   - leave executor.getPosition() == 750 (not 500), and
-    ///   - cause the next readNextWindow to return a rope starting at logical 750
+    ///   - cause the next readNextWindow to return a chain starting at logical 750
     ///     with content matching the source at offset 750.
     ///
     /// The returned size depends on which branch the executor takes:
-    ///   - Wait branch (worker already running): rope is the prefetched [500, 1000)
+    ///   - Wait branch (worker already running): chain is the prefetched [500, 1000)
     ///     sliced to [750, 1000) - size 250, or less when the takeover interrupted
     ///     the worker mid-window and a shorter prefix past 750 was served.
     ///   - Cancel branch (worker hadn't started): a fresh window from position 750
-    ///     of size min(window_size, file_size - 750), so the rope spans [750, 1250).
+    ///     of size min(window_size, file_size - 750), so the chain spans [750, 1250).
     /// All are valid outcomes and the test accepts any.
 
     String content(2000, 0);
@@ -722,9 +722,9 @@ TEST(ReaderExecutor, SeekTriggersPrefetch)
         << "seek must trigger a new prefetch when prefetch_pool is set";
 
     /// And the prefetched data is the one we actually consume next.
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().offset, 2500u);
-    EXPECT_EQ(rope.range().size, 500u);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().offset, 2500u);
+    EXPECT_EQ(chain.range().size, 500u);
 }
 
 TEST(ReaderExecutor, SeekWithoutPoolDoesNotCrash)
@@ -746,8 +746,8 @@ TEST(ReaderExecutor, SeekWithoutPoolDoesNotCrash)
     executor.seek(400);
     EXPECT_FALSE(executor.hasInflightPrefetch());
 
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().offset, 400u);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().offset, 400u);
 }
 
 TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
@@ -778,8 +778,8 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
         executor_options.long_connection_limit = limit;
         ReaderExecutor executor(source, objects, {}, executor_options);
 
-        Rope rope = executor.readNextWindow();   // synchronous full-window read, then schedules a prefetch
-        return {rope.range().size, executor.hasInflightPrefetch(), executor.inflightPrefetchSize()};
+        ChainedBuffers chain = executor.readNextWindow();   // synchronous full-window read, then schedules a prefetch
+        return {chain.range().size, executor.hasInflightPrefetch(), executor.inflightPrefetchSize()};
     };
 
     const Reading normal = measure(0.50);
@@ -954,13 +954,13 @@ TEST(ReaderExecutor, DecryptInPlaceAcrossMultipleNodes)
 {
     /// End-to-end exercise of `decryptInPlace` over a multi-node window: the
     /// executor returns ciphertext (logical offsets) and the consumer decrypts
-    /// each served node. Plaintext is larger than ROPE_BLOCK_SIZE (and a
+    /// each served node. Plaintext is larger than CHAINED_BUFFER_BLOCK_SIZE (and a
     /// non-multiple total) so several nodes, including a partial tail, are decrypted.
 
     String key(16, 'k');
     FileEncryption::InitVector iv(UInt128{0x0123456789abcdefULL});
 
-    const size_t plaintext_size = ReaderExecutor::ROPE_BLOCK_SIZE * 3 + 12345;
+    const size_t plaintext_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE * 3 + 12345;
     String plaintext(plaintext_size, '\0');
     for (size_t i = 0; i < plaintext_size; ++i)
         plaintext[i] = static_cast<char>((i * 31 + 7) & 0xFF);  /// distinguishable
@@ -976,7 +976,7 @@ TEST(ReaderExecutor, DecryptInPlaceAcrossMultipleNodes)
     /// readNextWindow call — the >3 MiB ciphertext is served as several nodes,
     /// each decrypted by decryptInPlace (3 full blocks + 1 partial).
     ReaderExecutor::Options executor_options;
-    executor_options.window_size = plaintext_size + ReaderExecutor::ROPE_BLOCK_SIZE;
+    executor_options.window_size = plaintext_size + ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
     ReaderExecutor executor(source, objects, {}, executor_options);
     executor.addDecryptionLayer(
         "/test", 0,
@@ -1035,7 +1035,7 @@ TEST(ReaderExecutor, EncryptedEofReleasesLongConnectionSlot)
 
 TEST(ReaderExecutor, DecryptInPlaceSmallPayload)
 {
-    /// Same path but payload smaller than ROPE_BLOCK_SIZE — exercises the
+    /// Same path but payload smaller than CHAINED_BUFFER_BLOCK_SIZE — exercises the
     /// single-iteration loop.
 
     String key(16, 'q');
@@ -1078,7 +1078,7 @@ TEST(ReaderExecutor, DecryptInPlaceMultiLayer)
     FileEncryption::InitVector iv_inner(UInt128{1});
     FileEncryption::InitVector iv_outer(UInt128{2});
 
-    const String plaintext(ReaderExecutor::ROPE_BLOCK_SIZE + 500, 'X');
+    const String plaintext(ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE + 500, 'X');
 
     /// 1. Serialize the inner header bytes.
     String inner_h_bytes;
@@ -1236,13 +1236,13 @@ TEST(ReaderExecutor, CacheHitBetweenColdGapsNoDuplicateCoverage)
 
     /// Drain to EOF: the plan serves the run at the cursor (gap or resident) one
     /// call at a time.
-    Rope assembled;
+    ChainedBuffers assembled;
     while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.empty())
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
             break;
-        assembled.append(std::move(rope));
+        assembled.append(std::move(chain));
     }
 
     EXPECT_EQ(assembled.range().offset, 0u);
@@ -1322,8 +1322,8 @@ TEST(ReaderExecutor, DestructorTolerantOfThrowingPrefetch)
 
         /// First sync read consumes the 1st open() and primes maybeTriggerPrefetch,
         /// which submits a task whose 2nd open() will throw on the pool thread.
-        auto rope = executor.readNextWindow();
-        ASSERT_FALSE(rope.empty());
+        auto chain = executor.readNextWindow();
+        ASSERT_FALSE(chain.empty());
 
         /// executor's destructor must drain the throwing future without terminating.
     }
@@ -1375,7 +1375,7 @@ TEST(ReaderExecutor, LocalReadUsesFullWindow)
     /// stateless path. Like stateless remote reads, they keep the full window
     /// (not a single block) so one open amortises its setup over a window
     /// instead of reopening the source per block.
-    constexpr size_t file_size = 2 * ReaderExecutor::ROPE_BLOCK_SIZE;
+    constexpr size_t file_size = 2 * ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
     String content(file_size, 'L');
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", content}});
@@ -1389,13 +1389,13 @@ TEST(ReaderExecutor, LocalReadUsesFullWindow)
     ASSERT_FALSE(w.empty());
     EXPECT_EQ(w.range().size, file_size)
         << "local read must keep the full window (whole 2 MiB file), not shrink to one block";
-    EXPECT_EQ(w.getNodes().size(), file_size / ReaderExecutor::ROPE_BLOCK_SIZE)
-        << "the window is split into block-sized rope nodes";
+    EXPECT_EQ(w.getNodes().size(), file_size / ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE)
+        << "the window is split into block-sized chain nodes";
 }
 
 TEST(ReaderExecutor, ConfiguredBlockSizeControlsNodeSize)
 {
-    /// A stateless (local) read keeps the full window but splits it into rope
+    /// A stateless (local) read keeps the full window but splits it into chain
     /// nodes of the configured block size. With a non-default block size the
     /// window still spans the whole file, while each node is one configured
     /// block - proving `block_size` drives the node granularity and
@@ -1420,7 +1420,7 @@ TEST(ReaderExecutor, ConfiguredBlockSizeControlsNodeSize)
     EXPECT_EQ(w.range().size, file_size)
         << "window must span the whole file, not be capped at the 256 KiB block";
     EXPECT_EQ(w.getNodes().size(), file_size / configured_block)
-        << "the window is split into configured-block-sized rope nodes";
+        << "the window is split into configured-block-sized chain nodes";
 }
 
 TEST(ReaderExecutor, ConsumePathCancelledPrefetchIsStashedForDrain)
@@ -1642,16 +1642,16 @@ public:
         return std::min(committed_end, hit_range.end());
     }
 
-    Rope read(ByteRange sub) override
+    ChainedBuffers read(ByteRange sub) override
     {
-        Rope result;
+        ChainedBuffers result;
         const size_t lo = std::max(sub.offset, hit_range.offset);
         const size_t hi = std::min({sub.end(), hit_range.end(), readable()});
         if (lo >= hi)
             return result;
-        auto buf = std::make_shared<OwnedRopeBuffer>(hi - lo);
+        auto buf = std::make_shared<OwnedChainedBuffer>(hi - lo);
         std::memset(buf->data(), 'D', hi - lo);
-        result.append(RopeNode{buf, 0, hi - lo, lo});
+        result.append(ChainedBufferNode{buf, 0, hi - lo, lo});
         return result;
     }
 
@@ -1676,7 +1676,7 @@ public:
     const IntervalSet & committed() const override { return committed_ranges; }
     bool complete() const override { return committed_ranges.subtract(aligned_range).empty(); }
 
-    size_t write(Rope data) override
+    size_t write(ChainedBuffers data) override
     {
         const size_t seg = cache.segmentSize();
         const size_t seg_start = seg_idx * seg;
@@ -1708,9 +1708,9 @@ public:
         return contiguous;
     }
 
-    Rope read(ByteRange sub) override
+    ChainedBuffers read(ByteRange sub) override
     {
-        Rope result;
+        ChainedBuffers result;
         const size_t seg = cache.segmentSize();
         const size_t seg_start = seg_idx * seg;
         const size_t dl = cache.downloaded.contains(seg_idx) ? cache.downloaded[seg_idx] : 0;
@@ -1719,9 +1719,9 @@ public:
         const size_t hi = std::min({sub.end(), aligned_range.end(), committed_end});
         if (lo >= hi)
             return result;
-        auto buf = std::make_shared<OwnedRopeBuffer>(hi - lo);
+        auto buf = std::make_shared<OwnedChainedBuffer>(hi - lo);
         std::memset(buf->data(), 'D', hi - lo);
-        result.append(RopeNode{buf, 0, hi - lo, lo});
+        result.append(ChainedBufferNode{buf, 0, hi - lo, lo});
         return result;
     }
 
@@ -1829,9 +1829,9 @@ TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     String result;
-    auto consume = [&](Rope rope)
+    auto consume = [&](ChainedBuffers chain)
     {
-        for (const auto & node : rope.getNodes())
+        for (const auto & node : chain.getNodes())
             result.append(node.data(), node.size);
     };
 
@@ -1847,10 +1847,10 @@ TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
     /// Drain the rest sequentially.
     while (true)
     {
-        auto rope = executor->readNextWindow();
-        if (rope.empty())
+        auto chain = executor->readNextWindow();
+        if (chain.empty())
             break;
-        consume(std::move(rope));
+        consume(std::move(chain));
     }
 
     EXPECT_EQ(result, content);   /// no corruption / no missing bytes
@@ -1892,9 +1892,9 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     String result;
-    auto consume = [&](Rope rope)
+    auto consume = [&](ChainedBuffers chain)
     {
-        for (const auto & node : rope.getNodes())
+        for (const auto & node : chain.getNodes())
             result.append(node.data(), node.size);
     };
 
@@ -1916,10 +1916,10 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     /// Finish and verify no corruption.
     while (true)
     {
-        auto rope = executor->readNextWindow();
-        if (rope.empty())
+        auto chain = executor->readNextWindow();
+        if (chain.empty())
             break;
-        consume(std::move(rope));
+        consume(std::move(chain));
     }
     EXPECT_EQ(result, content);
 }
@@ -1952,10 +1952,10 @@ TEST(ReaderExecutor, PinReleasedOnSeek)
     EXPECT_EQ((cache->downloaded.contains(0) ? cache->downloaded[0] : 0u), 0u)
         << "pin should be released on seek, allowing eviction of segment 0";
 
-    auto rope = executor.readNextWindow();                /// [5000,6000)
-    ASSERT_FALSE(rope.empty());
+    auto chain = executor.readNextWindow();                /// [5000,6000)
+    ASSERT_FALSE(chain.empty());
     String got;
-    for (const auto & node : rope.getNodes())
+    for (const auto & node : chain.getNodes())
         got.append(node.data(), node.size);
     EXPECT_EQ(got, content.substr(5000, got.size()));
 }
@@ -1979,10 +1979,10 @@ TEST(ReaderExecutor, PutFailedTakesNoPin)
     executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
     ReaderExecutor executor(source, objects, caches, executor_options);
 
-    auto rope = executor.readNextWindow();   /// [0,1000)
-    ASSERT_FALSE(rope.empty());
+    auto chain = executor.readNextWindow();   /// [0,1000)
+    ASSERT_FALSE(chain.empty());
     String got;
-    for (const auto & node : rope.getNodes())
+    for (const auto & node : chain.getNodes())
         got.append(node.data(), node.size);
     EXPECT_EQ(got, content.substr(0, got.size()));   /// data still correct from source
     EXPECT_FALSE(cache->liveness.contains(0));        /// nothing downloaded -> no pin token
@@ -2006,8 +2006,8 @@ TEST(ReaderExecutor, TransientReadDoesNotPin)
     ReaderExecutor executor(source, objects, caches, executor_options);
     auto transient = executor.makeTransientForReadAt(0, /*read_size=*/4000);
     ASSERT_TRUE(transient != nullptr);
-    auto rope = transient->readNextWindow();
-    ASSERT_FALSE(rope.empty());
+    auto chain = transient->readNextWindow();
+    ASSERT_FALSE(chain.empty());
 
     /// A `readBigAt` transient does not pin its in-flight segment (it reads its
     /// bounded extent once and is destroyed, so protecting a partial segment serves
@@ -2127,10 +2127,10 @@ TEST(ReaderExecutor, ReadBigAtBoundsConnectionToRequest)
     size_t total = 0;
     while (total < want)
     {
-        auto rope = transient->readNextWindow();
-        if (rope.empty())
+        auto chain = transient->readNextWindow();
+        if (chain.empty())
             break;
-        total += rope.range().size;
+        total += chain.range().size;
     }
 
     EXPECT_EQ(total, want) << "the transient reads exactly the requested extent";
@@ -2182,10 +2182,10 @@ TEST(ReaderExecutor, ReadBigAtBoundsLongConnectionOnEncryptedFile)
     String got;
     while (total < want)
     {
-        auto rope = transient->readNextWindow();
-        if (rope.empty())
+        auto chain = transient->readNextWindow();
+        if (chain.empty())
             break;
-        for (const auto & n : rope.getNodes())
+        for (const auto & n : chain.getNodes())
         {
             String chunk(n.data(), n.size);
             if (transient->needsDecryption())
@@ -2233,10 +2233,10 @@ TEST(ReaderExecutor, ReadBigAtBoundsLongConnectionToObjectEndAcrossBoundary)
     size_t total = 0;
     while (total < want)
     {
-        auto rope = transient->readNextWindow();
-        if (rope.empty())
+        auto chain = transient->readNextWindow();
+        if (chain.empty())
             break;
-        total += rope.range().size;
+        total += chain.range().size;
     }
 
     EXPECT_EQ(total, want);
@@ -2276,10 +2276,10 @@ TEST(ReaderExecutor, UnknownSizeStatelessReaderBoundsOneShotToExtent)
     size_t total = 0;
     while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.empty())
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
             break;
-        total += rope.range().size;
+        total += chain.range().size;
     }
 
     EXPECT_EQ(total, extent) << "the unknown-size stateless reader stops at the advertised extent";
@@ -2312,8 +2312,8 @@ TEST(ReaderExecutor, ReadBigAtTransientStatsRollUpToParent)
         auto transient = parent->makeTransientForReadAt(0, /*read_size=*/4000);
         while (true)
         {
-            auto rope = transient->readNextWindow();
-            if (rope.empty())
+            auto chain = transient->readNextWindow();
+            if (chain.empty())
                 break;
         }
         /// The transient already emitted its source reads to ProfileEvents at the read
@@ -2406,7 +2406,7 @@ TEST(ReaderExecutor, UnknownSizeStreamsToEof)
     String collected;
     while (true)
     {
-        Rope w = executor.readNextWindow();
+        ChainedBuffers w = executor.readNextWindow();
         if (w.empty())
             break;
         for (const auto & node : w.getNodes())
@@ -2450,7 +2450,7 @@ TEST(ReaderExecutor, UnknownSizeZeroByteTerminalRead)
 {
     /// Unknown-size source whose size is an exact multiple of the window size,
     /// so the terminal read returns 0 bytes: `readNextWindow` returns an empty
-    /// rope and the caller stops, never making the follow-up call that would hit
+    /// chain and the caller stops, never making the follow-up call that would hit
     /// the pre-read EOF gate. All bytes up to that zero-byte terminal must still
     /// be served correctly.
     String content(1000, 'E');   /// exactly 2 * window
@@ -2468,7 +2468,7 @@ TEST(ReaderExecutor, UnknownSizeZeroByteTerminalRead)
     String collected;
     while (true)
     {
-        Rope w = executor.readNextWindow();
+        ChainedBuffers w = executor.readNextWindow();
         if (w.empty())
             break;
         for (const auto & node : w.getNodes())
@@ -2518,15 +2518,15 @@ public:
     ByteRange range() const override { return range_member; }
     size_t readable() const override { return range_member.end(); }
 
-    Rope read(ByteRange sub) override
+    ChainedBuffers read(ByteRange sub) override
     {
-        Rope result;
+        ChainedBuffers result;
         const size_t lo = std::max(sub.offset, range_member.offset);
         const size_t hi = std::min(sub.end(), range_member.end());
         if (lo >= hi)
             return result;
 
-        Rope assembled;
+        ChainedBuffers assembled;
         const size_t first_block = lo / block_size;
         const size_t last_block = (hi - 1) / block_size;
         for (size_t b = first_block; b <= last_block; ++b)
@@ -2535,9 +2535,9 @@ public:
             if (it == storage.end())
                 continue;
             const auto & data = it->second;
-            auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
+            auto buf = std::make_shared<OwnedChainedBuffer>(data.size());
             std::memcpy(buf->data(), data.data(), data.size());
-            assembled.append(RopeNode{buf, 0, data.size(), b * block_size});
+            assembled.append(ChainedBufferNode{buf, 0, data.size(), b * block_size});
         }
         return assembled.slice(ByteRange{lo, hi - lo});
     }
@@ -2567,7 +2567,7 @@ public:
     const IntervalSet & committed() const override { return committed_ranges; }
     bool complete() const override { return committed_ranges.subtract(range_member).empty(); }
 
-    size_t write(Rope data) override
+    size_t write(ChainedBuffers data) override
     {
         if (data.empty())
             return 0;
@@ -2610,15 +2610,15 @@ public:
         return bytes_written;
     }
 
-    Rope read(ByteRange sub) override
+    ChainedBuffers read(ByteRange sub) override
     {
-        Rope result;
+        ChainedBuffers result;
         const size_t lo = std::max(sub.offset, range_member.offset);
         const size_t hi = std::min(sub.end(), range_member.end());
         if (lo >= hi)
             return result;
 
-        Rope assembled;
+        ChainedBuffers assembled;
         const size_t first_block = lo / block_size;
         const size_t last_block = (hi - 1) / block_size;
         for (size_t b = first_block; b <= last_block; ++b)
@@ -2627,9 +2627,9 @@ public:
             if (it == storage.end())
                 continue;
             const auto & data = it->second;
-            auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
+            auto buf = std::make_shared<OwnedChainedBuffer>(data.size());
             std::memcpy(buf->data(), data.data(), data.size());
-            assembled.append(RopeNode{buf, 0, data.size(), b * block_size});
+            assembled.append(ChainedBufferNode{buf, 0, data.size(), b * block_size});
         }
         return assembled.slice(ByteRange{lo, hi - lo});
     }
@@ -2718,7 +2718,7 @@ public:
 
     bool hasBlock(size_t block_index) const { return storage.contains(block_index); }
 
-    /// (range argument to put, totalBytes of rope argument to put)
+    /// (range argument to put, totalBytes of chain argument to put)
     const std::vector<std::pair<ByteRange, size_t>> & putLog() const { return put_log; }
 
     /// Pre-fill a block; used to seed cache state before a test.
@@ -2755,15 +2755,15 @@ TEST(ReaderExecutor, ChainTwoTierDisjointHits)
     executor_options.min_bytes_for_seek = 0;
     ReaderExecutor executor(src, objects, {page_cache, disk_cache}, executor_options);
 
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().size, 128u * 1024u);
-    EXPECT_EQ(rope.totalBytes(), 128u * 1024u);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().size, 128u * 1024u);
+    EXPECT_EQ(chain.totalBytes(), 128u * 1024u);
 }
 
 /// THE BUG: PageCache (64K blocks) hits block 0, misses block 1. DiskCache
 /// (4M blocks) holds the whole 4M segment, so for the chain's lookup of
 /// [64K, 128K) it reports a hit at [0, 4M) — covering bytes already in
-/// PageCache. Returned rope today has duplicate coverage.
+/// PageCache. Returned chain today has duplicate coverage.
 TEST(ReaderExecutor, ChainLowerCacheHitCoversUpperHit)
 {
     auto src = std::make_shared<MemorySourceReader>(
@@ -2781,14 +2781,14 @@ TEST(ReaderExecutor, ChainLowerCacheHitCoversUpperHit)
     executor_options.min_bytes_for_seek = 0;
     ReaderExecutor executor(src, objects, {page_cache, disk_cache}, executor_options);
 
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().size, 128u * 1024u);
-    EXPECT_EQ(rope.totalBytes(), 128u * 1024u)
-        << "Returned rope must not contain duplicate coverage from cache-vs-cache overlap";
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().size, 128u * 1024u);
+    EXPECT_EQ(chain.totalBytes(), 128u * 1024u)
+        << "Returned chain must not contain duplicate coverage from cache-vs-cache overlap";
 }
 
 /// Three caches with 64K / 1M / 4M granularities. PageCache hits, MidCache
-/// hit covers PageCache, DiskCache not reached. Returned rope must be
+/// hit covers PageCache, DiskCache not reached. Returned chain must be
 /// disjoint and equal to window size.
 TEST(ReaderExecutor, ChainThreeTierCascading)
 {
@@ -2809,9 +2809,9 @@ TEST(ReaderExecutor, ChainThreeTierCascading)
     executor_options.min_bytes_for_seek = 0;
     ReaderExecutor executor(src, objects, {page_cache, mid_cache, disk_cache}, executor_options);
 
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().size, 128u * 1024u);
-    EXPECT_EQ(rope.totalBytes(), 128u * 1024u);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().size, 128u * 1024u);
+    EXPECT_EQ(chain.totalBytes(), 128u * 1024u);
 }
 
 /// PageCache hits the prefix, DiskCache is cold. The prefix is streamed from
@@ -2838,20 +2838,20 @@ TEST(ReaderExecutor, ChainLowerCacheFilledFullyAfterRead)
     size_t total = 0;
     while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.range().size == 0)
+        auto chain = executor.readNextWindow();
+        if (chain.range().size == 0)
             break;
-        total += rope.range().size;
+        total += chain.range().size;
     }
     EXPECT_EQ(total, 4u * 1024 * 1024);
     EXPECT_TRUE(disk_cache->hasBlock(0))
         << "DiskCache must be filled with the full segment after the read (gap over-read)";
 }
 
-/// Every write across the chain must receive a rope with disjoint coverage —
-/// totalBytes == range.size. A rope with duplicate nodes would overflow
+/// Every write across the chain must receive a chain with disjoint coverage —
+/// totalBytes == range.size. A chain with duplicate nodes would overflow
 /// the write buffer's flat copy.
-TEST(ReaderExecutor, ChainPutReceivesDisjointRope)
+TEST(ReaderExecutor, ChainPutReceivesDisjointChain)
 {
     auto src = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", String(4 * 1024 * 1024, 'S')}});
@@ -2875,11 +2875,11 @@ TEST(ReaderExecutor, ChainPutReceivesDisjointRope)
     ASSERT_FALSE(disk_cache->putLog().empty()) << "DiskCache put must be called";
     for (const auto & [range, total] : disk_cache->putLog())
         EXPECT_EQ(total, range.size)
-            << "put received non-disjoint rope: range=[" << range.offset
+            << "put received non-disjoint chain: range=[" << range.offset
             << ", " << range.end() << "), totalBytes=" << total;
 }
 
-/// Cache block extends past the window's tail. Returned rope must end at
+/// Cache block extends past the window's tail. Returned chain must end at
 /// the window boundary, not at the block boundary.
 TEST(ReaderExecutor, ChainHitExtendsBeyondWindowEnd)
 {
@@ -2896,14 +2896,14 @@ TEST(ReaderExecutor, ChainHitExtendsBeyondWindowEnd)
     executor_options.min_bytes_for_seek = 0;
     ReaderExecutor executor(src, objects, {page_cache}, executor_options);
 
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().offset, 0u);
-    EXPECT_EQ(rope.range().size, 50u * 1024u);
-    EXPECT_EQ(rope.totalBytes(), 50u * 1024u);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().offset, 0u);
+    EXPECT_EQ(chain.range().size, 50u * 1024u);
+    EXPECT_EQ(chain.totalBytes(), 50u * 1024u);
 }
 
 /// Window starts inside a cache block. Bytes before window.offset must not
-/// appear in the returned rope.
+/// appear in the returned chain.
 TEST(ReaderExecutor, ChainHitExtendsBeforeWindowStart)
 {
     auto src = std::make_shared<MemorySourceReader>(
@@ -2920,15 +2920,15 @@ TEST(ReaderExecutor, ChainHitExtendsBeforeWindowStart)
     ReaderExecutor executor(src, objects, {page_cache}, executor_options);
 
     executor.seek(10 * 1024);
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().offset, 10u * 1024u);
-    EXPECT_EQ(rope.range().size, 40u * 1024u);
-    EXPECT_EQ(rope.totalBytes(), 40u * 1024u);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().offset, 10u * 1024u);
+    EXPECT_EQ(chain.range().size, 40u * 1024u);
+    EXPECT_EQ(chain.totalBytes(), 40u * 1024u);
 }
 
 /// Cache miss range extends past the window end (cache block is larger than
 /// the window's tail). Source fetch goes past the window to fill the block;
-/// cache stores the full block; user rope is exactly window size.
+/// cache stores the full block; user chain is exactly window size.
 TEST(ReaderExecutor, ChainWindowEndCacheMissExtendsPast)
 {
     auto src = std::make_shared<MemorySourceReader>(
@@ -2943,9 +2943,9 @@ TEST(ReaderExecutor, ChainWindowEndCacheMissExtendsPast)
     executor_options.min_bytes_for_seek = 0;
     ReaderExecutor executor(src, objects, {disk_cache}, executor_options);
 
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().size, 50u * 1024u);
-    EXPECT_EQ(rope.totalBytes(), 50u * 1024u);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().size, 50u * 1024u);
+    EXPECT_EQ(chain.totalBytes(), 50u * 1024u);
     EXPECT_TRUE(disk_cache->hasBlock(0))
         << "Cache block must be filled past the window end (intentional read-ahead)";
 }
@@ -2975,10 +2975,10 @@ TEST(ReaderExecutor, PrunesLowerTierMissCoveredByFasterTier)
     size_t total = 0;
     while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.range().size == 0)
+        auto chain = executor.readNextWindow();
+        if (chain.range().size == 0)
             break;
-        total += rope.range().size;
+        total += chain.range().size;
     }
     EXPECT_EQ(total, block) << "the page hit must still serve the data";
     EXPECT_FALSE(disk_cache->hasBlock(0))
@@ -3014,10 +3014,10 @@ TEST(ReaderExecutor, ProactivelyFillsLowerCellAcrossEmbeddedFasterHit)
     size_t delivered = 0;
     while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.range().size == 0)
+        auto chain = executor.readNextWindow();
+        if (chain.range().size == 0)
             break;
-        delivered += rope.range().size;
+        delivered += chain.range().size;
     }
     EXPECT_EQ(delivered, file - page_block) << "client gets only the requested [1K,4K)";
     EXPECT_TRUE(disk_cache->hasBlock(0))
@@ -3046,8 +3046,8 @@ namespace
         ByteRange range() const override { return aligned_range; }
         const IntervalSet & committed() const override { return committed_ranges; }
         bool complete() const override { return false; }
-        size_t write(Rope) override { return 0; }
-        Rope read(ByteRange) override { return {}; }
+        size_t write(ChainedBuffers) override { return 0; }
+        ChainedBuffers read(ByteRange) override { return {}; }
     private:
         ByteRange aligned_range;
         IntervalSet committed_ranges;
@@ -3109,8 +3109,8 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
     executor_options.window_size = 500;
     ReaderExecutor executor(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{tracker}, executor_options);
 
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.range().size, 500u);
+    auto chain = executor.readNextWindow();
+    EXPECT_EQ(chain.range().size, 500u);
 
     /// With plan-then-stream (single-tier, the default), the window is probed for
     /// residency once per object via `planResidency` and then - because the data
@@ -3139,7 +3139,7 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
 }
 
 /// For an unknown-size source, the worker can latch `reached_eof` mid-flight
-/// while still producing a partial rope with the real final bytes.
+/// while still producing a partial chain with the real final bytes.
 /// `readNextWindow`'s EOF gate must defer to the in-flight machine (`atEnd()
 /// && !machine`), so those bytes are collected and served; only the
 /// nothing-in-flight case short-circuits to EOF.
@@ -3173,7 +3173,7 @@ TEST(ReaderExecutor, UnknownSizePrefetchedFinalBytesAreServed)
     /// `maybeTriggerPrefetch` submits P1 for [16, 32). The synchronous
     /// pool runs P1 inline: the source short-returns 14 bytes (EOF at 30),
     /// the worker sets `reached_eof = true`, and the future ends up
-    /// holding the 14-byte rope.
+    /// holding the 14-byte chain.
     auto r1 = executor.readNextWindow();
     EXPECT_EQ(r1.range().offset, 0u);
     EXPECT_EQ(r1.range().size, window);
@@ -3363,12 +3363,12 @@ TEST(ReaderExecutor, MemoryBackedFileBufferIsReadFully)
     String collected;
     while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.empty())
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
             break;
         size_t base = collected.size();
-        collected.resize(base + rope.range().size);
-        rope.copyTo(collected.data() + base, rope.range());
+        collected.resize(base + chain.range().size);
+        chain.copyTo(collected.data() + base, chain.range());
     }
     EXPECT_EQ(collected, content) << "memory-backed file buffer must deliver all bytes through the executor";
 }
@@ -3500,10 +3500,10 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsPinnedSegment)
     int round = 0;
     while (true)
     {
-        auto rope = executor->readNextWindow();
-        if (rope.empty())
+        auto chain = executor->readNextWindow();
+        if (chain.empty())
             break;
-        for (const auto & node : rope.getNodes())
+        for (const auto & node : chain.getNodes())
             result.append(node.data(), node.size);
         flood(round++);   // eviction pressure before the next window
     }
@@ -3757,10 +3757,10 @@ TEST(ReaderExecutor, TakeoverServesPartialPrefixWithoutDataLoss)
 
         while (true)
         {
-            auto rope = executor.readNextWindow();
-            if (rope.empty())
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
                 break;
-            for (const auto & node : rope.getNodes())
+            for (const auto & node : chain.getNodes())
                 result.append(node.data(), node.size);
         }
         feeder.join();
@@ -3860,10 +3860,10 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
         String cold;
         while (true)
         {
-            auto rope = executor.readNextWindow();
-            if (rope.empty())
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
                 break;
-            for (const auto & node : rope.getNodes())
+            for (const auto & node : chain.getNodes())
                 cold.append(node.data(), node.size);
         }
         EXPECT_EQ(cold, content);
@@ -3893,10 +3893,10 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
         String warm;
         while (true)
         {
-            auto rope = executor.readNextWindow();
-            if (rope.empty())
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
                 break;
-            for (const auto & node : rope.getNodes())
+            for (const auto & node : chain.getNodes())
                 warm.append(node.data(), node.size);
         }
         EXPECT_EQ(warm, content);
@@ -3955,10 +3955,10 @@ TEST(ReaderExecutor, PutStepParkReschedAbandonLadder)
             String rest;
             while (true)
             {
-                auto rope = executor.readNextWindow();
-                if (rope.empty())
+                auto chain = executor.readNextWindow();
+                if (chain.empty())
                     break;
-                for (const auto & node : rope.getNodes())
+                for (const auto & node : chain.getNodes())
                     rest.append(node.data(), node.size);
             }
             EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorPutAbandoned), 0u)
@@ -3993,10 +3993,10 @@ TEST(ReaderExecutor, PutStepParkReschedAbandonLadder)
             pool->fail.store(true);                /// parks w2's put AND blocks new launches
             while (true)
             {
-                auto rope = executor.readNextWindow();
-                if (rope.empty())
+                auto chain = executor.readNextWindow();
+                if (chain.empty())
                     break;
-                for (const auto & node : rope.getNodes())
+                for (const auto & node : chain.getNodes())
                     all.append(node.data(), node.size);
             }
         }
@@ -4044,10 +4044,10 @@ TEST(ReaderExecutor, WarmServeDefersPromoteToPutStep)
         String result;
         while (true)
         {
-            auto rope = executor.readNextWindow();
-            if (rope.empty())
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
                 break;
-            for (const auto & node : rope.getNodes())
+            for (const auto & node : chain.getNodes())
                 result.append(node.data(), node.size);
         }
         EXPECT_EQ(result, String(FILE_SIZE, 'D')) << "warm serve must come from the fs tier";
@@ -4111,12 +4111,12 @@ void validateScheduleMatchesReality(
     std::shared_ptr<const CoverageMap> geom;
     while (true)
     {
-        auto rope = executor.readNextWindow();
+        auto chain = executor.readNextWindow();
         if (!geom)
             geom = executor.planGeometryForTest();  /// the initial (and only) plan
-        if (rope.empty())
+        if (chain.empty())
             break;
-        outputs.push_back(rope.range());
+        outputs.push_back(chain.range());
     }
 
     ASSERT_NE(geom, nullptr);
@@ -4249,8 +4249,8 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
     [[maybe_unused]] bool saw_ready = false;
     while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.empty())
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
             break;
         ++windows;
 #if defined(DEBUG_OR_SANITIZER_BUILD)
@@ -4299,10 +4299,10 @@ TEST(ReaderExecutor, ScheduleDrivenCoalescedReadContent)
     String out;
     while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.empty())
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
             break;
-        for (const auto & node : rope.getNodes())
+        for (const auto & node : chain.getNodes())
             out.append(node.data(), node.size);
     }
     String expected(file, 'S');
@@ -4311,7 +4311,7 @@ TEST(ReaderExecutor, ScheduleDrivenCoalescedReadContent)
     EXPECT_EQ(out, expected) << "schedule-driven read must serve the resident islands from cache and the rest from source";
 }
 
-/// A backward seek INSIDE the look-ahead plan must not serve a discontiguous rope: the
+/// A backward seek INSIDE the look-ahead plan must not serve a discontiguous chain: the
 /// jump invalidates the ahead-banked ready_bytes, so the interpreter must re-plan from the
 /// new position. Read forward (banking ahead), seek back inside the plan, read to the end,
 /// and check the post-seek tail is the contiguous, byte-correct [4K, end).
@@ -4445,10 +4445,10 @@ TEST(ReaderExecutor, SeveralFetchesFillAllGaps)
     size_t delivered = 0;
     while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.empty())
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
             break;
-        delivered += rope.range().size;
+        delivered += chain.range().size;
     }
     executor.seek(0);  // tear the plan down so any pending fills reap
 
@@ -4486,10 +4486,10 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     std::shared_ptr<const CoverageMap> geom;
     while (true)
     {
-        auto rope = executor.readNextWindow();
+        auto chain = executor.readNextWindow();
         if (!geom)
             geom = executor.planGeometryForTest();
-        if (rope.empty())
+        if (chain.empty())
             break;
     }
     ASSERT_NE(geom, nullptr);
@@ -4694,10 +4694,10 @@ TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
     int n = 0;
     while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.empty())
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
             break;
-        for (const auto & node : rope.getNodes())
+        for (const auto & node : chain.getNodes())
             result.append(node.data(), node.size);
         ++n;
         if (n == 1)
@@ -4716,10 +4716,10 @@ TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
 namespace
 {
 
-String ropeBytes(const Rope & rope)
+String chainBytes(const ChainedBuffers & chain)
 {
     String s;
-    for (const auto & node : rope.getNodes())
+    for (const auto & node : chain.getNodes())
         s.append(node.data(), node.size);
     return s;
 }
@@ -4776,9 +4776,9 @@ TEST(ReaderExecutor, LongConnectionContiguousServeReleasesAtBound)
     size_t pos = 0;
     while (ex.hasLongConnForTest() && pos < size)
     {
-        Rope w = ex.serveFromLongForTest(pos, block);
+        ChainedBuffers w = ex.serveFromLongForTest(pos, block);
         ASSERT_GT(w.totalBytes(), 0u);
-        got += ropeBytes(w);
+        got += chainBytes(w);
         pos += w.totalBytes();
     }
 
@@ -4797,8 +4797,8 @@ TEST(ReaderExecutor, LongConnectionBridgesSmallForwardGap)
     auto & ex = *rig.executor;
     ex.openLongForTest(0, size);
 
-    Rope w0 = ex.serveFromLongForTest(0, block);
-    EXPECT_EQ(ropeBytes(w0), rig.content.substr(0, block));
+    ChainedBuffers w0 = ex.serveFromLongForTest(0, block);
+    EXPECT_EQ(chainBytes(w0), rig.content.substr(0, block));
     EXPECT_EQ(ex.longConnPositionForTest(), block);
 
     /// canContinue truth table at frontier `block`:
@@ -4809,8 +4809,8 @@ TEST(ReaderExecutor, LongConnectionBridgesSmallForwardGap)
 
     /// Serve across a 2048-byte forward gap -> bridged (frontier jumps past the gap).
     const size_t gap_off = block + 2048;
-    Rope w1 = ex.serveFromLongForTest(gap_off, block);
-    EXPECT_EQ(ropeBytes(w1), rig.content.substr(gap_off, block));
+    ChainedBuffers w1 = ex.serveFromLongForTest(gap_off, block);
+    EXPECT_EQ(chainBytes(w1), rig.content.substr(gap_off, block));
     EXPECT_EQ(ex.longConnPositionForTest(), gap_off + block);                /// gap discarded, not re-served
 }
 
@@ -4891,7 +4891,7 @@ TEST(ReaderExecutor, LongConnectionForegroundDrainsWholeFile)
         auto w = ex.readNextWindow();
         if (w.empty())
             break;
-        got += ropeBytes(w);
+        got += chainBytes(w);
     }
 
     EXPECT_EQ(got, content);                     /// byte-exact
@@ -4936,13 +4936,13 @@ TEST(ReaderExecutor, LongConnectionDrainedAcrossPrefetchWindows)
     EXPECT_TRUE(ex.machineHasLongConnForTest());   /// carried + worker-advanced
     EXPECT_FALSE(ex.hasLongConnForTest());
 
-    String got = ropeBytes(r1);
+    String got = chainBytes(r1);
     while (true)
     {
         auto w = ex.readNextWindow();
         if (w.empty())
             break;
-        got += ropeBytes(w);
+        got += chainBytes(w);
     }
 
     EXPECT_EQ(got, content);                       /// byte-exact across fg + worker drains
@@ -4989,7 +4989,7 @@ TEST(ReaderExecutor, LongConnectionOpensOnPrefetchPath)
         auto w = ex.readNextWindow();
         if (w.empty())
             break;
-        got += ropeBytes(w);
+        got += chainBytes(w);
     }
 
     EXPECT_EQ(got, content);
@@ -5027,7 +5027,7 @@ TEST(ReaderExecutor, LongConnectionDroppedWhenCannotContinue)
 
     ex.openLongForTest(0, size);
     auto r0 = ex.readNextWindow();                 /// drains [0,100); frontier at 100
-    EXPECT_EQ(ropeBytes(r0), content.substr(0, window));
+    EXPECT_EQ(chainBytes(r0), content.substr(0, window));
     EXPECT_TRUE(ex.hasLongConnForTest());
     EXPECT_EQ(ex.longConnPositionForTest(), window);
 
@@ -5035,7 +5035,7 @@ TEST(ReaderExecutor, LongConnectionDroppedWhenCannotContinue)
     EXPECT_TRUE(ex.hasLongConnForTest());
 
     auto r1 = ex.readNextWindow();                 /// cannot continue (backward) -> drop, then reopen
-    EXPECT_EQ(ropeBytes(r1), content.substr(window / 2, window));
+    EXPECT_EQ(chainBytes(r1), content.substr(window / 2, window));
     EXPECT_TRUE(ex.hasLongConnForTest());          /// a fresh connection serves the new forward run
     EXPECT_EQ(ex.longConnPositionForTest(), window / 2 + window);
     /// The dropped connection accounts an incomplete connection (tail too big to drain).
@@ -5080,7 +5080,7 @@ TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)
             auto w = ex.readNextWindow();
             if (w.empty())
                 break;
-            got += ropeBytes(w);
+            got += chainBytes(w);
         }
     };
 

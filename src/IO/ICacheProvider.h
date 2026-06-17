@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <IO/IntervalSet.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <base/types.h>
@@ -25,7 +25,7 @@ enum class CacheTier
 /// plan across many read windows. Coordinates are FILE-LEVEL throughout.
 
 /// Held, re-readable view of ONE resident (hit) file-level range. Owns the pin
-/// that keeps its bytes alive; holds NO cursor (the executor's Rope owns it).
+/// that keeps its bytes alive; holds NO cursor (the executor's ChainedBuffers owns it).
 class CacheReader
 {
 public:
@@ -40,9 +40,9 @@ public:
     /// offset, re-evaluated each call. Reads must stay below it.
     virtual size_t readable() const = 0;
 
-    /// Read `sub` (within `[range().offset, readable())`) as a Rope of
+    /// Read `sub` (within `[range().offset, readable())`) as a ChainedBuffers of
     /// file-level nodes. Records `sub` for the view's deferred LRU bump.
-    virtual Rope read(ByteRange sub) = 0;
+    virtual ChainedBuffers read(ByteRange sub) = 0;
 };
 
 /// Held, incrementally-fillable target for ONE miss file-level range. Owns its
@@ -65,11 +65,11 @@ public:
     /// Returns the bytes that newly landed; 0 for bytes outside the range,
     /// already committed, a lost downloader race, reservation failure or
     /// bypass - NEVER throws on those, degrades to a partial or zero return.
-    virtual size_t write(Rope data) = 0;
+    virtual size_t write(ChainedBuffers data) = 0;
 
     /// Serve an already-committed sub-range from this buffer's own held
     /// segments/cells, without a source round-trip.
-    virtual Rope read(ByteRange sub) = 0;
+    virtual ChainedBuffers read(ByteRange sub) = 0;
 
     /// Opaque token keeping the partial segment under `frontier`
     /// non-evictable while the live source connection streams into it.

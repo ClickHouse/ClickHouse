@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <IO/ICacheProvider.h>
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/VectorWithMemoryTracking.h>

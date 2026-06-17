@@ -20,7 +20,7 @@
 #include <IO/DiskCacheProvider.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/ReadSettings.h>
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/PageCache.h>
 #include <Common/CurrentThread.h>
@@ -209,10 +209,10 @@ String readBigAtViaTransient(ReaderExecutor & parent, size_t offset, size_t want
     size_t total = 0;
     while (total < want)
     {
-        auto rope = t->readNextWindow();
-        if (rope.empty())
+        auto chain = t->readNextWindow();
+        if (chain.empty())
             break;
-        for (const auto & node : rope.getNodes())
+        for (const auto & node : chain.getNodes())
         {
             if (total >= want)
                 break;
@@ -348,10 +348,10 @@ public:
         String result;
         while (true)
         {
-            auto rope = executor.readNextWindow();
-            if (rope.empty())
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
                 break;
-            for (const auto & node : rope.getNodes())
+            for (const auto & node : chain.getNodes())
                 result.append(node.data(), node.size);
         }
         return result;
@@ -654,10 +654,10 @@ TEST_F(ReaderExecutorCacheChain, PartialFsHitTailFromSource)
         executor_options.min_bytes_for_seek = 0;
         executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
         ReaderExecutor executor(source, objects, caches, executor_options);
-        auto rope = executor.readNextWindow();
-        ASSERT_EQ(rope.range().size, half);
+        auto chain = executor.readNextWindow();
+        ASSERT_EQ(chain.range().size, half);
         String prefix;
-        for (const auto & node : rope.getNodes())
+        for (const auto & node : chain.getNodes())
             prefix.append(node.data(), node.size);
         EXPECT_EQ(prefix, content.substr(0, half));
     }
@@ -946,10 +946,10 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainKeepsSingleConnection)
     size_t round = 0;
     while (true)
     {
-        auto rope = executor->readNextWindow();
-        if (rope.empty())
+        auto chain = executor->readNextWindow();
+        if (chain.empty())
             break;
-        for (const auto & node : rope.getNodes())
+        for (const auto & node : chain.getNodes())
             result.append(node.data(), node.size);
         /// Eviction pressure before the next window.
         flood_fs(round++);

@@ -53,13 +53,13 @@ namespace
 {
 
 /// Shared zero-copy pread of `[overlap_start, overlap_start + overlap_size)`
-/// (object-local) out of `segment`, appending a single file-level `RopeNode`
+/// (object-local) out of `segment`, appending a single file-level `ChainedBufferNode`
 /// (logical offset `overlap_start + object_file_offset`) to `result`. Optionally
 /// reuses / refreshes a `StreamingReaderSlot` and anchors the reader. Shared by
 /// the read buffer and the write buffer's served-prefix read. The holder pins
 /// the segment, so a short read is a hard I/O error — throw, never drop a hit.
 void preadSegmentNode(
-    Rope & result,
+    ChainedBuffers & result,
     FileSegment & segment,
     size_t overlap_start,
     size_t overlap_size,
@@ -71,7 +71,7 @@ void preadSegmentNode(
     const String path = segment.getPath();
     const size_t offset_in_file = overlap_start - segment.range().left;
 
-    auto buf = std::make_shared<OwnedRopeBuffer>(overlap_size);
+    auto buf = std::make_shared<OwnedChainedBuffer>(overlap_size);
 
     /// Reuse the held streaming reader for this segment if it is free, else open
     /// a fresh one (pread shares the descriptor via `OpenedFileCache`, kept warm
@@ -122,7 +122,7 @@ void preadSegmentNode(
             "DiskCacheProvider: short read from cache file {} at offset {}: got {}, expected {}",
             path, offset_in_file, copied, overlap_size);
 
-    result.append(RopeNode{
+    result.append(ChainedBufferNode{
         std::move(buf), 0, overlap_size, overlap_start + object_file_offset});
 
     if (stream_slot)
@@ -184,9 +184,9 @@ size_t DiskCacheReader::readable() const
     return std::min(readable_end, hit_range.end());
 }
 
-Rope DiskCacheReader::read(ByteRange sub)
+ChainedBuffers DiskCacheReader::read(ByteRange sub)
 {
-    Rope result;
+    ChainedBuffers result;
     if (!holder)
         return result;
 
@@ -262,14 +262,14 @@ bool DiskCacheWriter::complete() const
     return committed_ranges.subtract(aligned_range).empty();
 }
 
-size_t DiskCacheWriter::write(Rope data)
+size_t DiskCacheWriter::write(ChainedBuffers data)
 {
     if (cache_settings.read_if_exists_otherwise_bypass)
         return 0;
     if (!holder)
         return 0;
 
-    /// `FileSegment::range()` is object-local; shift `data` so `Rope::copyTo`
+    /// `FileSegment::range()` is object-local; shift `data` so `ChainedBuffers::copyTo`
     /// sees matching coordinates.
     data.shift(-static_cast<ssize_t>(object_file_offset));
 
@@ -385,9 +385,9 @@ size_t DiskCacheWriter::write(Rope data)
     return bytes_written;
 }
 
-Rope DiskCacheWriter::read(ByteRange sub)
+ChainedBuffers DiskCacheWriter::read(ByteRange sub)
 {
-    Rope result;
+    ChainedBuffers result;
     if (!holder)
         return result;
 

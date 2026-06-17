@@ -193,7 +193,7 @@ PlanSchedule buildSchedule(
         }
     }
 
-    /// --- retrieves: one Remote per fill-closure GAP (pure coverage), plus HandedRope promotes ---
+    /// --- retrieves: one Remote per fill-closure GAP (pure coverage), plus HandedChain promotes ---
     /// The schedule does NOT group gaps into connections - it lists each cache-cell-aligned gap as
     /// its own job. The runtime decides how many source connections span them (a held connection
     /// bridges a small cached hole or reopens at a wide one - see ReaderExecutor's
@@ -209,15 +209,15 @@ PlanSchedule buildSchedule(
     }
 
     /// A User range served from a slower resident tier is promoted UP into the
-    /// faster tiers that miss it (HandedRope: the foreground hands the served
-    /// rope, no re-read, no remote).
+    /// faster tiers that miss it (HandedChain: the foreground hands the served
+    /// chain, no re-read, no remote).
     for (const auto & tr : sched.ranges)
     {
         if (tr.purpose != PlanSchedule::Purpose::User || !tr.resident)
             continue;
         PlanSchedule::Retrieve promote;
         promote.range = tr.range;
-        promote.source = PlanSchedule::Source::HandedRope;
+        promote.source = PlanSchedule::Source::HandedChain;
         promote.upper_source_tier = tr.tier;
         for (size_t ei = 0; ei < tr.tier_entry && ei < geometry.entries.size(); ++ei)  /// faster tiers only
             for (const auto & m : geometry.entries[ei].aligned_miss)

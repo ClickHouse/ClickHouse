@@ -260,7 +260,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     /// The ReaderExecutor owns prefetch / memory-cache / decryption internally,
     /// so it must bypass the legacy wraps below — e.g. an
     /// `AsynchronousBoundedReadBuffer` wrap asserts `buffer().begin() ==
-    /// request.buf`, which `PipelineReadBuffer` (refcounted rope memory) can't
+    /// request.buf`, which `PipelineReadBuffer` (refcounted chain memory) can't
     /// satisfy. Returning early avoids them.
     if (auto pipeline_buf = tryBuildReaderExecutor(query_id))
         return pipeline_buf;

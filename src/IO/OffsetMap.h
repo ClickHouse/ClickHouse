@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <Common/VectorWithMemoryTracking.h>

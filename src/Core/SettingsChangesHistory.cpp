@@ -44,7 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_reader_executor", false, false, "New experimental setting to use ReaderExecutor-based read pipeline instead of the matryoshka ReadBuffer assembly."},
             {"enable_reader_executor_log", false, false, "New experimental setting to write one row per ReaderExecutor at destruction into system.reader_executor_log."},
             {"reader_executor_window_size", 8388608, 8388608, "New experimental setting to configure the read-ahead window size of the ReaderExecutor."},
-            {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the rope-node / block size of the ReaderExecutor."},
+            {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the chained-buffer node / block size of the ReaderExecutor."},
             {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental setting: forward-gap bound below which the ReaderExecutor bridges/reads through on the open source connection instead of a separate read or reopen."},
             {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental setting: drain bound below which the ReaderExecutor reads a dropped long connection out to its right bound so it returns to the pool reusable."},
             {"reader_executor_use_long_connections", true, true, "New experimental setting to reuse a bounded long source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},

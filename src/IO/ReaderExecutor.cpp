@@ -401,7 +401,7 @@ ReaderExecutor::~ReaderExecutor()
 /// them. With no prefetch, read synchronously (or return empty at EOF).
 /// Releases the live connection + slot once EOF is latched, then reads one
 /// window ahead.
-Rope ReaderExecutor::readNextWindow()
+ChainedBuffers ReaderExecutor::readNextWindow()
 {
     /// Total foreground time in the read call (planning, cache reads, source reads,
     /// prefetch waits) - the executor's direct contribution to query read latency.
@@ -434,7 +434,7 @@ Rope ReaderExecutor::readNextWindow()
         ? clampToExtent(window_size)
         : clampToExtent(logical_size - position);
 
-    Rope rope;
+    ChainedBuffers chain;
 
     /// Plan-first: build/refresh the geometry, then let the interpreter serve the
     /// cursor step - a resident run streamed from the held cache handle, or an
@@ -465,39 +465,39 @@ Rope ReaderExecutor::readNextWindow()
         }
     }
 
-    rope = interpretStep(position_phys, to_read);
+    chain = interpretStep(position_phys, to_read);
 
-    stats.add(Stats::RequestedBytes, rope.range().size);
-    position += rope.range().size;
+    stats.add(Stats::RequestedBytes, chain.range().size);
+    position += chain.range().size;
 #if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: the window is a prefix of (or equals) the cursor step
-    if (read_plan.geometry() && !read_plan.schedule.steps.empty() && !rope.empty() && !reached_eof
+    if (read_plan.geometry() && !read_plan.schedule.steps.empty() && !chain.empty() && !reached_eof
         && read_plan.cursor < read_plan.schedule.steps.size())
     {
-        const size_t produced_off_phys = (position - rope.range().size) + data_start_offset;
+        const size_t produced_off_phys = (position - chain.range().size) + data_start_offset;
         const auto & step = read_plan.schedule.steps[read_plan.cursor];
         chassert(produced_off_phys >= step.output.offset);
-        chassert(produced_off_phys + rope.range().size <= step.output.end());
+        chassert(produced_off_phys + chain.range().size <= step.output.end());
         /// Strict equality only when this window spanned the whole step (known size); a
         /// step wider than the per-call block/window is served over several windows.
         if (!offset_map.hasUnknownSize()
             && produced_off_phys == step.output.offset
             && position + data_start_offset == step.output.end())
-            chassert(rope.range().size == step.output.size);
+            chassert(chain.range().size == step.output.size);
     }
 #endif
     shadowAdvanceCursor();
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
-        rope.range().size, rope.getNodes().size(), position);
+        chain.range().size, chain.getNodes().size(), position);
 
     /// Unknown-size EOF is latched by a short read here, not the pre-read gate,
-    /// and the caller stops on the empty rope without a follow-up call - so drop
+    /// and the caller stops on the empty chain without a follow-up call - so drop
     /// the in-flight fill pin now rather than leaking it.
     if (reached_eof)
         inflight_segment_pin.reset();
 
     maybeLaunchAhead();
 
-    return rope;
+    return chain;
 }
 
 void ReaderExecutor::seek(size_t new_position)
@@ -531,7 +531,7 @@ void ReaderExecutor::seek(size_t new_position)
     reached_eof = false;
     /// A jumped position invalidates the schedule-driven serve state: jobs banked AHEAD of
     /// the old cursor would, after the jump, leave `ready_bytes` disjoint from the new
-    /// cursor (a foreground read below the ahead-bank makes a gappy rope). Drop the plan so
+    /// cursor (a foreground read below the ahead-bank makes a gappy chain). Drop the plan so
     /// the next launch re-plans + rebuilds `retrieve_status` from the new position. (The
     /// fast path above keeps the plan only for a forward seek into the in-flight window,
     /// where the bank stays contiguous.)
@@ -656,22 +656,22 @@ void ReaderExecutor::initDecryption()
     /// held write buffers the header itself is not populated here - it is read once and is
     /// tiny.
     CoverageMap init_geometry;
-    Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset},
+    ChainedBuffers header_chain = readPhysicalWindow(ByteRange{0, data_start_offset},
         init_geometry, reached_eof, stats);
 
     /// Under size-unknown sources `readPhysicalWindow` latches `reached_eof`
-    /// on short returns instead of throwing, so an empty rope means
+    /// on short returns instead of throwing, so an empty chain means
     /// "empty object" (same as the size-known empty branch above) and a
-    /// partial rope means corrupted/truncated.
-    if (offset_map.hasUnknownSize() && header_rope.totalBytes() == 0)
+    /// partial chain means corrupted/truncated.
+    if (offset_map.hasUnknownSize() && header_chain.totalBytes() == 0)
     {
         LOG_DEBUG(log, "initDecryption: unknown-size source returned 0 bytes (empty object), skipping");
         return;
     }
-    if (header_rope.totalBytes() != data_start_offset)
+    if (header_chain.totalBytes() != data_start_offset)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Encrypted source returned {} header bytes, expected {} (corrupted/truncated)",
-            header_rope.totalBytes(), data_start_offset);
+            header_chain.totalBytes(), data_start_offset);
 
     /// Stacked encryption layout: only `h0` is plaintext; every later header
     /// is wrapped by all layers above it (`[h0, enc0(h1), enc0(enc1(h2)), ...]`).
@@ -688,7 +688,7 @@ void ReaderExecutor::initDecryption()
         /// decrypt in place across the already-initialized layers.
         std::array<char, FileEncryption::Header::kSize> hdr_bytes{};
         {
-            Rope slice = header_rope.slice(ByteRange{offset, FileEncryption::Header::kSize});
+            ChainedBuffers slice = header_chain.slice(ByteRange{offset, FileEncryption::Header::kSize});
             chassert(slice.totalBytes() == FileEncryption::Header::kSize);
             slice.copyTo(hdr_bytes.data(), ByteRange{offset, FileEncryption::Header::kSize});
         }
@@ -802,7 +802,7 @@ VectorWithMemoryTracking<ByteRange> ReaderExecutor::mergeRanges(const VectorWith
     return merged;
 }
 
-Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
 {
     /// Stream the contiguous resident run straight from the plan's held (pinning) cache
     /// readers - no per-window discovery, no source. Serve each tier's range from its own
@@ -810,7 +810,7 @@ Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
     /// gap (the next call serves it). A machine for a downstream gap may be in flight here
     /// (the resident/prefetch overlap): this path touches ONLY the caches and the (empty,
     /// moved-to-the-machine) foreground connection cluster, never the worker's machine.
-    Rope rope;
+    ChainedBuffers chain;
 
     /// Test hook: pause after the plan classifies this run as a hit but before the read, so
     /// a test can drop/evict the cache in that window and verify the plan-pinned segment
@@ -818,7 +818,7 @@ Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
     FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
 
     /// Serve a BLOCK at a time (not a full window): a cache hit has no remote open to
-    /// amortise over a window, so block-sizing just bounds the in-flight Rope memory per
+    /// amortise over a window, so block-sizing just bounds the in-flight ChainedBuffers memory per
     /// call. The loop also stops at the resident run end / `plan_end`.
     const size_t window_end = position_phys
         + std::min(effectiveBlockSize(read_plan.geometry()->pressure_level), to_read);
@@ -832,7 +832,7 @@ Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
             || !read_plan.bufs[run.entry].view)
             break;
         const size_t serve_end = std::min(run.run_end, window_end);
-        Rope chunk = readHitFromView(*read_plan.bufs[run.entry].view, ByteRange{pos, serve_end - pos});
+        ChainedBuffers chunk = readHitFromView(*read_plan.bufs[run.entry].view, ByteRange{pos, serve_end - pos});
         const size_t got = chunk.range().size;
         if (got == 0)
             break;
@@ -843,7 +843,7 @@ Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
         /// the fastest tier or nothing faster populates) - deferred to a put-only machine
         /// when pools are present; skipped outright under contention (optional work).
         schedulePromoteStep(run.tier, ByteRange{pos, got}, chunk, stats);
-        rope.append(std::move(chunk));
+        chain.append(std::move(chunk));
         pos += got;
         if (pos < serve_end)
             break;
@@ -852,13 +852,13 @@ Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
         static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
 
     if (data_start_offset)
-        rope.shift(-static_cast<ssize_t>(data_start_offset));
+        chain.shift(-static_cast<ssize_t>(data_start_offset));
     LOG_TRACE(log, "serveCacheBlock: streamed resident [{}, {}) from cache",
-        position_phys, position_phys + rope.range().size);
-    return rope;
+        position_phys, position_phys + chain.range().size);
+    return chain;
 }
 
-bool ReaderExecutor::tryCollectMachine(Rope & rope)
+bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
 {
     /// The worker may own the connection mid-read, so the revoke/release handoff
     /// must complete before any source touch.
@@ -939,7 +939,7 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
         const size_t fetched_logical_end = m->fetched.range().end() - data_start_offset;
         if (fetched_logical_end <= position)
         {
-            Rope assembled;
+            ChainedBuffers assembled;
             IntervalSet covered_unused;
             backfillBytes(m->physical_window, requested_phys, m->fetched, assembled, covered_unused,
                 /*push_to_writers=*/false, stats);
@@ -957,7 +957,7 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
     /// Backfill the cache for the fetched window (the worker did none), pin the
     /// in-flight segment at the frontier the fetch actually reached (an interrupted
     /// step stops short of the aligned window end; a full fetch reaches it), slice
-    /// back to the REQUESTED window and shift to logical. A partial rope is
+    /// back to the REQUESTED window and shift to logical. A partial chain is
     /// structurally an EOF-short window: the backfill clamps to delivered bytes and
     /// the contiguity contract holds for a prefix - the remainder is just the next
     /// gap, found by the normal dispatch (usually relaunched as the next machine on
@@ -970,42 +970,42 @@ bool ReaderExecutor::tryCollectMachine(Rope & rope)
         ? ByteRange{requested_phys.offset,
             std::min(requested_phys.end(), m->fetched.range().end()) - requested_phys.offset}
         : requested_phys;
-    Rope result;
+    ChainedBuffers result;
     IntervalSet covered;
     backfillBytes(m->physical_window, requested_phys, m->fetched, result, covered,
         /*push_to_writers=*/false, stats);
-    rope = finalizeAssembledWindow(slice_window, pin_frontier, result, reached_eof);
+    chain = finalizeAssembledWindow(slice_window, pin_frontier, result, reached_eof);
 #if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: InFlight -> Ready (bytes in hand, serve proceeds)
     shadowSetPhase(*m, RetrievePhase::Ready);
 #endif
     /// The deferred write side of this window: the put step takes the writers and
-    /// the assembled rope to the background. After `finalizeAssembledWindow` - the
+    /// the assembled chain to the background. After `finalizeAssembledWindow` - the
     /// pin was just taken from the plan's writers while they were still here.
     schedulePutStep(std::move(m), result);
     if (data_start_offset)
-        rope.shift(-static_cast<ssize_t>(data_start_offset));
+        chain.shift(-static_cast<ssize_t>(data_start_offset));
 
-    /// A seek landed inside the fetched window: trim the prefix so `rope` starts at `position`.
-    if (!rope.empty() && position > rope.range().offset)
+    /// A seek landed inside the fetched window: trim the prefix so `chain` starts at `position`.
+    if (!chain.empty() && position > chain.range().offset)
     {
-        const size_t end = rope.range().end();
-        rope = rope.slice(ByteRange{position, end - position});
+        const size_t end = chain.range().end();
+        chain = chain.slice(ByteRange{position, end - position});
     }
     return true;
 }
 
-Rope ReaderExecutor::syncGapRead(ByteRange physical_window)
+ChainedBuffers ReaderExecutor::syncGapRead(ByteRange physical_window)
 {
     LOG_TRACE(log, "syncGapRead: synchronous gap read physical [{}, {})",
         physical_window.offset, physical_window.end());
     StatTimer sync_scope(stats, Stats::SyncReadMicroseconds);
-    Rope rope = readWindowLogical(physical_window, *read_plan.geometry(), reached_eof, stats);
+    ChainedBuffers chain = readWindowLogical(physical_window, *read_plan.geometry(), reached_eof, stats);
     HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
         static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
-    return rope;
+    return chain;
 }
 
-Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window,
+ChainedBuffers ReaderExecutor::readPhysicalWindow(ByteRange physical_window,
     const CoverageMap & geometry, bool & eof_latch, Stats & out_stats)
 {
     LOG_TRACE(log, "readPhysicalWindow [{}, {})", physical_window.offset, physical_window.end());
@@ -1016,7 +1016,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window,
     /// pushes them into the plan's held write buffers. A prefetch worker never comes
     /// here: it runs the narrow `fetchGapsFromSource` over the plan gap the foreground
     /// bounded at submit, and the foreground backfills its bytes at consume.
-    Rope result;
+    ChainedBuffers result;
     /// Physical bytes already materialised in `result`. Keeps `result` disjoint:
     /// resident and source bytes only fill what is not yet covered. The cache writes
     /// happen AFTER assembly, into the plan's held write buffers - so a short/zero
@@ -1041,7 +1041,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window,
 
     /// With a `CacheFiller` pool present the sync path defers its cache fill
     /// exactly like a machine collect: assemble only, then hand the writers +
-    /// rope to a put-only machine below. Without one, the put step runs
+    /// chain to a put-only machine below. Without one, the put step runs
     /// synchronously inline (the `push_to_writers` write here).
     const bool defer_fill = put_runner != nullptr;
 
@@ -1069,19 +1069,19 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window,
     return sliced;
 }
 
-Rope ReaderExecutor::readWindowLogical(ByteRange physical_window,
+ChainedBuffers ReaderExecutor::readWindowLogical(ByteRange physical_window,
     const CoverageMap & geometry, bool & eof_latch, Stats & out_stats)
 {
-    Rope rope = readPhysicalWindow(physical_window, geometry, eof_latch, out_stats);
+    ChainedBuffers chain = readPhysicalWindow(physical_window, geometry, eof_latch, out_stats);
     /// Physical offsets include the encryption header prefix; the consumer works
     /// in logical (post-header) offsets. Shift once here. No-op when not encrypted.
     if (data_start_offset)
-        rope.shift(-static_cast<ssize_t>(data_start_offset));
-    return rope;
+        chain.shift(-static_cast<ssize_t>(data_start_offset));
+    return chain;
 }
 
 void ReaderExecutor::serveResidentFromPlan(
-    ByteRange physical_window, Rope & result, IntervalSet & covered,
+    ByteRange physical_window, ChainedBuffers & result, IntervalSet & covered,
     const CoverageMap & geometry, Stats & out_stats)
 {
     /// Foreground-only (reads `this->read_plan.bufs`). Does NOT re-plan: the foreground
@@ -1132,7 +1132,7 @@ void ReaderExecutor::serveResidentFromPlan(
 
             out_stats.add(Stats::CacheGetRequests);
             StatTimer get_scope(out_stats, Stats::CacheGetMicroseconds);
-            Rope resident_rope = readHitFromView(*read_plan.bufs[i].view, clamped);
+            ChainedBuffers resident_chain = readHitFromView(*read_plan.bufs[i].view, clamped);
             HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
             for (const auto & sub : useful)
@@ -1140,12 +1140,12 @@ void ReaderExecutor::serveResidentFromPlan(
                 /// The held read buffer pins resident segments, so a byte the plan
                 /// reported resident MUST still be readable here. If not, the pin was
                 /// not honored - fail loudly rather than drop bytes.
-                if (!resident_rope.covers(sub))
+                if (!resident_chain.covers(sub))
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "ReaderExecutor: residency plan promised a hit at [{}, {}) but read() did not "
                         "return it - a pinned cache segment was not honored",
                         sub.offset, sub.end());
-                result.append(resident_rope.extract(sub));
+                result.append(resident_chain.extract(sub));
                 covered.add(sub);
                 out_stats.add(tier_counter, sub.size);
             }
@@ -1156,11 +1156,11 @@ void ReaderExecutor::serveResidentFromPlan(
 /// Serve a clamped resident sub-range from a held `planResidencyView` view's hit read
 /// buffers: find each `HitEntry` overlapping `clamped`, read the overlap from its
 /// re-readable buffer (clamped to `readable()` so a partial prefix is never over-read),
-/// and append the pieces. Returns the assembled (possibly short) Rope; the caller checks
+/// and append the pieces. Returns the assembled (possibly short) ChainedBuffers; the caller checks
 /// `covers`. Records each `read` on the view for the deferred LRU bump.
-Rope ReaderExecutor::readHitFromView(CacheView & view, ByteRange clamped)
+ChainedBuffers ReaderExecutor::readHitFromView(CacheView & view, ByteRange clamped)
 {
-    Rope out;
+    ChainedBuffers out;
     for (const auto & hit : view.hits())
     {
         if (!hit.reader)
@@ -1175,7 +1175,7 @@ Rope ReaderExecutor::readHitFromView(CacheView & view, ByteRange clamped)
     return out;
 }
 
-void ReaderExecutor::serveLateHits(ByteRange window, Rope & result, IntervalSet & covered, Stats & out_stats)
+void ReaderExecutor::serveLateHits(ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats)
 {
     /// Late hits: a sibling reader / promotion populated a gap between plan-build and
     /// consume. Mirror the deleted `serveCacheTiersCollectingMisses` - all tiers, in
@@ -1225,13 +1225,13 @@ void ReaderExecutor::serveLateHits(ByteRange window, Rope & result, IntervalSet 
                     StatTimer get_scope(out_stats, Stats::CacheGetMicroseconds);
                     for (const auto & sub : useful)
                     {
-                        Rope hit_rope = hit.reader->read(sub);
-                        if (!hit_rope.covers(sub))
+                        ChainedBuffers hit_chain = hit.reader->read(sub);
+                        if (!hit_chain.covers(sub))
                             throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "ReaderExecutor: cache {} planResidencyView reported a late hit at "
                                 "[{}, {}) but read() did not return it - a held FileSegment was not honored",
                                 cache->name(), sub.offset, sub.end());
-                        result.append(hit_rope.extract(sub));
+                        result.append(hit_chain.extract(sub));
                         covered.add(sub);
                         out_stats.add(tier_counter, sub.size);
                     }
@@ -1258,7 +1258,7 @@ void ReaderExecutor::serveLateHits(ByteRange window, Rope & result, IntervalSet 
 bool ReaderExecutor::fetchAndBackfillGaps(
     ByteRange fetch_window,
     ByteRange requested_window,
-    Rope & result,
+    ChainedBuffers & result,
     IntervalSet & covered,
     bool & eof_latch,
     MemoryPressureLevel pressure_level,
@@ -1268,7 +1268,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     /// Synchronous foreground gap path: serve any grown committed prefix and late cache hit
     /// FIRST (so a concurrently/self-cached gap is served from cache, not re-fetched), then
     /// read the still-missing gaps of the ALIGNED `fetch_window` from the source - merged
-    /// into fewer requests by `min_bytes_for_seek` - into one `source_bytes` Rope, and hand
+    /// into fewer requests by `min_bytes_for_seek` - into one `source_bytes` ChainedBuffers, and hand
     /// it to the shared `assembleAndWriteBack` (append + over-read + cache fill).
     recreditCommittedPrefixes(fetch_window, result, covered, out_stats);
     serveLateHits(fetch_window, result, covered, out_stats);
@@ -1284,7 +1284,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     /// Block size for the source-read tiles, from the per-plan cached pressure level.
     const size_t window_block_size = effectiveBlockSize(pressure_level);
 
-    Rope source_bytes;
+    ChainedBuffers source_bytes;
     for (const auto & fr : fetch_ranges)
     {
         auto physical_ranges = offset_map.map(fr);
@@ -1314,7 +1314,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
                 const size_t sub_size = sub_end - sub_obj_off;
 
                 /// Split at the REQUESTED window edges so user-data bytes and segment-aligned
-                /// head/tail-extension bytes land in separate `OwnedRopeBuffer`s (released
+                /// head/tail-extension bytes land in separate `OwnedChainedBuffer`s (released
                 /// independently).
                 VectorWithMemoryTracking<size_t> splits;
                 if (requested_window.offset > sub_logical && requested_window.offset < sub_logical + sub_size)
@@ -1325,7 +1325,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
 
                 auto blocks = allocateBlocks(sub_size, window_block_size, splits);
                 StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
-                Rope sr = readFromSource(pr.object, sub_obj_off, std::move(blocks), sub_logical,
+                ChainedBuffers sr = readFromSource(pr.object, sub_obj_off, std::move(blocks), sub_logical,
                     read_extent_end, &long_conn, /*stop=*/nullptr, out_stats);
                 HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
                     static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
@@ -1354,7 +1354,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     return !fetch_ranges.empty();
 }
 
-Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
+ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
     bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
     std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats)
 {
@@ -1365,7 +1365,7 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
     /// its own `backfillBytes`. The window is already clamped to one plan gap by
     /// the caller, so it never straddles a resident run; the cache backfill of
     /// these bytes is `backfillBytes`'s job.
-    Rope result;
+    ChainedBuffers result;
     if (physical_window.size == 0)
         return result;
 
@@ -1384,15 +1384,15 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
         /// `getOrSet` that would segment-align a miss runs later, in `backfillBytes`).
         auto blocks = allocateBlocks(pr.size, window_block_size, {});
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
-        Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
+        ChainedBuffers source_chain = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
             read_extent, lc, stop, out_stats);
         HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
             static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
-        const size_t actual = source_rope.totalBytes();
+        const size_t actual = source_chain.totalBytes();
         out_stats.add(Stats::BytesFromSource, actual);
         if (from_prefetch)
             out_stats.add(Stats::PrefetchIssuedSourceBytes, actual);
-        result.append(std::move(source_rope));
+        result.append(std::move(source_chain));
         file_pos += pr.size;
 
         /// The BETWEEN-CONNECTIONS stop point (and the post-hoc classifier for a
@@ -1420,8 +1420,8 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
 }
 
 void ReaderExecutor::backfillBytes(
-    ByteRange physical_window, ByteRange requested_window, const Rope & source_bytes,
-    Rope & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats)
+    ByteRange physical_window, ByteRange requested_window, const ChainedBuffers & source_bytes,
+    ChainedBuffers & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats)
 {
     /// The prefetch-CONSUME gap path: the worker already fetched the whole aligned
     /// `physical_window` into `source_bytes` (it does no cache work). Serve any grown
@@ -1436,10 +1436,10 @@ void ReaderExecutor::backfillBytes(
 
 void ReaderExecutor::assembleAndWriteBack(
     ByteRange fetch_window, ByteRange requested_window,
-    const Rope & source_bytes, Rope & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats)
+    const ChainedBuffers & source_bytes, ChainedBuffers & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats)
 {
     /// Append the source bytes for the still-uncovered gaps of `fetch_window`, in offset
-    /// order (assembly truth is the SOURCE Rope, `[CF-contiguity]`). CLAMP every append to
+    /// order (assembly truth is the SOURCE ChainedBuffers, `[CF-contiguity]`). CLAMP every append to
     /// what `source_bytes` ACTUALLY delivered: a size-unknown EOF read returns fewer bytes
     /// than the window, and a cold-segment miss head can sit BEFORE the window - those head
     /// bytes were never fetched, so they stay a hole here and the held write buffer's
@@ -1473,7 +1473,7 @@ void ReaderExecutor::assembleAndWriteBack(
         pushAssembledToWriteBuffers(fetch_window, result, out_stats);
 }
 
-Rope ReaderExecutor::finalizeAssembledWindow(ByteRange slice_window, size_t pin_frontier, Rope & result, bool eof_latch)
+ChainedBuffers ReaderExecutor::finalizeAssembledWindow(ByteRange slice_window, size_t pin_frontier, ChainedBuffers & result, bool eof_latch)
 {
     /// Strategy A pin: re-point to the partial segment under `pin_frontier` - the frontier
     /// the read actually reached, which (with page-block alignment) can sit past
@@ -1515,10 +1515,10 @@ Rope ReaderExecutor::finalizeAssembledWindow(ByteRange slice_window, size_t pin_
     return sliced;
 }
 
-void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, const Rope & result, Stats & out_stats)
+void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, const ChainedBuffers & result, Stats & out_stats)
 {
     /// Push the assembled `result`'s miss bytes into the plan's held write buffers,
-    /// fire-and-forget: `result` is already assembled from the source Rope + hit readers,
+    /// fire-and-forget: `result` is already assembled from the source ChainedBuffers + hit readers,
     /// so a short/zero `write` landing affects only `BytesPushedToCacheSync`, never
     /// `result` (`[CF-contiguity]`). Writes only into the authoritative `BufEntry::writers`
     /// (`chassert(writer)`), never the view's null-writer misses (`[CF-mutate]`). `result`
@@ -1545,7 +1545,7 @@ bool ReaderExecutor::isScheduledFillTarget(ByteRange window, size_t entry, ByteR
     return false;
 }
 
-void ReaderExecutor::writeSliceToWriter(MissEntry & w, ByteRange window, const Rope & rope,
+void ReaderExecutor::writeSliceToWriter(MissEntry & w, ByteRange window, const ChainedBuffers & chain,
     Stats::Counter bytes_counter, Stats & out_stats)
 {
     chassert(w.writer);
@@ -1557,7 +1557,7 @@ void ReaderExecutor::writeSliceToWriter(MissEntry & w, ByteRange window, const R
     const size_t hi = std::min(w.writer->range().end(), window.end());
     if (lo >= hi)
         return;
-    auto slice = rope.slice(ByteRange{lo, hi - lo});
+    auto slice = chain.slice(ByteRange{lo, hi - lo});
     if (slice.empty())
         return;
     out_stats.add(Stats::CachePopulateRequests);
@@ -1567,8 +1567,8 @@ void ReaderExecutor::writeSliceToWriter(MissEntry & w, ByteRange window, const R
         static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
 }
 
-void ReaderExecutor::pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
-    const Rope & rope, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats)
+void ReaderExecutor::pushChainToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
+    const ChainedBuffers & chain, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats)
 {
     for (auto & w : writers)
     {
@@ -1578,12 +1578,12 @@ void ReaderExecutor::pushRopeToWriters(VectorWithMemoryTracking<MissEntry> & wri
         /// fetch-side flag before its put - see `schedulePutStep`.)
         if (interrupt && interrupt->load(std::memory_order_relaxed))
             break;
-        writeSliceToWriter(w, window, rope, bytes_counter, out_stats);
+        writeSliceToWriter(w, window, chain, bytes_counter, out_stats);
     }
 }
 
 void ReaderExecutor::recreditCommittedPrefixes(
-    ByteRange window, Rope & result, IntervalSet & covered, Stats & out_stats)
+    ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats)
 {
     /// Before the source fetch, re-credit any committed prefix of a frozen miss that a
     /// concurrent reader (or this plan's own write) has grown since plan-build: serve it
@@ -1624,7 +1624,7 @@ void ReaderExecutor::recreditCommittedPrefixes(
                 StatTimer get_scope(out_stats, Stats::CacheGetMicroseconds);
                 for (const auto & sub : useful)
                 {
-                    Rope chunk = w.writer->read(sub);
+                    ChainedBuffers chunk = w.writer->read(sub);
                     if (!chunk.covers(sub))
                         continue;  /// raced shrink/detach - fall back to the source path
                     result.append(chunk.extract(sub));
@@ -1638,9 +1638,9 @@ void ReaderExecutor::recreditCommittedPrefixes(
     }
 }
 
-Rope ReaderExecutor::readFromSource(
+ChainedBuffers ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
-    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
+    VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t logical_offset,
     std::optional<size_t> read_extent, std::optional<LongConnection> * lc,
     const MachineBase * stop, Stats & out_stats)
 {
@@ -1655,7 +1655,7 @@ Rope ReaderExecutor::readFromSource(
     /// Drain a held/carried long connection if it can serve this fetch contiguously
     /// within its bound. `lc` is the foreground's `long_conn` or the worker's machine
     /// payload, never the other's, so each thread drains only its own.
-    Rope head;  /// the prefix served from a held connection that drains to its bound mid-read
+    ChainedBuffers head;  /// the prefix served from a held connection that drains to its bound mid-read
     if (lc && *lc)
     {
         if ((*lc)->servesObject(object.remote_path)
@@ -1680,8 +1680,8 @@ Rope ReaderExecutor::readFromSource(
                 prefix_bytes += blocks[n++]->size();
             if (prefix_bytes == prefix_span && n > 0)
             {
-                VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> prefix;
-                VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> suffix;
+                VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> prefix;
+                VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> suffix;
                 for (size_t i = 0; i < blocks.size(); ++i)
                     (i < n ? prefix : suffix).push_back(std::move(blocks[i]));
                 head = serveFromLong(*lc, offset, std::move(prefix), logical_offset, stop, out_stats);
@@ -1716,7 +1716,7 @@ Rope ReaderExecutor::readFromSource(
     auto & buf = *opened;
     out_stats.add(Stats::SourceRequests);
 
-    Rope rope = std::move(head);  /// the connection-served prefix, if the read was split at the bound
+    ChainedBuffers chain = std::move(head);  /// the connection-served prefix, if the read was split at the bound
     size_t total_read = 0;
     bool hit_eof = false;
 
@@ -1735,7 +1735,7 @@ Rope ReaderExecutor::readFromSource(
             break;
         }
 
-        rope.append(RopeNode{block, 0, got, logical_offset + total_read});
+        chain.append(ChainedBufferNode{block, 0, got, logical_offset + total_read});
         total_read += got;
     }
 
@@ -1746,14 +1746,14 @@ Rope ReaderExecutor::readFromSource(
     if (!hit_eof && total_read > 0 && (!stateless_bounded || total_read < want))
         out_stats.add(Stats::IncompleteConnections);
 
-    return rope;
+    return chain;
 }
 
-VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::allocateBlocks(
+VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> ReaderExecutor::allocateBlocks(
     size_t size, size_t block_size, const VectorWithMemoryTracking<size_t> & splits)
 {
     chassert(block_size > 0);
-    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks;
+    VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks;
     blocks.reserve((size + block_size - 1) / block_size + splits.size());
 
     size_t pos = 0;
@@ -1765,7 +1765,7 @@ VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::alloc
 
         const size_t boundary = (split_it != splits.end()) ? std::min(*split_it, size) : size;
         const size_t chunk = std::min(block_size, boundary - pos);
-        blocks.push_back(std::make_shared<OwnedRopeBuffer>(chunk));
+        blocks.push_back(std::make_shared<OwnedChainedBuffer>(chunk));
         pos += chunk;
     }
     return blocks;
@@ -1773,11 +1773,11 @@ VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::alloc
 
 // ─── Long connection ────────────────────────────────────────────────────────
 
-Rope ReaderExecutor::LongConnection::readInto(
-    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
+ChainedBuffers ReaderExecutor::LongConnection::readInto(
+    VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t logical_offset,
     const MachineBase * stop)
 {
-    Rope rope;
+    ChainedBuffers chain;
     size_t total_read = 0;
     for (auto & block : blocks)
     {
@@ -1788,11 +1788,11 @@ Rope ReaderExecutor::LongConnection::readInto(
         const size_t got = readIntoBlock(*buffer, block->data(), block->size());
         if (got == 0)
             break;
-        rope.append(RopeNode{block, 0, got, logical_offset + total_read});
+        chain.append(ChainedBufferNode{block, 0, got, logical_offset + total_read});
         total_read += got;
     }
     current_position += total_read;
-    return rope;
+    return chain;
 }
 
 size_t ReaderExecutor::LongConnection::skipForward(size_t gap, size_t block_bytes)
@@ -1803,7 +1803,7 @@ size_t ReaderExecutor::LongConnection::skipForward(size_t gap, size_t block_byte
     if (gap == 0)
         return 0;
     const size_t scratch_size = std::min(gap, block_bytes);
-    auto scratch = std::make_shared<OwnedRopeBuffer>(scratch_size);
+    auto scratch = std::make_shared<OwnedChainedBuffer>(scratch_size);
     size_t skipped = 0;
     while (skipped < gap)
     {
@@ -1962,8 +1962,8 @@ void ReaderExecutor::openLong(std::optional<LongConnection> & conn, const Stored
     out_stats.add(Stats::LongConnectionOpened);
 }
 
-Rope ReaderExecutor::serveFromLong(std::optional<LongConnection> & conn, size_t offset,
-    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
+ChainedBuffers ReaderExecutor::serveFromLong(std::optional<LongConnection> & conn, size_t offset,
+    VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t logical_offset,
     const MachineBase * stop, Stats & out_stats) const
 {
     /// Precondition: the caller has checked `servesObject` + `canContinue`.
@@ -1976,12 +1976,12 @@ Rope ReaderExecutor::serveFromLong(std::optional<LongConnection> & conn, size_t 
         out_stats.add(Stats::OverReadBytes, skipped);
     }
     /// The served bytes are counted as `BytesFromSource` by the caller (the returned
-    /// rope), as on the one-shot path.
-    Rope rope = conn->readInto(std::move(blocks), logical_offset, stop);
+    /// chain), as on the one-shot path.
+    ChainedBuffers chain = conn->readInto(std::move(blocks), logical_offset, stop);
     out_stats.add(Stats::LongConnectionHits);
-    out_stats.add(Stats::LongConnectionBytes, rope.totalBytes());
+    out_stats.add(Stats::LongConnectionBytes, chain.totalBytes());
     releaseLongAtBound(conn);
-    return rope;
+    return chain;
 }
 
 bool ReaderExecutor::maybeDrainLongTail(std::optional<LongConnection> & conn, Stats & out_stats) const
@@ -2043,7 +2043,7 @@ void ReaderExecutor::openLongForTest(size_t phys_offset, size_t reach)
     openLong(long_conn, pr.object, pr.object_offset, read_end, std::move(slot), stats);
 }
 
-Rope ReaderExecutor::serveFromLongForTest(size_t phys_offset, size_t want)
+ChainedBuffers ReaderExecutor::serveFromLongForTest(size_t phys_offset, size_t want)
 {
     auto ranges = offset_map.map(ByteRange{phys_offset, want});
     chassert(!ranges.empty());
@@ -2052,7 +2052,7 @@ Rope ReaderExecutor::serveFromLongForTest(size_t phys_offset, size_t want)
     return serveFromLong(long_conn, pr.object_offset, std::move(blocks), phys_offset, /*stop=*/nullptr, stats);
 }
 
-void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope & assembled)
+void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled)
 {
 
     /// Over the cap: the NEW fill is skipped - droppable by the invariant
@@ -2099,7 +2099,7 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
     if (m->writers.empty())
         return;  /// nothing to fill for this window
 
-    m->fill_rope = assembled;
+    m->fill_chain = assembled;
     /// The machine is being re-armed for a second step: a takeover collect set
     /// `interrupt_requested` to stop the FETCH - the put must not inherit it.
     m->interrupt_requested.store(false);
@@ -2108,10 +2108,10 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
     m->run_step = [this, self = m.get()]
     {
         self->stats.add(Stats::PutWaitMicroseconds, self->put_wait.elapsedMicroseconds());
-        const size_t fill_end = self->fill_rope.empty()
+        const size_t fill_end = self->fill_chain.empty()
             ? self->physical_window.offset
-            : std::min(self->physical_window.end(), self->fill_rope.range().end());
-        pushRopeToWriters(self->writers, self->physical_window, self->fill_rope,
+            : std::min(self->physical_window.end(), self->fill_chain.range().end());
+        pushChainToWriters(self->writers, self->physical_window, self->fill_chain,
             self->put_bytes_counter, &self->interrupt_requested, self->stats);
         /// Pin the partial segment under the just-written frontier until the
         /// reap (see `fill_pin`): the foreground's finalize pinned BEFORE this
@@ -2126,9 +2126,9 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Rope
                 }
         }
         /// The writers are NOT released here - the reap returns them home (a
-        /// writer spans many windows and the next one needs it). Only the rope
+        /// writer spans many windows and the next one needs it). Only the chain
         /// is dropped: the fill is committed (or abandoned on abort).
-        self->fill_rope = {};
+        self->fill_chain = {};
         return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
 
@@ -2271,9 +2271,9 @@ void ReaderExecutor::joinPutMachinesOverlapping(ByteRange window, bool writers_t
             /// HERE rather than skip - skipping would re-fetch the bytes from the
             /// source AND drop the fill (double loss). The one case a deferred
             /// write runs on the client thread, bounded by one window.
-            pushRopeToWriters(m.writers, m.physical_window, m.fill_rope,
+            pushChainToWriters(m.writers, m.physical_window, m.fill_chain,
                 Stats::BytesPushedToCacheSync, /*interrupt=*/nullptr, m.stats);
-            m.fill_rope = {};
+            m.fill_chain = {};
         }
         else
         {
@@ -2284,7 +2284,7 @@ void ReaderExecutor::joinPutMachinesOverlapping(ByteRange window, bool writers_t
     }
 }
 
-void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats)
+void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, const ChainedBuffers & bytes, Stats & out_stats)
 {
 
     /// Without a `CacheFiller` pool the promote runs synchronously, as always.
@@ -2332,15 +2332,15 @@ void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, c
     if (pm->writers.empty())
         return;  /// nothing faster populatable for this run (or all on loan)
 
-    pm->fill_rope = bytes;
+    pm->fill_chain = bytes;
     pm->put_wait.restart();
     pm->put_bytes_counter = Stats::BytesPromoted;
     pm->run_step = [this, self = pm.get()]
     {
         self->stats.add(Stats::PutWaitMicroseconds, self->put_wait.elapsedMicroseconds());
-        pushRopeToWriters(self->writers, self->physical_window, self->fill_rope,
+        pushChainToWriters(self->writers, self->physical_window, self->fill_chain,
             self->put_bytes_counter, &self->interrupt_requested, self->stats);
-        self->fill_rope = {};
+        self->fill_chain = {};
         return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
 
@@ -2357,7 +2357,7 @@ void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, c
     }
 }
 
-void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats)
+void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const ChainedBuffers & bytes, Stats & out_stats)
 {
     /// The POOL-LESS promote body (`schedulePromoteStep` defers the same write to a
     /// put-only machine when pools are present).
@@ -2577,7 +2577,7 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     /// EOF (no further launch) or a cancel/re-plan (which resets `fetched`), so the
     /// frontier never strands un-fetched bytes mid-plan.
     const size_t window = machine ? machine->physical_window.size : 0;
-    Rope collected;
+    ChainedBuffers collected;
     if (tryCollectMachine(collected))
     {
         /// `collected` is logical (the I/O leaf already shifted + sliced to `position`);
@@ -2596,21 +2596,21 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     }
 }
 
-Rope ReaderExecutor::serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys, size_t to_read) const
+ChainedBuffers ReaderExecutor::serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys, size_t to_read) const
 {
     /// All logical: `ready_bytes` and `position` are logical; the cursor step is physical,
-    /// so shift its end by the header. No `Rope` shift - only the bounds arithmetic.
+    /// so shift its end by the header. No `ChainedBuffers` shift - only the bounds arithmetic.
     const size_t pos = position_phys - data_start_offset;
     const size_t step_end = step.output.end() - data_start_offset;
     const size_t end = std::min({step_end, pos + to_read, st.ready_bytes.range().end()});
-    Rope out = st.ready_bytes.slice(ByteRange{pos, end - pos});
+    ChainedBuffers out = st.ready_bytes.slice(ByteRange{pos, end - pos});
     /// Release everything up to `end` (the served prefix + any skipped head) so the
     /// banked footprint stays ~one window.
     st.ready_bytes = st.ready_bytes.slice(ByteRange{end, st.ready_bytes.range().end() - end});
     return out;
 }
 
-Rope ReaderExecutor::serveRetrieveForeground(size_t ri, size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::serveRetrieveForeground(size_t ri, size_t position_phys, size_t to_read)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
     auto & st = read_plan.retrieve_status[ri];
@@ -2627,7 +2627,7 @@ Rope ReaderExecutor::serveRetrieveForeground(size_t ri, size_t position_phys, si
     const size_t want = std::min({to_read, step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
     if (want == 0)
         return {};
-    Rope w = syncGapRead(ByteRange{position_phys, want});  /// returns logical, banked directly
+    ChainedBuffers w = syncGapRead(ByteRange{position_phys, want});  /// returns logical, banked directly
     if (!w.empty())
         st.ready_bytes.append(std::move(w));
     /// The launch frontier is a high-water mark of bytes fetched from `r.range.offset`, NOT
@@ -2639,7 +2639,7 @@ Rope ReaderExecutor::serveRetrieveForeground(size_t ri, size_t position_phys, si
     return serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys, to_read);
 }
 
-Rope ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys, size_t to_read)
 {
     auto & st = read_plan.retrieve_status[ri];
     const size_t pos = position_phys - data_start_offset;  /// `ready_bytes` is logical
@@ -2657,17 +2657,17 @@ Rope ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t r
     return serveStepFromBanked(step, st, position_phys, to_read);
 }
 
-Rope ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys, size_t to_read)
 {
     /// A resident step: stream it from the held cache buffers, bounded to the step (the
     /// maximal cross-tier resident run) and to one block. Reuses the resident serve path.
     return serveCacheBlock(position_phys, std::min(to_read, step.output.end() - position_phys));
 }
 
-Rope ReaderExecutor::handleExtentOrReplan(size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::handleExtentOrReplan(size_t position_phys, size_t to_read)
 {
     /// The cursor ran past the materialized steps (or there is nothing to read). At a known
-    /// end / the extent, this is EOF (empty rope). Otherwise re-plan from here and retry.
+    /// end / the extent, this is EOF (empty chain). Otherwise re-plan from here and retry.
     if (to_read == 0 || atEnd())
         return {};
     if (!read_plan.geometry() || read_plan.cursor >= read_plan.schedule.steps.size())
@@ -2680,7 +2680,7 @@ Rope ReaderExecutor::handleExtentOrReplan(size_t position_phys, size_t to_read)
     return interpretStep(position_phys, to_read);
 }
 
-Rope ReaderExecutor::interpretStep(size_t position_phys, size_t to_read)
+ChainedBuffers ReaderExecutor::interpretStep(size_t position_phys, size_t to_read)
 {
     if (to_read == 0 || !read_plan.geometry() || read_plan.schedule.steps.empty()
         || read_plan.cursor >= read_plan.schedule.steps.size())
@@ -3008,7 +3008,7 @@ void ReaderExecutor::drainAbandonedMachines(bool wait_finished)
                     tryLogException(m->failure, log, "Cancelled prefetch task threw", LogsLevel::debug);
                 /// Reconcile the reaped machine: its fetch really happened, so
                 /// merge the stats and attribute the issued bytes to wasted (the
-                /// rope is never collected). A REVOKED machine no-ops every term:
+                /// chain is never collected). A REVOKED machine no-ops every term:
                 /// its stats are zero.
                 stats += m->stats;
                 stats.add(Stats::PrefetchWastedSourceBytes, m->stats.get(Stats::PrefetchIssuedSourceBytes));

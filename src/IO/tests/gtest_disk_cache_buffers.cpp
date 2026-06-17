@@ -6,7 +6,7 @@
 /// `FileSegment::reserve` finds a query budget).
 
 #include <IO/DiskCacheProvider.h>
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <IO/IntervalSet.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
@@ -49,18 +49,18 @@ namespace
 
 constexpr size_t kSegmentSize = 4 * 1024;
 
-/// Make a contiguous file-level rope of `byte` over `[offset, offset + size)`.
-Rope makeRope(size_t offset, size_t size, char byte)
+/// Make a contiguous file-level chain of `byte` over `[offset, offset + size)`.
+ChainedBuffers makeChain(size_t offset, size_t size, char byte)
 {
-    Rope r;
-    auto buf = std::make_shared<OwnedRopeBuffer>(size);
+    ChainedBuffers r;
+    auto buf = std::make_shared<OwnedChainedBuffer>(size);
     std::memset(buf->data(), byte, size);
-    r.append(RopeNode{std::move(buf), 0, size, offset});
+    r.append(ChainedBufferNode{std::move(buf), 0, size, offset});
     return r;
 }
 
-/// Flatten a rope's bytes (in logical order) into a string for comparison.
-std::string flatten(const Rope & r)
+/// Flatten a chain's bytes (in logical order) into a string for comparison.
+std::string flatten(const ChainedBuffers & r)
 {
     std::string out;
     for (const auto & node : r.getNodes())
@@ -172,21 +172,21 @@ TEST_F(DiskCacheBuffers, WriteAcrossWindowsThenHit)
     const size_t half = kSegmentSize / 2;
 
     // First window: [0, half) of 'A'.
-    size_t n1 = writer.write(makeRope(0, half, 'A'));
+    size_t n1 = writer.write(makeChain(0, half, 'A'));
     EXPECT_EQ(n1, half);
     EXPECT_FALSE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, half}).empty());
     EXPECT_FALSE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
 
     // Second window: [half, segment) of 'B' — appends from the grown cwo.
-    size_t n2 = writer.write(makeRope(half, kSegmentSize - half, 'B'));
+    size_t n2 = writer.write(makeChain(half, kSegmentSize - half, 'B'));
     EXPECT_EQ(n2, kSegmentSize - half);
     EXPECT_TRUE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
 
     // read() from the write buffer returns what was written.
     {
-        Rope got = writer.read(ByteRange{0, kSegmentSize});
+        ChainedBuffers got = writer.read(ByteRange{0, kSegmentSize});
         ASSERT_TRUE(got.covers(ByteRange{0, kSegmentSize}));
         std::string s = flatten(got);
         ASSERT_EQ(s.size(), kSegmentSize);
@@ -207,7 +207,7 @@ TEST_F(DiskCacheBuffers, WriteAcrossWindowsThenHit)
     ASSERT_NE(hit.reader, nullptr);
     EXPECT_EQ(hit.reader->readable(), kSegmentSize);
 
-    Rope got = hit.reader->read(ByteRange{0, kSegmentSize});
+    ChainedBuffers got = hit.reader->read(ByteRange{0, kSegmentSize});
     ASSERT_TRUE(got.covers(ByteRange{0, kSegmentSize}));
     std::string s = flatten(got);
     EXPECT_EQ(s.substr(0, half), std::string(half, 'A'));
@@ -226,22 +226,22 @@ TEST_F(DiskCacheBuffers, IdempotentReWriteReturnsZero)
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
-    size_t n1 = writer.write(makeRope(0, kSegmentSize, 'X'));
+    size_t n1 = writer.write(makeChain(0, kSegmentSize, 'X'));
     EXPECT_EQ(n1, kSegmentSize);
     EXPECT_TRUE(writer.complete());
 
     // Re-write the same range: append-only at a now-exhausted cwo → 0 bytes.
-    size_t n2 = writer.write(makeRope(0, kSegmentSize, 'Y'));
+    size_t n2 = writer.write(makeChain(0, kSegmentSize, 'Y'));
     EXPECT_EQ(n2, 0u);
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
 
     // Overlapping re-write also lands nothing new.
-    size_t n3 = writer.write(makeRope(0, kSegmentSize / 2, 'Z'));
+    size_t n3 = writer.write(makeChain(0, kSegmentSize / 2, 'Z'));
     EXPECT_EQ(n3, 0u);
 }
 
 
-/// (c) write a Rope starting past the segment cwo (a gap at the front) → only the
+/// (c) write a ChainedBuffers starting past the segment cwo (a gap at the front) → only the
 /// contiguous prefix lands; the rest is left for a later write (no throw).
 TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
 {
@@ -255,7 +255,7 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
     const size_t quarter = kSegmentSize / 4;
 
     // Data starts at `quarter` while cwo is still 0 → nothing contiguous lands.
-    size_t n0 = writer.write(makeRope(quarter, quarter, 'G'));
+    size_t n0 = writer.write(makeChain(quarter, quarter, 'G'));
     EXPECT_EQ(n0, 0u);
     EXPECT_FALSE(writer.complete());
     // The WHOLE segment is still uncommitted: the single uncovered sub-range
@@ -264,12 +264,12 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
     EXPECT_EQ(writer.committed().subtract(ByteRange{0, kSegmentSize})[0].size, kSegmentSize);
 
     // Now write the front prefix; it lands and advances cwo.
-    size_t n1 = writer.write(makeRope(0, quarter, 'H'));
+    size_t n1 = writer.write(makeChain(0, quarter, 'H'));
     EXPECT_EQ(n1, quarter);
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, quarter}).empty());
 
     // The earlier gap can now be filled contiguously.
-    size_t n2 = writer.write(makeRope(quarter, kSegmentSize - quarter, 'I'));
+    size_t n2 = writer.write(makeChain(quarter, kSegmentSize - quarter, 'I'));
     EXPECT_EQ(n2, kSegmentSize - quarter);
     EXPECT_TRUE(writer.complete());
 }
@@ -307,7 +307,7 @@ TEST_F(DiskCacheBuffers, PlanResidencyViewIsReadOnly)
     ASSERT_EQ(writer.committed().subtract(ByteRange{0, kSegmentSize}).size(), 1u);
     EXPECT_EQ(writer.committed().subtract(ByteRange{0, kSegmentSize})[0].size, kSegmentSize);
     // It is genuinely empty: a full write succeeds entirely.
-    EXPECT_EQ(writer.write(makeRope(0, kSegmentSize, 'D')), kSegmentSize);
+    EXPECT_EQ(writer.write(makeChain(0, kSegmentSize, 'D')), kSegmentSize);
 }
 
 
@@ -346,7 +346,7 @@ TEST_F(DiskCacheBuffers, PinFrontier)
 
     // Partially fill so a committed prefix exists and the segment stays PARTIAL.
     const size_t half = kSegmentSize / 2;
-    ASSERT_EQ(writer.write(makeRope(0, half, 'P')), half);
+    ASSERT_EQ(writer.write(makeChain(0, half, 'P')), half);
 
     // At-boundary frontier (== range().left) → cwo > left holds, so a pin at the
     // segment start is valid; a pin at the committed frontier is also valid since
@@ -363,7 +363,7 @@ TEST_F(DiskCacheBuffers, PinFrontier)
 
     // The pin is a FileSegmentPtr aliased as void; releasing it must not break the
     // buffer. Keep it while completing the fill.
-    ASSERT_EQ(writer.write(makeRope(half, kSegmentSize - half, 'Q')), kSegmentSize - half);
+    ASSERT_EQ(writer.write(makeChain(half, kSegmentSize - half, 'Q')), kSegmentSize - half);
     EXPECT_TRUE(writer.complete());
     pin_start.reset();
     pin_mid.reset();
@@ -393,7 +393,7 @@ TEST_F(DiskCacheBuffers, ReadableGrowsWithPartialWrite)
     auto & writer = *misses[0].writer;
 
     const size_t quarter = kSegmentSize / 4;     // sub-segment partial fill
-    ASSERT_EQ(writer.write(makeRope(0, quarter, 'R')), quarter);
+    ASSERT_EQ(writer.write(makeChain(0, quarter, 'R')), quarter);
 
     // A view over the same range reports the committed prefix as a hit; its read
     // buffer's readable() reflects the partial cwo.
@@ -403,7 +403,7 @@ TEST_F(DiskCacheBuffers, ReadableGrowsWithPartialWrite)
     EXPECT_EQ(hit.range.offset, 0u);
     EXPECT_EQ(hit.reader->readable(), quarter);
 
-    Rope got = hit.reader->read(ByteRange{0, quarter});
+    ChainedBuffers got = hit.reader->read(ByteRange{0, quarter});
     ASSERT_TRUE(got.covers(ByteRange{0, quarter}));
     EXPECT_EQ(flatten(got), std::string(quarter, 'R'));
 
@@ -436,14 +436,14 @@ TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
     EXPECT_FALSE(writer.complete());
 
     // First segment only: complete() stays false; committed() spans just segment 0.
-    size_t n1 = writer.write(makeRope(0, kSegmentSize, 'A'));
+    size_t n1 = writer.write(makeChain(0, kSegmentSize, 'A'));
     EXPECT_EQ(n1, kSegmentSize);
     EXPECT_FALSE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
     EXPECT_FALSE(writer.committed().subtract(ByteRange{0, 2 * kSegmentSize}).empty());
 
     // Second segment: crosses the boundary, completes the buffer.
-    size_t n2 = writer.write(makeRope(kSegmentSize, kSegmentSize, 'B'));
+    size_t n2 = writer.write(makeChain(kSegmentSize, kSegmentSize, 'B'));
     EXPECT_EQ(n2, kSegmentSize);
     EXPECT_TRUE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, 2 * kSegmentSize}).empty());
@@ -458,7 +458,7 @@ TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
 
     auto read_segment = [&](size_t off, char byte)
     {
-        Rope acc;
+        ChainedBuffers acc;
         for (const auto & hit : view->hits())
             acc.append(hit.reader->read(ByteRange{off, kSegmentSize}));
         ASSERT_TRUE(acc.covers(ByteRange{off, kSegmentSize}));
@@ -493,7 +493,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     EXPECT_EQ(writer.range().size, kSegmentSize);
 
     // Write at the FILE-LEVEL offset; the file-level committed interval lands.
-    size_t n = writer.write(makeRope(kSegmentSize, kSegmentSize, 'F'));
+    size_t n = writer.write(makeChain(kSegmentSize, kSegmentSize, 'F'));
     EXPECT_EQ(n, kSegmentSize);
     EXPECT_TRUE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{kSegmentSize, kSegmentSize}).empty());
@@ -510,7 +510,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     EXPECT_EQ(hit.range.size, kSegmentSize);
     ASSERT_NE(hit.reader, nullptr);
 
-    Rope got = hit.reader->read(ByteRange{kSegmentSize, kSegmentSize});
+    ChainedBuffers got = hit.reader->read(ByteRange{kSegmentSize, kSegmentSize});
     ASSERT_TRUE(got.covers(ByteRange{kSegmentSize, kSegmentSize}));
     EXPECT_EQ(flatten(got), std::string(kSegmentSize, 'F'));
 
@@ -523,7 +523,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
         object2, object_file_offset, {ByteRange{kSegmentSize, kSegmentSize}});
     ASSERT_EQ(misses2.size(), 1u);
     ASSERT_NE(misses2[0].writer, nullptr);
-    ASSERT_EQ(misses2[0].writer->write(makeRope(kSegmentSize, kSegmentSize, 'G')), kSegmentSize);
+    ASSERT_EQ(misses2[0].writer->write(makeChain(kSegmentSize, kSegmentSize, 'G')), kSegmentSize);
     misses2.clear();
 
     auto view2 = provider->planResidencyView(
@@ -554,7 +554,7 @@ TEST_F(DiskCacheBuffers, PartialFillFinalizationShrinks)
     auto & writer = *misses[0].writer;
 
     const size_t half = kSegmentSize / 2;
-    ASSERT_EQ(writer.write(makeRope(0, half, 'S')), half);
+    ASSERT_EQ(writer.write(makeChain(0, half, 'S')), half);
     EXPECT_FALSE(writer.complete());
 
     // Drop the writer → the held holder finalizes the partial segment as the last
@@ -570,7 +570,7 @@ TEST_F(DiskCacheBuffers, PartialFillFinalizationShrinks)
     EXPECT_EQ(hit.range.size, half);
     ASSERT_NE(hit.reader, nullptr);
     EXPECT_EQ(hit.reader->readable(), half);
-    Rope got = hit.reader->read(ByteRange{0, half});
+    ChainedBuffers got = hit.reader->read(ByteRange{0, half});
     ASSERT_TRUE(got.covers(ByteRange{0, half}));
     EXPECT_EQ(flatten(got), std::string(half, 'S'));
 
@@ -595,7 +595,7 @@ TEST_F(DiskCacheBuffers, DeferredBumpOnViewDestroyDoesNotThrow)
     {
         auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
         ASSERT_EQ(misses.size(), 1u);
-        ASSERT_EQ(misses[0].writer->write(makeRope(0, kSegmentSize, 'K')), kSegmentSize);
+        ASSERT_EQ(misses[0].writer->write(makeChain(0, kSegmentSize, 'K')), kSegmentSize);
     }
 
     auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
@@ -603,7 +603,7 @@ TEST_F(DiskCacheBuffers, DeferredBumpOnViewDestroyDoesNotThrow)
     ASSERT_FALSE(view->hits().empty());
 
     // Record ranges for the deferred bump.
-    Rope got = view->hits()[0].reader->read(ByteRange{0, kSegmentSize});
+    ChainedBuffers got = view->hits()[0].reader->read(ByteRange{0, kSegmentSize});
     ASSERT_TRUE(got.covers(ByteRange{0, kSegmentSize}));
 
     // Destroying the view runs the deferred bump over the recorded ranges; must not throw.

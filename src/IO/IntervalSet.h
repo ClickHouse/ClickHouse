@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -8,7 +8,7 @@ namespace DB
 
 /// A set of disjoint, sorted byte intervals. `ReaderExecutor` tracks window
 /// coverage with one: every byte appended to the result is `add`-ed first, and
-/// reads only fill what `subtract` reports as uncovered - so the assembled rope
+/// reads only fill what `subtract` reports as uncovered - so the assembled chain
 /// is disjoint by construction regardless of overlapping cache tiers.
 class IntervalSet
 {

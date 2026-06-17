@@ -1,5 +1,5 @@
 #include <IO/PageCacheProvider.h>
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <Common/PageCache.h>
 
 #include <gtest/gtest.h>
@@ -36,24 +36,24 @@ PageCacheFile makeFile(const std::string & path)
     return file;
 }
 
-/// Build a single-node Rope of `size` bytes filled with `fill`, logically at
+/// Build a single-node ChainedBuffers of `size` bytes filled with `fill`, logically at
 /// `[offset, offset + size)`.
-Rope makeRope(size_t offset, size_t size, char fill)
+ChainedBuffers makeChain(size_t offset, size_t size, char fill)
 {
-    Rope rope;
-    auto buf = std::make_shared<OwnedRopeBuffer>(size);
+    ChainedBuffers chain;
+    auto buf = std::make_shared<OwnedChainedBuffer>(size);
     std::memset(buf->data(), fill, size);
-    rope.append(RopeNode{buf, 0, size, offset});
-    return rope;
+    chain.append(ChainedBufferNode{buf, 0, size, offset});
+    return chain;
 }
 
-/// Flatten `rope`'s coverage of `[offset, offset + size)` into a std::string,
+/// Flatten `chain`'s coverage of `[offset, offset + size)` into a std::string,
 /// asserting full coverage first.
-std::string flatten(const Rope & rope, size_t offset, size_t size)
+std::string flatten(const ChainedBuffers & chain, size_t offset, size_t size)
 {
-    EXPECT_TRUE(rope.covers(ByteRange{offset, size}));
+    EXPECT_TRUE(chain.covers(ByteRange{offset, size}));
     std::string out(size, '\0');
-    rope.copyTo(out.data(), ByteRange{offset, size});
+    chain.copyTo(out.data(), ByteRange{offset, size});
     return out;
 }
 
@@ -79,7 +79,7 @@ TEST(PageCacheBuffers, WriteWholeBlockThenHit)
 
     EXPECT_FALSE(writer.complete());
 
-    size_t wrote = writer.write(makeRope(0, block_size, 'A'));
+    size_t wrote = writer.write(makeChain(0, block_size, 'A'));
     EXPECT_EQ(wrote, block_size) << "the whole block newly landed";
     EXPECT_TRUE(writer.complete());
 
@@ -94,8 +94,8 @@ TEST(PageCacheBuffers, WriteWholeBlockThenHit)
     EXPECT_EQ(view->hits()[0].range.size, block_size);
 
     /// The hit read buffer round-trips the written bytes.
-    auto rope = view->hits()[0].reader->read(ByteRange{0, block_size});
-    EXPECT_EQ(flatten(rope, 0, block_size), std::string(block_size, 'A'));
+    auto chain = view->hits()[0].reader->read(ByteRange{0, block_size});
+    EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'A'));
 }
 
 /// (b) The write buffer doubles as a read buffer: after write(), writer.read(sub)
@@ -113,7 +113,7 @@ TEST(PageCacheBuffers, WriteBufferDoublesAsReadBuffer)
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
-    writer.write(makeRope(0, block_size, 'Z'));
+    writer.write(makeChain(0, block_size, 'Z'));
 
     /// Whole-block read back.
     auto whole = writer.read(ByteRange{0, block_size});
@@ -145,7 +145,7 @@ TEST(PageCacheBuffers, EofTailBlockShort)
     auto & writer = *misses[0].writer;
     EXPECT_EQ(writer.range().size, tail_size);
 
-    size_t wrote = writer.write(makeRope(tail_off, tail_size, 'T'));
+    size_t wrote = writer.write(makeChain(tail_off, tail_size, 'T'));
     EXPECT_EQ(wrote, tail_size);
     EXPECT_TRUE(writer.complete());
 
@@ -157,9 +157,9 @@ TEST(PageCacheBuffers, EofTailBlockShort)
 
     /// A read asking for a full block returns only the 476 valid bytes — the cell
     /// physically has no more (no past-EOF region).
-    auto rope = view->hits()[0].reader->read(ByteRange{tail_off, block_size});
-    EXPECT_EQ(rope.totalBytes(), tail_size);
-    EXPECT_EQ(flatten(rope, tail_off, tail_size), std::string(tail_size, 'T'));
+    auto chain = view->hits()[0].reader->read(ByteRange{tail_off, block_size});
+    EXPECT_EQ(chain.totalBytes(), tail_size);
+    EXPECT_EQ(flatten(chain, tail_off, tail_size), std::string(tail_size, 'T'));
 }
 
 /// (d) bypass: a provider with bypass_if_missing=true => openWriteBuffers returns
@@ -188,7 +188,7 @@ TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
         PageCacheWriter writer(
             cache, file, block_size, /*file_size_in_bytes=*/block_size,
             /*inject_eviction=*/false, /*bypass_if_missing=*/true, ByteRange{0, block_size});
-        size_t wrote = writer.write(makeRope(0, block_size, 'X'));
+        size_t wrote = writer.write(makeChain(0, block_size, 'X'));
         EXPECT_EQ(wrote, 0u);
         EXPECT_FALSE(writer.complete()) << "bypass write commits nothing";
     }
@@ -240,7 +240,7 @@ TEST(PageCacheBuffers, FirstWriterWins)
     {
         auto first = provider.openWriteBuffers(StoredObject{}, 0, {ByteRange{0, block_size}});
         ASSERT_EQ(first.size(), 1u);
-        size_t wrote = first[0].writer->write(makeRope(0, block_size, 'F'));
+        size_t wrote = first[0].writer->write(makeChain(0, block_size, 'F'));
         EXPECT_EQ(wrote, block_size);
     }
 
@@ -249,14 +249,14 @@ TEST(PageCacheBuffers, FirstWriterWins)
     ASSERT_EQ(second.size(), 1u);
     auto & writer = *second[0].writer;
 
-    size_t wrote = writer.write(makeRope(0, block_size, 'S'));
+    size_t wrote = writer.write(makeChain(0, block_size, 'S'));
     EXPECT_EQ(wrote, 0u) << "lost the first-writer-wins race: nothing newly landed";
     EXPECT_TRUE(writer.complete()) << "the byte IS cached (by the first writer), so committed must advance";
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, block_size}).empty());
 
     /// read returns the FIRST writer's bytes (the adopted existing cell).
-    auto rope = writer.read(ByteRange{0, block_size});
-    EXPECT_EQ(flatten(rope, 0, block_size), std::string(block_size, 'F'));
+    auto chain = writer.read(ByteRange{0, block_size});
+    EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'F'));
 }
 
 /// (g) multi-block write + read-back per block: a range spanning >= 2 blocks, one
@@ -281,15 +281,15 @@ TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
     EXPECT_EQ(writer.range().offset, 0u);
     EXPECT_EQ(writer.range().size, span);
 
-    /// Two-node rope: block 0 filled '0', block 1 filled '1'.
-    Rope data;
+    /// Two-node chain: block 0 filled '0', block 1 filled '1'.
+    ChainedBuffers data;
     {
-        auto b0 = std::make_shared<OwnedRopeBuffer>(block_size);
+        auto b0 = std::make_shared<OwnedChainedBuffer>(block_size);
         std::memset(b0->data(), '0', block_size);
-        data.append(RopeNode{b0, 0, block_size, 0});
-        auto b1 = std::make_shared<OwnedRopeBuffer>(block_size);
+        data.append(ChainedBufferNode{b0, 0, block_size, 0});
+        auto b1 = std::make_shared<OwnedChainedBuffer>(block_size);
         std::memset(b1->data(), '1', block_size);
-        data.append(RopeNode{b1, 0, block_size, block_size});
+        data.append(ChainedBufferNode{b1, 0, block_size, block_size});
     }
 
     size_t wrote = writer.write(std::move(data));
@@ -328,7 +328,7 @@ TEST(PageCacheBuffers, PartialBlockWriteIsSkipped)
     auto & writer = *misses[0].writer;
 
     /// Data covers only the first half of the block — the whole block is not covered.
-    size_t wrote = writer.write(makeRope(0, block_size / 2, 'P'));
+    size_t wrote = writer.write(makeChain(0, block_size / 2, 'P'));
     EXPECT_EQ(wrote, 0u) << "a partially-covered block is left for a later write";
     EXPECT_FALSE(writer.complete());
     auto uncommitted = writer.committed().subtract(ByteRange{0, block_size});
@@ -358,7 +358,7 @@ TEST(PageCacheBuffers, HitMissInterleavedTiling)
     {
         auto middle = provider.openWriteBuffers(StoredObject{}, 0, {ByteRange{block_size, block_size}});
         ASSERT_EQ(middle.size(), 1u);
-        size_t wrote = middle[0].writer->write(makeRope(block_size, block_size, 'M'));
+        size_t wrote = middle[0].writer->write(makeChain(block_size, block_size, 'M'));
         EXPECT_EQ(wrote, block_size);
     }
 
@@ -376,8 +376,8 @@ TEST(PageCacheBuffers, HitMissInterleavedTiling)
     EXPECT_EQ(view->misses()[1].range.size, block_size);
 
     /// The middle hit reader round-trips the written bytes.
-    auto rope = view->hits()[0].reader->read(ByteRange{block_size, block_size});
-    EXPECT_EQ(flatten(rope, block_size, block_size), std::string(block_size, 'M'));
+    auto chain = view->hits()[0].reader->read(ByteRange{block_size, block_size});
+    EXPECT_EQ(flatten(chain, block_size, block_size), std::string(block_size, 'M'));
 }
 
 /// (j) first-writer-wins is keyed by the cache + file identity, not the provider
@@ -396,7 +396,7 @@ TEST(PageCacheBuffers, FirstWriterWinsAcrossProviders)
     {
         auto first = provider1.openWriteBuffers(StoredObject{}, 0, {ByteRange{0, block_size}});
         ASSERT_EQ(first.size(), 1u);
-        size_t wrote = first[0].writer->write(makeRope(0, block_size, 'F'));
+        size_t wrote = first[0].writer->write(makeChain(0, block_size, 'F'));
         EXPECT_EQ(wrote, block_size);
     }
 
@@ -409,12 +409,12 @@ TEST(PageCacheBuffers, FirstWriterWinsAcrossProviders)
     ASSERT_EQ(second.size(), 1u);
     auto & writer = *second[0].writer;
 
-    size_t wrote = writer.write(makeRope(0, block_size, 'S'));
+    size_t wrote = writer.write(makeChain(0, block_size, 'S'));
     EXPECT_EQ(wrote, 0u) << "lost the cross-provider first-writer-wins race: nothing newly landed";
     EXPECT_TRUE(writer.complete()) << "the byte IS cached (by provider1), so committed must advance";
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, block_size}).empty());
 
     /// read returns the FIRST provider's bytes (the adopted existing cell).
-    auto rope = writer.read(ByteRange{0, block_size});
-    EXPECT_EQ(flatten(rope, 0, block_size), std::string(block_size, 'F'));
+    auto chain = writer.read(ByteRange{0, block_size});
+    EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'F'));
 }

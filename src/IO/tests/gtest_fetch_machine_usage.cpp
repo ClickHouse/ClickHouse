@@ -23,7 +23,7 @@ using namespace DB;
 ///     where the previous one stopped: nothing is recomputed, nothing is lost.
 ///
 /// Production counterpart: `ReaderExecutor::Connection::readInto` checks the
-/// stop gate between source blocks; the rope and the connection frontier are
+/// stop gate between source blocks; the chain and the connection frontier are
 /// the committed progress.
 
 namespace

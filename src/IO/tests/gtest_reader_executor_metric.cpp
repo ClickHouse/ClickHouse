@@ -26,7 +26,7 @@
 #include <IO/PageCacheProvider.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/ReadSettings.h>
-#include <IO/Rope.h>
+#include <IO/ChainedBuffers.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
@@ -393,10 +393,10 @@ public:
                 /// step by step, not the whole read at once. This is what lets a long
                 /// connection's predicted reach run past the (advancing) extent and open.
                 executor.setReadExtent(std::min(end, executor.getPosition() + WINDOW));
-                auto rope = executor.readNextWindow();
-                if (rope.empty())
+                auto chain = executor.readNextWindow();
+                if (chain.empty())
                     break;
-                got += rope.range().size;
+                got += chain.range().size;
             }
             total += got;
         }

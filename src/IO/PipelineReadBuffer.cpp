@@ -54,22 +54,22 @@ off_t PipelineReadBuffer::seek(off_t off, int whence)
 
     LOG_DEBUG(log, "seek to {}", new_pos);
 
-    /// Reset `working_buffer` BEFORE asking the rope to rewind. This makes
+    /// Reset `working_buffer` BEFORE asking the chain to rewind. This makes
     /// the next `nextImpl` advance by 0 (instead of by the size of the
     /// partially-consumed previous span), so the rewind position is
     /// preserved.
     resetWorkingBuffer();
 
-    if (rope.tryRewind(new_pos))
+    if (chain.tryRewind(new_pos))
     {
-        LOG_TRACE(log, "seek: rewound inside rope");
+        LOG_TRACE(log, "seek: rewound inside chain");
         read_position = new_pos;
         return new_pos;
     }
 
     LOG_TRACE(log, "seek: delegating to executor");
     executor->seek(new_pos);
-    rope = Rope{};
+    chain = ChainedBuffers{};
     read_position = new_pos;
     return new_pos;
 }
@@ -145,7 +145,7 @@ size_t PipelineReadBuffer::readBigAt(
     size_t total_copied = 0;
     while (total_copied < want)
     {
-        Rope window = sub->readNextWindow();
+        ChainedBuffers window = sub->readNextWindow();
         if (window.empty())
             break;
         for (const auto & node : window.getNodes())
@@ -183,33 +183,33 @@ bool PipelineReadBuffer::checkIfActuallySeekable()
 
 bool PipelineReadBuffer::nextImpl()
 {
-    /// Tell the rope that the bytes we exposed last time are now fully
+    /// Tell the chain that the bytes we exposed last time are now fully
     /// consumed (the caller would not have called us otherwise). This is
-    /// where the rope releases nodes whose data we no longer need.
+    /// where the chain releases nodes whose data we no longer need.
     /// `working_buffer.size()` is 0 right after construction or right
     /// after `seek` — so the first call and post-seek calls don't
     /// over-advance.
-    rope.advance(working_buffer.size());
+    chain.advance(working_buffer.size());
 
-    if (rope.atEnd())
+    if (chain.atEnd())
     {
-        LOG_TRACE(log, "nextImpl: rope exhausted, requesting next window at position {}", read_position);
-        rope = executor->readNextWindow();
-        if (rope.atEnd())
+        LOG_TRACE(log, "nextImpl: chain exhausted, requesting next window at position {}", read_position);
+        chain = executor->readNextWindow();
+        if (chain.atEnd())
         {
             LOG_TRACE(log, "nextImpl: EOF");
             return false;
         }
         LOG_TRACE(log, "nextImpl: got window [{}, {}), {} nodes",
-            rope.range().offset, rope.range().end(), rope.getNodes().size());
+            chain.range().offset, chain.range().end(), chain.getNodes().size());
     }
 
-    auto span = rope.peek();
+    auto span = chain.peek();
     if (executor->needsDecryption())
     {
         /// Decrypt only the span we are about to serve - read-ahead/prefetched
         /// bytes never peeked are never decrypted. Decrypt into a scratch buffer
-        /// so the rope stays encrypted and a rewind that re-serves this span
+        /// so the chain stays encrypted and a rewind that re-serves this span
         /// re-decrypts it cleanly (CTR is position-addressable).
         decrypt_buf.resize(span.size);
         std::memcpy(decrypt_buf.data(), span.data, span.size);
