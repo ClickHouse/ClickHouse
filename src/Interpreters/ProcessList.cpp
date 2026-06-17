@@ -302,31 +302,39 @@ ProcessList::EntryPtr ProcessList::insert(
         /// admitted on that freed slot — transferred from the finishing query, or acquired on the fast
         /// path right after the release — can therefore observe the finishing query as still counted.
         /// Rejecting on such a transient overcount would fail a query holding a valid admission slot,
-        /// so when we hold one, wait on `query_finished` until either the limit clears or no
-        /// early-released teardown that could still decrement *this* counter is in flight, bounded by
-        /// the remaining admission budget (`admission_deadline`). The teardown count is scoped to the
-        /// counter under test (`teardowns_in_flight`): per-query-kind for the kind limits, per-user for
-        /// the user limit, and the global `admission_pending_teardowns` only for the all-users limit on
-        /// `non_internal_processes`. An unrelated teardown (a different kind/user) cannot make this
-        /// limit clear, so it must not keep us parked here. If the relevant teardowns have drained and
-        /// the limit is still full, it is genuinely full of running queries — throw instead of parking
-        /// here: a long wait would hoard the global admission slot while this query is not executing,
-        /// forcing queries of other kinds/users into the queue while an execution slot is actually
-        /// idle. On throw, the rollback guard above hands the slot to the next waiter. Without an
-        /// admission slot (admission queue disabled) the checks keep their legacy behavior.
-        auto passes_secondary_limit = [&](auto && under_limit, auto && teardowns_in_flight)
+        /// so when we hold one, wait on `query_finished` for the relevant early-released teardowns to
+        /// drain, bounded by the remaining admission budget (`admission_deadline`).
+        ///
+        /// But we must wait only while draining those teardowns can actually bring the counter under
+        /// the limit. A completing teardown decrements both the live counter and its pending-teardown
+        /// count under the same lock (see `~ProcessListEntry`), so `current - pending` — the genuinely
+        /// running, not-early-released queries of this scope — is invariant as teardowns drain. Hence
+        /// `current - pending < limit` (written `current < limit + pending` to avoid unsigned
+        /// underflow) is exactly the condition under which waiting can succeed. When it does not hold,
+        /// the limit is full of running queries that no teardown will clear, so we throw immediately
+        /// instead of parking — a long wait would hoard the global admission slot for the whole
+        /// teardown window (which can be long, e.g. a slow client still receiving results), forcing
+        /// queries of other kinds/users into the queue while an execution slot sits idle. On throw,
+        /// the rollback guard above hands the slot to the next waiter.
+        ///
+        /// The teardown count is scoped to the counter under test: per-query-kind for the kind limits,
+        /// per-user for the user limit, and the global `admission_pending_teardowns` only for the
+        /// all-users limit on `non_internal_processes`. An unrelated teardown (a different kind/user)
+        /// cannot decrement *this* counter, so it is excluded from `pending`. Without an admission slot
+        /// (admission queue disabled) the checks keep their legacy behavior.
+        auto passes_secondary_limit = [&](auto && under_limit, auto && drain_can_clear)
         {
             if (got_admission_slot)
                 query_finished.wait_until(lock, admission_deadline,
-                    [&] { return under_limit() || !teardowns_in_flight(); });
+                    [&] { return under_limit() || !drain_can_clear(); });
             return under_limit();
         };
 
         /// Number of early-released-but-not-yet-destroyed queries of `kind` (see the scoping note above).
-        auto query_kind_teardowns_in_flight = [&](IAST::QueryKind kind)
+        auto query_kind_pending_teardowns_count = [&](IAST::QueryKind kind) -> ProcessList::QueryAmount
         {
             auto found = query_kind_pending_teardowns.find(kind);
-            return found != query_kind_pending_teardowns.end() && found->second != 0;
+            return found != query_kind_pending_teardowns.end() ? found->second : 0;
         };
 
         if (!is_unlimited_query && max_size && !admission_queue_enabled)
@@ -353,8 +361,8 @@ ProcessList::EntryPtr ProcessList::insert(
             if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert)
             {
                 auto under_limit = [&] { return getQueryKindAmount(query_kind) < max_insert_queries_amount; };
-                auto teardowns_in_flight = [&] { return query_kind_teardowns_in_flight(query_kind); };
-                if (!passes_secondary_limit(under_limit, teardowns_in_flight))
+                auto drain_can_clear = [&] { return getQueryKindAmount(query_kind) < max_insert_queries_amount + query_kind_pending_teardowns_count(query_kind); };
+                if (!passes_secondary_limit(under_limit, drain_can_clear))
                     throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                     "Too many simultaneous insert queries. Maximum: {}, current: {}",
                                     max_insert_queries_amount, getQueryKindAmount(query_kind));
@@ -362,8 +370,8 @@ ProcessList::EntryPtr ProcessList::insert(
             if (max_select_queries_amount && query_kind == IAST::QueryKind::Select)
             {
                 auto under_limit = [&] { return getQueryKindAmount(query_kind) < max_select_queries_amount; };
-                auto teardowns_in_flight = [&] { return query_kind_teardowns_in_flight(query_kind); };
-                if (!passes_secondary_limit(under_limit, teardowns_in_flight))
+                auto drain_can_clear = [&] { return getQueryKindAmount(query_kind) < max_select_queries_amount + query_kind_pending_teardowns_count(query_kind); };
+                if (!passes_secondary_limit(under_limit, drain_can_clear))
                     throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                     "Too many simultaneous select queries. Maximum: {}, current: {}",
                                     max_select_queries_amount, getQueryKindAmount(query_kind));
@@ -399,12 +407,12 @@ ProcessList::EntryPtr ProcessList::insert(
                 /// See the comment at `passes_secondary_limit` above: when we hold an admission slot,
                 /// wait out in-flight early-release teardowns (a finishing query that already freed
                 /// its slot still counts toward `non_internal_processes` until its destructor runs),
-                /// then reject if the limit is genuinely full. This is the global limit, so any
-                /// teardown is relevant — use `admission_pending_teardowns`. Without a slot (admission
-                /// queue disabled), keep the legacy `queue_max_wait_ms`-bounded wait.
-                auto teardowns_in_flight = [&] { return admission_pending_teardowns != 0; };
+                /// but only while draining them can clear the limit, then reject. This is the global
+                /// limit, so any teardown is relevant — use `admission_pending_teardowns`. Without a
+                /// slot (admission queue disabled), keep the legacy `queue_max_wait_ms`-bounded wait.
+                auto drain_can_clear = [&] { return non_internal_processes < limit + admission_pending_teardowns; };
                 if (got_admission_slot
-                    ? !passes_secondary_limit(under_limit, teardowns_in_flight)
+                    ? !passes_secondary_limit(under_limit, drain_can_clear)
                     : (!queue_max_wait_ms
                        || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
                               under_limit)))
@@ -441,11 +449,11 @@ ProcessList::EntryPtr ProcessList::insert(
 
                     /// Same as `max_concurrent_queries_for_all_users` above, but scoped to this user:
                     /// only this user's early-release teardowns can decrement `non_internal_queries`,
-                    /// so wait on the per-user counter, then reject if the limit is genuinely full.
+                    /// so wait on the per-user counter while draining it can clear the limit, then reject.
                     auto & user_pending_teardowns = user_process_list->second.admission_pending_teardowns;
-                    auto teardowns_in_flight = [&] { return user_pending_teardowns != 0; };
+                    auto drain_can_clear = [&] { return user_queries < limit + user_pending_teardowns; };
                     if (got_admission_slot
-                        ? !passes_secondary_limit(under_limit, teardowns_in_flight)
+                        ? !passes_secondary_limit(under_limit, drain_can_clear)
                         : (!queue_max_wait_ms
                            || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
                                   under_limit)))
