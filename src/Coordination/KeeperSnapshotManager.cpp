@@ -15,6 +15,7 @@
 #include <Disks/IDisk.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -42,6 +43,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPRESS;
+    extern const int CORRUPTED_DATA;
     extern const int KEEPER_EXCEPTION;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
@@ -286,6 +288,62 @@ namespace
             uint64_t size_bytes = 0;
             readBinary(size_bytes, in);
         }
+    }
+
+    /// V8-specific per-node deserializer. V8 always uses the V7 wire encoding for individual nodes.
+    /// Does NOT call acl_map.addUsage — V8 load path batches ACL usage in MemorySnapshotLoadHandle.
+    /// Validates num_children >= 0 (untrusted snapshot input; throws CORRUPTED_DATA on failure).
+    template<typename Node>
+    void readNodeV8(Node & node, ReadBuffer & in, bool cleanup_acl)
+    {
+        readVarUInt(node.stats.data_size, in);
+        if (node.stats.data_size != 0)
+        {
+            node.data = std::unique_ptr<char[]>(new char[node.stats.data_size]);
+            in.readStrict(node.data.get(), node.stats.data_size);
+        }
+
+        // V7+ ACL ID as uint32_t
+        readBinary(node.acl_id, in);
+        if (cleanup_acl)
+            node.acl_id = 0;
+        // NOTE: Do NOT call acl_map.addUsage here.
+
+        // V7+ has no is_sequential field.
+
+        // Stats (same order as writeNode V7)
+        readBinary(node.stats.czxid, in);
+        readBinary(node.stats.mzxid, in);
+        int64_t ctime = 0;
+        readBinary(ctime, in);
+        node.stats.setCtime(ctime);
+        readBinary(node.stats.mtime, in);
+        readBinary(node.stats.version, in);
+        readBinary(node.stats.cversion, in);
+        readBinary(node.stats.aversion, in);
+        int64_t ephemeral_owner = 0;
+        readBinary(ephemeral_owner, in);
+        if (ephemeral_owner != 0)
+            node.stats.setEphemeralOwner(ephemeral_owner);
+
+        // V6+ has no data_length field.
+        int32_t num_children = 0;
+        readBinary(num_children, in);
+        if (num_children < 0)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "V8 snapshot: negative num_children {} in node", num_children);
+        node.setNumChildren(num_children);
+
+        readBinary(node.stats.pzxid, in);
+
+        // V7+: seq_num as int64_t (V6 and earlier used int32_t)
+        int64_t seq_num = 0;
+        readBinary(seq_num, in);
+        if (ephemeral_owner == 0)
+            node.stats.setSeqNum(seq_num);
+
+        // V4-V5 had size_bytes; V7/V8 do not.
     }
 
     void serializeSnapshotMetadata(const SnapshotMetadataPtr & snapshot_meta, WriteBuffer & out)
@@ -1278,6 +1336,307 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::serializeSnapshotToB
 }
 
 template<typename Storage>
+SnapshotDeserializationResult<Storage>
+KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
+    nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage) const
+{
+    if constexpr (use_rocksdb)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "V8 snapshot format is not supported with RocksDB storage");
+    }
+    else
+    {
+
+    const char * buf_data = reinterpret_cast<const char *>(buffer->data_begin());
+    const size_t buf_size = buffer->size();
+
+    auto frames = parseAndValidateV8Header(buf_data, buf_size);
+
+    // V8 storage: root "/" must come from the snapshot, not the constructor.
+    SnapshotDeserializationResult<Storage> result;
+    result.storage = std::make_unique<Storage>(
+        storage_tick_time, superdigest, keeper_context,
+        /* initialize_system_nodes = */ false,
+        /* insert_initial_root = */ false);
+    Storage & storage = *result.storage;
+
+    // One-shot ZSTD decompression helper.
+    // ZSTD_compress2 (used by serializeV8) embeds content size, so getFrameContentSize works.
+    auto decompress_frame = [&](const V8FrameDescriptor & fd) -> String
+    {
+        const char * src = buf_data + fd.compressed_offset;
+        const size_t src_size = static_cast<size_t>(fd.compressed_size);
+        const unsigned long long dsize = ZSTD_getFrameContentSize(src, src_size);
+        if (dsize == ZSTD_CONTENTSIZE_ERROR || dsize == ZSTD_CONTENTSIZE_UNKNOWN)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "V8 snapshot: cannot determine ZSTD content size for frame at offset {}",
+                fd.compressed_offset);
+        String out(static_cast<size_t>(dsize), '\0');
+        const size_t actual = ZSTD_decompress(out.data(), dsize, src, src_size);
+        if (ZSTD_isError(actual))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "V8 snapshot ZSTD decompression failed: {}", ZSTD_getErrorName(actual));
+        return out;
+    };
+
+    bool recalculate_digest = keeper_context->digestEnabled();
+
+    // ── METADATA frame (always frames[0], validated by parseAndValidateV8Header) ──────────────
+    {
+        const String meta_bytes = decompress_frame(frames[0]);
+        ReadBufferFromString rbuf(meta_bytes);
+
+        uint8_t version_byte = 0;
+        readBinary(version_byte, rbuf);
+        if (version_byte != static_cast<uint8_t>(SnapshotVersion::V8))
+            throw Exception(
+                ErrorCodes::UNKNOWN_FORMAT_VERSION,
+                "V8 snapshot: unexpected version byte {} in METADATA frame (expected 8)", version_byte);
+
+        result.snapshot_meta = deserializeSnapshotMetadata(rbuf);
+
+        // zxid (always present in V8; V8 inherits V5+ semantics)
+        {
+            int64_t zxid = 0;
+            readBinary(zxid, rbuf);
+            std::lock_guard lock(storage.transaction_mutex);
+            storage.zxid = zxid;
+        }
+        storage.old_snapshot_zxid = 0;
+
+        // Digest
+        uint8_t digest_version = 0;
+        readBinary(digest_version, rbuf);
+        if (digest_version != static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST))
+        {
+            uint64_t nodes_digest = 0;
+            readBinary(nodes_digest, rbuf);
+            if (digest_version == static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION))
+            {
+                storage.nodes_digest = nodes_digest;
+                recalculate_digest = false;
+            }
+        }
+
+        // session_id_counter
+        int64_t session_id = 0;
+        readBinary(session_id, rbuf);
+        storage.session_id_counter = session_id;
+
+        // ACL map (V8 always uses V7+ uint32_t ACLId)
+        size_t acl_map_size = 0;
+        readBinary(acl_map_size, rbuf);
+        for (size_t i = 0; i < acl_map_size; ++i)
+        {
+            ACLId acl_id = 0;
+            readBinary(acl_id, rbuf);
+            size_t acls_size = 0;
+            readBinary(acls_size, rbuf);
+            Coordination::ACLs acls;
+            for (size_t j = 0; j < acls_size; ++j)
+            {
+                Coordination::ACL acl;
+                readBinary(acl.permissions, rbuf);
+                readBinary(acl.scheme, rbuf);
+                readBinary(acl.id, rbuf);
+                acls.push_back(acl);
+            }
+            if (!keeper_context->shouldBlockACL())
+                storage.acl_map.addMapping(acl_id, acls);
+        }
+        // Drain: the METADATA frame must be fully consumed; trailing bytes indicate format drift.
+        if (!rbuf.eof())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "V8 snapshot: trailing bytes after METADATA frame content");
+    }
+
+    if (recalculate_digest)
+        storage.nodes_digest = 0;
+
+    const bool cleanup_acl_global = keeper_context->shouldBlockACL();
+
+    // ── NODES frames (K ≥ 1 frames, serialised sequentially) ────────────────────────────────────
+    std::vector<MemorySnapshotLoadHandle> handles;
+    for (const auto & fd : frames)
+    {
+        if (fd.type != V8ChunkType::NODES)
+            continue;
+
+        const String frame_bytes = decompress_frame(fd);
+        ReadBufferFromString rbuf(frame_bytes);
+
+        uint64_t node_count = 0;
+        readBinary(node_count, rbuf);
+
+        if (!load_full_storage)
+        {
+            // Analyzer (path-only) mode: collect paths and discard node data.
+            for (uint64_t i = 0; i < node_count; ++i)
+            {
+                String path;
+                readBinary(path, rbuf);
+                result.paths.push_back(path);
+                typename Storage::Node node{};
+                readNodeV8(node, rbuf, /*cleanup_acl=*/true);
+            }
+            if (!rbuf.eof())
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "V8 snapshot: trailing bytes after NODES frame content (analyzer mode)");
+            continue;
+        }
+
+        // Full-load mode: parse nodes into a per-frame handle.
+        MemorySnapshotLoadHandle h = beginMemorySnapshotLoad(storage);
+
+        for (uint64_t i = 0; i < node_count; ++i)
+        {
+            String path_str;
+            readBinary(path_str, rbuf);
+
+            using enum Coordination::PathMatchResult;
+            const auto match = Coordination::matchPath(path_str, keeper_system_path);
+
+            typename Storage::Node node{};
+            readNodeV8(node, rbuf, cleanup_acl_global);
+
+            if (match == IS_CHILD)
+            {
+                // V8 serializer skips system children; presence here means corrupt snapshot.
+                if (keeper_context->ignoreSystemPathOnStartup()
+                    || keeper_context->getServerState() != KeeperContext::Phase::INIT)
+                {
+                    LOG_ERROR(
+                        getLogger("KeeperSnapshotManager"),
+                        "System-path child {} found in V8 snapshot — skipping", path_str);
+                    continue;
+                }
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "System-path child {} found in V8 snapshot. "
+                    "Set keeper_server.ignore_system_path_on_startup=true to ignore.", path_str);
+            }
+            if (match == EXACT && !node.empty())
+            {
+                if (keeper_context->ignoreSystemPathOnStartup()
+                    || keeper_context->getServerState() != KeeperContext::Phase::INIT)
+                {
+                    LOG_ERROR(
+                        getLogger("KeeperSnapshotManager"),
+                        "Non-empty keeper system node {} found in V8 snapshot — clearing data", path_str);
+                    node = typename Storage::Node{};
+                }
+                else
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Non-empty keeper system node {} found in V8 snapshot. "
+                        "Set keeper_server.ignore_system_path_on_startup=true to ignore.", path_str);
+            }
+
+            // Pre-reserve child set for non-ephemeral nodes (avoids per-addChild re-alloc).
+            if (!node.stats.isEphemeral() && node.numChildren() > 0)
+                node.getChildren().reserve(node.numChildren());
+
+            const auto ephemeral_owner = node.stats.ephemeralOwner();
+            if (ephemeral_owner != 0)
+            {
+                h.local_ephemerals[ephemeral_owner].insert(path_str);
+                ++h.local_ephemeral_nodes;
+            }
+
+            if (recalculate_digest)
+                h.digest_sum += node.getDigest(path_str);
+
+            if (!cleanup_acl_global && node.acl_id != 0)
+                ++h.acl_usage[node.acl_id];
+
+            // Allocate the path key in the shared arena and enqueue in the batch.
+            const size_t path_size = path_str.size();
+            auto key = h.nodes.allocateKey(path_size);
+            std::memcpy(key.get(), path_str.data(), path_size);
+            h.nodes.emplace(std::move(key), path_size, std::move(node));
+        }
+
+        if (!rbuf.eof())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "V8 snapshot: trailing bytes after NODES frame content");
+        handles.push_back(std::move(h));
+    }
+
+    if (load_full_storage)
+    {
+        finalizeMemorySnapshotLoad(storage, {handles.data(), handles.size()}, recalculate_digest);
+        storage.initializeSystemNodes();
+    }
+
+    // ── SESSIONS frame ───────────────────────────────────────────────────────────────────────────
+    for (const auto & fd : frames)
+    {
+        if (fd.type != V8ChunkType::SESSIONS)
+            continue;
+
+        const String sessions_bytes = decompress_frame(fd);
+        ReadBufferFromString rbuf(sessions_bytes);
+
+        size_t active_sessions_size = 0;
+        readBinary(active_sessions_size, rbuf);
+        for (size_t i = 0; i < active_sessions_size; ++i)
+        {
+            int64_t active_session_id = 0;
+            int64_t timeout = 0;
+            readBinary(active_session_id, rbuf);
+            readBinary(timeout, rbuf);
+            storage.addSessionID(active_session_id, timeout);
+
+            // V8 always includes session auth (V8 >= V1).
+            size_t session_auths_size = 0;
+            readBinary(session_auths_size, rbuf);
+            typename Storage::AuthIDs ids;
+            for (size_t j = 0; j < session_auths_size; ++j)
+            {
+                String scheme;
+                String id;
+                readBinary(scheme, rbuf);
+                readBinary(id, rbuf);
+                ids.emplace_back(typename Storage::AuthID{scheme, id});
+            }
+            if (!ids.empty())
+                storage.committed_session_and_auth[active_session_id] = ids;
+        }
+
+        // Optional cluster config: same encoding as legacy (EOF = absent, length-prefix = present).
+        if (!rbuf.eof())
+        {
+            size_t data_size = 0;
+            readVarUInt(data_size, rbuf);
+            auto cluster_buf = nuraft::buffer::alloc(data_size);
+            rbuf.readStrict(reinterpret_cast<char *>(cluster_buf->data_begin()), data_size);
+            cluster_buf->pos(0);
+            result.cluster_config = ClusterConfig::deserialize(*cluster_buf);
+        }
+        // Drain: any bytes after the cluster-config section indicate format corruption.
+        if (!rbuf.eof())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "V8 snapshot: trailing bytes after SESSIONS frame content");
+        break; // Exactly one SESSIONS frame.
+    }
+
+    if (load_full_storage)
+        storage.updateStats();
+
+    return result;
+
+    } // end else (!use_rocksdb)
+}
+
+template<typename Storage>
 bool KeeperSnapshotManager<Storage>::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
 {
     static constexpr unsigned char ZSTD_COMPRESSED_MAGIC[4] = {0x28, 0xB5, 0x2F, 0xFD};
@@ -1289,9 +1648,27 @@ bool KeeperSnapshotManager<Storage>::isZstdCompressed(nuraft::ptr<nuraft::buffer
     return memcmp(magic_from_buffer, ZSTD_COMPRESSED_MAGIC, 4) == 0;
 }
 
+/// Returns true iff `buffer` starts with "CKFS" (V8 magic).
+static bool isV8Snapshot(nuraft::ptr<nuraft::buffer> buffer)
+{
+    if (buffer->size() < 4)
+        return false;
+    const char * p = reinterpret_cast<const char *>(buffer->data_begin());
+    return std::memcmp(p, KEEPER_V8_MAGIC.data(), 4) == 0;
+}
+
 template<typename Storage>
 SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage) const
 {
+    buffer->pos(0);
+
+    // 3-way detection:
+    //   "CKFS" → V8 chunked-ZSTD (C3)
+    //   ZSTD magic → legacy ZSTD (V3-V7)
+    //   else    → legacy LZ4 (V0-V2)
+    if (isV8Snapshot(buffer))
+        return deserializeV8FromBuffer(buffer, load_full_storage);
+
     bool is_zstd_compressed = isZstdCompressed(buffer);
 
     std::unique_ptr<ReadBufferFromNuraftBuffer> reader = std::make_unique<ReadBufferFromNuraftBuffer>(buffer);
@@ -1310,12 +1687,119 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
     return result;
 }
 
+/// Read and discard the METADATA tail that follows SnapshotMetadata in a V8 METADATA frame:
+/// zxid, digest fields, session_id_counter, and the ACL map.  Called from the metadata-only
+/// fast path to validate full frame layout without populating storage.
+///
+/// IMPORTANT: field order here must stay in sync with the METADATA parsing block inside
+/// deserializeV8FromBuffer (search for "// zxid (always present in V8").
+static void drainV8MetadataFrameTail(ReadBufferFromString & rbuf)
+{
+    // zxid
+    {
+        int64_t zxid = 0;
+        readBinary(zxid, rbuf);
+    }
+
+    // Digest
+    {
+        uint8_t digest_version = 0;
+        readBinary(digest_version, rbuf);
+        if (digest_version != static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST))
+        {
+            uint64_t nodes_digest = 0;
+            readBinary(nodes_digest, rbuf);
+        }
+    }
+
+    // session_id_counter
+    {
+        int64_t session_id = 0;
+        readBinary(session_id, rbuf);
+    }
+
+    // ACL map
+    {
+        size_t acl_map_size = 0;
+        readBinary(acl_map_size, rbuf);
+        for (size_t i = 0; i < acl_map_size; ++i)
+        {
+            ACLId acl_id = 0;
+            readBinary(acl_id, rbuf);
+            size_t acls_size = 0;
+            readBinary(acls_size, rbuf);
+            for (size_t j = 0; j < acls_size; ++j)
+            {
+                int32_t permissions = 0;
+                String scheme;
+                String id;
+                readBinary(permissions, rbuf);
+                readBinary(scheme, rbuf);
+                readBinary(id, rbuf);
+            }
+        }
+    }
+
+    // Trailing bytes after the ACL map indicate format drift or corruption.
+    if (!rbuf.eof())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "V8 snapshot: trailing bytes after METADATA frame content");
+}
+
+/// Decompress ONLY the METADATA frame (frames[0]) of a V8 snapshot and return the snapshot
+/// metadata. Never touches NODES or SESSIONS frames — O(1) in node count.
+/// Called from deserializeSnapshotMetadataFromBuffer after "CKFS" magic is detected.
+static SnapshotMetadataPtr deserializeV8MetadataOnlyFromBuffer(nuraft::ptr<nuraft::buffer> buffer)
+{
+    const char * buf_data = reinterpret_cast<const char *>(buffer->data_begin());
+    const size_t buf_size = buffer->size();
+
+    auto frames = parseAndValidateV8Header(buf_data, buf_size);
+
+    // Decompress ONLY frame[0] (METADATA) — intentionally never touch NODES or SESSIONS.
+    const V8FrameDescriptor & meta_fd = frames[0];
+    const char * src = buf_data + meta_fd.compressed_offset;
+    const size_t src_size = static_cast<size_t>(meta_fd.compressed_size);
+    const unsigned long long dsize = ZSTD_getFrameContentSize(src, src_size);
+    if (dsize == ZSTD_CONTENTSIZE_ERROR || dsize == ZSTD_CONTENTSIZE_UNKNOWN)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "V8 snapshot: cannot determine ZSTD content size for METADATA frame");
+    String meta_bytes(static_cast<size_t>(dsize), '\0');
+    const size_t actual = ZSTD_decompress(meta_bytes.data(), dsize, src, src_size);
+    if (ZSTD_isError(actual))
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "V8 snapshot METADATA frame ZSTD decompression failed: {}", ZSTD_getErrorName(actual));
+
+    ReadBufferFromString rbuf(meta_bytes);
+    uint8_t version_byte = 0;
+    readBinary(version_byte, rbuf);
+    if (version_byte != static_cast<uint8_t>(SnapshotVersion::V8))
+        throw Exception(
+            ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "V8 snapshot: unexpected version byte {} in METADATA frame (expected 8)", version_byte);
+
+    auto snapshot_meta = deserializeSnapshotMetadata(rbuf);
+    drainV8MetadataFrameTail(rbuf); // Validate full frame layout; values discarded.
+    return snapshot_meta;
+}
+
 template<typename Storage>
 SnapshotMetadataPtr KeeperSnapshotManager<Storage>::deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
     /// `nuraft::buffer::pos(0)` resets the cursor. This method must leave the
     /// buffer at offset `0` on success and on throw.
     SCOPE_EXIT({ buffer->pos(0); });
+
+    // V8: snapshot_meta lives in the METADATA frame only.
+    // Use the dedicated fast path that decompresses only frame[0] — O(1) in node count.
+    // The full deserializer (deserializeV8FromBuffer) would process all NODES and SESSIONS
+    // frames, which at 56M-node scale allocates gigabytes of temporary data while the
+    // old storage is still live — violating the three-phase peak-memory design.
+    if (isV8Snapshot(buffer))
+        return deserializeV8MetadataOnlyFromBuffer(buffer);
 
     bool is_zstd_compressed = isZstdCompressed(buffer);
 

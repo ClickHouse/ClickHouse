@@ -2,6 +2,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaUtils.h>
 #include <list>
+#include <span>
 
 namespace DB
 {
@@ -261,6 +262,145 @@ public:
     KeyPtr allocateKey(size_t size)
     {
         return KeyPtr{new char[size], KeyDeleter{size, &arena}};
+    }
+
+    /// A batch of nodes parsed off-thread, ready to be merged into the table.
+    /// Owns a private std::list using the SAME default std::allocator as `List`,
+    /// so finalize can splice() it in O(1) (equal, stateless allocators).
+    /// MOVE-ONLY: ListElem holds a bare string_view key whose char[] is arena-owned
+    /// but NOT auto-freed by ~ListElem; the batch's own destructor frees un-spliced
+    /// keys. A copy would shallow-copy those string_views and both copies' destructors
+    /// would double-free the same char[]. KeeperMemNode is copyable, so std::list<ListElem>
+    /// is copyable by default — we must explicitly forbid it.
+    struct LocalInsertBatch
+    {
+        List nodes;                    ///< std::list<ListElem>, default (stateless) allocator
+        GlobalArena * arena = nullptr; ///< stateless new[]/delete[]; safe to use from any thread
+
+        LocalInsertBatch() = default;
+        LocalInsertBatch(const LocalInsertBatch &) = delete;
+        LocalInsertBatch & operator=(const LocalInsertBatch &) = delete;
+        LocalInsertBatch(LocalInsertBatch && o) noexcept
+            : nodes(std::move(o.nodes)), arena(o.arena)
+        {
+            o.arena = nullptr;
+        }
+        LocalInsertBatch & operator=(LocalInsertBatch && o) noexcept
+        {
+            if (this != &o)
+            {
+                freeOwnedKeys();
+                nodes = std::move(o.nodes);
+                arena = o.arena;
+                o.arena = nullptr;
+            }
+            return *this;
+        }
+        ~LocalInsertBatch() { freeOwnedKeys(); }
+
+        /// Frees keys still owned by this batch (i.e. nodes not yet spliced into the table).
+        /// After buildMapFromBatches splices `nodes` out, it is empty and this is a no-op.
+        void freeOwnedKeys() noexcept
+        {
+            if (!arena)
+                return;
+            for (auto & e : nodes)
+                arena->free(e.key.data(), e.key.size());
+            nodes.clear();
+        }
+
+        /// Allocate a key owned by the table's arena (just `new char[size]`; thread-safe).
+        KeyPtr allocateKey(size_t size) { return KeyPtr{new char[size], KeyDeleter{size, arena}}; }
+
+        /// Append one parsed node. version/active_in_map are set later by buildMapFromBatches.
+        void emplace(KeyPtr key_data, size_t key_size, V value)
+        {
+            std::string_view key{key_data.release(), key_size}; // ownership now tracked by this batch
+            ListElem elem{key, std::move(value)};               // node_metadata default {false, false, 0}
+            nodes.push_back(std::move(elem));
+        }
+
+        size_t size() const { return nodes.size(); }
+    };
+
+    // Compile-time guarantee that splice() is O(1): the batch list and the table list share
+    // the same stateless default std::allocator (verified: List = std::list<ListElem> above).
+    static_assert(
+        std::allocator_traits<typename List::allocator_type>::is_always_equal::value,
+        "LocalInsertBatch splice requires a stateless, always-equal list allocator");
+
+    /// Create a new local insert batch backed by this table's arena.
+    LocalInsertBatch beginLocalInsert()
+    {
+        LocalInsertBatch b;
+        b.arena = &arena;
+        return b;
+    }
+
+    /// Splice all batches IN ORDER, reserve the map to the total, build the index map in one walk.
+    /// PRECONDITION: the table must be EMPTY (V8 load path constructs storage without the
+    /// automatic root node). Duplicate keys are a CORRUPTED_DATA exception (release-safe),
+    /// not a chassert, because snapshot bytes are untrusted input.
+    /// `out_total_children` and `out_non_root` feed the folded validation in finalizeMemorySnapshotLoad.
+    void buildMapFromBatches(std::span<LocalInsertBatch> batches,
+                             uint64_t & out_total_children,
+                             uint64_t & out_non_root)
+    {
+        chassert(!snapshot_mode);
+        if (!map.empty() || !list.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "buildMapFromBatches requires an empty container");
+
+        size_t total = 0;
+        for (auto & b : batches)
+            total += b.nodes.size();
+        map.reserve(total);
+
+        for (auto & b : batches)
+        {
+            /// equal-allocator guarantee: O(1) splice
+            chassert(list.get_allocator() == b.nodes.get_allocator());
+            list.splice(list.end(), b.nodes); // O(1); empties b.nodes
+        }
+
+        out_total_children = 0;
+        out_non_root = 0;
+        for (auto it = list.begin(); it != list.end(); ++it)
+        {
+            size_t h = map.hash(it->key);
+            typename IndexMap::LookupResult mit;
+            bool inserted = false;
+            map.emplace(it->key, mit, inserted, h);
+            if (!inserted)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Duplicate path '{}' in snapshot", it->key);
+            it->setVersion(current_version);
+            it->setActiveInMap();
+            mit->getMapped() = it;
+            updateDataSize(INSERT_OR_REPLACE, it->key.size(), it->value.sizeInBytes(), 0);
+            // numChildren() returns 0 for ephemeral nodes; the raw num_children field was
+            // validated >= 0 at parse time (readNodeV8), so the cast is safe.
+            out_total_children += static_cast<uint64_t>(it->value.numChildren());
+            out_non_root += (it->key != "/");
+        }
+    }
+
+    /// Load-time only (snapshot_mode == false): apply `updater` to the value at `key` IN PLACE.
+    /// Throws CORRUPTED_DATA (not LOGICAL_ERROR like updateValue) if `key` is absent —
+    /// a missing parent in a snapshot is corrupt input, not a logic bug.
+    /// One map lookup; mirrors updateValue's non-snapshot-mode branch incl. updateDataSize.
+    template <typename Updater>
+    void updateValueForLoad(std::string_view key, Updater && updater)
+    {
+        chassert(!snapshot_mode);
+        auto it = map.find(key);
+        if (it == map.end())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Missing parent '{}' in snapshot", key);
+        auto list_itr = it->getMapped();
+        uint64_t old_value_size = list_itr->value.sizeInBytes();
+        updater(list_itr->value);
+        updateDataSize(UPDATE, key.size(), list_itr->value.sizeInBytes(), old_value_size, /*remove_old=*/true);
     }
 
     void insertOrReplace(KeyPtr key_data, size_t key_size, V value)

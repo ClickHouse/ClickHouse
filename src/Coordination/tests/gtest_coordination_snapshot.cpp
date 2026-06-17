@@ -30,6 +30,9 @@
 
 #include <zstd.h>
 
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+
 #include <fstream>
 #include <limits>
 #include <stdexcept>
@@ -2399,6 +2402,916 @@ TEST(KeeperV8Header, v8HeaderSizeComputation)
     EXPECT_EQ(v8HeaderSize(1),   30u);
     EXPECT_EQ(v8HeaderSize(3),   64u);
     EXPECT_EQ(v8HeaderSize(100), 1713u);
+}
+
+// ─── V8 read-path tests (C3: sequential V8 deserialization + validating load API) ─────────────────
+
+/// Serialize a small V8 snapshot and deserialize it back via `deserializeSnapshotFromBuffer`.
+/// Verifies:
+///  - 3-way detection routes V8 snapshots to `deserializeV8FromBuffer` (not the legacy paths)
+///  - Nodes (data, acl_id, ephemerals) are faithfully restored
+///  - Session and auth state is restored
+///  - ACL map is restored
+///  - ACL usage counts are correct
+TEST(KeeperSnapshotV8Read, RoundTripBasic)
+{
+    ChangelogDirTest snap_dir("./v8read_roundtrip");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    // Build a storage with a few nodes (some ephemeral) and sessions.
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+
+    // Add ACL mapping id=1 → one ACL entry so the ACL map round-trip is covered.
+    Coordination::ACL acl1;
+    acl1.permissions = 0x1f; // all
+    acl1.scheme = "auth";
+    acl1.id = "";
+    storage.acl_map.addMapping(1, {acl1});
+
+    addNode(storage, "/persistent", "hello", /*ephemeral_owner=*/0, /*acl_id=*/1);
+    addNode(storage, "/ephnode",    "tmp",   /*ephemeral_owner=*/42);
+    addNode(storage, "/subdir",     "dir");
+    addNode(storage, "/subdir/child", "child_data");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 7;
+    storage.session_id_counter = 100;
+
+    // Add a session (id=42) so ephemeral ownership is tracked.
+    storage.committed_ephemerals[42].insert("/ephnode");
+    ++storage.committed_ephemeral_nodes;
+    storage.addSessionID(42, 30000);
+    storage.committed_session_and_auth[42] = {{"digest", "user:pass"}};
+
+    // Serialize as V8.
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/7, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // Verify 3-way detection: buffer starts with "CKFS" magic.
+    ASSERT_GE(buf->size(), 4u);
+    EXPECT_EQ(memcmp(buf->data_begin(), "CKFS", 4), 0) << "V8 snapshot must start with CKFS magic";
+
+    // Deserialize via the public API — must route to deserializeV8FromBuffer.
+    auto result = mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true);
+    ASSERT_NE(result.storage, nullptr);
+    ASSERT_NE(result.snapshot_meta, nullptr);
+
+    const auto & s = *result.storage;
+
+    // Root must exist.
+    EXPECT_NE(s.container.find("/"), s.container.end());
+
+    // /persistent node with correct data and acl_id.
+    auto it_persistent = s.container.find("/persistent");
+    ASSERT_NE(it_persistent, s.container.end());
+    EXPECT_EQ(it_persistent->value.getData(), "hello");
+    EXPECT_EQ(it_persistent->value.acl_id, 1u);
+
+    // /ephnode must exist and be ephemeral.
+    auto it_eph = s.container.find("/ephnode");
+    ASSERT_NE(it_eph, s.container.end());
+    EXPECT_TRUE(it_eph->value.stats.isEphemeral());
+    EXPECT_EQ(it_eph->value.stats.ephemeralOwner(), 42);
+
+    // /subdir/child must exist.
+    EXPECT_NE(s.container.find("/subdir/child"), s.container.end());
+
+    // Ephemeral tracking restored.
+    EXPECT_EQ(s.committed_ephemeral_nodes, 1u);
+    auto eph_it = s.committed_ephemerals.find(42);
+    ASSERT_NE(eph_it, s.committed_ephemerals.end());
+    EXPECT_TRUE(eph_it->second.count("/ephnode"));
+
+    // Session restored.
+    EXPECT_EQ(s.session_id_counter, storage.session_id_counter);
+    auto auth_it = s.committed_session_and_auth.find(42);
+    ASSERT_NE(auth_it, s.committed_session_and_auth.end());
+    ASSERT_EQ(auth_it->second.size(), 1u);
+    EXPECT_EQ(auth_it->second[0].scheme, "digest");
+    EXPECT_EQ(auth_it->second[0].id, "user:pass");
+
+    // ACL map restored — addMapping for id=1 must have been called.
+    auto restored_acls = s.acl_map.convertNumber(1);
+    EXPECT_EQ(restored_acls.size(), 1u);
+    EXPECT_EQ(restored_acls[0].scheme, "auth");
+}
+
+/// Verify that `deserializeSnapshotMetadataFromBuffer` correctly extracts the log index
+/// from a V8 snapshot without loading the full storage.
+TEST(KeeperSnapshotV8Read, MetadataOnlyExtraction)
+{
+    ChangelogDirTest snap_dir("./v8read_meta");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/a", "data");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 42;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/42, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // Must extract snapshot_meta without loading nodes.
+    auto meta = mgr.deserializeSnapshotMetadataFromBuffer(buf);
+    ASSERT_NE(meta, nullptr);
+    EXPECT_EQ(meta->get_last_log_idx(), 42u);
+}
+
+/// Verify paths-only mode: `load_full_storage=false` collects paths without building the storage.
+TEST(KeeperSnapshotV8Read, PathsOnlyMode)
+{
+    ChangelogDirTest snap_dir("./v8read_paths");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/x", "x_data");
+    addNode(storage, "/y", "y_data");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 5;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/5, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // load_full_storage=false: paths collected, storage is null (or empty — implementation may vary).
+    auto result = mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/false);
+    ASSERT_FALSE(result.paths.empty()) << "paths must be collected in path-only mode";
+
+    // At minimum /, /x, /y should be present.
+    const auto & paths = result.paths;
+    EXPECT_NE(std::find(paths.begin(), paths.end(), "/"), paths.end())   << "root path missing";
+    EXPECT_NE(std::find(paths.begin(), paths.end(), "/x"), paths.end())  << "/x missing";
+    EXPECT_NE(std::find(paths.begin(), paths.end(), "/y"), paths.end())  << "/y missing";
+}
+
+/// Verify that a legacy ZSTD (V7) snapshot still deserializes correctly after the V8 gate is opened
+/// and `MAX_SUPPORTED_SNAPSHOT_VERSION` is now V8.
+TEST(KeeperSnapshotV8Read, LegacyV7SnapshotStillLoads)
+{
+    ChangelogDirTest snap_dir("./v8read_legacy");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/legacy", "old_data");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 3;
+
+    // Write as V7 (legacy ZSTD).
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/3, /*cluster_config=*/nullptr, DB::SnapshotVersion::V7);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // Must NOT start with CKFS magic — it's a ZSTD-compressed legacy snapshot.
+    ASSERT_GE(buf->size(), 4u);
+    EXPECT_NE(memcmp(buf->data_begin(), "CKFS", 4), 0) << "V7 snapshot must not have CKFS magic";
+
+    // 3-way detection should route to legacy ZSTD path.
+    auto result = mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true);
+    ASSERT_NE(result.storage, nullptr);
+    ASSERT_NE(result.storage->container.find("/legacy"), result.storage->container.end());
+}
+
+// ─── V8 validation / corruption tests (C3 gate-opening correctness surface) ──────────────────────
+
+/// V8 round-trip produces semantically identical storage to V7 (same format for individual
+/// nodes; only the framing differs). Verifies that the C3 sequential reader is not simply
+/// consistent with the C2 writer by accident — both formats yield identical results.
+TEST(KeeperSnapshotV8Validation, V8EqualsV7)
+{
+    ChangelogDirTest snap_dir("./v8val_eq_v7");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    // Populate a non-trivial storage: root + 3 children, one ephemeral.
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/a",   "data_a");
+    addNode(storage, "/b",   "data_b");
+    addNode(storage, "/a/c", "data_c");
+    addNode(storage, "/eph", "eph_data", /*ephemeral_owner=*/77);
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 15;
+    storage.session_id_counter = 200;
+    storage.committed_ephemerals[77].insert("/eph");
+    ++storage.committed_ephemeral_nodes;
+    storage.addSessionID(77, 60000);
+
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+
+    // Serialize V7 and V8 in separate scopes: KeeperStorageSnapshot enables snapshot mode in its
+    // constructor and disables it in its destructor (chassert(!snapshot_mode) on entry).
+    // Both snapshots use the same `storage`, so one must be fully destroyed before the next is
+    // constructed — otherwise the second constructor trips the chassert in Debug/ASan builds.
+    nuraft::ptr<nuraft::buffer> buf7, buf8;
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap7(
+            &storage, /*up_to_log_idx=*/15, /*cluster_config=*/nullptr, DB::SnapshotVersion::V7);
+        buf7 = mgr.serializeSnapshotToBuffer(snap7);
+    } // snap7 destroyed here → disableSnapshotMode(); snapshot_mode = false
+    ASSERT_NE(buf7, nullptr);
+
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap8(
+            &storage, /*up_to_log_idx=*/15, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+        buf8 = mgr.serializeSnapshotToBuffer(snap8);
+    } // snap8 destroyed here → disableSnapshotMode(); snapshot_mode = false
+    ASSERT_NE(buf8, nullptr);
+
+    auto res7 = mgr.deserializeSnapshotFromBuffer(buf7, /*load_full_storage=*/true);
+    ASSERT_NE(res7.storage, nullptr);
+    auto res8 = mgr.deserializeSnapshotFromBuffer(buf8, /*load_full_storage=*/true);
+    ASSERT_NE(res8.storage, nullptr);
+
+    // Both must have the same node count.
+    EXPECT_EQ(res7.storage->container.size(), res8.storage->container.size())
+        << "V7 and V8 round-trips must produce the same number of nodes";
+
+    // Spot-check key nodes.
+    for (const char * path : {"/", "/a", "/b", "/a/c", "/eph"})
+    {
+        auto it7 = res7.storage->container.find(path);
+        auto it8 = res8.storage->container.find(path);
+        ASSERT_NE(it7, res7.storage->container.end()) << "V7 missing " << path;
+        ASSERT_NE(it8, res8.storage->container.end()) << "V8 missing " << path;
+        EXPECT_EQ(it7->value.getData(), it8->value.getData())
+            << "Data mismatch for " << path;
+        EXPECT_EQ(it7->value.acl_id, it8->value.acl_id)
+            << "acl_id mismatch for " << path;
+        EXPECT_EQ(it7->value.numChildren(), it8->value.numChildren())
+            << "numChildren mismatch for " << path;
+    }
+
+    // Ephemeral ownership must be preserved.
+    EXPECT_EQ(res7.storage->committed_ephemeral_nodes, res8.storage->committed_ephemeral_nodes);
+    auto eit7 = res7.storage->committed_ephemerals.find(77);
+    auto eit8 = res8.storage->committed_ephemerals.find(77);
+    ASSERT_NE(eit7, res7.storage->committed_ephemerals.end());
+    ASSERT_NE(eit8, res8.storage->committed_ephemerals.end());
+    EXPECT_EQ(eit7->second.count("/eph"), eit8->second.count("/eph"));
+
+    // Session counter.
+    EXPECT_EQ(res7.storage->session_id_counter, res8.storage->session_id_counter);
+}
+
+/// After the F1 fix, deserializeSnapshotMetadataFromBuffer on a V8 snapshot must decompress
+/// ONLY the METADATA frame. Verify: (a) it returns correct metadata even when NODES frames
+/// are deliberately corrupt; (b) the full deserializer correctly detects the same corruption.
+TEST(KeeperSnapshotV8Validation, MetadataOnlyFastPath)
+{
+    ChangelogDirTest snap_dir("./v8val_metafast");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/node1", "v1");
+    addNode(storage, "/node2", "v2");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 99;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/99, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // Locate the first NODES frame and corrupt its middle bytes.
+    const char * raw_const = reinterpret_cast<const char *>(buf->data_begin());
+    const size_t buf_size = buf->size();
+    auto frames = parseAndValidateV8Header(raw_const, buf_size);
+    ASSERT_GE(frames.size(), DB::KEEPER_V8_MIN_CHUNK_COUNT);
+
+    // Find the first NODES frame.
+    const V8FrameDescriptor * nodes_fd = nullptr;
+    for (const auto & f : frames)
+    {
+        if (f.type == V8ChunkType::NODES)
+        {
+            nodes_fd = &f;
+            break;
+        }
+    }
+    ASSERT_NE(nodes_fd, nullptr) << "No NODES frame found";
+
+    // Corrupt the middle of the NODES frame (ZSTD checksum will catch this).
+    auto * raw_mut = reinterpret_cast<char *>(buf->data_begin());
+    const size_t corrupt_pos = nodes_fd->compressed_offset + nodes_fd->compressed_size / 2;
+    raw_mut[corrupt_pos] ^= static_cast<char>(0xFF);
+
+    // Metadata-only path MUST succeed — it never touches the corrupt NODES frame.
+    auto meta = mgr.deserializeSnapshotMetadataFromBuffer(buf);
+    ASSERT_NE(meta, nullptr);
+    EXPECT_EQ(meta->get_last_log_idx(), 99u)
+        << "Metadata-only path must return correct log index despite corrupt NODES frame";
+
+    // Full deserializer MUST detect the corruption.
+    EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true), DB::Exception)
+        << "Full deserializer must throw on NODES frame corruption";
+}
+
+/// Corrupt the V8 header version byte (position 4 in the buffer) to a value != 8.
+/// deserializeSnapshotFromBuffer must throw (UNKNOWN_FORMAT_VERSION from
+/// parseAndValidateV8Header) before touching any frame data.
+TEST(KeeperSnapshotV8Validation, WrongHeaderVersionRejected)
+{
+    ChangelogDirTest snap_dir("./v8val_hdrver");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/z", "z_data");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 1;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/1, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+    ASSERT_GE(buf->size(), 5u);
+
+    // Position 4 is the version byte in the V8 header (after 4 magic bytes).
+    // Change it from 8 to 9 to simulate an unknown future version.
+    auto * raw_mut = reinterpret_cast<char *>(buf->data_begin());
+    ASSERT_EQ(static_cast<uint8_t>(raw_mut[4]), 8u) << "Expected version byte 8 at position 4";
+    raw_mut[4] = 9;
+
+    // Both public entry points must reject this.
+    EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(buf, true), DB::Exception)
+        << "deserializeSnapshotFromBuffer must throw on unknown V8 header version";
+    EXPECT_THROW(mgr.deserializeSnapshotMetadataFromBuffer(buf), DB::Exception)
+        << "deserializeSnapshotMetadataFromBuffer must throw on unknown V8 header version";
+}
+
+/// Corrupt the middle of a NODES frame compressed data. The ZSTD checksum embedded by
+/// serializeV8 must detect the corruption during decompression and throw CORRUPTED_DATA.
+TEST(KeeperSnapshotV8Validation, CorruptNodeFrameRejected)
+{
+    ChangelogDirTest snap_dir("./v8val_corrupt");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/n1", "v1");
+    addNode(storage, "/n2", "v2");
+    addNode(storage, "/n3", "v3");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 5;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/5, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    const char * raw_const = reinterpret_cast<const char *>(buf->data_begin());
+    const size_t buf_size = buf->size();
+    auto frames = parseAndValidateV8Header(raw_const, buf_size);
+
+    // Find the first NODES frame.
+    const V8FrameDescriptor * nodes_fd = nullptr;
+    for (const auto & f : frames)
+    {
+        if (f.type == V8ChunkType::NODES)
+        {
+            nodes_fd = &f;
+            break;
+        }
+    }
+    ASSERT_NE(nodes_fd, nullptr);
+
+    // Flip 8 bits in the middle of the compressed NODES frame payload
+    // (well past the ZSTD frame header, so it hits payload bytes).
+    auto * raw_mut = reinterpret_cast<char *>(buf->data_begin());
+    const size_t corrupt_offset = nodes_fd->compressed_offset + nodes_fd->compressed_size / 2;
+    raw_mut[corrupt_offset] ^= static_cast<char>(0xFF);
+
+    EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true), DB::Exception)
+        << "Corrupt NODES frame must throw during full deserialization";
+}
+
+/// V8 path-only mode (load_full_storage=false) must not attempt to finalize storage.
+/// After the F1 metadata-fast-path fix, the paths-only call should also be cheap.
+/// This test verifies paths collected in analyzer mode don't accidentally load nodes.
+TEST(KeeperSnapshotV8Validation, PathsOnlyDoesNotFinalize)
+{
+    ChangelogDirTest snap_dir("./v8val_pathsonly");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/dir",        "d");
+    addNode(storage, "/dir/child1", "c1");
+    addNode(storage, "/dir/child2", "c2");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 3;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/3, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    auto result = mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/false);
+
+    // storage must be null or empty — analyzer mode must not build the map.
+    EXPECT_TRUE(result.storage == nullptr || result.storage->container.size() == 0)
+        << "Paths-only mode must not build the full storage";
+
+    // All snapshot paths (including root) must appear in result.paths.
+    const auto & paths = result.paths;
+    EXPECT_NE(std::find(paths.begin(), paths.end(), "/"), paths.end())      << "/ missing";
+    EXPECT_NE(std::find(paths.begin(), paths.end(), "/dir"), paths.end())   << "/dir missing";
+    EXPECT_NE(std::find(paths.begin(), paths.end(), "/dir/child1"), paths.end()) << "/dir/child1 missing";
+    EXPECT_NE(std::find(paths.begin(), paths.end(), "/dir/child2"), paths.end()) << "/dir/child2 missing";
+}
+
+// ── V8 reader-level rejection tests ─────────────────────────────────────────
+//
+// These helpers let tests construct semantically invalid V8 NODES frames and
+// splice them into otherwise-valid V8 buffers (valid METADATA + SESSIONS from
+// the real serialiser, replaced NODES).  Each test verifies that the reader
+// rejects the tampered buffer with CORRUPTED_DATA.
+
+/// One synthetic ZooKeeper node entry in the V7/V8 on-disk encoding.
+/// num_children is int32_t so callers can pass -1 to exercise the parse-time
+/// rejection in readNodeV8.
+struct FakeNodeEntryV8
+{
+    std::string path      = {};
+    std::string data      = {};
+    uint32_t acl_id       = 0;
+    int64_t  czxid        = 0;
+    int64_t  mzxid        = 0;
+    int64_t  ctime        = 0;
+    int64_t  mtime        = 0;
+    int32_t  version      = 0;
+    int32_t  cversion     = 0;
+    int32_t  aversion     = 0;
+    int64_t  ephemeral_owner = 0;
+    int32_t  num_children = 0;  ///< may be -1 for test 7c
+    int64_t  pzxid        = 0;
+    int64_t  seq_num      = 0;
+};
+
+/// Build uncompressed bytes for a V8 NODES frame.
+/// Layout: uint64_t node_count | node_count × [path_binary | V7-node-fields]
+/// Field order matches writeNode(V7) + readNodeV8 exactly.
+static std::string buildNodesFrameBytesV8(const std::vector<FakeNodeEntryV8> & entries)
+{
+    WriteBufferFromOwnString w;
+
+    const uint64_t node_count = static_cast<uint64_t>(entries.size());
+    writeBinary(node_count, w);   // 8 raw bytes, native byte order
+
+    for (const auto & e : entries)
+    {
+        writeBinary(e.path, w);                     // VarUInt(len) + bytes
+
+        // V7/V8 node encoding (matches writeNode(V7) and readNodeV8):
+        writeVarUInt(e.data.size(), w);             // VarUInt data_size
+        if (!e.data.empty())
+            w.write(e.data.data(), e.data.size());
+
+        writeBinary(e.acl_id, w);                   // uint32_t (V7+ layout)
+        writeBinary(e.czxid, w);
+        writeBinary(e.mzxid, w);
+        writeBinary(e.ctime, w);
+        writeBinary(e.mtime, w);
+        writeBinary(e.version, w);
+        writeBinary(e.cversion, w);
+        writeBinary(e.aversion, w);
+        writeBinary(e.ephemeral_owner, w);
+        writeBinary(e.num_children, w);             // int32_t (can be -1)
+        writeBinary(e.pzxid, w);
+        writeBinary(e.seq_num, w);                  // int64_t (V7+ layout)
+    }
+
+    return w.str();
+}
+
+/// Decompress and return the uncompressed content of frames[frame_idx] in a V8 buffer.
+static std::string decompressV8Frame(nuraft::ptr<nuraft::buffer> buf, size_t frame_idx)
+{
+    const char * raw = reinterpret_cast<const char *>(buf->data_begin());
+    auto frames = parseAndValidateV8Header(raw, buf->size());
+    if (frame_idx >= frames.size())
+        throw std::runtime_error("decompressV8Frame: frame_idx out of range");
+    const V8FrameDescriptor & fd = frames[frame_idx];
+    const char * src = raw + fd.compressed_offset;
+    const size_t src_size = static_cast<size_t>(fd.compressed_size);
+    const unsigned long long dsize = ZSTD_getFrameContentSize(src, src_size);
+    if (dsize == ZSTD_CONTENTSIZE_ERROR || dsize == ZSTD_CONTENTSIZE_UNKNOWN)
+        throw std::runtime_error("decompressV8Frame: cannot determine content size");
+    std::string out(static_cast<size_t>(dsize), '\0');
+    const size_t actual = ZSTD_decompress(out.data(), dsize, src, src_size);
+    if (ZSTD_isError(actual))
+        throw std::runtime_error(
+            std::string("decompressV8Frame: decompress failed: ") + ZSTD_getErrorName(actual));
+    return out;
+}
+
+/// Replace the first frame of target_type in a V8 snapshot buffer with new uncompressed
+/// content.  All other frames are kept verbatim.  Returns a freshly-allocated nuraft::buffer.
+static nuraft::ptr<nuraft::buffer> replaceFirstFrameOfType(
+    nuraft::ptr<nuraft::buffer> orig_buf,
+    V8ChunkType target_type,
+    const std::string & new_frame_bytes)
+{
+    const char * raw = reinterpret_cast<const char *>(orig_buf->data_begin());
+    const size_t raw_size = orig_buf->size();
+
+    auto frames = parseAndValidateV8Header(raw, raw_size);
+
+    // Find the first frame of the requested type.
+    size_t target_idx = frames.size();
+    for (size_t i = 0; i < frames.size(); ++i)
+    {
+        if (frames[i].type == target_type)
+        {
+            target_idx = i;
+            break;
+        }
+    }
+    if (target_idx == frames.size())
+        throw std::runtime_error("replaceFirstFrameOfType: target frame type not found");
+
+    // Compress the replacement using the same ZSTD parameters as the writer.
+    ZSTD_CCtx * cctx = ZSTD_createCCtx();
+    if (!cctx) throw std::runtime_error("replaceFirstFrameOfType: ZSTD_createCCtx failed");
+    SCOPE_EXIT({ ZSTD_freeCCtx(cctx); });
+    ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, 3);
+    ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
+
+    const size_t max_cs = ZSTD_compressBound(new_frame_bytes.size());
+    std::string new_compressed(max_cs, '\0');
+    const size_t new_cs = ZSTD_compress2(
+        cctx,
+        new_compressed.data(), max_cs,
+        new_frame_bytes.data(), new_frame_bytes.size());
+    if (ZSTD_isError(new_cs))
+        throw std::runtime_error(
+            std::string("replaceFirstFrameOfType: ZSTD compress failed: ")
+            + ZSTD_getErrorName(new_cs));
+
+    // Compute new frame descriptors with updated offsets.
+    const size_t header_sz = v8HeaderSize(static_cast<uint64_t>(frames.size()));
+    std::vector<V8FrameDescriptor> new_descs;
+    new_descs.reserve(frames.size());
+    size_t total_sz = header_sz;
+    for (size_t i = 0; i < frames.size(); ++i)
+    {
+        const size_t payload_sz = (i == target_idx) ? new_cs : frames[i].compressed_size;
+        new_descs.push_back(V8FrameDescriptor{
+            frames[i].type,
+            static_cast<uint64_t>(total_sz),
+            static_cast<uint64_t>(payload_sz)});
+        total_sz += payload_sz;
+    }
+
+    // Allocate and fill the new buffer.
+    auto new_buf = nuraft::buffer::alloc(total_sz);
+    char * dst = reinterpret_cast<char *>(new_buf->data_begin());
+
+    packV8Header(std::span<const V8FrameDescriptor>(new_descs), dst);
+
+    size_t pos = header_sz;
+    for (size_t i = 0; i < frames.size(); ++i)
+    {
+        if (i == target_idx)
+        {
+            memcpy(dst + pos, new_compressed.data(), new_cs);
+            pos += new_cs;
+        }
+        else
+        {
+            memcpy(dst + pos, raw + frames[i].compressed_offset, frames[i].compressed_size);
+            pos += frames[i].compressed_size;
+        }
+    }
+    return new_buf;
+}
+
+/// Convenience wrapper — replace the first NODES frame (most common test operation).
+static nuraft::ptr<nuraft::buffer> replaceFirstNodesFrame(
+    nuraft::ptr<nuraft::buffer> orig_buf,
+    const std::string & new_nodes_bytes)
+{
+    return replaceFirstFrameOfType(orig_buf, V8ChunkType::NODES, new_nodes_bytes);
+}
+
+// ── Rejection tests ──────────────────────────────────────────────────────────
+
+/// (4b) NODES frame with node_count == 0 → no root → CORRUPTED_DATA at step 2
+/// of finalizeMemorySnapshotLoad ("V8 snapshot has no root '/' node").
+TEST(KeeperSnapshotV8Validation, EmptyNodesFrameNoRoot)
+{
+    ChangelogDirTest snap_dir("./v8val_emptyroot");
+
+    auto settings     = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_ctx   = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_ctx->setLocalLogsPreprocessed();
+    keeper_ctx->setRocksDBOptions();
+    keeper_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_ctx);
+    addNode(storage, "/n1", "v1");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 1;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/1, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // Replace NODES with an empty frame (node_count=0, no nodes at all).
+    // finalizeMemorySnapshotLoad step 2 must reject: no '/' root in container.
+    auto tampered = replaceFirstNodesFrame(buf, buildNodesFrameBytesV8({}));
+
+    EXPECT_THROW(
+        mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
+        DB::Exception)
+        << "Empty NODES frame must be rejected (no '/' root)";
+}
+
+/// (7a) NODES frame has '/' and '/a/b' but is missing '/a'.
+/// updateValueForLoad in finalizeMemorySnapshotLoad step 3 throws CORRUPTED_DATA
+/// because the parent '/a' is absent from the container.
+TEST(KeeperSnapshotV8Validation, MissingParentInNodesFrame)
+{
+    ChangelogDirTest snap_dir("./v8val_missingparent");
+
+    auto settings   = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_ctx->setLocalLogsPreprocessed();
+    keeper_ctx->setRocksDBOptions();
+    keeper_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_ctx);
+    addNode(storage, "/a",   "va");
+    addNode(storage, "/a/b", "vb");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/2, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // Replace NODES with '/' + '/a/b', deliberately omitting '/a'.
+    // When step 3 processes '/a/b', it looks up parent '/a' → not found → CORRUPTED_DATA.
+    std::vector<FakeNodeEntryV8> nodes;
+    nodes.push_back(FakeNodeEntryV8{.path = "/"});     // root present
+    nodes.push_back(FakeNodeEntryV8{.path = "/a/b"});  // child present but parent '/a' absent
+    auto tampered = replaceFirstNodesFrame(buf, buildNodesFrameBytesV8(nodes));
+
+    EXPECT_THROW(
+        mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
+        DB::Exception)
+        << "Missing parent '/a' must be rejected by updateValueForLoad";
+}
+
+/// (7b-over) A node whose declared numChildren is 0 but that has one actual
+/// child.  The inline check in step 3 of finalizeMemorySnapshotLoad must
+/// reject: children.size() > numChildren().
+TEST(KeeperSnapshotV8Validation, NumChildrenOvercount)
+{
+    ChangelogDirTest snap_dir("./v8val_overcount");
+
+    auto settings   = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_ctx->setLocalLogsPreprocessed();
+    keeper_ctx->setRocksDBOptions();
+    keeper_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_ctx);
+    addNode(storage, "/a", "v");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 1;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/1, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // '/' declares numChildren=0 but '/a' is a real child.
+    // Step 3: addChild("a") → children.size()==1 > numChildren()==0 → CORRUPTED_DATA.
+    FakeNodeEntryV8 root;
+    root.path         = "/";
+    root.num_children = 0;   // under-declares: actual child '/a' will exceed this
+
+    FakeNodeEntryV8 child_a;
+    child_a.path         = "/a";
+    child_a.num_children = 0;
+
+    auto tampered = replaceFirstNodesFrame(buf, buildNodesFrameBytesV8({root, child_a}));
+
+    EXPECT_THROW(
+        mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
+        DB::Exception)
+        << "numChildren=0 with one actual child must be rejected (over-count check in step 3)";
+}
+
+/// (7b-under) A node whose declared numChildren is 5 but that has only one
+/// actual child.  The step-4 folded equality check must reject:
+/// out_non_root (1) != out_total_children (5).
+TEST(KeeperSnapshotV8Validation, NumChildrenUndercount)
+{
+    ChangelogDirTest snap_dir("./v8val_undercount");
+
+    auto settings   = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_ctx->setLocalLogsPreprocessed();
+    keeper_ctx->setRocksDBOptions();
+    keeper_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_ctx);
+    addNode(storage, "/a", "v");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 1;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/1, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // '/' over-declares numChildren=5 but only '/a' exists (1 non-root node).
+    // Step 3 passes (1 ≤ 5); step 4 rejects: out_non_root(1) != out_total_children(5).
+    FakeNodeEntryV8 root;
+    root.path         = "/";
+    root.num_children = 5;   // over-declares: only one actual child
+
+    FakeNodeEntryV8 child_a;
+    child_a.path         = "/a";
+    child_a.num_children = 0;
+
+    auto tampered = replaceFirstNodesFrame(buf, buildNodesFrameBytesV8({root, child_a}));
+
+    EXPECT_THROW(
+        mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
+        DB::Exception)
+        << "numChildren=5 with only 1 actual child must be rejected (under-count check in step 4)";
+}
+
+/// (7c) A node whose raw num_children field is -1.
+/// readNodeV8 must reject before finalizeMemorySnapshotLoad is ever reached.
+TEST(KeeperSnapshotV8Validation, NegativeNumChildrenRejected)
+{
+    ChangelogDirTest snap_dir("./v8val_negchildren");
+
+    auto settings   = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_ctx->setLocalLogsPreprocessed();
+    keeper_ctx->setRocksDBOptions();
+    keeper_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_ctx);
+    addNode(storage, "/n1", "v1");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 1;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/1, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // Root node has num_children = -1.
+    // readNodeV8 must throw CORRUPTED_DATA before finalize is reached.
+    FakeNodeEntryV8 root;
+    root.path         = "/";
+    root.num_children = -1;  // invalid — must be rejected by readNodeV8
+
+    auto tampered = replaceFirstNodesFrame(buf, buildNodesFrameBytesV8({root}));
+
+    EXPECT_THROW(
+        mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
+        DB::Exception)
+        << "Negative num_children must be rejected by readNodeV8";
+}
+
+/// Append a junk byte after the ACL map in the METADATA frame.  The metadata-only
+/// fast path (deserializeSnapshotMetadataFromBuffer) must throw CORRUPTED_DATA —
+/// verifying the F1-metadata-only-frame-tail-unvalidated fix.
+TEST(KeeperSnapshotV8Validation, MetadataTailTamperedRejected)
+{
+    ChangelogDirTest snap_dir("./v8val_metatail");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/node1", "v1");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 10;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/10, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // Decompress METADATA frame (always frames[0]) and append a junk byte after the ACL map.
+    std::string meta_bytes = decompressV8Frame(buf, 0);
+    meta_bytes += '\xFF'; // trailing garbage
+
+    // Replace the METADATA frame with the tampered version.
+    auto tampered = replaceFirstFrameOfType(buf, V8ChunkType::METADATA, meta_bytes);
+
+    // The metadata-only fast path must detect the trailing byte (F1 fix).
+    EXPECT_THROW(mgr.deserializeSnapshotMetadataFromBuffer(tampered), DB::Exception)
+        << "deserializeSnapshotMetadataFromBuffer must throw on trailing bytes in METADATA frame";
+
+    // The full deserialiser must also detect it.
+    EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true), DB::Exception)
+        << "deserializeSnapshotFromBuffer must throw on trailing bytes in METADATA frame";
+}
+
+/// Append a junk byte after the cluster config in the SESSIONS frame.  The full
+/// deserialiser must throw CORRUPTED_DATA — verifying the F2-sessions-frame-no-eof-drain fix.
+TEST(KeeperSnapshotV8Validation, SessionsTrailingBytesRejected)
+{
+    ChangelogDirTest snap_dir("./v8val_sesseof");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/node1", "v1");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 7;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/7, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    // Find the SESSIONS frame index.
+    const char * raw_const = reinterpret_cast<const char *>(buf->data_begin());
+    auto frames = parseAndValidateV8Header(raw_const, buf->size());
+    size_t sess_idx = frames.size();
+    for (size_t i = 0; i < frames.size(); ++i)
+    {
+        if (frames[i].type == V8ChunkType::SESSIONS)
+        {
+            sess_idx = i;
+            break;
+        }
+    }
+    ASSERT_LT(sess_idx, frames.size()) << "No SESSIONS frame found";
+
+    // Decompress the SESSIONS frame and append a junk byte after all content.
+    std::string sess_bytes = decompressV8Frame(buf, sess_idx);
+    sess_bytes += '\xFF'; // trailing garbage
+
+    // Replace the SESSIONS frame with the tampered version.
+    auto tampered = replaceFirstFrameOfType(buf, V8ChunkType::SESSIONS, sess_bytes);
+
+    // Full deserialiser must detect the trailing byte (F2 fix).
+    EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true), DB::Exception)
+        << "deserializeSnapshotFromBuffer must throw on trailing bytes in SESSIONS frame";
 }
 
 } // namespace DB

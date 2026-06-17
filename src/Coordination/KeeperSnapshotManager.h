@@ -38,10 +38,10 @@ enum SnapshotVersion : uint8_t
     V5 = 5, /// add ZXID and digest to snapshots
     V6 = 6, /// remove is_sequential, per node size, data length
     V7 = 7, /// acl_id narrowed from uint64_t to uint32_t, seq_num widened from int32_t to int64_t
-    V8 = 8, /// chunked independently-compressed ZSTD frames, parallel-read capable (inert until C3)
+    V8 = 8, /// chunked independently-compressed ZSTD frames, parallel-read capable (active from C3; C4 adds parallel per-frame deserialization)
 };
 
-static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V7;
+static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V8;
 
 /// What is stored in binary snapshot
 template<typename Storage>
@@ -190,6 +190,13 @@ template<typename Storage>
 class KeeperSnapshotManager
 {
 public:
+#if USE_ROCKSDB
+    static constexpr bool use_rocksdb = std::is_same_v<Storage, KeeperRocksStorage>;
+#else
+    static constexpr bool use_rocksdb = false;
+#endif
+
+
     KeeperSnapshotManager(
         size_t snapshots_to_keep_,
         const KeeperContextPtr & keeper_context_,
@@ -257,6 +264,12 @@ public:
     void setProtectedPendingSnapshotIndex(uint64_t log_idx);
 
 private:
+    /// Deserialize a V8 (chunked independently-compressed ZSTD) snapshot from `buffer`.
+    /// Called from deserializeSnapshotFromBuffer after "CKFS" magic is detected.
+    /// Throws UNKNOWN_FORMAT_VERSION if called for a RocksDB storage instantiation.
+    SnapshotDeserializationResult<Storage> deserializeV8FromBuffer(
+        nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage = true) const;
+
     /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
     void removeOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx);
     void moveSnapshotsIfNeeded();

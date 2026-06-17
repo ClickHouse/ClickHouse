@@ -1,5 +1,6 @@
 /// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
+#include <span>
 #include <algorithm>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -72,6 +73,7 @@ namespace CoordinationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 namespace FailPoints
@@ -737,15 +739,28 @@ KeeperStorage<Container>::~KeeperStorage() = default;
 
 template <typename Container>
 KeeperStorage<Container>::KeeperStorage(
-    int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, const bool initialize_system_nodes)
+    int64_t tick_time_ms,
+    const String & superdigest_,
+    const KeeperContextPtr & keeper_context_,
+    const bool initialize_system_nodes,
+    const bool insert_initial_root)
     : KeeperStorageBase(tick_time_ms, keeper_context_, superdigest_)
 {
+    if (initialize_system_nodes && !insert_initial_root)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "initialize_system_nodes requires insert_initial_root (initializeSystemNodes dereferences '/')");
+
     if constexpr (use_rocksdb)
         container.initialize(keeper_context);
-    Node root_node;
-    container.insert("/", root_node);
-    if constexpr (!use_rocksdb)
-        addDigest(root_node, "/");
+
+    if (insert_initial_root)
+    {
+        Node root_node;
+        container.insert("/", root_node);
+        if constexpr (!use_rocksdb)
+            addDigest(root_node, "/");
+    }
 
     if (initialize_system_nodes)
         initializeSystemNodes();
@@ -5038,6 +5053,102 @@ template class KeeperStorage<SnapshotableHashTable<KeeperMemNode>>;
 #if USE_ROCKSDB
 template class KeeperStorage<RocksDBContainer<KeeperRocksNode>>;
 #endif
+
+// ────────────────────────────────────────────────────────────────────────────────
+// V8 parallel-snapshot load API (memory storage only, concrete free functions).
+// ────────────────────────────────────────────────────────────────────────────────
+
+MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperMemoryStorage & storage)
+{
+    MemorySnapshotLoadHandle handle;
+    handle.nodes = storage.container.beginLocalInsert();
+    return handle;
+}
+
+void finalizeMemorySnapshotLoad(
+    KeeperMemoryStorage & storage,
+    std::span<MemorySnapshotLoadHandle> handles,
+    bool recalculate_digest)
+{
+    // Step 1: splice all node batches into the container, reserve the map, build index map.
+    // Also accumulates total declared num_children (out_total_children) and non-root node
+    // count (out_non_root) for folded validation below.
+    //
+    // buildMapFromBatches takes LocalInsertBatch objects; extract them from the handles.
+    // LocalInsertBatch is move-only; after the move the handle's nodes list is empty
+    // and its destructor is a no-op.
+    using LocalBatch = SnapshotableHashTable<KeeperMemNode>::LocalInsertBatch;
+    std::vector<LocalBatch> batches;
+    batches.reserve(handles.size());
+    for (auto & h : handles)
+        batches.push_back(std::move(h.nodes));
+
+    uint64_t out_total_children = 0;
+    uint64_t out_non_root = 0;
+    storage.container.buildMapFromBatches(
+        std::span<LocalBatch>{batches.data(), batches.size()},
+        out_total_children, out_non_root);
+
+    // Step 2: root invariant check — must run BEFORE the children walk which dereferences parents.
+    // The V8 path constructs storage with insert_initial_root=false so the snapshot's own "/"
+    // is the only source of the root.
+    if (storage.container.find("/") == storage.container.end())
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "V8 snapshot has no root '/' node");
+
+    // Step 3: children walk — one traversal. updateValueForLoad throws CORRUPTED_DATA on
+    // a missing parent (unlike updateValue which throws LOGICAL_ERROR).
+    for (const auto & itr : storage.container)
+    {
+        if (itr.key == "/")
+            continue;
+
+        const auto parent_path = Coordination::parentNodePath(itr.key);
+        const auto child_name = Coordination::getBaseNodeName(itr.key);
+
+        storage.container.updateValueForLoad(parent_path,
+            [&child_name, &parent_path](KeeperMemNode & parent)
+            {
+                parent.addChild(child_name);
+                // Inline over-count check: a parent's rebuilt children set cannot exceed
+                // the declared numChildren (validated >= 0 at parse time).
+                if (static_cast<int64_t>(parent.getChildren().size()) > parent.numChildren())
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Children of '{}' ({}) exceed declared numChildren ({})",
+                        parent_path,
+                        parent.getChildren().size(),
+                        parent.numChildren());
+            });
+    }
+
+    // Step 4: folded equality validation O(1).
+    // With per-node children.size() <= numChildren() (inline check above), non-negative
+    // numChildren (parse-time check), and Σ children.size() == out_non_root:
+    //   out_non_root == out_total_children ⟹ children.size() == numChildren() for every node.
+    // (a_i <= b_i & Σa == Σb ⟹ a_i == b_i)
+    if (out_non_root != out_total_children)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Rebuilt child count {} != declared {} (corrupt snapshot)",
+            out_non_root,
+            out_total_children);
+
+    // Step 5: merge side state from all handles.
+    for (auto & h : handles)
+    {
+        if (recalculate_digest)
+            storage.nodes_digest += h.digest_sum;
+
+        for (auto & [owner, paths] : h.local_ephemerals)
+            for (const auto & path : paths)
+                storage.committed_ephemerals[owner].insert(path);
+
+        storage.committed_ephemeral_nodes += h.local_ephemeral_nodes;
+
+        if (!h.acl_usage.empty())
+            storage.acl_map.addUsageBatch(h.acl_usage);
+    }
+}
 
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -656,7 +657,12 @@ public:
 
     bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool should_lock_storage);
 
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
+    /// `insert_initial_root=false` suppresses the automatic root `"/"` insert so the V8 load path
+    /// can populate the root from the snapshot's own serialized `"/"` node.
+    /// Invariant: `initialize_system_nodes=true` requires `insert_initial_root=true`, because
+    /// `initializeSystemNodes` assumes `"/"` already exists.
+    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_,
+                  bool initialize_system_nodes = true, bool insert_initial_root = true);
     ~KeeperStorage();
 
     void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;
@@ -682,7 +688,7 @@ public:
         bool check_acl = true,
         std::optional<KeeperDigest> digest = std::nullopt,
         int64_t log_idx = 0);
-    void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
+    void rollbackRequest(int64_t rollback_zxid, bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Set of methods for creating snapshots
 
@@ -727,5 +733,40 @@ private:
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);
 };
+
+// ────────────────────────────────────────────────────────────────────────────────
+// V8 parallel-snapshot load API — memory storage only (not template members).
+// Kept as free functions so the RocksDB explicit instantiation never sees
+// Container::LocalInsertBatch (which does not exist on RocksDBContainer).
+// ────────────────────────────────────────────────────────────────────────────────
+
+/// Per-frame state accumulated by one deserialization worker (or the serial caller).
+struct MemorySnapshotLoadHandle
+{
+    SnapshotableHashTable<KeeperMemNode>::LocalInsertBatch nodes; ///< parsed node batch
+    uint64_t digest_sum = 0;                                       ///< Σ node.getDigest(path); commutative
+    KeeperMemoryStorage::Ephemerals local_ephemerals;              ///< owner -> set<path>
+    size_t local_ephemeral_nodes = 0;
+    std::unordered_map<ACLId, uint64_t> acl_usage;                 ///< id -> count (post cleanup_acl)
+};
+
+/// Create a new handle whose node batch is backed by `storage.container`'s arena.
+/// Callable from any thread; takes no locks.
+MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperMemoryStorage & storage);
+
+/// Merge all handles into `storage` in the order given.
+///
+/// Steps (in order):
+///   1. storage.container.buildMapFromBatches — splice + reserve + map walk
+///   2. Root invariant: find("/") must exist
+///   3. Children walk via updateValueForLoad + inline over-count check
+///   4. Folded equality validation (Σ children.size() == total declared)
+///   5. Merge side state: digest, ephemerals, ACL usage
+///
+/// Caller must hold the storage lock exclusive (apply_snapshot) or be the init thread.
+void finalizeMemorySnapshotLoad(
+    KeeperMemoryStorage & storage,
+    std::span<MemorySnapshotLoadHandle> handles,
+    bool recalculate_digest);
 
 }
