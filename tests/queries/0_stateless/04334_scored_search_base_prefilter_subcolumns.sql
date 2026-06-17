@@ -1,4 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-old-analyzer
+-- ^ The legacy analyzer cannot resolve subcolumn identifiers (e.g. `arr.size0`)
+-- in a `WHERE` over a table function and throws `UNKNOWN_IDENTIFIER` before the
+-- query reaches the storage. Subcolumn prefiltering is a new-analyzer feature.
 
 -- A `WHERE` predicate over subcolumns of source-table columns (`arr.size0`,
 -- tuple elements, typed `JSON` paths) must be evaluated by the bitmap

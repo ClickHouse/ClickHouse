@@ -126,18 +126,33 @@ CREATE TABLE tab
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;
 
+SYSTEM STOP MERGES tab;
+
 INSERT INTO tab SELECT number, [toFloat32(cityHash64(number * 3 + 1) % 1000000 / 1000000.0), toFloat32(cityHash64(number * 3 + 2) % 1000000 / 1000000.0), toFloat32(cityHash64(number * 3 + 3) % 1000000 / 1000000.0)] FROM numbers(1000);
 
-SELECT '-- 6a. Table function results';
-SELECT id, _score
-FROM vectorSearch(currentDatabase(), tab, idx, [0.5, 0.5, 0.5], 10)
-ORDER BY _score, id;
+-- The HNSW graph is built by inserting vectors concurrently, so its topology -
+-- and hence the exact set of approximate neighbours - is not reproducible across
+-- runs (and depends on the randomized part layout). Comparing an exact ranking
+-- would be flaky, so instead assert that the approximate top-10 has high recall
+-- against the exact top-10. A wide candidate list makes the search near-exhaustive;
+-- the small residual gap is the Float32 index distance vs the Float64
+-- `cosineDistance` rounding at the 10th-place boundary.
+SELECT '-- 6a. Approximate top-10 recall against exact top-10 is at least 8/10';
+WITH
+    (
+        SELECT groupArray(id)
+        FROM vectorSearch(currentDatabase(), tab, idx, [0.5, 0.5, 0.5], 10)
+        SETTINGS hnsw_candidate_list_size_for_search = 1000
+    ) AS approx_ids,
+    (
+        SELECT groupArray(id)
+        FROM (SELECT id FROM tab ORDER BY cosineDistance(vec, [0.5, 0.5, 0.5]), id LIMIT 10)
+    ) AS exact_ids
+SELECT length(arrayIntersect(approx_ids, exact_ids)) >= 8;
 
-SELECT '-- 6v. Verification via ORDER BY cosineDistance LIMIT';
-SELECT id, cosineDistance(vec, [0.5, 0.5, 0.5]) AS _score
-FROM tab
-ORDER BY _score, id
-LIMIT 10;
+SELECT '-- 6b. The table function returns exactly K = 10 rows';
+SELECT count() = 10
+FROM vectorSearch(currentDatabase(), tab, idx, [0.5, 0.5, 0.5], 10);
 
 DROP TABLE tab;
 

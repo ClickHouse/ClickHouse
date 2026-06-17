@@ -71,7 +71,9 @@ void ReadFromMergeTreeScoredSearch::applyFilters(ActionDAGNodes added_filter_nod
     if (!ranges_in_data_parts || ranges_in_data_parts->empty())
         return;
 
-    if (auto built = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, {}))
+    /// Remap analyzer column identifiers (e.g. `__table1.category`) back to the
+    /// source-table column names (`category`), exactly as `SourceStepWithFilter::applyFilters` does.
+    if (auto built = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn()))
     {
         filter_actions_dag = std::make_shared<const ActionsDAG>(std::move(*built));
 
