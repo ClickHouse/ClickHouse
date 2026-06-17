@@ -205,6 +205,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             .remove_filter_column = row_level_filter->do_remove_column,
             .need_filter = true,
             .perform_alter_conversions = true,
+            .columns_overwritten_by_chain = {},
             .mutation_version = std::nullopt,
         };
 
@@ -233,6 +234,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             .remove_filter_column = prewhere_info->remove_prewhere_column,
             .need_filter = prewhere_info->need_filter,
             .perform_alter_conversions = true,
+            .columns_overwritten_by_chain = {},
             .mutation_version = std::nullopt,
         };
 
