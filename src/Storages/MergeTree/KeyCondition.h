@@ -41,7 +41,7 @@ struct ActionsDAGWithInversionPushDown
     /// apply truthiness-preserving but value-changing rewrites, e.g. `tryRewriteCoalesceBoolean` turns `ifNull(X, 0)` -> `X`,
     /// which differ on NULL rows.
     /// There is not correctness cost with passing false but may miss some optimization opportunities.
-    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context = false);
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context);
 };
 
 
