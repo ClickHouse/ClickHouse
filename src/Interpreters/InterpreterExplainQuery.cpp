@@ -19,12 +19,19 @@
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
+#include <Access/Common/SQLSecurityDefs.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -60,6 +67,132 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Walk the AST and expand parameterized view "table function" calls into their inlined,
+    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
+    ///
+    /// In the analyzer path, without this expansion the query tree would show the unexpanded
+    /// table function call. In the legacy path, `ExplainAnalyzedSyntaxMatcher` covers the FROM
+    /// table expression via `StorageView::replaceWithSubquery`, which only rewrites the first
+    /// table expression and leaves JOIN sides untouched; this visitor is complementary, expanding
+    /// parameterized views that appear on the right side of a JOIN as well.
+    struct ExpandParameterizedViewsMatcher
+    {
+        struct Data : public WithContext
+        {
+            explicit Data(ContextPtr context_) : WithContext(context_) {}
+        };
+
+        static bool needChildVisit(ASTPtr &, ASTPtr &)
+        {
+            return true;
+        }
+
+        static void visit(ASTPtr & ast, Data & data)
+        {
+            if (auto * select = ast->as<ASTSelectQuery>())
+                expandTables(*select, data);
+        }
+
+        /// Iterate all table expressions in the SELECT (FROM and JOINs) and expand
+        /// any that are parameterized view calls.
+        static void expandTables(ASTSelectQuery & select, const Data & data)
+        {
+            if (!select.tables() || select.tables()->children.empty())
+                return;
+
+            for (auto & child : select.tables()->children)
+            {
+                auto * table_element = child->as<ASTTablesInSelectQueryElement>();
+                if (!table_element || !table_element->table_expression)
+                    continue;
+
+                auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
+                if (!table_expr || !table_expr->table_function)
+                    continue;
+
+                tryExpandTableExpression(*table_expr, data);
+            }
+        }
+
+        /// If the table expression is a parameterized view call, replace it with
+        /// the parameter-substituted inner query as a subquery.
+        static void tryExpandTableExpression(ASTTableExpression & table_expr, const Data & data)
+        {
+            const auto * func = table_expr.table_function->as<ASTFunction>();
+            if (!func)
+                return;
+
+            /// FINAL and SAMPLE are valid on a parameterized view at execution time, but
+            /// rewriting the view call into a subquery here would attach them to the
+            /// subquery, where they are rejected with `UNSUPPORTED_METHOD`. Leave the
+            /// original call intact so `EXPLAIN SYNTAX` matches what execution accepts.
+            if (table_expr.final || table_expr.sample_size || table_expr.sample_offset)
+                return;
+
+            auto query_context = data.getContext()->getQueryContext();
+
+            /// A registered table function (e.g. `numbers`) takes precedence over a view with
+            /// the same name, matching `QueryAnalyzer::resolveTableFunction`. Without this check
+            /// a user view shadowing a built-in table function would be expanded here while
+            /// regular execution would still resolve the built-in.
+            if (TableFunctionFactory::instance().isTableFunctionName(func->name))
+                return;
+
+            String database_name = query_context->getCurrentDatabase();
+            String table_name = func->name;
+            if (func->isCompoundName())
+            {
+                std::vector<std::string> parts;
+                splitInto<'.'>(parts, func->name);
+                if (parts.size() != 2)
+                    return;
+                database_name = parts[0];
+                table_name = parts[1];
+            }
+
+            auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
+            if (!storage)
+                return;
+
+            const auto * storage_view = storage->as<StorageView>();
+            if (!storage_view || !storage_view->isParameterizedView())
+                return;
+
+            auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
+
+            /// For views created with `SQL SECURITY DEFINER` or `NONE`, execution resolves the
+            /// inner tables via `StorageView::getSQLSecurityOverriddenContext`. Inlining the view
+            /// here would instead re-analyze the inner query under the invoker's context, so
+            /// `EXPLAIN SYNTAX` would fail for users that can query the view but not its inner
+            /// tables. Leave the original parameterized call intact in that case.
+            if (metadata->sql_security_type && metadata->sql_security_type != SQLSecurityType::INVOKER)
+                return;
+
+            auto view_query = metadata->getSelectQuery().inner_query->clone();
+            NameToNameMap parameter_values = analyzeFunctionParamValues(table_expr.table_function, query_context);
+            StorageView::replaceQueryParametersIfParameterizedView(view_query, parameter_values);
+
+            /// Replace the table function with a subquery in-place on this table expression,
+            /// rather than using `StorageView::replaceWithSubquery` which only handles the
+            /// first table expression in the SELECT. Preserve the explicit alias from the
+            /// original table function (e.g. `... FROM my_pv(n=1) AS t`) so identifiers in
+            /// the outer query keep resolving; otherwise fall back to the view's table name
+            /// so the rendered `EXPLAIN SYNTAX` keeps referring to the view.
+            String alias = table_expr.table_function->tryGetAlias();
+            if (alias.empty())
+                alias = table_name;
+
+            table_expr.table_function = nullptr;
+            table_expr.subquery = make_intrusive<ASTSubquery>(std::move(view_query));
+            table_expr.subquery->setAlias(alias);
+
+            table_expr.children.clear();
+            table_expr.children.push_back(table_expr.subquery);
+        }
+    };
+
+    using ExpandParameterizedViewsVisitor = InDepthNodeVisitor<ExpandParameterizedViewsMatcher, true>;
+
     struct ExplainAnalyzedSyntaxMatcher
     {
         struct Data : public WithContext
@@ -292,6 +425,7 @@ struct QueryPipelineSettings
             {"graph", graph},
             {"compact", compact},
             {"distributed", query_pipeline_options.distributed},
+            {"compact_repeated_processor_chains", query_pipeline_options.compact_repeated_processor_chains},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -421,7 +555,8 @@ bool explainQueryTree(
     ASTPtr explained_query,
     ContextPtr query_context,
     const QueryTreeSettings & settings,
-    WriteBuffer & buf)
+    WriteBuffer & buf,
+    bool format_ast_as_syntax)
 {
     if (explained_query->as<ASTSelectWithUnionQuery>() == nullptr)
         return false;
@@ -468,7 +603,17 @@ bool explainQueryTree(
         IAST::FormatSettings format_settings(settings.ast_one_line);
         format_settings.show_secrets = query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
 
-        query_tree->toAST()->format(buf, format_settings);
+        ConvertToASTOptions ast_options;
+        /// `EXPLAIN SYNTAX` shows the query in a canonical, close-to-syntax form, so constants are
+        /// rendered as their source expressions and function calls are preferred over operator syntax.
+        /// `EXPLAIN QUERY TREE` (dump_ast) must show the query as it actually is after the query tree passes,
+        /// so neither source-expression rendering nor operator-to-function conversion is applied there.
+        ast_options.use_source_expression_for_constants = format_ast_as_syntax;
+
+        IAST::FormatState format_state;
+        IAST::FormatStateStacked format_frame;
+        format_frame.allow_operators = !format_ast_as_syntax;
+        query_tree->toAST(ast_options)->format(buf, format_settings, format_state, format_frame);
     }
 
     return true;
@@ -522,6 +667,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
+            /// Inline any parameterized view calls with their parameter-substituted inner queries,
+            /// so EXPLAIN SYNTAX shows what the view actually expands to.
+            ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
+            ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
+
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 bool explain_ok = explainQueryTree(ast.getExplainedQuery(), query_context, QueryTreeSettings{
@@ -531,7 +681,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     .dump_ast = true,
                     .passes = settings.query_tree_passes,
                     .ast_one_line = settings.oneline,
-                }, buf);
+                }, buf, /*format_ast_as_syntax=*/ true);
 
                 if (explain_ok)
                     break;
@@ -543,7 +693,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExplainAnalyzedSyntaxVisitor::Data data(query_context);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(buf, IAST::FormatSettings(settings.oneline));
+            IAST::FormatSettings format_settings(settings.oneline);
+            IAST::FormatState format_state;
+            IAST::FormatStateStacked format_frame;
+            format_frame.allow_operators = false;
+            ast.getExplainedQuery()->format(buf, format_settings, format_state, format_frame);
             break;
         }
         case ASTExplainQuery::QueryTree:
@@ -556,7 +710,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!settings.dump_tree && !settings.dump_ast)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'dump_tree' or 'dump_ast' must be set for EXPLAIN QUERY TREE query");
 
-            if (!explainQueryTree(ast.getExplainedQuery(), query_context, settings, buf))
+            if (!explainQueryTree(ast.getExplainedQuery(), query_context, settings, buf, /*format_ast_as_syntax=*/ false))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
 
             break;
@@ -758,6 +912,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(sample_block.cloneWithColumns(std::move(res_columns)))));
 }
 
+void registerInterpreterExplainQuery(InterpreterFactory & factory);
 void registerInterpreterExplainQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)

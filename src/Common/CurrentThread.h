@@ -1,7 +1,11 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <Core/LogsLevel.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/ThreadStatus.h>
+#include <base/defines.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/IThrottler.h>
 #include <Common/Scheduler/ResourceLink.h>
 
 #include <memory>
@@ -22,6 +26,23 @@ namespace DB
 class QueryStatus;
 struct Progress;
 class InternalTextLogsQueue;
+
+class ThreadStatus;
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
+using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
+using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
+
+/**
+ * We use **constinit** here to tell the compiler the current_thread variable is initialized.
+ * If we didn't help the compiler, then it would most likely add a check before every use of the variable to initialize it if needed.
+ * Instead it will trust that we are doing the right thing (and we do initialize it to nullptr) and emit more optimal code.
+ * This is noticeable in functions like CurrentMemoryTracker::free and CurrentMemoryTracker::allocImpl
+ * See also:
+ * - https://en.cppreference.com/w/cpp/language/constinit
+ * - https://github.com/ClickHouse/ClickHouse/pull/40078
+ */
+extern thread_local constinit ThreadStatus * current_thread;
 
 /** Collection of static methods to work with thread-local objects.
   * Allows to attach and detach query/process (thread group) to a thread
@@ -61,12 +82,7 @@ public:
     static void updatePerformanceCountersIfNeeded();
 
     static ProfileEvents::Counters & getProfileEvents();
-    inline ALWAYS_INLINE static MemoryTracker * getMemoryTracker()
-    {
-        if (!current_thread) [[unlikely]]
-            return nullptr;
-        return &current_thread->memory_tracker;
-    }
+    static MemoryTracker * getMemoryTracker();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);

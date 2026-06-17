@@ -26,7 +26,7 @@ using Strings = std::vector<String>;
 class ASTShowCreateAccessEntityQuery : public ASTQueryWithOutput
 {
 public:
-    AccessEntityType type;
+    AccessEntityType type{};
     Strings names;
     boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
 

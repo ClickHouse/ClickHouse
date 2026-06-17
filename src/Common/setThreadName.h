@@ -56,6 +56,7 @@ namespace DB
     M(DISTRIBUTED_SCHEDULE_POOL, "BgDistSchPool") \
     M(DISTRIBUTED_SINK, "DistrOutStrProc") \
     M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
+    M(DISTRIBUTED_QUERY_TASK, "DistQueryTask") \
     M(DROP_TABLES, "DropTables") \
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
@@ -75,6 +76,7 @@ namespace DB
     M(KEEPER_SNAPSHOT, "KeeperSnapshot") \
     M(KEEPER_SNAPSHOT_S3, "KeeperSnapS3") \
     M(KEEPER_COMMIT, "KeeperCommit") \
+    M(KEEPER_APPEND, "KeeperAppend") \
     M(KEEPER_READ, "KeeperRead") \
     M(KAFKA_BACKGROUND, "KafkaBackgrd") \
     M(KAFKA_BROKER, "KafkaBroker") \
@@ -163,6 +165,7 @@ namespace DB
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
+    M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
 
 
 enum class ThreadName : uint8_t

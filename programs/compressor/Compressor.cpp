@@ -51,8 +51,8 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 {
     while (!in.eof())
     {
-        UInt32 size_compressed;
-        UInt32 size_decompressed;
+        UInt32 size_compressed = {};
+        UInt32 size_decompressed = {};
         auto codec = DB::getCompressionCodecForFile(in, size_compressed, size_decompressed, true /* skip_to_next_block */);
 
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
@@ -69,6 +69,7 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 }
 
+int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv)
 {
     using namespace DB;

@@ -48,7 +48,7 @@ struct TraceLogElement
     ProfileEvents::Count increment{};
 
     /// Instrumentation values
-    UInt64 instrumented_point_id;
+    UInt64 instrumented_point_id{};
     Int32 function_id = -1;
     String function_name{};
     String handler{};

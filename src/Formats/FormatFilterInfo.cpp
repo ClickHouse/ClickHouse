@@ -85,6 +85,23 @@ bool FormatFilterInfo::hasFilter() const
     return filter_actions_dag != nullptr;
 }
 
+Block FormatFilterInfo::buildKeyConditionInputs(
+    Block base,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter)
+{
+    auto add_required = [&](const ActionsDAG & dag)
+    {
+        for (const auto & col : dag.getRequiredColumns())
+            if (!base.has(col.name))
+                base.insert({col.type->createColumn(), col.type, col.name});
+    };
+    if (row_level_filter)
+        add_required(row_level_filter->actions);
+    if (prewhere_info)
+        add_required(prewhere_info->prewhere_actions);
+    return base;
+}
 
 void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
 {
@@ -104,26 +121,12 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 if (!ctx)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
-                if (prewhere_info || row_level_filter)
-                {
-                    auto add_columns = [&](const ActionsDAG & dag)
-                    {
-                        for (const auto & col : dag.getRequiredColumns())
-                        {
-                            if (!keys.has(col.name) && !additional_columns.has(col.name))
-                                additional_columns.insert({col.type->createColumn(), col.type, col.name});
-                        }
-                    };
+                Block all_inputs = buildKeyConditionInputs(keys, prewhere_info, row_level_filter);
+                for (const auto & col : all_inputs)
+                    if (!keys.has(col.name))
+                        additional_columns.insert(col);
 
-                    if (row_level_filter)
-                        add_columns(row_level_filter->actions);
-                    if (prewhere_info)
-                        add_columns(prewhere_info->prewhere_actions);
-                }
-
-                ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();
-                for (const auto & col : additional_columns)
-                    columns.push_back(col);
+                ColumnsWithTypeAndName columns = all_inputs.getColumnsWithTypeAndName();
                 Names names;
                 names.reserve(columns.size());
                 for (const auto & col : columns)
