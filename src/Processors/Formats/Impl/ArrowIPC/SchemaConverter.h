@@ -49,6 +49,11 @@ enum class TypeKind : uint8_t
     Struct,
     Map,
     Union,
+    /// An Arrow type the native reader does not support. Parsed as a placeholder (rather than failing
+    /// during schema parsing) so schema inference can drop it with
+    /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`; decoding or requesting
+    /// such a column still fails with a clear error.
+    Unsupported,
 };
 
 struct ArrowField;
@@ -84,6 +89,9 @@ struct ArrowType
 
     /// Children (List/LargeList/FixedSizeList element, Struct/Union fields, Map's key_value struct).
     std::vector<ArrowField> children;
+
+    /// The Arrow type name for a `TypeKind::Unsupported` placeholder (used in the error message).
+    std::string unsupported_type_name;
 };
 
 struct DictionaryEncoding

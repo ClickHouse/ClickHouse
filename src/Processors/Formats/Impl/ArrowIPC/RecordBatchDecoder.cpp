@@ -359,9 +359,12 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
                 return reinterpret_cast<const int32_t *>(offsets_slice.ptr)[i];
             };
 
+            /// A sliced Arrow string array can begin at a non-negative first offset; the value bytes are
+            /// read directly from `data[offset[i], offset[i + 1])`, so any base offset works as long as the
+            /// offsets stay monotonic and within the data buffer (matching the Apache Arrow library reader).
             int64_t prev = read_offset(0);
-            if (prev != 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC string column has a non-zero first offset {}", prev);
+            if (prev < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC string column has a negative first offset {}", prev);
             for (size_t i = 0; i < rows; ++i)
             {
                 const int64_t end = read_offset(i + 1);
@@ -1001,6 +1004,14 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
         case TypeKind::Null:
         case TypeKind::Union:
             break; /// handled above
+        case TypeKind::Unsupported:
+            /// The buffer layout of an unsupported Arrow type is unknown, so its buffers cannot be skipped
+            /// to reach later columns. A `SELECT` of other columns from a file with such an (unrequested)
+            /// column therefore still fails — but with a clear error rather than a cursor desync.
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Native Arrow IPC reader cannot skip the unsupported Arrow type {} of field '{}'",
+                field.type.unsupported_type_name, field.name);
     }
 }
 

@@ -269,10 +269,13 @@ ArrowType parseType(const flatbuf::Field & field)
             break;
         }
         default:
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Arrow IPC type {} is not supported by the native reader yet",
-                flatbuf::EnumNameType(field.type_type()));
+            /// Keep an unsupported Arrow type as a placeholder rather than failing here, so schema
+            /// inference can drop the column with
+            /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`. Mapping it to a
+            /// ClickHouse type (`fieldToCHType`) or decoding/skipping it still fails with a clear error.
+            type.kind = TypeKind::Unsupported;
+            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
+            break;
     }
     return type;
 }
@@ -918,6 +921,13 @@ DataTypePtr fieldToCHType(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Native Arrow IPC reader does not support this type yet (field '{}')",
                 field.name);
+        case TypeKind::Unsupported:
+            /// `UNKNOWN_TYPE` so schema inference can drop the column with
+            /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`.
+            throw Exception(
+                ErrorCodes::UNKNOWN_TYPE,
+                "Native Arrow IPC reader does not support the Arrow type {} (field '{}')",
+                field.type.unsupported_type_name, field.name);
     }
 
     if (!result)
