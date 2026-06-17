@@ -179,6 +179,7 @@ bool IMergeTreeDataPartWriter::columnUsesDefaultCodec(const String & column_name
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
 }
 
+/// TODO: structural integer substreams (offsets, null maps) could go adaptive but `isSpecialCompressionAllowed` gates them out. Optimise.
 CompressionCodecPtr IMergeTreeDataPartWriter::maybeAdaptiveDefaultCodec(
     bool column_uses_default_codec, const DataTypePtr & substream_type, CompressionCodecPtr resolved_codec) const
 {
