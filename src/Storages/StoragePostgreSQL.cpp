@@ -965,14 +965,16 @@ ColumnsDescription doQueryResultStructure(pqxx::connection & connection, const S
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL query returned no columns: {}", query);
 
     /// Resolve the type names of the result columns from their type OIDs.
-    /// `unnest` preserves the array order, so the resolved type names line up with the result columns.
+    /// `WITH ORDINALITY` together with the explicit `ORDER BY` keeps the resolved type names
+    /// lined up with the result columns regardless of how the array is unnested.
     std::vector<std::string> oids;
     oids.reserve(num_columns);
     for (pqxx::row_size_type i = 0; i < num_columns; ++i)
         oids.push_back(std::to_string(sample.column_type(i)));
 
     pqxx::result type_names{tx.exec(
-        "SELECT format_type(t, NULL) FROM unnest(ARRAY[" + boost::algorithm::join(oids, ",") + "]::oid[]) AS t")};
+        "SELECT format_type(type_oid, NULL) FROM unnest(ARRAY[" + boost::algorithm::join(oids, ",")
+        + "]::oid[]) WITH ORDINALITY AS t(type_oid, ord) ORDER BY ord")};
     tx.commit();
 
     NamesAndTypesList columns;

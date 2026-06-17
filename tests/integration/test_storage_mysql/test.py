@@ -1142,8 +1142,9 @@ def test_query_passing_table_function(started_cluster):
     q_subq = f"mysql('mysql80:3306', 'clickhouse', (SELECT id, name FROM {table_name} WHERE id < 10), 'root', '{mysql_pass}')"
     assert node1.query(f"SELECT count() FROM {q_subq}").rstrip() == "10"
     assert node1.query(f"SELECT name FROM {q_subq} ORDER BY id LIMIT 1").rstrip() == "name_0"
-    # Only the columns produced by the query are visible.
-    assert node1.query(f"SELECT count(columns('.*')) FROM (SELECT * FROM {q_subq} LIMIT 1)").rstrip() == "2"
+    # Only the columns produced by the query are visible (id, name).
+    row = node1.query(f"SELECT * FROM {q_subq} ORDER BY id LIMIT 1").rstrip()
+    assert len(row.split("\t")) == 2
 
     drop_mysql_table(conn, table_name)
     conn.close()
