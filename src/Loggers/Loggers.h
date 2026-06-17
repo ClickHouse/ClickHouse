@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Loggers/AuditLog.h>
 #include <Loggers/OwnSplitChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>

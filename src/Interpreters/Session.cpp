@@ -8,7 +8,6 @@
 #include <Access/Role.h>
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
-#include <Loggers/AuditLog.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -360,8 +359,6 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     }
     catch (const Exception & e)
     {
-        notified_about_login_failure = true;
-
         if (auto * audit_log = getAuditLogIfEnabled())
         {
             const auto & client_info = getClientInfo();
@@ -443,10 +440,6 @@ void Session::checkIfUserIsStillValid()
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
-    if (notified_about_login_failure)
-        return;
-    notified_about_login_failure = true;
-
     if (auto * audit_log = getAuditLogIfEnabled())
     {
         LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",

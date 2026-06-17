@@ -202,7 +202,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     }
 
     const auto auditlog_path_prop = config.getString("logger.auditlog", "");
-    if (!auditlog_path_prop.empty() && config.getBool("allow_experimental_audit_log", false))
+    if (!auditlog_path_prop.empty())
     {
         DB::setGlobalAuditLog(nullptr);
         if (audit_log)
@@ -214,7 +214,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         bool async = config.getBool("logger.async", true);
         auto queue_size = config.getUInt("logger.async_queue_max_size", 65536);
         audit_log = std::make_unique<DB::AuditLog>(async, static_cast<size_t>(queue_size));
-        audit_log->configure(config);
+        const auto auditlog_path = renderFileNameTemplate(now, auditlog_path_prop);
+        audit_log->configure(config, auditlog_path);
         audit_log->open();
         DB::setGlobalAuditLog(audit_log.get());
     }

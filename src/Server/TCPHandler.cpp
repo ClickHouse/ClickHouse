@@ -2000,7 +2000,6 @@ void TCPHandler::receiveHello()
 
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication", LogsLevel::information);
                 /// ^^ Log at debug level instead of default error level as authentication failures are not an unusual event.
-                session->resetLoginFailureLatch();
             }
         }
     }
@@ -2017,30 +2016,18 @@ void TCPHandler::receiveHello()
             authentication_types.end(),
             [](auto authentication_type)
             {
-            return authentication_type ==  AuthenticationType::SSH_KEY;
+                return authentication_type ==  AuthenticationType::SSH_KEY;
             }) != authentication_types.end();
 
         if (!user_supports_ssh_authentication)
-        {
-            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
-            session->onAuthenticationFailure(user, socket().peerAddress(), exception);
-            throw exception; /// NOLINT
-        }
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
-        {
-            auto exception = Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
-            session->onAuthenticationFailure(user, socket().peerAddress(), exception);
-            throw exception; /// NOLINT
-        }
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
 
         readVarUInt(packet_type, *in);
         if (packet_type != Protocol::Client::SSHChallengeRequest)
-        {
-            auto exception = Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
-            session->onAuthenticationFailure(user, socket().peerAddress(), exception);
-            throw exception; /// NOLINT
-        }
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
 
         auto create_challenge = []()
         {
@@ -2057,11 +2044,7 @@ void TCPHandler::receiveHello()
         String signature;
         readVarUInt(packet_type, *in);
         if (packet_type != Protocol::Client::SSHChallengeResponse)
-        {
-            auto exception = Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
-            session->onAuthenticationFailure(user, socket().peerAddress(), exception);
-            throw exception; /// NOLINT
-        }
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
 
         readStringBinary(signature, *in, MAX_HELLO_STRING_SIZE);
 

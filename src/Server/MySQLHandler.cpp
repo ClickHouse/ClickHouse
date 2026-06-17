@@ -278,18 +278,10 @@ void MySQLHandler::run()
             handshake_response.auth_plugin_name);
 
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
-        {
-            auto e = Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
-            session->onAuthenticationFailure(handshake_response.username, socket().peerAddress(), e);
-            throw e; /// NOLINT
-        }
+            throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
         if (secure_required && !(client_capabilities & CLIENT_SSL))
-        {
-            auto e = Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
-            session->onAuthenticationFailure(handshake_response.username, socket().peerAddress(), e);
-            throw e; /// NOLINT
-        }
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
@@ -437,15 +429,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
             // (if password is specified using double SHA1). Otherwise, SHA256 plugin is used.
             if (user_authentication_type == DB::AuthenticationType::SHA256_PASSWORD)
             {
-                try
-                {
-                    authPluginSSL();
-                }
-                catch (const Exception & ssl_exc)
-                {
-                    session->onAuthenticationFailure(user_name, socket().peerAddress(), ssl_exc);
-                    throw;
-                }
+                authPluginSSL();
             }
         }
 
@@ -454,7 +438,6 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     }
     catch (const Exception & exc)
     {
-        session->onAuthenticationFailure(user_name, socket().peerAddress(), exc);
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
         packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
         throw;

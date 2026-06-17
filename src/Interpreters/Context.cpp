@@ -128,7 +128,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
-#include <Loggers/OwnSplitChannel.h>
+#include <Loggers/AuditLog.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -8058,9 +8058,13 @@ void Context::resetAuditTypes() const
 
 void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & config)
 {
-    /// Audit logging requires both the feature flag and a configured audit log file.
-    if (!getAuditLog())
+    /// The audit writer is created at startup whenever logger.auditlog is configured,
+    /// regardless of allow_experimental_audit_log.  The flag controls emission only:
+    /// toggling it at runtime enables or disables audit without a restart.
+    if (!config.getBool("allow_experimental_audit_log", false)
+        || !hasGlobalAuditLog())
     {
+        setAuditLoggingEnabled(false);
         resetAuditTypes();
         return;
     }
@@ -8145,6 +8149,7 @@ void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & c
         new_mask = static_cast<uint8_t>(Context::AuditLogTypes::DDL);
 
     shared->audit_types_bitmask.store(new_mask, std::memory_order_relaxed);
+    setAuditLoggingEnabled(true);
     LOG_DEBUG(shared->log, "auditlog_types={}", auditlog_types);
 }
 

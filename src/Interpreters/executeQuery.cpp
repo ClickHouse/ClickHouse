@@ -1005,9 +1005,6 @@ void logExceptionBeforeStart(
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->finish(query_end_time);
     }
-
-    if (!internal)
-        auditLog(elem, context, ast);
 }
 
 void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
@@ -1092,7 +1089,7 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
         return;
 
     String object_names; /// tables / views
-    if ((elem.exception_code == ErrorCodes::OK) && (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML))
+    if (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML)
     {
         for (const auto & table : elem.query_tables)
         {

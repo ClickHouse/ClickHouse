@@ -35,6 +35,11 @@ node_whitespace_types = cluster.add_instance(
     main_configs=["configs/logger_audit_whitespace_types.xml"],
     stay_alive=True,
 )
+node_reload = cluster.add_instance(
+    "node_audit_reload",
+    main_configs=["configs/logger_audit_reload.xml"],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -176,33 +181,6 @@ def pg_startup_message(user, database=""):
     return length + payload
 
 
-def test_audit_log_pg_unsupported_auth_method(start_cluster):
-    """A user whose only auth method is unsupported by the PostgreSQL protocol
-    must still emit a LoginFailure audit event with the attempted user and client IP."""
-    # Create a user that only supports double_sha1_password (not supported by the PG handler)
-    node_user_dcl.query(
-        "CREATE USER IF NOT EXISTS pg_unsupported_auth_user IDENTIFIED WITH double_sha1_password BY 'secret123'"
-    )
-
-    # Send a raw PostgreSQL startup message to trigger the auth-method negotiation path
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(5)
-        s.connect((node_user_dcl.ip_address, 9005))
-        s.sendall(pg_startup_message("pg_unsupported_auth_user"))
-        # Read response (we expect an error)
-        s.recv(4096)
-    except Exception:
-        pass
-    finally:
-        s.close()
-
-    assert_audit_log_contain_with_retry(node_user_dcl, "pg_unsupported_auth_user")
-    log_content = node_user_dcl.grep_in_log("pg_unsupported_auth_user", from_host=True, filename="clickhouse-server.audit.log")
-    assert "LoginFailure" in log_content, "LoginFailure must be emitted for unsupported auth-method negotiation"
-    assert "Unknown Host" not in log_content, "Client IP must be recorded, not 'Unknown Host'"
-
-
 def mysql_handshake_response(username, auth_response=b"", database="", auth_plugin_name="mysql_native_password", capability_flags=None):
     """Build a MySQL HandshakeResponse41 packet with the given username.
 
@@ -237,38 +215,6 @@ def mysql_handshake_response(username, auth_response=b"", database="", auth_plug
     # MySQL packet header: 3-byte length (LE) + 1-byte sequence id
     header = struct.pack("<I", len(payload))[:3] + struct.pack("<B", 1)
     return header + payload
-
-
-def test_audit_log_mysql_ssl_required_failure(start_cluster):
-    """When MySQL requires SSL but client doesn't support it, must emit LoginFailure with client IP."""
-    unique_user = "mysql_ssl_req_audit_user"
-
-    node_mysql_ssl_required.query(
-        f"CREATE USER IF NOT EXISTS {unique_user} IDENTIFIED WITH double_sha1_password BY 'secret123'"
-    )
-
-    s = None
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(5)
-        s.connect((node_mysql_ssl_required.ip_address, 9004))
-        s.recv(4096)
-        s.sendall(mysql_handshake_response(unique_user))
-        s.recv(4096)
-    except Exception:
-        pass
-    finally:
-        try:
-            if s:
-                s.close()
-        except Exception:
-            pass
-        node_mysql_ssl_required.query(f"DROP USER IF EXISTS {unique_user}")
-
-    assert_audit_log_contain_with_retry(node_mysql_ssl_required, unique_user)
-    log_content = node_mysql_ssl_required.grep_in_log(unique_user, from_host=True, filename="clickhouse-server.audit.log")
-    assert "LoginFailure" in log_content, "LoginFailure must be emitted for SSL-required failure"
-    assert "Unknown Host" not in log_content, "Client IP must be recorded for SSL-required failure, not 'Unknown Host'"
 
 
 def test_audit_log_mysql_wrong_password(start_cluster):
@@ -397,13 +343,71 @@ def test_audit_log_check_grant_classified_as_dcl(start_cluster):
     node_user_dcl.query("DROP USER IF EXISTS check_grant_test_user")
 
 
-def test_audit_log_failed_query(start_cluster):
-    """DDL audit records must include failed DDL queries (EXCEPTION_BEFORE_START)"""
-    try:
-        node_ddl.query("DROP TABLE test_nonexistent_obj_audit_98765")
-    except Exception:
-        pass
+AUDIT_LOG_CONFIG_PATH = "/etc/clickhouse-server/config.d/logger_audit_reload.xml"
+AUDIT_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.audit.log"
 
-    assert_audit_log_contain_with_retry(node_ddl, "test_nonexistent_obj_audit_98765")
-    log_content = node_ddl.grep_in_log("test_nonexistent_obj_audit_98765", from_host=True, filename="clickhouse-server.audit.log")
-    assert "DDL" in log_content, "Failed DDL must still be classified as DDL"
+
+def test_audit_log_reload_enable(start_cluster):
+    """Starting with allow_experimental_audit_log=false, a config reload to true
+    must start emitting audit records without a server restart."""
+
+    # The node starts with allow_experimental_audit_log=false.
+    # Run a DDL — no audit record should be written.
+    node_reload.query("DROP TABLE IF EXISTS test_reload_before")
+    node_reload.query("CREATE TABLE test_reload_before(a int) ENGINE=Memory")
+    time.sleep(1)
+
+    audit_exists = node_reload.exec_in_container(
+        ["bash", "-c", f"test -f {AUDIT_LOG_FILE} && wc -l < {AUDIT_LOG_FILE} || echo 0"]
+    ).strip()
+    assert audit_exists == "0", f"Audit log must be empty while disabled, got {audit_exists} lines"
+
+    # Enable audit via config reload.
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
+        "<allow_experimental_audit_log>true</allow_experimental_audit_log>",
+    )
+    node_reload.query("SYSTEM RELOAD CONFIG")
+
+    # Run a DDL after enabling — an audit record must appear.
+    node_reload.query("CREATE TABLE test_reload_after(a int) ENGINE=Memory")
+    assert_audit_log_contain_with_retry(node_reload, "test_reload_after")
+    log_content = node_reload.grep_in_log("test_reload_after", from_host=True, filename="clickhouse-server.audit.log")
+    assert "DDL" in log_content, "DDL audit record must appear after enabling via reload"
+
+    # The DDL that ran while disabled must NOT appear.
+    assert not node_reload.contains_in_log("test_reload_before", from_host=True, filename="clickhouse-server.audit.log")
+
+
+def test_audit_log_reload_disable(start_cluster):
+    """After enabling audit via reload, disabling it via another reload must
+    stop emitting audit records immediately."""
+
+    # Ensure audit is enabled (may already be from the previous test).
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
+        "<allow_experimental_audit_log>true</allow_experimental_audit_log>",
+    )
+    node_reload.query("SYSTEM RELOAD CONFIG")
+
+    # Run a DDL and confirm audit is active.
+    node_reload.query("DROP TABLE IF EXISTS test_disable_before")
+    node_reload.query("CREATE TABLE test_disable_before(a int) ENGINE=Memory")
+    assert_audit_log_contain_with_retry(node_reload, "test_disable_before")
+
+    # Disable audit via config reload.
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        "<allow_experimental_audit_log>true</allow_experimental_audit_log>",
+        "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
+    )
+    node_reload.query("SYSTEM RELOAD CONFIG")
+
+    # Run a DDL after disabling — no new audit record should appear.
+    node_reload.query("CREATE TABLE test_disable_after(a int) ENGINE=Memory")
+    time.sleep(2)
+    assert not node_reload.contains_in_log(
+        "test_disable_after", from_host=True, filename="clickhouse-server.audit.log"
+    ), "DDL after disabling audit must not appear in audit log"

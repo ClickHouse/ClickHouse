@@ -5,6 +5,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SessionTracker.h>
+#include <Loggers/AuditLog.h>
 #include <Poco/Net/SocketAddress.h>
 
 #include <chrono>
@@ -13,10 +14,6 @@
 #include <optional>
 #include <vector>
 
-namespace DB
-{
-class AuditLog;
-}
 
 namespace Poco::Net { class SocketAddress; }
 
@@ -109,8 +106,6 @@ public:
 
     /// Closes and removes session
     void closeSession(const String & session_id);
-
-    void resetLoginFailureLatch() { notified_about_login_failure = false; }
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
@@ -118,7 +113,6 @@ private:
     DB::AuditLog * getAuditLogIfEnabled() const;
 
     mutable bool notified_session_log_about_login = false;
-    mutable bool notified_about_login_failure = false;
     const UUID auth_id;
     const ContextPtr global_context;
 

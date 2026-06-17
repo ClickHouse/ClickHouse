@@ -9,12 +9,13 @@
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/setThreadName.h>
+#include <Loggers/ExtendedLogMessage.h>
 
 #include <boost/noncopyable.hpp>
 
-#include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
-#include <Poco/FileChannel.h>
+#include <Poco/Message.h>
 #include <Poco/Runnable.h>
 #include <Poco/Thread.h>
 
@@ -40,9 +41,6 @@ using TextLogQueue = SystemLogQueue<TextLogElement>;
 
 using AsyncLogQueueSize = std::pair<std::string, size_t>;
 using AsyncLogQueueSizes = VectorWithMemoryTracking<AsyncLogQueueSize>;
-
-class ExtendedLogMessage;
-enum class ThreadName : uint8_t;
 
 class OwnSplitChannelBase : public Poco::Channel
 {
@@ -104,7 +102,15 @@ public:
 struct OwnRunnableForChannel;
 struct OwnRunnableForTextLog;
 
-class AsyncLogMessage;
+class AsyncLogMessage
+{
+public:
+    explicit AsyncLogMessage(Poco::Message && msg_);
+
+    Poco::Message msg;
+    ExtendedLogMessage msg_ext;
+    ThreadName msg_thread_name;
+};
 using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 
 class AsyncLogMessageQueue
@@ -227,45 +233,4 @@ struct OwnRunnableForTextLog : public Poco::Runnable
 private:
     OwnAsyncSplitChannel & split;
 };
-
-
-/// Standalone audit log writer.
-/// Writes directly to its own OwnFormattingChannel / Poco::FileChannel,
-/// bypassing OwnSplitChannel routing. Reuses AsyncLogMessageQueue for async mode.
-class AuditLog
-{
-public:
-    AuditLog(bool async, size_t queue_size);
-    ~AuditLog();
-
-    AuditLog(const AuditLog &) = delete;
-    AuditLog & operator=(const AuditLog &) = delete;
-
-    void configure(Poco::Util::AbstractConfiguration & config);
-    void open();
-    void close();
-
-    /// Close the underlying file so it can be reopened on next write (SIGHUP rotation).
-    void closeFile();
-
-    void write(std::string message);
-
-    size_t getQueueSize() const;
-
-private:
-    friend struct AuditLogRunnable;
-    void run();
-
-    Poco::AutoPtr<Poco::FileChannel> file_channel;
-    std::shared_ptr<OwnFormattingChannel> formatting_channel;
-
-    const bool is_async;
-    std::unique_ptr<AsyncLogMessageQueue> queue;
-    std::unique_ptr<Poco::Runnable> writer_runnable;
-    std::unique_ptr<Poco::Thread> writer_thread;
-    std::atomic<bool> is_open{false};
-};
-
-AuditLog * getAuditLog();
-void setGlobalAuditLog(AuditLog * log);
 };
