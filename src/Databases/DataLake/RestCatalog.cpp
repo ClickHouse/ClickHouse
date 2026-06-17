@@ -627,10 +627,12 @@ bool RestCatalog::empty() const
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
-        const auto tables = listTablesInNamespace(namespace_name, /* limit */1);
-        found_table = !tables.empty();
         if (found_table)
             return true;
+        const auto tables = listTablesInNamespace(namespace_name, /* limit */1);
+        if (!tables.empty())
+            found_table = true;
+        return found_table;
     };
 
     Namespaces namespaces;
