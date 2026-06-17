@@ -1237,6 +1237,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_targeted_check or is_flaky_check or is_bugfix_validation:
         test_results = [r for r in test_results if r.name != "Timeout"]
 
+    # Whether pytest produced any real test results, captured *before* the synthetic
+    # `skipped_flaky_modules` entries are appended below. The empty-result status decision
+    # must look only at real pytest output: in a scope-capped flaky run the synthetic
+    # `SKIPPED` entries would otherwise make `test_results` non-empty even when the selected
+    # modules produced nothing, masking a timeout-empty run (should be `SKIPPED`) or an empty
+    # harness failure (should be `ERROR`) as a green top-level result.
+    pytest_has_results = bool(test_results)
+
     # Make the best-effort scope cap explicit in the report: list the modules that were
     # skipped to fit the time budget as SKIPPED entries rather than dropping them silently.
     for skipped_module in skipped_flaky_modules:
@@ -1255,15 +1263,26 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # actually observed: an empty result without a timeout means pytest failed to produce
     # any output for some other reason (crashed before writing the jsonl report, plugin or
     # internal error, ...), which is a real harness failure and must stay ERROR.
+    #
+    # Both decisions use `pytest_has_results` (real pytest output) rather than the current
+    # `test_results`, which may carry only the synthetic `skipped_flaky_modules` entries
+    # appended above. With a scope cap in effect those synthetic `SKIPPED` rows make
+    # `test_results` non-empty, so the empty-result status must be forced here: `create_from`
+    # only defaults an empty result set to `ERROR`, and a list of `SKIPPED` rows would
+    # otherwise collapse to a green top-level status.
     empty_best_effort = is_empty_best_effort_skip(
-        is_flaky_check, is_targeted_check, bool(test_results), timed_out
+        is_flaky_check, is_targeted_check, pytest_has_results, timed_out
     )
     empty_harness_failure = (
-        (is_flaky_check or is_targeted_check) and not test_results and not timed_out
+        (is_flaky_check or is_targeted_check) and not pytest_has_results and not timed_out
     )
     R = Result.create_from(
         results=test_results,
-        status=Result.Status.SKIPPED if empty_best_effort else "",
+        status=(
+            Result.Status.SKIPPED
+            if empty_best_effort
+            else Result.Status.ERROR if empty_harness_failure else ""
+        ),
         info=(
             "No test results collected within the flaky-check time budget (best effort)"
             if empty_best_effort
