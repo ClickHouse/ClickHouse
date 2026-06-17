@@ -757,9 +757,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
     using Bitvector = UInt32; // choose UInt64 or even UInt128 for larger sets
     // A budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
     // This budget cap is obtained from empirical testing using different queries and join graphs.
-    static constexpr UInt32 max_nr_ccps = 60'000;
+    static constexpr UInt32 max_nr_ccps = 50'000;
 
-    if (n > std::numeric_limits<Bitvector>::digits)
+    if (n >= std::numeric_limits<Bitvector>::digits)
     {
         LOG_TRACE(log,
             "Number of relations {} exceeds the DP threshold {}, skipping DP optimization invoking greedy algorithm",
