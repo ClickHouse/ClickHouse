@@ -160,7 +160,7 @@ Tests should be
 
 ### Templated tests with Jinja {#templated-tests-with-jinja}
 
-A `.sql` or `.sh` test can be written as a [Jinja2](https://jinja.palletsprojects.com/) template by adding a `.j2` suffix to the file name, so `foo.sql` becomes `foo.sql.j2`. Before running the test, `clickhouse-test` renders the template into an ordinary `.sql` or `.sh` script and executes the result.
+A `.sql` test can be written as a [Jinja2](https://jinja.palletsprojects.com/) template by adding a `.j2` suffix to the file name, so `foo.sql` becomes `foo.sql.j2`. Before running the test, `clickhouse-test` renders the template into an ordinary `.sql` script and executes the result.
 
 This is useful when a test repeats the same query with small variations: a loop generates the queries from a compact template instead of writing each one out by hand. The most commonly used constructs are:
 
@@ -184,7 +184,7 @@ SELECT toTypeName(0::UInt16);
 SELECT toTypeName(0::UInt32);
 ```
 
-The `.reference` file must match the output of the fully rendered test (the results of all generated queries), not the template itself. For more examples, see the existing `*.sql.j2` and `*.sh.j2` files in `tests/queries/0_stateless/`.
+The `.reference` file must match the output of the fully rendered test (the results of all generated queries), not the template itself. For more examples, see the existing `*.sql.j2` files in `tests/queries/0_stateless/`.
 
 ### Restricting test runs {#restricting-test-runs}
 
