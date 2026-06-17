@@ -353,10 +353,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         }
         bool has_filter = filter || reading->getPrewhereInfo();
 
-        /// If any conditions are pushed down to storage but not used in the index,
-        /// we cannot precisely estimate the row count
+        /// If any conditions are pushed down to storage but not used in the index, we cannot
+        /// precisely estimate the row count: the residual filter is applied while reading and
+        /// can only remove rows. We still report `selected_rows` as an upper bound — it is the
+        /// number of rows scanned before the filter, so the post-filter count cannot exceed it.
+        /// The join-order optimizer uses this bound to pick the build side when the other input
+        /// has a trustworthy estimate (see `chooseJoinOrder`).
         if (has_filter && !is_filtered_by_index)
-            return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
+            return RelationStats{.estimated_rows = {}, .estimated_rows_upper_bound = analyzed_result->selected_rows, .table_name = table_display_name};
 
         return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
     }
@@ -633,7 +637,8 @@ static String dumpStatsForLogs(const RelationStats & stats)
 {
     return fmt::format("{}: {} rows, columns: [{}]",
         stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
+        stats.estimated_rows ? toString(stats.estimated_rows.value())
+            : (stats.estimated_rows_upper_bound ? fmt::format("unknown (<= {})", stats.estimated_rows_upper_bound.value()) : "unknown"),
         fmt::join(stats.column_stats | std::views::transform(
             [](const auto & p)
             {
@@ -1107,10 +1112,19 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             auto lhs_estimation = entry->left->estimated_rows;
             auto rhs_estimation = entry->right->estimated_rows;
 
+            /// We flip the join to move the smaller input to the build (right) side. To decide
+            /// that the left input is the smaller one, an upper bound on the left combined with a
+            /// trustworthy (exact) estimate on the right is enough: if even the left's ceiling is
+            /// below the right's exact count, the left is provably smaller. This lets us still
+            /// pick a build side when one input carries a residual filter that defeats its exact
+            /// estimate but leaves a known upper bound (see `estimateReadRowsCount`). When neither
+            /// input is upper-bounded this reduces to the plain `lhs < rhs` comparison.
+            auto lhs_upper_bound = entry->left->rowsUpperBound();
+
             bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
                 ? optimization_settings.join_swap_table.value()
-                : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
-                    && lhs_estimation.value() < rhs_estimation.value();
+                : entry->join_method == JoinMethod::Hash && lhs_upper_bound && rhs_estimation
+                    && lhs_upper_bound.value() < rhs_estimation.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 
