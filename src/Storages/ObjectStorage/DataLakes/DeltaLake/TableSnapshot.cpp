@@ -708,13 +708,18 @@ void TableSnapshot::initOrUpdateSnapshot() const
     if (kernel_snapshot_state && current_credentials_fingerprint == kernel_state_credentials_fingerprint)
         return;
 
+    /// Pin rebuilds to the already-resolved version so cached latest snapshots don't drift.
+    const std::optional<size_t> version_to_build = kernel_snapshot_state
+        ? std::optional<size_t>(kernel_snapshot_state->snapshot_version)
+        : snapshot_version_to_read;
+
     ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
     LOG_TEST(
         log, "{} kernel snapshot state",
         kernel_snapshot_state ? "Rebuilding (credentials rotated)" : "Initializing");
 
-    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
+    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
     kernel_state_credentials_fingerprint = current_credentials_fingerprint;
 
     LOG_TRACE(
