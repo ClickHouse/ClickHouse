@@ -5,10 +5,7 @@ import pytest
 from minio.deleteobjects import DeleteObject
 
 import helpers.keeper_utils as keeper_utils
-from helpers.cluster import ClickHouseCluster, is_arm
-
-if is_arm():
-    pytestmark = pytest.mark.skip
+from helpers.cluster import ClickHouseCluster
 
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
