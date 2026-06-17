@@ -247,6 +247,18 @@ bool accurateEquals(const Field & left, const Field & right)
                 /// Must compare their infinity flags to keep them distinct.
                 return left.isNegativeInfinity() == right.isNegativeInfinity()
                     && left.isPositiveInfinity() == right.isPositiveInfinity();
+            /// `DecimalField::operator==` routes through `decimalEqual`, which accounts for both
+            /// scales, so this matches the visitor's decimal/decimal arm exactly. `DateTime64` and
+            /// `Time64` share the `Decimal64` tag and an identical layout, so `safeGet` is the same
+            /// reinterpretation that `Field::dispatch` already performs for them.
+            case Field::Types::Decimal32:
+                return left.safeGet<DecimalField<Decimal32>>() == right.safeGet<DecimalField<Decimal32>>();
+            case Field::Types::Decimal64:
+                return left.safeGet<DecimalField<Decimal64>>() == right.safeGet<DecimalField<Decimal64>>();
+            case Field::Types::Decimal128:
+                return left.safeGet<DecimalField<Decimal128>>() == right.safeGet<DecimalField<Decimal128>>();
+            case Field::Types::Decimal256:
+                return left.safeGet<DecimalField<Decimal256>>() == right.safeGet<DecimalField<Decimal256>>();
             default:
                 break;
         }
@@ -286,6 +298,18 @@ bool accurateLess(const Field & left, const Field & right)
             }
             case Field::Types::Null:
                 return left.isNegativeInfinity() && right.isPositiveInfinity();
+            /// `DecimalField::operator<` routes through `decimalLess`, which accounts for both
+            /// scales, so this matches the visitor's decimal/decimal arm exactly. `DateTime64` and
+            /// `Time64` share the `Decimal64` tag and an identical layout, so `safeGet` is the same
+            /// reinterpretation that `Field::dispatch` already performs for them.
+            case Field::Types::Decimal32:
+                return left.safeGet<DecimalField<Decimal32>>() < right.safeGet<DecimalField<Decimal32>>();
+            case Field::Types::Decimal64:
+                return left.safeGet<DecimalField<Decimal64>>() < right.safeGet<DecimalField<Decimal64>>();
+            case Field::Types::Decimal128:
+                return left.safeGet<DecimalField<Decimal128>>() < right.safeGet<DecimalField<Decimal128>>();
+            case Field::Types::Decimal256:
+                return left.safeGet<DecimalField<Decimal256>>() < right.safeGet<DecimalField<Decimal256>>();
             default:
                 break;
         }
@@ -332,6 +356,18 @@ bool accurateLessOrEqual(const Field & left, const Field & right)
             case Field::Types::Null:
                 /// Null encodes -Inf, +Inf, and NULL. Only +Inf <= -Inf is false.
                 return !(right.isNegativeInfinity() && left.isPositiveInfinity());
+            /// `DecimalField::operator<=` routes through `decimalLessOrEqual`, which accounts for
+            /// both scales. Decimals are totally ordered, so this equals the visitor's `!(r < l)`.
+            /// `DateTime64` and `Time64` share the `Decimal64` tag and an identical layout, so
+            /// `safeGet` is the same reinterpretation that `Field::dispatch` already performs.
+            case Field::Types::Decimal32:
+                return left.safeGet<DecimalField<Decimal32>>() <= right.safeGet<DecimalField<Decimal32>>();
+            case Field::Types::Decimal64:
+                return left.safeGet<DecimalField<Decimal64>>() <= right.safeGet<DecimalField<Decimal64>>();
+            case Field::Types::Decimal128:
+                return left.safeGet<DecimalField<Decimal128>>() <= right.safeGet<DecimalField<Decimal128>>();
+            case Field::Types::Decimal256:
+                return left.safeGet<DecimalField<Decimal256>>() <= right.safeGet<DecimalField<Decimal256>>();
             default:
                 break;
         }
