@@ -5,14 +5,8 @@
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 
-#include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <Functions/ComparisonNames.h>
-#include <IO/WriteHelpers.h>
+#include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -122,7 +116,7 @@ class  EngineIterator : public ffi::EngineIterator
 public:
     static constexpr uint64_t VISITOR_FAILED_OR_UNSUPPORTED = ~0;
 
-    explicit EngineIterator(EngineIteratorData & data_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    explicit EngineIterator(EngineIteratorData & data_)
     {
         data = &data_;
         get_next = &getNext;

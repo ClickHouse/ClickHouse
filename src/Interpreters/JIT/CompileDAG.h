@@ -42,7 +42,7 @@ public:
 
     struct Node
     {
-        CompileType type{};
+        CompileType type;
         DataTypePtr result_type;
 
         /// For CONSTANT

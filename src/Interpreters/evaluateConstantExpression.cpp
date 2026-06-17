@@ -75,7 +75,7 @@ static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLitera
     return {res, type};
 }
 
-static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
+std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
         return getFieldAndDataTypeFromLiteral(literal);
@@ -115,7 +115,7 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
         QueryAnalyzer analyzer(false);
         analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
 
-        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
         auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
         collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
@@ -140,6 +140,12 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
         {
             result_column = output->column;
             result_type = output->result_type;
+
+            /// All constant (literal) columns in block are added with size 1.
+            /// But if there was no columns in block before executing a function, the result has size 0.
+            /// Change the size to 1.
+            if (result_column->empty() && isColumnConst(*result_column))
+                result_column = result_column->cloneResized(1);
         }
     }
     else
@@ -179,12 +185,6 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column not found): {}", result_name);
-
-    /// All constant (literal) columns in block are added with size 1.
-    /// But if there was no columns in block before executing a function, the result has size 0.
-    /// Change the size to 1.
-    if (result_column->empty() && isColumnConst(*result_column))
-        result_column = result_column->cloneResized(1);
 
     if (result_column->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,

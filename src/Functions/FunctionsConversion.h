@@ -4,6 +4,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -13,6 +14,7 @@
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/AccurateComparison.h>
@@ -72,7 +74,6 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -83,7 +84,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
-    extern const SettingsBool cast_keep_nullable;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
     extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
@@ -130,7 +130,6 @@ struct FunctionConvertSettings
     const bool input_format_ipv6_default_on_conversion_error;
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
-    const bool cast_keep_nullable;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
 
@@ -146,7 +145,6 @@ struct FunctionConvertSettings
         , input_format_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error])
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
-        , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
@@ -639,17 +637,18 @@ struct ToTime64TransformUnsigned
         : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
     {}
 
-    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & /*time_zone*/) const
+    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & time_zone) const
     {
+        const auto converted = time_zone.toTime(from);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from > MAX_TIME_TIMESTAMP) [[unlikely]]
+            if (converted > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
+            else
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(converted, 0, scale_multiplier);
         }
-
-        /// clamp in unsigned domain to avoid wrong when casting UInt64 above INT64_MAX to time_t
-        auto clamped = static_cast<time_t>(std::min<UInt64>(from, static_cast<UInt64>(MAX_TIME_TIMESTAMP)));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
+        else
+            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(std::min<time_t>(converted, MAX_DATETIME64_TIMESTAMP), 0, scale_multiplier);
     }
 };
 
@@ -1291,13 +1290,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res = 0;
+                        time_t res;
                         parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
-                        time_t res = 0;
+                        time_t res;
                         parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
@@ -1318,13 +1317,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res = 0;
+                        time_t res;
                         parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
-                        time_t res = 0;
+                        time_t res;
                         parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
@@ -1385,7 +1384,7 @@ struct ConvertThroughParsing
             }
             else
             {
-                bool parsed = false;
+                bool parsed;
 
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
                 {
@@ -1403,13 +1402,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res = 0;
+                        time_t res;
                         parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
-                        time_t res = 0;
+                        time_t res;
                         parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
@@ -1430,13 +1429,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res = 0;
+                        time_t res;
                         parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
-                        time_t res = 0;
+                        time_t res;
                         parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
@@ -1771,18 +1770,6 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
         vec_null_map_to = &col_null_map_to->getData();
     }
 
-    /// Same-width integer conversions are bit-reinterprets; `memcpy` is faster than the compiler-unrolled
-    /// per-element copy at x86-64-v3.
-    if constexpr (std::is_integral_v<FromFieldType> && std::is_integral_v<ToFieldType>
-        && sizeof(FromFieldType) == sizeof(ToFieldType)
-        && !std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
-        && !std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
-    {
-        if (input_rows_count > 0)
-            std::memcpy(vec_to.data(), vec_from.data(), input_rows_count * sizeof(ToFieldType));
-        return std::move(col_to);
-    }
-
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         /// Handle NaN/Inf when converting from float to integer
@@ -1830,8 +1817,6 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
             size_t remaining = input_rows_count - i;
 
 #if !defined(OS_DARWIN)
-            _Pragma("clang diagnostic push")
-            _Pragma("clang diagnostic ignored \"-Wpass-failed\"")
             _Pragma("clang loop vectorize_width(4) interleave_count(2)")
 #endif
             for (size_t j = 0; j < remaining; ++j)
@@ -1840,46 +1825,28 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
                 float f = static_cast<float>(tmp);
                 d[j] = BFloat16(f);
             }
-#if !defined(OS_DARWIN)
-            _Pragma("clang diagnostic pop")
-#endif
 
             i += remaining - 1;
         }
-#endif
+        /// ARM64 optimized conversion: UInt64 -> Float32
         else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, Float32>)
         {
             const UInt64* __restrict s = &vec_from[i];
             Float32* __restrict d = &vec_to[i];
             size_t remaining = input_rows_count - i;
 
-#if defined(__aarch64__) && !defined(OS_DARWIN)
-            _Pragma("clang diagnostic push")
-            _Pragma("clang diagnostic ignored \"-Wpass-failed\"")
+#if !defined(OS_DARWIN)
             _Pragma("clang loop vectorize_width(4) interleave_count(2)")
+#endif
             for (size_t j = 0; j < remaining; ++j)
             {
                 double tmp = static_cast<double>(s[j]);
                 d[j] = Float32(tmp);
             }
-            _Pragma("clang diagnostic pop")
-#elif defined(__x86_64__)
-            /// Prevent auto-vectorization on x86: the compiler's attempt to semi-vectorize
-            /// UInt64->Float32 with AVX2 is slower than scalar code, because there is no
-            /// vector instruction for this conversion before AVX-512.
-            /// Also disable unrolling: with LTO on v3, the compiler unrolls this scalar
-            /// loop 2-4x, bloating the function by ~2KB with no throughput benefit
-            /// (vcvtsi2ss is inherently serial).
-            _Pragma("clang loop vectorize(disable) unroll(disable)")
-            for (size_t j = 0; j < remaining; ++j)
-                d[j] = static_cast<Float32>(s[j]);
-#else
-            for (size_t j = 0; j < remaining; ++j)
-                d[j] = static_cast<Float32>(s[j]);
-#endif
 
             i += remaining - 1;
         }
+#endif
         /// Default: simple static_cast conversion
         else
         {
@@ -2125,7 +2092,7 @@ struct ConvertImpl
 
             const DateLUTImpl * time_zone = nullptr;
 
-            UInt32 scale = 0;
+            UInt32 scale;
 
             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                         || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2207,7 +2174,7 @@ struct ConvertImpl
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
 
-            UInt32 scale = 0;
+            UInt32 scale;
             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                         || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 scale = additions.scale;
@@ -2320,33 +2287,13 @@ struct ConvertImpl
 
                 bool cut_trailing_zeros_align_to_groups_of_thousands = settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 
-                if (arguments.size() > 1 && arguments[1].type->isNullable())
-                {
-                    if (auto tz_null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst()))
-                    {
-                        if (null_map)
-                        {
-                            auto & dst = null_map->getData();
-                            const auto & src = tz_null_map->getData();
-                            for (size_t i = 0; i < dst.size(); ++i)
-                                dst[i] |= src[i];
-                        }
-                        else
-                        {
-                            null_map = std::move(tz_null_map);
-                        }
-                    }
-                }
+                if (!null_map && arguments.size() > 1)
+                    null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
 
                 if (null_map)
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
-                        if (null_map->getData()[i])
-                        {
-                            offsets_to[i] = write_buffer.count();
-                            continue;
-                        }
                         if (!time_zone_column && arguments.size() > 1)
                         {
                             if (!arguments[1].column.get()->getDataAt(i).empty())
@@ -2581,33 +2528,25 @@ struct ConvertImpl
                 return arguments[0].column;
 
             Int64 conversion_factor = 1;
+            Int64 result_value;
 
             int from_position = static_cast<int>(from.kind);
             int to_position = static_cast<int>(to.kind); /// Positions of each interval according to granularity map
-
-            bool is_const = isColumnConst(*arguments[0].column);
-            size_t calc_num_rows = is_const ? 1 : input_rows_count;
-            auto res_col = IColumn::mutate(ColumnInt64::create(calc_num_rows));
-            auto & res_data = assert_cast<ColumnInt64 &>(*res_col).getData();
 
             if (from_position < to_position)
             {
                 for (int i = from_position; i < to_position; ++i)
                     conversion_factor *= interval_conversions[i];
-                for (size_t row = 0; row < calc_num_rows; ++row)
-                    res_data[row] = arguments[0].column->getInt(row) / conversion_factor;
+                result_value = arguments[0].column->getInt(0) / conversion_factor;
             }
             else
             {
                 for (int i = from_position; i > to_position; --i)
                     conversion_factor *= interval_conversions[i];
-                for (size_t row = 0; row < calc_num_rows; ++row)
-                    res_data[row] = arguments[0].column->getInt(row) * conversion_factor;
+                result_value = arguments[0].column->getInt(0) * conversion_factor;
             }
 
-            if (is_const)
-                res_col = ColumnConst::create(std::move(res_col), input_rows_count);
-            return std::move(res_col);
+            return ColumnConst::create(ColumnInt64::create(1, result_value), input_rows_count);
         }
         else
         {
@@ -2634,7 +2573,7 @@ struct ConvertImpl
 
             if constexpr (IsDataTypeDecimal<ToDataType>)
             {
-                UInt32 scale = 0;
+                UInt32 scale;
 
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2842,18 +2781,11 @@ struct ConvertImplGenericFromString
 
 struct ConvertImplFromDynamicToColumn
 {
-    /// Variant and Dynamic hold NULLs natively via NULL_DISCRIMINATOR, so they
-    /// do not need Nullable wrapping. `canBeInsideNullable` returns false for them
-    /// (meaning they cannot be *wrapped* in Nullable), but that does not mean they
-    /// cannot represent NULL — so we must exclude them from the throw check.
-    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type);
-
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
-        bool throw_on_null = false);
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert);
 };
 
 /// Declared early because used below.
@@ -2955,7 +2887,7 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 #endif
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
-class FunctionConvert final : public IFunction
+class FunctionConvert : public IFunction
 {
 public:
     using Monotonic = MonotonicityImpl;
@@ -3261,9 +3193,7 @@ private:
                 return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
             };
 
-            return ConvertImplFromDynamicToColumn::execute(
-                arguments, result_type, input_rows_count, nested_convert,
-                ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
+            return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
         }
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool
@@ -3469,7 +3399,7 @@ private:
 template <typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode,
     ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Basic>
-class FunctionConvertFromString final : public IFunction
+class FunctionConvertFromString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -3694,33 +3624,8 @@ private:
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
-        /// Interval values are stored as Int64. If the source type is wider than Int64
-        /// (e.g., UInt128, Int128, UInt256, Int256) or unsigned and wider than Int64's
-        /// positive range, the conversion can overflow, breaking monotonicity.
-        if (!type.isValueRepresentedByNumber())
-            return {};
-
-        size_t size_of_from = type.getSizeOfValueInMemory();
-
-        /// Types wider than 8 bytes (Int128, UInt128, Int256, UInt256) can overflow Int64.
-        if (size_of_from > sizeof(Int64))
-            return {};
-
-        /// UInt64 can overflow Int64 for values > INT64_MAX.
-        if (size_of_from == sizeof(Int64) && type.isValueRepresentedByUnsignedInteger())
-        {
-            if (left.isNull() || right.isNull())
-                return {};
-
-            /// Only monotonic if both values fit in Int64 (i.e., are non-negative when cast to Int64).
-            Int64 left_val = static_cast<Int64>(left.safeGet<UInt64>());
-            Int64 right_val = static_cast<Int64>(right.safeGet<UInt64>());
-            if (left_val < 0 || right_val < 0)
-                return {};
-        }
-
         return { .is_monotonic = true };
     }
 };
@@ -3850,24 +3755,6 @@ struct ToNumberMonotonicity
             if (from_is_unsigned == to_is_unsigned)
                 return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
 
-            /// When converting between signed and unsigned of the same size,
-            /// monotonicity holds only when both endpoints are in the same "half"
-            /// of the type's range (i.e., the conversion does not wrap around).
-            /// For unsigned->signed: values in [0, 2^(N-1)-1] map monotonically,
-            /// and values in [2^(N-1), 2^N-1] also map monotonically (to negative),
-            /// but crossing the boundary breaks monotonicity.
-            if (from_is_unsigned && !to_is_unsigned)
-            {
-                if (left.isNull() || right.isNull())
-                    return {};
-
-                /// Check if both values, when reinterpreted as signed T, have the same sign.
-                const bool is_monotonic = (T(left.safeGet<UInt64>()) >= 0) == (T(right.safeGet<UInt64>()) >= 0);
-                return { .is_monotonic = is_monotonic };
-            }
-
-            /// signed -> unsigned of the same size
-            /// `left_in_first_half` already handles NULL bounds via a heuristic.
             if (left_in_first_half == right_in_first_half)
                 return { .is_monotonic = true };
 
@@ -3936,22 +3823,23 @@ struct ToDateMonotonicity
 
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
-        constexpr UInt64 max_day_num = std::is_same_v<T, DataTypeDate32> ? DATE_LUT_MAX_EXTEND_DAY_NUM - 1 : DATE_LUT_MAX_DAY_NUM;
-
-        if (((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
-             && ((left.isNull() || left.safeGet<UInt64>() <= max_day_num) && (right.isNull() || right.safeGet<UInt64>() > max_day_num)))
+        else if (
+            ((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
+             && ((left.isNull() || left.safeGet<UInt64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<UInt64>() > DATE_LUT_MAX_DAY_NUM)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Int64>() <= static_cast<Int64>(max_day_num)) && (right.isNull() || right.safeGet<Int64>() > static_cast<Int64>(max_day_num))))
+                && ((left.isNull() || left.safeGet<Int64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Int64>() > DATE_LUT_MAX_DAY_NUM)))
             || ((
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() <= static_cast<Float64>(max_day_num)) && (right.isNull() || right.safeGet<Float64>() > static_cast<Float64>(max_day_num)))))
+                && ((left.isNull() || left.safeGet<Float64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Float64>() > DATE_LUT_MAX_DAY_NUM))))
             || !isNativeNumber(type))
         {
             return {};
         }
-
-        return {.is_monotonic = true, .is_always_monotonic = true};
+        else
+        {
+            return {.is_monotonic = true, .is_always_monotonic = true};
+        }
     }
 };
 
@@ -4443,7 +4331,7 @@ using FunctionParseDateTime64BestEffortUSOrNull = FunctionConvertFromString<
     DataTypeDateTime64, NameParseDateTime64BestEffortUSOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>;
 
 
-class ExecutableFunctionCast final : public IExecutableFunction
+class ExecutableFunctionCast : public IExecutableFunction
 {
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
@@ -4585,7 +4473,7 @@ private:
 
     WrapperType createStringWrapper(const DataTypePtr & from_type) const;
 
-    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N, bool requested_result_is_nullable) const;
+    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N) const;
 
 
     WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const;
@@ -4598,7 +4486,7 @@ private:
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const;
 
-    using ElementWrappers = VectorWithMemoryTracking<WrapperType>;
+    using ElementWrappers = std::vector<WrapperType>;
 
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 
@@ -4706,14 +4594,5 @@ FunctionBasePtr createFunctionBaseCast(
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
     CastType cast_type);
-
-FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context,
-    const char * name,
-    const ColumnsWithTypeAndName & arguments,
-    const DataTypePtr & return_type,
-    std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
 }

@@ -1,11 +1,9 @@
 #include <Columns/ColumnConst.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -26,7 +24,7 @@ namespace DB::QueryPlanOptimizations
 ///     ORDER BY distance_function(vec, reference_vec), [...]
 ///     LIMIT N
 /// where
-/// - distance_function is function 'L2Distance', 'cosineDistance', or 'dotProduct',
+/// - distance_function is function 'L2Distance' or 'cosineDistance',
 /// - vec is a column of tab (*),
 /// - reference_vec is a literal of type Array(Float32/Float64)
 ///
@@ -133,25 +131,16 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     /// Extract distance_function
     const String & function_name = sort_column_node->function_base->getName();
     String distance_function;
-    if (function_name == "L2Distance" || function_name == "cosineDistance" || function_name == "dotProduct")
+    if (function_name == "L2Distance" || function_name == "cosineDistance")
         distance_function = function_name;
     else
-        return no_layers_updated;
-
-    /// Validate sort direction:
-    /// - L2Distance and cosineDistance require ascending sort order (smaller means more similar)
-    /// - dotProduct requires descending sort order (larger means more similar)
-    const int sort_direction = sort_description.front().direction;
-    if ((distance_function == "L2Distance" || distance_function == "cosineDistance") && sort_direction != 1)
-        return no_layers_updated;
-    if (distance_function == "dotProduct" && sort_direction != -1)
         return no_layers_updated;
 
     /// Extract stuff from the ORDER BY clause. It is expected to look like this: ORDER BY cosineDistance(vec1, [1.0, 2.0 ...])
     /// - The search column is 'vec1'.
     /// - The reference vector is [1.0, 2.0, ...].
     const ActionsDAG::NodeRawConstPtrs & sort_column_node_children = sort_column_node->children;
-    VectorWithMemoryTracking<Float64> reference_vector;
+    std::vector<Float64> reference_vector;
     String search_column;
 
     for (const auto * child : sort_column_node_children)
@@ -409,8 +398,9 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             /// Bug #85514: cosineDistance/L2Distance can have return types Float64 or Float32, depending on the
             /// input types but the "_distance" column is always of type Float32. Add a CAST if needed.
             ///
-            /// The sort column node will be removed first from the DAG, hence remember the datatype of final result
+            /// The sort column node will be removed first from the DAG, hence remember if a CAST is needed.
             const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column); /// "cosine/L2Distance(..., ...)"
+            const bool need_cast = !WhichDataType(sort_column_node->result_type).isFloat32();
             const auto result_type = sort_column_node->result_type;
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
@@ -418,14 +408,7 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
-            const bool need_sqrt = vector_search_parameters->distance_function == "L2Distance";
-            if (need_sqrt) /// usearch returns L2 squared distance to save repeated sqrt computations.
-            {
-                auto sqrt_function = FunctionFactory::instance().get("sqrt", read_from_mergetree_step->getContext());
-                distance_node = &expression.addFunction(sqrt_function, {distance_node}, {});
-            }
-
-            if (!distance_node->result_type->equals(*result_type))
+            if (need_cast)
                 distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
@@ -465,10 +448,6 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
         new_step->setStepDescription(*expression_node->step);
         expression_node->step = std::move(new_step);
-
-        /// The SortingStep's input header must reflect the new ExpressionStep output header
-        /// (which now has _distance consumed and L2Distance(...) produced via ALIAS).
-        sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
     }
 
     return true;

@@ -167,7 +167,7 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     }
     max_granule = granule_num;
 
-    UInt64 rows_to_read = 0;
+    UInt64 rows_to_read;
     readBinary(rows_to_read, istr);
     if (rows_to_read == 0)
         return;
@@ -308,19 +308,13 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     for (size_t i = 0; i < limit; ++i)
     {
         auto emplace_result = state.emplaceKey(method.data, pos + i, variants.string_pool);
-        const bool inserted = emplace_result.isInserted();
 
-        if (inserted)
+        if (emplace_result.isInserted())
             has_new_data = true;
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
-        filter[pos + i] = inserted;
-
-        /// `set(N)` granules with more than `N` values are serialized as empty.
-        /// Keeping more rows only wastes CPU and memory.
-        if (inserted && max_rows && variants.getTotalRowCount() > max_rows)
-            break;
+        filter[pos + i] = emplace_result.isInserted();
     }
     return has_new_data;
 }
@@ -346,7 +340,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
     return granule;
 }
 
-static KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
     return KeyCondition{filter_dag, context, index.column_names, index.expression};
 }

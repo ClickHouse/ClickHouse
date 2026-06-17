@@ -21,7 +21,7 @@ It is important to understand this note from the [original PR for S3Queue implem
 
 ```sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
-    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression], [headers], [extra_credentials])
+    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression], [headers])
     [SETTINGS]
     [mode = '',]
     [after_processing = 'keep',]
@@ -171,16 +171,6 @@ Possible values:
 - String.
 
 Default value: empty string.
-
-### `after_processing_move_preserve_path` {#after_processing_move_preserve_path}
-
-If `true`, the full source object path is appended to `after_processing_move_prefix` when moving a successfully processed file, so the source directory structure under the bucket is preserved at the destination. If `false`, only the file name is used and the source directory structure is flattened.
-
-Possible values:
-
-- `true` / `false`.
-
-Default value: `false`.
 
 ### `after_processing_move_secret_access_key` {#after_processing_move_secret_access_key}
 

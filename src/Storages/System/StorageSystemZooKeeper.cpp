@@ -126,7 +126,7 @@ struct ZkNodeCache
     }
 };
 
-class ZooKeeperSink final : public SinkToStorage
+class ZooKeeperSink : public SinkToStorage
 {
     ContextPtr context;
     std::unordered_map<String, zkutil::ZooKeeperPtr> zookeepers;
@@ -251,7 +251,7 @@ private:
 };
 
 
-class SystemZooKeeperSource final : public ISource
+class SystemZooKeeperSource : public ISource
 {
 public:
     SystemZooKeeperSource(
@@ -285,23 +285,14 @@ private:
 
 
 StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
-        : StorageWithCommonVirtualColumns(table_id_)
+        : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(getColumnsDescription());
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StorageSystemZooKeeper::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
-void StorageSystemZooKeeper::readImpl(
+void StorageSystemZooKeeper::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -311,7 +302,7 @@ void StorageSystemZooKeeper::readImpl(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
     auto read_step = std::make_unique<ReadFromSystemZooKeeper>(
         column_names,
         query_info,
@@ -351,20 +342,16 @@ ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
         {"path",           std::make_shared<DataTypeString>(), "The path to the node."},
     };
 
-    /// Mark read-only columns as MATERIALIZED with a constant expression to block INSERT
-    /// and ensure the attribute survives DDL serialization.
     for (auto & name : description.getAllRegisteredNames())
     {
         description.modify(name, [&](ColumnDescription & column)
         {
+            /// We only allow column `name`, `path`, `value` to insert.
             if (column.name != "name"
                 && column.name != "path"
                 && column.name != "value"
                 && column.name != "zookeeperName")
-            {
                 column.default_desc.kind = ColumnDefaultKind::Materialized;
-                column.default_desc.expression = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0)));
-            }
         });
     }
 
@@ -660,7 +647,7 @@ Chunk SystemZooKeeperSource::generate()
         if (zookeeper == zookeepers.end() || zookeeper->second->expired())
         {
             zookeepers[name] = ZooKeeperWithFaultInjection::createInstance(
-                static_cast<double>(settings[Setting::insert_keeper_fault_injection_probability]),
+                settings[Setting::insert_keeper_fault_injection_probability],
                 settings[Setting::insert_keeper_fault_injection_seed],
                 context->getDefaultOrAuxiliaryZooKeeper(name),
                 "",
@@ -674,7 +661,7 @@ Chunk SystemZooKeeperSource::generate()
     struct ListTask
     {
         String path;
-        ZkPathType path_type{};
+        ZkPathType path_type;
         String prefix;
         String path_corrected;
         String path_part;
