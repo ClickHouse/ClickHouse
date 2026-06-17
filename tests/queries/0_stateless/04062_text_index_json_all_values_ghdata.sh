@@ -46,7 +46,11 @@ $MY_CLICKHOUSE_CLIENT --query "
     )
     ENGINE = MergeTree
     ORDER BY tuple()
-    SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity = 100, index_granularity_bytes = '10M';
+    SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity = 100, index_granularity_bytes = '10M',
+        text_index_posting_list_codec = 'none',
+        text_index_posting_list_block_size = 1048576,
+        text_index_dictionary_block_size = 512,
+        text_index_dictionary_block_frontcoding_compression = 1;
 "
 
 cat "$CUR_DIR"/data_json/ghdata_sample.json | $MY_CLICKHOUSE_CLIENT \
