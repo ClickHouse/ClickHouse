@@ -26,6 +26,10 @@
 # `filesystem_prefetch_step_marks = 1` splits the part into one task per mark, so the pool has
 # look-ahead tasks to pre-schedule. Without it the whole small part is a single task that the reading
 # thread consumes directly, so the pool never pre-prefetches and the counter is 0 regardless of budget.
+#
+# `allow_prefetched_read_pool_for_remote_filesystem = 1` is required because the stateless test profile
+# disables the prefetched read pool by default (tests/config/users.d/prefetch_settings.xml); without it
+# the scan uses the plain single-stream reader, the pool never runs, and the counter is always 0.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -41,6 +45,7 @@ SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0
 AS SELECT repeat('a', 1024) FROM numbers_mt(32e3) SETTINGS enable_filesystem_cache = 0;
 
 SET max_threads = 1,
+    allow_prefetched_read_pool_for_remote_filesystem = 1,
     remote_filesystem_read_prefetch = 1,
     remote_filesystem_read_method = 'threadpool',
     enable_filesystem_cache = 0,
