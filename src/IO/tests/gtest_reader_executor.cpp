@@ -2,7 +2,10 @@
 #include <IO/LocalSourceReader.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/PipelineReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+
+#include <cstring>
 
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
@@ -62,6 +65,60 @@ unsigned char patternByte(size_t i)
 {
     return static_cast<unsigned char>(i % 256);
 }
+
+/// A source buffer that mimics object storage opened with `use_external_buffer=true`: it owns no
+/// read memory, and `nextImpl` fills the caller's externally `set()` buffer (`internal_buffer`).
+/// This is the path where a raw `read` would refill a stale external pointer; a local
+/// `ReadBufferFromFileDescriptor` cannot reproduce it because it falls back to its own memory.
+class ExternalBufferReader : public ReadBufferFromFileBase
+{
+public:
+    explicit ExternalBufferReader(std::shared_ptr<const std::string> data_)
+        : ReadBufferFromFileBase(/*buf_size=*/0, /*existing_memory=*/nullptr, /*alignment=*/0, data_->size())
+        , data(std::move(data_))
+    {
+    }
+
+    bool nextImpl() override
+    {
+        const size_t cap = read_until ? std::min(*read_until, data->size()) : data->size();
+        if (file_pos >= cap || internal_buffer.empty())
+            return false;
+        const size_t n = std::min(internal_buffer.size(), cap - file_pos);
+        memcpy(internal_buffer.begin(), data->data() + file_pos, n);   /// into the external set() buffer
+        working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + n);
+        pos = working_buffer.begin();
+        file_pos += n;
+        return n != 0;
+    }
+
+    off_t seek(off_t off, int) override { file_pos = static_cast<size_t>(off); resetWorkingBuffer(); return off; }
+    off_t getPosition() override { return static_cast<off_t>(file_pos) - static_cast<off_t>(available()); }
+    String getFileName() const override { return "external_mock"; }
+    void setReadUntilPosition(size_t position) override { read_until = position; }
+    void setReadUntilEnd() override { read_until.reset(); }
+    bool supportsRightBoundedReads() const override { return true; }
+    bool supportsExternalBufferMode() const override { return true; }
+
+private:
+    std::shared_ptr<const std::string> data;
+    size_t file_pos = 0;
+    std::optional<size_t> read_until;
+};
+
+class ExternalBufferSourceReader : public IFileBasedSourceReader
+{
+public:
+    explicit ExternalBufferSourceReader(std::shared_ptr<const std::string> data_) : data(std::move(data_)) {}
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &) override
+    {
+        return std::make_unique<ExternalBufferReader>(data);
+    }
+    String name() const override { return "ExternalBufferSourceReader"; }
+
+private:
+    std::shared_ptr<const std::string> data;
+};
 
 class ReaderExecutorTest : public ::testing::Test
 {
@@ -501,6 +558,52 @@ TEST_F(ReaderExecutorTest, IncompleteConnectionOnAbandonedDrop)
     ex.seek(0);
     ex.readNextWindow();   /// drops the held connection (backward, undrained tail)
     EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 1u);
+}
+
+TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
+{
+    /// Regression for the external-buffer discard path. With a source opened in external-buffer mode
+    /// (object storage), skipForward must read the bridged gap into its own scratch, not the source
+    /// buffer's stale external pointer -- the last served window's block.
+    ///
+    /// A small file (4 blocks) makes the first connection's bound reach EOF, so a window it serves
+    /// and the bridge below stay on the SAME connection (no rotation): hold that window, bridge a
+    /// small forward gap, and assert the held window's bytes are not overwritten.
+    constexpr size_t size = 512 * 1024;
+    auto data = std::make_shared<std::string>(size, '\0');
+    for (size_t i = 0; i < size; ++i)
+        (*data)[i] = static_cast<char>(patternByte(i));
+    StoredObject obj;
+    obj.remote_path = "external_mock";
+    obj.bytes_size = size;
+    TestThreadGroup tg;
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+    ReaderExecutor ex(std::make_shared<ExternalBufferSourceReader>(data), StoredObjects{obj},
+        ReaderExecutor::Options{.min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024, .long_connection_limit = limit});
+
+    /// Read until a long connection opens, and hold that connection's first served window.
+    ChainedBuffers held;
+    for (int i = 0; i < 4 && held.atEnd(); ++i)
+    {
+        const auto opened_before = tg.get(ProfileEvents::LongConnectionOpened);
+        auto w = ex.readNextWindow();
+        if (!w.atEnd() && tg.get(ProfileEvents::LongConnectionOpened) > opened_before)
+            held = std::move(w);
+    }
+    ASSERT_FALSE(held.atEnd()) << "expected a long connection to open";
+    const auto span = held.peek();
+    const size_t off = span.logical_offset;
+
+    /// A small forward gap on the open connection -> serveFromLong bridges via skipForward.
+    ex.seek(off + span.size + 4096);
+    ex.readNextWindow();
+
+    /// The held window must be intact -- skipForward must not write into its block.
+    const auto check = held.peek();
+    ASSERT_EQ(check.size, span.size);
+    for (size_t i = 0; i < check.size; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(check.data[i]), patternByte(off + i))
+            << "served window clobbered by bridge at " << (off + i);
 }
 
 }

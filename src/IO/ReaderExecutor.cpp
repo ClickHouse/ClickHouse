@@ -129,8 +129,17 @@ ReaderExecutor::ReaderExecutor(
 ReaderExecutor::~ReaderExecutor()
 {
     /// Release any held connection (drains a small tail to complete it, frees its slot, and
-    /// accounts an incomplete drop if it was abandoned mid-response).
-    dropLong();
+    /// accounts an incomplete drop if it was abandoned mid-response). The drain does remote I/O,
+    /// so a throw here -- e.g. on a cancelled query -- must not escape a destructor (it would
+    /// `std::terminate`); the slot still releases via `long_conn`'s own destruction.
+    try
+    {
+        dropLong();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to release a held source connection on destruction");
+    }
 
     /// ProfileEvents are emitted instantly in `Stats::add`; `Stats` are read back here only
     /// for this summary report (a future PR turns it into a `system.reader_executor_log` row).
@@ -160,7 +169,10 @@ size_t ReaderExecutor::LongConnection::skipForward(size_t gap, size_t block_byte
     size_t skipped = 0;
     while (skipped < gap)
     {
-        const size_t got = buffer->read(scratch->data(), std::min(gap - skipped, scratch_size));
+        /// Discard via `readIntoBlock`, not a raw `read`: in external-buffer mode a raw read would
+        /// refill the source buffer's stale external pointer (the last served window's block)
+        /// instead of `scratch`, corrupting or use-after-free'ing already-served data.
+        const size_t got = readIntoBlock(*buffer, scratch->data(), std::min(gap - skipped, scratch_size));
         if (got == 0)
             break;
         skipped += got;
