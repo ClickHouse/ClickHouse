@@ -2655,6 +2655,11 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     if (checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate secondary indexes sizes when columns or checksums are not initialized");
 
+    /// The packed-substream fallback below issues existsFile / getFileSize through the storage
+    /// overlay, which reaches Keeper in the metadata-in-Keeper configuration; set the component
+    /// for those requests like the other Keeper-touching paths in this class.
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk");
+
     auto secondary_indices_descriptions = storage.getInMemoryMetadataPtr(storage.getContext(), false)->secondary_indices;
     IndexSizeByName new_secondary_index_sizes;
 
