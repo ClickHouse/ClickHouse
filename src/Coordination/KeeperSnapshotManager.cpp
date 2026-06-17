@@ -15,7 +15,8 @@
 #include <Disks/IDisk.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -24,10 +25,14 @@
 #include <IO/copyData.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <zstd.h>
 
@@ -35,6 +40,13 @@ namespace ProfileEvents
 {
     extern const Event KeeperSnapshotWrittenBytes;
     extern const Event KeeperSnapshotFileSyncMicroseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric KeeperSnapshotDeserThreads;
+    extern const Metric KeeperSnapshotDeserThreadsActive;
+    extern const Metric KeeperSnapshotDeserThreadsScheduled;
 }
 
 namespace DB
@@ -54,11 +66,29 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 rocksdb_load_batch_size;
     extern const CoordinationSettingsUInt64 snapshot_chunk_size;
+    extern const CoordinationSettingsUInt64 snapshot_deser_threads;
 }
 
 
 namespace
 {
+    /// Create a ZSTD streaming reader for a single V8 snapshot frame.
+    /// Sets require_frame_complete=true to verify that ZSTD_decompressStream reaches ret==0
+    /// (i.e. the full frame including the 4-byte content-checksum epilogue is consumed).
+    /// This restores the integrity guarantee that the superseded one-shot ZSTD_decompress
+    /// path (C3) provided: a corrupt or truncated frame is detected rather than accepted.
+    static std::unique_ptr<ReadBuffer> makeV8FrameReader(const char * data, size_t size)
+    {
+        auto raw = std::make_unique<ReadBufferFromMemory>(data, size);
+        return std::make_unique<ZstdInflatingReadBuffer>(
+            std::move(raw),
+            DBMS_DEFAULT_BUFFER_SIZE,
+            /*existing_memory=*/nullptr,
+            /*alignment=*/0,
+            /*zstd_window_log_max=*/0,
+            /*require_frame_complete=*/true);
+    }
+
     void moveSnapshotBetweenDisks(
         DiskPtr disk_from,
         const std::string & path_from,
@@ -1059,6 +1089,32 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     , storage_tick_time(storage_tick_time_)
     , keeper_context(keeper_context_)
 {
+    // ── Deserialisation thread pool (C4) ──────────────────────────────────────────────────────
+    // Compute effective thread count.  Setting 0 → auto (min(4, cores/2), capped to 8).
+    // Never created under snapshots_lock — pool construction is safe here.
+    {
+        const auto & cs = keeper_context->getCoordinationSettings();
+        const uint64_t raw = static_cast<uint64_t>(cs[CoordinationSetting::snapshot_deser_threads]);
+        if (raw == 0)
+            deser_threads = std::clamp<size_t>(getNumberOfCPUCoresToUse() / 2, 1, 4);
+        else
+            deser_threads = std::clamp<size_t>(static_cast<size_t>(raw), 1, 8);
+
+        if (deser_threads > 1)
+        {
+            // shutdown_on_exception=false: a worker exception must not permanently poison
+            // the pool (verified §7.2 / §10 of the design).  wait() rethrows + clears.
+            deser_pool.emplace(
+                CurrentMetrics::KeeperSnapshotDeserThreads,
+                CurrentMetrics::KeeperSnapshotDeserThreadsActive,
+                CurrentMetrics::KeeperSnapshotDeserThreadsScheduled,
+                /*max_threads=*/deser_threads,
+                /*max_free_threads=*/0,
+                /*queue_size=*/0,
+                /*shutdown_on_exception=*/false);
+        }
+    }
+
     std::unordered_set<DiskPtr> read_disks;
     const auto load_snapshot_from_disk = [&](const auto & disk)
     {
@@ -1362,33 +1418,18 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
         /* insert_initial_root = */ false);
     Storage & storage = *result.storage;
 
-    // One-shot ZSTD decompression helper.
-    // ZSTD_compress2 (used by serializeV8) embeds content size, so getFrameContentSize works.
-    auto decompress_frame = [&](const V8FrameDescriptor & fd) -> String
-    {
-        const char * src = buf_data + fd.compressed_offset;
-        const size_t src_size = static_cast<size_t>(fd.compressed_size);
-        const unsigned long long dsize = ZSTD_getFrameContentSize(src, src_size);
-        if (dsize == ZSTD_CONTENTSIZE_ERROR || dsize == ZSTD_CONTENTSIZE_UNKNOWN)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "V8 snapshot: cannot determine ZSTD content size for frame at offset {}",
-                fd.compressed_offset);
-        String out(static_cast<size_t>(dsize), '\0');
-        const size_t actual = ZSTD_decompress(out.data(), dsize, src, src_size);
-        if (ZSTD_isError(actual))
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "V8 snapshot ZSTD decompression failed: {}", ZSTD_getErrorName(actual));
-        return out;
-    };
-
     bool recalculate_digest = keeper_context->digestEnabled();
 
     // ── METADATA frame (always frames[0], validated by parseAndValidateV8Header) ──────────────
+    // Streaming decompression (F3): each frame gets its own ZSTD_DCtx via makeV8FrameReader,
+    // which also verifies the full frame (including the 4-byte content-checksum epilogue) is
+    // consumed — matching the integrity guarantee of the superseded one-shot ZSTD_decompress.
     {
-        const String meta_bytes = decompress_frame(frames[0]);
-        ReadBufferFromString rbuf(meta_bytes);
+        const V8FrameDescriptor & mfd = frames[0];
+        auto zbuf_meta = makeV8FrameReader(
+            buf_data + mfd.compressed_offset,
+            static_cast<size_t>(mfd.compressed_size));
+        ReadBuffer & rbuf = *zbuf_meta;
 
         uint8_t version_byte = 0;
         readBinary(version_byte, rbuf);
@@ -1460,22 +1501,41 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
 
     const bool cleanup_acl_global = keeper_context->shouldBlockACL();
 
-    // ── NODES frames (K ≥ 1 frames, serialised sequentially) ────────────────────────────────────
-    std::vector<MemorySnapshotLoadHandle> handles;
+    // ── NODES frames ─────────────────────────────────────────────────────────────────────────────
+    // Collect frame descriptors in header order (preserves deterministic splice order).
+    std::vector<const V8FrameDescriptor *> nodes_fds;
     for (const auto & fd : frames)
-    {
-        if (fd.type != V8ChunkType::NODES)
-            continue;
+        if (fd.type == V8ChunkType::NODES)
+            nodes_fds.push_back(&fd);
 
-        const String frame_bytes = decompress_frame(fd);
-        ReadBufferFromString rbuf(frame_bytes);
+    const size_t K = nodes_fds.size();
+
+    // Pre-initialise handles SERIALLY before scheduling any tasks (U1 lifecycle):
+    // beginMemorySnapshotLoad touches storage; workers must never touch storage directly.
+    std::vector<MemorySnapshotLoadHandle> handles;
+    if (load_full_storage)
+    {
+        handles.reserve(K);
+        for (size_t i = 0; i < K; ++i)
+            handles.push_back(beginMemorySnapshotLoad(storage));
+    }
+
+    // Per-frame parser — shared by serial and parallel paths.
+    // In the parallel path, each worker writes exclusively to handles[f] (different index per task).
+    // !load_full_storage is never true in the parallel path (guaranteed by dispatch condition below).
+    auto process_nodes_frame = [&](size_t f, const V8FrameDescriptor & fd)
+    {
+        auto zbuf = makeV8FrameReader(
+            buf_data + fd.compressed_offset,
+            static_cast<size_t>(fd.compressed_size));
+        ReadBuffer & rbuf = *zbuf;
 
         uint64_t node_count = 0;
         readBinary(node_count, rbuf);
 
         if (!load_full_storage)
         {
-            // Analyzer (path-only) mode: collect paths and discard node data.
+            // Analyzer (path-only) mode: not reached from the parallel path.
             for (uint64_t i = 0; i < node_count; ++i)
             {
                 String path;
@@ -1488,12 +1548,11 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
                 throw Exception(
                     ErrorCodes::CORRUPTED_DATA,
                     "V8 snapshot: trailing bytes after NODES frame content (analyzer mode)");
-            continue;
+            return;
         }
 
-        // Full-load mode: parse nodes into a per-frame handle.
-        MemorySnapshotLoadHandle h = beginMemorySnapshotLoad(storage);
-
+        // Full-load mode: fill the pre-initialised handle for this frame index.
+        MemorySnapshotLoadHandle & h = handles[f];
         for (uint64_t i = 0; i < node_count; ++i)
         {
             String path_str;
@@ -1556,6 +1615,7 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
                 ++h.acl_usage[node.acl_id];
 
             // Allocate the path key in the shared arena and enqueue in the batch.
+            // LocalInsertBatch::allocateKey uses new char[] — thread-safe (GlobalArena comment).
             const size_t path_size = path_str.size();
             auto key = h.nodes.allocateKey(path_size);
             std::memcpy(key.get(), path_str.data(), path_size);
@@ -1566,7 +1626,40 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "V8 snapshot: trailing bytes after NODES frame content");
-        handles.push_back(std::move(h));
+    };
+
+    // Dispatch: parallel for full-load with ≥2 threads and ≥2 frames; serial otherwise.
+    if (load_full_storage && deser_pool.has_value() && K > 1)
+    {
+        // Capture the calling thread's group so workers can inherit it for metrics and naming.
+        auto tg = getCurrentThreadGroup();
+        try
+        {
+            for (size_t f = 0; f < K; ++f)
+            {
+                // Copy the frame descriptor for lambda safety (lives on the calling stack).
+                const V8FrameDescriptor fd_copy = *nodes_fds[f];
+                deser_pool->scheduleOrThrowOnError(
+                    [f, fd_copy, &process_nodes_frame, tg]()
+                    {
+                        ThreadGroupSwitcher switcher(tg, ThreadName::KEEPER_SNAPSHOT_LOAD);
+                        process_nodes_frame(f, fd_copy);
+                    });
+            }
+            deser_pool->wait();
+        }
+        catch (...)
+        {
+            // Drain pool before handles / process_nodes_frame lambda go out of scope.
+            deser_pool->wait();
+            throw;
+        }
+    }
+    else
+    {
+        // Serial path — also handles !load_full_storage (analyzer mode, not performance-critical).
+        for (size_t f = 0; f < K; ++f)
+            process_nodes_frame(f, *nodes_fds[f]);
     }
 
     if (load_full_storage)
@@ -1581,8 +1674,10 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
         if (fd.type != V8ChunkType::SESSIONS)
             continue;
 
-        const String sessions_bytes = decompress_frame(fd);
-        ReadBufferFromString rbuf(sessions_bytes);
+        auto zbuf_sess = makeV8FrameReader(
+            buf_data + fd.compressed_offset,
+            static_cast<size_t>(fd.compressed_size));
+        ReadBuffer & rbuf = *zbuf_sess;
 
         size_t active_sessions_size = 0;
         readBinary(active_sessions_size, rbuf);
@@ -1693,7 +1788,7 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
 ///
 /// IMPORTANT: field order here must stay in sync with the METADATA parsing block inside
 /// deserializeV8FromBuffer (search for "// zxid (always present in V8").
-static void drainV8MetadataFrameTail(ReadBufferFromString & rbuf)
+static void drainV8MetadataFrameTail(ReadBuffer & rbuf)
 {
     // zxid
     {
@@ -1759,21 +1854,10 @@ static SnapshotMetadataPtr deserializeV8MetadataOnlyFromBuffer(nuraft::ptr<nuraf
 
     // Decompress ONLY frame[0] (METADATA) — intentionally never touch NODES or SESSIONS.
     const V8FrameDescriptor & meta_fd = frames[0];
-    const char * src = buf_data + meta_fd.compressed_offset;
-    const size_t src_size = static_cast<size_t>(meta_fd.compressed_size);
-    const unsigned long long dsize = ZSTD_getFrameContentSize(src, src_size);
-    if (dsize == ZSTD_CONTENTSIZE_ERROR || dsize == ZSTD_CONTENTSIZE_UNKNOWN)
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "V8 snapshot: cannot determine ZSTD content size for METADATA frame");
-    String meta_bytes(static_cast<size_t>(dsize), '\0');
-    const size_t actual = ZSTD_decompress(meta_bytes.data(), dsize, src, src_size);
-    if (ZSTD_isError(actual))
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "V8 snapshot METADATA frame ZSTD decompression failed: {}", ZSTD_getErrorName(actual));
-
-    ReadBufferFromString rbuf(meta_bytes);
+    auto zbuf_meta = makeV8FrameReader(
+        buf_data + meta_fd.compressed_offset,
+        static_cast<size_t>(meta_fd.compressed_size));
+    ReadBuffer & rbuf = *zbuf_meta;
     uint8_t version_byte = 0;
     readBinary(version_byte, rbuf);
     if (version_byte != static_cast<uint8_t>(SnapshotVersion::V8))

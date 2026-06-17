@@ -41,6 +41,8 @@
 namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
+    extern const CoordinationSettingsUInt64 snapshot_chunk_size;
+    extern const CoordinationSettingsUInt64 snapshot_deser_threads;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
 }
 
@@ -2678,6 +2680,12 @@ TEST(KeeperSnapshotV8Validation, V8EqualsV7)
 
     // Session counter.
     EXPECT_EQ(res7.storage->session_id_counter, res8.storage->session_id_counter);
+
+    // Both V7 and V8 preserve the same embedded nodes_digest.
+    // (The source storage has nodes_digest=0 since addNode bypasses commits; the serializer
+    //  embeds that value and both loaders read it back consistently.)
+    EXPECT_EQ(res7.storage->nodes_digest, res8.storage->nodes_digest)
+        << "V7 and V8 round-trips must preserve the same nodes_digest";
 }
 
 /// After the F1 fix, deserializeSnapshotMetadataFromBuffer on a V8 snapshot must decompress
@@ -3312,6 +3320,314 @@ TEST(KeeperSnapshotV8Validation, SessionsTrailingBytesRejected)
     // Full deserialiser must detect the trailing byte (F2 fix).
     EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true), DB::Exception)
         << "deserializeSnapshotFromBuffer must throw on trailing bytes in SESSIONS frame";
+}
+
+/// Regression for F1-zstd-frame-completion-not-verified: when a V8 frame's compressed_size
+/// is shrunk to exclude the 4-byte ZSTD content-checksum trailer, deserialization must throw.
+///
+/// Context: the C4 streaming decompression rework (F3) replaced the one-shot ZSTD_decompress
+/// path (which required the full frame including the checksum) with ZstdInflatingReadBuffer.
+/// The old path rejected a truncated frame with ZSTD_error_srcSize_wrong; the new path
+/// silently accepted inner-buffer EOF without checking ZSTD_decompressStream returned 0.
+/// The V8 header only enforces non-overlap between frames (not contiguity), so the 4 dropped
+/// checksum bytes become a legal inter-frame gap — parseAndValidateV8Header passes, the ZSTD
+/// reader decompresses the payload, and the corruption is invisible.
+///
+/// The fix adds require_frame_complete=true to ZstdInflatingReadBuffer for V8 frame reads:
+/// when the inner buffer reaches EOF with ZSTD_decompressStream returning non-zero, we throw.
+/// This test verifies that a tampered NODES frame (serial and parallel paths) and a tampered
+/// METADATA frame are both rejected after the fix.
+TEST(KeeperSnapshotV8Validation, F1ZstdFrameTrailerDropped)
+{
+    ChangelogDirTest snap_dir("./v8val_f1_trailer");
+
+    // chunk_size=1: each node gets its own NODES frame.
+    // With nodes /, /a, /b that gives K=3 NODES frames → parallel path (K > 1) is reachable.
+    auto settings_src = std::make_shared<DB::CoordinationSettings>();
+    (*settings_src)[DB::CoordinationSetting::snapshot_chunk_size] = 1;
+    auto ctx_src = std::make_shared<DB::KeeperContext>(true, settings_src);
+    ctx_src->setLocalLogsPreprocessed();
+    ctx_src->setRocksDBOptions();
+    ctx_src->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskF1Src", snap_dir.path));
+    ctx_src->setDigestEnabled(false);
+
+    DB::KeeperMemoryStorage storage_src(500, "", ctx_src);
+    addNode(storage_src, "/a", "aaa");
+    addNode(storage_src, "/b", "bbb");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage_src.zxid) = 10;
+    storage_src.session_id_counter = 50;
+
+    nuraft::ptr<nuraft::buffer> good_buf;
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+            &storage_src, /*up_to_log_idx=*/10, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_src(3, ctx_src, /*compress_zstd=*/true);
+        good_buf = mgr_src.serializeSnapshotToBuffer(snap);
+    }
+    ASSERT_NE(good_buf, nullptr);
+
+    // Parse header and verify K ≥ 2 NODES frames (needed for the parallel path test).
+    std::vector<DB::V8FrameDescriptor> frames;
+    {
+        const char * raw = reinterpret_cast<const char *>(good_buf->data_begin());
+        frames = DB::parseAndValidateV8Header(raw, good_buf->size());
+    }
+    size_t nodes_count = 0;
+    size_t first_nodes_frame_idx = 0; // index in `frames[]` of the first NODES frame
+    for (size_t i = 0; i < frames.size(); ++i)
+    {
+        if (frames[i].type == DB::V8ChunkType::NODES)
+        {
+            if (nodes_count == 0)
+                first_nodes_frame_idx = i;
+            ++nodes_count;
+        }
+    }
+    ASSERT_GE(nodes_count, 2u) << "Need ≥2 NODES frames (chunk=1 with 3 nodes) for parallel path";
+
+    // Return a copy of good_buf with frame[frame_idx].compressed_size shrunk by 4.
+    // The 4 bytes are the ZSTD content-checksum epilogue (ZSTD_c_checksumFlag=1).
+    // They become an inter-frame gap — legal under the non-overlap-only header check —
+    // so parseAndValidateV8Header still passes on the tampered buffer.
+    // V8 header layout: compressed_size of frame i is at byte offset 22 + 17*i.
+    auto makeTrailerDropped = [&](size_t frame_idx) -> nuraft::ptr<nuraft::buffer>
+    {
+        nuraft::ptr<nuraft::buffer> bad = nuraft::buffer::alloc(good_buf->size());
+        std::memcpy(bad->data_begin(), good_buf->data_begin(), good_buf->size());
+        char * hdr = reinterpret_cast<char *>(bad->data_begin());
+        uint64_t cs = 0;
+        std::memcpy(&cs, hdr + 22 + 17 * frame_idx, 8);
+        cs -= 4; // drop the 4-byte ZSTD checksum trailer
+        std::memcpy(hdr + 22 + 17 * frame_idx, &cs, 8);
+        return bad;
+    };
+
+    // ── NODES frame, serial path (deser_threads=1) ──────────────────────────────────────────
+    {
+        auto bad = makeTrailerDropped(first_nodes_frame_idx);
+        auto s = std::make_shared<DB::CoordinationSettings>();
+        (*s)[DB::CoordinationSetting::snapshot_deser_threads] = 1;
+        auto ctx = std::make_shared<DB::KeeperContext>(true, s);
+        ctx->setLocalLogsPreprocessed();
+        ctx->setRocksDBOptions();
+        ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskF1T1", snap_dir.path));
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_zstd=*/true);
+        EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, /*load_full_storage=*/true), DB::Exception)
+            << "NODES frame: dropped ZSTD trailer must throw (serial, deser_threads=1)";
+    }
+
+    // ── NODES frame, parallel path (deser_threads=8, K=3 → pool dispatch) ──────────────────
+    {
+        auto bad = makeTrailerDropped(first_nodes_frame_idx);
+        auto s = std::make_shared<DB::CoordinationSettings>();
+        (*s)[DB::CoordinationSetting::snapshot_deser_threads] = 8;
+        auto ctx = std::make_shared<DB::KeeperContext>(true, s);
+        ctx->setLocalLogsPreprocessed();
+        ctx->setRocksDBOptions();
+        ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskF1T8", snap_dir.path));
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_zstd=*/true);
+        EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, /*load_full_storage=*/true), DB::Exception)
+            << "NODES frame: dropped ZSTD trailer must throw (parallel, deser_threads=8)";
+    }
+
+    // ── METADATA frame (always read serially regardless of deser_threads) ───────────────────
+    {
+        auto bad = makeTrailerDropped(0); // frames[0] is always METADATA
+        auto s = std::make_shared<DB::CoordinationSettings>();
+        (*s)[DB::CoordinationSetting::snapshot_deser_threads] = 1;
+        auto ctx = std::make_shared<DB::KeeperContext>(true, s);
+        ctx->setLocalLogsPreprocessed();
+        ctx->setRocksDBOptions();
+        ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskF1Meta", snap_dir.path));
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_zstd=*/true);
+        EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, /*load_full_storage=*/true), DB::Exception)
+            << "METADATA frame: dropped ZSTD trailer must throw";
+    }
+}
+
+/// ── C4 tests: digest recalculation and parallel load determinism ──────────────────────────────
+
+/// Verify that loading a V8 snapshot that has NO_DIGEST in its METADATA frame
+/// (serialized with digestEnabled=false) under a digest-enabled KeeperContext
+/// correctly recalculates nodes_digest from the node data (the recalculate_digest path).
+TEST(KeeperSnapshotV8Parallel, DigestRecalculationOnLoad)
+{
+    ChangelogDirTest snap_dir("./v8_digest_recalc");
+
+    // 1. Serialize with digest DISABLED → NO_DIGEST in METADATA frame.
+    auto src_settings = std::make_shared<DB::CoordinationSettings>();
+    auto src_ctx = std::make_shared<DB::KeeperContext>(true, src_settings);
+    src_ctx->setLocalLogsPreprocessed();
+    src_ctx->setRocksDBOptions();
+    src_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskND", snap_dir.path));
+    src_ctx->setDigestEnabled(false);
+
+    DB::KeeperMemoryStorage storage_src(500, "", src_ctx);
+    addNode(storage_src, "/alpha", "val_alpha");
+    addNode(storage_src, "/beta",  "val_beta");
+    addNode(storage_src, "/alpha/child", "val_child");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage_src.zxid) = 42;
+    storage_src.session_id_counter = 7;
+
+    nuraft::ptr<nuraft::buffer> buf_no_digest;
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+            &storage_src, /*up_to_log_idx=*/42, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_nd(3, src_ctx, /*compress_zstd=*/true);
+        buf_no_digest = mgr_nd.serializeSnapshotToBuffer(snap);
+    }
+    ASSERT_NE(buf_no_digest, nullptr);
+
+    // 2. Load with digest ENABLED → triggers recalculate_digest path.
+    auto load_settings = std::make_shared<DB::CoordinationSettings>();
+    auto load_ctx = std::make_shared<DB::KeeperContext>(true, load_settings);
+    load_ctx->setLocalLogsPreprocessed();
+    load_ctx->setRocksDBOptions();
+    load_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskD", snap_dir.path));
+    load_ctx->setDigestEnabled(true);
+
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_load(3, load_ctx, /*compress_zstd=*/true);
+    auto res = mgr_load.deserializeSnapshotFromBuffer(buf_no_digest, /*load_full_storage=*/true);
+    ASSERT_NE(res.storage, nullptr);
+
+    // 3. Load a second time — must produce the same digest (recalculation is deterministic).
+    auto res2 = mgr_load.deserializeSnapshotFromBuffer(buf_no_digest, /*load_full_storage=*/true);
+    ASSERT_NE(res2.storage, nullptr);
+
+    EXPECT_NE(res.storage->nodes_digest, 0u)
+        << "Recalculated nodes_digest must be non-zero for a non-empty V8 snapshot";
+    EXPECT_EQ(res.storage->nodes_digest, res2.storage->nodes_digest)
+        << "Recalculated nodes_digest must be the same across two loads of the same snapshot";
+    EXPECT_EQ(res.storage->container.size(), res2.storage->container.size());
+}
+
+/// Load the same multi-frame V8 snapshot with snapshot_deser_threads=1 (serial) and =8
+/// (parallel) and verify: identical node counts, identical data per path, identical digest,
+/// identical ephemeral ownership, and byte-identical re-serialization.
+TEST(KeeperSnapshotV8Parallel, ParallelVsSequential)
+{
+    ChangelogDirTest snap_dir("./v8_parallel_det");
+
+    // Source context: small chunk size → multiple NODES frames; digest disabled → NO_DIGEST
+    // so that the recalculate_digest path exercises the parallel path as well.
+    auto src_settings = std::make_shared<DB::CoordinationSettings>();
+    (*src_settings)[DB::CoordinationSetting::snapshot_chunk_size] = 4;
+    auto src_ctx = std::make_shared<DB::KeeperContext>(true, src_settings);
+    src_ctx->setLocalLogsPreprocessed();
+    src_ctx->setRocksDBOptions();
+    src_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskSrc", snap_dir.path));
+    src_ctx->setDigestEnabled(false);
+
+    // Build a storage with enough nodes to span ≥ 2 NODES frames (chunk=4 → ceil(N/4) frames).
+    DB::KeeperMemoryStorage storage_src(500, "", src_ctx);
+    addNode(storage_src, "/n1", "data1");
+    addNode(storage_src, "/n2", "data2");
+    addNode(storage_src, "/n3", "data3");
+    addNode(storage_src, "/n4", "data4");
+    addNode(storage_src, "/n5", "data5");
+    addNode(storage_src, "/n1/c1", "child1");
+    addNode(storage_src, "/n2/c2", "child2");
+    addNode(storage_src, "/eph", "eph_data", /*ephemeral_owner=*/100);
+    storage_src.committed_ephemerals[100].insert("/eph");
+    ++storage_src.committed_ephemeral_nodes;
+    storage_src.addSessionID(100, 60000);
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage_src.zxid) = 50;
+    storage_src.session_id_counter = 200;
+
+    // Serialize once.
+    nuraft::ptr<nuraft::buffer> source_buf;
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+            &storage_src, /*up_to_log_idx=*/50, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_src(3, src_ctx, /*compress_zstd=*/true);
+        source_buf = mgr_src.serializeSnapshotToBuffer(snap);
+    }
+    ASSERT_NE(source_buf, nullptr);
+
+    // Verify we actually got multiple NODES frames (otherwise the parallel path is not tested).
+    {
+        const char * raw = reinterpret_cast<const char *>(source_buf->data_begin());
+        auto frames = parseAndValidateV8Header(raw, source_buf->size());
+        size_t nodes_frame_count = 0;
+        for (const auto & fd : frames)
+            if (fd.type == V8ChunkType::NODES)
+                ++nodes_frame_count;
+        ASSERT_GT(nodes_frame_count, 1u) << "Test requires multiple NODES frames for parallelism";
+    }
+
+    // Load with serial path (threads=1).
+    auto settings1 = std::make_shared<DB::CoordinationSettings>();
+    (*settings1)[DB::CoordinationSetting::snapshot_deser_threads] = 1;
+    auto ctx1 = std::make_shared<DB::KeeperContext>(true, settings1);
+    ctx1->setLocalLogsPreprocessed();
+    ctx1->setRocksDBOptions();
+    ctx1->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk1", snap_dir.path));
+    ctx1->setDigestEnabled(true); // recalculate_digest=true since snapshot has NO_DIGEST
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr1(3, ctx1, /*compress_zstd=*/true);
+    auto res1 = mgr1.deserializeSnapshotFromBuffer(source_buf, /*load_full_storage=*/true);
+    ASSERT_NE(res1.storage, nullptr);
+
+    // Load with parallel path (threads=8).
+    auto settings8 = std::make_shared<DB::CoordinationSettings>();
+    (*settings8)[DB::CoordinationSetting::snapshot_deser_threads] = 8;
+    auto ctx8 = std::make_shared<DB::KeeperContext>(true, settings8);
+    ctx8->setLocalLogsPreprocessed();
+    ctx8->setRocksDBOptions();
+    ctx8->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk8", snap_dir.path));
+    ctx8->setDigestEnabled(true); // recalculate_digest=true since snapshot has NO_DIGEST
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr8(3, ctx8, /*compress_zstd=*/true);
+    auto res8 = mgr8.deserializeSnapshotFromBuffer(source_buf, /*load_full_storage=*/true);
+    ASSERT_NE(res8.storage, nullptr);
+
+    // Node counts must match.
+    EXPECT_EQ(res1.storage->container.size(), res8.storage->container.size())
+        << "Serial and parallel loads must produce the same number of nodes";
+
+    // Spot-check key paths for data equality.
+    for (const char * path : {"/", "/n1", "/n2", "/n3", "/n4", "/n5", "/n1/c1", "/n2/c2", "/eph"})
+    {
+        auto it1 = res1.storage->container.find(path);
+        auto it8 = res8.storage->container.find(path);
+        ASSERT_NE(it1, res1.storage->container.end()) << "Serial missing " << path;
+        ASSERT_NE(it8, res8.storage->container.end()) << "Parallel missing " << path;
+        EXPECT_EQ(it1->value.getData(), it8->value.getData()) << "Data mismatch at " << path;
+    }
+
+    // Digest must be non-zero (recalculated from nodes) and equal across both loads.
+    EXPECT_NE(res1.storage->nodes_digest, 0u)
+        << "Recalculated digest must be non-zero";
+    EXPECT_EQ(res1.storage->nodes_digest, res8.storage->nodes_digest)
+        << "Serial and parallel digests must match";
+
+    // Ephemeral ownership must be preserved identically.
+    EXPECT_EQ(res1.storage->committed_ephemeral_nodes, res8.storage->committed_ephemeral_nodes);
+    {
+        auto eph1 = res1.storage->committed_ephemerals.find(100);
+        auto eph8 = res8.storage->committed_ephemerals.find(100);
+        ASSERT_NE(eph1, res1.storage->committed_ephemerals.end()) << "Owner 100 missing in serial";
+        ASSERT_NE(eph8, res8.storage->committed_ephemerals.end()) << "Owner 100 missing in parallel";
+        EXPECT_EQ(eph1->second, eph8->second) << "Ephemeral path sets must match";
+    }
+
+    // Re-serialize both and verify byte-identical output (deterministic frame-order splice).
+    nuraft::ptr<nuraft::buffer> rebuf1, rebuf8;
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+            res1.storage.get(), /*up_to_log_idx=*/50, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+        rebuf1 = mgr1.serializeSnapshotToBuffer(snap);
+    }
+    ASSERT_NE(rebuf1, nullptr);
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+            res8.storage.get(), /*up_to_log_idx=*/50, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+        rebuf8 = mgr8.serializeSnapshotToBuffer(snap);
+    }
+    ASSERT_NE(rebuf8, nullptr);
+
+    ASSERT_EQ(rebuf1->size(), rebuf8->size())
+        << "Re-serialized buffers must have identical size";
+    EXPECT_EQ(std::memcmp(rebuf1->data_begin(), rebuf8->data_begin(), rebuf1->size()), 0)
+        << "Re-serialized buffers must be byte-identical (deterministic splice order)";
 }
 
 } // namespace DB

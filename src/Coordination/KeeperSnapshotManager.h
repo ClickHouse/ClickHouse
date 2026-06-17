@@ -2,7 +2,9 @@
 #include "config.h"
 
 #include <atomic>
+#include <optional>
 #include <Common/CopyableAtomic.h>
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/KeeperCommon.h>
@@ -306,6 +308,14 @@ private:
     size_t storage_tick_time;
 
     KeeperContextPtr keeper_context;
+
+    /// Thread pool for parallel V8 snapshot frame deserialization (C4).
+    /// Pre-created in the constructor (never under snapshots_lock).
+    /// Empty when deser_threads == 1 (serial path used instead).
+    /// mutable: deserializeV8FromBuffer is called from const methods.
+    mutable std::optional<ThreadPool> deser_pool;
+    /// Effective thread count (1 = serial fallback, >1 = parallel).
+    size_t deser_threads = 1;
 
     LoggerPtr log = getLogger("KeeperSnapshotManager");
 };
