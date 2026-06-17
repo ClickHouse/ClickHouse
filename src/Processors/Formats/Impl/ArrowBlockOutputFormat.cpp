@@ -10,6 +10,14 @@
 #include <Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockOutputFormat.h>
 #include <Processors/Formats/Impl/ArrowIPC/RecordBatchEncoder.h>
 #include <Core/Block.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <Common/assert_cast.h>
 
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>
@@ -127,14 +135,52 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
 
 namespace
 {
+/// True if `type` has a `Variant` with a `LowCardinality` alternative anywhere in its tree. The native
+/// writer materializes such an alternative to plain values, so with dictionary output requested it cannot
+/// reproduce the library writer's nested-dictionary union child — defer the column to the library writer.
+bool variantHasLowCardinalityAlternative(const DataTypePtr & type)
+{
+    const DataTypePtr t = removeNullable(removeLowCardinality(type));
+    const WhichDataType which(t);
+    if (which.isVariant())
+    {
+        for (const auto & v : assert_cast<const DataTypeVariant &>(*t).getVariants())
+            if (v->lowCardinality() || variantHasLowCardinalityAlternative(v))
+                return true;
+        return false;
+    }
+    if (which.isArray())
+        return variantHasLowCardinalityAlternative(assert_cast<const DataTypeArray &>(*t).getNestedType());
+    if (which.isTuple())
+    {
+        for (const auto & e : assert_cast<const DataTypeTuple &>(*t).getElements())
+            if (variantHasLowCardinalityAlternative(e))
+                return true;
+        return false;
+    }
+    if (which.isMap())
+    {
+        const auto & m = assert_cast<const DataTypeMap &>(*t);
+        return variantHasLowCardinalityAlternative(m.getKeyType()) || variantHasLowCardinalityAlternative(m.getValueType());
+    }
+    return false;
+}
+
 /// Whether the native Arrow IPC writer can encode every column of the header. The only remaining
 /// reason to use the Apache Arrow library writer is a column type the native encoder does not support
 /// (e.g. `Dynamic`/`JSON`); LowCardinality (incl. dictionary-encoded output) and Variant are native.
-bool canNativelyEncodeBlock(const Block & header, const FormatSettings & /*format_settings*/)
+bool canNativelyEncodeBlock(const Block & header, const FormatSettings & format_settings)
 {
     for (const auto & column : header)
+    {
         if (!ArrowIPC::RecordBatchEncoder::canNativelyEncode(column.type))
             return false;
+        /// The native writer cannot dictionary-encode a `LowCardinality` nested inside a `Variant`; when
+        /// dictionary output is requested, defer such a column to the Apache Arrow library writer so the
+        /// union child keeps its dictionary schema instead of silently becoming plain values.
+        if (format_settings.arrow.low_cardinality_as_dictionary && variantHasLowCardinalityAlternative(column.type))
+            return false;
+    }
     return true;
 }
 }

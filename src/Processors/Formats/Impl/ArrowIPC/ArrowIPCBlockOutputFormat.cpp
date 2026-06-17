@@ -253,8 +253,18 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::substituteDictionar
     if (plan.here)
         return encodeDictionaryColumn(column, type, *plan.here);
 
+    /// A nullable container (e.g. the experimental `Nullable(Tuple(...))`): unwrap the `ColumnNullable`
+    /// together with the type, recurse into the nested column with the same plan (the plan strips
+    /// `Nullable` before assigning ids), then re-wrap the substituted result with the original null map.
+    if (type->isNullable())
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+        auto [nested, nested_type] = substituteDictionaries(nullable.getNestedColumnPtr(), removeNullable(type), plan);
+        return {ColumnNullable::create(nested, nullable.getNullMapColumnPtr()), std::make_shared<DataTypeNullable>(nested_type)};
+    }
+
     /// No dictionary at this node, but a descendant has one: rebuild the container with its children
-    /// substituted. Containers (Array/Tuple/Map) are never Nullable in ClickHouse, but strip defensively.
+    /// substituted.
     const DataTypePtr t = removeNullable(type);
     const WhichDataType which(t);
     if (which.isArray())
