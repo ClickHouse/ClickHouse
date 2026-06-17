@@ -12,6 +12,8 @@
 1
 --- JSONAsObject: normal rows still parse ---
 20
+--- JSON (no-metadata fallback): schema inference rejects oversized object ---
+1
 --- JSON (with metadata): large value still parses ---
 1048576
 --- JSON (no-metadata fallback): normal rows still parse ---

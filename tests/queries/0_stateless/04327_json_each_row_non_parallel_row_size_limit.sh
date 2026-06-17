@@ -61,6 +61,12 @@ for i in range(20):
     | ${CLICKHOUSE_LOCAL} $COMMON_SETTINGS \
         --input-format=JSONAsObject --structure="json JSON" -q "SELECT count() FROM table WHERE NOT ignore(json)"
 
+echo "--- JSON (no-metadata fallback): schema inference rejects oversized object ---"
+python3 -c "import sys; sys.stdout.buffer.write(b'{\"a\":\"' + b'x' * (30 * 1024 * 1024) + b'\"}\n')" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} $COMMON_SETTINGS \
+        --input-format=JSON -q "DESC table" 2>&1 \
+    | grep -c "input_format_json_max_object_size"
+
 echo "--- JSON (with metadata): large value still parses ---"
 python3 -c "import sys; sys.stdout.buffer.write(b'{\"meta\":[{\"name\":\"a\",\"type\":\"String\"}],\"data\":[{\"a\":\"' + b'z' * (1024 * 1024) + b'\"}]}\n')" 2>/dev/null \
     | ${CLICKHOUSE_LOCAL} $COMMON_SETTINGS \

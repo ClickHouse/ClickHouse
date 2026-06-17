@@ -39,18 +39,22 @@ namespace JSONUtils
         bool quotes = false;
         size_t number_of_rows = 0;
         bool need_more_data = true;
+        size_t object_start_bytes = 0;
 
         if (max_rows && (max_rows < min_rows))
             max_rows = min_rows;
 
         while (loadAtPosition(in, memory, pos) && need_more_data)
         {
-            const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
-            if (max_row_size && current_object_size > max_row_size)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per object. "
-                    "Increase the value of setting 'input_format_json_max_object_size' or check your data manually, "
-                    "most likely JSON is malformed", in.count(), max_row_size, current_object_size);
+            if (max_row_size && balance > 0)
+            {
+                const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position()) - object_start_bytes;
+                if (current_object_size > max_row_size)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per object. "
+                        "Increase the value of setting 'input_format_json_max_object_size' or check your data manually, "
+                        "most likely JSON is malformed", in.count(), max_row_size, current_object_size);
+            }
 
             if (quotes)
             {
@@ -100,6 +104,7 @@ namespace JSONUtils
 
                 if (!quotes && balance == 0)
                 {
+                    object_start_bytes = memory.size() + static_cast<size_t>(pos - in.position());
                     ++number_of_rows;
                     if ((number_of_rows >= min_rows)
                         && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
