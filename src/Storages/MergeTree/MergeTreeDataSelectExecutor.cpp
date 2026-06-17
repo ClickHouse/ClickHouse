@@ -1619,8 +1619,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         return part_with_ranges.ranges;
 
     /// If conditions are relaxed, don't fill exact ranges.
-    if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed())
-        || (total_offset_condition && total_offset_condition->isRelaxed()))
+    if (key_condition.legacyContainsRelaxedRPN() || (part_offset_condition && part_offset_condition->legacyContainsRelaxedRPN())
+        || (total_offset_condition && total_offset_condition->legacyContainsRelaxedRPN()))
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();

@@ -664,13 +664,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
+                out.relaxed = true;
                 return true;
             }
         }
 };
-
-static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
-    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
 
 /// Functions with range inversion cannot be relaxed. It will become stricter instead.
 /// For example:
@@ -1287,8 +1285,8 @@ KeyCondition::KeyCondition(
     if (skip_analysis_)
     {
         has_filter = (filter_dag.predicate != nullptr);
-        relaxed = true;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        rpn.back().marked_relaxed_for_compatibility = true;
         return;
     }
 
@@ -1300,8 +1298,8 @@ KeyCondition::KeyCondition(
     if (!filter_dag.predicate)
     {
         has_filter = false;
-        relaxed = true;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        rpn.back().marked_relaxed_for_compatibility = true;
         return;
     }
 
@@ -1309,27 +1307,35 @@ KeyCondition::KeyCondition(
 
     RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
-        return extractAtomFromTree(node, info, out);
+        if (extractAtomFromTree(node, info, out))
+            return true;
+
+        out.marked_relaxed_for_compatibility = true;
+        return false;
     });
 
     rpn = std::move(builder).extractRPN();
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
-
-    if (std::any_of(rpn.begin(), rpn.end(), [&](const auto & elem) { return always_relaxed_atom_elements.contains(elem.function); }))
-        relaxed = true;
 }
 
 KeyCondition::KeyCondition(
     ThisIsPrivate, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
-    bool date_time_overflow_behavior_ignore_, bool relaxed_)
+    bool date_time_overflow_behavior_ignore_)
     : has_filter(true)
     , key_columns(std::move(key_columns_))
     , num_key_columns(num_key_columns_)
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(date_time_overflow_behavior_ignore_)
-    , relaxed(relaxed_)
 {}
+
+bool KeyCondition::legacyContainsRelaxedRPN() const
+{
+    return std::any_of(rpn.begin(), rpn.end(), [](const auto & elem)
+    {
+        return elem.relaxed || elem.marked_relaxed_for_compatibility;
+    });
+}
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
 {
@@ -2450,8 +2456,11 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     if (adjusted_indexes_mapping.size() < set_types.size())
         out.relaxed = true;
 
-    if (out.set_index->size() > 1 || out.relaxed)
-        relaxed = true;
+    /// Multi-value sets are exact at the atom level, but the historical condition-level
+    /// relaxed flag treated them as relaxed because the selected key range can have gaps.
+    if (out.set_index->size() > 1)
+        out.marked_relaxed_for_compatibility = true;
+
 
     return true;
 }
@@ -2538,8 +2547,11 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     if (adjusted_indexes_mapping.size() < set_types.size())
         out.relaxed = true;
 
-    if (out.set_index->size() > 1 || out.relaxed)
-        relaxed = true;
+    /// Multi-value sets are exact at the atom level, but the historical condition-level
+    /// relaxed flag treated them as relaxed because the selected key range can have gaps.
+    if (out.set_index->size() > 1)
+        out.marked_relaxed_for_compatibility = true;
+
 
     return true;
 }
@@ -3390,10 +3402,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 if (tryPrepareSetIndexForIn(func, info, out))
                 {
                     const auto atom_it = atom_map.find(func_name);
-                    bool valid_atom = atom_it->second(out, const_value);
-                    if (valid_atom && out.relaxed)
-                        relaxed = true;
-                    return valid_atom;
+                    return atom_it->second(out, const_value);
                 }
                 else
                     return false;
@@ -3408,10 +3417,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         return true;
 
                     const auto atom_it = atom_map.find(func_name);
-                    bool valid_atom = atom_it->second(out, const_value);
-                    if (valid_atom && out.relaxed)
-                        relaxed = true;
-                    return valid_atom;
+                    return atom_it->second(out, const_value);
                 }
                 else
                     return false;
@@ -3660,10 +3666,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        bool valid_atom = atom_it->second(out, const_value);
-        if (valid_atom && out.relaxed)
-            relaxed = true;
-        return valid_atom;
+        return atom_it->second(out, const_value);
     }
     if (node.tryGetConstant(const_value, const_type))
     {
@@ -3726,6 +3729,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
             {
                 /// If we didn't find a space-filling curve - replace the condition to unknown.
                 new_rpn.emplace_back();
+                new_rpn.back().marked_relaxed_for_compatibility = true;
                 continue;
             }
 
@@ -3738,6 +3742,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
             RPNElement collapsed_elem;
             collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
+            collapsed_elem.relaxed = true;
             collapsed_elem.key_columns = elem.key_columns;
             collapsed_elem.space_filling_curve_args_hyperrectangle = std::move(hyperrectangle);
 
@@ -3760,6 +3765,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
                 RPNElement collapsed_elem;
                 collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
+                collapsed_elem.relaxed = true;
                 collapsed_elem.key_columns = cond1.key_columns;
                 collapsed_elem.space_filling_curve_args_hyperrectangle
                     = intersect(cond1.space_filling_curve_args_hyperrectangle, cond2.space_filling_curve_args_hyperrectangle);
@@ -4657,7 +4663,7 @@ Ranges KeyCondition::extractBounds() const
     {
         /// Evaluate a single top-level conjunct in isolation, because `extractPlainRanges()` requires
         /// the whole RPN to be representable by plain range operations.
-        KeyCondition one_conjunct(ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
+        KeyCondition one_conjunct(ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore);
         one_conjunct.rpn.assign(rpn.begin() + start, rpn.begin() + end);
 
         Ranges conjunct_ranges;
@@ -4785,7 +4791,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
             /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
             /// Therefore, we must set `can_be_false = true` to be safe.
-            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
+            /// Additionally, when `KeyCondition::legacyContainsRelaxedRPN()` is true, the caller should ignore `can_be_false` anyway.
             if (element.relaxed)
                 rpn_stack.back().can_be_false = true;
 
@@ -5058,7 +5064,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
 
             /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
-            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
+            /// Additionally, when `KeyCondition::legacyContainsRelaxedRPN()` is true, the caller should ignore `can_be_false` anyway.
             /// Therefore, we must set `can_be_false = true` to be safe.
             if (element.relaxed)
                 rpn_stack.back().can_be_false = true;
@@ -5648,7 +5654,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
                 continue;
 
             ColumnIndices one_key_column = {{*key_column_names[i], i}};
-            auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
+            auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore);
             add_rpn_ranges(*condition, *this, ranges);
             out_column_conditions.emplace_back(i, std::move(condition));
         }
