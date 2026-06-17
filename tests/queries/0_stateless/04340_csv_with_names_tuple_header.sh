@@ -1,12 +1,18 @@
--- Tags: no-parallel
--- ^ uses a file in user_files for the round-trip check
+#!/usr/bin/env bash
+# Issue #107342: CSVWithNames header must flatten named tuples to match the flattened data width.
+# clickhouse-local with unique file names so it runs in parallel with itself (no no-parallel tag).
 
--- Test for issue #107342: when output_format_csv_serialize_tuple_into_separate_columns is on
--- (the default), CSVWithNames / CSVWithNamesAndTypes flatten tuple VALUES into separate columns,
--- but the header used to keep only the top-level tuple name, so the header had fewer fields than
--- the data. output_format_csv_header_serialize_tuple_into_separate_columns (default 1) now flattens
--- the header (and the types row) the same way so the widths agree.
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
 
+cd "${CLICKHOUSE_TMP}" || exit 1
+
+OPTOUT_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}_optout.csv"
+FLAT_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}_flat.csv"
+trap 'rm -f "${OPTOUT_FILE}" "${FLAT_FILE}"' EXIT
+
+${CLICKHOUSE_LOCAL} --multiquery "
 SELECT '-- CSVWithNames: header flattened to match data (default)';
 SELECT
     (123::UInt64, 'Sophia')::Tuple(ID UInt64, Name String) AS User,
@@ -56,10 +62,6 @@ SELECT '-- scalar Nullable column: stays one cell with the full Nullable type na
 SELECT CAST(1, 'Nullable(UInt64)') AS n, 'x' AS s
 FORMAT CSVWithNamesAndTypes;
 
--- CustomSeparated joins fields with format_custom_field_delimiter, but a tuple value uses
--- csv.tuple_delimiter (format_csv_delimiter, ',') internally. So the header may only be flattened
--- when the custom field delimiter is the same single character as the tuple delimiter; otherwise a
--- tuple value stays one custom field and a flattened header would have more fields than the data.
 SELECT '-- CustomSeparatedWithNames, CSV rule, comma field delimiter: header flattened (delimiters match)';
 SELECT 5::UInt8 AS x, (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
 FORMAT CustomSeparatedWithNames
@@ -84,18 +86,21 @@ SELECT '-- CustomSeparatedWithNames with non-CSV escaping rule: header not flatt
 SELECT (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
 FORMAT CustomSeparatedWithNames
 SETTINGS format_custom_escaping_rule = 'Quoted', format_custom_field_delimiter = ',';
+"
 
--- Round-trip: data written with a flattened header reads back into the tuple positionally
--- (input_format_with_names_use_header = 0), and the opt-out single-name header reads back by name.
-SELECT '-- round-trip: opt-out single-name header reads back by name';
-INSERT INTO FUNCTION file('04340_optout.csv', CSVWithNames)
+# Round-trip: data written with a flattened header reads back into the tuple positionally
+# (input_format_with_names_use_header = 0), and the opt-out single-name header reads back by name.
+echo '-- round-trip: opt-out single-name header reads back by name'
+${CLICKHOUSE_LOCAL} --query "
+INSERT INTO FUNCTION file('${OPTOUT_FILE}', CSVWithNames)
 SELECT (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
-SETTINGS engine_file_truncate_on_insert = 1, output_format_csv_header_serialize_tuple_into_separate_columns = 0;
-SELECT * FROM file('04340_optout.csv', CSVWithNames, 'User Tuple(ID UInt64, Name String)');
+SETTINGS engine_file_truncate_on_insert = 1, output_format_csv_header_serialize_tuple_into_separate_columns = 0"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${OPTOUT_FILE}', CSVWithNames, 'User Tuple(ID UInt64, Name String)')"
 
-SELECT '-- round-trip: flattened header reads back positionally (use_header = 0)';
-INSERT INTO FUNCTION file('04340_flat.csv', CSVWithNames)
+echo '-- round-trip: flattened header reads back positionally (use_header = 0)'
+${CLICKHOUSE_LOCAL} --query "
+INSERT INTO FUNCTION file('${FLAT_FILE}', CSVWithNames)
 SELECT (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
-SETTINGS engine_file_truncate_on_insert = 1;
-SELECT * FROM file('04340_flat.csv', CSVWithNames, 'User Tuple(ID UInt64, Name String)')
-SETTINGS input_format_with_names_use_header = 0;
+SETTINGS engine_file_truncate_on_insert = 1"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${FLAT_FILE}', CSVWithNames, 'User Tuple(ID UInt64, Name String)')
+SETTINGS input_format_with_names_use_header = 0"
