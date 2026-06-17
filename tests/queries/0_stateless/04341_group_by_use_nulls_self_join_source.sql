@@ -14,3 +14,15 @@ SELECT l.number
 FROM numbers(2) AS l INNER JOIN numbers(2) AS r ON l.number = r.number
 GROUP BY l.number WITH ROLLUP
 ORDER BY l.number;
+
+-- The same must hold when the second side reuses a table-expression alias (resolved by
+-- TableExpressionsAliasVisitor) rather than naming the table again: `l` and `r` are still
+-- distinct column source instances.
+SELECT r.number
+FROM (SELECT number FROM numbers(2)) AS l JOIN l AS r ON l.number = r.number
+GROUP BY l.number WITH ROLLUP; -- { serverError NOT_AN_AGGREGATE }
+
+SELECT l.number
+FROM (SELECT number FROM numbers(2)) AS l JOIN l AS r ON l.number = r.number
+GROUP BY l.number WITH ROLLUP
+ORDER BY l.number;

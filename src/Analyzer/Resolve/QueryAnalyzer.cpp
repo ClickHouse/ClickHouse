@@ -4000,20 +4000,13 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         scope.scope_node->formatASTForErrorMessage());
                 }
 
-                /// Each reference to a CTE in the join tree is a distinct column source instance
-                /// (the same CTE may be self-joined, e.g. `FROM cte AS a, cte AS b`), and they all
-                /// resolve to the same shared CTE node. Mint fresh column source ids so the
-                /// references stay distinguishable; otherwise their columns would share ids and be
-                /// wrongly treated as the same source.
-                auto * cte_candidate_query_node = resolved_identifier->as<QueryNode>();
-                auto * cte_candidate_union_node = resolved_identifier->as<UnionNode>();
-                auto * cte_candidate_table_node = resolved_identifier->as<TableNode>();
-                bool resolved_to_cte = (cte_candidate_query_node && cte_candidate_query_node->isCTE())
-                    || (cte_candidate_union_node && cte_candidate_union_node->isCTE())
-                    || (cte_candidate_table_node && cte_candidate_table_node->isMaterializedCTE());
-
-                resolved_identifier = resolved_to_cte ? resolved_identifier->cloneWithFreshColumnSourceIds()
-                                                      : resolved_identifier->clone();
+                /// Each reference in the join tree is a distinct column source instance, even when
+                /// several references resolve to the same shared node: a self-joined CTE
+                /// (`FROM cte AS a, cte AS b`) or a reused table-expression alias registered by
+                /// TableExpressionsAliasVisitor (`FROM (SELECT ...) AS l JOIN l AS r`). Mint fresh
+                /// column source ids so the references stay distinguishable under local comparison;
+                /// otherwise their columns would share ids and be wrongly treated as the same source.
+                resolved_identifier = resolved_identifier->cloneWithFreshColumnSourceIds();
                 if (table_identifier_lookup.original_ast_node)
                     resolved_identifier->setOriginalAST(table_identifier_lookup.original_ast_node);
 
