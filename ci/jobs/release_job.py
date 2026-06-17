@@ -135,7 +135,11 @@ def main():
         name="Fetch Full Repository",
         command=[
             "git fetch --unshallow --no-recurse-submodules origin ||:",
-            "git fetch --no-recurse-submodules origin",
+            # actions/checkout configures origin to fetch only the workflow ref,
+            # but prepare reads origin/<release_branch> and a commit_sha that an
+            # auto_releases run may pass from a different branch. Fetch all heads
+            # and tags so those refs are always present.
+            "git fetch --no-recurse-submodules origin '+refs/heads/*:refs/remotes/origin/*'",
             "git fetch --tags --no-recurse-submodules origin",
         ],
         workdir=REPO_PATH,
@@ -215,12 +219,18 @@ def main():
             workdir=REPO_PATH,
         )
 
+    # only-repo / only-docker are recovery runs against an already-released tag:
+    # origin/<release_branch> has been version-bumped since, so prepare's
+    # out-of-order guard must be relaxed (as the legacy workflow did).
+    skip_tag_check_flag = (
+        "--skip-tag-check" if (args.only_repo or args.only_docker) else ""
+    )
     step(
         name="Prepare Release Info",
         command=[
             f"python3 ./ci/jobs/create_release.py --prepare-release-info"
             f" --ref {args.ref} --release-type {args.release_type}"
-            f" {dry_run_flag}".strip()
+            f" {skip_tag_check_flag} {dry_run_flag}".strip()
         ],
         workdir=REPO_PATH,
     )

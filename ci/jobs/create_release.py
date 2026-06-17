@@ -499,19 +499,29 @@ class ReleaseInfo:
             # file at `origin/<release_branch>` HEAD, a release has been made on
             # a later commit — tagging `commit_ref` now would create an
             # out-of-order release.
-            ref_cmake = Shell.get_output_or_raise(
-                f"git show {commit_ref}:{FILE_WITH_VERSION_PATH}"
-            )
-            branch_cmake = Shell.get_output_or_raise(
-                f"git show origin/{release_branch}:{FILE_WITH_VERSION_PATH}"
-            )
-            if ref_cmake != branch_cmake:
-                raise RuntimeError(
-                    f"Refusing to release ref [{commit_ref}]: "
-                    f"{FILE_WITH_VERSION_PATH} differs from origin/{release_branch} "
-                    f"HEAD, which means a release has already been made on a "
-                    f"later commit. Tagging would create an out-of-order release."
+            if _skip_tag_check:
+                # Recovery run (only-repo / only-docker) against an already
+                # released tag: origin/<release_branch> has since been
+                # version-bumped, so the out-of-order comparison below would
+                # always fail. Skip it, but make sure we are really pointing at
+                # an existing release tag rather than an arbitrary commit.
+                assert Shell.check(
+                    f"git rev-parse --verify --quiet refs/tags/{release_tag}^{{commit}}"
+                ), f"--skip-tag-check requires an existing release tag [{release_tag}]"
+            else:
+                ref_cmake = Shell.get_output_or_raise(
+                    f"git show {commit_ref}:{FILE_WITH_VERSION_PATH}"
                 )
+                branch_cmake = Shell.get_output_or_raise(
+                    f"git show origin/{release_branch}:{FILE_WITH_VERSION_PATH}"
+                )
+                if ref_cmake != branch_cmake:
+                    raise RuntimeError(
+                        f"Refusing to release ref [{commit_ref}]: "
+                        f"{FILE_WITH_VERSION_PATH} differs from origin/{release_branch} "
+                        f"HEAD, which means a release has already been made on a "
+                        f"later commit. Tagging would create an out-of-order release."
+                    )
             if version.patch == 1:
                 expected_version = copy(version)
                 previous_release_tag = f"v{version.major}.{version.minor}.1.1-new"
