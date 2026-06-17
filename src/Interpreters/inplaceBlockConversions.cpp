@@ -205,20 +205,16 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
             }
             else
             {
-                /// _CAST(ifNull(col, _CAST(default, 'X')), 'Array(UInt8)')   // X = source base type
-                /// Eager-safe: NULL rows are replaced by the default re-encoded in the source
-                /// type before any cast to T, so the placeholder is never parsed. No branch to
-                /// short-circuit, so independent of short_circuit_function_evaluation.
-                auto source_base_type = removeNullable(column_in_block.type)->getName();
-                auto default_in_source = makeASTFunction("_CAST",
-                    default_value,
-                    make_intrusive<ASTLiteral>(source_base_type));
-                auto filled = makeASTFunction("ifNull",
-                    make_intrusive<ASTIdentifier>(required_column.name),
-                    std::move(default_in_source));
-                convert_func = makeASTFunction("_CAST",
-                    std::move(filled),
+                /// if(isNull(col), _CAST(default, 'T'), _CAST(assumeNotNull(col), 'T'))
+                /// Default stays target-side (no source round-trip). Value branch runs only on
+                /// non-NULL rows: this conversion path evaluates short-circuit funcs lazily.
+                auto is_null = makeASTFunction("isNull", make_intrusive<ASTIdentifier>(required_column.name));
+                auto cast_default = makeASTFunction("_CAST", default_value,
                     make_intrusive<ASTLiteral>(required_column.type->getName()));
+                auto cast_value = makeASTFunction("_CAST",
+                    makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(required_column.name)),
+                    make_intrusive<ASTLiteral>(required_column.type->getName()));
+                convert_func = makeASTFunction("if", std::move(is_null), std::move(cast_default), std::move(cast_value));
             }
             conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
             continue;
