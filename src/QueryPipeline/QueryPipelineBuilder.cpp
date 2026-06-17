@@ -328,12 +328,21 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::selectPipeline(
     return signal;
 }
 
+static void assignToJoinStage(const Processors * processors, IQueryPlanStep * join_step, JoinStep::JoinStage stage)
+{
+    if (!processors)
+        return;
+    for (const auto & processor : *processors)
+        processor->setQueryPlanStep(join_step, static_cast<size_t>(stage));
+}
+
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
     SharedHeader & out_header,
     size_t max_block_size,
+    IQueryPlanStep * join_step,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -361,7 +370,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     }
 
     auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
-    return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+    auto result = mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+
+    assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Default);
+    return result;
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShapedByShards(
@@ -370,6 +382,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     JoinPtr join,
     SharedHeader & out_header,
     size_t max_block_size,
+    IQueryPlanStep * join_step,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -404,6 +417,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     left->pipe.header = left->pipe.output_ports.front()->getSharedHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     left->resources = std::move(right->resources);
+
+    assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Default);
     return left;
 }
 
@@ -690,9 +705,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         left->pipe.processors->emplace_back(std::move(joining));
     }
 
-    if (collected_processors)
-        for (auto & p : *collected_processors)
-            p->setQueryPlanStep(join_step, static_cast<size_t>(JoinStep::JoinStage::Probe));
+    assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Probe);
 
     /// Move the collected processors to the last step in the right pipeline.
     Processors processors = collector.detachProcessors(static_cast<size_t>(JoinStep::JoinStage::Build));
@@ -713,6 +726,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     JoinPtr join,
     SharedHeader & output_header,
     size_t max_block_size,
+    IQueryPlanStep * join_step,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -724,10 +738,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 
     left->pipe.collected_processors = collected_processors;
 
-    /// Remember the last step of the right pipeline.
-    IQueryPlanStep * step = right->pipe.processors->back()->getQueryPlanStep();
     /// Collect the NEW processors for the right pipeline.
-    QueryPipelineProcessorsCollector collector(*right, step);
+    QueryPipelineProcessorsCollector collector(*right, join_step);
 
     if (left->hasTotals() || right->hasTotals())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Join by layers is supported only for pipelines without totals");
@@ -781,10 +793,12 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
         left->pipe.processors->emplace_back(std::move(joining));
     }
 
+    assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Probe);
+
     /// Move the collected processors to the last step in the right pipeline.
-    Processors processors = collector.detachProcessors();
-    if (step)
-        step->appendExtraProcessors(processors);
+    Processors processors = collector.detachProcessors(static_cast<size_t>(JoinStep::JoinStage::Build));
+    if (join_step)
+        join_step->appendExtraProcessors(processors);
 
     left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
     left->resources = std::move(right->resources);

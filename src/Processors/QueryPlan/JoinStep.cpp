@@ -149,7 +149,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
             joined_pipeline->resize(max_streams);
         }
         else
@@ -173,7 +173,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShapedByShards(
-                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
         }
         else
         {
@@ -183,6 +183,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 join,
                 join_algorithm_header,
                 max_block_size,
+                this,
                 &processors);
         }
     }
@@ -237,6 +238,7 @@ String JoinStep::getStepGroupName(size_t group) const
 {
     switch (static_cast<JoinStage>(group))
     {
+        case JoinStage::Default: return {};
         case JoinStage::Probe: return "probe";
         case JoinStage::Build: return "build";
     }

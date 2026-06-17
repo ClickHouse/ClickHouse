@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
-#include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>

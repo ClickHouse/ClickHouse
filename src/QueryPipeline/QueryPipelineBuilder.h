@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
@@ -17,6 +16,8 @@ struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
 class QueryPlan;
+
+class IQueryPlanStep;
 
 class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
@@ -149,6 +150,7 @@ public:
         JoinPtr join,
         SharedHeader & output_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Join two independent pipelines, processing them simultaneously.
@@ -158,6 +160,7 @@ public:
         JoinPtr table_join,
         SharedHeader & out_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
@@ -166,6 +169,7 @@ public:
         JoinPtr table_join,
         SharedHeader & out_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.

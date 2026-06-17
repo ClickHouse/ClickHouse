@@ -24,8 +24,9 @@ public:
 
     enum class JoinStage : size_t
     {
-        Build = 0,
-        Probe = 1,
+        Default = 0,
+        Build = 1,
+        Probe = 2,
     };
 
     JoinStep(
