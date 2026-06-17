@@ -758,10 +758,12 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
             print(
                 f"Loaded {len(public_catalog.active_test_issues)} active issues from {PUBLIC_REPO}\n"
             )
-            # Merge public issues into the catalog for matching
-            existing_numbers = {i.number for i in issue_catalog.active_test_issues}
+            # Merge public issues into the catalog for matching. Deduplicate by
+            # the globally unique issue URL: issue numbers are repo-local, so a
+            # private #123 must not shadow an unrelated public #123.
+            existing_urls = {i.url for i in issue_catalog.active_test_issues}
             for issue in public_catalog.active_test_issues:
-                if issue.number not in existing_numbers:
+                if issue.url not in existing_urls:
                     issue_catalog.active_test_issues.append(issue)
 
         print("Checking failures against open issues...\n")
@@ -1116,7 +1118,14 @@ def main():
     else:
         question = "All checks passed! Congratulations!\n"
 
-    if unknown_failures or known_failures:
+    if (unknown_failures or known_failures) and repo != PUBLIC_REPO:
+        # The summary builds job report links against the public reports bucket,
+        # which would be broken for a private PR. The private repo's own CI
+        # already maintains its summary comment, so skip updating it here.
+        print(
+            f"\nSkipping PR comment update for {repo}: cannot generate private report links"
+        )
+    elif unknown_failures or known_failures:
         question += "\nDo you want to update PR CI comment?"
         if not UserPrompt.confirm(question):
             sys.exit(0)
