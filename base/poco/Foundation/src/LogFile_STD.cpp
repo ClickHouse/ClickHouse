@@ -64,10 +64,7 @@ void LogFileImpl::writeBinaryImpl(const char * data, size_t size, bool flush)
 UInt64 LogFileImpl::sizeImpl() const
 {
 	if (!_str.good())
-	{
-		_str.clear();  // Clear error flags to allow recovery after disk full
 		throw FileException(_path);
-	}
 	return (UInt64) _str.tellp();
 }
 
