@@ -8,12 +8,18 @@
 # timeout. Same precedent as `02968_file_log_multiple_read.sh`.
 #
 # Regression test for a FileLog stale-metadata crash on delete+recreate that
-# REUSES THE SAME INODE within one watcher backoff window. The same-inode
-# recreate is forced deterministically and does NOT rely on filesystem
-# inode-allocation policy: a hard link outside the watched directory pins the
-# inode across the unlink, the content is rewritten through that held link, then
-# the inode is linked back under the original name. This yields a
-# `DW_ITEM_REMOVED` + `DW_ITEM_ADDED` batch for the same name and the same inode.
+# REUSES THE SAME INODE and is processed in ONE `updateFileInfos` batch. Two
+# independent sources of non-determinism are removed so the bug is exercised
+# regardless of the filesystem and the scheduler:
+#   1. Same inode: a hard link outside the watched directory pins the inode
+#      across the unlink; the content is rewritten through that held link and
+#      the inode is linked back under the original name. This does not rely on
+#      filesystem inode-allocation policy (tmpfs/xfs never reuse, ext4 may).
+#   2. Same drain: the consumer (the materialized view) is detached before the
+#      delete/relink and re-attached afterwards. `getEventsAndReset` is only
+#      called while a dependent view is attached, so with the view detached the
+#      watcher accumulates `DW_ITEM_REMOVED` + `DW_ITEM_ADDED` and they are
+#      drained together on re-attach, independent of `watchFunc` poll timing.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -37,8 +43,8 @@ DROP TABLE IF EXISTS file_log_mv;
 CREATE TABLE file_log (
     id Int64
 ) ENGINE = FileLog('${logs_dir}/', 'CSV')
-SETTINGS poll_directory_watch_events_backoff_init = 5000,
-         poll_directory_watch_events_backoff_max = 5000;
+SETTINGS poll_directory_watch_events_backoff_init = 500,
+         poll_directory_watch_events_backoff_max = 500;
 
 CREATE TABLE sink (
     id Int64
@@ -73,18 +79,28 @@ function wait_for_row_count()
 wait_for_row_count 3
 sleep 2
 
+# Detach the consumer so no streaming cycle drains the watcher's event queue
+# while we rebuild the file. The settle sleep lets any in-flight cycle finish.
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE file_log_mv"
+sleep 2
+
 # Pin the inode, delete the watched name, rewrite the content through the held
-# link, then link the same inode back. The watcher sees REMOVED + ADDED for
-# `a.csv` with an UNCHANGED inode in one 5s backoff window. With the bug the
-# in-memory offset is reset to 0 while the on-disk meta keeps 6, so the next
-# serialize() aborts the server with a LOGICAL_ERROR.
+# link, then link the same inode back. With the consumer detached the watcher
+# records REMOVED + ADDED for `a.csv` (same inode) and keeps both queued. The
+# settle sleep lets the watcher read both inotify events.
 ln "${logs_dir}/a.csv" "${held}"
 rm -f "${logs_dir}/a.csv"
 printf '100\n200\n' > "${held}"
 ln "${held}" "${logs_dir}/a.csv"
+sleep 3
 
-# One backoff window plus margin for the watcher to drain and process the batch.
-sleep 8
+# Re-attach the consumer: the next streaming cycle drains the accumulated
+# REMOVED + ADDED in one `updateFileInfos` call. With the bug the in-memory
+# offset is reset to 0 while the on-disk meta keeps 6, so the next serialize()
+# aborts the server with a LOGICAL_ERROR.
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE file_log_mv"
+
+sleep 5
 if ! ${CLICKHOUSE_CLIENT} --query "SELECT 1" >/dev/null 2>&1; then
     echo "server is not responding after delete+recreate with reused inode (likely crashed)"
     exit 1
