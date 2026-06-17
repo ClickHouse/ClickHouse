@@ -1,5 +1,6 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/LocalSourceReader.h>
+#include <IO/LongConnectionLimit.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <Common/CurrentThread.h>
@@ -26,6 +27,10 @@ namespace ProfileEvents
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorIncompleteConnections;
+    extern const Event LongConnectionOpened;
+    extern const Event LongConnectionHits;
+    extern const Event LongConnectionFallbacks;
+    extern const Event LongConnectionBytes;
 }
 
 using namespace DB;
@@ -299,6 +304,112 @@ TEST_F(ReaderExecutorTest, ModeledCostScalesWithSourceRequests)
     EXPECT_EQ(requests_after_coarse, 1u);
     EXPECT_EQ(requests_after_fine - requests_after_coarse, 16u);
     EXPECT_GT(cost_after_fine - cost_after_coarse, cost_after_coarse);
+}
+
+TEST_F(ReaderExecutorTest, LongConnectionsOffByDefault)
+{
+    TestThreadGroup tg;
+    constexpr size_t size = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    /// No LongConnectionLimit -> the stateless path; behavior must be unchanged.
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/128 * 1024);
+    auto data = drain(ex);
+
+    ASSERT_EQ(data.size(), size);
+    for (size_t i = 0; i < size; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+    EXPECT_EQ(tg.get(ProfileEvents::LongConnectionOpened), 0u);
+    EXPECT_EQ(tg.get(ProfileEvents::LongConnectionHits), 0u);
+    EXPECT_EQ(tg.get(ProfileEvents::LongConnectionFallbacks), 0u);
+}
+
+TEST_F(ReaderExecutorTest, SequentialScanOpensAndReusesConnection)
+{
+    TestThreadGroup tg;
+    constexpr size_t size = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/128 * 1024,
+        limit, /*min_bytes_for_seek=*/2 * 1024 * 1024, /*max_tail_for_drain=*/1024 * 1024);
+    auto data = drain(ex);
+
+    ASSERT_EQ(data.size(), size);
+    for (size_t i = 0; i < size; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+    /// A purely sequential scan opens at least one long connection and reuses it.
+    EXPECT_GE(tg.get(ProfileEvents::LongConnectionOpened), 1u);
+    EXPECT_GE(tg.get(ProfileEvents::LongConnectionHits), 1u);
+    /// Forward-scan connections are read to their bound, so none are abandoned.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
+}
+
+TEST_F(ReaderExecutorTest, CapacityZeroAlwaysFallsBack)
+{
+    TestThreadGroup tg;
+    constexpr size_t size = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    auto limit = std::make_shared<LongConnectionLimit>(0);   /// no slots available
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/128 * 1024,
+        limit, 2 * 1024 * 1024, 1024 * 1024);
+    auto data = drain(ex);
+
+    ASSERT_EQ(data.size(), size);
+    for (size_t i = 0; i < size; ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+    EXPECT_EQ(tg.get(ProfileEvents::LongConnectionOpened), 0u);
+    EXPECT_GE(tg.get(ProfileEvents::LongConnectionFallbacks), 1u);   /// wanted long, no slot
+}
+
+TEST_F(ReaderExecutorTest, DataCorrectAcrossSeeksWithLongConnections)
+{
+    /// Exercises the bridge (small forward seek) and drop (backward seek) paths for
+    /// correctness: every served byte must match the pattern regardless of reuse.
+    constexpr size_t size = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/128 * 1024,
+        limit, 2 * 1024 * 1024, 1024 * 1024);
+
+    auto read_at = [&](size_t pos, size_t len)
+    {
+        ex.seek(pos);
+        ChainedBuffers w = ex.readNextWindow();
+        EXPECT_FALSE(w.atEnd());
+        if (w.atEnd())
+            return;
+        auto span = w.peek();
+        EXPECT_GE(span.size, len);
+        for (size_t i = 0; i < len && i < span.size; ++i)
+            EXPECT_EQ(static_cast<unsigned char>(span.data[i]), patternByte(pos + i)) << "at " << (pos + i);
+    };
+
+    /// Warm up a long connection with a few sequential windows.
+    for (int i = 0; i < 4; ++i)
+        ex.readNextWindow();
+    read_at(700 * 1024, 1024);   /// small forward gap -> bridge (or reopen); data must match
+    read_at(10 * 1024, 1024);    /// backward -> drop + reread
+    read_at(900 * 1024, 1024);   /// forward again
+}
+
+TEST_F(ReaderExecutorTest, IncompleteConnectionOnAbandonedDrop)
+{
+    TestThreadGroup tg;
+    constexpr size_t size = 2 * 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+    /// max_tail_for_drain = 0: a connection dropped before its bound is never drained, so it
+    /// is abandoned mid-response and must count as incomplete.
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/128 * 1024,
+        limit, /*min_bytes_for_seek=*/2 * 1024 * 1024, /*max_tail_for_drain=*/0);
+
+    /// Read until a long connection is open (it has a large bound), then seek backward to
+    /// abandon it mid-response.
+    for (int i = 0; i < 8 && tg.get(ProfileEvents::LongConnectionOpened) == 0; ++i)
+        ex.readNextWindow();
+    ASSERT_GE(tg.get(ProfileEvents::LongConnectionOpened), 1u);
+    ex.seek(0);
+    ex.readNextWindow();   /// drops the held connection (backward, undrained tail)
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 1u);
 }
 
 }
