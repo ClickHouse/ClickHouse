@@ -423,13 +423,13 @@ GeoJSONRowInputFormat::GeoJSONRowInputFormat(
                 {
                     auto discr = variant_type->tryGetVariantDiscriminator(geo_type_name);
                     if (discr.has_value())
-                        geometry_discriminants[geo_type_name] = *discr;
+                        geometry_discriminators[geo_type_name] = *discr;
                 }
             }
 
             /// The format always produces one of the geometry types of the `Geometry` type, so the column must
             /// contain the full set of them. Otherwise geometries would be silently inserted as NULL (data loss).
-            if (geometry_discriminants.size() != geo_type_names.size())
+            if (geometry_discriminators.size() != geo_type_names.size())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "The 'geometry' column of the GeoJSON input format must have type 'Geometry', but it has type '{}'",
@@ -726,7 +726,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
         return;
 
     auto & variant_col = assert_cast<ColumnVariant &>(*col);
-    ColumnVariant::Discriminator global_discr = geometry_discriminants.at(geo_type);
+    ColumnVariant::Discriminator global_discr = geometry_discriminators.at(geo_type);
     auto & sub_col = variant_col.getVariantByGlobalDiscriminator(global_discr);
     auto local_discr = variant_col.localDiscriminatorByGlobal(global_discr);
     size_t offset = sub_col.size();

@@ -48,7 +48,7 @@ private:
     std::optional<size_t> geometry_col_idx;
     std::optional<size_t> properties_col_idx;
 
-    std::unordered_map<String, ColumnVariant::Discriminator> geometry_discriminants;
+    std::unordered_map<String, ColumnVariant::Discriminator> geometry_discriminators;
 };
 
 class GeoJSONExternalSchemaReader : public IExternalSchemaReader
