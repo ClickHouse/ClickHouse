@@ -3,10 +3,10 @@ FROM
 (
     SELECT
         toUInt64(number) AS x,
-        toUInt64(number * 2) AS y
+        toUInt64(multiply(number, 2)) AS y
     FROM numbers(4)
 )
-GROUP BY (x, y) WITH CLUSTER 1.
+GROUP BY tuple(x, y) WITH CLUSTER 1.
 SELECT count()
 FROM
 (
@@ -25,4 +25,4 @@ FROM
 )
 GROUP BY
     k,
-    (x, y) WITH CLUSTER 1.
+    tuple(x, y) WITH CLUSTER 1.
