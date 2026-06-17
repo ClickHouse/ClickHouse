@@ -9,14 +9,15 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int FILE_DOESNT_EXIST;
+extern const int BAD_ARGUMENTS;
+extern const int FILE_DOESNT_EXIST;
 }
 
 class CommandDiskUsage final : public ICommand
 {
 public:
-    CommandDiskUsage() : ICommand("CommandDiskUsage")
+    CommandDiskUsage()
+        : ICommand("CommandDiskUsage")
     {
         command_name = "du";
         description = "Print the total size in bytes for a file or directory.";
@@ -56,20 +57,14 @@ private:
             const String current = std::move(stack.top());
             stack.pop();
 
-            // An empty list signifies that current is either a file or an empty directory.
-            const auto children = disk.listAllFilesByPath(current);
-            if (!children.empty())
-            {
-                for (const auto & file_name : children)
-                    stack.push(current.ends_with("/") ? current + file_name : current + "/" + file_name);
-            }
-            // Skip the case where current is an empty directory.
-            else if (!disk.isDirectory(current))
+            const String relative = disk.getRelativeFromRoot(current);
+
+            if (disk.getDisk()->existsFile(relative))
             {
                 // Wrap getFileSize in try/catch, in case file disappears while traversing.
                 try
                 {
-                    total += disk.getDisk()->getFileSize(disk.getRelativeFromRoot(current));
+                    total += disk.getDisk()->getFileSize(relative);
                 }
                 catch (const Exception & e)
                 {
@@ -79,6 +74,12 @@ private:
                     LOG_WARNING(log, "File '{}' disappeared while traversing, skipping", current);
                 }
             }
+
+            // On object storage a path can be both a file and a directory (eg, if both
+            // keys `p` and `p/child` exist). So, we need to run listAllFilesByPath
+            // even if existsFile() was true above.
+            for (const auto & file_name : disk.listAllFilesByPath(current))
+                stack.push(current.ends_with("/") ? current + file_name : current + "/" + file_name);
         }
         return total;
     }

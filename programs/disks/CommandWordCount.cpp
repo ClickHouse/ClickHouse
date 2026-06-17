@@ -10,21 +10,20 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 class CommandWordCount final : public ICommand
 {
 public:
-    CommandWordCount() : ICommand("CommandWordCount")
+    CommandWordCount()
+        : ICommand("CommandWordCount")
     {
         command_name = "wc";
         description = "Count bytes, lines and words in a file (like `wc`)";
-        options_description.add_options()
-            ("path", po::value<String>(), "file to count (mandatory, positional)")
-            ("bytes,c", "print the byte count")
-            ("lines,l", "print the line count (number of newlines)")
-            ("words,w", "print the word count (whitespace-delimited)");
+        options_description.add_options()("path", po::value<String>(), "file to count (mandatory, positional)")(
+            "bytes,c", "print the byte count")("lines,l", "print the line count (number of newlines)")(
+            "words,w", "print the word count (whitespace-delimited)");
         positional_options_description.add("path", 1);
     }
 
@@ -35,10 +34,8 @@ public:
         String path = disk.getRelativeFromRoot(path_arg);
 
         auto disk_ptr = disk.getDisk();
-        if (disk_ptr->existsDirectory(path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot count '{}': Is a directory", path_arg);
         if (!disk_ptr->existsFile(path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path_arg, disk_ptr->getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} on disk {} doesn't exist", path_arg, disk_ptr->getName());
 
         bool count_bytes = options.contains("bytes");
         bool count_lines = options.contains("lines");
