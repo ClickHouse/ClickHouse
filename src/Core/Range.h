@@ -118,6 +118,8 @@ public:
 
 Range intersect(const Range & a, const Range & b);
 
+Range createTypeAwareWholeUniverse(const DataTypePtr & data_type);
+
 /** Hyperrectangle is a product of ranges: each range across each coordinate.
   */
 using Hyperrectangle = std::vector<Range>;
