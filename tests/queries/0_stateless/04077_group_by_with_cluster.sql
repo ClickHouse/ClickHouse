@@ -1,6 +1,9 @@
 -- Test GROUP BY ... WITH CLUSTER <distance> modifier
 
 -- Basic test: cluster timestamps within distance 10
+
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT
     min(ts) AS cluster_start,
     max(ts) AS cluster_end,

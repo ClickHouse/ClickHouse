@@ -3,6 +3,8 @@
 -- Each test produces a result identical to what a naive O(N^2) sweep would
 -- give; the test contract is correctness, not the path taken.
 
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT '--- 12k random hex strings, d=1 ---';
 -- 16-char hex of cityHash64 — uniformly distributed strings, pairwise edit
 -- distance is typically >= 12. With d=1 nothing merges; expected 12000 clusters.

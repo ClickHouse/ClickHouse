@@ -6,6 +6,9 @@
 
 -- 3 consecutive microsecond-precision timestamps differ by 1 tick (1 µs),
 -- merge into a single cluster at `WITH CLUSTER 1`.
+
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT count() AS num_clusters, sum(c) AS total_rows
 FROM (
     SELECT ts, count() AS c

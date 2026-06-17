@@ -2,6 +2,8 @@
 -- tuple expressions like `(x, y)` open the 2D path. Verify the explicit
 -- rejection and the suggested unpacking workaround.
 
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 DROP TABLE IF EXISTS t_cluster_tuple;
 CREATE TABLE t_cluster_tuple (p Tuple(Float64, Float64), v UInt8) ENGINE = Memory;
 INSERT INTO t_cluster_tuple VALUES ((0.0, 0.0), 1), ((1.0, 1.0), 2), ((10.0, 10.0), 3);

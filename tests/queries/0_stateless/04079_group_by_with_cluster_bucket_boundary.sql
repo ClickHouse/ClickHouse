@@ -3,6 +3,9 @@
 -- and the adjacent-bucket merging at boundaries.
 
 -- Values exactly at bucket boundary (D=10: values 9 and 10 are in buckets 0 and 1, should merge)
+
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT '--- Bucket boundary merge ---';
 SELECT
     min(x) AS mn,

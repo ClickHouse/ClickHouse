@@ -3,6 +3,8 @@
 -- These tests exercise that neighborhood at its corners and verify bulk
 -- correctness on tens of thousands of rows.
 
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT '--- Cell-boundary: distance exactly d (3-4-5 triangle) ---';
 -- (0, 0) and (3, 4): distance 5 exactly (no FP rounding). At d = 5 the check
 -- `dist_sq <= d_sq` (25 <= 25) merges; at d = 4 it does not.

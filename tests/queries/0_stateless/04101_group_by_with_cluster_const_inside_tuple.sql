@@ -7,6 +7,9 @@
 -- aggregate / no-aggregate query shapes.
 
 -- Aggregate query (count()): used to fail before the fix.
+
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT count() AS num_clusters
 FROM (
     SELECT k, count() AS c

@@ -5,6 +5,9 @@
 -- while the value range fits 2^53.
 
 -- 1D UInt64 around 2^53: three consecutive integers must merge under d=1.
+
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT count() AS num_clusters, sum(c) AS total_rows
 FROM (
     SELECT x, count() AS c

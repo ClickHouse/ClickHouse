@@ -3,6 +3,9 @@
 -- functions that grow their state during `merge` (the `groupArray`-family).
 
 -- 1D: merging buckets across the distance keeps growing the `groupArray` state.
+
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT
     arraySort(groupArray(v)) AS vals
 FROM (

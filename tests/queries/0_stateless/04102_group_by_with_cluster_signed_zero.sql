@@ -5,6 +5,9 @@
 -- cluster step must canonicalize zero before bucketing.
 
 -- 1D, `distance == 0`: exact-match path bit-casts after canonicalization.
+
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT count() AS num_clusters, sum(c) AS total_rows
 FROM (
     SELECT x, count() AS c

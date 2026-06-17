@@ -2,6 +2,8 @@
 -- Distance is byte-level Levenshtein. d is interpreted as integer max edits.
 -- UTF-8 bytes are treated as raw bytes (no codepoint awareness).
 
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT '--- Basic: two close strings, d=1 ---';
 SELECT s, count() AS c
 FROM VALUES('s String', ('apple'), ('apple'), ('apples'), ('banana'))

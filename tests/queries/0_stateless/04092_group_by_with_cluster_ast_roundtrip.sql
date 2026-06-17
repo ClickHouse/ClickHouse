@@ -5,6 +5,9 @@
 -- query is rewritten back to SQL (e.g. for distributed execution).
 
 -- 2D round-trip: must serialize back as a tuple with `WITH CLUSTER`.
+
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 EXPLAIN SYNTAX SELECT count()
 FROM (SELECT toUInt64(number) AS x, toUInt64(number * 2) AS y FROM numbers(4))
 GROUP BY (x, y) WITH CLUSTER 1;

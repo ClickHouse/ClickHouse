@@ -3,6 +3,9 @@
 -- clustering (or pointing it at the wrong column).
 
 -- Constant before cluster key: clustering must still apply to `x`.
+
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT count() AS num_clusters, max(c) AS max_cluster_size
 FROM (
     SELECT x, count() AS c

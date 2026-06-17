@@ -11,6 +11,8 @@
 -- fallback they would stay split (3 leftover clusters); with the fix the
 -- pair merges (2 leftover clusters total, max size 2).
 
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT count() AS num_clusters, sum(c) AS total_rows, max(c) AS max_cluster_size
 FROM (
     SELECT s, count() AS c

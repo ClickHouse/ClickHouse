@@ -1,6 +1,9 @@
 -- Extended tests for GROUP BY ... WITH CLUSTER <distance>
 
 -- Float distance with integer keys
+
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+
 SELECT '--- Float distance ---';
 SELECT
     min(ts) AS cluster_start,
