@@ -1049,7 +1049,7 @@ void MergeTreeData::checkProperties(
                         checkSuspiciousIndices(index_expression_ptr);
                 }
 
-                MergeTreeIndexFactory::instance().validate(index, attach);
+                MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
             }
             catch (Exception & e)
             {
@@ -4507,7 +4507,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
     for (const auto & disk : getDisks())
-        if (!disk->supportsHardLinks() && !commands.isSettingsAlter() && !commands.isCommentAlter())
+        if (!disk->supportsHardLinks() && !commands.areNonReplicatedAlterCommands())
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "ALTER TABLE commands are not supported on immutable disk '{}', except for setting and comment alteration",
@@ -11040,7 +11040,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         getSettings(),
         metadata_snapshot,
         columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices(), *getSettings()),
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::NonTransactionalTID,
