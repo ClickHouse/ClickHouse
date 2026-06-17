@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ITokenizer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -26,6 +27,8 @@ namespace
 /// Name of the placeholder column used when building the postprocessor ActionsDAG.
 constexpr char postprocessor_token_name[] = "__text_index_token";
 constexpr char postprocessor_lambda_arg[] = "__text_index_lambda_arg";
+/// Lambda argument used when tokenizing each element of an Array column in the row-level fallback.
+constexpr char postprocessor_element_arg[] = "__text_index_element";
 
 }
 
@@ -140,11 +143,31 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
     ASTPtr expr = original_expression_ast->clone();
     replaceExpressionToIdentifier(expr, index_column_name, postprocessor_lambda_arg);
 
-    /// Tokens to map the postprocessor over: the elements for an Array(String) column (already tokens),
-    /// otherwise tokens(col, '<tokenizer>').
+    /// Build the token stream the postprocessor maps over so that it matches the index-build path
+    /// (tokenize first, then postprocess each token). Three cases:
+    ///   - Array column + 'array' tokenizer: the elements are already the final tokens, use them as-is.
+    ///   - Array column + any other tokenizer: tokenize every element and flatten, mirroring
+    ///     tokenizeToArray which runs the tokenizer per element. Using the elements directly here would
+    ///     postprocess whole multi-token elements (e.g. 'foo bar') instead of their tokens ('foo', 'bar').
+    ///   - Non-array column: tokenize the whole value with tokens(col, '<tokenizer>').
+    /// tokens always yields String tokens, so it also normalizes FixedString elements to String.
     ASTPtr tokens_ast = make_intrusive<ASTIdentifier>(col_name);
-    if (!isArray(col_type))
+    const bool is_array_tokenizer = tokenizer_description == ArrayTokenizer::getName();
+    if (isArray(col_type))
+    {
+        if (!is_array_tokenizer)
+            tokens_ast = makeASTFunction("arrayFlatten",
+                makeASTFunction("arrayMap",
+                    makeASTLambda({postprocessor_element_arg},
+                        makeASTFunction("tokens",
+                            make_intrusive<ASTIdentifier>(postprocessor_element_arg),
+                            make_intrusive<ASTLiteral>(Field(tokenizer_description)))),
+                    std::move(tokens_ast)));
+    }
+    else
+    {
         tokens_ast = makeASTFunction("tokens", std::move(tokens_ast), make_intrusive<ASTLiteral>(Field(tokenizer_description)));
+    }
 
     /// arrayMap(x -> postprocessor(x), <tokens>)
     expr = makeASTFunction("arrayMap",

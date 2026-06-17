@@ -99,3 +99,19 @@ wo	1
 1
 0
 0
+31. Array column + non-array tokenizer: each element is tokenized before the postprocessor.
+1
+1
+1
+1
+1
+1
+1
+1
+0
+0
+32. Array column + non-array tokenizer: unmaterialized (row-scan) and indexed parts agree.
+2
+2
+2
+0

@@ -440,4 +440,53 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, 'zzz') SETTINGS query_plan_direc
 
 DROP TABLE tab;
 
+SELECT '31. Array column + non-array tokenizer: each element is tokenized before the postprocessor.';
+-- Index build runs splitByNonAlpha on every array element, so 'Foo Bar' -> ['Foo','Bar'] -> lower.
+-- The row-level fallback must do the same; using the element verbatim ('foo bar') would miss
+-- single-token needles. Each pair below must agree with direct read on (=1) and off (=0).
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Array(String),
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['Foo Bar', 'Baz']), (2, ['hello world']);
+
+SELECT count() FROM tab WHERE hasAllTokens(val, ['foo']) SETTINGS query_plan_direct_read_from_text_index = 1;        -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['foo']) SETTINGS query_plan_direct_read_from_text_index = 0;        -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['foo', 'bar']) SETTINGS query_plan_direct_read_from_text_index = 1; -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['foo', 'bar']) SETTINGS query_plan_direct_read_from_text_index = 0; -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['baz']) SETTINGS query_plan_direct_read_from_text_index = 1;        -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['baz']) SETTINGS query_plan_direct_read_from_text_index = 0;        -- 1
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['world']) SETTINGS query_plan_direct_read_from_text_index = 1;      -- 1
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['world']) SETTINGS query_plan_direct_read_from_text_index = 0;      -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, ['xyz']) SETTINGS query_plan_direct_read_from_text_index = 1;        -- 0
+SELECT count() FROM tab WHERE hasAllTokens(val, ['xyz']) SETTINGS query_plan_direct_read_from_text_index = 0;        -- 0
+
+DROP TABLE tab;
+
+SELECT '32. Array column + non-array tokenizer: unmaterialized (row-scan) and indexed parts agree.';
+
+CREATE TABLE tab (id UInt64, val Array(String)) ENGINE = MergeTree ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, ['Foo Bar']);  -- old part: no index, evaluated by the row-scan fallback
+
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val));
+
+INSERT INTO tab VALUES (2, ['Foo Bar']);  -- new part: indexed
+
+-- Both rows tokenize to ['Foo','Bar'] -> lower -> ['foo','bar']; each needle must match both parts.
+SELECT count() FROM tab WHERE hasAllTokens(val, ['foo']);          -- 2
+SELECT count() FROM tab WHERE hasAllTokens(val, ['foo', 'bar']);   -- 2
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['bar']);          -- 2
+SELECT count() FROM tab WHERE hasAllTokens(val, ['xyz']);          -- 0
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;
