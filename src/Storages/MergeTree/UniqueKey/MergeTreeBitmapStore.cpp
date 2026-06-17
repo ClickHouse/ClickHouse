@@ -105,19 +105,14 @@ void MergeTreeBitmapStore::installBitmap(
     DeleteBitmapFileOps::writeBitmapToStorage(storage, csn, bitmap, part_name);
     ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapUpdates);
 
-    /// Rebuild the in-memory list from disk: a racing `dropPart`+reader pair
-    /// can leave the cached vector inconsistent in either direction.
-    auto files = DeleteBitmapFileOps::enumerateFiles(storage);
-    std::vector<BitmapVersion> csns;
-    csns.reserve(files.size());
-    for (const auto & f : files)
-        csns.push_back(f.version);
-    std::sort(csns.begin(), csns.end());
-
+    /// The durable write above is the commit point. Invalidate the cached CSN index rather than
+    /// rebuilding it here: a rebuild reads disk and could throw after the write, leaving
+    /// csns_per_part stale so a later readBitmap misses the just-committed version. Dropping the
+    /// entry makes the next read re-enumerate disk truth (which now includes `csn`), and also
+    /// absorbs a racing `dropPart`. The per-version delete-bitmap content cache is left intact —
+    /// bitmaps are immutable by version, so a reader at `snapshot < csn` still needs the prior one.
     std::unique_lock lock(csns_mutex);
-    csns_per_part[part_id] = std::move(csns);
-    /// No cache invalidation: bitmaps are immutable by version; readers
-    /// at `snapshot_version < csn` may still need the prior version.
+    csns_per_part.erase(part_id);
 }
 
 std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapStore::readBitmap(
