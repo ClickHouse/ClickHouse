@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-fasttest, no-parallel
+# Tag no-fasttest: the FileLog engine is Linux-only (USE_FILELOG is gated on
+# OS_LINUX and depends on inotify), so it is absent from the Darwin/fast-test
+# build and `ENGINE = FileLog` would fail with UNKNOWN_STORAGE there.
 # Tag no-parallel: FileLog -> MV streaming latency depends on `BackgroundSchedulePool`
 # scheduling; under heavy parallel load `wait_for_row_count` can drift past its
 # timeout. Same precedent as `02968_file_log_multiple_read.sh`.
