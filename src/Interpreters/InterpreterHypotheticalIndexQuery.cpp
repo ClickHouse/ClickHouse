@@ -104,14 +104,14 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     /// Reject unsupported types before validate can throw a confusing type-specific error
     /// get() already throws INCORRECT_QUERY for unknown types, exactly as validate
-    auto index_helper = MergeTreeIndexFactory::instance().get(index_desc);
+    auto index_helper = MergeTreeIndexFactory::instance().get(index_desc, *merge_tree->getSettings());
     if (index_helper->isTextIndex() || index_helper->isVectorSimilarityIndex())
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Hypothetical indexes of type '{}' are not supported",
             index_desc.type);
 
-    MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false);
+    MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false, *merge_tree->getSettings());
 
     /// Old-syntax MergeTree rejects `ALTER TABLE ... ADD INDEX`, so reject it here too.
     if (!merge_tree->is_custom_partitioned)

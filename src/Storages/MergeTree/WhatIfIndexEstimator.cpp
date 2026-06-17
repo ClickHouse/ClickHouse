@@ -566,7 +566,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     MergeTreeIndexPtr index_helper;
     try
     {
-        index_helper = MergeTreeIndexFactory::instance().get(fresh_index_desc);
+        index_helper = MergeTreeIndexFactory::instance().get(fresh_index_desc, *data.getSettings()));
     }
     catch (const Exception &)
     {
