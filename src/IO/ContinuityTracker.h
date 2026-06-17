@@ -7,30 +7,21 @@
 namespace DB
 {
 
-/// Estimates how far a read will continue contiguously, from the sequence of
-/// served byte ranges and seeks arriving at a reader. It is a PURE estimator: it
-/// reports a predicted length and nothing else - it does not know about
-/// connections, windows, or the read extent, and makes no short-vs-long
-/// decision. The caller (the executor) applies its own threshold and clamps the
-/// prediction to the object end / the current read extent at decision time, so a
-/// read that continues past a former extent (when `setReadExtent` advances the
-/// mark range) is handled by the caller, never baked into the estimate.
+/// Estimates how far a read will continue contiguously - a predicted forward length in
+/// bytes - from the sequence of served byte ranges and seeks arriving at a reader.
 ///
-/// The run span is the bytes covered forward without a far seek (a forward gap up
-/// to `near_gap` is bridged and stays in the run). A far seek folds the finished
-/// run into an EWMA of past run lengths and resets the run but KEEPS the estimate,
-/// so the read right after a far seek is still predicted long (trusting the
-/// previous run); repeated random seeks decay the EWMA back toward zero.
-///
-/// Pure value type: no I/O, no ownership, position-space agnostic (it sees only
-/// deltas). One per reader, foreground-only.
+/// The run span is the bytes covered forward without a far seek (a forward gap up to
+/// `near_gap` is bridged and stays in the run). A far seek folds the finished run into an
+/// EWMA of past run lengths and resets the run while keeping the estimate, so the read right
+/// after a far seek is still predicted long (trusting the previous run); repeated random
+/// seeks decay the EWMA toward zero.
 class ContinuityTracker
 {
 public:
     struct Options
     {
-        /// Forward gap up to which a serve still continues the run (a bridgeable
-        /// hole, not a real seek). The caller sets it from `min_bytes_for_seek`.
+        /// Forward gap up to which a serve still continues the run; the caller sets it
+        /// from `min_bytes_for_seek`.
         size_t near_gap = 2 * 1024 * 1024;
         /// EWMA weight for the just-finished run (0..1): higher trusts the most
         /// recent run more, lower is smoother / decays slower.
@@ -57,11 +48,9 @@ public:
     /// `near_gap` - ends the run: fold its span into the estimate and restart.
     void onSeek(size_t new_pos);
 
-    /// The predicted contiguous length the read will cover going forward, in
-    /// bytes and UNCLAMPED: `max(currentRun, estimate)` - "we have read this far
-    /// contiguously (or did last time), so expect about as far again". The caller
-    /// turns this into a connection bound by clamping to the object end / read
-    /// extent, and decides short-vs-long against its own threshold.
+    /// The predicted contiguous length (bytes) the read will cover going forward:
+    /// `max(currentRun, estimate)` - "we have read this far contiguously (or did last
+    /// time), so expect about as far again".
     size_t predictedReach() const;
 
     /// The current contiguous run span (frontier - run start).

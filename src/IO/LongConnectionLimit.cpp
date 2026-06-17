@@ -1,16 +1,9 @@
 #include <IO/LongConnectionLimit.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
 
 namespace CurrentMetrics
 {
     extern const Metric LongConnections;
-}
-
-namespace ProfileEvents
-{
-    extern const Event LongConnectionSlotAcquired;
-    extern const Event LongConnectionSlotFailed;
 }
 
 namespace DB
@@ -72,11 +65,9 @@ LongConnectionSlot LongConnectionLimit::tryAcquire(std::shared_ptr<LongConnectio
         if (count.compare_exchange_weak(cur, cur + 1, std::memory_order_acq_rel, std::memory_order_relaxed))
         {
             CurrentMetrics::add(CurrentMetrics::LongConnections);
-            ProfileEvents::increment(ProfileEvents::LongConnectionSlotAcquired);
             return LongConnectionSlot(std::move(self));
         }
     }
-    ProfileEvents::increment(ProfileEvents::LongConnectionSlotFailed);
     return {};
 }
 
