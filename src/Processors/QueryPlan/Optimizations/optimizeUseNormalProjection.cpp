@@ -343,9 +343,14 @@ std::optional<String> optimizeUseNormalProjections(
             }
         }
 
-        if (!projection_pk_was_useful && !force_optimize_projection)
+        /// Keep this candidate if its primary key contributed to filtering, or if its sort order
+        /// matches the query's ORDER BY (a read-in-order projection avoids an explicit sort even
+        /// without a selective filter). Dropping a sort-order-only candidate here would regress
+        /// read-in-order queries that have no selective projection primary key.
+        bool sort_order_helps = projection_sort_order_useful(projection);
+        if (!projection_pk_was_useful && !force_optimize_projection && !sort_order_helps)
         {
-            LOG_DEBUG(logger, "Not using projection {} because condition was not useful : {}", candidate.projection->name, stat.condition);
+            LOG_DEBUG(logger, "Not using projection {} because its condition was not useful and its sort order does not help : {}", candidate.projection->name, stat.condition);
             continue;
         }
 
