@@ -2364,7 +2364,7 @@ ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::Expla
            ASTExplainQuery::ExplainKind::QueryEstimates,
            ASTExplainQuery::ExplainKind::TableOverride,
            ASTExplainQuery::ExplainKind::CurrentTransaction,
-           ASTExplainQuery::ExplainKind::WhatIf, {"empirical"}};
+           ASTExplainQuery::ExplainKind::WhatIf};
     return explain_kinds[fuzz_rand() % explain_kinds.size()];
 }
 
