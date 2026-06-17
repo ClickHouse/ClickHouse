@@ -1609,6 +1609,21 @@ ReturnType readDateTimeTextFallback(
     /// if negative, it is a timestamp with no ambiguity
     if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
+        /// A dot here (not a YYYY.MM.DD date) is a DateTime64 decimal timestamp like `1234.5`, parse
+        /// digits and leave the dot for the caller without consuming it
+        if (dt64_mode && *buf.position() == '.')
+        {
+            const bool dotted_date = buf.available() >= date_broken_down_length - 4
+                && buf.position()[3] == '.'
+                && isNumericASCII(buf.position()[1]) && isNumericASCII(buf.position()[2])
+                && isNumericASCII(buf.position()[4]) && isNumericASCII(buf.position()[5]);
+            if (!dotted_date)
+            {
+                datetime = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+                return ReturnType(true);
+            }
+        }
+
         const auto already_read_length = s_pos - s;
         const size_t remaining_date_size = date_broken_down_length - already_read_length;
 

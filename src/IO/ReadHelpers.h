@@ -876,7 +876,10 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
     if (optimistic_path_for_date_time_input)
     {
-        if ((s[4] < '0' || s[4] > '9') && s[4] == s[7])
+        /// A dot at position 4 but not 7 is DateTime64 decimal timestamp like `1234.5`, not a
+        /// YYYY.MM.DD date; parse it as an integer below
+        const bool decimal_dt64_timestamp = dt64_mode && s[4] == '.' && s[7] != '.';
+        if ((s[4] < '0' || s[4] > '9') && !decimal_dt64_timestamp)
         {
             if constexpr (!throw_exception)
             {
