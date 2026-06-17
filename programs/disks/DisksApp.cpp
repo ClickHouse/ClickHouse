@@ -32,6 +32,8 @@
 #include <Utils.h>
 #include <Server/CloudPlacementInfo.h>
 #include <IO/SharedThreadPools.h>
+#include <Common/ThreadPool.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Poco/FileChannel.h>
 
@@ -627,6 +629,13 @@ void DisksApp::runInteractive()
 int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv)
 {
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
+
     try
     {
         DB::DisksApp app;
