@@ -494,6 +494,11 @@ void validateGeoJSONGeometryMembers(
     if (!isOneOf(geo_type, supported_geojson_geometry_types) && geo_type != "MultiPoint")
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: unknown or invalid geometry type '{}'", geo_type);
 
+    /// A 'geometries' member belongs only to a GeometryCollection; reject it on any other type.
+    if (!raw_geometries.empty())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "GeoJSON: a '{}' geometry must not have a 'geometries' member", geo_type);
+
     if (raw_coordinates.empty())
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -817,6 +822,12 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
         throw Exception(
             ErrorCodes::INCORRECT_DATA, "GeoJSON: unknown or invalid geometry type '{}'", geo_type);
     }
+
+    /// A 'geometries' member belongs only to a GeometryCollection; reject it on a coordinates-based
+    /// geometry rather than buffering and ignoring it, which would let malformed content slip through.
+    if (!raw_geometries.empty())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "GeoJSON: a '{}' geometry must not have a 'geometries' member", geo_type);
 
     /// A supported geometry type without a 'coordinates' member is malformed (an explicit JSON `null`
     /// geometry is handled separately above), so reject it instead of silently inserting NULL.
