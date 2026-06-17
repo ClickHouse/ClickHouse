@@ -12,7 +12,7 @@ Creates a custom HTTP handler defined from SQL, without editing the server confi
 ## Syntax {#syntax}
 
 ```sql
-CREATE [IF NOT EXISTS] HANDLER name
+CREATE HANDLER [IF NOT EXISTS] name
 [PROTOCOL protocol_name]
 URL [PREFIX|REGEXP] '/path'
 [METHODS (GET, POST)]
