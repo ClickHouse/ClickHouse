@@ -9,12 +9,20 @@
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/setThreadName.h>
+#include <Loggers/ExtendedLogMessage.h>
 
 #include <boost/noncopyable.hpp>
 
 #include <Poco/Channel.h>
+#include <Poco/Message.h>
 #include <Poco/Runnable.h>
 #include <Poco/Thread.h>
+
+namespace Poco::Util
+{
+class AbstractConfiguration;
+}
 
 namespace ProfileEvents
 {
@@ -33,9 +41,6 @@ using TextLogQueue = SystemLogQueue<TextLogElement>;
 
 using AsyncLogQueueSize = std::pair<std::string, size_t>;
 using AsyncLogQueueSizes = VectorWithMemoryTracking<AsyncLogQueueSize>;
-
-class ExtendedLogMessage;
-enum class ThreadName : uint8_t;
 
 class OwnSplitChannelBase : public Poco::Channel
 {
@@ -97,7 +102,15 @@ public:
 struct OwnRunnableForChannel;
 struct OwnRunnableForTextLog;
 
-class AsyncLogMessage;
+class AsyncLogMessage
+{
+public:
+    explicit AsyncLogMessage(Poco::Message && msg_);
+
+    Poco::Message msg;
+    ExtendedLogMessage msg_ext;
+    ThreadName msg_thread_name;
+};
 using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 
 class AsyncLogMessageQueue
@@ -110,6 +123,10 @@ public:
 
     /// Enqueues a single message notification
     void enqueueMessage(AsyncLogMessagePtr message);
+
+    /// Enqueues a message, blocking until space is available.
+    /// Use for audit logging where dropping records is not acceptable.
+    void enqueueMessageBlocking(AsyncLogMessagePtr message);
 
     /// Waits for a message notification to be dequeued and returns it. It might return an empty notification if wakeUp() was called
     /// or a spurious wakeup occurs
@@ -129,6 +146,7 @@ public:
 private:
     Queue message_queue;
     std::condition_variable condition;
+    std::condition_variable space_available;
     const ProfileEvents::Event & event_on_passed_message;
     const ProfileEvents::Event & event_on_drop_message;
     /// Default queue limit, to prevent memory overflow

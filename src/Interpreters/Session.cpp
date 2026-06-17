@@ -7,6 +7,7 @@
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Common/logger_useful.h>
+#include <Common/Logger.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -320,6 +321,14 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
+        if (auto * audit_log = getAuditLogIfEnabled())
+        {
+            const auto & client_info = getClientInfo();
+            std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
+            LOG_AUDIT(audit_log, "User, {}, {}, Logout",
+                    escapeForAuditField(user ? user->getName() : ""), host);
+        }
+
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
@@ -342,7 +351,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypes(const Str
     return authentication_types;
 }
 
-std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFailure(const String & user_name) const
+std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFailure(const String & user_name, const Poco::Net::SocketAddress & address) const
 {
     try
     {
@@ -350,6 +359,15 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     }
     catch (const Exception & e)
     {
+        if (auto * audit_log = getAuditLogIfEnabled())
+        {
+            const auto & client_info = getClientInfo();
+            std::string host = client_info.current_address
+                ? client_info.current_address->host().toString()
+                : address.host().toString();
+            LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure", escapeForAuditField(user_name), host);
+        }
+
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
@@ -422,6 +440,13 @@ void Session::checkIfUserIsStillValid()
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
+    if (auto * audit_log = getAuditLogIfEnabled())
+    {
+        LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",
+                escapeForAuditField(user_name.has_value() ? user_name.value() : ""),
+                address_.host().toString());
+    }
+
     LOG_DEBUG(log, "Authentication failed with error: {}", e.what());
     if (auto session_log = getSessionLog())
     {
@@ -743,6 +768,14 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      user_authenticated_with);
     }
 
+    if (auto * audit_log = getAuditLogIfEnabled())
+    {
+        const auto & client_info = getClientInfo();
+        std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
+        LOG_AUDIT(audit_log, "User, {}, {}, LoginSuccess",
+                escapeForAuditField(user ? user->getName() : ""), host);
+    }
+
     notified_session_log_about_login = true;
 }
 
@@ -769,6 +802,14 @@ void Session::closeSession(const String & session_id)
         return;
 
     NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_id, named_session);
+}
+
+AuditLog * Session::getAuditLogIfEnabled() const
+{
+    if (!global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+        return nullptr;
+
+    return getAuditLog();
 }
 
 }

@@ -2,7 +2,9 @@
 
 #include <base/defines.h>
 
+#include <algorithm>
 #include <memory>
+#include <string>
 
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
@@ -64,3 +66,12 @@ LoggerRawPtr createRawLogger(const std::string & name, Poco::Channel * channel, 
   * Otherwise, returns false.
   */
 bool hasLogger(const std::string & name);
+
+/// Escape CR/LF in a free-form audit field so that a single audit record
+/// always occupies exactly one physical log line.
+inline std::string escapeForAuditField(std::string s)
+{
+    std::replace(s.begin(), s.end(), '\n', ' ');
+    std::replace(s.begin(), s.end(), '\r', ' ');
+    return s;
+}

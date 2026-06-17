@@ -1,6 +1,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
+#include <Loggers/AuditLog.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -24,6 +25,7 @@
 #include <Processors/Formats/Impl/NullFormat.h>
 
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -67,6 +69,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/Access/ASTCheckGrantQuery.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -463,11 +466,11 @@ QueryLogElement logQueryStart(
     bool log_queries = settings[Setting::log_queries];
 
     auto query_log = context->getQueryLog();
-    if (!query_log)
-        return elem;
 
-    /// Log into system table start of query execution, if need.
-    if (log_queries)
+    /// Populate object names (tables, views, etc.) from the access info and interpreter.
+    /// This is needed by both system.query_log and the audit log, so it runs regardless
+    /// of the log_queries setting.
+    if ((log_queries && query_log) || getAuditLog())
     {
         /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
         if (pipeline.initialized())
@@ -487,7 +490,17 @@ QueryLogElement logQueryStart(
             InterpreterInsertQuery::extendQueryLogElemImpl(elem, context);
         else if (interpreter)
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
+    }
 
+    /// When only audit log is enabled (query_log unavailable),
+    /// we have populated the object names above — return early without touching
+    /// QueryMetricLog or system.query_log machinery.
+    if (!query_log)
+        return elem;
+
+    /// Log into system table start of query execution.
+    if (log_queries)
+    {
         if (settings[Setting::log_query_settings])
             elem.query_settings = std::make_shared<Settings>(context->getSettingsRef());
 
@@ -742,6 +755,9 @@ static void logQueryFinishImpl(
 
     if (!query_pipeline_finalized_info.processors_profile_infos.empty())
         logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos, query_pipeline_finalized_info.pipeline_dump);
+
+    if (!internal)
+        auditLog(elem, context, query_ast);
 }
 
 void logQueryFinish(
@@ -852,6 +868,9 @@ void logQueryException(
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
         query_span->finish(time_now);
     }
+
+    if (!internal)
+        auditLog(elem, context, query_ast);
 }
 
 void logExceptionBeforeStart(
@@ -985,6 +1004,120 @@ void logExceptionBeforeStart(
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->finish(query_end_time);
     }
+}
+
+void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
+{
+    auto * audit_log = DB::getAuditLog();
+    if (!audit_log)
+        return;
+
+    /// Map the query kind to an audit type. Every `QueryKind` is classified deliberately so
+    /// that sensitive operations (such as `Backup`, `Restore`, or moving access entities) are
+    /// not silently hidden under `MISC` and excluded by common audit filters.
+    Context::AuditLogTypes audit_type = Context::AuditLogTypes::MISC;
+    switch (elem.query_kind)
+    {
+        /// Statements that query or modify data (and read-only schema/data inspection).
+        case IAST::QueryKind::Select:
+        case IAST::QueryKind::Insert:
+        case IAST::QueryKind::Delete:
+        case IAST::QueryKind::Update:
+        case IAST::QueryKind::Optimize:
+        case IAST::QueryKind::Show:
+        case IAST::QueryKind::Explain:
+        case IAST::QueryKind::Exists:
+        case IAST::QueryKind::Describe:
+        case IAST::QueryKind::Copy:
+        case IAST::QueryKind::AsyncInsertFlush:
+            audit_type = Context::AuditLogTypes::DML;
+            break;
+
+        /// CHECK GRANT is an access-control statement (DCL), not a table CHECK (DML).
+        case IAST::QueryKind::Check:
+            if (ast && ast->as<ASTCheckGrantQuery>())
+                audit_type = Context::AuditLogTypes::DCL;
+            else
+                audit_type = Context::AuditLogTypes::DML;
+            break;
+
+        /// TRUNCATE reports QueryKind::Drop but is a data-modifying operation (DML).
+        case IAST::QueryKind::Drop:
+            if (ast && ast->as<ASTDropQuery>() && ast->as<ASTDropQuery>()->kind == ASTDropQuery::Kind::Truncate)
+                audit_type = Context::AuditLogTypes::DML;
+            else
+                audit_type = Context::AuditLogTypes::DDL;
+            break;
+
+        /// Statements that create, modify, or remove database objects (including backup/restore).
+        case IAST::QueryKind::Create:
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Alter:
+        case IAST::QueryKind::Backup:
+        case IAST::QueryKind::Restore:
+        case IAST::QueryKind::ExternalDDL:
+            audit_type = Context::AuditLogTypes::DDL;
+            break;
+        /// Statements related to privilege and access control.
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::Move:
+            audit_type = Context::AuditLogTypes::DCL;
+            break;
+        /// Session-, transaction-, and system-level statements that do not query or alter data,
+        /// schema, or access control. All query kinds are listed explicitly (no `default`) so that
+        /// any new kind added later forces a deliberate audit classification at compile time.
+        case IAST::QueryKind::None:
+        case IAST::QueryKind::System:
+        case IAST::QueryKind::Set:
+        case IAST::QueryKind::Use:
+        case IAST::QueryKind::KillQuery:
+        case IAST::QueryKind::Begin:
+        case IAST::QueryKind::Commit:
+        case IAST::QueryKind::Rollback:
+        case IAST::QueryKind::SetTransactionSnapshot:
+        case IAST::QueryKind::ParallelWithQuery:
+        case IAST::QueryKind::Snapshot:
+            audit_type = Context::AuditLogTypes::MISC;
+            break;
+    }
+
+    /// Check if audit type enabled for logging
+    if (!context->isEnabledAuditType(audit_type))
+        return;
+
+    String object_names; /// tables / views
+    if (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML)
+    {
+        for (const auto & table : elem.query_tables)
+        {
+            if (!object_names.empty())
+                object_names += ",";
+            object_names += table;
+        }
+
+        for (const auto & view : elem.query_views)
+        {
+            if (!object_names.empty())
+                object_names += ",";
+            object_names += view;
+        }
+    }
+
+    std::string host = elem.client_info.current_address ? elem.client_info.current_address->host().toString() : "Unknown Host";
+
+    /// Ensure the audit record occupies exactly one physical line.
+    /// toOneLineQuery collapses most whitespace but preserves newlines after
+    /// line comments; unconditionally strip CR/LF from all free-form fields.
+    String safe_query = escapeForAuditField(toOneLineQuery(elem.query));
+    String safe_object_names = escapeForAuditField(object_names);
+    String safe_user = escapeForAuditField(elem.client_info.current_user);
+
+    /// TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
+    LOG_AUDIT(audit_log, "{}, {}, {}, {}, {}, {}, {}",
+            audit_type, elem.query_kind, elem.exception_code, safe_user,
+            host, safe_object_names, safe_query);
 }
 
 static void validateAnalyzerSettings(ASTPtr ast, bool context_value)

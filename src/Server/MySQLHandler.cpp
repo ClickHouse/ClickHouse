@@ -421,7 +421,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 {
     try
     {
-        const auto user_authentication_types = session->getAuthenticationTypesOrLogInFailure(user_name);
+        const auto user_authentication_types = session->getAuthenticationTypesOrLogInFailure(user_name, socket().peerAddress());
 
         for (const auto user_authentication_type : user_authentication_types)
         {

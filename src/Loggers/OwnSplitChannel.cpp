@@ -2,6 +2,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/TextLog.h>
 #include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
@@ -12,6 +13,7 @@
 #include <Common/setThreadName.h>
 
 #include <Poco/Message.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #if defined(MEMORY_SANITIZER)
 #include <sanitizer/msan_interface.h>
@@ -155,9 +157,10 @@ void OwnSplitChannel::logSplit(
     try
     {
         /// Log data to child channels
-        for (auto & channel : channels | std::views::values)
+        for (auto & [name, channel] : channels)
         {
             auto priority = channel->getPriority();
+
             if (priority >= msg.getPriority())
                 channel->logExtended(msg_ext);
         }
@@ -296,27 +299,19 @@ void OwnAsyncSplitChannel::close()
     }
 }
 
-class AsyncLogMessage
+ALWAYS_INLINE AsyncLogMessage::AsyncLogMessage(Message && msg_)
+    : msg(std::move(msg_))
+    , msg_ext(ExtendedLogMessage::getFrom(msg))
+    , msg_thread_name(getThreadName())
 {
-public:
-    ALWAYS_INLINE explicit AsyncLogMessage(Message && msg_)
-        : msg(std::move(msg_))
-        , msg_ext(ExtendedLogMessage::getFrom(msg))
-        , msg_thread_name(getThreadName())
+    if (const auto & masker = SensitiveDataMasker::getInstance())
     {
-        if (const auto & masker = SensitiveDataMasker::getInstance())
-        {
-            auto message_text = msg.getText();
-            auto matches = masker->wipeSensitiveDataThrow(message_text);
-            if (matches > 0)
-                msg.setText(message_text);
-        }
+        auto message_text = msg.getText();
+        auto matches = masker->wipeSensitiveDataThrow(message_text);
+        if (matches > 0)
+            msg.setText(message_text);
     }
-
-    Message msg; /// Need to keep a copy until we finish logging
-    ExtendedLogMessage msg_ext;
-    ThreadName msg_thread_name;
-};
+}
 
 
 AsyncLogMessageQueue::AsyncLogMessageQueue(
@@ -362,6 +357,17 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
         condition.notify_all();
 }
 
+void AsyncLogMessageQueue::enqueueMessageBlocking(AsyncLogMessagePtr message)
+{
+    ProfileEvents::incrementNoTrace(event_on_passed_message);
+    std::unique_lock lock(mutex);
+    space_available.wait(lock, [this] { return message_queue.size() < max_size; });
+    message_queue.push_back(std::move(message));
+    if (message_queue.size() > max_size / 2)
+        request_flush = true;
+    condition.notify_one();
+}
+
 AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
 {
     std::unique_lock lock(mutex);
@@ -369,6 +375,7 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
     {
         auto notification = std::move(message_queue.front());
         message_queue.pop_front();
+        space_available.notify_one();
         return notification;
     }
 
@@ -378,6 +385,7 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
 
     auto notification = std::move(message_queue.front());
     message_queue.pop_front();
+    space_available.notify_one();
     return notification;
 }
 
@@ -386,6 +394,7 @@ AsyncLogMessageQueue::Queue AsyncLogMessageQueue::getCurrentQueueAndClear()
     std::unique_lock lock(mutex);
     Queue new_queue;
     std::swap(message_queue, new_queue);
+    space_available.notify_all();
     return new_queue;
 }
 
@@ -393,6 +402,7 @@ void AsyncLogMessageQueue::wakeUp()
 {
     std::unique_lock lock(mutex);
     condition.notify_one();
+    space_available.notify_all();
 }
 
 size_t AsyncLogMessageQueue::getCurrentMessageSize()
@@ -424,6 +434,7 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         /// so we can create the AsyncLogMessage as it won't penalize performance by being unused
         auto msg_priority = msg.getPriority();
         auto notification = std::make_shared<AsyncLogMessage>(std::move(msg));
+
         if (const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
             logs_queue && logs_queue->isNeeded(msg_priority, notification->msg.getSource()))
         {

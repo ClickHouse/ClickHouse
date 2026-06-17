@@ -2033,14 +2033,14 @@ void TCPHandler::receiveHello()
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
-        const auto authentication_types = session->getAuthenticationTypesOrLogInFailure(user);
+        const auto authentication_types = session->getAuthenticationTypesOrLogInFailure(user, socket().peerAddress());
 
         bool user_supports_ssh_authentication = std::find_if(
             authentication_types.begin(),
             authentication_types.end(),
             [](auto authentication_type)
             {
-               return authentication_type ==  AuthenticationType::SSH_KEY;
+                return authentication_type ==  AuthenticationType::SSH_KEY;
             }) != authentication_types.end();
 
         if (!user_supports_ssh_authentication)
@@ -2069,6 +2069,7 @@ void TCPHandler::receiveHello()
         readVarUInt(packet_type, *in);
         if (packet_type != Protocol::Client::SSHChallengeResponse)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
+
         readStringBinary(signature, *in, MAX_HELLO_STRING_SIZE);
 
         auto prepare_string_for_ssh_validation = [&](const String & username, const String & challenge_)

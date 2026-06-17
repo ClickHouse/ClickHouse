@@ -9,6 +9,7 @@
 #include <iostream>
 #include <sstream>
 
+#include <Common/Logger.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
@@ -198,6 +199,25 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             errorlog_level,
             ProfileEvents::AsyncLoggingErrorFileLogTotalMessages,
             ProfileEvents::AsyncLoggingErrorFileLogDroppedMessages);
+    }
+
+    const auto auditlog_path_prop = config.getString("logger.auditlog", "");
+    if (!auditlog_path_prop.empty())
+    {
+        DB::setGlobalAuditLog(nullptr);
+        if (audit_log)
+        {
+            audit_log->close();
+            audit_log.reset();
+        }
+
+        bool async = config.getBool("logger.async", true);
+        auto queue_size = config.getUInt("logger.async_queue_max_size", 65536);
+        audit_log = std::make_unique<DB::AuditLog>(async, static_cast<size_t>(queue_size));
+        const auto auditlog_path = renderFileNameTemplate(now, auditlog_path_prop);
+        audit_log->configure(config, auditlog_path);
+        audit_log->open();
+        DB::setGlobalAuditLog(audit_log.get());
     }
 
     if (config.getBool("logger.use_syslog", false))
@@ -428,6 +448,8 @@ void Loggers::closeLogs(Poco::Logger & logger)
         log_file->close();
     if (error_log_file)
         error_log_file->close();
+    if (audit_log)
+        audit_log->closeFile();
     // Shouldn't syslog_channel be closed here too?
 
     if (!log_file)
@@ -449,6 +471,13 @@ DB::AsyncLogQueueSizes Loggers::getAsynchronousMetricsFromAsyncLogs()
 
 void Loggers::stopLogging()
 {
+    DB::setGlobalAuditLog(nullptr);
+    if (audit_log)
+    {
+        audit_log->close();
+        audit_log.reset();
+    }
+
     if (split)
         split->close();
     split.reset();
