@@ -705,6 +705,46 @@ TEST_F(ConnectionPoolTest, ProxyConnectFailureDoesNotPessimizeTarget)
     ASSERT_EQ(failed_before, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load());
 }
 
+TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
+{
+    /// In non-bypassed proxy mode the proxy resolves and reaches the target, so the target
+    /// host must not be resolved locally: the name may be resolvable only by the proxy (an
+    /// internal/proxy-only hostname), and a local DNS lookup would fail the request before the
+    /// proxy is even contacted. Use a target host that is guaranteed not to resolve (the
+    /// `.invalid` TLD, RFC 6761) together with a proxy whose port has no listener. With local
+    /// resolution skipped, the request must reach the proxy connect and fail there - the error
+    /// then refers to the proxy endpoint, not to a DNS lookup of the unresolvable target.
+    auto uri = Poco::URI("http://proxy-only-target.invalid:9999");
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.1";
+    /// TCPMUX (port 1) is a reserved port that almost never has a listener,
+    /// so connect attempts return ECONNREFUSED synchronously.
+    proxy_config.port = 1;
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config);
+
+    bool reached_proxy_connect = false;
+    try
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        FAIL() << "Expected the proxy connect to fail";
+    }
+    catch (const Poco::Exception & e)
+    {
+        /// The error must come from connecting to the proxy endpoint (`127.0.0.1:1`), proving
+        /// the unresolvable target host was never resolved locally. Had local resolution run,
+        /// it would have failed first with a DNS error mentioning the target host instead.
+        const std::string text = e.displayText();
+        reached_proxy_connect = text.find("127.0.0.1:1") != std::string::npos;
+        ASSERT_EQ(std::string::npos, text.find("proxy-only-target.invalid"))
+            << "Target host was resolved locally: " << text;
+    }
+    ASSERT_TRUE(reached_proxy_connect);
+}
+
 TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
 {
     /// Regression test for the PR's core fallback path: when the first resolved

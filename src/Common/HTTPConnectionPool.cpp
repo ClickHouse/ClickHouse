@@ -621,6 +621,26 @@ private:
             notifySocketInode();
         }
 
+        /// Whether the underlying socket has actually established a connection to a remote peer.
+        /// `Poco::Net::Socket::peerAddress` issues `getpeername`, which succeeds only once the
+        /// socket is connected; a failed TCP connect leaves the fd open but without a peer, so
+        /// this reliably tells a completed TCP connect apart from one that never linked up.
+        /// Used to decide whether a connect-time failure belongs to the resolved address (TCP
+        /// connect itself failed) or to local post-connect socket setup (timeouts, `TCP_NODELAY`),
+        /// which `Poco::Net::HTTPSession::connect` performs after the TCP connect has succeeded.
+        bool isConnectedToPeer()
+        {
+            try
+            {
+                Session::socket().peerAddress();
+                return true;
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: no peer means the TCP connect did not complete
+            {
+                return false;
+            }
+        }
+
         bool isCompleted() const
         {
             return request_stream_completed && response_stream_completed;
@@ -815,8 +835,66 @@ private:
     }
 
 
+    /// Establish a connection through a non-bypassed proxy. `Poco::Net::HTTPClientSession::reconnect`
+    /// connects to the proxy endpoint and the proxy resolves and reaches the target, so the target
+    /// `HostResolver` is deliberately not consulted here: the target name may be resolvable only by
+    /// the proxy, and `_resolved_host` is left empty so Poco uses `_host` for the proxy request /
+    /// `CONNECT` target. A connect failure on this path belongs to the proxy, not to the target
+    /// address, so it is propagated directly without any resolver bookkeeping or per-address retry.
+    ConnectionPtr prepareConnectionViaProxy(
+        const ConnectionTimeouts & timeouts, UInt64 * connect_time, const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config)
+    {
+        auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+        connection->setKeepAlive(true);
+        connection->setProxyConfig(poco_proxy_config);
+
+        try
+        {
+            setTimeouts(*connection, timeouts);
+
+            auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
+            connection->doConnect(connect_time);
+            applySocketBufferSizes(*connection, group->getSocketBufferSizes());
+        }
+        catch (...)
+        {
+            ProfileEvents::increment(getMetrics().errors);
+            (*connection).reset();
+            throw;
+        }
+
+        ProfileEvents::increment(getMetrics().created);
+        return connection;
+    }
+
     ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
+        /// In non-bypassed proxy mode `Poco::Net::HTTPClientSession::reconnect` connects to
+        /// `_proxyConfig.host` and ignores `_resolved_host`: the proxy is responsible for
+        /// resolving and reaching the target. Retrying a different resolved target address would
+        /// not change the network path, and resolving the target locally is not only useless but
+        /// harmful - the target name may be resolvable only by the proxy (an internal/proxy-only
+        /// hostname), so a local DNS lookup would fail the request before the proxy is contacted.
+        /// Handle that case on a separate path that does not touch the target `HostResolver`.
+        ///
+        /// `Poco::Net::HTTPClientSession::reconnect` takes the proxy path only when
+        /// `!_proxyConfig.host.empty() && !bypassProxy()`. When `no_proxy_hosts` matches the
+        /// target host, `bypassProxy()` is true and Poco connects directly to `_resolved_host`,
+        /// so per-address retries and `setFail` pessimization must apply just like the no-proxy
+        /// case.
+        auto poco_proxy_config = proxy_configuration.isEmpty()
+            ? Poco::Net::HTTPClientSession::ProxyConfig{}
+            : proxyConfigurationToPocoProxyConfig(proxy_configuration);
+        const bool proxy_bypassed_for_host = !poco_proxy_config.nonProxyHosts.empty()
+            && Poco::RegularExpression::match(
+                host,
+                poco_proxy_config.nonProxyHosts,
+                Poco::RegularExpression::RE_CASELESS | Poco::RegularExpression::RE_ANCHORED);
+        const bool retry_resolved_addresses = proxy_configuration.isEmpty() || proxy_bypassed_for_host;
+
+        if (!retry_resolved_addresses)
+            return prepareConnectionViaProxy(timeouts, connect_time, poco_proxy_config);
+
         /// When DNS returns several addresses for a host (e.g. an IPv4 and an IPv6 record),
         /// try the next one if the first fails with a network error. Without this, a single
         /// broken address (a typical case is a host advertising AAAA on a network without
@@ -829,37 +907,12 @@ private:
         static constexpr size_t max_connect_attempts = 4;
         static constexpr size_t max_resolve_iterations = 16;
 
-        /// In proxy mode `Poco::Net::HTTPClientSession::reconnect` connects to
-        /// `_proxyConfig.host` and ignores `_resolved_host`, so retrying a different
-        /// resolved target address does not change the network path. Disable the
-        /// retry loop in that case and use `setUnused` instead of `setFail` on
-        /// connect failures: the failure belongs to the proxy path, not the target,
-        /// and must not pessimize target-address resolver state or trigger DNS
-        /// refreshes for the target host.
-        ///
-        /// `Poco::Net::HTTPClientSession::reconnect` only takes the proxy path when
-        /// `!_proxyConfig.host.empty() && !bypassProxy()`. When `no_proxy_hosts`
-        /// matches the target host, `bypassProxy()` is true and Poco connects directly
-        /// to `_resolved_host`, so per-address retries and `setFail` pessimization
-        /// must apply just like the no-proxy case.
-        auto poco_proxy_config = proxy_configuration.isEmpty()
-            ? Poco::Net::HTTPClientSession::ProxyConfig{}
-            : proxyConfigurationToPocoProxyConfig(proxy_configuration);
-        const bool proxy_bypassed_for_host = !poco_proxy_config.nonProxyHosts.empty()
-            && Poco::RegularExpression::match(
-                host,
-                poco_proxy_config.nonProxyHosts,
-                Poco::RegularExpression::RE_CASELESS | Poco::RegularExpression::RE_ANCHORED);
-        const bool retry_resolved_addresses = proxy_configuration.isEmpty() || proxy_bypassed_for_host;
-        const size_t connect_attempt_budget = retry_resolved_addresses ? max_connect_attempts : 1;
-        const size_t resolve_iteration_budget = retry_resolved_addresses ? max_resolve_iterations : 1;
-
         auto resolver = HostResolversPool::instance().getResolver(host);
         std::unordered_set<String> tried_addresses;
         std::exception_ptr last_net_error;
         size_t connect_attempts = 0;
 
-        for (size_t i = 0; i < resolve_iteration_budget && connect_attempts < connect_attempt_budget; ++i)
+        for (size_t i = 0; i < max_resolve_iterations && connect_attempts < max_connect_attempts; ++i)
         {
             auto address = resolver->resolve();
             if (!tried_addresses.insert(*address).second)
@@ -928,12 +981,19 @@ private:
             catch (const Poco::Net::NetException &)
             {
                 ProfileEvents::increment(getMetrics().errors);
+                /// `Poco::Net::HTTPSession::connect` establishes the TCP connection first and only
+                /// then applies local socket options (receive/send timeouts, `TCP_NODELAY`, the
+                /// throttlers). Those `setsockopt` calls run after the TCP connect has already
+                /// succeeded and can throw `Poco::Net::NetException` of their own. Such a failure
+                /// is local to the socket, not a property of the resolved address, so it must not
+                /// pessimize/retry the address. Probe the socket before resetting it: if it has a
+                /// peer, the TCP connect succeeded and the failure happened during post-connect
+                /// setup, so propagate it directly and let the `Entry` destructor record the
+                /// address as a success (it was reachable).
+                const bool tcp_connected = connection->isConnectedToPeer();
                 (*connection).reset();
-                if (!retry_resolved_addresses)
-                {
-                    address.setUnused();
+                if (tcp_connected)
                     throw;
-                }
                 /// Capture the original connect exception before any bookkeeping that
                 /// may itself throw, so the retry loop still has a meaningful error to
                 /// rethrow if every resolved address fails.
@@ -963,15 +1023,12 @@ private:
                 /// catch, a timed-out first address falls into `catch (...)` and is
                 /// re-thrown immediately, defeating the whole point of this retry loop on
                 /// dual-stack hosts whose first resolved address is blackholed. Treat it
-                /// as a per-address routing failure with the same `setFail`/`setUnused`
-                /// policy as the `NetException` path above.
+                /// as a per-address routing failure with the same `setFail` policy as the
+                /// `NetException` path above. A connect timeout is always the TCP connect itself
+                /// (the post-connect `setsockopt` calls do not block), so unlike `NetException`
+                /// no post-connect-setup discrimination is needed here.
                 ProfileEvents::increment(getMetrics().errors);
                 (*connection).reset();
-                if (!retry_resolved_addresses)
-                {
-                    address.setUnused();
-                    throw;
-                }
                 last_net_error = std::current_exception();
                 try
                 {
@@ -987,37 +1044,19 @@ private:
             {
                 ProfileEvents::increment(getMetrics().errors);
                 (*connection).reset();
-                if (retry_resolved_addresses)
+                try
                 {
-                    try
-                    {
-                        /// `Entry::setFail` can throw on DNS errors (see `NetException`
-                        /// handler above). Swallow that here so the original (non-network)
-                        /// exception is preserved when this catch-all rethrows.
-                        address.setFail();
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during catch-all rethrow");
-                    }
+                    /// `Entry::setFail` can throw on DNS errors (see `NetException`
+                    /// handler above). Swallow that here so the original (non-network)
+                    /// exception is preserved when this catch-all rethrows.
+                    address.setFail();
                 }
-                else
+                catch (...)
                 {
-                    address.setUnused();
+                    tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during catch-all rethrow");
                 }
                 throw;
             }
-
-            /// `doConnect` succeeded, so the resolved address is reachable.
-            /// In non-bypassed proxy mode `Poco::Net::HTTPClientSession::reconnect`
-            /// connects to the proxy and ignores `_resolved_host`, so the target
-            /// address we got from the resolver was never actually exercised by
-            /// this connect. Suppress the `Entry` destructor's `setSuccess` so we
-            /// do not record a spurious success for the target address - that would
-            /// reset `consecutive_fail_count` and let the resolver keep handing out
-            /// a known-bad target IP based on proxy-path success.
-            if (!retry_resolved_addresses)
-                address.setUnused();
 
             /// Apply socket buffer sizes only after a successful connect. This is a local
             /// socket-option operation; a failure here (e.g. from `setsockopt`) is not a
