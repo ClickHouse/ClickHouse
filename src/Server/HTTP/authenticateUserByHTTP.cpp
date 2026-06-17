@@ -63,6 +63,15 @@ bool authenticateUserByHTTP(
     std::unique_ptr<Credentials> & request_credentials,
     const HTTPHandlerConnectionConfig & connection_config,
     ContextPtr global_context,
+    LoggerPtr log);
+bool authenticateUserByHTTP(
+    const HTTPServerRequest & request,
+    const HTMLForm & params,
+    HTTPServerResponse & response,
+    Session & session,
+    std::unique_ptr<Credentials> & request_credentials,
+    const HTTPHandlerConnectionConfig & connection_config,
+    ContextPtr global_context,
     LoggerPtr log)
 {
     /// Get the credentials created by the previous call of authenticateUserByHTTP() while handling the previous HTTP request.

@@ -209,6 +209,7 @@ public:
 
             NullableElements,
             NullMap,
+            NullMapHidden,
             SparseNullMap,
 
             TupleElement,
@@ -446,7 +447,7 @@ public:
         bool position_independent_encoding = true;
 
         bool native_format = false;
-        const FormatSettings * format_settings;
+        const FormatSettings * format_settings{};
 
         bool object_and_dynamic_read_statistics = false;
 

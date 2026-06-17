@@ -70,7 +70,7 @@ class ClickHouseBinary:
         delay = 2
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {self.port} --query "select 1"', verbose=True
+                f'clickhouse-client --port {self.port} --receive_timeout=5 --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print("Server ready")

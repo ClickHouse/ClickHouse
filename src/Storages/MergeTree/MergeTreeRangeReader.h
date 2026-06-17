@@ -43,6 +43,11 @@ struct PrewhereExprStep
     /// A step without alter conversion cannot be executed after step with alter conversions.
     bool perform_alter_conversions = false;
 
+    /// Columns the on-fly mutation chain will overwrite. They are exempt from
+    /// per-step alter conversion. See `MergeTreeReadersChain::executeActionsBeforePrewhere`
+    /// for usage. Empty when `perform_alter_conversions == true`.
+    NameSet columns_overwritten_by_chain;
+
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
 };
@@ -470,7 +475,7 @@ private:
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
-    const PrewhereExprStep * prewhere_info;
+    const PrewhereExprStep * prewhere_info{};
 
     Stream stream;
 

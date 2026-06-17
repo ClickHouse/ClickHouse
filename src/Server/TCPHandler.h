@@ -21,6 +21,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/StringWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -83,8 +84,13 @@ struct QueryState
     std::unique_ptr<NativeWriter> block_out;
     Block block_for_insert;
 
-    /// Query text.
-    String query;
+    /// Query text. Uses `StringWithMemoryTracking` so that the resize on
+    /// receive goes through the throwing memory-tracker path. A client
+    /// sending an oversized query body trips `MEMORY_LIMIT_EXCEEDED`
+    /// cleanly, rather than driving the server's RSS past
+    /// `max_server_memory_usage` via `allocNoThrow` and getting
+    /// cgroup-OOM-killed.
+    StringWithMemoryTracking query;
     std::shared_ptr<QueryPlanAndSets> plan_and_sets;
     /// Parsed query
     ASTPtr parsed_query;
@@ -315,6 +321,9 @@ private:
     static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
+    /// Send an exception when the connection buffers are not initialized yet
+    /// (for example, when their allocation failed because the server memory limit is reached).
+    void trySendExceptionWithoutConnectionBuffers(const Exception & e);
     void sendProgress(QueryState & state);
     static void sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendLogs(QueryState & state) TSA_REQUIRES(callback_mutex);
