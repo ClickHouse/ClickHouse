@@ -28,6 +28,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Core/UUID.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -66,9 +67,11 @@ DataTypePtr arrayElementHint(const DataTypePtr & hint)
     return nullptr;
 }
 
-/// The requested type hint for a struct child, matched by element name when the hint is a named Tuple and
-/// otherwise by position; null when the hint is not a Tuple or has no matching element.
-DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos)
+/// The requested type hint for a struct child. For a named Tuple it is matched by element name — the same
+/// way the later named-tuple CAST maps the struct, including case-insensitively when requested — and there
+/// is no positional fallback (that could attach the hint to the wrong element). For an unnamed Tuple (the
+/// synthetic Map-entries hint) it is matched by position. Null when the hint is not a Tuple or has no match.
+DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive)
 {
     const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
     if (!tuple)
@@ -77,8 +80,12 @@ DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name
     {
         const auto & names = tuple->getElementNames();
         for (size_t i = 0; i < names.size(); ++i)
-            if (names[i] == child_name)
+        {
+            const bool match = case_insensitive ? boost::iequals(names[i], child_name) : names[i] == child_name;
+            if (match)
                 return tuple->getElements()[i];
+        }
+        return nullptr;
     }
     if (pos < tuple->getElements().size())
         return tuple->getElements()[pos];
@@ -565,7 +572,9 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             {
                 const ArrowField & child = type.children[i];
                 ColumnPtr element = decodeField(
-                    child, /*allow_low_cardinality=*/false, tupleElementHint(effective_hint, child.name, i), child_path(child.name));
+                    child, /*allow_low_cardinality=*/false,
+                    tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
+                    child_path(child.name));
                 /// Every struct field carries its own `FieldNode.length`, but they must all equal the
                 /// parent struct's row count. A malformed file can shorten one field (or slice a child
                 /// out of range), leaving a `ColumnTuple` with elements of unequal size. Reject it here

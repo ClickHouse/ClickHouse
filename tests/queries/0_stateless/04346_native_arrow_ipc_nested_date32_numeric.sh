@@ -27,6 +27,12 @@ shapes = {
                   type=pa.struct([("d", pa.date32()), ("n", pa.int64())]))], names=["t"])),
     "map": (pa.record_batch([pa.array([[("k", 0)], [("k", OOR)], [("k", -25567)]],
                                       type=pa.map_(pa.string(), pa.date32()))], names=["m"])),
+    # Struct whose Arrow field names are upper-cased: with case-insensitive matching, `D` must still map to
+    # the requested numeric element `d`, so the nested `date32` is read raw (the hint lookup must respect
+    # case-insensitivity rather than fall back to the wrong positional element).
+    "ci_struct": (pa.record_batch(
+        [pa.array([{"D": 0, "N": 1}, {"D": OOR, "N": 2}, {"D": -25567, "N": 3}],
+                  type=pa.struct([("D", pa.date32()), ("N", pa.int64())]))], names=["t"])),
 }
 for name, batch in shapes.items():
     for fmt, opener in [("Arrow", pa.ipc.new_file), ("ArrowStream", pa.ipc.new_stream)]:
@@ -51,6 +57,13 @@ for FMT in Arrow ArrowStream; do
     run_pair "${DATA_FILE}.struct.${FMT}" "${FMT}" "t Tuple(d Int32, n Int64)" "t"
     run_pair "${DATA_FILE}.struct.${FMT}" "${FMT}" "t Tuple(d Int32, n Int64)" "t.d"
     run_pair "${DATA_FILE}.map.${FMT}"    "${FMT}" "m Map(String, Int32)"      "m"
+
+    echo "--- case-insensitive: Arrow struct field 'D' -> requested 'd Int32' reads raw, native == library ---"
+    for COL in t t.d; do
+        native=$(${CLICKHOUSE_LOCAL}  --query "SELECT ${COL} FROM file('${DATA_FILE}.ci_struct.${FMT}', '${FMT}', 't Tuple(d Int32, n Int64)') SETTINGS input_format_arrow_use_native_reader = 1, input_format_arrow_case_insensitive_column_matching = 1")
+        library=$(${CLICKHOUSE_LOCAL} --query "SELECT ${COL} FROM file('${DATA_FILE}.ci_struct.${FMT}', '${FMT}', 't Tuple(d Int32, n Int64)') SETTINGS input_format_arrow_use_native_reader = 0, input_format_arrow_case_insensitive_column_matching = 1")
+        if [ "$native" = "$library" ]; then echo "OK native==library | ${COL}"; echo "$native"; else echo "MISMATCH | ${COL}"; fi
+    done
 
     echo "--- nested Date32 target still range-checks the out-of-range day (native) ---"
     ${CLICKHOUSE_LOCAL} --query "
