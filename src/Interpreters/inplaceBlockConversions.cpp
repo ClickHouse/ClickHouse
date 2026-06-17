@@ -17,6 +17,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
@@ -183,18 +184,42 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
                     "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
                     required_column.name, column_in_block.type->getName(), required_column.type->getName());
 
-            /// Builds: ifNull(_CAST(col, 'Nullable(T)'), _CAST(default, 'T'))
-            /// Use makeNullableOrLowCardinalityNullable so LowCardinality targets stay valid:
-            ///   LowCardinality(String) -> LowCardinality(Nullable(String))   (valid)
-            /// instead of the invalid Nullable(LowCardinality(String)) produced by string concatenation.
-            auto nullable_target_type_name = makeNullableOrLowCardinalityNullable(required_column.type)->getName();
-            auto cast_col = makeASTFunction("_CAST",
-                make_intrusive<ASTIdentifier>(required_column.name),
-                make_intrusive<ASTLiteral>(nullable_target_type_name));
-            auto cast_default = makeASTFunction("_CAST",
-                default_value,
-                make_intrusive<ASTLiteral>(required_column.type->getName()));
-            auto convert_func = makeASTFunction("ifNull", std::move(cast_col), std::move(cast_default));
+            ASTPtr convert_func;
+            if (recursiveRemoveLowCardinality(required_column.type)->canBeInsideNullable())
+            {
+                /// _CAST(ifNull(_CAST(col, 'LowCardinality(Nullable(String))'), _CAST('', 'LowCardinality(String)')), 'LowCardinality(String)')
+                /// ifNull already resolves to the non-nullable target here (its default arg is
+                /// non-nullable), so the inner result is LowCardinality(String); the outer cast
+                /// pins the type explicitly and keeps this branch symmetric with the else branch.
+                auto nullable_target_type_name = makeNullableOrLowCardinalityNullable(required_column.type)->getName();
+                auto cast_col = makeASTFunction("_CAST",
+                    make_intrusive<ASTIdentifier>(required_column.name),
+                    make_intrusive<ASTLiteral>(nullable_target_type_name));
+                auto cast_default = makeASTFunction("_CAST",
+                    default_value,
+                    make_intrusive<ASTLiteral>(required_column.type->getName()));
+                auto filled = makeASTFunction("ifNull", std::move(cast_col), std::move(cast_default));
+                convert_func = makeASTFunction("_CAST",
+                    std::move(filled),
+                    make_intrusive<ASTLiteral>(required_column.type->getName()));
+            }
+            else
+            {
+                /// _CAST(ifNull(col, _CAST(default, 'X')), 'Array(UInt8)')   // X = source base type
+                /// Eager-safe: NULL rows are replaced by the default re-encoded in the source
+                /// type before any cast to T, so the placeholder is never parsed. No branch to
+                /// short-circuit, so independent of short_circuit_function_evaluation.
+                auto source_base_type = removeNullable(column_in_block.type)->getName();
+                auto default_in_source = makeASTFunction("_CAST",
+                    default_value,
+                    make_intrusive<ASTLiteral>(source_base_type));
+                auto filled = makeASTFunction("ifNull",
+                    make_intrusive<ASTIdentifier>(required_column.name),
+                    std::move(default_in_source));
+                convert_func = makeASTFunction("_CAST",
+                    std::move(filled),
+                    make_intrusive<ASTLiteral>(required_column.type->getName()));
+            }
             conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
             continue;
         }
