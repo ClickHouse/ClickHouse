@@ -221,7 +221,7 @@ void calculateHashTableCacheKeys(
         /// selector, which is also kind-aware (`RIGHT`→child 1, `LEFT`→child 0), so both equivalent
         /// representations resolve to the same table. The (remapped) kind is mixed into the hash so
         /// that otherwise identical subtrees with different kinds (`INNER` vs `LEFT`) do not collide.
-        if (const auto * join_step = dynamic_cast<const JoinStep *>(node.step.get()); join_step && node.children.size() == 2)
+        if (const auto * join_step = typeid_cast<const JoinStep *>(node.step.get()); join_step && node.children.size() == 2)
         {
             const auto & table_join = join_step->getJoin()->getTableJoin();
             auto kind = table_join.kind();

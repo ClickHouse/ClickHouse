@@ -21,6 +21,8 @@ struct IQueryPlanStep::Serialization
     // single-node and distributed (parallel-replicas) plan builds: `AggregatingStep`'s `final` flag
     // (which differs between those builds) and its stats-collecting cache key, and the runtime-filter
     // id value in `ActionsDAG::serialize`.
+    // MUST be kept in sync with `for_cache_key` on `SerializedSetsRegistry` (the registry one drives
+    // `ActionsDAG::serialize`, this one drives the step's own `serialize`): set both or neither.
     bool for_cache_key = false;
 };
 
