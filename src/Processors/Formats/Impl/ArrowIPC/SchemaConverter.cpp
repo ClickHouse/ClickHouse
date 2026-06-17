@@ -155,6 +155,17 @@ ArrowType parseType(const flatbuf::Field & field)
             type.kind = TypeKind::Time;
             type.unit = validatedEnum(t->unit(), flatbuf::TimeUnit_MIN, flatbuf::TimeUnit_MAX, "TimeUnit");
             type.time_bit_width = t->bitWidth();
+            /// Arrow `Time` allows only `time32` (SECOND/MILLISECOND, 32-bit) and `time64`
+            /// (MICROSECOND/NANOSECOND, 64-bit). Reject any other unit/bit-width pair here, otherwise the
+            /// decoder would read e.g. `unit = SECOND, bitWidth = 64` as an 8-byte value from a 4-byte type.
+            const bool valid_time
+                = (type.time_bit_width == 32 && (type.unit == flatbuf::TimeUnit_SECOND || type.unit == flatbuf::TimeUnit_MILLISECOND))
+                || (type.time_bit_width == 64 && (type.unit == flatbuf::TimeUnit_MICROSECOND || type.unit == flatbuf::TimeUnit_NANOSECOND));
+            if (!valid_time)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC Time has an invalid unit/bit-width combination (unit {}, bitWidth {})",
+                    type.unit, type.time_bit_width);
             break;
         }
         case flatbuf::Type_Timestamp:
