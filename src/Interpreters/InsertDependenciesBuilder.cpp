@@ -74,6 +74,7 @@
 #include <base/defines.h>
 
 #include <atomic>
+#include <cassert>
 #include <exception>
 #include <memory>
 #include <unordered_map>
@@ -492,7 +493,7 @@ private:
 };
 
 
-static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
+DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
 {
     auto constraints = metadata->getConstraints();
 
@@ -782,9 +783,9 @@ struct SquashingTransformContext
 
 }
 
-VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
+std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
 {
-    VectorWithMemoryTracking<Chain> insert_chains;
+    std::vector<Chain> insert_chains;
     std::vector<SquashingProcessorsMap> squashing_processor_maps;
     std::unordered_map<
         StorageIDMaybeEmpty,
@@ -902,7 +903,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
         result_data.push_back(std::make_pair(std::move(processor_list), std::move(resources)));
     }
 
-    VectorWithMemoryTracking<Chain> result_chains;
+    std::vector<Chain> result_chains;
     result_chains.reserve(result_data.size());
 
     for (auto & [processor_list, resources] : result_data)
@@ -1453,13 +1454,10 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     if (!constraints.empty())
         result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, header, constraints, insert_context));
 
-    const bool has_dependent_materialized_views = !dependent_views.at(view_id).empty();
-
     if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
-        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));
     }
     else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
@@ -1471,7 +1469,6 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     {
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
-        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));
     }
 
@@ -1485,7 +1482,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
     if (dependent_views_ids.empty())
         return {};
 
-    VectorWithMemoryTracking<Chain> view_chains;
+    std::vector<Chain> view_chains;
     view_chains.reserve(dependent_views_ids.size());
 
     std::vector<Block> output_view_chains_headers;
@@ -1534,7 +1531,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 }
 
 
-static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
+String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
     String res = q->formatWithSecretsOneLine();
     if (auto masker = SensitiveDataMasker::getInstance())

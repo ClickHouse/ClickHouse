@@ -1,18 +1,16 @@
-#include <Common/ThreadStatus.h>
-
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
-#include <base/getPageSize.h>
-#include <Common/CurrentThread.h>
-#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/QueryProfiler.h>
-#include <Common/SignalUnsafeMutationGuard.h>
+#include <Common/ErrnoException.h>
 #include <Common/ThreadProfileEvents.h>
+#include <Common/QueryProfiler.h>
+#include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
-#include <Common/memory.h>
 #include <Common/setThreadName.h>
+#include <Common/memory.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Core/Settings.h>
+#include <base/getPageSize.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
 
@@ -22,6 +20,8 @@
 
 namespace DB
 {
+thread_local ThreadStatus constinit * current_thread = nullptr;
+
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -173,22 +173,16 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
 void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
 {
     chassert(query_id.empty());
-    SignalUnsafeMutationGuard guard(is_query_id_usable);
     query_id = std::move(new_query_id);
 }
 
 void ThreadStatus::clearQueryId() noexcept
 {
-    SignalUnsafeMutationGuard guard(is_query_id_usable);
     query_id.clear();
 }
 
-std::string_view ThreadStatus::getQueryId() const
+const String & ThreadStatus::getQueryId() const
 {
-    if (!is_query_id_usable.load(std::memory_order_acquire))
-        return "";
-
-    std::atomic_signal_fence(std::memory_order_seq_cst);
     return query_id;
 }
 
@@ -274,7 +268,7 @@ ThreadStatus::~ThreadStatus()
 {
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
-    chassert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
+    assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
 
     /// detachGroup if it was attached
     if (deleter)
