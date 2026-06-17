@@ -80,12 +80,14 @@ def _format_status_error(exc: Exception, log_paths) -> str:
 
     if isinstance(exc, FileNotFoundError):
         return (
-            "Fuzzer runner aborted before producing status.tsv. The fuzzer "
-            "process was killed (job timeout, out of memory, or a "
-            "docker/orchestration failure) before it could report its exit "
-            "status. This is a CI infrastructure issue, not a fuzzer finding (a "
-            "real finding writes status.tsv with a FAIL status and a stack "
-            "trace); re-running the job usually clears it." + tails_str
+            "Fuzzer runner aborted before writing status.tsv. run-fuzzer.sh runs "
+            "under 'set -e' and writes status.tsv only at the very end, so any "
+            "earlier failure lands here: a server startup failure (e.g. the "
+            "clickhouse-server pid file is never created), a fuzzer-harness "
+            "error, or an infrastructure problem (job timeout, out of memory, "
+            "docker/orchestration). Inspect the log tails below to determine the "
+            "cause; a normal fuzzer finding instead writes status.tsv with a FAIL "
+            "status and a stack trace." + tails_str
         )
 
     tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
@@ -302,11 +304,11 @@ def run_fuzz_job(check_name: str):
             WORKSPACE_PATH / "status.tsv"
         )
     except Exception as e:
-        # Missing/empty status.tsv -> runner aborted before reporting (infra);
-        # malformed status.tsv -> harness bug. _format_status_error explains
-        # which, and inlines the log tails so the abort cause is visible instead
-        # of an opaque FileNotFoundError traceback. Attach available artifacts
-        # (incl. sanitizer.log.*) so the report is not lost.
+        # Missing/empty status.tsv -> runner aborted before reporting (server
+        # start failure, harness error, or infra); malformed status.tsv ->
+        # harness bug. _format_status_error inlines the log tails so the abort
+        # cause is visible instead of an opaque FileNotFoundError traceback.
+        # Attach available artifacts (incl. sanitizer.log.*) so nothing is lost.
         error_info = _format_status_error(e, paths)
         early_result = Result.create_from(status=Result.Status.ERROR, info=error_info)
         for file in paths:

@@ -59,8 +59,10 @@ def test_read_fuzzer_status_malformed():
             _read_fuzzer_status(bad)
 
 
-def test_format_status_error_missing_is_infra_with_log_tail():
-    # Missing status.tsv -> infra-flagged message, no traceback, with log tail.
+def test_format_status_error_missing_is_neutral_with_log_tail():
+    # Missing status.tsv -> neutral early-abort message, no traceback, log tail.
+    # It must NOT assert infra / "re-run clears it": a missing file can also be
+    # a server-startup or harness regression, so we point at the logs instead.
     with tempfile.TemporaryDirectory() as d:
         fuzzer_log = Path(d) / "fuzzer.log"
         fuzzer_log.write_text("\n".join(f"line{i}" for i in range(200)))
@@ -68,7 +70,8 @@ def test_format_status_error_missing_is_infra_with_log_tail():
             FileNotFoundError("status.tsv was not produced"),
             [fuzzer_log, Path(d) / "absent.log"],
         )
-        assert "infrastructure" in msg
+        assert "aborted before writing status.tsv" in msg
+        assert "re-run" not in msg.lower()
         assert "Traceback" not in msg
         assert "fuzzer.log (last lines)" in msg
         assert "line199" in msg  # tail, not head
