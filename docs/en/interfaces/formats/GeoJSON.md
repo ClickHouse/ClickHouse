@@ -21,11 +21,11 @@ Reads a [GeoJSON](https://geojson.org/) `FeatureCollection` document and produce
 
 | Column       | Type     | Description                                                                                 |
 |--------------|----------|---------------------------------------------------------------------------------------------|
-| `id`         | `String` | The feature's top-level `id` field, or an empty string if absent.                          |
+| `id`         | `String` | The feature's `id` member (a JSON string or number), stored as text; an empty string if the `id` is absent or `null`.                          |
 | `geometry`   | `Geometry`        | The feature's geometry, stored as a `Geometry` variant type.                                |
 | `properties` | `Nullable(JSON)`  | The feature's `properties` object, stored as a semi-structured `JSON` column. An explicit `"properties": null` is preserved as `NULL`. |
 
-The `Geometry` type is a `Variant` that can hold `Point`, `LineString`, `Polygon`, `MultiPolygon`, `MultiLineString`, or `Ring`. The `geometry` column is `NULL` only when the feature's geometry is an explicit JSON `null`. A valid GeoJSON geometry type that cannot be mapped to a supported variant (e.g. `GeometryCollection` or `MultiPoint`) throws by default; this can be changed to insert `NULL` instead — see [Handling unsupported geometry types](#unsupported-geometry) below.
+Each geometry is stored in ClickHouse's `Geometry` type (a `Variant`). The supported GeoJSON geometry types are `Point`, `LineString`, `MultiLineString`, `Polygon`, and `MultiPolygon`. The two other GeoJSON geometry types, `GeometryCollection` and `MultiPoint`, cannot be represented by the `Geometry` type and raise an exception by default; this can be changed to insert `NULL` instead — see [Handling unsupported geometry types](#unsupported-geometry) below. The `geometry` column is `NULL` only when a feature's geometry is an explicit JSON `null`.
 
 The document's structure is validated: the top-level `type` must be `FeatureCollection` and every element of `features` must have `type` `Feature`. Coordinates must satisfy the GeoJSON shape invariants — a `LineString` (and each line of a `MultiLineString`) must have at least two positions, and a `Polygon` ring (and each ring of a `MultiPolygon`) must be closed and have at least four positions. Malformed documents are rejected rather than silently loaded.
 
@@ -110,13 +110,13 @@ variantType(geometry): Point
 Row 2:
 ──────
 name:                  River Thames
-geometry:              [(-0.25,51.47),(-0.18000000000000002,51.49),(-0.12000000000000001,51.506),(-0.07,51.505),(0,51.51)]
+geometry:              [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
 variantType(geometry): LineString
 
 Row 3:
 ──────
 name:                  Hyde Park
-geometry:              [[(-0.188,51.5074),(-0.15330000000000002,51.5074),(-0.15330000000000002,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+geometry:              [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
 variantType(geometry): Polygon
 ```
 
@@ -140,18 +140,20 @@ Row 2:
 ──────
 name:                  River Thames
 variantType(geometry): LineString
-geometry.Point:        ᴺᵁᴸᴸ
-geometry.LineString:   [(-0.25,51.47),(-0.18000000000000002,51.49),(-0.12000000000000001,51.506),(-0.07,51.505),(0,51.51)]
+geometry.Point:        (0,0)
+geometry.LineString:   [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
 geometry.Polygon:      []
 
 Row 3:
 ──────
 name:                  Hyde Park
 variantType(geometry): Polygon
-geometry.Point:        ᴺᵁᴸᴸ
+geometry.Point:        (0,0)
 geometry.LineString:   []
-geometry.Polygon:      [[(-0.188,51.5074),(-0.15330000000000002,51.5074),(-0.15330000000000002,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+geometry.Polygon:      [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
 ```
+
+Accessing a `Geometry` subcolumn returns the value when the row holds that type, and the type's default otherwise — `(0,0)` for `Point` and `[]` for the array-based types — so use `variantType(geometry)` to tell which one is set.
 
 We can also ingest GeoJSON data into a table:
 
