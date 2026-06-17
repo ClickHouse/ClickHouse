@@ -169,6 +169,10 @@ size_t MergeTreeBitmapStore::gcObsoleteBitmaps(
     BitmapVersion committed_csn,
     BitmapVersion oldest_snapshot_csn)
 {
+    /// Caller must serialize this with `installBitmap` (and `dropPart`) for the same part under the
+    /// per-partition UK mutex: both mutate the part's on-disk files and the in-memory CSN index, and
+    /// a gc that unlinks a version while an install is mid-flight could otherwise leave the index
+    /// listing a removed version.
     auto csns = snapshotCsns(storage, part_id);
 
     std::vector<BitmapVersion> committed;
@@ -224,6 +228,8 @@ size_t MergeTreeBitmapStore::gcObsoleteBitmaps(
 
 void MergeTreeBitmapStore::dropPart(const std::string & part_id)
 {
+    /// Caller must serialize this with `installBitmap` / `gcObsoleteBitmaps` for the same part under
+    /// the per-partition UK mutex (see `installBitmap`): all three mutate the part's index state.
     {
         std::unique_lock lock(csns_mutex);
         csns_per_part.erase(part_id);
