@@ -184,7 +184,7 @@ SELECT toTypeName(0::UInt16);
 SELECT toTypeName(0::UInt32);
 ```
 
-The `.reference` file must match the output of the fully rendered test (the results of all generated queries), not the template itself. For more examples, see the existing `*.sql.j2` files in `tests/queries/0_stateless/`.
+The expected output can be supplied either as a plain `<name>.reference` file containing the fully-expanded results, or as a `<name>.reference.j2` template, which `clickhouse-test` renders the same way before comparing. Use the templated form when the expected output also follows a repeating pattern. For more examples, see the existing `*.sql.j2` files in `tests/queries/0_stateless/`.
 
 ### Restricting test runs {#restricting-test-runs}
 
