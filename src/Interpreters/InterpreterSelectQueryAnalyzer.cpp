@@ -448,7 +448,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
                 query_plan,
                 ast_literal_positions,
                 collected_parameters);
-            if (!ast_literal_positions.empty())
+            if (!ast_literal_positions.empty() && ast_literal_positions.size() == params_size)
             {
                 vector_query_plan_cache_writer.setAst(query);
                 LOG_DEBUG(getLogger("InterpreterSelectQueryAnalyzer"), "setAst");

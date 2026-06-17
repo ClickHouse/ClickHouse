@@ -52,6 +52,7 @@ public:
     
     bool is_internal = false;
     bool is_select = false;
+    size_t params_size = 0;
 private:
     String vector_query_string_;
     std::shared_ptr<VectorQueryPlanCache::Writer> vector_query_plan_cache_writer_;

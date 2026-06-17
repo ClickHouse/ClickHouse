@@ -291,6 +291,7 @@ struct VectorQueryPlanCacheRestoreResult
     bool query_result_cache_hit = false;
     bool can_use_query_result_cache = false;
     bool is_select = false;
+    size_t params_size = 0;
 };
 
 static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
@@ -325,10 +326,10 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                 result.is_select = true;
                 result.vector_query_for_plan_cache = parameterized_result.normalized_sql;
                 result.new_query = parameterized_result.new_sql;
+                result.params_size = parameterized_result.params.size();
                 if (vector_query_plan_cache && !internal)
                 {
                     chassert(!result.vector_query_for_plan_cache.empty());
-
                     VectorQueryPlanCache::Key key(
                         result.vector_query_for_plan_cache,
                         context->getCurrentDatabase(),
@@ -418,6 +419,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
     else if (vector_use_cast)
     {
         result.new_query = parameterizer.rewriteVectorLiteralsToCasts(begin, end);
+        LOG_DEBUG(logger, "old_query={},new_query={}", String(begin, end), result.new_query);
     }
 
     return result;
@@ -436,6 +438,7 @@ struct CacheProbeOutput
     bool query_result_cache_entry_exists = false;
     ASTPtr ast;
     std::unique_ptr<QueryPlan> cached_plan;
+    size_t params_size = 0;
 };
 
 /// Log query into text log (not into system table).
@@ -1321,6 +1324,7 @@ static std::optional<BlockIO> tryExecuteFromCache(
     output.query_result_cache_entry_exists = cache_result.query_result_cache_hit;
     output.ast = std::move(cache_result.ast);
     output.cached_plan = std::move(cache_result.cached_plan);
+    output.params_size = cache_result.params_size;
 
     const bool has_cached_result = output.query_result_cache_entry_exists;
     const bool has_cached_plan = output.cached_plan != nullptr;
@@ -1539,6 +1543,7 @@ static BlockIO executeQueryImpl(
     std::optional<Settings> settings_copy = std::move(cache_output.settings_copy);
     QueryResultCacheUsage query_result_cache_usage = cache_output.query_result_cache_usage;
     out_ast = std::move(cache_output.ast);
+    size_t params_size = cache_output.params_size;
 
     auto logger = getLogger("executeQuery");
     QueryResultCachePtr query_result_cache = context->getQueryResultCache();
@@ -2209,6 +2214,7 @@ static BlockIO executeQueryImpl(
                     interpreter->is_internal = internal;
                     if (enable_vector_query_plan_cache && !skip_ast_processing)
                     {
+                        interpreter->params_size = params_size;
                         interpreter->is_select = is_select;
                         interpreter->setVectorQueryString(vector_query_for_plan_cache.empty() ? query : vector_query_for_plan_cache);
                     }

@@ -361,7 +361,7 @@ bool candidateMatchesAstLiteral(
         return false;    
     const String ast_last_function = getLastFunctionName(position);
     const String ast_second_last_function = getSecondLastFunctionName(position);
-
+    
     if (!candidate.function_names.empty())
     {
         size_t number = candidate.function_names.size();
@@ -381,7 +381,7 @@ bool candidateMatchesAstLiteral(
         }
         if (function_names_str != function_names)
         {
-            if (number == position.function_list.size())
+            if (number >= position.function_list.size())
                 return false;
             for (size_t i = number; i > 0; i--)
             {
@@ -411,6 +411,11 @@ bool candidateMatchesAstLiteral(
         if (candidate.value.getType() == Field::Types::String)
         {
             return stripOuterQuotes(parameters.params[ast_index].original_string) == candidate.value.safeGet<String>();
+        }
+        if (candidate.value.getType() == Field::Types::Tuple)
+        {
+            LOG_DEBUG(logger, "not support tuple type");
+            return false;
         }
         return fieldsEquivalent(parameters.parsed_params[ast_index], candidate.value);
     }
@@ -450,6 +455,9 @@ void findActionsDAGAndCollectConstants(
     traverse_node = [&](const ActionsDAG::Node * node, const ActionsDAG::Node * parent_node, std::vector<String>& function_names)
     {
         if (!node || should_clear_and_return)
+            return;
+        auto map_it = map.find(node);
+        if (map_it == map.end())
             return;
         // Process based on node type
         switch (node->type)
@@ -687,6 +695,9 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
     bool position_saw_in_keyword = false;
     size_t position_param_count = 0;
     size_t params_before_position = 0;
+    // Track DATE_PART function context - skip first string parameter
+    bool in_date_part_function = false;
+    bool date_part_saw_first_string = false;
     bool is_bare_word = false;
     bool is_dot = false;
     bool is_negative = false;
@@ -696,7 +707,12 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
     {
         Token token = lexer.nextToken();
         if (token.type == TokenType::Semicolon)
+        {
+            hash.update(token.begin, token.size());
+            result.normalized_sql += std::string(token.begin, token.size());
+            result.new_sql += std::string(token.begin, token.size());
             break;
+        } 
         if (token.isEnd() || token.isError())
             break;
         if (vector_function_type && token.type == TokenType::BareWord)
@@ -867,12 +883,27 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             {
                 position_saw_in_keyword = true;
             }
+            // Detect DATE_PART function start
+            if (token.type == TokenType::BareWord && token.size() == 9 && tokenMatchesBareWord(token, "date_part"))
+            {
+                in_date_part_function = true;
+                date_part_saw_first_string = false;
+            }
             if (parse_params && !vector_function_type && !is_dot && (token.type == TokenType::Number
                     || token.type == TokenType::StringLiteral
                     || token.type == TokenType::HereDoc)
                 )
             {
-                
+                // Skip first string parameter in date_part function
+                if (in_date_part_function && token.type == TokenType::StringLiteral && !date_part_saw_first_string)
+                {
+                    date_part_saw_first_string = true;
+                    hash.update(token.begin, token.size());
+                    result.normalized_sql += std::string(token.begin, token.size());
+                    result.new_sql += std::string(token.begin, token.size());
+                    is_dot = false;
+                    continue;
+                }
                 ParameterInfo::Type param_type;
                 if (token.type == TokenType::Number)
                     param_type = ParameterInfo::Type::NUMERIC;
@@ -921,6 +952,13 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
                 in_position_function = false;
                 position_saw_in_keyword = false;
                 position_param_count = 0;
+            }
+            // Check if we're exiting DATE_PART function (closing bracket)
+            if (in_date_part_function && token.type == TokenType::ClosingRoundBracket)
+            {
+                // Reset DATE_PART tracking
+                in_date_part_function = false;
+                date_part_saw_first_string = false;
             }
         }
         hash.update(token.begin, token.size());
@@ -1404,7 +1442,6 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
 
     if (!isSelectStatement(lexer))
     {
-        new_sql.assign(begin, end);
         return new_sql;
     }
 
@@ -1417,7 +1454,10 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
     {
         Token token = lexer.nextToken();
         if (token.type == TokenType::Semicolon)
+        {
+            new_sql += std::string(token.begin, token.size());
             break;
+        }
         if (token.isEnd() || token.isError())
             break;
         if (vector_function_type && token.type == TokenType::BareWord)
@@ -1616,7 +1656,6 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
             if (candidateMatchesAstLiteral(candidates[candidate_index], ast_index, ast_position, parameters))
                 matched_candidate_indexes.push_back(candidate_index);
         }
-
         if (matched_candidate_indexes.empty())
         {
             String function_chain;
