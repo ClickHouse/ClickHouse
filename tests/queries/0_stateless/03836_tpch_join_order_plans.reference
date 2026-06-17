@@ -315,17 +315,20 @@ Expression ((Project names + Projection))
                 ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q15
 Expression (Project names)
-  Expression ((Before ORDER BY + (Projection + )))
-    Sorting
-      JoinLogical (Local HashJoin )
-        Expression (Change column names to column identifiers)
-          ReadFromMergeTree (default.supplier)
-        Expression ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))
-          Filter (((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))[split])
-            Aggregating
-              Expression (Before GROUP BY)
-                Expression ((WHERE + Change column names to column identifiers))
-                  ReadFromMergeTree (default.lineitem)
+  GatherExchange
+    Expression ((Before ORDER BY + (Projection + )))
+      Sorting
+        JoinLogical (Shuffle HashJoin )
+          Expression (Change column names to column identifiers)
+            ShuffleExchange
+              ReadFromMergeTree (ParallelRead default.supplier)
+          Expression ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))
+            Filter (((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))[split])
+              Aggregating
+                Expression (Before GROUP BY)
+                  Expression ((WHERE + Change column names to column identifiers))
+                    ShuffleExchange
+                      ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q16
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))

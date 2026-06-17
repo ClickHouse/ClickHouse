@@ -7,24 +7,32 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Core/SortDescription.h>
+#include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
 namespace DB
 {
 
-/// Trace a column name back through ALIAS chains to the original INPUT name.
-/// Returns empty for FUNCTION nodes (computed columns).
+/// `materialize(x)` preserves values and thus the hash, so it is transparent to hash-based
+/// distribution and can be traced through. VIEW reads insert such nodes.
+static bool isMaterializeNode(const ActionsDAG::Node & node)
+{
+    return node.type == ActionsDAG::ActionType::FUNCTION
+        && node.children.size() == 1
+        && node.function_base
+        && node.function_base->getName() == "materialize";
+}
+
+/// Trace a column name back to the original INPUT name through ALIAS chains and `materialize`
+/// wrappers. Returns empty for genuinely computed columns (other FUNCTION nodes).
 static String traceColumnToInput(const ActionsDAG & dag, const String & output_name)
 {
     const ActionsDAG::Node * node = dag.tryFindInOutputs(output_name);
     if (!node)
         return {};
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-    {
-        chassert(node->children.size() == 1);
+    while (node->type == ActionsDAG::ActionType::ALIAS || isMaterializeNode(*node))
         node = node->children.front();
-    }
     if (node->type == ActionsDAG::ActionType::INPUT)
         return node->result_name;
     return {};
