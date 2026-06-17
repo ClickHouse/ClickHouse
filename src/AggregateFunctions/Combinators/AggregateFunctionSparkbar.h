@@ -204,14 +204,19 @@ public:
         if (key < begin_x || key > end_x)
             return;
 
-        /// Compute deltas in UInt64 before converting to Float64 to avoid catastrophic
-        /// cancellation when keys are large (e.g. Int64/DateTime64 near ±1e18).
-        /// The bounds check above guarantees key >= begin_x and end_x > begin_x,
-        /// so both unsigned deltas are mathematically non-negative.
-        const Float64 range  = static_cast<Float64>(static_cast<UInt64>(end_x) - static_cast<UInt64>(begin_x));
-        const Float64 offset = static_cast<Float64>(static_cast<UInt64>(key)   - static_cast<UInt64>(begin_x));
-        const size_t pos = static_cast<size_t>(
-            std::min<Float64>(offset / range * static_cast<Float64>(width), static_cast<Float64>(width - 1)));
+        /// Compute the bucket index with exact integer arithmetic. The bounds check above
+        /// guarantees begin_x <= key <= end_x and the constructor guarantees begin_x < end_x,
+        /// so both unsigned deltas are non-negative and range is positive. Using Float64 here
+        /// would lose precision once range or offset exceeds the 53-bit exact integer range,
+        /// silently mis-bucketing valid UInt64/Int64/DateTime64 keys near a bucket boundary.
+        const UInt64 range  = static_cast<UInt64>(end_x) - static_cast<UInt64>(begin_x);
+        const UInt64 offset = static_cast<UInt64>(key)   - static_cast<UInt64>(begin_x);
+        /// offset * width can exceed 64 bits (offset up to ~1.8e19, width up to MAX_WIDTH), so the
+        /// product is taken in 128 bits. Since offset <= range, the quotient is at most `width`
+        /// (reached only when key == end_x), and it is clamped to the last bucket.
+        const size_t pos = std::min<UInt64>(
+            static_cast<UInt64>(static_cast<__uint128_t>(offset) * width / range),
+            static_cast<UInt64>(width) - 1);
 
         /// First argument (columns[0]) is the x-axis key; the rest go to the nested function.
         nested_function->add(place + pos * size_of_data, columns + 1, row_num, arena);
