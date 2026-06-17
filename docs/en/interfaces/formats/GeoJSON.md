@@ -162,7 +162,7 @@ CREATE TABLE london
 (
     id           String,
     geometry     Geometry,
-    properties   JSON,
+    properties   Nullable(JSON),
     name         String MATERIALIZED properties.name,
     feature_type String MATERIALIZED properties.feature_type
 )
