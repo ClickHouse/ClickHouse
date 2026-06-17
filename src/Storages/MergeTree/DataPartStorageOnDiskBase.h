@@ -181,6 +181,12 @@ public:
     /// time; the actual finalize happens later). After the file is committed, on-disk reads
     /// would work too, but the in-memory index is always cheaper and equally authoritative.
     void seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const;
+
+    /// Seed this storage's PackedFilesReader from `source`'s archive index. Used when the
+    /// unchanged skp_idx.packed is hardlinked from `source` into this (new) part: the hardlink
+    /// shares the source's bytes, so the source's index applies verbatim. No-op if `source` has
+    /// no packed archive. See the seed rationale above.
+    void seedSkipIndicesPackedReaderFrom(const IDataPartStorage & source) const;
 protected:
 
     VolumePtr volume;

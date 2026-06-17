@@ -40,3 +40,35 @@ WHERE database = currentDatabase() AND table = 'packed_drop_size'
 ORDER BY name;
 
 DROP TABLE packed_drop_size SYNC;
+
+-- Sibling case: a mutation that leaves the archive unchanged hardlinks skp_idx.packed into the
+-- new part instead of rewriting it. The hardlink is just as invisible during pre-commit size
+-- accounting, so the new storage must be seeded from the source archive index there too.
+
+DROP TABLE IF EXISTS packed_hardlink_size SYNC;
+
+CREATE TABLE packed_hardlink_size
+(
+    id UInt64,
+    v UInt64,
+    s String,
+    INDEX m_v v TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS storage_policy = 's3_no_fake_transaction',
+         min_bytes_for_wide_part = 0,
+         packed_skip_index_max_bytes = '1M',
+         index_granularity = 1024,
+         columns_and_secondary_indices_sizes_lazy_calculation = 0;
+
+INSERT INTO packed_hardlink_size SELECT number, number * 7, toString(number % 50) FROM numbers(2000);
+
+-- UPDATE a non-indexed column: the minmax archive is unchanged and gets hardlinked.
+ALTER TABLE packed_hardlink_size UPDATE s = concat(s, '_x') WHERE id < 100 SETTINGS mutations_sync = 2, alter_sync = 2;
+
+SELECT name, data_compressed_bytes > 0
+FROM system.data_skipping_indices
+WHERE database = currentDatabase() AND table = 'packed_hardlink_size'
+ORDER BY name;
+
+DROP TABLE packed_hardlink_size SYNC;

@@ -2578,6 +2578,19 @@ private:
                     ctx->need_sync);
             }
         }
+        else if (!ctx->packed_skip_index_archive_dirty)
+        {
+            /// The archive is unchanged, so it is hardlinked into the new part (collectFilesToSkip
+            /// only excludes skp_idx.packed when packed_skip_index_archive_dirty). On object-storage
+            /// disks with a non-fake transaction the hardlink isn't committed until the part
+            /// transaction commits, which happens after finalizeMutatedPart. With
+            /// columns_and_secondary_indices_sizes_lazy_calculation=0 the eager size accounting runs
+            /// before that commit; seed the new storage's reader from the source archive index so it
+            /// can resolve packed virtual files. Mirrors filterPackedSkipIndicesArchiveTo and
+            /// fillSkipIndicesChecksums.
+            if (auto * new_disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&ctx->new_data_part->getDataPartStorage()))
+                new_disk_storage->seedSkipIndicesPackedReaderFrom(ctx->source_part->getDataPartStorage());
+        }
 
         ctx->compression_codec = ctx->source_part->default_codec;
 

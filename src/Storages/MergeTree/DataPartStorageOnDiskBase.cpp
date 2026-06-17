@@ -1050,6 +1050,21 @@ void DataPartStorageOnDiskBase::seedSkipIndicesPackedReader(const PackedFilesIO:
     skip_indices_packed_probed = true;
 }
 
+void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartStorage & source) const
+{
+    const auto * source_disk = dynamic_cast<const DataPartStorageOnDiskBase *>(&source);
+    if (!source_disk)
+        return;
+
+    /// Same-class access to the protected probe is allowed; this also triggers the source's lazy
+    /// load if it hasn't been read yet.
+    const auto * source_archive = source_disk->getSkipIndicesPackedReader();
+    if (!source_archive)
+        return;
+
+    seedSkipIndicesPackedReader(source_archive->getIndex());
+}
+
 bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::string & name) const
 {
     const auto * reader = getSkipIndicesPackedReader();
