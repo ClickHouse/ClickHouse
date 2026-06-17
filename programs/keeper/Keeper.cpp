@@ -17,6 +17,7 @@
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
+#include <IO/SharedThreadPools.h>
 #include <Server/waitServersToFinish.h>
 #include <Server/CloudPlacementInfo.h>
 #include <base/getMemoryAmount.h>
@@ -388,6 +389,7 @@ try
     SCOPE_EXIT({
         Stopwatch watch;
         LOG_INFO(log, "Waiting for background threads");
+        DB::StaticThreadPool::shutdownAll();
         GlobalThreadPool::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });

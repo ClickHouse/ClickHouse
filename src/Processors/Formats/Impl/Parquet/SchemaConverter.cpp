@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
+#include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -169,6 +170,11 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
 
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
+    /// A deeply nested schema (e.g. a long chain of REQUIRED groups) recurses here per level.
+    /// The definition-level cap below only counts OPTIONAL/REPEATED nesting, so without this an
+    /// untrusted file could overflow the stack (uncatchable crash) instead of throwing.
+    checkStackSize();
+
     if (node.type_hint)
         chassert(node.requested);
     if (schema_idx >= file_metadata.schema.size())

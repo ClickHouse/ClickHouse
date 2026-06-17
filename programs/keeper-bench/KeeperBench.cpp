@@ -3,6 +3,9 @@
 #include <Runner.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
+#include <Common/ThreadPool.h>
+#include <IO/SharedThreadPools.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include <boost/program_options/variables_map.hpp>
 
@@ -29,6 +32,13 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
     //Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
     //Poco::Logger::root().setChannel(channel);
     //Poco::Logger::root().setLevel("trace");
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
 
     try
     {

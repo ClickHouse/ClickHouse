@@ -2334,7 +2334,7 @@ void HashJoin::publishSharedRuntimeFilters()
         return;
     shared_runtime_filters_publish_attempted = true;
 
-    if (!table_join->enableJoinRuntimeFilterSharedFixedHashTable())
+    if (!table_join->joinRuntimeFilterFromFixedHashTable())
         return;
 
     const auto & descriptors = table_join->getSharedRuntimeFilterDescriptors();
@@ -2581,7 +2581,7 @@ bool HashJoin::hasPostBuildPhase() const
     const bool needs_shared_filter_publish =
         data && data->rows_to_join && data->maps.size() == 1
         && (data->type == Type::key8 || data->type == Type::key16)
-        && table_join->enableJoinRuntimeFilterSharedFixedHashTable()
+        && table_join->joinRuntimeFilterFromFixedHashTable()
         && !table_join->getSharedRuntimeFilterDescriptors().empty();
 
     return rightTableCanBeReranged() || canConvertToFixedHashMap() || needs_shared_filter_publish;

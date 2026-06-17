@@ -88,6 +88,16 @@ private:
     MergeTreePatchReaders patch_readers;
     std::vector<std::deque<PatchReadResultPtr>> patches_results;
 
+    /// Storage names of overwritten columns that an on-fly MUTATION step genuinely consumes
+    /// as a function input before any step overwrites them. They must still be converted to
+    /// the post-`MODIFY` metadata type, otherwise the consuming action sees a type/storage
+    /// mismatch. The synthetic keep-old fallback of an `UPDATE` (`if(cond, expr, col)`'s third
+    /// argument) is not a genuine read and is ignored; a real same-step read such as
+    /// `UPDATE col = f(col)` does force conversion. Columns referenced only by that fallback
+    /// stay skipped; query PREWHERE steps are excluded (they convert at their own turn).
+    /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
+    NameSet columns_consumed_by_chain_actions;
+
     bool is_initialized = false;
     LoggerPtr log = getLogger("MergeTreeReadersChain");
 };
