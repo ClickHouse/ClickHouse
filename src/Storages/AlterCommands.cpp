@@ -1,3 +1,5 @@
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -132,7 +134,7 @@ struct ReplaceLiteralVisitorData
         for (auto & argument : func.arguments->children)
         {
             if (auto * literal = typeid_cast<ASTLiteral *>(argument.get()); literal)
-                argument = std::make_shared<ASTLiteral>(0);
+                argument = make_intrusive<ASTLiteral>(Field(0));
         }
     }
 };
@@ -2188,7 +2190,7 @@ time_t AlterCommands::tryOptimizeModifyTLL(const StorageInMemoryMetadata & metad
         return 0;
 
     TTLTableDescription new_table_ttl = TTLTableDescription::getTTLForTableFromAST(
-        alter_cmd.ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
+        alter_cmd.ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
     if (!new_table_ttl.rows_ttl.expression_ast || !new_table_ttl.rows_where_ttl.empty() || !new_table_ttl.move_ttl.empty()
         || !new_table_ttl.recompression_ttl.empty() || !new_table_ttl.group_by_ttl.empty())
         return 0;
