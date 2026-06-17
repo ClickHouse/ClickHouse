@@ -378,17 +378,17 @@ def test_parallel_replicas_pattern1(start_cluster, max_parallel_replicas):
     assert off == expected
 
 
-def test_remote_partial_aggregation_has_top_k(start_cluster):
-    """`EXPLAIN PLAN distributed=1` exposes the remote sub-plan that is
-    serialized to the parallel-replicas follower.  When
-    `enable_group_by_top_k_optimization = 1` the helper added to
-    `createRemotePlanForParallelReplicas` must mark the partial
-    `AggregatingStep` with a `Top-K` annotation; turning the setting off
-    must leave it absent.
+def test_remote_partial_aggregation_has_no_top_k(start_cluster):
+    """The GROUP BY top-K pushdown is intentionally NOT applied to the partial
+    aggregation shipped to parallel-replicas followers: it would have to be
+    serialized through `AggregatingStep`, but the query-plan serialization
+    version is not negotiated on the cached-blob send path, so older followers
+    could not be told about the extra bytes.
 
-    Without this assertion the test suite could only prove the result is
-    *correct* (the rank argument guarantees that regardless of whether the
-    heap fires).  This test directly verifies the pushdown happened.
+    Therefore the remote partial `AggregatingStep` must never carry a `Top-K`
+    annotation, regardless of `enable_group_by_top_k_optimization`.  Result
+    correctness is covered by the pattern tests; the optimization still applies
+    to the coordinator's final aggregation.
     """
     table = "t_pr"
     _create_replicated_shards(table)
@@ -402,20 +402,14 @@ def test_remote_partial_aggregation_has_top_k(start_cluster):
         "cluster_for_parallel_replicas": "one_shard_two_replicas",
         "serialize_query_plan": 1,
     }
-    plan_on = node1.query(
-        query, settings=dict(settings_base, enable_group_by_top_k_optimization=1)
-    )
-    plan_off = node1.query(
-        query, settings=dict(settings_base, enable_group_by_top_k_optimization=0)
-    )
-    assert "Top-K:" in plan_on, (
-        f"Expected Top-K hint in the remote partial AggregatingStep when "
-        f"the optimization is enabled.\nFull plan:\n{plan_on}"
-    )
-    assert "Top-K:" not in plan_off, (
-        f"Did not expect Top-K hint when the optimization is disabled.\n"
-        f"Full plan:\n{plan_off}"
-    )
+    for opt in (0, 1):
+        plan = node1.query(
+            query, settings=dict(settings_base, enable_group_by_top_k_optimization=opt)
+        )
+        assert "Top-K:" not in plan, (
+            f"Top-K must not be pushed into partial aggregation across the wire "
+            f"(enable_group_by_top_k_optimization={opt}).\nFull plan:\n{plan}"
+        )
 
 
 @pytest.mark.parametrize("max_parallel_replicas", [2])

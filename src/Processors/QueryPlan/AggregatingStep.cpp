@@ -986,19 +986,13 @@ void AggregatingStep::serialize(Serialization & ctx) const
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         flags |= 16;
 
-    /// Round-trip the `enable_group_by_top_k_optimization` heap parameters so
-    /// the partial aggregation on a parallel-replicas follower can apply the
-    /// top-K filter that the initiator's optimizer chose for it.
-    /// Collators are not yet serialized: only the no-collator case is sent.
-    const bool has_top_k_pushdown =
-        params.top_k_keys > 0
-        && params.top_k_key_columns > 0
-        && std::all_of(
-            params.top_k_keys_collators.begin(),
-            params.top_k_keys_collators.end(),
-            [](const Collator * c) { return c == nullptr; });
-    if (has_top_k_pushdown)
-        flags |= 32;
+    /// The `enable_group_by_top_k_optimization` heap parameters are intentionally
+    /// not serialized: the query-plan serialization version is not negotiated on
+    /// the cached-blob send path (`Connection::sendQueryPlan`), so an older
+    /// receiver could not be told to skip these bytes.  The optimization still
+    /// applies to local (final) aggregation; it is simply not pushed across the
+    /// wire to parallel-replicas followers.  Revisit once the version is wired
+    /// through the send path (flag bit 32 is reserved for it).
 
     writeIntBinary(flags, ctx.out);
 
@@ -1025,20 +1019,6 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.skip_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
-
-    if (has_top_k_pushdown)
-    {
-        writeVarUInt(params.top_k_keys, ctx.out);
-        writeVarUInt(params.top_k_key_columns, ctx.out);
-        for (size_t i = 0; i < params.top_k_key_columns; ++i)
-        {
-            const Int8 dir = static_cast<Int8>(params.top_k_keys_directions[i]);
-            const Int8 nulls_dir = static_cast<Int8>(params.top_k_keys_nulls_directions[i]);
-            writeIntBinary(dir, ctx.out);
-            writeIntBinary(nulls_dir, ctx.out);
-        }
-        writeIntBinary(static_cast<UInt8>(params.top_k_requires_pruning), ctx.out);
-    }
 }
 
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
@@ -1054,7 +1034,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     bool group_by_use_nulls = bool(flags & 4);
     bool has_grouping_sets = bool(flags & 8);
     bool has_stats_key = bool(flags & 16);
-    bool has_top_k_pushdown = bool(flags & 32);
+    /// Flag bit 32 is reserved for the top-K pushdown payload, which is not
+    /// serialized (see the serialize side); a current stream never sets it.
 
     UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);
@@ -1143,35 +1124,6 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging],
         false,
         false);
-
-    if (has_top_k_pushdown)
-    {
-        UInt64 top_k = 0;
-        UInt64 top_k_key_columns = 0;
-        readVarUInt(top_k, ctx.in);
-        readVarUInt(top_k_key_columns, ctx.in);
-        std::vector<int> directions(top_k_key_columns);
-        std::vector<int> nulls_directions(top_k_key_columns);
-        std::vector<const Collator *> collators(top_k_key_columns, nullptr);
-        for (size_t i = 0; i < top_k_key_columns; ++i)
-        {
-            Int8 dir = 0;
-            Int8 nulls_dir = 0;
-            readIntBinary(dir, ctx.in);
-            readIntBinary(nulls_dir, ctx.in);
-            directions[i] = dir;
-            nulls_directions[i] = nulls_dir;
-        }
-        UInt8 requires_pruning = 0;
-        readIntBinary(requires_pruning, ctx.in);
-        aggregating_step->applyLimitPushdown(
-            top_k,
-            std::move(directions),
-            std::move(nulls_directions),
-            std::move(collators),
-            top_k_key_columns,
-            requires_pruning != 0);
-    }
 
     return aggregating_step;
 }
