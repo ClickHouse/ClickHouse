@@ -326,7 +326,7 @@ Chunk KafkaSource::generateImpl()
 
     if (cancelled)
     {
-        consumer->rollbackToLastCommitted();
+        consumer->rewindToLastCommitted();
         return {};
     }
 
@@ -383,6 +383,7 @@ void KafkaSource::commit()
         return;
 
     consumer->commit();
+    consumer->cleanBlockStartOffsets();
 
     broken = false;
 }

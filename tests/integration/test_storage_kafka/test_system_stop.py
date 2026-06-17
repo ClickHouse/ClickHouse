@@ -10,6 +10,7 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,
+    stay_alive=True,
     macros={
         "kafka_broker": "kafka1",
         "kafka_topic_old": k.KAFKA_TOPIC_OLD,
@@ -424,6 +425,62 @@ def test_stop_during_insert_does_not_duplicate(kafka_cluster, keeper):
         # duplicate), and none are missing (no loss).
         wait_dst_count(table, n)
         assert_dst_count_stable(table, n, seconds=8)
+
+
+def test_stop_with_commit_every_batch_does_not_lose_rows(kafka_cluster):
+    # `kafka_commit_every_batch` commits offsets at every poll batch (`kafka_poll_max_batch_size`)
+    # while the single block is still being assembled, BEFORE it is inserted into the views. 
+    # SYSTEM STOP aborting in-flight block discards rows but their offsets stay committed.
+    # Consumer that rejoins from the committed offset resumes PAST the discarded rows and they are lost.
+    #
+    # kafka_poll_max_batch_size = 1 commits after every row; kafka_max_block_size = 1000 keeps the
+    # block open for ~kafka_flush_interval_ms so STOP lands while the rows are committed but not inserted.
+    # v1 only: `kafka_commit_every_batch` is a `StorageKafka`/`KafkaConsumer` setting; v2 does not use it.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_cebatch_{k.random_string(6)}"
+    n = 10
+    with k.kafka_topic(admin_client, table):
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{table}',
+                         kafka_group_name = '{table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_commit_every_batch = 1,
+                         kafka_poll_max_batch_size = 1,
+                         kafka_max_block_size = 1000,
+                         kafka_flush_interval_ms = 5000,
+                         kafka_poll_timeout_ms = 1000;
+            CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+                SELECT key, value FROM test.{table};
+            """
+        )
+
+        produce(kafka_cluster, table, 0, 1)
+        wait_dst_count(table, 1)
+
+        # Halt, pre-load one block of n rows, then resume so a fresh cycle opens a block, polls all n
+        # rows one batch at a time -- committing each batch's offset to the broker as it goes -- and
+        # holds the block open for ~kafka_flush_interval_ms before inserting it.
+        instance.query(f"SYSTEM STOP test.{table}")
+        produce(kafka_cluster, table, 1, n)
+        instance.query(f"SYSTEM START test.{table}")
+
+        time.sleep(2)  # all n rows polled and their offsets committed; block still open, not yet inserted
+        instance.query(f"SYSTEM STOP test.{table}")
+
+        # The aborted block is discarded and future cycles are blocked, so only the warm-up row is visible.
+        assert_dst_count_stable(table, 1, seconds=3)
+
+        # Restart so a brand-new consumer resumes strictly from the committed offset (what any rebalance
+        # or process restart does). If the mid-block commits advanced past the discarded rows, those rows
+        # are gone for good and the count never reaches 1 + n.
+        instance.restart_clickhouse()
+        wait_dst_count(table, 1 + n)
+        assert_dst_count_stable(table, 1 + n, seconds=5)
 
 
 def test_system_stop_all_background(kafka_cluster):
