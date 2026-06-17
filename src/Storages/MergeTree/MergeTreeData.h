@@ -1682,13 +1682,16 @@ protected:
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context,
-        std::optional<bool> allow_minmax_index_for_json_table_setting = std::nullopt) const;
+        bool check_minmax_index_for_json = true) const;
 
     void setProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
         bool attach = false,
-        ContextPtr local_context = nullptr);
+        ContextPtr local_context = nullptr,
+        bool check_minmax_index_for_json = true);
+
+    void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 

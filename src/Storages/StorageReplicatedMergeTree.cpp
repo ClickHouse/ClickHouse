@@ -1820,7 +1820,11 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setProperties(new_metadata, old_metadata);
+
+    /// The JSON minmax index compatibility check is already enforced by the replica that initiates
+    /// `ALTER`. Query-level settings are not serialized into the replication log entry, so replaying
+    /// the same metadata on followers must not depend on the original query context.
+    setProperties(new_metadata, old_metadata, false, nullptr, false /* check_minmax_index_for_json */);
 
     try
     {
@@ -1829,7 +1833,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     catch (...)
     {
         LOG_ERROR(log, "Failed to set table structure, reverting changes");
-        setProperties(old_metadata, new_metadata);
+        setProperties(old_metadata, new_metadata, false, nullptr, false /* check_minmax_index_for_json */);
         throw;
     }
 }
