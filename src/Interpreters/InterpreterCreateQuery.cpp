@@ -586,7 +586,15 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
-    bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
+
+    /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the initiator.
+    /// Known limitation: with distributed_ddl_entry_format_version < NORMALIZE_CREATE_ON_INITIATOR_VERSION
+    /// the initiator does not normalize the query, and the transforms are wrongly skipped here too.
+    const bool already_normalized_on_initiator = context_->isDDLOrOnClusterInternal();
+
+    bool make_columns_nullable = mode < LoadingStrictnessLevel::SECONDARY_CREATE
+        && !already_normalized_on_initiator
+        && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
     for (const auto & ast : columns_ast.children)
@@ -704,7 +712,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
+        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
@@ -2159,7 +2168,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
-        std::bernoulli_distribution fault(probability);
+        std::bernoulli_distribution fault(static_cast<double>(probability));
         if (fault(thread_local_rng))
         {
             /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
@@ -2662,7 +2671,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
     {
-        SQLSecurityType default_security;
+        SQLSecurityType default_security = {};
 
         if (is_materialized_view)
             default_security = context_->getSettingsRef()[Setting::default_materialized_view_sql_security];
@@ -2834,6 +2843,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
     LOG_INFO(getLogger("InterpreterCreateQuery"), "Removed {} transaction metadata files for table, relative path: {}.", total_removed, table_data_path);
 }
 
+void registerInterpreterCreateQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

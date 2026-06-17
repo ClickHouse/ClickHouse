@@ -348,7 +348,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
             const auto & desc = impl->desc[i];
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
-            int res;
+            int res = 0;
             if (impl->need_collation[i])
                 res = impl->sort_columns[i]->compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction, *impl->desc[i].collator);
             else

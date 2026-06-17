@@ -55,7 +55,7 @@ static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndType
     return res;
 }
 
-bool isRetryableSchemaInferenceError(int code)
+static bool isRetryableSchemaInferenceError(int code)
 {
     return code == ErrorCodes::EMPTY_DATA_PASSED || code == ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA;
 }
@@ -102,7 +102,7 @@ static const std::vector<String> & getSimilarFormatsSetForDetection()
     return formats_order;
 }
 
-std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
+static std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
     std::optional<String> format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,

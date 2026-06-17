@@ -74,14 +74,32 @@ SELECT aiGenerate('ai_no_model', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_model;
 
+-- `api_key` is optional: it can be omitted for OpenAI-compatible servers that don't
+-- require authentication (e.g. a local Ollama instance). When absent, the provider
+-- omits the auth header rather than sending a dummy token.
 DROP NAMED COLLECTION IF EXISTS ai_no_api_key;
 CREATE NAMED COLLECTION ai_no_api_key AS
     provider = 'openai',
     endpoint = 'http://localhost:1/v1/chat/completions',
     model = 'test-model';
 
-SELECT '-- Named collection missing api_key';
-SELECT aiGenerate('ai_no_api_key', 'hi'); -- { serverError BAD_ARGUMENTS }
+SELECT '-- Named collection without api_key resolves';
+SELECT count() FROM (SELECT aiGenerate('ai_no_api_key', x) AS result FROM tab);
+
+-- Force the no-key path through provider construction and an actual HTTP request:
+-- `localhost:1` refuses the connection, `ai_function_throw_on_error = 0` swallows it,
+-- and the row is returned with an empty result. If provider construction had rejected
+-- an empty `api_key`, this would throw before the swallow path is reached.
+SELECT '-- Named collection without api_key reaches HTTP path';
+DROP TABLE IF EXISTS _03300_no_api_key_in;
+CREATE TABLE _03300_no_api_key_in (x String) ENGINE = Memory;
+INSERT INTO _03300_no_api_key_in VALUES ('hello');
+SET ai_function_throw_on_error = 0;
+SET ai_function_request_timeout_sec = 3;
+SELECT length(aiGenerate('ai_no_api_key', x)) FROM _03300_no_api_key_in;
+SET ai_function_throw_on_error = 1;
+SET ai_function_request_timeout_sec = 60;
+DROP TABLE _03300_no_api_key_in;
 
 DROP NAMED COLLECTION ai_no_api_key;
 

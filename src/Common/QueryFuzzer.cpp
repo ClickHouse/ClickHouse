@@ -26,18 +26,27 @@
 #include <IO/WriteHelpers.h>
 
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -48,6 +57,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTQueryParameter.h>
@@ -58,10 +68,15 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowColumnsQuery.h>
+#include <Parsers/ASTShowFunctionsQuery.h>
+#include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
@@ -266,16 +281,27 @@ Field QueryFuzzer::getRandomField(int type)
             return bad_int64_values[fuzz_rand() % std::size(bad_int64_values)];
         }
         case 1: {
-            static constexpr double values[] = {NAN,       INFINITY,
-                                                -INFINITY, 0.,
-                                                -0.,       0.0001,
-                                                0.5,       0.9999,
-                                                1.,        1.0001,
-                                                2.,        10.0001,
-                                                100.0001,  1000.0001,
-                                                1e10,      1e20,
-                                                FLT_MIN,   FLT_MIN + FLT_EPSILON,
-                                                FLT_MAX,   FLT_MAX + FLT_EPSILON};
+            static constexpr double values[]
+                = {std::numeric_limits<double>::quiet_NaN(),
+                   std::numeric_limits<double>::infinity(),
+                   -std::numeric_limits<double>::infinity(),
+                   0.,
+                   -0.,
+                   0.0001,
+                   0.5,
+                   0.9999,
+                   1.,
+                   1.0001,
+                   2.,
+                   10.0001,
+                   100.0001,
+                   1000.0001,
+                   1e10,
+                   1e20,
+                   static_cast<double>(FLT_MIN),
+                   static_cast<double>(FLT_MIN) + static_cast<double>(FLT_EPSILON),
+                   static_cast<double>(FLT_MAX),
+                   static_cast<double>(FLT_MAX) + static_cast<double>(FLT_EPSILON)};
             return values[fuzz_rand() % std::size(values)];
         }
         case 2: {
@@ -960,7 +986,6 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                "add_minmax_index_for_string_columns",
                "add_minmax_index_for_temporal_columns",
                "allow_coalescing_columns_in_partition_or_order_key",
-               "allow_experimental_reverse_key",
                "allow_floating_point_partition_key",
                "allow_nullable_key",
                "allow_summing_columns_in_partition_or_order_key",
@@ -1766,11 +1791,20 @@ static const std::map<size_t, Strings> swapAggrs
          "count",
          "deltaSum",
          "entropy",
+         "estimateCompressionRatio",
          "first_value",
          "groupArray",
+         "groupArrayIntersect",
+         "groupArrayMovingAvg",
+         "groupArrayMovingSum",
          "groupBitAnd",
          "groupBitOr",
          "groupBitXor",
+         "groupBitmap",
+         "groupBitmapAnd",
+         "groupBitmapOr",
+         "groupBitmapXor",
+         "groupConcat",
          "groupUniqArray",
          "kurtPop",
          "kurtSamp",
@@ -1778,6 +1812,15 @@ static const std::map<size_t, Strings> swapAggrs
          "max",
          "median",
          "min",
+         "quantile",
+         "quantileBFloat16",
+         "quantileExact",
+         "quantileExactExclusive",
+         "quantileExactHigh",
+         "quantileExactInclusive",
+         "quantileExactLow",
+         "quantileTDigest",
+         "quantileTiming",
          "singleValueOrNull",
          "skewPop",
          "skewSamp",
@@ -1789,7 +1832,6 @@ static const std::map<size_t, Strings> swapAggrs
          "sumCount",
          "sumKahan",
          "sumWithOverflow",
-         "topK",
          "uniq",
          "uniqCombined",
          "uniqCombined64",
@@ -1799,18 +1841,11 @@ static const std::map<size_t, Strings> swapAggrs
          "varPop",
          "varPopStable",
          "varSamp",
-         "varSampStable",
-         "groupArrayIntersect",
-         "groupBitmapAnd",
-         "groupBitmapOr",
-         "groupBitmapXor",
-         "quantile",
-         "groupArrayMovingAvg",
-         "groupArrayMovingSum",
-         "groupArraySorted",
-         "aggThrow"}},
+         "varSampStable"}},
        {2,
-        {"argMax",
+        {"analysisOfVariance",
+         "approx_top_sum",
+         "argMax",
          "argMin",
          "avgWeighted",
          "boundingRatio",
@@ -1824,21 +1859,29 @@ static const std::map<size_t, Strings> swapAggrs
          "cramersV",
          "cramersVBiasCorrected",
          "deltaSumTimestamp",
+         "groupArrayInsertAt",
+         "intervalLengthSum",
          "kolmogorovSmirnovTest",
          "mannWhitneyUTest",
          "maxIntersections",
          "maxIntersectionsPosition",
+         "maxMappedArrays",
+         "minMappedArrays",
+         "quantileBFloat16Weighted",
+         "quantileDeterministic",
+         "quantileExactWeighted",
+         "quantileInterpolatedWeighted",
+         "quantileTDigestWeighted",
+         "quantileTimingWeighted",
          "quantileWeighted",
          "rankCorr",
+         "simpleLinearRegression",
          "studentTTest",
+         "sumMappedArrays",
          "theilsU",
          "topKWeighted",
          "uniq",
-         "welchTTest",
-         "simpleLinearRegression",
-         "largestTriangleThreeBuckets",
-         "analysisOfVariance",
-         "intervalLengthSum"}}};
+         "welchTTest"}}};
 
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
@@ -2232,10 +2275,8 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         {"file", "url"},
         /// Cluster variants of file-like sources
         {"fileCluster", "urlCluster"},
-        /// Object storage (url, access_key, secret_key, format, structure)
-        {"s3", "gcs", "cosn", "oss"},
-        /// Object storage cluster variants
-        {"s3Cluster", "azureBlobStorageCluster"},
+        /// S3-compatible object storage (url, access_key, secret_key, format, structure)
+        {"cosn", "gcs", "oss", "s3"},
         /// Data lake table functions
         {"iceberg", "icebergS3", "deltaLake", "deltaLakeS3", "hudi", "paimon", "paimonS3"},
         /// Data lake Azure variants
@@ -2245,17 +2286,17 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         /// Data lake local variants
         {"icebergLocal", "deltaLakeLocal", "paimonLocal"},
         /// Data lake cluster variants
-        {"icebergCluster", "icebergS3Cluster", "deltaLakeCluster", "deltaLakeS3Cluster", "hudiCluster", "paimonCluster", "paimonS3Cluster"},
+        {"deltaLakeCluster", "deltaLakeS3Cluster", "hudiCluster", "icebergCluster", "icebergS3Cluster", "paimonCluster", "paimonS3Cluster"},
         /// Data lake Azure cluster variants
-        {"icebergAzureCluster", "deltaLakeAzureCluster", "paimonAzureCluster"},
+        {"deltaLakeAzureCluster", "icebergAzureCluster", "paimonAzureCluster"},
         /// Data lake HDFS cluster variants
         {"icebergHDFSCluster", "paimonHDFSCluster"},
         /// MergeTree introspection
-        {"mergeTreeIndex", "mergeTreeAnalyzeIndexes", "mergeTreeProjection", "mergeTreeTextIndex"},
+        {"mergeTreeAnalyzeIndexes", "mergeTreeIndex", "mergeTreeProjection", "mergeTreeTextIndex"},
         /// External relational databases (host, port, db, table, user, password)
         {"mysql", "postgresql"},
-        /// External databases with connection-style args
-        {"sqlite", "mongodb", "redis"},
+        /// External document stores (connection-style args)
+        {"mongodb", "redis"},
         /// Remote ClickHouse clusters
         {"remote", "remoteSecure"},
         /// Named cluster table functions
@@ -2264,8 +2305,8 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         {"jdbc", "odbc"},
         /// Fuzzer generators
         {"fuzzQuery", "fuzzJSON"},
-        /// Prometheus query variants
-        {"prometheusQuery", "prometheusQueryRange"},
+        /// TimeSeries table functions (db, table → time-series views)
+        {"timeSeriesMetrics", "timeSeriesSamples", "timeSeriesTags"},
         /// View variants
         {"view", "viewIfPermitted"},
     };
@@ -2689,7 +2730,7 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
         }
         else if (!alias.empty())
         {
-            ASTIdentifier * id;
+            ASTIdentifier * id = nullptr;
             const int next_action = fuzz_rand() % 30;
 
             if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty())
@@ -2725,6 +2766,7 @@ static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p)
     const auto * id = typeid_cast<ASTIdentifier *>(p.second.get());
     return id && !id->name_parts.empty() && !id->isParam();
 };
+
 
 ASTPtr QueryFuzzer::generatePredicate()
 {
@@ -2809,7 +2851,22 @@ ASTPtr QueryFuzzer::generatePredicate()
                         makeASTFunction("greaterOrEquals", expression_1->clone(), lo),
                         makeASTFunction("lessOrEquals", expression_1, hi));
                 }
-                /// Fall back to a column comparison if no subquery was available (case 1) or for nprob >= 4
+                else if (nprob == 4)
+                {
+                    switch (fuzz_rand() % 3)
+                    {
+                        case 0: /// expr IS TRUE → isNotDistinctFrom(expr, true)
+                            next_condition = makeASTFunction("isNotDistinctFrom", expression_1, make_intrusive<ASTLiteral>(true));
+                            break;
+                        case 1: /// expr IS FALSE → isNotDistinctFrom(expr, false)
+                            next_condition = makeASTFunction("isNotDistinctFrom", expression_1, make_intrusive<ASTLiteral>(false));
+                            break;
+                        default: /// expr IS UNKNOWN → isNull(expr)
+                            next_condition = makeASTFunction("isNull", expression_1);
+                            break;
+                    }
+                }
+                /// Fall back to a column comparison if no subquery was available (case 1) or for nprob >= 5
                 if (!next_condition)
                 {
                     /// Pick any other column reference
@@ -3332,8 +3389,10 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "parseDateTime64InJodaSyntax",
          "parseDateTime64InJodaSyntaxOrNull",
          "parseDateTime64InJodaSyntaxOrZero"},
-        /// Date ↔ Modified Julian Day conversions
-        {"toModifiedJulianDay", "toModifiedJulianDayOrNull", "fromModifiedJulianDay", "fromModifiedJulianDayOrNull"},
+        /// Day-count → Date (integer arg)
+        {"fromDaysSinceYearZero", "fromModifiedJulianDay", "fromModifiedJulianDayOrNull"},
+        /// String → day-count (String/FixedString arg)
+        {"toModifiedJulianDay", "toModifiedJulianDayOrNull"},
         /// Unix-time → DateTime
         {"fromUnixTime", "fromUnixTimeInJodaSyntax"},
         /// Date arithmetic: add/subtract intervals (date/datetime, number → datetime)
@@ -3370,6 +3429,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toUInt128OrZero", "toUInt128OrDefault", "toUInt256",      "toUInt256OrNull",   "toUInt256OrZero", "toUInt256OrDefault"},
         /// Floating-point type casts (bare, OrNull, OrZero, and OrDefault variants)
         {"toBFloat16",
+         "toBFloat16OrNull",
+         "toBFloat16OrZero",
          "toFloat32",
          "toFloat32OrNull",
          "toFloat32OrZero",
@@ -3401,7 +3462,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toTimeOrNull",
          "toTimeOrZero",
          "toTimeOrDefault",
-         "toTime64OrDefault"},
+         "toTime64OrDefault",
+         "toTime64OrNull",
+         "toTime64OrZero"},
         /// Rounding functions (number → number)
         {"ceil", "floor", "round", "roundBankers", "roundDown", "trunc", "roundAge", "roundDuration", "roundToExp2"},
         /// Bitwise binary operators
@@ -3425,7 +3488,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "normalizeUTF8NFKC",
          "normalizeUTF8NFKD",
          "caseFoldUTF8",
-         "removeDiacriticsUTF8"},
+         "removeDiacriticsUTF8",
+         "soundex"},
         /// String left/right extraction and padding
         {"right", "rightPad", "rightPadUTF8", "rightUTF8", "left", "leftPad", "leftPadUTF8", "leftUTF8"},
         /// Whitespace trimming
@@ -3469,10 +3533,12 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "arrayShiftLeft",         "arrayShiftRight"},
         /// URL hierarchy generators (url → Array(String))
         {"URLHierarchy", "URLPathHierarchy"},
-        /// Trig functions, logarithms, exponentials and roots (number → Float64)
-        {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh",   "atan",
-         "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",     "exp2",
-         "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "power",   "tgamma", "sigmoid", "atan2"},
+        /// Unary trig functions, logarithms, exponentials and roots (number → Float64)
+        {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh", "atan",
+         "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",   "exp2",
+         "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "tgamma",  "sigmoid"},
+        /// Binary math functions (number, number → Float64)
+        {"atan2", "hypot", "power"},
         /// Non-cryptographic hash functions (→ UInt32/UInt64)
         {"cityHash64",
          "CRC32",
@@ -3485,6 +3551,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "metroHash64",
          "murmurHash2_32",
          "murmurHash2_64",
+         "murmurHash3_32",
          "murmurHash3_64",
          "sipHash64",
          "wyHash64",
@@ -3492,7 +3559,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "xxHash64",
          "xxh3"},
         /// Non-cryptographic 128-bit hash functions (→ FixedString(16))
-        {"sipHash128", "murmurHash3_128"},
+        {"sipHash128", "sipHash128Reference", "murmurHash3_128"},
         /// Cryptographic hashes (string → FixedString)
         {"MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512", "SHA512_256"},
         /// String position search (haystack, needle → UInt64)
@@ -3530,9 +3597,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Higher-order map functions (lambda, map → map or UInt8)
         higher_order_map_funcs,
         /// Binary encoding (bytes → encoded String)
-        {"hex", "bin", "base64Encode", "base64URLEncode"},
+        {"hex", "bin", "base58Encode", "base64Encode", "base64URLEncode"},
         /// Binary decoding (encoded String → bytes)
-        {"unhex", "unbin", "base64Decode", "base64URLDecode", "tryBase64Decode", "tryBase64URLDecode"},
+        {"unhex", "unbin", "base58Decode", "tryBase58Decode", "base64Decode", "base64URLDecode", "tryBase64Decode", "tryBase64URLDecode"},
         /// Sign/magnitude
         {"abs", "sign"},
         /// JSONExtract* family (json, path → typed value)
@@ -3621,7 +3688,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Window ranking functions (no arguments, window clause required)
         {"rank", "dense_rank", "row_number", "percent_rank", "cume_dist"},
         /// Window lag/lead functions (expr[, offset[, default]])
-        {"lagInFrame", "leadInFrame"},
+        {"lag", "lagInFrame", "lead", "leadInFrame"},
         /// Array search / index (array, value → UInt64)
         {"indexOf", "countEqual"},
         /// Human-readable formatting (number → String)
@@ -3631,7 +3698,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Bitmap membership tests (Bitmap, Bitmap → UInt8)
         {"bitmapContains", "bitmapHasAny", "bitmapHasAll"},
         /// UUID type casts (String → UUID, with error-handling variants)
-        {"toUUID", "toUUIDOrNull", "toUUIDOrZero"},
+        {"toUUID", "toUUIDOrDefault", "toUUIDOrNull", "toUUIDOrZero"},
         /// String/type conversion (arity mismatch for toFixedString is intentional)
         {"toString", "toFixedString"},
         /// Type name introspection (any → String)
@@ -3644,8 +3711,28 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
+        /// AI functions: 2-arg (named_collection, text → result)
+        {"aiEmbed", "aiGenerate"},
+        /// AI functions: 3-arg (named_collection, text, semantic_arg → result)
+        {"aiClassify", "aiExtract", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
-        {"greatCircleDistance", "geoDistance", "greatCircleAngle"}};
+        {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
+        /// Consistent hash functions (value, num_buckets → Int32)
+        {"jumpConsistentHash", "kostikConsistentHash"},
+        /// Keyed SipHash functions (key_tuple, value... → hash)
+        {"sipHash64Keyed", "sipHash128Keyed", "sipHash128ReferenceKeyed"},
+        /// Bitmap binary cardinality (Bitmap, Bitmap → UInt64)
+        {"bitmapAndCardinality", "bitmapOrCardinality", "bitmapXorCardinality", "bitmapAndnotCardinality"},
+        /// Bitmap subset extraction (Bitmap, range → Bitmap)
+        {"bitmapSubsetInRange", "bitmapSubsetLimit"},
+        /// Tuple element-wise arithmetic (Tuple, Tuple → Tuple)
+        {"tupleDivide", "tupleIntDiv", "tupleIntDivOrZero", "tupleMinus", "tupleModulo", "tupleMultiply", "tuplePlus"},
+        /// Snowflake ID ↔ DateTime conversions
+        {"dateTimeToSnowflake", "dateTimeToSnowflakeID", "snowflakeIDToDateTime", "snowflakeToDateTime"},
+        /// IP CIDR range functions (IP, UInt8 → Tuple)
+        {"IPv4CIDRToRange", "IPv6CIDRToRange"},
+        /// IP string predicates (String → UInt8)
+        {"isIPv4String", "isIPv6String"}};
 
 void QueryFuzzer::fuzz(ASTPtr & ast)
 {
@@ -3670,6 +3757,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     auto [_, inserted] = debug_visited_nodes.insert(ast.get());
     if (!inserted)
     {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(
             stderr,
             "The AST node '{}' was already visited before."
@@ -3678,6 +3767,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             current_ast_depth,
             debug_visited_nodes.size(),
             (*debug_top_ast)->dumpTree());
+#pragma clang diagnostic pop
         std::abort();
     }
 
@@ -5130,6 +5220,210 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         else
             fuzz(ast->children);
+    }
+    else if (auto * show_tables = typeid_cast<ASTShowTablesQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            show_tables->databases = !show_tables->databases;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->clusters = !show_tables->clusters;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->dictionaries = !show_tables->dictionaries;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->temporary = !show_tables->temporary;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->caches = !show_tables->caches;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->merges = !show_tables->merges;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->m_settings = !show_tables->m_settings;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->changed = !show_tables->changed;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->full = !show_tables->full;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->not_like = !show_tables->not_like;
+        if (fuzz_rand() % 10 == 0)
+            show_tables->case_insensitive_like = !show_tables->case_insensitive_like;
+        if (fuzz_rand() % 20 == 0 && !show_tables->like.empty())
+            show_tables->like.clear();
+        fuzz(show_tables->children);
+    }
+    else if (auto * show_columns = typeid_cast<ASTShowColumnsQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            show_columns->extended = !show_columns->extended;
+        if (fuzz_rand() % 10 == 0)
+            show_columns->full = !show_columns->full;
+        if (fuzz_rand() % 10 == 0)
+            show_columns->not_like = !show_columns->not_like;
+        if (fuzz_rand() % 10 == 0)
+            show_columns->case_insensitive_like = !show_columns->case_insensitive_like;
+        if (fuzz_rand() % 20 == 0 && !show_columns->like.empty())
+            show_columns->like.clear();
+        fuzz(show_columns->children);
+    }
+    else if (auto * show_indexes = typeid_cast<ASTShowIndexesQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            show_indexes->extended = !show_indexes->extended;
+        fuzz(show_indexes->children);
+    }
+    else if (auto * show_functions = typeid_cast<ASTShowFunctionsQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            show_functions->case_insensitive_like = !show_functions->case_insensitive_like;
+        if (fuzz_rand() % 20 == 0 && !show_functions->like.empty())
+            show_functions->like.clear();
+    }
+    else if (auto * partition = typeid_cast<ASTPartition *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+        {
+            if (partition->all)
+            {
+                if (partition->value || partition->id)
+                    partition->all = false;
+            }
+            else
+            {
+                partition->all = true;
+            }
+        }
+        fuzz(partition->children);
+    }
+    else if (auto * dict = typeid_cast<ASTDictionary *>(ast.get()))
+    {
+        static const Strings simple_layout_types
+            = {"flat", "hashed", "sparse_hashed", "cache", "direct", "hashed_array", "complex_key_hashed",
+               "complex_key_sparse_hashed", "complex_key_cache", "complex_key_direct", "complex_key_hashed_array",
+               "ip_trie", "ssd_cache", "complex_key_ssd_cache"};
+
+        if (dict->layout && fuzz_rand() % 10 == 0)
+            dict->layout->layout_type = pickRandomly(fuzz_rand, simple_layout_types);
+
+        if (dict->lifetime)
+        {
+            if (fuzz_rand() % 10 == 0)
+                dict->lifetime->min_sec = fuzz_rand() % 3600;
+            if (fuzz_rand() % 10 == 0)
+                dict->lifetime->max_sec = dict->lifetime->min_sec + fuzz_rand() % 7200;
+        }
+
+        fuzz(dict->children);
+    }
+    else if (auto * dict_attr = typeid_cast<ASTDictionaryAttributeDeclaration *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            dict_attr->injective = !dict_attr->injective;
+        if (fuzz_rand() % 20 == 0)
+            dict_attr->hierarchical = !dict_attr->hierarchical;
+        if (dict_attr->hierarchical && fuzz_rand() % 10 == 0)
+            dict_attr->bidirectional = !dict_attr->bidirectional;
+        if (fuzz_rand() % 50 == 0)
+            dict_attr->is_object_id = !dict_attr->is_object_id;
+        if (dict_attr->default_value && fuzz_rand() % 5 == 0)
+            if (auto * lit = dict_attr->default_value->as<ASTLiteral>())
+                lit->value = fuzzField(lit->value);
+        if (dict_attr->expression)
+            fuzz(dict_attr->expression);
+        if (dict_attr->type)
+            fuzz(dict_attr->type);
+    }
+    else if (auto * create_nc = typeid_cast<ASTCreateNamedCollectionQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            create_nc->if_not_exists = !create_nc->if_not_exists;
+        for (auto & change : create_nc->changes)
+            if (fuzz_rand() % 5 == 0)
+                change.value = fuzzField(change.value);
+    }
+    else if (auto * alter_nc = typeid_cast<ASTAlterNamedCollectionQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            alter_nc->if_exists = !alter_nc->if_exists;
+        for (auto & change : alter_nc->changes)
+            if (fuzz_rand() % 5 == 0)
+                change.value = fuzzField(change.value);
+    }
+    else if (auto * drop_nc = typeid_cast<ASTDropNamedCollectionQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            drop_nc->if_exists = !drop_nc->if_exists;
+    }
+    else if (auto * txn = typeid_cast<ASTTransactionControl *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+        {
+            static const ASTTransactionControl::QueryType txn_types[]
+                = {ASTTransactionControl::BEGIN, ASTTransactionControl::COMMIT, ASTTransactionControl::ROLLBACK,
+                   ASTTransactionControl::SET_SNAPSHOT};
+            txn->action = txn_types[fuzz_rand() % std::size(txn_types)];
+        }
+        if (txn->action == ASTTransactionControl::SET_SNAPSHOT && fuzz_rand() % 5 == 0)
+            txn->snapshot = fuzz_rand();
+    }
+    else if (auto * grant = typeid_cast<ASTGrantQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            grant->is_revoke = !grant->is_revoke;
+        if (fuzz_rand() % 10 == 0)
+            grant->admin_option = !grant->admin_option;
+        if (fuzz_rand() % 20 == 0)
+            grant->replace_access = !grant->replace_access;
+        if (fuzz_rand() % 20 == 0)
+            grant->replace_granted_roles = !grant->replace_granted_roles;
+        if (fuzz_rand() % 10 == 0)
+            grant->current_grants = !grant->current_grants;
+        fuzz(grant->children);
+    }
+    else if (auto * create_role = typeid_cast<ASTCreateRoleQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            create_role->alter = !create_role->alter;
+        if (fuzz_rand() % 10 == 0)
+            create_role->if_exists = !create_role->if_exists;
+        if (fuzz_rand() % 10 == 0)
+            create_role->if_not_exists = !create_role->if_not_exists;
+        if (fuzz_rand() % 10 == 0)
+            create_role->or_replace = !create_role->or_replace;
+    }
+    else if (auto * create_policy = typeid_cast<ASTCreateRowPolicyQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            create_policy->alter = !create_policy->alter;
+        if (fuzz_rand() % 10 == 0)
+            create_policy->if_exists = !create_policy->if_exists;
+        if (fuzz_rand() % 10 == 0)
+            create_policy->if_not_exists = !create_policy->if_not_exists;
+        if (fuzz_rand() % 10 == 0)
+            create_policy->or_replace = !create_policy->or_replace;
+        if (create_policy->is_restrictive.has_value() && fuzz_rand() % 10 == 0)
+            create_policy->is_restrictive = !*create_policy->is_restrictive;
+        for (auto & [filter_type, filter_expr] : create_policy->filters)
+            if (filter_expr)
+                fuzz(filter_expr);
+    }
+    else if (auto * drop_access = typeid_cast<ASTDropAccessEntityQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            drop_access->if_exists = !drop_access->if_exists;
+    }
+    else if (auto * backup = typeid_cast<ASTBackupQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            backup->kind = (backup->kind == ASTBackupQuery::BACKUP) ? ASTBackupQuery::RESTORE : ASTBackupQuery::BACKUP;
+        if (backup->settings)
+            fuzz(backup->settings);
+        fuzz(backup->children);
+    }
+    else if (auto * check_table = typeid_cast<ASTCheckTableQuery *>(ast.get()))
+    {
+        if (!check_table->part_name.empty() && fuzz_rand() % 10 == 0)
+            check_table->part_name.clear();
+        if (check_table->partition)
+            fuzz(check_table->partition);
+        fuzz(check_table->children);
     }
     else
     {

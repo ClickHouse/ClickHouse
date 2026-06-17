@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -232,16 +234,53 @@ struct IdentifierResolveScope
     bool isStandardMode() const;
 
     /// Register a CTE in this scope. Updates `cte_name_to_query_node` and, when the CTE is unquoted
-    /// in standard mode, also updates `lowercase_cte_to_original_names`. Returns true if registered;
-    /// false if the same name (case-sensitive) is already registered. Throws on case-insensitive
-    /// collision among unquoted CTEs so that `WITH MyCTE AS …, mycte AS …` is rejected.
+    /// in standard mode, also updates `lowercase_cte_to_original_names`. Returns OK if registered;
+    /// DuplicateName if the same name (case-sensitive) is already registered; CaseInsensitiveCollision
+    /// for unquoted name collisions so that `WITH MyCTE AS …, mycte AS …` can be rejected.
     enum class CTERegisterResult { OK, DuplicateName, CaseInsensitiveCollision };
     CTERegisterResult registerCTE(const std::string & cte_name, QueryTreeNodePtr node, bool is_double_quoted);
+
+    /// Identifier resolution cache — prevents AST explosion by sharing resolved alias nodes.
+    /// Policy is encapsulated in `findCachedIdentifier` and `tryCacheIdentifier`.
+    void disableIdentifierCache() { identifier_resolve_cache_enabled = false; }
+    void enableIdentifierCache() { if (!identifier_resolve_cache_force_disabled) identifier_resolve_cache_enabled = true; }
+    void disableIdentifierCachePermanently() { identifier_resolve_cache_force_disabled = true; identifier_resolve_cache_enabled = false; }
+    void clearIdentifierCache() { identifier_resolve_cache.clear(); }
+
+    std::optional<IdentifierResolveResult> findCachedIdentifier(
+        const IdentifierLookup & lookup,
+        const IdentifierResolveContext & resolve_context);
+
+    void tryCacheIdentifier(
+        const IdentifierLookup & lookup,
+        const IdentifierResolveResult & result,
+        const IdentifierResolveContext & resolve_context);
 
     /// Dump identifier resolve scope
     [[maybe_unused]] void dump(WriteBuffer & buffer) const;
 
     [[maybe_unused]] String dump() const;
+
+private:
+    bool canCacheIdentifier(
+        const IdentifierLookup & lookup,
+        const IdentifierResolveContext & resolve_context) const;
+
+    struct IdentifierResolveCacheEntry
+    {
+        IdentifierResolveResult result;
+
+        /// Expressions that contain subqueries cannot be shared between use sites:
+        /// later stages rewrite each subquery instance independently (`GLOBAL IN`
+        /// external tables, `rewrite_in_to_join`, `createUniqueAliasesIfNecessary`),
+        /// so every retrieval must return its own copy of the tree. Computed once at
+        /// insertion to avoid walking the subtree on every hit.
+        bool needs_clone_on_retrieval = false;
+    };
+
+    std::unordered_map<IdentifierLookup, IdentifierResolveCacheEntry, IdentifierLookupHash> identifier_resolve_cache;
+    bool identifier_resolve_cache_enabled = true;
+    bool identifier_resolve_cache_force_disabled = false;
 };
 
 }

@@ -23,7 +23,8 @@ extern const int UNSUPPORTED_METHOD;
 class LibArchiveReader::StreamInfo
 {
 public:
-    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_, size_t archive_size_ = 0)
+    /// `buf` is intentionally left uninitialized — it is filled by `read` before use.
+    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_, size_t archive_size_ = 0) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         : read_buffer(std::move(read_buffer_)), archive_size(archive_size_) { }
 
     static ssize_t read(struct archive *, void * client_data, const void ** buff)
@@ -79,7 +80,7 @@ public:
 
     std::unique_ptr<SeekableReadBuffer> read_buffer;
     size_t archive_size;
-    char buf[DBMS_DEFAULT_BUFFER_SIZE];
+    char buf[DBMS_DEFAULT_BUFFER_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by `read` before use
     std::exception_ptr stored_exception;
 };
 

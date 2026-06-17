@@ -315,7 +315,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        size_t keys_found;
+        size_t keys_found = 0;
         auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -498,10 +498,17 @@ namespace
 template class DirectDictionary<DictionaryKeyType::Simple>;
 template class DirectDictionary<DictionaryKeyType::Complex>;
 
+void registerDictionaryDirect(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory)
 {
-    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::Simple>, false);
-    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::Complex>, true);
+    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::Simple>, false, true, Documentation{
+        .description = "Does not store any data in memory; every lookup queries the source directly. Suitable for sources that are fast to query and update frequently.",
+        .syntax = "LAYOUT(DIRECT())",
+        .related = {"cache"}});
+    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::Complex>, true, true, Documentation{
+        .description = "Like `direct`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_DIRECT())",
+        .related = {"direct"}});
 }
 
 

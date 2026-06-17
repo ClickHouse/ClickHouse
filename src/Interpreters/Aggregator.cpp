@@ -5,9 +5,7 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
-#ifdef OS_LINUX
-#    include <unistd.h>
-#endif
+#include <base/getL2CacheSize.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
@@ -220,15 +218,8 @@ concept HasPrefetchMemberFunc = requires
 
 size_t getMinBytesForPrefetch()
 {
-    size_t l2_size = 0;
-
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-    if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-        l2_size = ret;
-#endif
-
-    /// 256KB looks like a reasonable default L2 size. 4 is empirical constant.
-    return 4 * std::max<size_t>(l2_size, 256 * 1024);
+    /// 4 is empirical constant.
+    return 4 * getL2CacheSize();
 }
 
 UInt64 & getCountState(DB::AggregateDataPtr __restrict place) /// NOLINT(readability-non-const-parameter)
@@ -487,7 +478,7 @@ Block Aggregator::Params::getHeader(
 }
 
 /// Extract raw key column pointers from columns with fixed layout (keys at positions 0..keys_size-1).
-ColumnRawPtrs makeRawKeyColumns(const Columns & columns, size_t keys_size)
+static ColumnRawPtrs makeRawKeyColumns(const Columns & columns, size_t keys_size)
 {
     ColumnRawPtrs key_columns(keys_size);
     for (size_t i = 0; i < keys_size; ++i)
@@ -496,7 +487,7 @@ ColumnRawPtrs makeRawKeyColumns(const Columns & columns, size_t keys_size)
 }
 
 /// Extract aggregate column data from columns with fixed layout (aggregates at positions keys_size..keys_size+aggregates_size-1).
-Aggregator::AggregateColumnsConstData makeAggregateColumnsData(const Columns & columns, size_t keys_size, size_t aggregates_size)
+static Aggregator::AggregateColumnsConstData makeAggregateColumnsData(const Columns & columns, size_t keys_size, size_t aggregates_size)
 {
     Aggregator::AggregateColumnsConstData aggregate_columns(aggregates_size);
     for (size_t i = 0; i < aggregates_size; ++i)
@@ -949,7 +940,7 @@ void NO_INLINE Aggregator::executeImpl(
 {
     UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_rows) : 1.0;
-    bool use_cache = !is_simple_count && cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
+    bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
     if (use_cache)
     {
@@ -1194,8 +1185,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     };
     std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
 
-    size_t key_start;
-    size_t key_end;
+    size_t key_start = 0;
+    size_t key_end = 0;
     /// If all keys are const, key columns contain only 1 row.
     if  (all_keys_are_const)
     {
@@ -1222,7 +1213,9 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if (i == key_start + PrefetchingHelper::iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
-                if (i + prefetch_look_ahead < row_end)
+                /// Bound by `key_end` (not `row_end`): when all keys are const the key
+                /// columns hold 1 row, so the look-ahead must not cross that row.
+                if (i + prefetch_look_ahead < key_end)
                 {
                     auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
                     method.data.prefetch(std::move(key_holder));
@@ -3353,7 +3346,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 {
     UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_rows) : 1.0;
-    bool use_cache = !is_simple_count && cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
+    bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
     auto merge_count_variant = [&]<typename State>(State & state)
     {
@@ -3642,7 +3635,7 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
                     /// Copy to avoid race.
                     auto consecutive_keys_cache_stats_copy = result.consecutive_keys_cache_stats;
                     size_t chunk_rows = agg_chunk.chunk.getNumRows();
-                    auto chunk_columns = agg_chunk.chunk.getColumns();
+                    auto chunk_columns = agg_chunk.chunk.detachColumns();
                 #define M(NAME) \
                     else if (result.type == AggregatedDataVariants::Type::NAME) \
                         mergeStreamsImpl(chunk_columns, chunk_rows, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false, is_cancelled);
@@ -3703,7 +3696,7 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
                 break;
 
             size_t chunk_rows = agg_chunk.chunk.getNumRows();
-            auto chunk_columns = agg_chunk.chunk.getColumns();
+            auto chunk_columns = agg_chunk.chunk.detachColumns();
 
             if (result.type == AggregatedDataVariants::Type::without_key || agg_chunk.is_overflows)
                 mergeBlockWithoutKeyStreamsImpl(chunk_columns, chunk_rows, result, is_cancelled);
@@ -3789,7 +3782,7 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
         if (bucket_num >= 0 && agg_chunk.bucket_num != bucket_num)
             bucket_num = -1;
 
-        auto chunk_columns = agg_chunk.chunk.getColumns();
+        auto chunk_columns = agg_chunk.chunk.detachColumns();
 
         if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
             mergeBlockWithoutKeyStreamsImpl(chunk_columns, chunk_rows, result, is_cancelled);

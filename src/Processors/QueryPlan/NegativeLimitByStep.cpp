@@ -16,9 +16,9 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .returns_single_stream = true,
+            .returns_single_stream = false,
             .preserves_number_of_streams = false,
-            .preserves_sorting = true,
+            .preserves_sorting = false,
         },
         {
             .preserves_number_of_rows = false,
@@ -102,13 +102,13 @@ void NegativeLimitByStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
 {
-    UInt64 group_length;
-    UInt64 group_offset;
+    UInt64 group_length = 0;
+    UInt64 group_offset = 0;
 
     readVarUInt(group_length, ctx.in);
     readVarUInt(group_offset, ctx.in);
 
-    UInt64 num_columns;
+    UInt64 num_columns = 0;
     readVarUInt(num_columns, ctx.in);
     Names columns(num_columns);
     for (auto & column : columns)
@@ -117,11 +117,12 @@ QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
     return std::make_unique<NegativeLimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
 }
 
-void NegativeLimitByStep::applyOrder(SortDescription sort_description)
+void NegativeLimitByStep::applyOrder()
 {
-    in_order = sort_description.hasPrefix(columns);
+    in_order = true;
 }
 
+void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("NegativeLimitBy", NegativeLimitByStep::deserialize);

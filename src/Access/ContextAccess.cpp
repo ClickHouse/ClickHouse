@@ -215,6 +215,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "database_engines",
             "table_engines",
             "table_functions",
+            "disk_types",
+            "dictionary_layouts",
             "aggregate_function_combinators",
             "completions",
 
@@ -715,7 +717,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     }
 
     auto acs = getAccessRightsWithImplicit();
-    bool granted;
+    bool granted = false;
     if constexpr (wildcard)
     {
         if constexpr (grant_option)
