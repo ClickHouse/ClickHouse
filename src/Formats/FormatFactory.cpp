@@ -53,7 +53,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
 
-    extern SettingsString input_format_geojson_unsupported_geometry_handling;
+    extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
     extern SettingsBool input_format_parallel_parsing;
     extern SettingsBool output_format_parallel_formatting;
     extern SettingsUInt64 output_format_compression_level;
@@ -365,17 +365,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
     format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
     format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
-    {
-        const String & val = settings[Setting::input_format_geojson_unsupported_geometry_handling];
-        if (val == "throw")
-            format_settings.geojson.unsupported_geometry_handling = FormatSettings::UnsupportedGeometryHandling::Throw;
-        else if (val == "null")
-            format_settings.geojson.unsupported_geometry_handling = FormatSettings::UnsupportedGeometryHandling::Null;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unknown value '{}' for setting input_format_geojson_unsupported_geometry_handling. "
-                "Expected 'throw' or 'null'.", val);
-    }
+    format_settings.geojson.unsupported_geometry_handling = settings[Setting::input_format_geojson_unsupported_geometry_handling];
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
     format_settings.mysql_dump.map_column_names = settings[Setting::input_format_mysql_dump_map_column_names];
     format_settings.sql_insert.max_batch_size = settings[Setting::output_format_sql_insert_max_batch_size];
