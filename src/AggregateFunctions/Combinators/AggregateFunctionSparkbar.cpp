@@ -172,7 +172,10 @@ public:
 void registerAggregateFunctionCombinatorSparkbar(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorSparkbar(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSparkbar>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSparkbar>(), Documentation{
+        .description = "Applied as a suffix to a numeric-result aggregate function name (e.g. `sumSparkbar`, `countSparkbar`, `uniqSparkbar`), it applies the nested aggregate function independently to each of `width` buckets spanning the x-axis range `[begin_x, end_x]` and renders the per-bucket results as a Unicode sparkbar string. The first argument is the x-axis (bucket key) column; the remaining arguments are forwarded to the nested aggregate function. The explicit range is required because bucketing happens at aggregation time.",
+        .syntax = "<aggregate_function>Sparkbar(width, begin_x, end_x)(x_axis, <aggregate_function_arguments>)",
+        .related = {}});
 }
 
 }
