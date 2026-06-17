@@ -1,5 +1,8 @@
 #include <Columns/ColumnString.h>
 
+#include <algorithm>
+#include <functional>
+
 #include <Columns/Collator.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
@@ -159,6 +162,24 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
     size_t nested_length = nested_end - nested_offset;
 
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    /// The offsets we are about to copy must be monotonically non-decreasing (the fast path
+    /// assigns them verbatim, the slow path subtracts nested_offset and would underflow); a
+    /// malformed source would otherwise plant corrupt offsets in the destination. We scan from
+    /// nested_offset's position so the boundary against the previous string is covered too.
+    /// Checked only in debug/sanitizer builds to keep the release copy loops vectorizable.
+    {
+        const auto * scan_begin = src_concrete.offsets.begin() + (start == 0 ? 0 : start - 1);
+        const auto * scan_end = src_concrete.offsets.begin() + start + length;
+        const auto * bad = std::adjacent_find(scan_begin, scan_end, std::greater<>());
+        if (bad != scan_end)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "ColumnString::insertRangeFrom: source has non-monotonic offsets. "
+                "offset {} at position {} is below the previous offset {}",
+                *(bad + 1), bad + 1 - src_concrete.offsets.begin(), *bad);
+    }
+#endif
+
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
     offsets.reserve(offsets.size() + length);
 
@@ -172,27 +193,12 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     }
     else
     {
-        const size_t old_size = offsets.size();
-        const size_t prev_max_offset = offsets.back();    /// -1th index is Ok, see PaddedPODArray
+        size_t old_size = offsets.size();
+        size_t prev_max_offset = offsets.back();    /// -1th index is Ok, see PaddedPODArray
         offsets.resize(old_size + length);
 
-        size_t prev_src_offset = nested_offset;
         for (size_t i = 0; i < length; ++i)
-        {
-            const size_t src_offset = src_concrete.offsets[start + i];
-
-            // Intermediate offsets can still be non-monotonic
-            /// A copied offset that dips below the previous one (in particular below nested_offset) would underflow the subtraction and
-            /// store a corrupt destination offset, so reject it here.
-            if (src_offset < prev_src_offset)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "ColumnString::insertRangeFrom: source offsets inconsistent with chars array. "
-                    "non-monotonic offset {} at position {} (previous offset {})",
-                    src_offset, start + i, prev_src_offset);
-
-            offsets[old_size + i] = src_offset - nested_offset + prev_max_offset;
-            prev_src_offset = src_offset;
-        }
+            offsets[old_size + i] = src_concrete.offsets[start + i] - nested_offset + prev_max_offset;
     }
 }
 
