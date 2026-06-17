@@ -483,3 +483,34 @@ def test_system_stop_requires_grant(rabbitmq_cluster):
         instance.query(f"SYSTEM {verb} test.{table}", user=user)
 
     instance.query(f"DROP USER {user}")
+
+
+def test_direct_select_blocked_while_stopped_with_attached_view(rabbitmq_cluster):
+    # While a table with an attached materialized view is STOPped, a direct SELECT must still be
+    # rejected: the direct-read guard depends on the attached view, not on whether streaming is
+    # running. Otherwise the SELECT would consume messages meant for the view and lose them.
+    table = "rabbitmq_stopped_direct"
+    exchange = "stopped_direct_exchange"
+    setup_consuming_table(table, exchange)
+
+    publish(rabbitmq_cluster, exchange, 0, 10)
+    wait_dst_count(table, 10)
+
+    # STOP halts consumption; the 10 new messages stay queued in RabbitMQ.
+    instance.query(f"SYSTEM STOP test.{table}")
+    publish(rabbitmq_cluster, exchange, 10, 10)
+    # Wait out several stopped polling cycles: if the guard were wrongly dropped while stopped,
+    # it would reliably be dropped by the direct read below (so this is a true fail-first check).
+    assert_dst_count_stable(table, 10)
+
+    # The view is still attached, so the direct SELECT must be rejected (not steal the backlog).
+    err = instance.query_and_get_error(
+        f"SELECT count() FROM test.{table}",
+        settings={"stream_like_engine_allow_direct_select": 1},
+        timeout=60,
+    )
+    assert "Cannot read from StorageRabbitMQ with attached materialized views" in err
+
+    # START drains the backlog, proving the messages were retained.
+    instance.query(f"SYSTEM START test.{table}")
+    wait_dst_count(table, 20)

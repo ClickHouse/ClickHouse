@@ -1079,11 +1079,12 @@ void StorageRabbitMQ::threadFunc()
             bool rabbit_connected = connection->isConnected() || connection->reconnect();
 
             const bool run_cycle = rabbit_connected && stream_control.claimCycle();
+
+            mv_attached.store(num_views > 0);
+
             if (num_views && run_cycle)
             {
                 auto start_time = std::chrono::steady_clock::now();
-
-                mv_attached.store(true);
 
                 // Keep streaming as long as there are attached views and streaming is not cancelled
                 while (!shutdown_called && num_created_consumers > 0)
@@ -1121,8 +1122,6 @@ void StorageRabbitMQ::threadFunc()
     {
         LOG_ERROR(log, "Error while streaming to views: {}", getCurrentExceptionMessage(true));
     }
-
-    mv_attached.store(false);
 
     try
     {

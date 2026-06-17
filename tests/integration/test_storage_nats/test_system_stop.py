@@ -6,6 +6,7 @@
 
 import asyncio
 import json
+import threading
 import time
 
 import pytest
@@ -411,6 +412,76 @@ def test_stop_during_insert_does_not_duplicate(nats_cluster):
     wait_dst_count_at_least(table, n)
     assert_dst_count_stable(table, n, seconds=8)
     assert jetstream_ack_pending(nats_cluster, stream, durable) == 0
+
+
+def test_cancel_during_direct_select_does_not_drop_messages(nats_cluster):
+    # A direct SELECT on a NATS table consumes messages but -- unlike the background view path --
+    # performs no acknowledgement of its own (NATSSource never acks/commits). So an aborted direct
+    # read has nothing to ack, and a SYSTEM CANCEL racing it cannot commit messages that were never
+    # returned. We verify this on JetStream (at-least-once): a message stays redeliverable until it
+    # is acked, so a read aborted mid-flight loses nothing. We hammer SYSTEM CANCEL while draining via
+    # repeated direct SELECTs, then drain the remainder with no cancels; every published key must
+    # surface in some SELECT result.
+    stream = "js_cancel_stream"
+    subject = "js_cancel_subject"
+    durable = "js_cancel_durable"
+    table = "nats_direct_cancel"
+    n = 20
+
+    # Short ack-wait so messages a direct read pulled but never acked are redelivered quickly.
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=2)
+
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+        """
+    )
+
+    jetstream_publish(nats_cluster, subject, 0, n)
+
+    collected = set()
+
+    def drain(deadline):
+        while time.time() < deadline and len(collected) < n:
+            res = instance.query(
+                f"SELECT key FROM test.{table} "
+                f"SETTINGS stream_like_engine_allow_direct_select = 1",
+                ignore_error=True,
+            )
+            for line in res.split():
+                if line.strip():
+                    collected.add(int(line))
+
+    stop = threading.Event()
+
+    def spam_cancel():
+        while not stop.is_set():
+            instance.query(f"SYSTEM CANCEL test.{table}")
+            time.sleep(0.02)
+
+    canceller = threading.Thread(target=spam_cancel)
+    canceller.start()
+    try:
+        drain(time.time() + 15)  # drain under a storm of SYSTEM CANCELs racing the direct reads
+    finally:
+        stop.set()
+        canceller.join()
+
+    drain(time.time() + 60)  # finish draining with no cancels in flight
+
+    missing = set(range(n)) - collected
+    assert not missing, (
+        f"JetStream messages lost during a cancelled direct read: {sorted(missing)}"
+    )
 
 
 def test_system_stop_all_background(nats_cluster):

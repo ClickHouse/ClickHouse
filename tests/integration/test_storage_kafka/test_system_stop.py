@@ -708,3 +708,110 @@ def test_multi_consumer_stop_aborts_all_inflight_blocks(kafka_cluster):
         # Nothing was committed, so START redelivers everything.
         instance.query(f"SYSTEM START test.{table}")
         wait_dst_count(table, 10)
+
+
+@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
+def test_cancel_during_direct_select_does_not_drop_messages(kafka_cluster, keeper):
+    # A direct SELECT with kafka_commit_on_select = 1 commits the offsets of the rows it returns. A
+    # SYSTEM CANCEL that aborts an in-flight direct read must not advance the committed offset past
+    # messages that were polled but discarded (never returned to the client) -- otherwise the next
+    # read starts after them and they are silently lost. StorageKafka rewinds to the last committed
+    # offset before the suffix commit; StorageKafka2 drops the offset guard so the suffix commit is a
+    # no-op. We hammer SYSTEM CANCEL while draining via repeated direct SELECTs, then drain the
+    # remainder with no cancels in flight; every produced key must surface in some SELECT result.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_direct_cancel_{'v2' if keeper else 'v1'}_{k.random_string(6)}"
+    n = 20
+    keeper_settings = (
+        f",\n                     kafka_keeper_path = '/clickhouse/kafka2/{table}',"
+        f"\n                     kafka_replica_name = 'r1'"
+        if keeper
+        else ""
+    )
+    with k.kafka_topic(admin_client, table):
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{table}',
+                         kafka_group_name = '{table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_commit_on_select = 1,
+                         kafka_flush_interval_ms = 500{keeper_settings};
+            """,
+            settings=(
+                {"allow_experimental_kafka_offsets_storage_in_keeper": 1}
+                if keeper
+                else {}
+            ),
+        )
+
+        produce(kafka_cluster, table, 0, n)
+
+        collected = set()
+
+        def drain(deadline):
+            while time.time() < deadline and len(collected) < n:
+                res = instance.query(
+                    f"SELECT key FROM test.{table}",
+                    settings={"stream_like_engine_allow_direct_select": 1},
+                    ignore_error=True,
+                )
+                for line in res.split():
+                    if line.strip():
+                        collected.add(int(line))
+
+        stop = threading.Event()
+
+        def spam_cancel():
+            while not stop.is_set():
+                instance.query(f"SYSTEM CANCEL test.{table}")
+                time.sleep(0.02)
+
+        canceller = threading.Thread(target=spam_cancel)
+        canceller.start()
+        try:
+            drain(time.time() + 15)  # drain under a storm of SYSTEM CANCELs racing the direct reads
+        finally:
+            stop.set()
+            canceller.join()
+
+        drain(time.time() + 60)  # finish draining with no cancels in flight
+
+        missing = set(range(n)) - collected
+        assert not missing, (
+            f"messages committed by an aborted direct read but never returned (lost): {sorted(missing)}"
+        )
+
+
+def test_direct_select_blocked_while_stopped_with_attached_view(kafka_cluster):
+    # While a table with an attached materialized view is STOPped, a direct SELECT must still be
+    # rejected: the direct-read guard depends on the attached view, not on whether streaming is
+    # running. Otherwise the SELECT would consume messages meant for the view and lose them.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_stopped_direct_{k.random_string(6)}"
+    with k.kafka_topic(admin_client, table):
+        setup_consuming_table(table, table)
+
+        produce(kafka_cluster, table, 0, 10)
+        wait_dst_count(table, 10)
+
+        # STOP halts consumption; the 10 new messages stay queued in the topic.
+        instance.query(f"SYSTEM STOP test.{table}")
+        produce(kafka_cluster, table, 10, 10)
+        # Wait out several stopped polling cycles: if the guard were wrongly dropped while stopped,
+        # it would reliably be dropped by the direct read below (so this is a true fail-first check).
+        assert_dst_count_stable(table, 10)
+
+        # The view is still attached, so the direct SELECT must be rejected (not steal the backlog).
+        err = instance.query_and_get_error(
+            f"SELECT count() FROM test.{table}",
+            settings={"stream_like_engine_allow_direct_select": 1},
+            timeout=60,
+        )
+        assert "Cannot read from StorageKafka with attached materialized views" in err
+
+        # START drains the backlog, proving the messages were retained.
+        instance.query(f"SYSTEM START test.{table}")
+        wait_dst_count(table, 20)

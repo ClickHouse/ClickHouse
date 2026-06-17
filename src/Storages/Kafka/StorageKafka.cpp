@@ -616,11 +616,12 @@ void StorageKafka::threadFunc(size_t idx)
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         const bool run_cycle = stream_control.claimCycle();
+
+        mv_attached.store(num_views > 0);
+
         if (num_views && run_cycle)
         {
             auto start_time = std::chrono::steady_clock::now();
-
-            mv_attached.store(true);
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
@@ -675,8 +676,6 @@ void StorageKafka::threadFunc(size_t idx)
             consumer_ptr->setExceptionInfo(exception_str, false /* no stacktrace, reuse passed one */);
         }
     }
-
-    mv_attached.store(false);
 
     // Wait for attached views
     if (!task->stream_cancelled)
