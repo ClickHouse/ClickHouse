@@ -451,10 +451,24 @@ class CommitStatusCheck:
                 return False
 
     @staticmethod
+    def abort_if_non_interactive_override(what):
+        """Fail closed: forcing a non-green merge gate to success is a deliberate
+        human decision and must never be taken automatically under --yes."""
+        if UserPrompt.assume_yes:
+            print(
+                f"ERROR: refusing to override {what} in non-interactive (--yes) mode. "
+                f"Re-run without --yes to decide this manually."
+            )
+            sys.exit(1)
+
+    @staticmethod
     def process_sync_status(
         commit_status_data: Optional[GH.CommitStatus], sha: str, repo: str = PUBLIC_REPO
     ):
         if not commit_status_data:
+            CommitStatusCheck.abort_if_non_interactive_override(
+                "a missing CH Inc sync status"
+            )
             if not UserPrompt.confirm(
                 "CH Inc sync status is missing. Override to success?"
             ):
@@ -474,6 +488,9 @@ class CommitStatusCheck:
             if commit_status_data.description == "tests failed":
                 print(
                     f"\nCH Sync failed for commit, description: {commit_status_data.description}"
+                )
+                CommitStatusCheck.abort_if_non_interactive_override(
+                    "a failed CH Inc sync (tests failed)"
                 )
                 if UserPrompt.confirm("You sure it can be ignored?"):
                     GH.post_commit_status(
@@ -495,6 +512,9 @@ class CommitStatusCheck:
             if commit_status_data.description == "tests started":
                 print(
                     f"\n{commit_status_data.context} is pending with description {commit_status_data.description}"
+                )
+                CommitStatusCheck.abort_if_non_interactive_override(
+                    "a pending CH Inc sync"
                 )
                 if UserPrompt.confirm("You sure it can be ignored?"):
                     GH.post_commit_status(
@@ -523,6 +543,9 @@ class CommitStatusCheck:
         elif not commit_status_data:
             override = True
         elif commit_status_data.state in (Result.GHStatus.FAILURE,):
+            CommitStatusCheck.abort_if_non_interactive_override(
+                "a failed Mergeable Check"
+            )
             if UserPrompt.confirm("Do you want to override mergeable check?"):
                 override = True
             else:
@@ -1045,7 +1068,9 @@ def main():
         )
         pr_data = json.loads(pr_data)
         head_sha = pr_data["headRefOid"]
-        if GH.pr_has_conflicts(pr_number, repo):
+        # Conflicts only matter for the merge-queue path; --ci-only never merges,
+        # so a conflicted PR can still be analyzed and have issues filed.
+        if not ci_only and GH.pr_has_conflicts(pr_number, repo):
             print("PR has conflicts, cannot merge")
             sys.exit(1)
     else:
@@ -1060,16 +1085,21 @@ def main():
         status_map = CommitStatusCheck.get_commit_statuses(head_sha, repo=repo)
         sync_status = status_map.get(CheckStatuses.CH_INC_SYNC)
         mergeable_check_status = status_map.get(CheckStatuses.MERGEABLE_CHECK)
+        pr_status = status_map.get(CheckStatuses.PR)
         if (
-            status_map[CheckStatuses.PR].state
-            not in (
-                Result.GHStatus.SUCCESS,
-                Result.GHStatus.FAILURE,
+            (
+                not pr_status
+                or pr_status.state
+                not in (
+                    Result.GHStatus.SUCCESS,
+                    Result.GHStatus.FAILURE,
+                )
             )
             and not FORCE_MERGE
         ):
             raise Exception(
-                f"Status for {commit_status_data.context} is not completed: {commit_status_data.state} - cannot proceed"
+                f"PR status is not completed: "
+                f"{pr_status.state if pr_status else 'missing'} - cannot proceed"
             )
     else:
         status_map = {}
