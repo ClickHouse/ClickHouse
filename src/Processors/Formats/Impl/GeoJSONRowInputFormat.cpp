@@ -33,13 +33,11 @@ namespace
 {
 
 
-/// Read a single number using the strict JSON grammar (RFC 8259) and return it as `Float64`.
-/// `readFloatText` is too permissive for validating JSON: it accepts non-JSON spellings such as
-/// `+1`, `.5`, `1.`, `+Inf` and `+NaN`, so a coordinate like `[+Inf, 0]` would be loaded as a
-/// `Geometry` instead of being rejected. This helper accepts only `-?(0|[1-9][0-9]*)(\.[0-9]+)?
-/// ([eE][+-]?[0-9]+)?` and additionally rejects values that overflow `Float64` to a non-finite
-/// result (e.g. a huge exponent like `1e400`).
-Float64 readStrictJSONNumber(ReadBuffer & buf)
+/// Read a number in the strict JSON grammar (RFC 8259) and return its raw text. The accepted grammar
+/// is `-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?`, so non-JSON spellings such as `+1`, `.5`,
+/// `1.`, `+Inf` and `+NaN` are rejected. Returning the raw text rather than a parsed number preserves
+/// the exact digits, so a large integer keeps its full precision.
+String readStrictJSONNumberText(ReadBuffer & buf)
 {
     skipWhitespaceIfAny(buf);
 
@@ -61,13 +59,13 @@ Float64 readStrictJSONNumber(ReadBuffer & buf)
             consume();
     }
     else
-        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: invalid JSON number in coordinates");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: invalid JSON number");
 
     if (peek() == '.')
     {
         consume();
         if (!is_digit(peek()))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: invalid JSON number in coordinates (missing fraction digits)");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: invalid JSON number (missing fraction digits)");
         while (is_digit(peek()))
             consume();
     }
@@ -80,11 +78,19 @@ Float64 readStrictJSONNumber(ReadBuffer & buf)
         if (c == '+' || c == '-')
             consume();
         if (!is_digit(peek()))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: invalid JSON number in coordinates (missing exponent digits)");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: invalid JSON number (missing exponent digits)");
         while (is_digit(peek()))
             consume();
     }
 
+    return number;
+}
+
+/// Read a coordinate number using the strict JSON grammar and return it as `Float64`, additionally
+/// rejecting values that overflow `Float64` to a non-finite result (e.g. a huge exponent like `1e400`).
+Float64 readStrictJSONNumber(ReadBuffer & buf)
+{
+    String number = readStrictJSONNumberText(buf);
     Float64 result = 0;
     ReadBufferFromString number_buf(number);
     readFloatText(result, number_buf);
@@ -253,6 +259,39 @@ void assertPropertiesIsObjectOrNull(ReadBuffer & buf)
             ErrorCodes::INCORRECT_DATA, "GeoJSON: a Feature's 'properties' member must be a JSON object or null");
 }
 
+/// Read and validate a Feature's optional `id` member. RFC 7946 (section 3.2) restricts it to a JSON
+/// string or number, so an object, array or boolean is rejected. A number is stored verbatim as text
+/// so that a large integer id keeps its exact value, and an explicit `null` is treated as an absent
+/// id. When `col` is null the member is only validated and nothing is inserted.
+void readGeoJSONId(IColumn * col, ReadBuffer & buf, const FormatSettings::JSON & json_settings)
+{
+    skipWhitespaceIfAny(buf);
+    if (buf.eof())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "GeoJSON: unexpected end of input while reading the 'id' member");
+
+    const char c = *buf.position();
+    if (c == 'n')
+    {
+        assertString("null", buf);
+        if (col)
+            col->insertDefault();
+        return;
+    }
+
+    String value;
+    if (c == '"')
+        readJSONString(value, buf, json_settings);
+    else if (c == '-' || (c >= '0' && c <= '9'))
+        value = readStrictJSONNumberText(buf);
+    else
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "GeoJSON: a Feature's 'id' member must be a JSON string or number");
+
+    if (col)
+        col->insertData(value.data(), value.size());
+}
+
 /// Iterate over every field of a JSON object (opening `{` must already be consumed).
 /// Calls handle_field(key) for each field. If handle_field returns true the value was
 /// consumed by the callback; otherwise the value is skipped automatically.
@@ -419,6 +458,11 @@ GeoJSONRowInputFormat::GeoJSONRowInputFormat(
         const auto & col = header.getByPosition(i);
         if (col.name == "id")
         {
+            if (!WhichDataType(col.type).isString())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The 'id' column of the GeoJSON input format must have type 'String', but it has type '{}'",
+                    col.type->getName());
             id_col_idx = i;
         }
         else if (col.name == "geometry")
@@ -594,12 +638,13 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
             has_type = true;
             return true;
         }
-        if (key == "id" && id_col_idx.has_value())
+        if (key == "id")
         {
             if (has_id)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'id' field in a feature");
-            SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
-                *columns[*id_col_idx], buf, format_settings, serializations[*id_col_idx]);
+            /// `id` is restricted to a JSON string or number and is validated even when it is not a
+            /// requested output column; it is inserted only when the `id` column is selected.
+            readGeoJSONId(id_col_idx.has_value() ? columns[*id_col_idx].get() : nullptr, buf, format_settings.json);
             has_id = true;
             return true;
         }
