@@ -373,6 +373,59 @@ def test_kafka2_stop_aborts_inflight_block_pause_commits_it(kafka_cluster):
                 wait_dst_count(table, 5)
 
 
+@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
+def test_stop_during_insert_does_not_duplicate(kafka_cluster, keeper):
+    # A STOP arriving while the block is being inserted into the views (the poll already returned it)
+    # must let the insert finish and commit its offsets, so the rows land exactly once and are never
+    # redelivered. The per-row-sleeping view stretches the insert; max_block_size = n makes the poll
+    # return at once, so the block is already past the source when STOP arrives.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_stop_insert_{k.random_string(6)}"
+    n = 5
+    with k.kafka_topic(admin_client, table):
+        keeper_settings = (
+            f", kafka_keeper_path = '/clickhouse/kafka2/{table}', kafka_replica_name = 'r1'"
+            if keeper
+            else ""
+        )
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{table}',
+                         kafka_group_name = '{table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 500,
+                         kafka_poll_timeout_ms = 1000,
+                         kafka_max_block_size = {n}{keeper_settings};
+            CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+                SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
+            """,
+            settings=(
+                {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+            ),
+        )
+
+        # Halt, pre-load exactly one block, then resume: the source polls all n rows at once
+        # (max_block_size = n, no flush wait) and hands them to the ~n*0.4s insert.
+        instance.query(f"SYSTEM STOP test.{table}")
+        produce(kafka_cluster, table, 0, n)
+        instance.query(f"SYSTEM START test.{table}")
+
+        # Land a STOP while the slow insert is running, then immediately START so that a block whose
+        # offsets were (incorrectly) rolled back instead of committed would be redelivered as a duplicate.
+        time.sleep(1)
+        instance.query(f"SYSTEM STOP test.{table}")
+        instance.query(f"SYSTEM START test.{table}")
+
+        # The block commits its offsets exactly once: the rows appear and never grow past n (no
+        # duplicate), and none are missing (no loss).
+        wait_dst_count(table, n)
+        assert_dst_count_stable(table, n, seconds=8)
+
+
 def test_system_stop_all_background(kafka_cluster):
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_allbg_{k.random_string(6)}"

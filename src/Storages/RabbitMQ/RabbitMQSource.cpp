@@ -369,6 +369,7 @@ Chunk RabbitMQSource::generateImpl()
 
     if (aborted)
     {
+        consumption_aborted = true;
         LOG_TRACE(log, "Consumption interrupted: discarding in-flight block of {} rows", total_rows);
         return {};
     }

@@ -199,7 +199,7 @@ def test_refresh_runs_once_while_start_keeps_consuming(rabbitmq_cluster):
                      rabbitmq_exchange_name = '{exchange}',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = '{exchange}',
-                     rabbitmq_flush_interval_ms = 3000,
+                     rabbitmq_flush_interval_ms = 500,
                      rabbitmq_row_delimiter = '\\n';
 
         CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
@@ -211,25 +211,27 @@ def test_refresh_runs_once_while_start_keeps_consuming(rabbitmq_cluster):
     )
     instance.wait_for_log_line("Started streaming to 1 attached views")
 
+    publish(rabbitmq_cluster, exchange, 0, 1)
+    wait_dst_count(table, 1)
+
     instance.query(f"SYSTEM STOP test.{table}")
+    time.sleep(2)  # let the in-flight cycle finish so the table is genuinely stopped
 
-    # First batch (queued in the broker while stopped), then one REFRESH: the single cycle (its flush
-    # window is long enough to drain the small backlog) consumes exactly these messages.
-    publish(rabbitmq_cluster, exchange, 0, 5)
+    # First batch (queued in the broker while stopped), then one REFRESH: the single cycle drains
+    # exactly these messages.
+    publish(rabbitmq_cluster, exchange, 1, 5)
     instance.query(f"SYSTEM REFRESH test.{table}")
-    wait_dst_count(table, 5)
+    wait_dst_count(table, 6)
 
-    # Second batch, no further REFRESH: the stream is still stopped, so REFRESH having run once does
-    # not keep consuming — these messages stay queued in the broker, unread.
-    publish(rabbitmq_cluster, exchange, 5, 5)
-    assert_dst_count_stable(table, 5)
+    # Second batch, no further REFRESH: the stream is still stopped, so it stays queued, unread.
+    publish(rabbitmq_cluster, exchange, 6, 5)
+    assert_dst_count_stable(table, 6)
 
-    # START resumes continuous consumption: the backlog drains and later batches keep being consumed
-    # "forever" without any further command.
+    # START resumes continuous consumption.
     instance.query(f"SYSTEM START test.{table}")
-    wait_dst_count(table, 10)
-    publish(rabbitmq_cluster, exchange, 10, 5)
-    wait_dst_count(table, 15)
+    wait_dst_count(table, 11)
+    publish(rabbitmq_cluster, exchange, 11, 5)
+    wait_dst_count(table, 16)
 
 
 def test_stop_aborts_inflight_block_pause_commits_it(rabbitmq_cluster):
@@ -278,6 +280,53 @@ def test_stop_aborts_inflight_block_pause_commits_it(rabbitmq_cluster):
             assert_dst_count_stable(table, 0, seconds=8)
             instance.query(f"SYSTEM START test.{table}")
             wait_dst_count(table, 5)
+
+
+def test_stop_during_insert_does_not_duplicate(rabbitmq_cluster):
+    # A STOP arriving while the block is being inserted into the views (the poll already returned it)
+    # must let the insert finish and ack, so the messages are acked exactly once and never requeued.
+    # The per-row-sleeping view stretches the insert; max_block_size = n makes the poll return at once,
+    # so the block is already past the source when STOP arrives.
+    table = "rabbitmq_stop_during_insert"
+    exchange = "stop_during_insert_exchange"
+    n = 5
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{exchange}',
+                     rabbitmq_flush_interval_ms = 500,
+                     rabbitmq_max_block_size = {n},
+                     rabbitmq_row_delimiter = '\\n';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
+        """
+    )
+    instance.wait_for_log_line("Started streaming to 1 attached views")
+
+    # Halt, pre-load exactly one block, then resume: the source polls all n rows at once
+    # (max_block_size = n, no flush wait) and hands them to the ~n*0.4s insert.
+    instance.query(f"SYSTEM STOP test.{table}")
+    publish(rabbitmq_cluster, exchange, 0, n)
+    instance.query(f"SYSTEM START test.{table}")
+
+    # Land a STOP while the slow insert is running, then immediately START so that a block which was
+    # (incorrectly) requeued instead of acked would be redelivered and surface as a duplicate.
+    time.sleep(1)
+    instance.query(f"SYSTEM STOP test.{table}")
+    instance.query(f"SYSTEM START test.{table}")
+
+    # The block reaches the ack exactly once: the rows appear and never grow past n (no duplicate),
+    # and none are missing (no loss).
+    wait_dst_count(table, n)
+    assert_dst_count_stable(table, n, seconds=8)
 
 
 def test_system_stop_all_background(rabbitmq_cluster):

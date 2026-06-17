@@ -201,7 +201,12 @@ Chunk NATSSource::generate()
     }
 
     /// Discard the in-flight block on abort, the rows read this cycle are not pushed to the views.
-    if (aborted || total_rows == 0)
+    if (aborted)
+    {
+        consumption_aborted = true;
+        return {};
+    }
+    if (total_rows == 0)
         return {};
 
     auto result_columns = executor.getResultColumns();

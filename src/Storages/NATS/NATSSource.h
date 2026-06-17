@@ -33,6 +33,8 @@ public:
 
     void setWaitForFlushInterval(bool value) { wait_for_flush_interval = value; }
 
+    bool wasConsumptionAborted() const { return consumption_aborted; }
+
 private:
     bool checkTimeLimit() const;
 
@@ -44,6 +46,7 @@ private:
     StreamingHandleErrorMode handle_error_mode;
 
     bool is_finished = false;
+    bool consumption_aborted = false;
     const Block non_virtual_header;
     const Block virtual_header;
     /// Epoch snapshot taken when this source starts; a SYSTEM STOP/CANCEL that advances the storage's

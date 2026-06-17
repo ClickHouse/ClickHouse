@@ -190,6 +190,10 @@ def test_stop_aborts_inflight_batch_pause_commits_it(started_cluster):
     # in-flight batch reach it (files committed); STOP aborts before it, so the files are left
     # Cancelled (reset, not Failed) and reprocessed on resume. A materialized view that sleeps per
     # row keeps the batch in-flight long enough for the command to arrive mid-processing.
+    #
+    # Unlike the message-queue engines, S3Queue reads and inserts in one fused pipeline, so STOP/CANCEL
+    # interrupts the running insert and reprocesses the files on resume (like a crash mid-batch). A STOP
+    # landing during the insert can therefore duplicate already-inserted rows; that is accepted here.
     node = started_cluster.instances["instance"]
     n_files = 10
     for verb in ["PAUSE", "STOP"]:

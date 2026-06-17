@@ -361,6 +361,58 @@ def test_stop_aborts_inflight_block_pause_commits_it(nats_cluster):
             assert_dst_count_stable(table, 0)
 
 
+def test_stop_during_insert_does_not_duplicate(nats_cluster):
+    # A STOP arriving while the block is being inserted into the views (the poll already returned it)
+    # must let the insert finish and ack its JetStream messages, so they are acked exactly once and
+    # never redelivered. The per-row-sleeping view stretches the insert. JetStream (not core NATS) is
+    # used so an abort that does land in the poll redelivers rather than loses the messages.
+    stream = "js_insert_stream"
+    subject = "js_insert_subject"
+    durable = "js_insert_durable"
+    table = "nats_stop_during_insert"
+    n = 5
+
+    # A short ack-wait so a missing ack surfaces quickly as a redelivery.
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=3)
+
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
+        """
+    )
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+
+    jetstream_publish(nats_cluster, subject, 0, n)
+
+    # Land a STOP while the slow insert is running, then immediately START so that a block whose ack was
+    # (incorrectly) skipped would be redelivered after ack_wait and surface as a duplicate.
+    time.sleep(1)
+    instance.query(f"SYSTEM STOP test.{table}")
+    instance.query(f"SYSTEM START test.{table}")
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+
+    # The block is acked exactly once: the rows appear and never grow past n (past the 3s ack-wait there
+    # is no redelivery), none are missing, and the consumer reports nothing still pending acknowledgement.
+    wait_dst_count_at_least(table, n)
+    assert_dst_count_stable(table, n, seconds=8)
+    assert jetstream_ack_pending(nats_cluster, stream, durable) == 0
+
+
 def test_system_stop_all_background(nats_cluster):
     table = "nats_allbg"
     subject = "allbg_subject"

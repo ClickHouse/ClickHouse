@@ -1153,10 +1153,6 @@ void StorageRabbitMQ::threadFunc()
 
 bool StorageRabbitMQ::streamToViews()
 {
-    /// Snapshot the cancel epoch for this whole cycle; a STOP/CANCEL arriving mid-cycle advances it past
-    /// this value, so the block is requeued (not acked) instead of reaching its durable boundary.
-    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
-
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -1236,13 +1232,12 @@ bool StorageRabbitMQ::streamToViews()
 
     LOG_TRACE(log, "Processed {} rows", rows.load());
 
-    const bool aborted = isConsumeCancelRequested(cycle_epoch);
-
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent
      */
     deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
+    bool any_aborted = false;
 
     if (!connection->isConnected())
     {
@@ -1266,8 +1261,7 @@ bool StorageRabbitMQ::streamToViews()
     }
     else
     {
-        LOG_TEST(log, "Will {} messages for {} channels",
-            aborted ? "requeue" : (write_failed ? "nack" : "ack"), sources.size());
+        LOG_TEST(log, "Committing messages for {} channels", sources.size());
 
         /// Commit
         for (auto & source : sources)
@@ -1294,8 +1288,11 @@ bool StorageRabbitMQ::streamToViews()
                 *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
                 *    will ever happen.
                 */
-                bool send_result = aborted ? source->sendNack(/*requeue=*/true)
-                                           : (write_failed ? source->sendNack(/*requeue=*/false) : source->sendAck());
+                const bool source_aborted = source->wasConsumptionAborted();
+                any_aborted |= source_aborted;
+                LOG_TEST(log, "Will {} messages for channel {}", (source_aborted ? "requeue" : (write_failed ? "nack" : "ack")), source->getChannelID());
+                bool send_result = source_aborted ? source->sendNack(/*requeue=*/true)
+                                                  : (write_failed ? source->sendNack(/*requeue=*/false) : source->sendAck());
                 if (send_result)
                 {
                     /// Iterate loop to activate error callbacks if they happened
@@ -1309,7 +1306,7 @@ bool StorageRabbitMQ::streamToViews()
         }
     }
 
-    if (aborted)
+    if (any_aborted)
     {
         LOG_TRACE(log, "Consumption interrupted, reschedule");
         return true;

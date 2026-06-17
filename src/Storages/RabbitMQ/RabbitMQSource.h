@@ -39,6 +39,8 @@ public:
     bool sendAck();
     bool sendNack(bool requeue = false);
 
+    bool wasConsumptionAborted() const { return consumption_aborted; }
+
 private:
     StorageRabbitMQ & storage;
     StorageSnapshotPtr storage_snapshot;
@@ -50,6 +52,7 @@ private:
     const bool nack_broken_messages;
 
     bool is_finished = false;
+    bool consumption_aborted = false;
     const Block non_virtual_header;
     const Block virtual_header;
     /// Epoch snapshot taken when this source starts; a SYSTEM STOP/CANCEL that advances the storage's
