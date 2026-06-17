@@ -75,7 +75,7 @@ SETTINGS input_format_json_max_depth = 2; -- { serverError TOO_DEEP_RECURSION }
 -- An invalid value for the unsupported-geometry-handling setting is rejected.
 SELECT count()
 FROM format('GeoJSON', '{"type":"FeatureCollection","features":[]}')
-SETTINGS input_format_geojson_unsupported_geometry_handling = 'bogus'; -- { serverError BAD_ARGUMENTS }
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'bogus'; -- { clientError BAD_ARGUMENTS }
 
 -- An explicit "id": null is treated like an absent id (an empty string).
 SELECT id = ''
