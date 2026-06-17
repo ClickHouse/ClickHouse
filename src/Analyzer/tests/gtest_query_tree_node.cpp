@@ -4,6 +4,7 @@
 
 #include <Analyzer/Identifier.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/ListNode.h>
 
@@ -203,4 +204,65 @@ TEST(QueryTreeNode, InternalColumnSourceComparedByContent)
     ASSERT_EQ(lhs_list->getTreeHashLocal(), rhs_list->getTreeHashLocal());
     ASSERT_TRUE(lhs_list->isEqualGlobal(*rhs_list));
     ASSERT_EQ(lhs_list->getTreeHashGlobal(), rhs_list->getTreeHashGlobal());
+}
+
+TEST(QueryTreeNode, RepeatedColumnSourceGlobalConsistency)
+{
+    /// Content comparison must use a bijective source correspondence so it agrees with the
+    /// per-source hashing: `List(col(s), col(s))` (one source twice) must not compare equal to
+    /// `List(col(s1), col(s2))` (two distinct sources), and the hash must distinguish them too.
+    NameAndTypePair col("value", std::make_shared<DataTypeUInt64>());
+    auto s = std::make_shared<SourceNode>();
+    auto s1 = std::make_shared<SourceNode>();
+    auto s2 = std::make_shared<SourceNode>();
+
+    auto make_pair_list = [&](const QueryTreeNodePtr & a, const QueryTreeNodePtr & b)
+    {
+        auto list = std::make_shared<ListNode>();
+        list->getNodes().push_back(std::make_shared<ColumnNode>(col, a));
+        list->getNodes().push_back(std::make_shared<ColumnNode>(col, b));
+        return list;
+    };
+
+    auto same = make_pair_list(s, s);
+    auto same_again = make_pair_list(s, s);
+    auto distinct = make_pair_list(s1, s2);
+
+    /// Same repetition pattern -> equal and hash-equal.
+    ASSERT_TRUE(same->isEqualGlobal(*same_again));
+    ASSERT_EQ(same->getTreeHashGlobal(), same_again->getTreeHashGlobal());
+
+    /// One repeated source vs two distinct sources -> not equal, and hashes differ (consistent).
+    ASSERT_FALSE(same->isEqualGlobal(*distinct));
+    ASSERT_NE(same->getTreeHashGlobal(), distinct->getTreeHashGlobal());
+
+    /// The hash-keyed container must keep distinct keys yet still find an equal one.
+    QueryTreeNodePtrWithGlobalHashSet set;
+    set.insert(QueryTreeNodePtrWithGlobalHash(same));
+    set.insert(QueryTreeNodePtrWithGlobalHash(distinct));
+    ASSERT_EQ(set.size(), 2u);
+    ASSERT_TRUE(set.contains(QueryTreeNodePtrWithGlobalHash(same_again)));
+}
+
+TEST(QueryTreeNode, RepeatedInternalColumnSourceLocalConsistency)
+{
+    /// The same bijection applies to local comparison when the repeated source is internal to the
+    /// compared subtree (here the source is a child of the list and is referenced by two columns).
+    NameAndTypePair col("value", std::make_shared<DataTypeUInt64>());
+
+    auto make_internal_repeat = [&]()
+    {
+        auto src = std::make_shared<SourceNode>();
+        auto list = std::make_shared<ListNode>();
+        list->getNodes().push_back(src);
+        list->getNodes().push_back(std::make_shared<ColumnNode>(col, src));
+        list->getNodes().push_back(std::make_shared<ColumnNode>(col, src));
+        return list;
+    };
+
+    auto a = make_internal_repeat();
+    auto b = make_internal_repeat();
+
+    ASSERT_TRUE(a->isEqualLocal(*b));
+    ASSERT_EQ(a->getTreeHashLocal(), b->getTreeHashLocal());
 }

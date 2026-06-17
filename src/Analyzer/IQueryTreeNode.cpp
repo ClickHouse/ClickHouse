@@ -110,8 +110,10 @@ struct NodePairHash
 /** Compare two trees.
   *
   * If compare_column_sources_by_content is false, column references are compared by their column
-  * source ids. Otherwise column sources are compared by content: source nodes are pushed into the
-  * same pairwise traversal, and the equals_pairs set handles repeated references.
+  * source ids. Otherwise column sources are compared by content via a bijective correspondence
+  * (lhs_source_to_rhs plus the set of already-taken rhs sources): a source is compared once on first
+  * sight and every later reference must map to the same counterpart, mirroring the per-source
+  * visitation identifiers used by computeTreeHash so that equal trees always hash equal.
   */
 bool IQueryTreeNode::areTreesEqual(
     const IQueryTreeNode & lhs,
@@ -136,6 +138,16 @@ bool IQueryTreeNode::areTreesEqual(
 
     std::vector<NodePair> nodes_to_process;
     std::unordered_set<NodePair, NodePairHash> equals_pairs;
+
+    /// Bijective correspondence between content-compared column sources, matching the per-source
+    /// visitation identifiers used by computeTreeHash. Without it a repeated source on one side
+    /// could compare equal to several distinct sources on the other side (e.g.
+    /// `List(col(s), col(s))` vs `List(col(s1), col(s2))`), which would disagree with the hash and
+    /// break hash-keyed containers. The lhs side maps to its rhs counterpart (to verify a repeated
+    /// lhs source keeps mapping to the same rhs source); the rhs side only needs to know which rhs
+    /// sources are already taken, so a set is enough.
+    std::unordered_map<const IQueryTreeNode *, const IQueryTreeNode *> lhs_source_to_rhs;
+    std::unordered_set<const IQueryTreeNode *> rhs_corresponded_sources;
 
     nodes_to_process.emplace_back(&lhs, &rhs);
 
@@ -189,7 +201,23 @@ bool IQueryTreeNode::areTreesEqual(
                     return false;
 
                 if (lhs_source)
-                    nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
+                {
+                    /// Enforce a bijection: a given lhs source must always correspond to the same
+                    /// rhs source and vice versa. Compare the source content only on first sight.
+                    auto [lhs_it, lhs_inserted] = lhs_source_to_rhs.try_emplace(lhs_source.get(), rhs_source.get());
+                    if (!lhs_inserted)
+                    {
+                        if (lhs_it->second != rhs_source.get())
+                            return false;
+                    }
+                    else
+                    {
+                        /// lhs source is seen for the first time; its rhs counterpart must be free.
+                        if (!rhs_corresponded_sources.insert(rhs_source.get()).second)
+                            return false;
+                        nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
+                    }
+                }
             }
             else
             {
