@@ -117,12 +117,34 @@ ALTER TABLE t_json_minmax_forbidden_replicated
     MODIFY SETTING allow_minmax_index_for_json = 1
     SETTINGS allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
 
--- Should succeed: table-level setting is already effective before adding the index.
+-- Should fail: ReplicatedMergeTree table settings are local, but skip index metadata
+-- is replicated through Keeper.
 ALTER TABLE t_json_minmax_forbidden_replicated MODIFY SETTING allow_minmax_index_for_json = 1;
 ALTER TABLE t_json_minmax_forbidden_replicated
-    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1;
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated SYNC;
+
+DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_r1 SYNC;
+DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_r2 SYNC;
+
+CREATE TABLE t_json_minmax_forbidden_replicated_r1 (
+    id Int32,
+    col1 JSON
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array_two_replicas', 'r1') ORDER BY id;
+
+CREATE TABLE t_json_minmax_forbidden_replicated_r2 (
+    id Int32,
+    col1 JSON
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array_two_replicas', 'r2') ORDER BY id;
+
+-- Should fail on the initiating replica before writing unsafe index metadata to Keeper.
+ALTER TABLE t_json_minmax_forbidden_replicated_r1 MODIFY SETTING allow_minmax_index_for_json = 1;
+ALTER TABLE t_json_minmax_forbidden_replicated_r1
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1; -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_r1 SYNC;
+DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_r2 SYNC;
 
 -- Should succeed: dropping the JSON minmax index and resetting the escape hatch in one ALTER
 -- leaves a valid final metadata state.

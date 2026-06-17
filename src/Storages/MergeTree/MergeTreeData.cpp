@@ -1120,7 +1120,17 @@ void MergeTreeData::checkProperties(
                                         idx_column.type->getName(), idx_column.name);
                                 }
 
-                                if (!current_table_allows_minmax_index_for_json && !same_json_minmax_index_existed(index))
+                                const bool same_json_minmax_index_already_existed = same_json_minmax_index_existed(index);
+                                if (supportsReplication() && !same_json_minmax_index_already_existed)
+                                {
+                                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "{} data type of column {} is not allowed in a new minmax index for replicated MergeTree tables because MergeTree "
+                                        "table setting 'allow_minmax_index_for_json = 1' is local to each replica, while skip index metadata is "
+                                        "replicated through Keeper",
+                                        idx_column.type->getName(), idx_column.name);
+                                }
+
+                                if (!current_table_allows_minmax_index_for_json && !same_json_minmax_index_already_existed)
                                 {
                                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "{} data type of column {} is not allowed in a new minmax index because MergeTree table setting "
