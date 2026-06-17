@@ -198,7 +198,7 @@ public:
 
                     /// Empty node name is not allowed and leads to logical errors
                     if (result.empty())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal and should not be used directly");
                     break;
                 }
                 else if (function_node.getFunctionName() == "exists")

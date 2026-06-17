@@ -9,6 +9,7 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <IO/Operators.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
@@ -78,6 +79,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_retry_pause[];
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
+    extern const char rmt_dedup_conflict_part_name_missing[];
 }
 
 namespace ErrorCodes
@@ -518,14 +520,23 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     {
                         chassert(conflicts.size() == 1);
                         auto block_id = conflicts.front().getBlockId();
-                        auto actual_part_name = conflicts.front().getConflictPartName();
-                        bool exists_locally = bool(storage.getActiveContainingPart(actual_part_name));
-                        LOG_INFO(
-                            log,
-                            "Block with ID {} {} as part {}; ignoring it.",
-                            block_id,
-                            exists_locally ? "already exists locally" : "already exists on other replicas",
-                            actual_part_name);
+                        /// The conflicting part name may be unresolved (see ZNONODE skip in
+                        /// resolve_duplicate_stage), same guard as the quorum collection above.
+                        if (conflicts.front().hasConflictPartName())
+                        {
+                            auto actual_part_name = conflicts.front().getConflictPartName();
+                            bool exists_locally = bool(storage.getActiveContainingPart(actual_part_name));
+                            LOG_INFO(
+                                log,
+                                "Block with ID {} {} as part {}; ignoring it.",
+                                block_id,
+                                exists_locally ? "already exists locally" : "already exists on other replicas",
+                                actual_part_name);
+                        }
+                        else
+                        {
+                            LOG_INFO(log, "Block with ID {} was deduplicated; ignoring it.", block_id);
+                        }
                     }
 
                     block_ids_for_log = getDeduplicationBlockIds(conflicts);
@@ -754,8 +765,11 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             auto & deduplication_hash = retry_context.conflict_deduplication_hashes[i];
             const auto & resp = response[i];
 
+            bool simulate_missing_node = false;
+            fiu_do_on(FailPoints::rmt_dedup_conflict_part_name_missing, { simulate_missing_node = true; });
+
             /// If we cannot get the node, then probably it was removed in the meantime. Just skip it then.
-            if (resp.error == Coordination::Error::ZNONODE)
+            if (resp.error == Coordination::Error::ZNONODE || simulate_missing_node)
                 continue;
 
             const String & part_name = resp.data;
@@ -1247,6 +1261,9 @@ void ReplicatedMergeTreeSink::waitForQuorum(
 
     fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0, { zookeeper->forceFailureBeforeOperation(); });
 
+    /// Granularity of the quorum wait: how often we wake up to re-check whether the query was cancelled.
+    static constexpr UInt64 quorum_wait_step_ms = 1000;
+
     while (true)
     {
         Coordination::EventPtr event = std::make_shared<Poco::Event>();
@@ -1264,7 +1281,43 @@ void ReplicatedMergeTreeSink::waitForQuorum(
         if (quorum_entry.part_name != part_name)
             break;
 
-        if (!event->tryWait(quorum_timeout_ms))
+        /// Wait for the quorum watch to fire, but in bounded steps so that a cancelled query stops waiting
+        /// promptly instead of blocking for the whole quorum_timeout_ms. The watch is only signalled when the
+        /// quorum node changes, so on a `KILL QUERY` (or once max_execution_time is exceeded) nothing would wake
+        /// us up: without this a cancelled quorum INSERT can stay in the processlist for the entire (possibly very
+        /// large) insert_quorum_timeout and trip the hung-check. checkTimeLimit() throws QUERY_WAS_CANCELLED on a
+        /// kill and TIMEOUT_EXCEEDED on max_execution_time when timeout_overflow_mode = 'throw'; with
+        /// timeout_overflow_mode = 'break' it returns false instead. A quorum INSERT cannot return a partial
+        /// success while the quorum status is unknown, so we treat a false return as a timeout too (rather than
+        /// silently continuing to wait). This matches the check ZooKeeperRetriesControl performs between retries.
+        auto process_list_element = context->getProcessListElement();
+        Stopwatch quorum_watch;
+        bool quorum_updated = false;
+        while (true)
+        {
+            const UInt64 elapsed_ms = quorum_watch.elapsedMilliseconds();
+            if (elapsed_ms >= quorum_timeout_ms)
+                break;
+
+            if (event->tryWait(std::min<UInt64>(quorum_wait_step_ms, quorum_timeout_ms - elapsed_ms)))
+            {
+                quorum_updated = true;
+                break;
+            }
+
+            /// checkTimeLimit() throws on a kill or on a 'throw'-mode timeout. A false return means a 'break'-mode
+            /// timeout was reached: the framework would normally let such a query finish gracefully (as a
+            /// successful "break"), but a quorum INSERT must not report success while the quorum status is unknown.
+            /// Escalate to a hard cancellation (the same call CancellationChecker uses for 'throw' mode) so the
+            /// query fails with TIMEOUT_EXCEEDED instead of being silently completed.
+            if (process_list_element && !process_list_element->checkTimeLimit())
+            {
+                process_list_element->cancelQuery(DB::CancelReason::TIMEOUT);
+                process_list_element->checkTimeLimit();
+            }
+        }
+
+        if (!quorum_updated)
             throw Exception(
                 ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
                 "Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: "
