@@ -460,12 +460,7 @@ bool IcebergMetadata::optimizeManifestFiles(
 {
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
-        /// Format-version 3 adds row lineage: each data file carries an inherited `first_row_id`
-        /// from which readers assign `_row_id`. The manifest writer does not yet round-trip
-        /// `first_row_id` (it uses the v2 Avro schema for v3), so a manifest-only rewrite would
-        /// carry data files forward while dropping their row ids, producing a v3 table with a
-        /// valid-looking snapshot but broken row lineage. Reject the operation (fail-close) instead
-        /// of silently corrupting lineage until the round-trip is implemented.
+        /// Reject manifest compaction on format-version 3: the writer does not yet round-trip the row-lineage `first_row_id`, so a rewrite would drop row ids (fail-close).
         if (persistent_components.format_version >= 3)
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,

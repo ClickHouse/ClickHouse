@@ -22,9 +22,7 @@ public:
     struct NextMetadataResult
     {
         Poco::JSON::Object::Ptr snapshot = nullptr;
-        /// Metadata path for the manifest list file (e.g. "wasb://container@account/table/metadata/snap-xxx.avro").
-        /// Use IcebergPathResolver::resolve to get storage path for I/O.
-        /// Use .serialize() to get the path for writing into Iceberg metadata.
+        /// Metadata path for the manifest list file; resolve for I/O, serialize for writing into Iceberg metadata.
         Iceberg::IcebergPathFromMetadata manifest_list_path;
     };
 
@@ -41,9 +39,7 @@ public:
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt);
 
-    /// Create a manifest-only rewrite snapshot (`replace` operation).
-    /// No data files are added or removed; all `total-*` counters are carried forward from the
-    /// parent snapshot unchanged so repeated `OPTIMIZE ... MANIFEST` calls are idempotent.
+    /// Create a manifest-only rewrite snapshot (`replace` operation) carrying `total-*` counters forward so `OPTIMIZE ... MANIFEST` is idempotent.
     NextMetadataResult generateManifestOnlySnapshot(
         FileNamesGenerator & generator,
         const Iceberg::IcebergPathFromMetadata & metadata_file_path,

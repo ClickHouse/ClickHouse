@@ -110,8 +110,7 @@ namespace FailPoints
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 
 // NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
-// We work a lot with avro library. Clang analyzer is about GenericDatum structure. It thinks that value in generic datum can be uninitialized.
-// No idea why
+// Clang analyzer wrongly thinks the avro GenericDatum value can be uninitialized.
 namespace
 {
 
@@ -157,13 +156,6 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
             return dumpValue(field.safeGet<Int32>());
         case TypeIndex::Int64:
             return dumpValue(field.safeGet<Int64>());
-        /// Iceberg schema types are always signed, but a resolved partition type can be an unsigned
-        /// ClickHouse type whose value `getAvroType` maps to Avro `int`/`long` — most importantly
-        /// `icebergBucket`, which returns `UInt32`. The underlying value decodes into the `Field` as a
-        /// signed integer, so read it generically (the `Field`'s storage signedness need not match the
-        /// resolved type) and serialize it at the width of the corresponding signed Avro type: the
-        /// `int`-mapped types must emit 4 bytes (like the `Int32` path) and only the `long`-mapped
-        /// `UInt64` may emit 8, otherwise the manifest bound has the wrong encoded width.
         case TypeIndex::UInt8:
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
@@ -324,19 +316,11 @@ void generateManifestFile(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    /// The Avro `schema` metadata header must describe the schema the manifest's partition spec was
-    /// written against, so the spec's `source-id`s resolve on read. For an append that is the table's
-    /// current schema. A manifest-only rewrite of an older spec (compaction) passes the historical
-    /// schema that still defines the spec's source columns explicitly, because the current schema may
-    /// have dropped them; serializing the current schema there would make the rewritten manifest's
-    /// `source-id`s unresolvable on read and silently drop the partition field.
     Poco::JSON::Object::Ptr schema_object_to_write = schema_to_serialize;
     if (!schema_object_to_write)
     {
         int current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
-        /// Iceberg schema-ids are identifiers, not array positions: after schema evolution they can be
-        /// non-contiguous or out of order, so look up the schema by matching `schema-id` rather than
-        /// indexing the array by the id.
+        /// Look up the schema by matching `schema-id` rather than array index, as ids may be non-contiguous.
         auto schemas_array = metadata->getArray(Iceberg::f_schemas);
         for (UInt32 i = 0; i < schemas_array->size(); ++i)
         {
@@ -370,11 +354,7 @@ void generateManifestFile(
         avro::GenericDatum manifest_datum(root_schema);
         avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
 
-        /// A metadata-only rewrite (non-empty per_file_entry_lineage) does not add data: each entry
-        /// is written as EXISTING and keeps the snapshot-id and sequence number that originally added
-        /// the file, instead of being re-stamped as ADDED by the new snapshot. This keeps the new
-        /// snapshot internally consistent with the manifest-list entry (which reports the files as
-        /// existing) and lets incremental planning distinguish carried-forward files from additions.
+        /// A metadata-only rewrite (non-empty per_file_entry_lineage) writes each entry as EXISTING, keeping the snapshot-id and sequence number that originally added the file rather than re-stamping it as ADDED.
         const DataFileEntryLineage * entry_lineage
             = per_file_entry_lineage.empty() ? nullptr : &per_file_entry_lineage[file_idx];
 
@@ -389,9 +369,6 @@ void generateManifestFile(
         {
             if (version > 1)
             {
-                /// Select the non-null branch of the ["null", T] union in place and assign the value.
-                /// (Constructing a detached GenericUnion and assigning it back does not reliably
-                /// persist the branch value, which left EXISTING entries with a null sequence number.)
                 auto & field = manifest.field(field_name);
                 field.selectBranch(1);
                 field.value<std::decay_t<decltype(value)>>() = value;
@@ -419,9 +396,7 @@ void generateManifestFile(
         data_file.field(Iceberg::f_file_format)
             = avro::GenericDatum(data_file_formats.empty() ? format : data_file_formats[file_idx]);
 
-        /// Writes a list of (field-id, value) pairs into the union-typed `field_name` array of the
-        /// data_file record. Generic over the key and value types so it serves both the computed
-        /// `DataFileStatistics` path and the verbatim per-file path below.
+        /// Writes (field-id, value) pairs into the union-typed `field_name` array of the data_file record.
         [[maybe_unused]] auto set_fields = [&]<typename K, typename T, typename U>(
                               const std::vector<std::pair<K, T>> & statistics, const std::string & field_name, U && dump_function)
         {
@@ -441,13 +416,9 @@ void generateManifestFile(
 
         if (!per_file_statistics.empty())
         {
-            /// Manifest-only rewrite: carry over the source file's column stats verbatim. Bounds
-            /// are already the raw serialized bytes from the source manifest, so they are written
-            /// back as-is (no type-aware re-serialization, no sample_block lookup needed).
+            /// Manifest-only rewrite: carry over the source file's column stats verbatim.
             const auto & stats = per_file_statistics[file_idx];
-            /// Bounds are Iceberg `bytes` fields. The source stores them as raw byte strings, so
-            /// convert to std::vector<uint8_t> to produce an Avro `bytes` datum (matching the schema
-            /// and the type produced by dumpFieldToBytes), not a `string` datum.
+            /// Bounds are raw bytes; convert to std::vector<uint8_t> to produce an Avro `bytes` datum.
             auto to_bytes = [](Int32, const String & value)
             { return std::vector<uint8_t>(value.begin(), value.end()); };
             set_fields(stats.column_sizes, Iceberg::f_column_sizes, [](Int32, Int64 value) { return value; });
@@ -486,9 +457,7 @@ void generateManifestFile(
         data_file.field(Iceberg::f_record_count) = avro::GenericDatum(static_cast<Int64>(data_file_row_counts[file_idx]));
         data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(static_cast<Int64>(data_file_byte_counts[file_idx]));
 
-        /// Preserve the source file's sort_order_id (a manifest-only rewrite does not change the
-        /// data files, so their sortedness must be reported unchanged). The field is a ["null","int"]
-        /// union; leaving it on the null branch (when no value is supplied) matches the append path.
+        /// Preserve the source file's sort_order_id.
         if (!data_file_sort_order_ids.empty() && data_file_sort_order_ids[file_idx].has_value())
         {
             auto & sort_order_field = data_file.field(Iceberg::f_sort_order_id);
@@ -499,8 +468,7 @@ void generateManifestFile(
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
-            /// Build the Avro datum that holds the actual partition value (without
-            /// the surrounding union). Throws on an unsupported value type.
+            /// Build the Avro datum holding the partition value; throws on an unsupported type.
             auto make_value_datum = [&]() -> avro::GenericDatum
             {
                 switch (partition_values[i].getType())
@@ -529,10 +497,7 @@ void generateManifestFile(
 
             if (is_nullable_partition)
             {
-                /// Nullable partition columns are encoded as Avro `["null", T]`
-                /// unions. NULL selects branch 0; a concrete value selects branch 1.
-                /// See issue #105852: before this change, NULL partition values were
-                /// silently written as 0 because the schema was non-nullable.
+                /// Nullable partition columns are Avro `["null", T]` unions: NULL is branch 0, a value is branch 1.
                 size_t field_index = 0;
                 if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
                     throw Exception(
@@ -596,8 +561,7 @@ void generateManifestList(
             ErrorCodes::LOGICAL_ERROR,
             "entry_partition_summaries size ({}) does not match number of manifest entries ({})",
             entry_partition_summaries.size(), manifest_entry_names.size());
-    /// When provided, existing_entry_counts must be parallel to manifest_entry_names: it marks
-    /// this as a manifest-only rewrite and supplies the existing-file/row counts per entry.
+    /// When provided, existing_entry_counts marks a manifest-only rewrite and supplies per-entry counts.
     if (!existing_entry_counts.empty() && existing_entry_counts.size() != manifest_entry_names.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -630,10 +594,7 @@ void generateManifestList(
         if (version > 1)
         {
             entry.field(Iceberg::f_content) = static_cast<Int32>(content_type);
-            /// The manifest's own sequence number is the snapshot that wrote it (this rewrite). But
-            /// min_sequence_number is the lowest data sequence number of the files it references: for
-            /// a manifest-only rewrite those are the preserved original (older) sequence numbers, so
-            /// use the per-manifest minimum rather than the new snapshot's sequence.
+            /// For a manifest-only rewrite, min_sequence_number is the per-manifest minimum of the preserved original sequence numbers.
             const Int64 new_sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
             entry.field(Iceberg::f_sequence_number) = new_sequence_number;
             entry.field(Iceberg::f_min_sequence_number)
@@ -664,8 +625,7 @@ void generateManifestList(
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
         if (manifest_only_rewrite)
         {
-            /// Manifest-only rewrite (`replace`): the consolidated manifest references data files
-            /// that already existed in the table, so they are reported as existing, not added.
+            /// Manifest-only rewrite (`replace`): data files already existed, so they are reported as existing, not added.
             const auto & counts = existing_entry_counts[entry_idx];
             set_versioned_field(0, Iceberg::f_added_files_count);
             set_versioned_field(counts.existing_files_count, Iceberg::f_existing_files_count);
@@ -674,10 +634,7 @@ void generateManifestList(
             set_versioned_field(counts.existing_rows_count, Iceberg::f_existing_rows_count);
             set_versioned_field(0, Iceberg::f_deleted_rows_count);
 
-            /// Recompute the manifest-list `partitions` field summary so manifest-level pruning
-            /// bounds survive the rewrite. Each consolidated manifest covers a single partition
-            /// value, so for every partition field lower_bound == upper_bound == that value
-            /// (null when the value is null). contains_nan is left null (not tracked here).
+            /// Recompute the `partitions` summary so pruning bounds survive the rewrite (lower_bound == upper_bound per field).
             if (!entry_partition_summaries.empty())
             {
                 auto & partitions_field = entry.field(Iceberg::f_partitions);
@@ -744,10 +701,7 @@ void generateManifestList(
         writer.write(entry_datum);
     }
 
-    /// Copy entries verbatim from the parent snapshot's manifest list. `use_previous_snapshots`
-    /// copies all of them (normal append on top of the parent); a non-empty
-    /// `carry_forward_manifest_paths` copies only the listed manifests (manifest-only compaction
-    /// carrying delete-file manifests forward while replacing the data manifests).
+    /// Copy entries from the parent snapshot's manifest list: `use_previous_snapshots` copies all, `carry_forward_manifest_paths` copies only the listed manifests.
     if (use_previous_snapshots || !carry_forward_manifest_paths.empty())
     {
         auto parent_snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
@@ -764,8 +718,7 @@ void generateManifestList(
                     [&](const avro::GenericDatum & datum)
                     {
                         const avro::GenericRecord & old_entry = datum.value<avro::GenericRecord>();
-                        /// When a path filter is supplied, copy only those entries (the rest of the
-                        /// parent's manifests — the data manifests — are replaced by the new ones).
+                        /// When a path filter is supplied, copy only the matching entries.
                         if (!carry_forward_manifest_paths.empty()
                             && !carry_forward_manifest_paths.contains(old_entry.field(Iceberg::f_manifest_path).value<std::string>()))
                             return;
@@ -774,10 +727,7 @@ void generateManifestList(
                         new_entry.field(f_manifest_path) = old_entry.field(Iceberg::f_manifest_path);
                         new_entry.field(f_manifest_length) = old_entry.field(Iceberg::f_manifest_length);
                         new_entry.field(f_partition_spec_id) = old_entry.field(Iceberg::f_partition_spec_id);
-                        /// In some version, iceberg-spark has changed the type of field `f_added_snapshot_id`
-                        /// from 'null, long' to 'long'. See https://github.com/apache/iceberg/pull/11626.
-                        /// Just in case that we read the old type 'null, long', we do this conversion: read every field
-                        /// and write it again with new, correct schema.
+                        /// iceberg-spark changed `f_added_snapshot_id` from 'null, long' to 'long' (apache/iceberg#11626); rewrite with the new schema in case we read the old type.
                         if (old_entry.hasField(Iceberg::f_added_snapshot_id))
                         {
                             const avro::GenericDatum & old_added_snapshot_id_entry = old_entry.field(Iceberg::f_added_snapshot_id);
@@ -816,9 +766,6 @@ void generateManifestList(
                         add_field_to_datum(Iceberg::f_deleted_rows_count);
                         add_field_to_datum(Iceberg::f_key_metadata);
                         /// v2 and v3 share the manifest-list schema, so these fields exist for both.
-                        /// (The new-entry path above likewise gates them on `version > 1`.) Without
-                        /// this, carrying a delete manifest forward in a v3 table would drop its
-                        /// content/sequence-number fields and corrupt the manifest list.
                         if (version > 1)
                         {
                             add_field_to_datum(Iceberg::f_content);
@@ -1129,11 +1076,7 @@ bool IcebergStorageSink::initializeMetadata()
         object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
         if (retry_because_of_metadata_conflict)
         {
-            /// When retrying after a metadata conflict, we must read the actual latest
-            /// metadata version, not the explicitly specified one. If a table was created
-            /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
-            /// loop must still discover the real latest version to advance past it.
-            /// Otherwise the loop keeps regenerating the same target version and fails.
+            /// When retrying after a metadata conflict, read the actual latest version, ignoring any explicitly specified path.
             auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
                 object_storage,
                 persistent_table_components.table_path,
@@ -1291,10 +1234,7 @@ bool IcebergStorageSink::initializeMetadata()
             }
         }
 
-        /// If there's an active metadata cache, we can't just cache 'our' written version as
-        /// latest, because it could've been overwritten by a concurrent catalog update.
-        /// We safely invalidate the cache, and the very next reader gets the most up-to-date
-        /// latest version. See `PersistentTableComponents::invalidateMetadataCache`.
+        /// Invalidate the cache so the next reader gets the latest version, which a concurrent catalog update may have changed.
         persistent_table_components.invalidateMetadataCache();
     }
     catch (...)

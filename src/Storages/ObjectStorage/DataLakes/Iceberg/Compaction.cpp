@@ -83,8 +83,7 @@ struct DataFilePlan
     UInt64 new_bytes_count = 0;
 };
 
-/// Plan of compaction consists of information about all data files and what delete files should be applied for them.
-/// Also it contains some other information about previous metadata.
+/// Compaction plan: all data files, the delete files applied to them, and prior metadata.
 struct Plan
 {
     bool need_optimize = false;
@@ -131,19 +130,7 @@ struct Plan
     } partition_encoder;
 };
 
-/// Cheap pre-check used by compactIcebergManifests: read just the current manifest list
-/// (one Avro file) and report whether its entry count is strictly greater than `threshold`.
-/// This avoids walking every manifest entry on every retry, which under contention
-/// (e.g. concurrent OPTIMIZE ... MANIFEST) would amplify storage reads quadratically.
-///
-/// The threshold is passed in so we can skip materializing the per-entry
-/// `ManifestFileCacheKeys` vector that `getManifestList` produces — we only need a yes/no
-/// answer, not the entries themselves. (The Avro deserializer constructor still parses
-/// all rows; pushing the early-exit deeper into Avro decoding would require a separate
-/// max-rows parameter on `AvroForIcebergDeserializer`.)
-///
-/// The companion "are manifests already optimal?" check is done lazily inside
-/// `writeConsolidatedManifestFile` from the data it has to read anyway.
+/// Cheap pre-check for `compactIcebergManifests`: read just the current manifest list and report whether its entry count exceeds `threshold`.
 static bool isCurrentManifestListAboveThreshold(
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
@@ -279,7 +266,6 @@ static Plan getPlan(
         if (partition_index >= plan.partitions.size())
             continue;
 
-        std::vector<Iceberg::ProcessedManifestFileEntryPtr> result_delete_files;
         for (auto & data_file : plan.partitions[partition_index])
         {
             if (data_file->data_object_info->info.sequence_number <= delete_file->sequence_number)
@@ -385,8 +371,7 @@ static void writeDataFiles(
         auto file_bytes = write_buffer->count();
         if (file_bytes == 0 && !data_file->patched_path.empty())
         {
-            /// Some storage backends (e.g. Azure) don't track bytes in the write buffer.
-            /// Fall back to querying the actual object size.
+            /// Some storage backends (e.g. Azure) don't track bytes in the write buffer; query the object size.
             auto obj_metadata = object_storage->getObjectMetadata(path_resolver.resolve(data_file->patched_path), /*with_tags=*/false);
             file_bytes = obj_metadata.size_bytes;
         }
@@ -406,11 +391,7 @@ static bool writeConsolidatedManifestFile(
 {
     auto log = getLogger("IcebergManifestConsolidation");
 
-    /// Validate the format version on the freshly-fetched metadata, not on the version captured when
-    /// the table object was created. `compactIcebergManifests` deliberately re-fetches the latest
-    /// metadata, so a table created as v2 and later upgraded to v3 by another writer would otherwise
-    /// slip past the caller's guard and reach `generateManifestFile`, which accepts v3 but writes it
-    /// with the v2 manifest schema — dropping the row-lineage `first_row_id` this guard protects.
+    /// Validate the format version on the freshly-fetched metadata, since the table may have been upgraded to v3 by another writer.
     if (metadata_object->getValue<Int32>(Iceberg::f_format_version) >= 3)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -474,19 +455,13 @@ static bool writeConsolidatedManifestFile(
 
     auto partitions_specs = metadata_object->getArray(f_partition_specs);
 
-    /// After partition evolution a snapshot can reference manifests written under different partition
-    /// specs. Each compacted manifest must be rewritten under the spec its source files actually used
-    /// (re-encoding old partition tuples under the default spec would corrupt partition metadata and
-    /// pruning). Resolve and cache the spec JSON, partition column names, and partition value types
-    /// per spec-id on demand instead of assuming the default spec.
+    /// After partition evolution each manifest must be rewritten under the spec its source files used; resolve and cache spec info per spec-id.
     struct ResolvedPartitionSpec
     {
         Poco::JSON::Object::Ptr spec;
         std::vector<String> partition_columns;
         std::vector<DataTypePtr> partition_types;
-        /// The schema that defines every source column the spec references. The rewritten manifest
-        /// serializes this into its Avro `schema` metadata header (rather than the current schema)
-        /// so the spec's `source-id`s resolve on read even after the current schema dropped them.
+        /// The schema defining every source column the spec references, serialized into the manifest's Avro `schema` header.
         Poco::JSON::Object::Ptr schema;
     };
     std::unordered_map<Int32, ResolvedPartitionSpec> resolved_specs;
@@ -524,14 +499,7 @@ static bool writeConsolidatedManifestFile(
             source_ids.push_back(spec_field->getValue<Int32>(Iceberg::f_source_id));
         }
 
-        /// Derive the partition value types from a schema that actually defines every source column
-        /// the spec references, not unconditionally from the current schema. After partition/schema
-        /// evolution an older spec can reference a source column that was dropped from the current
-        /// schema; deriving the types from the current schema would then throw (the column is absent
-        /// from the sample block) or encode the preserved partition tuple under the wrong type.
-        /// Prefer the current schema, then fall back to any historical schema that still defines the
-        /// source columns. All metadata schemas are registered first (idempotent) so they can be
-        /// queried by id.
+        /// Derive partition value types from a schema that defines every source column the spec references, preferring the current schema then any historical one; register all schemas first so they can be queried by id.
         for (UInt32 i = 0; i < schemas->size(); ++i)
             persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
 
@@ -539,8 +507,7 @@ static bool writeConsolidatedManifestFile(
         {
             auto fields_characteristics
                 = persistent_table_components.schema_processor->tryGetFieldsCharacteristics(schema_id, source_ids);
-            /// tryGetFieldsCharacteristics skips source-ids absent from the schema, so a short result
-            /// means this schema does not define every partition source column.
+            /// A short result means this schema does not define every partition source column.
             if (fields_characteristics.size() != source_ids.size())
                 return std::nullopt;
             Block block;
@@ -577,8 +544,7 @@ static bool writeConsolidatedManifestFile(
         resolved.partition_types
             = ChunkPartitioner(spec_fields, schema_for_spec->getArray(Iceberg::f_fields), context, shared_sample_block).getResultTypes();
 
-        /// Keep the raw metadata schema object (not the schema_processor's parsed form) so the
-        /// manifest's Avro `schema` header is the verbatim schema JSON, including its `schema-id`.
+        /// Keep the raw metadata schema object so the manifest's Avro `schema` header is the verbatim schema JSON.
         for (UInt32 i = 0; i < schemas->size(); ++i)
         {
             if (schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id) == schema_id_for_spec)
@@ -600,19 +566,13 @@ static bool writeConsolidatedManifestFile(
         std::vector<IcebergPathFromMetadata> file_paths;
         /// Parallel to file_paths: {record_count, file_size_in_bytes} from the source manifest entry.
         std::vector<std::pair<Int64, Int64>> file_metrics;
-        /// Parallel to file_paths: the original file_format recorded for each data file, preserved
-        /// so a manifest-only rewrite never relabels e.g. an ORC/AVRO file as the table's write format.
+        /// Parallel to file_paths: the original file_format, preserved so a rewrite never relabels the file's format.
         std::vector<String> file_formats;
-        /// Parallel to file_paths: the source file's per-column statistics, preserved so a
-        /// manifest-only rewrite does not drop column sizes / null counts / bounds (which would
-        /// weaken predicate pushdown and file pruning after compaction).
+        /// Parallel to file_paths: the source file's per-column statistics, preserved across the rewrite.
         std::vector<DataFileColumnStatistics> file_statistics;
-        /// Parallel to file_paths: the source file's sort_order_id, preserved so a manifest-only
-        /// rewrite keeps the table's sortedness (a missing sort_order_id is treated as unsorted).
+        /// Parallel to file_paths: the source file's sort_order_id, preserved so the rewrite keeps sortedness.
         std::vector<std::optional<Int32>> file_sort_order_ids;
-        /// Parallel to file_paths: the source entry's lineage (adding snapshot-id and effective
-        /// data sequence number), preserved so a manifest-only rewrite emits each file as an
-        /// EXISTING entry retaining its original lineage instead of an ADDED entry of the new snapshot.
+        /// Parallel to file_paths: the source entry's lineage, preserved so each file is emitted as an EXISTING entry retaining its lineage.
         std::vector<DataFileEntryLineage> file_entry_lineage;
 
         explicit PartitionData(Poco::JSON::Array::Ptr /*schema*/)
@@ -623,17 +583,9 @@ static bool writeConsolidatedManifestFile(
 
     std::unordered_map<String, PartitionData> partitions_map;
 
-    // Collect live data files from the current snapshot only.
-    // getFilesWithoutDeleted() already filters out entries with ManifestEntryStatus::DELETED,
-    // so files explicitly removed by prior operations are excluded automatically.
-    // We do NOT iterate older snapshots: a file that was DELETED in the current snapshot
-    // may still appear as EXISTING in an older snapshot's manifest — reading all history
-    // would incorrectly resurrect such deleted files.
+    // Collect live data files from the current snapshot only; iterating older snapshots would resurrect deleted files.
     size_t total_data_files = 0;
-    // Only data manifests are consolidated. Delete-file manifests (position/equality deletes) are
-    // carried forward unchanged into the new manifest list — rewriting only the data manifests must
-    // not drop them, otherwise the deleted rows would reappear. We collect their paths here and copy
-    // their manifest-list entries verbatim below.
+    // Only data manifests are consolidated; delete-file manifests are carried forward unchanged so deleted rows do not reappear.
     size_t num_data_manifests = 0;
     std::unordered_set<String> delete_manifest_paths;
 
@@ -655,11 +607,7 @@ static bool writeConsolidatedManifestFile(
 
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
-            // Build a string key that uniquely identifies this partition. Group by the source
-            // partition spec-id as well: files written under different specs must not be merged into
-            // one manifest, since a manifest carries a single partition spec.
-            // FieldVisitorDump preserves the type tag, so e.g. UInt64{42} and Int64{42}
-            // do not collide as the same partition.
+            // Partition key includes the source spec-id so files under different specs are not merged; FieldVisitorDump's type tag prevents UInt64/Int64 collisions.
             String partition_key = std::to_string(source_partition_spec_id) + "|";
             FieldVisitorDump dump_visitor;
             for (const auto & val : data_file->parsed_entry->partition_key_value)
@@ -671,8 +619,7 @@ static bool writeConsolidatedManifestFile(
             auto & pd = partitions_map.at(partition_key);
             pd.partition_spec_id = source_partition_spec_id;
             pd.partition_values = data_file->parsed_entry->partition_key_value;
-            // A single manifest file within the current snapshot should not list the
-            // same data file twice
+            // A single manifest file should not list the same data file twice
             if (std::find(pd.file_paths.begin(), pd.file_paths.end(), data_file->parsed_entry->file_path_key) == pd.file_paths.end())
             {
                 pd.file_paths.push_back(data_file->parsed_entry->file_path_key);
@@ -680,12 +627,7 @@ static bool writeConsolidatedManifestFile(
                 pd.file_formats.push_back(data_file->parsed_entry->file_format);
                 pd.file_sort_order_ids.push_back(data_file->parsed_entry->sort_order_id);
 
-                /// Preserve the entry's lineage. The snapshot-id and sequence number can be inherited
-                /// (null on the entry) for ADDED entries; the effective values are the adding
-                /// snapshot-id and sequence number of the manifest as recorded in the manifest list.
-                /// EXISTING entries written below require both to be non-null, so resolve the
-                /// inheritance here rather than falling back to the new (replace) snapshot, which
-                /// would re-stamp the file's lineage.
+                /// Preserve the entry's lineage, resolving inherited (null) snapshot-id and sequence number from the manifest, since EXISTING entries require both non-null.
                 DataFileEntryLineage lineage;
                 lineage.added_snapshot_id = data_file->parsed_entry->parsed_snapshot_id;
                 if (!lineage.added_snapshot_id.has_value())
@@ -695,9 +637,7 @@ static bool writeConsolidatedManifestFile(
                     lineage.sequence_number = manifest_file.added_sequence_number;
                 pd.file_entry_lineage.push_back(lineage);
 
-                /// Carry the source file's per-column stats over verbatim. Bounds are kept as the
-                /// raw serialized bytes the source manifest stored (value_bounds holds them as
-                /// String fields), so they round-trip without any type-aware re-serialization.
+                /// Carry the source file's per-column stats over verbatim, keeping bounds as the raw serialized bytes so they round-trip.
                 DataFileColumnStatistics stats;
                 for (const auto & [field_id, col_info] : data_file->parsed_entry->columns_infos)
                 {
@@ -715,14 +655,6 @@ static bool writeConsolidatedManifestFile(
                     if (!bounds.second.isNull())
                         stats.upper_bounds.emplace_back(field_id, bounds.second.safeGet<String>());
                 }
-                /// columns_infos / value_bounds are unordered maps; sort by field-id so the
-                /// rewritten manifest is deterministic regardless of map iteration order.
-                auto by_field_id = [](const auto & a, const auto & b) { return a.first < b.first; };
-                std::sort(stats.column_sizes.begin(), stats.column_sizes.end(), by_field_id);
-                std::sort(stats.value_counts.begin(), stats.value_counts.end(), by_field_id);
-                std::sort(stats.null_value_counts.begin(), stats.null_value_counts.end(), by_field_id);
-                std::sort(stats.lower_bounds.begin(), stats.lower_bounds.end(), by_field_id);
-                std::sort(stats.upper_bounds.begin(), stats.upper_bounds.end(), by_field_id);
                 pd.file_statistics.push_back(std::move(stats));
 
                 ++total_data_files;
@@ -730,11 +662,7 @@ static bool writeConsolidatedManifestFile(
         }
     }
 
-    /// Data manifests are already optimally consolidated (at most one per unique partition):
-    /// rewriting cannot reduce the count, so skip the write and report success to the caller.
-    /// Compared against the data-manifest count only, since delete manifests are carried forward
-    /// unchanged and do not participate in consolidation.
-    /// Returning true here means the outer retry loop terminates instead of re-walking on conflict.
+    /// Data manifests already optimally consolidated (at most one per partition): rewriting cannot reduce the count, so report success.
     if (partitions_map.size() >= num_data_manifests)
     {
         LOG_INFO(log, "Manifests already optimally consolidated ({} data manifests, {} unique partitions); nothing to do",
@@ -755,11 +683,7 @@ static bool writeConsolidatedManifestFile(
     MetadataGenerator metadata_generator(metadata_object);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
 
-    // Manifest-only rewrite: no data files are added or removed, so use a dedicated snapshot
-    // type that carries all total-* counters forward from the parent unchanged.
-    // Passing per-snapshot deltas (added_files, added_records, added_files_size) from the
-    // parent summary here would be wrong because generateNextMetadata computes
-    // total_* = parent_total_* + added_*, inflating the totals on every OPTIMIZE run.
+    // Manifest-only rewrite: use a snapshot type that carries all total-* counters forward unchanged, since passing deltas would inflate the totals.
     auto new_snapshot = metadata_generator.generateManifestOnlySnapshot(
         generator,
         generated_metadata_info.path,
@@ -768,22 +692,14 @@ static bool writeConsolidatedManifestFile(
     // Write one manifest file per (partition spec, partition value) group.
     std::vector<IcebergPathFromMetadata> consolidated_manifest_paths;
     std::vector<Int64> manifest_entry_sizes;
-    /// Parallel to consolidated_manifest_paths. A manifest-only rewrite references data files that
-    /// already exist, so the manifest list must report them as existing (not added) files/rows.
+    /// Parallel to consolidated_manifest_paths: existing (not added) file/row counts, since the referenced data files already exist.
     std::vector<ManifestListEntryExistingCounts> existing_entry_counts;
-    /// Parallel to consolidated_manifest_paths: each manifest's partition spec-id, so the manifest
-    /// list records the spec each (possibly partition-evolved) manifest was written under.
+    /// Parallel to consolidated_manifest_paths: each manifest's partition spec-id.
     std::vector<Int64> entry_partition_spec_ids;
-    /// Parallel to consolidated_manifest_paths: each manifest's single partition value, used to
-    /// recompute the manifest-list `partitions` summary so manifest-level pruning bounds survive.
+    /// Parallel to consolidated_manifest_paths: each manifest's partition value, used to recompute the manifest-list `partitions` summary.
     std::vector<ManifestListEntryPartitionSummary> entry_partition_summaries;
 
-    /// Defined before the write phase so it can be called on both commit conflict and exceptions.
-    /// Each manifest path is tracked in consolidated_manifest_paths before the corresponding
-    /// writeObject call, so cleanup also removes objects that a writer may have partially
-    /// created if generateManifestFile or finalize throws mid-iteration.
-    /// removeObjectIfExists tolerates non-existent objects, so tracking a path that turned
-    /// out never to be written is safe.
+    /// Cleanup for both commit conflict and exceptions; paths are tracked before writeObject so partially-created objects are removed (removeObjectIfExists tolerates missing objects).
     auto cleanup = [&]()
     {
         for (const auto & mp : consolidated_manifest_paths)
@@ -816,8 +732,7 @@ static bool writeConsolidatedManifestFile(
             LOG_INFO(log, "Creating manifest file for partition '{}': {} ({} data files)",
                      partition_key, storage_manifest_path, pd.file_paths.size());
 
-            /// Track the path before writeObject so cleanup() removes any object the
-            /// underlying buffer may have created even if generateManifestFile or finalize throws.
+            /// Track the path before writeObject so `cleanup` removes any object created even if a later step throws.
             consolidated_manifest_paths.push_back(manifest_path);
 
             auto buffer_manifest = object_storage->writeObject(
@@ -839,10 +754,7 @@ static bool writeConsolidatedManifestFile(
                 manifest_existing_rows += record_count;
             }
 
-            /// Lowest data sequence number across this manifest's files. The files keep their
-            /// original (older) sequence numbers, so the manifest-list min_sequence_number must
-            /// reflect that minimum rather than the new snapshot's sequence. All lineage entries
-            /// carry a resolved (inheritance-aware) non-null sequence number.
+            /// Lowest data sequence number across this manifest's files; files keep their original sequence numbers, so min_sequence_number must reflect that minimum.
             Int64 manifest_min_sequence_number = std::numeric_limits<Int64>::max();
             for (const auto & lineage : pd.file_entry_lineage)
                 manifest_min_sequence_number = std::min(manifest_min_sequence_number, lineage.sequence_number.value_or(0));
@@ -854,8 +766,7 @@ static bool writeConsolidatedManifestFile(
             const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);
             entry_partition_spec_ids.push_back(pd.partition_spec_id);
 
-            /// All files in this manifest share one partition value (grouped by partition key), so
-            /// the manifest-list partition summary's lower/upper bounds are exactly that value.
+            /// All files in this manifest share one partition value, so the summary's lower/upper bounds are exactly that value.
             ManifestListEntryPartitionSummary partition_summary;
             for (size_t i = 0; i < resolved_spec.partition_types.size(); ++i)
             {
@@ -923,8 +834,7 @@ static bool writeConsolidatedManifestFile(
             /* entry_partition_summaries */ entry_partition_summaries);
         buffer_manifest_list->finalize();
 
-        // Commit: write metadata file with If-None-Match + update version hint with ETag-based CAS.
-        // Returns false if another writer already claimed this metadata version, so the caller retries.
+        // Commit: write metadata file with If-None-Match + ETag-based CAS version hint; returns false if another writer claimed this version, so the caller retries.
         {
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
@@ -1022,7 +932,6 @@ static void writeMetadataFiles(
     {
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, std::unordered_set<Iceberg::IcebergPathFromMetadata>> grouped_by_manifest_files_result;
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, size_t> grouped_by_manifest_files_partitions;
-        std::unordered_map<std::shared_ptr<ManifestFilePlan>, size_t> partition_values;
 
         std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> patched_path_to_data_file;
         for (const auto & [_, data_file] : plan.path_to_data_file)
@@ -1035,7 +944,6 @@ static void writeMetadataFiles(
             {
                 grouped_by_manifest_files_partitions[data_file->manifest_list] = i;
                 grouped_by_manifest_files_result[data_file->manifest_list].insert(data_file->patched_path);
-                partition_values[data_file->manifest_list] = i;
             }
         }
 
@@ -1245,13 +1153,7 @@ void compactIcebergManifests(
             persistent_table_components.metadata_compression_method,
             persistent_table_components.table_uuid);
 
-        /// Cheap pre-check: read just the current manifest list (one Avro file) to
-        /// decide whether the table is above the configured threshold. The threshold
-        /// is passed in so this helper can skip materializing the per-entry vector
-        /// that getManifestList builds — we only need a yes/no answer here. The
-        /// companion "are manifests already optimal?" check is done lazily inside
-        /// writeConsolidatedManifestFile from the data files it has to read anyway,
-        /// so a wasted retry under contention does not re-walk every manifest entry.
+        /// Cheap pre-check: read just the current manifest list to decide whether the table is above the configured threshold.
         if (!isCurrentManifestListAboveThreshold(
                 metadata_object, persistent_table_components, object_storage_, context_, min_count_to_compact))
         {

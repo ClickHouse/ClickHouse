@@ -203,10 +203,7 @@ ManifestFileCacheKeys getManifestList(
                 content_type = Iceberg::ManifestFileContentType(
                     manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
             }
-            /// partition_spec_id is a required manifest-list field in all format versions. Fail closed
-            /// when it is absent instead of defaulting to the initial spec (0): a silent fallback would
-            /// let a partition-evolved table resolve manifests under the wrong spec and corrupt the
-            /// partition tuples/pruning metadata rather than surfacing the invalid manifest list.
+            /// `partition_spec_id` is a required manifest-list field; fail closed when absent instead of defaulting to spec 0, which would resolve a partition-evolved table's manifests under the wrong spec.
             if (!manifest_list_deserializer.hasPath(f_partition_spec_id))
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,

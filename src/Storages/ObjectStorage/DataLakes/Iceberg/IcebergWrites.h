@@ -45,10 +45,7 @@ namespace DB
 
 String removeEscapedSlashes(const String & json_str);
 
-/// Per-file column statistics carried over verbatim from a source manifest entry during a
-/// manifest-only rewrite. Each vector maps an Iceberg field-id to its value. Bounds hold the
-/// raw serialized bytes exactly as stored in the source manifest (no type-aware
-/// re-serialization), so they round-trip losslessly.
+/// Per-file column statistics carried over verbatim from a source manifest entry during a manifest-only rewrite.
 struct DataFileColumnStatistics
 {
     std::vector<std::pair<Int32, Int64>> column_sizes;
@@ -58,9 +55,7 @@ struct DataFileColumnStatistics
     std::vector<std::pair<Int32, String>> upper_bounds;
 };
 
-/// Per-file manifest-entry lineage carried over for a manifest-only rewrite. `sequence_number` is
-/// the file's effective (inheritance-resolved) data sequence number; it is also written as the
-/// `file_sequence_number`. `added_snapshot_id` is the snapshot that originally added the file.
+/// Per-file manifest-entry lineage (`added_snapshot_id` and `sequence_number`) carried over for a manifest-only rewrite.
 struct DataFileEntryLineage
 {
     std::optional<Int64> added_snapshot_id;
@@ -84,53 +79,27 @@ void generateManifestFile(
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     std::optional<Int64> user_defined_sequence_number = std::nullopt,
-    /// Optional per-file formats parallel to data_file_names. When non-empty, each entry's
-    /// original file_format is preserved (used by manifest-only compaction, which may rewrite
-    /// entries for files written by external writers in ORC/AVRO or a different format than the
-    /// table's own write format). When empty, every entry is written with `format`.
+    /// Optional per-file formats parallel to `data_file_names`; when non-empty each entry's original `file_format` is preserved, else `format` is used.
     const std::vector<String> & data_file_formats = {},
-    /// Optional per-file column statistics parallel to data_file_names. When non-empty, each
-    /// entry's stats are written from the matching element (used by manifest-only compaction to
-    /// preserve the source files' column stats). When empty, `data_file_statistics` is used.
+    /// Optional per-file column statistics parallel to `data_file_names`; when non-empty each entry's stats come from the matching element, else `data_file_statistics` is used.
     const std::vector<DataFileColumnStatistics> & per_file_statistics = {},
-    /// Optional per-file `sort_order_id` parallel to data_file_names. When an element has a value,
-    /// it is written back so a manifest-only rewrite preserves the table's sortedness (otherwise a
-    /// missing sort_order_id makes ClickHouse treat the table as unsorted). Empty / nullopt leaves
-    /// the field unset (null), matching the append path which writes unsorted data.
+    /// Optional per-file `sort_order_id` parallel to `data_file_names`; when set it is written back to preserve sortedness, else the field is left null.
     const std::vector<std::optional<Int32>> & data_file_sort_order_ids = {},
-    /// Optional per-file manifest-entry lineage parallel to data_file_names. When non-empty, the
-    /// rewrite is treated as metadata-only: every entry is written with status EXISTING and keeps
-    /// the snapshot-id and sequence number that originally added the file, instead of being
-    /// re-stamped as ADDED by the new snapshot (which would corrupt row lineage and break
-    /// delete-file sequence-number matching). When empty, entries are written as ADDED with the
-    /// new snapshot's id and sequence number (the append path).
+    /// Optional per-file manifest-entry lineage parallel to `data_file_names`; when non-empty entries are written as EXISTING keeping their original snapshot-id and sequence number, else as ADDED by the new snapshot.
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {},
-    /// Optional schema object to serialize into the manifest's Avro `schema` metadata header. When
-    /// null, the table's current schema is used (the append path). A manifest-only rewrite of an
-    /// older partition spec (compaction) passes the historical schema that still defines that spec's
-    /// `source-id` columns, because the current schema may have dropped them; otherwise the rewritten
-    /// manifest's `schema` header would not resolve the spec's `source-id`s on read and the partition
-    /// field would be silently dropped.
+    /// Optional schema to serialize into the manifest's Avro `schema` header; when null the table's current schema is used.
     Poco::JSON::Object::Ptr schema_to_serialize = nullptr);
 
-/// Per manifest-list entry counts for a manifest-only rewrite (a `replace` operation), where
-/// every data file referenced by the new manifest already existed in the table. When supplied to
-/// generateManifestList, the entry at the matching index is written with these existing-file and
-/// existing-row counts and zero added/deleted counts, instead of the append-style defaults that
-/// assume the manifest holds only newly added files.
+/// Per manifest-list entry existing-file/existing-row counts for a manifest-only rewrite, where every referenced data file already existed.
 struct ManifestListEntryExistingCounts
 {
     Int64 existing_files_count = 0;
     Int64 existing_rows_count = 0;
-    /// Minimum data sequence number across the entries written into this manifest. For a
-    /// manifest-only rewrite the files keep their original (older) sequence numbers, so the
-    /// manifest-list `min_sequence_number` must be this minimum, not the new snapshot's sequence.
+    /// Minimum data sequence number across the entries in this manifest, used as the manifest-list `min_sequence_number`.
     Int64 min_sequence_number = 0;
 };
 
-/// Partition tuple of a (single-partition) manifest, used to recompute the manifest-list
-/// `partitions` field summary for a manifest-only rewrite so manifest-level pruning bounds are not
-/// dropped. Each consolidated manifest covers one partition value, so lower_bound == upper_bound.
+/// Partition tuple of a single-partition manifest, used to recompute the manifest-list `partitions` summary for a manifest-only rewrite.
 struct ManifestListEntryPartitionSummary
 {
     /// One entry per partition field: its value and ClickHouse type (for byte encoding).
@@ -149,18 +118,11 @@ void generateManifestList(
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true,
     const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts = {},
-    /// Manifest-list entry paths (as stored in the parent snapshot's manifest list) to copy
-    /// verbatim from the parent into the new manifest list. Used by manifest-only compaction to
-    /// carry delete-file manifests forward unchanged, since it rewrites only the data manifests.
-    /// Copied in addition to manifest_entry_names and independent of use_previous_snapshots.
+    /// Manifest-list entry paths to copy verbatim from the parent snapshot into the new manifest list (carries delete-file manifests forward unchanged).
     const std::unordered_set<String> & carry_forward_manifest_paths = {},
-    /// Optional per-entry partition_spec_id parallel to manifest_entry_names. When non-empty, each
-    /// manifest-list entry records the supplied spec id instead of the table's default spec id, so a
-    /// manifest-only rewrite of a partition-evolved table keeps each manifest under its own spec.
+    /// Optional per-entry `partition_spec_id` parallel to `manifest_entry_names`; when non-empty each entry records the supplied spec id instead of the table's default.
     const std::vector<Int64> & entry_partition_spec_ids = {},
-    /// Optional per-entry partition summary parallel to manifest_entry_names. When non-empty, the
-    /// manifest-list `partitions` field summary is recomputed for each entry (manifest-only rewrite),
-    /// preserving manifest-level pruning bounds that would otherwise be dropped.
+    /// Optional per-entry partition summary parallel to `manifest_entry_names`; when non-empty the manifest-list `partitions` summary is recomputed per entry.
     const std::vector<ManifestListEntryPartitionSummary> & entry_partition_summaries = {});
 
 class IcebergStorageSink final : public SinkToStorage

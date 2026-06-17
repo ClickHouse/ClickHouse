@@ -38,9 +38,7 @@ Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
     return result.extract<Poco::JSON::Object::Ptr>();
 }
 
-/// Read a numeric `total-*` field from the parent snapshot's summary.
-/// Returns std::nullopt when the parent (or its summary, or the field itself) is absent
-/// or null, so callers can distinguish a missing counter from a genuine zero.
+/// Read a numeric `total-*` field from the parent snapshot's summary, returning std::nullopt when absent or null.
 std::optional<Int64> readParentTotal(Poco::JSON::Object::Ptr parent_snapshot, const char * field_name)
 {
     if (!parent_snapshot || !parent_snapshot->has(Iceberg::f_summary))
@@ -51,9 +49,7 @@ std::optional<Int64> readParentTotal(Poco::JSON::Object::Ptr parent_snapshot, co
     return parse<Int64>(parent_summary->getValue<String>(field_name));
 }
 
-/// Write the standard set of `total-*` counters into `summary` by adding the per-field
-/// delta to the corresponding parent value. Manifest-only rewrites pass all deltas as 0
-/// so the totals are inherited unchanged.
+/// Write the standard `total-*` counters into `summary` by adding each per-field delta to the corresponding parent value.
 void setSnapshotTotals(
     Poco::JSON::Object::Ptr summary,
     Poco::JSON::Object::Ptr parent_snapshot,
@@ -67,17 +63,13 @@ void setSnapshotTotals(
     /// Data totals (records, files size, data files) describe the whole table state.
     auto set_data_total = [&](const char * field_name, Int64 added)
     {
-        /// No parent snapshot: this is the base snapshot, so its total is exactly what
-        /// it adds. (Treating an absent parent as 0 is correct here, unlike below.)
+        /// No parent snapshot: this is the base snapshot, so its total is exactly what it adds.
         if (!parent_snapshot)
         {
             summary->set(field_name, std::to_string(added));
             return;
         }
-        /// The parent exists but omits this data total. We cannot derive the new
-        /// table-wide total from it. Defaulting to 0 would publish a snapshot falsely
-        /// claiming the table is (nearly) empty even though the data files are unchanged,
-        /// so fail the rewrite instead of corrupting the snapshot summary.
+        /// The parent omits this data total, so the new table-wide total cannot be derived: fail the rewrite instead of corrupting the summary.
         auto parent_value = readParentTotal(parent_snapshot, field_name);
         if (!parent_value.has_value())
             throw Exception(
@@ -86,8 +78,7 @@ void setSnapshotTotals(
                 field_name);
         summary->set(field_name, std::to_string(*parent_value + added));
     };
-    /// Delete-family totals: a missing counter is defined to mean "none", so treating
-    /// an absent parent value as 0 is safe.
+    /// Delete-family totals: a missing parent counter means "none", so treating it as 0 is safe.
     auto set_delete_total = [&](const char * field_name, Int64 added)
     {
         summary->set(field_name, std::to_string(readParentTotal(parent_snapshot, field_name).value_or(0) + added));
@@ -143,8 +134,7 @@ MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
 
 Int64 MetadataGenerator::getMaxSequenceNumber()
 {
-    /// Use the authoritative top-level field per Iceberg V2 spec.
-    /// Iterating snapshots is unreliable when catalogs prune snapshot history.
+    /// Use the authoritative top-level field per Iceberg V2 spec, since iterating snapshots is unreliable when history is pruned.
     if (metadata_object->has(Iceberg::f_last_sequence_number))
         return metadata_object->getValue<Int64>(Iceberg::f_last_sequence_number);
 
@@ -325,8 +315,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
 
-    /// Manifest-only rewrite: no data files are added, removed, or changed.
-    /// All added-* deltas are zero so total-* counters are inherited unchanged from the parent.
+    /// Manifest-only rewrite: all added-* deltas are zero so `total-*` counters are inherited unchanged from the parent.
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
     summary->set(Iceberg::f_operation, Iceberg::f_replace);
     summary->set(Iceberg::f_added_data_files, "0");
@@ -339,18 +328,6 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
 
     new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));
     new_snapshot->set(Iceberg::f_manifest_list, manifest_list_path.serialize());
-
-    if (format_version >= 3)
-    {
-        /// Mirror the v3 row-lineage fields that generateNextMetadata writes. A manifest-only
-        /// rewrite adds no rows, so first-row-id is the current next-row-id, added-rows is 0,
-        /// and next-row-id stays unchanged.
-        Int64 next_row_id = metadata_object->has(Iceberg::f_next_row_id) && !metadata_object->isNull(Iceberg::f_next_row_id)
-            ? metadata_object->getValue<Int64>(Iceberg::f_next_row_id)
-            : 0;
-        new_snapshot->set(Iceberg::f_first_row_id, next_row_id);
-        new_snapshot->set(Iceberg::f_added_rows, 0);
-    }
 
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
