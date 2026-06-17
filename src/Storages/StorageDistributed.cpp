@@ -758,33 +758,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 namespace
 {
 
-class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
-{
-    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
-    {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return nullptr;
-
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-            return nullptr;
-
-        auto column_expression = column_node->getExpression();
-        column_expression->setAlias(column_node->getColumnName());
-        return column_expression;
-    }
-
-public:
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto column_expression = getColumnNodeAliasExpression(node))
-            node = column_expression;
-    }
-};
-
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
 {
 public:
@@ -935,93 +908,12 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
 
-    /// Snapshot the projection-item structural hashes BEFORE ReplaseAliasColumnsVisitor
-    /// inlines ALIAS columns.  These "original" hashes identify what the outer planner
-    /// (which sees the un-inlined query tree) will treat as equivalent: items with the
-    /// same original hash collapse to a single DAG output through removeUnusedActions's
-    /// name-based deduplication, so we must keep them collapsed on the shard too.
-    /// Items that only become structurally identical after inlining (e.g. two ALIAS
-    /// columns expanding to the same expression, or one ALIAS column written next to
-    /// the same expression written directly) must, conversely, be disambiguated, or
-    /// the shard returns fewer columns than the outer planner expects and the
-    /// position-based rename in PlannerJoinTree throws NUMBER_OF_COLUMNS_DOESNT_MATCH.
-    std::vector<IQueryTreeNode::Hash> original_projection_hashes;
-    if (auto * pre_visitor_query_node = query_tree_to_modify->as<QueryNode>())
-    {
-        const auto & projection_nodes = pre_visitor_query_node->getProjection().getNodes();
-        original_projection_hashes.reserve(projection_nodes.size());
-        for (const auto & node : projection_nodes)
-            original_projection_hashes.push_back(node->getTreeHash({.compare_aliases = false}));
-    }
-
-    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
-    replace_alias_columns_visitor.visit(query_tree_to_modify);
-
-    /// Resolve structural collisions in the post-inlining projection that did not
-    /// exist in the original tree.  Items are bucketed by their post-inlining
-    /// structural hash; within each bucket they are further partitioned by their
-    /// original (pre-inlining) hash.  The first partition in each bucket keeps the
-    /// natural DAG name; every subsequent partition gets a fresh __actionName wrap;
-    /// items in the same partition share that wrap, so the shard ends up with
-    /// exactly as many distinct DAG output names as the outer planner's NameSet
-    /// deduplication produces.
-    if (auto * query_node_ptr = query_tree_to_modify->as<QueryNode>())
-    {
-        auto & projection_nodes = query_node_ptr->getProjection().getNodes();
-        if (projection_nodes.size() == original_projection_hashes.size())
-        {
-            struct TreeHashHash
-            {
-                size_t operator()(const IQueryTreeNode::Hash & h) const { return CityHash_v1_0_2::Hash128to64(h); }
-            };
-            struct OriginEntry { IQueryTreeNode::Hash original_hash; String wrap_name; };
-            std::unordered_map<IQueryTreeNode::Hash, std::vector<OriginEntry>, TreeHashHash> bucket;
-            FunctionOverloadResolverPtr action_name_resolver;
-            size_t wrap_counter = 0;
-
-            for (size_t i = 0; i < projection_nodes.size(); ++i)
-            {
-                auto inlined_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
-                auto & entries = bucket[inlined_hash];
-
-                if (entries.empty())
-                {
-                    entries.push_back({original_projection_hashes[i], {}});
-                    continue;
-                }
-
-                String wrap_name;
-                auto it = std::find_if(entries.begin(), entries.end(),
-                    [&](const OriginEntry & e) { return e.original_hash == original_projection_hashes[i]; });
-                if (it != entries.end())
-                {
-                    if (it->wrap_name.empty())
-                        continue;
-                    wrap_name = it->wrap_name;
-                }
-                else
-                {
-                    ++wrap_counter;
-                    wrap_name = "__distributed_alias_dedup_" + std::to_string(wrap_counter);
-                    entries.push_back({original_projection_hashes[i], wrap_name});
-                }
-
-                if (!action_name_resolver)
-                    action_name_resolver = FunctionFactory::instance().get("__actionName", query_context);
-
-                auto node_alias = projection_nodes[i]->getAlias();
-                projection_nodes[i]->removeAlias();
-                auto name_node = std::make_shared<ConstantNode>(wrap_name);
-                auto wrapper = std::make_shared<FunctionNode>("__actionName");
-                wrapper->getArguments().getNodes().push_back(std::move(projection_nodes[i]));
-                wrapper->getArguments().getNodes().push_back(std::move(name_node));
-                wrapper->resolveAsFunction(action_name_resolver);
-                if (!node_alias.empty())
-                    wrapper->setAlias(node_alias);
-                projection_nodes[i] = std::move(wrapper);
-            }
-        }
-    }
+    /// Inline ALIAS columns and disambiguate projection items that only become structurally
+    /// identical after inlining, so the shard emits as many distinct output columns as the
+    /// outer planner expects (otherwise NUMBER_OF_COLUMNS_DOESNT_MATCH). Also rewrite the matching
+    /// GROUP BY / ORDER BY / HAVING keys so that a shard which itself uses parallel replicas keeps
+    /// the duplicate keys distinct at its WithMergeableState.
+    inlineAndDisambiguateAliasColumns(query_tree_to_modify, query_context);
 
     const auto & settings = query_context->getSettingsRef();
 
