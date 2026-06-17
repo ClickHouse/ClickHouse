@@ -2739,8 +2739,15 @@ void Planner::buildPlanForQueryNode()
             const UInt64 settings_offset = query_node.getSettingsOffset();
             if (settings_limit > 0)
             {
+                bool settings_always_read_till_end = settings[Setting::exact_rows_before_limit];
+                if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
+                    settings_always_read_till_end = true;
+                if (!query_node.isGroupByWithTotals()
+                    && query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree)
+                    settings_always_read_till_end = true;
+
                 auto step = std::make_unique<LimitStep>(
-                    query_plan.getCurrentHeader(), settings_limit, settings_offset, settings[Setting::exact_rows_before_limit]);
+                    query_plan.getCurrentHeader(), settings_limit, settings_offset, settings_always_read_till_end);
                 step->setStepDescription("LIMIT OFFSET for SETTINGS");
                 query_plan.addStep(std::move(step));
             }
