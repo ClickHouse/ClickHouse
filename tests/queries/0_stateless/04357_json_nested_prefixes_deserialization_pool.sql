@@ -23,7 +23,6 @@ SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 
 SET merge_tree_use_prefixes_deserialization_thread_pool = 1;
 -- Keep the read local so it goes through the prefix-deserialization pool on this node.
 SET enable_parallel_replicas = 0;
-SYSTEM DROP MARK CACHE;
 SELECT
     sum(data.a::UInt64),
     sum(data.nested.x::UInt64),
