@@ -247,6 +247,12 @@ ArrowType parseType(const flatbuf::Field & field)
                     ErrorCodes::INCORRECT_DATA,
                     "Arrow IPC Map entries must be a struct of (key, value), got {} children",
                     type.children[0].type.children.size());
+            /// Arrow requires the `entries` struct itself to be non-nullable. A nullable entries child would
+            /// make the decoder return `Nullable(Tuple(...))` from `decodeField(type.children.at(0))` (even
+            /// with `null_count == 0`), which `decodeInner`'s Map branch then `assert_cast`s to `ColumnTuple`:
+            /// a bad-cast exception in debug/sanitizer builds and a wrong static_cast in release. Reject it.
+            if (type.children[0].nullable)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC Map entries struct must not be nullable");
             /// Arrow requires Map keys to be non-null, and the ClickHouse `Map` type forces a non-nullable
             /// key too. A nullable key would otherwise build a `ColumnMap` whose key column (wrapped in
             /// `Nullable` by the decoder) does not match its declared non-nullable key type.
