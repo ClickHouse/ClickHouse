@@ -101,6 +101,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int LOGICAL_ERROR;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -2182,14 +2183,22 @@ public:
         , resolved_format(std::move(resolved_format_))
     {
         StorageInMemoryMetadata metadata;
+        const auto nested_metadata = nested->getInMemoryMetadataPtr(nullptr, false);
         /// `columns_` is empty for a schema-inferred `CREATE TABLE ... ENGINE = URL('file://...')`
         /// without an explicit column list, because the structure is inferred inside the delegate
         /// storage constructor (the `URL` engine declares `supports_schema_inference`). Copy the
         /// inferred columns from the delegate so `SHOW CREATE`, `system.columns` and the materialized
         /// column list in the persisted metadata reflect the real structure instead of being empty.
-        metadata.setColumns(columns_.empty() ? nested->getInMemoryMetadataPtr(nullptr, false)->getColumns() : columns_);
+        metadata.setColumns(columns_.empty() ? nested_metadata->getColumns() : columns_);
         metadata.setConstraints(constraints_);
         metadata.setComment(comment_);
+        /// Expose the delegate's virtual columns (`_path`, `_file`, `_table`, ...) on the wrapper's
+        /// own metadata, matching the plain `URL` engine and the delegate it forwards to. Reads go
+        /// through the delegate, so `StorageProxy::getStorageSnapshot` already swaps in the delegate's
+        /// virtuals at query time; copying them here keeps this storage's standalone metadata (read
+        /// directly by introspection, e.g. `DESCRIBE`/`system.columns`) consistent with the delegate
+        /// instead of advertising no virtual columns at all.
+        metadata.setVirtuals(nested_metadata->virtuals);
         setInMemoryMetadata(metadata);
     }
 
@@ -2239,8 +2248,12 @@ public:
         ContextPtr context,
         TableExclusiveLockHolder & lock) override
     {
-        /// Deliberately bypass `StorageProxy::truncate` (which forwards to the delegate and would
-        /// truncate the backing file/object) and use the `IStorage` default, which throws.
+        /// `supportsTruncate() == false` alone is not enough to block truncation: it is only consulted
+        /// by the bulk `TRUNCATE ALL TABLES` / `TRUNCATE DATABASE ... LIKE` paths (which skip tables
+        /// that report it). An explicit `TRUNCATE TABLE` (`InterpreterDropQuery::executeToTableImpl`)
+        /// calls `truncate` directly without checking `supportsTruncate`, so without this override it
+        /// would reach `StorageProxy::truncate` and truncate the backing file/object. Deliberately
+        /// bypass the proxy and use the `IStorage` default, which throws `NOT_IMPLEMENTED`.
         IStorage::truncate(query, metadata_snapshot, context, lock); // NOLINT(bugprone-parent-virtual-call)
     }
 
@@ -2399,15 +2412,21 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     String resolved_format = configuration.format;
     if (resolved_format.empty() || resolved_format == "auto")
     {
-        if (target == URLSchemeTarget::File)
-        {
-            if (const auto * file = typeid_cast<const StorageFile *>(delegate_storage.get()))
-                resolved_format = file->getFormatName();
-        }
+        /// The classified schemes map to exactly two delegate storage types: `file://` -> `StorageFile`,
+        /// and `s3`/`gs`/`gcs`/`oss` (S3), `az`/`azure`/`abfss`/`abfs` (Azure) and `hdfs` ->
+        /// `StorageObjectStorage`. Throw if a future scheme is added to `classifyURLScheme` without
+        /// teaching this format resolution about its delegate type, instead of silently persisting a
+        /// `format = auto` that would force re-inference (and external I/O) on every `ATTACH`/restart.
+        if (const auto * file = typeid_cast<const StorageFile *>(delegate_storage.get()))
+            resolved_format = file->getFormatName();
         else if (const auto * object_storage = typeid_cast<const StorageObjectStorage *>(delegate_storage.get()))
-        {
             resolved_format = object_storage->getFormatName();
-        }
+        else
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected delegate storage '{}' while resolving the inferred format for the unified URL "
+                "engine dispatching scheme of URL '{}' (expected File or object storage)",
+                delegate_storage->getName(), configuration.url);
     }
 
     return std::make_shared<StorageURLSchemeDispatch>(
