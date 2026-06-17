@@ -2,7 +2,8 @@
 
 #include <array>
 #include <cmath>
-#include <unordered_set>
+#include <span>
+#include <string_view>
 
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeCustomGeo.h>
@@ -111,20 +112,28 @@ Field readGeoJSONPoint(ReadBuffer & buf)
     return Tuple{lon, lat};
 }
 
-/// Helper to read a JSON array of items produced by read_element into an Array Field.
-template <typename ElementReader>
-Array readGeoJSONArray(ReadBuffer & buf, ElementReader read_element)
+/// Iterate over every element of a JSON array, invoking `handle_element` once per element. The
+/// opening `[` must already be consumed, and commas between elements are required.
+template <typename ElementHandler>
+void forEachElementInJSONArray(ReadBuffer & buf, ElementHandler && handle_element)
 {
-    JSONUtils::skipArrayStart(buf);
-    Array items;
     bool first = true;
     while (!JSONUtils::checkAndSkipArrayEnd(buf))
     {
         if (!first)
             JSONUtils::skipComma(buf);
         first = false;
-        items.push_back(read_element(buf));
+        handle_element();
     }
+}
+
+/// Helper to read a JSON array of items produced by read_element into an Array Field.
+template <typename ElementReader>
+Array readGeoJSONArray(ReadBuffer & buf, ElementReader read_element)
+{
+    JSONUtils::skipArrayStart(buf);
+    Array items;
+    forEachElementInJSONArray(buf, [&] { items.push_back(read_element(buf)); });
     return items;
 }
 
@@ -207,14 +216,7 @@ void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_set
     else if (*buf.position() == '[')
     {
         JSONUtils::skipArrayStart(buf);
-        bool first = true;
-        while (!JSONUtils::checkAndSkipArrayEnd(buf))
-        {
-            if (!first)
-                JSONUtils::skipComma(buf);
-            first = false;
-            skipJSONValueStrict(buf, json_settings, current_depth + 1);
-        }
+        forEachElementInJSONArray(buf, [&] { skipJSONValueStrict(buf, json_settings, current_depth + 1); });
     }
     else
     {
@@ -267,6 +269,15 @@ void forEachFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & jso
         if (!handle_field(key))
             skipJSONValueStrict(buf, json_settings);
     }
+}
+
+/// Return whether `name` matches one of the given fixed geometry-type names.
+bool isOneOf(std::string_view name, std::span<const std::string_view> names)
+{
+    for (std::string_view candidate : names)
+        if (name == candidate)
+            return true;
+    return false;
 }
 
 /// Parse the `coordinates` of a supported GeoJSON geometry type and enforce the GeoJSON shape
@@ -367,22 +378,16 @@ void validateGeoJSONGeometryMembers(
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "GeoJSON: the 'geometries' member of a 'GeometryCollection' must be an array");
-        bool first = true;
-        while (!JSONUtils::checkAndSkipArrayEnd(geometries_buf))
-        {
-            if (!first)
-                JSONUtils::skipComma(geometries_buf);
-            first = false;
-            validateGeoJSONGeometry(geometries_buf, format_settings, current_depth + 1);
-        }
+        forEachElementInJSONArray(
+            geometries_buf, [&] { validateGeoJSONGeometry(geometries_buf, format_settings, current_depth + 1); });
         return;
     }
 
     /// `MultiPoint` coordinates are an array of positions (validated like a linear ring, without the
     /// closed/length invariants); all other supported types use the shared coordinate validator.
-    static const std::unordered_set<String> types_with_coordinates
+    static constexpr std::array<std::string_view, 6> types_with_coordinates
         = {"Point", "LineString", "MultiLineString", "Polygon", "MultiPolygon", "MultiPoint"};
-    if (!types_with_coordinates.contains(geo_type))
+    if (!isOneOf(geo_type, types_with_coordinates))
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: unknown or invalid geometry type '{}'", geo_type);
 
     if (raw_coordinates.empty())
@@ -679,14 +684,14 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
 
     /// GeoJSON geometry types that ClickHouse's Geometry type can represent. Note that `Ring` is part of the
     /// Geometry Variant but is NOT a valid GeoJSON geometry type, so it is intentionally excluded here.
-    static const std::unordered_set<String> supported_geojson_types
+    static constexpr std::array<std::string_view, 5> supported_geojson_types
         = {"Point", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
     /// Valid GeoJSON geometry types that cannot be represented in ClickHouse's Geometry type.
-    static const std::unordered_set<String> unrepresentable_geojson_types = {"GeometryCollection", "MultiPoint"};
+    static constexpr std::array<std::string_view, 2> unrepresentable_geojson_types = {"GeometryCollection", "MultiPoint"};
 
-    if (!supported_geojson_types.contains(geo_type))
+    if (!isOneOf(geo_type, supported_geojson_types))
     {
-        if (unrepresentable_geojson_types.contains(geo_type))
+        if (isOneOf(geo_type, unrepresentable_geojson_types))
         {
             /// Throw by default so that data is not silently lost; the user can opt into inserting NULL instead.
             if (format_settings.geojson.unsupported_geometry_handling == FormatSettings::UnsupportedGeometryHandling::Null)
