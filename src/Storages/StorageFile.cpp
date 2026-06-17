@@ -186,8 +186,16 @@ void listFilesWithRegexpMatchingImpl(
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             const auto normalized_path = absolute_path.lexically_normal().string();
-            if (!matched_paths || matched_paths->insert(normalized_path).second)
+            const bool inserted = !matched_paths || matched_paths->insert(normalized_path).second;
+            if (inserted)
+            {
                 result.push_back(normalized_path);
+
+                std::error_code ec;
+                const auto file_size = fs::file_size(absolute_path, ec);
+                if (!ec)
+                    total_bytes_to_read += file_size;
+            }
         }
         catch (const std::exception &) // NOLINT
         {
@@ -257,16 +265,23 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += it->file_size(ec);
-                if (ec)
-                {
-                    ec.clear();
-                    continue;
-                }
-
                 const auto normalized_path = fs::path(it->path()).lexically_normal().string();
-                if (!matched_paths || matched_paths->insert(normalized_path).second)
+                const bool inserted = !matched_paths || matched_paths->find(normalized_path) == matched_paths->end();
+                if (inserted)
+                {
+                    std::error_code size_ec;
+                    const auto file_size = it->file_size(size_ec);
+                    if (size_ec)
+                    {
+                        continue;
+                    }
+
+                    if (matched_paths)
+                        matched_paths->insert(normalized_path);
+
                     result.push_back(normalized_path);
+                    total_bytes_to_read += file_size;
+                }
             }
         }
         else if (it->is_directory())
