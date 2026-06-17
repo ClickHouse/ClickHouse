@@ -226,6 +226,17 @@ target_include_directories(_scann SYSTEM PUBLIC
 # Required by ScaNN to skip Bazel-only code paths.
 target_compile_definitions(_scann PUBLIC SCANN_CMAKE_MODE=1)
 
+# On ppc64le, ClickHouse defines -D__SSE2__=1 for SSE2 emulation via AltiVec.
+# Eigen detects __SSE2__ and includes its SSE PacketMath, which uses
+# _mm_loadu_si64 — a newer intrinsic absent from the ppc64le emulation layer.
+# Suppressing Eigen vectorization avoids the SSE code path.  The trade-off is
+# slower Eigen matrix operations (K-means, GMM, PCA, projection) during index
+# building on ppc64le; query throughput is unaffected because ScaNN's search
+# hot path uses its own highway-based SIMD dispatch.
+if (ARCH_PPC64LE)
+    target_compile_definitions(_scann PRIVATE EIGEN_DONT_VECTORIZE)
+endif()
+
 target_compile_options(_scann PRIVATE -w)
 
 target_link_libraries(_scann PUBLIC
