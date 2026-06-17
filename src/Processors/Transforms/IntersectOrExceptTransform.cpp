@@ -11,6 +11,9 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Ope
     , current_operator(operator_)
     , right_rows_estimate(right_rows_estimate_)
 {
+    /// Arm the first reservation review to fire just before the counting table's first resize (its
+    /// load threshold is half the initial buffer). Subsequent reviews re-arm to each next resize.
+    counts_inserts_until_review = 1UL << (COUNTING_SET_INITIAL_SIZE_DEGREE - 1);
 }
 
 
@@ -147,12 +150,25 @@ void IntersectOrExceptTransform::work()
 
 template <typename Method>
 void IntersectOrExceptTransform::addToCounts(
-    Method & method, const ColumnRawPtrs & columns, size_t rows, CountingSetVariants & variants) const
+    Method & method, const ColumnRawPtrs & columns, size_t rows, CountingSetVariants & variants)
 {
     typename Method::State state(columns, key_sizes, nullptr);
 
     for (size_t i = 0; i < rows; ++i)
-        ++state.emplaceKey(method.data, i, variants.string_pool).getMapped();
+    {
+        auto emplaced = state.emplaceKey(method.data, i, variants.string_pool);
+        ++emplaced.getMapped();
+
+        /// Growth tracking only matters for resizable tables; for fixed ones (key8/key16) the whole
+        /// block compiles away. Per-row cost is then just the (already-computed) inserted flag and a
+        /// decrement; the review, which reads the table size and may resize, runs amortized once
+        /// enough new keys accumulate.
+        if constexpr (requires { method.data.reserve(size_t{}); })
+        {
+            if (emplaced.isInserted() && --counts_inserts_until_review == 0)
+                reviewCountsReservation(method);
+        }
+    }
 }
 
 
@@ -164,52 +180,62 @@ void IntersectOrExceptTransform::reserveCounts(Method & method, size_t target)
 }
 
 
-void IntersectOrExceptTransform::reserveCountsFromEstimate(size_t rows_in_first_chunk)
+namespace
 {
-    counts_reserved = true;
+    constexpr size_t NEVER_AGAIN = std::numeric_limits<size_t>::max();
 
-    if (right_rows_estimate == 0 || rows_in_first_chunk == 0 || !counts_data)
-        return;
+    /// Jump straight to the target once the live key count is within this factor of it (bounds a
+    /// wrong target's over-reserve to this factor).
+    constexpr size_t COUNTS_RESERVE_GATE_FACTOR = 4;
 
-    auto & variants = *counts_data;
-    size_t distinct_so_far = variants.getTotalRowCount();
-    if (distinct_so_far == 0)
-        return;
+    /// With no row estimate, still pre-grow tables up to this many keys. A table that keeps getting
+    /// new keys is worth pre-sizing; the cap keeps the speculation small and leaves large
+    /// no-estimate tables to the hash table's natural growth.
+    constexpr size_t COUNTS_NO_ESTIMATE_LIMIT = 1 << 18;
+}
 
-    /// Scale the right-side row estimate by the distinct ratio seen in the first chunk.
-    double distinct_ratio = static_cast<double>(distinct_so_far) / static_cast<double>(rows_in_first_chunk);
-    size_t target = static_cast<size_t>(distinct_ratio * static_cast<double>(right_rows_estimate));
-
-    /// Cap the speculative reservation to a fraction of the *remaining* memory budget, so a wrong
-    /// (over-)estimate can never turn a query that would otherwise fit into MEMORY_LIMIT_EXCEEDED.
-    /// 1/4 leaves headroom for the rest of the query and for the old+new buffers of a later resize
-    /// (~3x the reserve) should the estimate undershoot. bytes_per_key comes from the first chunk's
-    /// table and includes the load-factor overhead.
+template <typename Method>
+size_t IntersectOrExceptTransform::cappedReserveTarget(Method & method, size_t distinct, size_t target) const
+{
     if (auto hard_limit = getCurrentQueryHardLimit())
     {
         Int64 available = static_cast<Int64>(*hard_limit) - getCurrentQueryMemoryUsage();
         if (available <= 0)
-            return;
+            return distinct;
 
-        size_t bytes_per_key = std::max<size_t>(1, variants.getTotalByteCount() / distinct_so_far);
+        size_t bytes_per_key = std::max<size_t>(1, method.data.getBufferSizeInBytes() / std::max<size_t>(distinct, 1));
         size_t budget_keys = (static_cast<size_t>(available) / 4) / bytes_per_key;
         target = std::min(target, budget_keys);
     }
+    return target;
+}
 
-    if (target <= distinct_so_far)
-        return;
+template <typename Method>
+void IntersectOrExceptTransform::reviewCountsReservation(Method & method)
+{
+    /// Called right before the table would resize itself (size has reached its load threshold).
+    size_t distinct = method.data.size();
 
-    switch (variants.type)
+    /// Grow toward the estimate; without one, toward a small bound so small-but-growing tables still
+    /// skip their early resizes (see COUNTS_NO_ESTIMATE_LIMIT).
+    size_t target = right_rows_estimate ? right_rows_estimate : COUNTS_NO_ESTIMATE_LIMIT;
+
+    /// Not within reach of the target yet: let the table resize naturally and re-arm to review just
+    /// before its next resize (threshold is half the buffer; the grower keeps a 0.5 load factor).
+    if (distinct * COUNTS_RESERVE_GATE_FACTOR < target)
     {
-        case CountingSetVariants::Type::EMPTY:
-            break;
-#define M(NAME) \
-    case CountingSetVariants::Type::NAME: \
-        reserveCounts(*variants.NAME, target); \
-        break;
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
+        size_t max_fill = method.data.getBufferSizeInCells() / 2;
+        counts_inserts_until_review = max_fill > distinct ? max_fill - distinct : 1;
+        return;
     }
+
+    /// Within reach of the target: reserve straight to it (capped), skipping this resize and the
+    /// rest of the cascade, then stop (no overshoot; beyond a no-estimate bound natural doubling
+    /// takes over).
+    counts_inserts_until_review = NEVER_AGAIN;
+    target = cappedReserveTarget(method, distinct, target);
+    if (target > distinct)
+        reserveCounts(method, target);
 }
 
 
@@ -313,9 +339,6 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
             APPLY_FOR_SET_VARIANTS(M)
 #undef M
         }
-
-        if (!counts_reserved)
-            reserveCountsFromEstimate(num_rows);
 
         return;
     }
