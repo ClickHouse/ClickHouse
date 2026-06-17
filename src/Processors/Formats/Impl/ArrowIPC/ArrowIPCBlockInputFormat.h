@@ -83,10 +83,11 @@ private:
     /// The decoder skips every other column so a SELECT of a subset of columns does not decode — or fail
     /// on — the unrequested ones. Empty until `prepareReader` runs.
     std::unordered_set<String> requested_top_level_fields;
-    /// Top-level field names whose requested header type is numeric (normalized like the set above): a
-    /// `date32` column among them is read as the raw `Int32` day number without the `Date32` range check,
-    /// matching the Apache Arrow library reader's numeric type-hint behavior.
-    std::unordered_set<String> date32_numeric_target_fields;
+    /// Each requested column's target ClickHouse type, keyed by its normalized name (including dotted
+    /// subcolumn names like `t.d`). Passed to the decoder for the recursive `date32` numeric type hint: a
+    /// `date32` mapped (at any nesting) to a numeric target is read as the raw `Int32` day number without
+    /// the `Date32` range check, matching the Apache Arrow library reader's numeric type-hint behavior.
+    std::unordered_map<String, DataTypePtr> requested_field_target_types;
     /// Arrow dictionary ids referenced by the requested top-level fields (computed by
     /// `computeReachableDictionaryIds`). A DictionaryBatch whose id is not here belongs only to unrequested
     /// columns and its body is skipped rather than decoded, so a subset read does not pay for — or fail on —

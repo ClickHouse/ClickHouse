@@ -62,20 +62,21 @@ public:
     /// (their buffers consumed but not materialized), so a `SELECT` of a subset of columns does not pay
     /// for — or fail on — unrequested columns. The set holds field names normalized the same way the
     /// reader matches them to the header (lower-cased when case-insensitive matching is on).
-    /// `date32_numeric_target_fields` (normalized like `keep_top_level_fields`) names the top-level
-    /// `date32` fields whose requested header type is numeric; those are decoded as the raw `Int32` day
-    /// number without the `Date32` range/overflow check, matching the Apache Arrow library reader's numeric
-    /// type-hint behavior.
+    /// `target_types` maps each requested column's normalized name (including dotted subcolumn names like
+    /// `t.d`) to its requested ClickHouse type. The decoder uses it to read a `date32` mapped to a numeric
+    /// target as the raw `Int32` day number without the `Date32` range/overflow check — recursively, so a
+    /// `date32` nested in an Array/Tuple/Map or addressed as a subcolumn is handled too — matching the
+    /// Apache Arrow library reader's recursive numeric type-hint behavior.
     std::vector<DecodedColumn> decodeBatch(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body,
         const std::unordered_set<String> * keep_top_level_fields = nullptr,
-        const std::unordered_set<String> * date32_numeric_target_fields = nullptr);
+        const std::unordered_map<String, DataTypePtr> * target_types = nullptr);
 
     /// Decodes an explicit list of fields (used for dictionary batches, which carry one value column).
     std::vector<DecodedColumn> decodeColumns(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::vector<ArrowField> & fields,
         const std::unordered_set<String> * keep_top_level_fields = nullptr,
-        const std::unordered_set<String> * date32_numeric_target_fields = nullptr);
+        const std::unordered_map<String, DataTypePtr> * target_types = nullptr);
 
 private:
     Slice nextBuffer();
@@ -84,20 +85,27 @@ private:
     /// `allow_low_cardinality` is set only for top-level fields: a dictionary-encoded field decodes into
     /// a LowCardinality column there, but a dictionary nested inside Array/Map/Tuple/Union is materialized
     /// to its plain value column (matching the type `fieldToCHType` declares for the nested field).
-    /// `date32_as_number` (only set for a top-level `date32` field with a numeric header target) reads the
-    /// raw `Int32` day number without the `Date32` range/overflow check; it is never propagated to nested
-    /// fields, which always apply the check.
-    ColumnPtr decodeField(const ArrowField & field, bool allow_low_cardinality = false, bool date32_as_number = false);
+    /// `target_hint` is the requested ClickHouse type for this field, derived from the parent's hint as the
+    /// decoder recurses (and falling back to a `target_types` lookup by `path`, the dotted column name). It
+    /// only affects `date32`: when the hint resolves to a numeric type the raw `Int32` day number is read
+    /// without the `Date32` range/overflow check, matching the library reader's numeric type hint.
+    ColumnPtr decodeField(
+        const ArrowField & field, bool allow_low_cardinality = false,
+        const DataTypePtr & target_hint = nullptr, const String & path = {});
     /// Advances the node/buffer/variadic cursors over `field` exactly as `decodeField` would, without
     /// reading or materializing its data. Used to skip an unrequested top-level column while keeping the
     /// flat node/buffer cursors aligned for the columns that follow.
     void skipField(const ArrowField & field);
-    ColumnPtr decodeInner(const ArrowField & field, size_t rows, bool date32_as_number = false);
+    ColumnPtr decodeInner(const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path);
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows);
     ColumnPtr decodeDictionary(
         const ArrowField & field, size_t rows, const Slice & validity, int64_t null_count, bool allow_low_cardinality);
     ColumnPtr buildNullMap(const Slice & validity, size_t rows, int64_t null_count) const;
-    ColumnPtr readOffsetsAndChild(const ArrowField & field, size_t rows, bool large);
+    ColumnPtr readOffsetsAndChild(
+        const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path);
+    /// The requested ClickHouse type for a field, preferring the hint derived from its parent and otherwise
+    /// looking up `path` (the dotted column name) in `target_types`. Returns null when neither is available.
+    DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path) const;
 
     void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body);
 
@@ -107,6 +115,9 @@ private:
 
     /// State valid only during a single decode call.
     const flatbuf::RecordBatch * current_batch = nullptr;
+    /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
+    /// null when the caller did not provide them. Points at the caller's map for the call's duration.
+    const std::unordered_map<String, DataTypePtr> * target_types = nullptr;
     /// The buffers to decode from: either views into the message body, or into `decompressed_body`.
     std::vector<Slice> buffer_slices;
     PODArray<char> decompressed_body;
