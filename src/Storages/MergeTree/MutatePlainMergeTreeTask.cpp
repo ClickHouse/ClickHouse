@@ -135,10 +135,14 @@ bool MutatePlainMergeTreeTask::executeStep()
                     transaction.commit(lock);
                 }
 
-                storage.updateMutationEntriesErrors(future_part, true, "", "");
                 mutate_task->updateProfileEvents();
 
+                /// Write the part log entry before reporting the mutation as done, otherwise a
+                /// synchronous mutation (mutations_sync) may return to the client before the
+                /// MutatePart row is queued, so a subsequent SYSTEM FLUSH LOGS misses it.
                 write_part_log({});
+
+                storage.updateMutationEntriesErrors(future_part, true, "", "");
 
                 state = State::NEED_FINISH;
                 return true;
