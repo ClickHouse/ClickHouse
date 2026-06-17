@@ -39,7 +39,7 @@ public:
         ContextPtr global_context;
         ASTPtr create_query;
         QualifiedTableName table_name;
-        bool can_throw{};
+        bool can_throw;
     };
 
     using Visitor = ConstInDepthNodeVisitor<DDLLoadingDependencyVisitor, true>;
