@@ -6,11 +6,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 config="$CUR_DIR/04327_disks_app_sed.xml"
 
-# Root the local test disk in an isolated, writable per-test directory instead of `/`.
-# $CLICKHOUSE_TMP can be relative, so resolve to the absolute path the local disk requires.
+# Established isolated per-test directories.
 local_disk_dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_sed_local"
-mkdir -p "$local_disk_dir"
+object_storage_dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_sed_object_storage"
+
+mkdir -p "$local_disk_dir" "$object_storage_dir/data" "$object_storage_dir/metadata"
+
 export TEST_DISK_04327_SED_LOCAL_PATH="$(realpath "$local_disk_dir")/"
+export TEST_DISK_04327_SED_OBJECT_STORAGE_PATH="$(realpath "$object_storage_dir/data")/"
+export TEST_DISK_04327_SED_OBJECT_STORAGE_METADATA_PATH="$(realpath "$object_storage_dir/metadata")/"
 
 run() {
     clickhouse-disks -C "$config" --disk "$disk_name" --query "$1"
