@@ -347,15 +347,17 @@ int arrowTimeUnitForScale(UInt32 scale)
 flatbuffers::Offset<flatbuf::Field>
 buildField(
     flatbuffers::FlatBufferBuilder & b, const std::string & name, const DataTypePtr & type, const FormatSettings & settings,
-    flatbuffers::Offset<flatbuf::DictionaryEncoding> dictionary = 0);
+    const DictPlan & plan);
 
 flatbuffers::Offset<flatbuf::Field>
-buildMapEntriesField(flatbuffers::FlatBufferBuilder & b, const DataTypeMap & map_type, const FormatSettings & settings)
+buildMapEntriesField(
+    flatbuffers::FlatBufferBuilder & b, const DataTypeMap & map_type, const FormatSettings & settings,
+    const std::vector<DictPlan> & kv_plans)
 {
     /// Arrow map child: a non-nullable struct "entries" with children "key" (non-nullable) and "value".
     std::vector<flatbuffers::Offset<flatbuf::Field>> kv;
-    kv.push_back(buildField(b, "key", removeNullable(map_type.getKeyType()), settings));
-    kv.push_back(buildField(b, "value", map_type.getValueType(), settings));
+    kv.push_back(buildField(b, "key", removeNullable(map_type.getKeyType()), settings, kv_plans.at(0)));
+    kv.push_back(buildField(b, "value", map_type.getValueType(), settings, kv_plans.at(1)));
     auto kv_vec = b.CreateVector(kv);
     auto entries_name = b.CreateString("entries");
     auto struct_type = flatbuf::CreateStruct_(b).Union();
@@ -365,8 +367,17 @@ buildMapEntriesField(flatbuffers::FlatBufferBuilder & b, const DataTypeMap & map
 flatbuffers::Offset<flatbuf::Field>
 buildField(
     flatbuffers::FlatBufferBuilder & b, const std::string & name, const DataTypePtr & type, const FormatSettings & settings,
-    flatbuffers::Offset<flatbuf::DictionaryEncoding> dictionary)
+    const DictPlan & plan)
 {
+    /// A `LowCardinality` node (top-level or nested) is written as an Arrow dictionary: the field carries
+    /// the value type plus a `DictionaryEncoding`, and the record batch holds integer indices.
+    flatbuffers::Offset<flatbuf::DictionaryEncoding> dictionary = 0;
+    if (plan.here)
+    {
+        auto index_type = flatbuf::CreateInt(b, plan.here->index_bit_width, plan.here->index_is_signed);
+        dictionary = flatbuf::CreateDictionaryEncoding(b, plan.here->id, index_type, /*isOrdered=*/false);
+    }
+
     DataTypePtr t = removeLowCardinality(type);
     const bool nullable = t->isNullable();
     t = removeNullable(t);
@@ -475,7 +486,7 @@ buildField(
                 }
                 break;
             case TypeIndex::Array:
-                children.push_back(buildField(b, "item", assert_cast<const DataTypeArray &>(*t).getNestedType(), settings));
+                children.push_back(buildField(b, "item", assert_cast<const DataTypeArray &>(*t).getNestedType(), settings, plan.children.at(0)));
                 type_type = flatbuf::Type_List;
                 type_offset = flatbuf::CreateList(b).Union();
                 break;
@@ -485,14 +496,14 @@ buildField(
                 const auto & elems = tuple.getElements();
                 const auto & elem_names = tuple.getElementNames();
                 for (size_t i = 0; i < elems.size(); ++i)
-                    children.push_back(buildField(b, elem_names[i], elems[i], settings));
+                    children.push_back(buildField(b, elem_names[i], elems[i], settings, plan.children.at(i)));
                 type_type = flatbuf::Type_Struct_;
                 type_offset = flatbuf::CreateStruct_(b).Union();
                 break;
             }
             case TypeIndex::Map:
             {
-                children.push_back(buildMapEntriesField(b, assert_cast<const DataTypeMap &>(*t), settings));
+                children.push_back(buildMapEntriesField(b, assert_cast<const DataTypeMap &>(*t), settings, plan.children));
                 type_type = flatbuf::Type_Map;
                 type_offset = flatbuf::CreateMap(b, false).Union();
                 break;
@@ -537,8 +548,10 @@ buildField(
                 /// plus a trailing `null`-typed child that NULL rows refer to.
                 const auto & variant_type = assert_cast<const DataTypeVariant &>(*t);
                 const auto & variants = variant_type.getVariants();
+                /// `Variant` is a dictionary boundary: a nested `LowCardinality` variant is written as
+                /// plain values (matching the encoder), so the children get an empty plan.
                 for (const auto & variant : variants)
-                    children.push_back(buildField(b, variant->getFamilyName(), variant, settings));
+                    children.push_back(buildField(b, variant->getFamilyName(), variant, settings, DictPlan{}));
                 children.push_back(flatbuf::CreateField(
                     b, b.CreateString("NULL"), false, flatbuf::Type_Null, flatbuf::CreateNull(b).Union(), 0, 0));
 
@@ -577,20 +590,12 @@ buildField(
 flatbuffers::Offset<flatbuf::Schema> buildSchemaTable(
     flatbuffers::FlatBufferBuilder & builder, const Names & names, const DataTypes & types, const FormatSettings & settings)
 {
-    const auto dictionaries = assignOutputDictionaries(types, settings);
+    const auto plans = assignOutputDictionaries(types, settings);
 
     std::vector<flatbuffers::Offset<flatbuf::Field>> field_offsets;
     field_offsets.reserve(names.size());
     for (size_t i = 0; i < names.size(); ++i)
-    {
-        flatbuffers::Offset<flatbuf::DictionaryEncoding> dict_off = 0;
-        if (dictionaries[i])
-        {
-            auto index_type = flatbuf::CreateInt(builder, dictionaries[i]->index_bit_width, dictionaries[i]->index_is_signed);
-            dict_off = flatbuf::CreateDictionaryEncoding(builder, dictionaries[i]->id, index_type, /*isOrdered=*/false);
-        }
-        field_offsets.push_back(buildField(builder, names[i], types[i], settings, dict_off));
-    }
+        field_offsets.push_back(buildField(builder, names[i], types[i], settings, plans[i]));
     auto fields_vec = builder.CreateVector(field_offsets);
 
     flatbuffers::Offset<flatbuffers::Vector<int64_t>> features = 0;
@@ -614,50 +619,59 @@ void buildSchemaMessage(
 
 namespace
 {
-/// True if a LowCardinality type appears anywhere below the top level of `type` (inside Array, Tuple,
-/// Map, ...). `forEachChild` walks all descendants, and a nested LowCardinality is passed to the
-/// callback as a child; a top-level LowCardinality is never passed to the callback for its own column,
-/// so this returns false for a plain top-level `LowCardinality(...)` (which is handled separately).
-bool hasNestedLowCardinality(const IDataType & type)
+/// Recursively assigns a sequential dictionary id to every dictionary-encoded `LowCardinality` node in
+/// `type` (top-level or nested), walking children in the same order the schema builder recurses, so the
+/// plan, the schema and the writer's column substitution all agree by position. `Variant` is a boundary:
+/// a `LowCardinality` inside it is written as plain values (matching the encoder), not a nested dictionary.
+DictPlan buildDictPlan(const DataTypePtr & type, const FormatSettings & settings, int64_t & next_id)
 {
-    bool found = false;
-    type.forEachChild([&](const IDataType & child)
+    DictPlan plan;
+    if (settings.arrow.low_cardinality_as_dictionary && type->lowCardinality())
+        plan.here = OutputDictionary{
+            next_id++,
+            settings.arrow.use_64_bit_indexes_for_dictionary ? 64 : 32,
+            settings.arrow.use_signed_indexes_for_dictionary};
+
+    const DataTypePtr t = removeNullable(removeLowCardinality(type));
+    const WhichDataType which(t);
+    if (which.isArray())
     {
-        if (child.lowCardinality())
-            found = true;
-    });
-    return found;
-}
-}
-
-std::vector<std::optional<OutputDictionary>> assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings)
-{
-    std::vector<std::optional<OutputDictionary>> result(types.size());
-    if (!settings.arrow.low_cardinality_as_dictionary)
-        return result;
-
-    /// Arrow dictionary indexes must be 32- or 64-bit (signed or unsigned).
-    const int bit_width = settings.arrow.use_64_bit_indexes_for_dictionary ? 64 : 32;
-    const bool is_signed = settings.arrow.use_signed_indexes_for_dictionary;
-
-    int64_t next_id = 0;
-    for (size_t i = 0; i < types.size(); ++i)
-    {
-        if (types[i]->lowCardinality())
-            result[i] = OutputDictionary{next_id++, bit_width, is_signed};
-        else if (hasNestedLowCardinality(*types[i]))
-            /// The native writer only dictionary-encodes top-level LowCardinality columns. A nested one
-            /// (e.g. `Array(LowCardinality(String))`) would otherwise be silently materialized to plain
-            /// values, diverging from the Apache Arrow library writer that emits a nested Arrow
-            /// dictionary. Fail loudly instead of changing the schema behind the user's back.
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "The native Arrow writer cannot encode the LowCardinality nested inside a column of type "
-                "'{}' as an Arrow dictionary. Either set output_format_arrow_low_cardinality_as_dictionary=0, "
-                "or set output_format_arrow_use_native_writer=0 to use the Apache Arrow library writer.",
-                types[i]->getName());
+        plan.children.push_back(buildDictPlan(assert_cast<const DataTypeArray &>(*t).getNestedType(), settings, next_id));
     }
-    return result;
+    else if (which.isTuple())
+    {
+        for (const auto & elem : assert_cast<const DataTypeTuple &>(*t).getElements())
+            plan.children.push_back(buildDictPlan(elem, settings, next_id));
+    }
+    else if (which.isMap())
+    {
+        const auto & map = assert_cast<const DataTypeMap &>(*t);
+        /// Mirror `buildMapEntriesField`: the key field uses the non-nullable key type, then the value.
+        plan.children.push_back(buildDictPlan(removeNullable(map.getKeyType()), settings, next_id));
+        plan.children.push_back(buildDictPlan(map.getValueType(), settings, next_id));
+    }
+    return plan;
+}
+}
+
+bool DictPlan::hasAnyDictionary() const
+{
+    if (here)
+        return true;
+    for (const auto & child : children)
+        if (child.hasAnyDictionary())
+            return true;
+    return false;
+}
+
+std::vector<DictPlan> assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings)
+{
+    std::vector<DictPlan> plans;
+    plans.reserve(types.size());
+    int64_t next_id = 0;
+    for (const auto & type : types)
+        plans.push_back(buildDictPlan(type, settings, next_id));
+    return plans;
 }
 
 void buildFooter(

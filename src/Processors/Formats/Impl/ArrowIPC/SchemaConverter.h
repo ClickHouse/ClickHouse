@@ -160,7 +160,7 @@ DataTypePtr fieldToCHType(
 void buildSchemaMessage(
     flatbuffers::FlatBufferBuilder & builder, const Names & names, const DataTypes & types, const FormatSettings & settings);
 
-/// Description of a dictionary-encoded output column (`output_format_arrow_low_cardinality_as_dictionary`).
+/// Description of a dictionary-encoded output node (`output_format_arrow_low_cardinality_as_dictionary`).
 struct OutputDictionary
 {
     int64_t id = 0;
@@ -168,11 +168,26 @@ struct OutputDictionary
     bool index_is_signed = true;
 };
 
-/// For each top-level column, whether it is written dictionary-encoded and how. Top-level
-/// `LowCardinality` columns are dictionary-encoded (with sequential ids) when
-/// `output_format_arrow_low_cardinality_as_dictionary` is on; everything else is `nullopt`.
-/// Both the schema builder and the output format use this so that ids/index types agree.
-std::vector<std::optional<OutputDictionary>> assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings);
+/// Recursive plan describing which `LowCardinality` nodes of a column's type tree are written as Arrow
+/// dictionaries — top-level *or* nested inside `Array`/`Tuple`/`Map` — when
+/// `output_format_arrow_low_cardinality_as_dictionary` is on, with ids/index types assigned in a
+/// deterministic DFS order. It is the single source of truth for dictionary ids: the schema builder and
+/// the output format both derive it from the same types+settings and read ids by position, so they agree
+/// without any traversal-order coordination. `children` mirror the type's children in the order the
+/// schema builder recurses (`Array` -> [item]; `Tuple` -> [elements...]; `Map` -> [key, value]); `Variant`
+/// is treated as a dictionary boundary (no nested dictionaries inside it) and other types have no children.
+struct DictPlan
+{
+    std::optional<OutputDictionary> here; /// set when this type node is a dictionary-encoded `LowCardinality`
+    std::vector<DictPlan> children;
+
+    /// True if this node or any descendant is dictionary-encoded (lets the writer skip untouched columns).
+    bool hasAnyDictionary() const;
+};
+
+/// Builds the dictionary plan (see `DictPlan`) for each top-level column, with ids assigned sequentially
+/// across all columns in DFS order. Both the schema builder and the output format use this.
+std::vector<DictPlan> assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings);
 
 }
 

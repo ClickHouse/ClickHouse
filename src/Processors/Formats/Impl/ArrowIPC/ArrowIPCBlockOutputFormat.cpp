@@ -9,9 +9,16 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnMap.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteBuffer.h>
 #include <IO/NetUtils.h>
@@ -91,6 +98,15 @@ void mapIndexesToGlobal(
             mapIndexesToGlobal(assert_cast<const ColumnUInt64 &>(local_indexes).getData(), local_to_global, out, out_null_map); break;
     }
 }
+
+/// One past the largest dictionary id in a column's plan (0 if it has no dictionaries).
+size_t countDictionaries(const ArrowIPC::DictPlan & plan)
+{
+    size_t n = plan.here ? static_cast<size_t>(plan.here->id) + 1 : 0;
+    for (const auto & child : plan.children)
+        n = std::max(n, countDictionaries(child));
+    return n;
+}
 }
 
 ArrowIPCBlockOutputFormat::ArrowIPCBlockOutputFormat(
@@ -108,11 +124,10 @@ ArrowIPCBlockOutputFormat::ArrowIPCBlockOutputFormat(
     message_writer.emplace(out);
     encoder = std::make_unique<ArrowIPC::RecordBatchEncoder>(format_settings);
 
-    column_dictionaries = ArrowIPC::assignOutputDictionaries(column_types, format_settings);
+    column_dict_plans = ArrowIPC::assignOutputDictionaries(column_types, format_settings);
     size_t num_dictionaries = 0;
-    for (const auto & dict : column_dictionaries)
-        if (dict)
-            num_dictionaries = std::max(num_dictionaries, static_cast<size_t>(dict->id) + 1);
+    for (const auto & plan : column_dict_plans)
+        num_dictionaries = std::max(num_dictionaries, countDictionaries(plan));
     dictionary_states.resize(num_dictionaries);
 }
 
@@ -170,6 +185,125 @@ ArrowIPC::MessageWriter::WrittenMessage ArrowIPCBlockOutputFormat::writeBatchMes
         builder.GetBufferPointer(), builder.GetSize(), batch.body.data(), batch.body.size());
 }
 
+std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::encodeDictionaryColumn(
+    const ColumnPtr & low_cardinality_column, const DataTypePtr & low_cardinality_type, const ArrowIPC::OutputDictionary & dict)
+{
+    auto & state = dictionary_states[dict.id];
+    const DataTypePtr value_type = removeLowCardinality(low_cardinality_type);
+    const bool value_nullable = value_type->isNullable();
+    if (!state.values)
+        state.values = value_type->createColumn();
+
+    /// Deduplicate at the dictionary level (a few values), not per row: map each entry of this batch's
+    /// LowCardinality dictionary to a global index, extending the accumulated dictionary with any new
+    /// values (emitted as a delta). The null placeholder maps to -1 (marked via the index validity bitmap,
+    /// never referenced from the Arrow dictionary).
+    const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(*low_cardinality_column);
+    const ColumnPtr & batch_dictionary = low_cardinality.getDictionary().getNestedColumn();
+    const size_t dict_size = batch_dictionary->size();
+    const size_t rows = low_cardinality.size();
+
+    const size_t delta_start = state.values->size();
+    PaddedPODArray<Int64> local_to_global(dict_size);
+    for (size_t e = 0; e < dict_size; ++e)
+    {
+        if (value_nullable && batch_dictionary->isNullAt(e))
+        {
+            local_to_global[e] = -1;
+            continue;
+        }
+        const std::string key(batch_dictionary->getDataAt(e));
+        auto [it, inserted] = state.value_to_index.try_emplace(key, static_cast<Int64>(state.values->size()));
+        if (inserted)
+            state.values->insertFrom(*batch_dictionary, e);
+        local_to_global[e] = it->second;
+    }
+
+    PaddedPODArray<Int64> indexes(rows);
+    auto index_null_map = value_nullable ? ColumnUInt8::create() : nullptr;
+    if (index_null_map)
+        index_null_map->getData().resize(rows);
+    mapIndexesToGlobal(
+        low_cardinality.getIndexes(), local_to_global, indexes, index_null_map ? &index_null_map->getData() : nullptr);
+
+    /// Emit the new dictionary values (a delta, except the first batch which registers the id).
+    const size_t delta_size = state.values->size() - delta_start;
+    if (!state.emitted || delta_size > 0)
+    {
+        ColumnPtr delta = state.values->cut(delta_start, delta_size);
+        auto dict_batch = encoder->encode({delta}, {value_type}, delta_size);
+        auto written = writeBatchMessage(dict_batch, dict.id, /*is_delta=*/state.emitted);
+        if (!stream)
+            dictionary_blocks.push_back({written.offset, written.metadata_length, written.body_length});
+        state.emitted = true;
+    }
+
+    auto [index_type, index_column] = makeIndexColumn(indexes, dict);
+    if (value_nullable)
+        return {ColumnNullable::create(std::move(index_column), std::move(index_null_map)), std::make_shared<DataTypeNullable>(index_type)};
+    return {std::move(index_column), std::move(index_type)};
+}
+
+std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::substituteDictionaries(
+    const ColumnPtr & column, const DataTypePtr & type, const ArrowIPC::DictPlan & plan)
+{
+    if (!plan.hasAnyDictionary())
+        return {column, type};
+
+    if (plan.here)
+        return encodeDictionaryColumn(column, type, *plan.here);
+
+    /// No dictionary at this node, but a descendant has one: rebuild the container with its children
+    /// substituted. Containers (Array/Tuple/Map) are never Nullable in ClickHouse, but strip defensively.
+    const DataTypePtr t = removeNullable(type);
+    const WhichDataType which(t);
+    if (which.isArray())
+    {
+        const auto & array = assert_cast<const ColumnArray &>(*column);
+        const auto & array_type = assert_cast<const DataTypeArray &>(*t);
+        auto [child, child_type] = substituteDictionaries(array.getDataPtr(), array_type.getNestedType(), plan.children.at(0));
+        return {ColumnArray::create(child, array.getOffsetsPtr()), std::make_shared<DataTypeArray>(child_type)};
+    }
+    if (which.isTuple())
+    {
+        const auto & tuple = assert_cast<const ColumnTuple &>(*column);
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*t);
+        const auto & elems = tuple_type.getElements();
+        Columns sub_columns;
+        DataTypes sub_types;
+        sub_columns.reserve(elems.size());
+        sub_types.reserve(elems.size());
+        for (size_t i = 0; i < elems.size(); ++i)
+        {
+            auto [sub_col, sub_type] = substituteDictionaries(tuple.getColumnPtr(i), elems[i], plan.children.at(i));
+            sub_columns.push_back(std::move(sub_col));
+            sub_types.push_back(std::move(sub_type));
+        }
+        auto new_type = tuple_type.hasExplicitNames()
+            ? std::make_shared<DataTypeTuple>(sub_types, tuple_type.getElementNames())
+            : std::make_shared<DataTypeTuple>(sub_types);
+        return {ColumnTuple::create(sub_columns), std::move(new_type)};
+    }
+    if (which.isMap())
+    {
+        const auto & map = assert_cast<const ColumnMap &>(*column);
+        const auto & map_type = assert_cast<const DataTypeMap &>(*t);
+        const ColumnArray & nested_array = map.getNestedColumn();
+        const auto & entries = assert_cast<const ColumnTuple &>(nested_array.getData());
+        /// Mirror the schema: the key uses the non-nullable key type, then the value.
+        auto [sub_key, sub_key_type]
+            = substituteDictionaries(entries.getColumnPtr(0), removeNullable(map_type.getKeyType()), plan.children.at(0));
+        auto [sub_value, sub_value_type] = substituteDictionaries(entries.getColumnPtr(1), map_type.getValueType(), plan.children.at(1));
+        return {
+            ColumnMap::create(sub_key, sub_value, nested_array.getOffsetsPtr()),
+            std::make_shared<DataTypeMap>(sub_key_type, sub_value_type)};
+    }
+
+    /// `hasAnyDictionary()` was true but no container matched — should not happen, since a dictionary only
+    /// lives in a LowCardinality node (handled above) or inside the containers handled here.
+    return {column, type};
+}
+
 void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
 {
     writeSchemaIfNeeded();
@@ -184,71 +318,9 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        if (!column_dictionaries[i])
-            continue;
-        const ArrowIPC::OutputDictionary & dict = *column_dictionaries[i];
-        auto & state = dictionary_states[dict.id];
-
-        const DataTypePtr value_type = removeLowCardinality(column_types[i]);
-        const bool value_nullable = value_type->isNullable();
-        if (!state.values)
-            state.values = value_type->createColumn();
-
-        /// Deduplicate at the dictionary level (a few values), not per row: map each entry of this
-        /// batch's LowCardinality dictionary to a global index, extending the accumulated dictionary
-        /// with any new values (emitted as a delta). The null placeholder maps to -1 (marked via the
-        /// index validity bitmap, never referenced from the Arrow dictionary).
-        const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(*columns[i]);
-        const ColumnPtr & batch_dictionary = low_cardinality.getDictionary().getNestedColumn();
-        const size_t dict_size = batch_dictionary->size();
-
-        const size_t delta_start = state.values->size();
-        PaddedPODArray<Int64> local_to_global(dict_size);
-        for (size_t e = 0; e < dict_size; ++e)
-        {
-            if (value_nullable && batch_dictionary->isNullAt(e))
-            {
-                local_to_global[e] = -1;
-                continue;
-            }
-            const std::string key(batch_dictionary->getDataAt(e));
-            auto [it, inserted] = state.value_to_index.try_emplace(key, static_cast<Int64>(state.values->size()));
-            if (inserted)
-                state.values->insertFrom(*batch_dictionary, e);
-            local_to_global[e] = it->second;
-        }
-
-        PaddedPODArray<Int64> indexes(num_rows);
-        auto index_null_map = value_nullable ? ColumnUInt8::create() : nullptr;
-        if (index_null_map)
-            index_null_map->getData().resize(num_rows);
-        mapIndexesToGlobal(
-            low_cardinality.getIndexes(), local_to_global, indexes,
-            index_null_map ? &index_null_map->getData() : nullptr);
-
-        /// Emit the new dictionary values (a delta, except the first batch which registers the id).
-        const size_t delta_size = state.values->size() - delta_start;
-        if (!state.emitted || delta_size > 0)
-        {
-            ColumnPtr delta = state.values->cut(delta_start, delta_size);
-            auto dict_batch = encoder->encode({delta}, {value_type}, delta_size);
-            auto written = writeBatchMessage(dict_batch, dict.id, /*is_delta=*/state.emitted);
-            if (!stream)
-                dictionary_blocks.push_back({written.offset, written.metadata_length, written.body_length});
-            state.emitted = true;
-        }
-
-        auto [index_type, index_column] = makeIndexColumn(indexes, dict);
-        if (value_nullable)
-        {
-            record_columns[i] = ColumnNullable::create(std::move(index_column), std::move(index_null_map));
-            record_types[i] = std::make_shared<DataTypeNullable>(index_type);
-        }
-        else
-        {
-            record_columns[i] = std::move(index_column);
-            record_types[i] = index_type;
-        }
+        auto [substituted_column, substituted_type] = substituteDictionaries(columns[i], column_types[i], column_dict_plans[i]);
+        record_columns[i] = std::move(substituted_column);
+        record_types[i] = std::move(substituted_type);
     }
 
     auto batch = encoder->encode(record_columns, record_types, num_rows);

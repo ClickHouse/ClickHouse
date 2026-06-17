@@ -47,6 +47,17 @@ private:
         std::optional<int64_t> dictionary_id = std::nullopt,
         bool is_delta = false);
 
+    /// Recursively replaces every dictionary-encoded `LowCardinality` node of `column`/`type` (per `plan`)
+    /// with its integer index column, accumulating the per-id dictionary and emitting `DictionaryBatch`
+    /// deltas, and returns the substituted (column, type) for the record batch. Handles nested dictionaries
+    /// inside `Array`/`Tuple`/`Map`.
+    std::pair<ColumnPtr, DataTypePtr> substituteDictionaries(
+        const ColumnPtr & column, const DataTypePtr & type, const ArrowIPC::DictPlan & plan);
+    /// Encodes one `LowCardinality` column against its accumulated dictionary id and returns its index
+    /// column (Nullable-wrapped when the dictionary value type is nullable) and that index column's type.
+    std::pair<ColumnPtr, DataTypePtr> encodeDictionaryColumn(
+        const ColumnPtr & low_cardinality_column, const DataTypePtr & low_cardinality_type, const ArrowIPC::OutputDictionary & dict);
+
     const bool stream;
     const FormatSettings format_settings;
 
@@ -59,16 +70,16 @@ private:
     std::vector<ArrowIPC::ArrowFileBlock> dictionary_blocks;
     std::vector<ArrowIPC::ArrowFileBlock> record_blocks;
 
-    /// Dictionary-encoded output (`output_format_arrow_low_cardinality_as_dictionary`): which top-level
-    /// columns are dictionary-encoded, and the per-id accumulated dictionary (extended across batches
-    /// via Arrow dictionary deltas).
+    /// Dictionary-encoded output (`output_format_arrow_low_cardinality_as_dictionary`): the per-column
+    /// plan of which `LowCardinality` nodes (top-level or nested) are dictionary-encoded, and the per-id
+    /// accumulated dictionary (extended across batches via Arrow dictionary deltas).
     struct DictionaryColumnState
     {
         MutableColumnPtr values;                              /// accumulated dictionary values (full nested type)
         std::unordered_map<std::string, Int64> value_to_index;
         bool emitted = false;
     };
-    std::vector<std::optional<ArrowIPC::OutputDictionary>> column_dictionaries;
+    std::vector<ArrowIPC::DictPlan> column_dict_plans;
     std::vector<DictionaryColumnState> dictionary_states;
 };
 
