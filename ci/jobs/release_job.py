@@ -358,10 +358,12 @@ def main():
             try:
                 # On a rerun after a partial failure the PR may already exist for
                 # this branch (the branch is force-pushed above); `gh pr create`
-                # would then fail with "already exists". Skip creation in that case.
-                existing_pr = Shell.get_output(
-                    f"gh pr list --repo ClickHouse/ClickHouse --head {shlex.quote(pr_branch)}"
-                    f" --state all --json url --jq '.[0].url'"
+                # would then fail with "already exists". Only treat an OPEN or
+                # MERGED PR as reusable — a PR closed without merge must be
+                # recreated, otherwise the downstream --merge-prs (which looks up
+                # open/merged PRs) would find nothing and fail after publication.
+                existing_pr = GH.get_pr_url_by_branch(
+                    branch=pr_branch, repo="ClickHouse/ClickHouse"
                 )
                 if existing_pr:
                     print(f"ChangeLog PR already exists [{existing_pr}] — skipping create")
@@ -557,32 +559,28 @@ def main():
     )
 
     # Merging the created PRs and marking the release "completed" are release
-    # mutations that must only happen when every preceding step succeeded.
-    # On failure we leave the in-progress status untouched so the Slack post
-    # below reports the actual failing step instead of a false "completed".
-    if ok:
-        results.append(
-            Result.from_commands_run(
-                name="Update Release Info and Merge Created PRs",
-                command=[
-                    f"python3 ./ci/jobs/create_release.py --merge-prs"
-                    f" {dry_run_flag}".strip()
-                ],
-                workdir=REPO_PATH,
-            )
-        )
+    # mutations that must only happen when every preceding step succeeded. Use
+    # step(), which skips when ok is already False and folds its own result back
+    # into ok — so if --merge-prs fails, the release is NOT marked completed and
+    # the Slack post below reports the actual failing step.
+    step(
+        name="Update Release Info and Merge Created PRs",
+        command=[
+            f"python3 ./ci/jobs/create_release.py --merge-prs"
+            f" {dry_run_flag}".strip()
+        ],
+        workdir=REPO_PATH,
+    )
 
-        results.append(
-            Result.from_commands_run(
-                name="Set Release Progress to Completed",
-                command=[
-                    "python3 ./ci/jobs/create_release.py --set-progress-started"
-                    " --progress completed",
-                    "python3 ./ci/jobs/create_release.py --set-progress-completed",
-                ],
-                workdir=REPO_PATH,
-            )
-        )
+    step(
+        name="Set Release Progress to Completed",
+        command=[
+            "python3 ./ci/jobs/create_release.py --set-progress-started"
+            " --progress completed",
+            "python3 ./ci/jobs/create_release.py --set-progress-completed",
+        ],
+        workdir=REPO_PATH,
+    )
 
     # Always post the final status (the completed release, or the failing step).
     results.append(
