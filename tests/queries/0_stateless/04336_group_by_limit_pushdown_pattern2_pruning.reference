@@ -12,3 +12,7 @@ UInt8 key (FixedHashTable cannot erase, heap disabled at runtime)
 5	5
 Date key (key16, FixedHashTable cannot erase, heap disabled at runtime)
 5	5
+Multi-stream: every returned group complete
+3	3
+Multi-stream heap disabled, single-stream heap active
+1	1

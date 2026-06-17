@@ -1027,8 +1027,16 @@ void Aggregator::executeImpl(
     /// without `ORDER BY`), the heap is only sound if evicted keys are erased
     /// from the hash table; methods whose hash table cannot erase
     /// (`FixedHashTable`-based ones) must not use the heap in that mode.
+    ///
+    /// `LowCardinality` is excluded too: its `State` keeps per-dictionary-index
+    /// `visit_cache` / `mapped_cache` entries that the trim path cannot
+    /// invalidate, so erasing a key would leave the State handing back a
+    /// destroyed `AggregateDataPtr` for a later row with the same index.  It
+    /// therefore never prunes (see `trimHeapAndPruneHashTable`), which also
+    /// disables the heap for it under `top_k_requires_pruning`.
     constexpr bool can_prune
-        = requires(typename Method::Data d, typename Method::Key k) { d.erase(k); };
+        = requires(typename Method::Data d, typename Method::Key k) { d.erase(k); }
+        && !Method::low_cardinality_optimization;
 
     /// A heap that never rejected anything is pure overhead - freeze it and
     /// route to the regular aggregation path (see `TopKAggregationHeap::freeze`).
@@ -1104,12 +1112,14 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
     using KeyType = typename Method::Key;
 
     /// Hash-table pruning is only possible when:
-    ///   * the hash table exposes `erase` (`FixedHashTable` and `StringHashTable` do not), and
+    ///   * the hash table exposes `erase` (`FixedHashTable`-based methods do not), and
+    ///   * the method is not `LowCardinality` (its `State`'s per-index caches
+    ///     would keep pointing at a destroyed state after erase), and
     ///   * the heap stores the full GROUP BY key (in prefix mode an evicted prefix
     ///     identifies every hash-table entry sharing it, not a single entry).
     /// Otherwise just trim the heap and leave the hash table alone - the heap
     /// still rejects rows in flight, only the memory saving is reduced.
-    if constexpr (!requires(DataType d, KeyType k) { d.erase(k); })
+    if constexpr (!requires(DataType d, KeyType k) { d.erase(k); } || Method::low_cardinality_optimization)
     {
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact([](size_t) {}));
     }
@@ -1399,7 +1409,12 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if constexpr (top_k)
                 {
                     if (method.top_k_heap.needsTrim())
+                    {
                         trimHeapAndPruneHashTable(method, *aggregates_pool, nullptr);
+                        /// Boundary moved / keys erased — see the general path below.
+                        skip_bitmap = nullptr;
+                        state.resetCache();
+                    }
                 }
             }
         }
@@ -1563,6 +1578,15 @@ void NO_INLINE Aggregator::executeImplBatch(
                         if (destroyed_set.contains(aggregate_data))
                             aggregate_data = nullptr;
                     }
+
+                    /// The trim moved the heap boundary and may have erased keys,
+                    /// so the precomputed skip bitmap and the State's
+                    /// consecutive-key cache are now stale.  Drop both: remaining
+                    /// rows must re-check against the new boundary and re-probe the
+                    /// hash table rather than reuse a cached (possibly destroyed)
+                    /// `AggregateDataPtr`.
+                    skip_bitmap = nullptr;
+                    state.resetCache();
                 }
             }
 

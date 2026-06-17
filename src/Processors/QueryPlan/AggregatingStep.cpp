@@ -403,6 +403,19 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         params.stats_collecting_params.disable();
     }
 
+    /// Pattern 2 of the top-K pushdown (`GROUP BY ... LIMIT` without `ORDER BY`,
+    /// marked by `top_k_requires_pruning`) prunes by erasing evicted keys from the
+    /// hash table.  That is only globally correct when every row for a key reaches
+    /// the same heap.  With several independent aggregating streams a key can be
+    /// pruned in one stream yet kept in another, and the merge would retain only the
+    /// surviving stream's partial state — an incomplete group the unsorted LIMIT can
+    /// return.  Sharded aggregation routes each key to a single shard, so it stays
+    /// safe; a single stream is safe trivially.  Otherwise disable the heap.
+    /// (Pattern 1 — with `ORDER BY` — is unaffected: its downstream global sort+limit
+    /// discards any key whose rank lost in some stream.)
+    if (params.top_k_requires_pruning && pipeline.getNumStreams() > 1 && !use_sharded_aggregation)
+        params.top_k_keys = 0;
+
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.

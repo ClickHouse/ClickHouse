@@ -1,6 +1,4 @@
 -- Correctness of the top-K heap under heavy eviction, across aggregation methods.
--- Keys arrive descending while ORDER BY is ascending, so the trim/eviction path runs
--- constantly; a wrong eviction surfaces as a wrong aggregate for the surviving keys.
 
 SET enable_group_by_top_k_optimization = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
@@ -73,10 +71,35 @@ SELECT k, uniqExact(v) FROM (SELECT toUInt32(999 - (number % 1000)) AS k, number
 SELECT 'Const-key block arriving after its key was evicted';
 SELECT k, count(), sum(v) FROM (SELECT 2::UInt32 AS k, 1 AS v FROM numbers(5) UNION ALL SELECT 1::UInt32, 1 FROM numbers(5) UNION ALL SELECT 2::UInt32, 1 FROM numbers(5)) GROUP BY k ORDER BY k ASC LIMIT 1;
 
+-- LowCardinality eviction must not erase from the hash table: the State's
+-- per-dictionary-index cache cannot be invalidated, so a re-appearing index would
+-- return a destroyed aggregate state.  Result must match optimization off.
+SELECT 'LowCardinality eviction: result matches optimization off';
+SELECT count() FROM
+(
+    SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(200000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1
+) AS optimized
+INNER JOIN
+(
+    SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(200000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0
+) AS full USING (k, c, s);
+
+-- A mid-block eviction must invalidate the consecutive-key cache: a key admitted by
+-- the stale skip bitmap, pushed, then evicted, must not hand its destroyed state to
+-- a later equal row.  Runs of equal keys + a stateful aggregate make it observable.
+SELECT 'consecutive-key cache after eviction: result matches optimization off';
+SELECT count() FROM
+(
+    SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(400000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1
+) AS optimized
+INNER JOIN
+(
+    SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(400000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0
+) AS full USING (k, u, s);
+
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';
 
--- Runtime guard: the queries above must have actually exercised skip and eviction.
 SELECT 'heap_engaged_guard';
 SYSTEM FLUSH LOGS query_log;
 SELECT sum(ProfileEvents['AggregationTopKRowsSkipped']) > 0, sum(ProfileEvents['AggregationTopKKeysEvicted']) > 0

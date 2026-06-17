@@ -174,6 +174,10 @@ Stateful aggregate under eviction (uniqExact)
 4	2
 Const-key block arriving after its key was evicted
 1	5	5
+LowCardinality eviction: result matches optimization off
+10
+consecutive-key cache after eviction: result matches optimization off
+10
 optimization_applied_guard
 1
 heap_engaged_guard
