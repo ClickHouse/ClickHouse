@@ -31,15 +31,27 @@ public:
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
 
-    /// `long_connection_limit` null disables connection reuse (the stateless path); the
-    /// caller passes it (and the two thresholds) from settings on the `use_reader_executor` path.
+    /// Tunables, grouped so the constructor stays stable as the executor gains knobs (cache,
+    /// prefetch, ...). `long_connection_limit` null disables connection reuse (the stateless path);
+    /// the caller fills these from settings on the `use_reader_executor` path.
+    struct Options
+    {
+        size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK;
+        size_t block_size = DEFAULT_BLOCK_SIZE;
+        size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
+        std::shared_ptr<LongConnectionLimit> long_connection_limit = nullptr;
+    };
+
     ReaderExecutor(
         std::shared_ptr<IFileBasedSourceReader> source,
         const StoredObjects & objects,
-        size_t block_size = DEFAULT_BLOCK_SIZE,
-        std::shared_ptr<LongConnectionLimit> long_connection_limit = nullptr,
-        size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK,
-        size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN);
+        Options options);
+
+    /// All-defaults overload (cannot be a default argument: `Options{}` in a member declaration
+    /// would need the initializers in a complete-class context).
+    ReaderExecutor(
+        std::shared_ptr<IFileBasedSourceReader> source,
+        const StoredObjects & objects);
 
     ~ReaderExecutor();
 

@@ -103,16 +103,13 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
 ReaderExecutor::ReaderExecutor(
     std::shared_ptr<IFileBasedSourceReader> source_,
     const StoredObjects & objects,
-    size_t block_size_,
-    std::shared_ptr<LongConnectionLimit> long_connection_limit_,
-    size_t min_bytes_for_seek_,
-    size_t max_tail_for_drain_)
+    Options options)
     : source(std::move(source_))
-    , block_size(block_size_ ? block_size_ : DEFAULT_BLOCK_SIZE)
-    , continuity_tracker(ContinuityTracker::Options{.near_gap = min_bytes_for_seek_})
-    , long_connection_limit(std::move(long_connection_limit_))
-    , min_bytes_for_seek(min_bytes_for_seek_)
-    , max_tail_for_drain(max_tail_for_drain_)
+    , block_size(options.block_size ? options.block_size : DEFAULT_BLOCK_SIZE)
+    , continuity_tracker(ContinuityTracker::Options{.near_gap = options.min_bytes_for_seek})
+    , long_connection_limit(std::move(options.long_connection_limit))
+    , min_bytes_for_seek(options.min_bytes_for_seek)
+    , max_tail_for_drain(options.max_tail_for_drain)
     , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
     offset_map.build(objects);
@@ -120,6 +117,13 @@ ReaderExecutor::ReaderExecutor(
     LOG_DEBUG(log, "Created: source={}, objects={}, total_size={}, block_size={}, long_connections={}",
         source ? source->name() : "none", objects.size(), offset_map.totalSize(), block_size,
         long_connection_limit != nullptr);
+}
+
+ReaderExecutor::ReaderExecutor(
+    std::shared_ptr<IFileBasedSourceReader> source_,
+    const StoredObjects & objects)
+    : ReaderExecutor(std::move(source_), objects, Options{})
+{
 }
 
 ReaderExecutor::~ReaderExecutor()

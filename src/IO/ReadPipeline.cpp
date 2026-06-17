@@ -249,10 +249,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     }
 
     auto executor = std::make_unique<ReaderExecutor>(
-        source_reader, source->objects, block_size,
-        long_connection_limit,
-        settings.reader_executor.min_bytes_for_seek,
-        settings.reader_executor.max_tail_for_drain);
+        source_reader, source->objects, ReaderExecutor::Options{
+            .min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek,
+            .block_size = block_size,
+            .max_tail_for_drain = settings.reader_executor.max_tail_for_drain,
+            .long_connection_limit = long_connection_limit});
 
     return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }

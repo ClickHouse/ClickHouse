@@ -130,8 +130,9 @@ protected:
     {
         TestThreadGroup tg;
         auto ex = std::make_unique<ReaderExecutor>(
-            std::make_shared<LocalSourceReader>(), objects, block,
-            std::move(limit), /*min_bytes_for_seek=*/64 * 1024, /*max_tail_for_drain=*/64 * 1024);
+            std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+                .min_bytes_for_seek = 64 * 1024, .block_size = block,
+                .max_tail_for_drain = 64 * 1024, .long_connection_limit = std::move(limit)});
         PipelineReadBuffer buf(std::move(ex));
 
         std::vector<char> window(block);
@@ -154,7 +155,7 @@ protected:
 TEST_F(ReaderExecutorTest, SequentialReadSingleObject)
 {
     StoredObjects objects{makeFile("a.bin", 1024)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256});
 
     EXPECT_EQ(ex.totalSize(), 1024u);
     EXPECT_FALSE(ex.hasUnknownSize());
@@ -169,7 +170,7 @@ TEST_F(ReaderExecutorTest, SequentialReadSingleObject)
 TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
 {
     StoredObjects objects{makeFile("a.bin", 1000)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/100);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 100});
 
     size_t total = 0;
     size_t windows = 0;
@@ -190,7 +191,7 @@ TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
 TEST_F(ReaderExecutorTest, SeekThenRead)
 {
     StoredObjects objects{makeFile("a.bin", 1024)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256});
 
     ex.seek(500);
     EXPECT_EQ(ex.getPosition(), 500u);
@@ -213,7 +214,7 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
 TEST_F(ReaderExecutorTest, MultiObjectConcatenationNeverCrossesBoundary)
 {
     StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 200)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256});
 
     EXPECT_EQ(ex.totalSize(), 500u);
 
@@ -233,7 +234,7 @@ TEST_F(ReaderExecutorTest, MultiObjectConcatenationNeverCrossesBoundary)
 TEST_F(ReaderExecutorTest, MultiObjectDataIsCorrect)
 {
     StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 200)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/64);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 64});
 
     auto data = drain(ex);
     ASSERT_EQ(data.size(), 500u);
@@ -247,7 +248,7 @@ TEST_F(ReaderExecutorTest, MultiObjectDataIsCorrect)
 TEST_F(ReaderExecutorTest, EmptyFileIsImmediateEOF)
 {
     StoredObjects objects{makeFile("empty.bin", 0)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256});
 
     EXPECT_EQ(ex.totalSize(), 0u);
     EXPECT_TRUE(ex.readNextWindow().atEnd());
@@ -261,7 +262,7 @@ TEST_F(ReaderExecutorTest, MissingFileWithUnknownSizeThrows)
     StoredObject missing;
     missing.remote_path = (tmp_dir / "does_not_exist.bin").string();
     missing.bytes_size = StoredObject::UnknownSize;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {missing}, /*block_size=*/256);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {missing}, ReaderExecutor::Options{.block_size = 256});
 
     EXPECT_ANY_THROW(ex.readNextWindow());
 }
@@ -272,7 +273,7 @@ TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
     /// truncated/corrupt; the executor must throw rather than return a short read.
     StoredObject obj = makeFile("short.bin", 100);
     obj.bytes_size = 1000;  // pretend the object is larger than the file on disk
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {obj}, /*block_size=*/256);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {obj}, ReaderExecutor::Options{.block_size = 256});
 
     EXPECT_ANY_THROW(ex.readNextWindow());
 }
@@ -286,7 +287,7 @@ TEST_F(ReaderExecutorTest, ProfileEventsCountSourceReadsAndBytes)
     /// 1 MiB file read in 256 KiB blocks -> 4 source reads, all bytes served.
     constexpr size_t size = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256 * 1024);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256 * 1024});
     drain(ex);
 
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 4u);
@@ -305,7 +306,7 @@ TEST_F(ReaderExecutorTest, ModeledCostMatchesFormula)
     /// Modeled cost = 30ms/source request + 20ms/MiB from source (cache/conn terms 0).
     constexpr size_t size = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256 * 1024);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256 * 1024});
     drain(ex);
 
     const auto cost = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
@@ -328,14 +329,14 @@ TEST_F(ReaderExecutorTest, ModeledCostScalesWithSourceRequests)
     constexpr size_t size = 1024 * 1024;
     {
         StoredObjects big_block{makeFile("a.bin", size)};
-        ReaderExecutor coarse(std::make_shared<LocalSourceReader>(), big_block, /*block_size=*/1024 * 1024);
+        ReaderExecutor coarse(std::make_shared<LocalSourceReader>(), big_block, ReaderExecutor::Options{.block_size = 1024 * 1024});
         drain(coarse);
     }
     const auto cost_after_coarse = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
     const auto requests_after_coarse = tg.get(ProfileEvents::ReaderExecutorSourceRequests);
     {
         StoredObjects small_block{makeFile("b.bin", size)};
-        ReaderExecutor fine(std::make_shared<LocalSourceReader>(), small_block, /*block_size=*/64 * 1024);
+        ReaderExecutor fine(std::make_shared<LocalSourceReader>(), small_block, ReaderExecutor::Options{.block_size = 64 * 1024});
         drain(fine);
     }
     const auto cost_after_fine = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
@@ -352,7 +353,7 @@ TEST_F(ReaderExecutorTest, LongConnectionsOffByDefault)
     constexpr size_t size = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
     /// No LongConnectionLimit -> the stateless path; behavior must be unchanged.
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/128 * 1024);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 128 * 1024});
     auto data = drain(ex);
 
     ASSERT_EQ(data.size(), size);
@@ -369,8 +370,9 @@ TEST_F(ReaderExecutorTest, SequentialScanOpensAndReusesConnection)
     constexpr size_t size = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
     auto limit = std::make_shared<LongConnectionLimit>(4);
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/128 * 1024,
-        limit, /*min_bytes_for_seek=*/2 * 1024 * 1024, /*max_tail_for_drain=*/1024 * 1024);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024,
+        .max_tail_for_drain = 1024 * 1024, .long_connection_limit = limit});
     auto data = drain(ex);
 
     ASSERT_EQ(data.size(), size);
@@ -395,7 +397,7 @@ TEST_F(ReaderExecutorTest, InBufferSeekIsServedWithoutRefetch)
     constexpr size_t size = 64 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
     auto ex = std::make_unique<ReaderExecutor>(
-        std::make_shared<LocalSourceReader>(), objects, /*block_size=*/16 * 1024);
+        std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 16 * 1024});
     PipelineReadBuffer buf(std::move(ex));
 
     /// Fetch one window [0, 16K) and partly consume it (one source request).
@@ -435,8 +437,9 @@ TEST_F(ReaderExecutorTest, CapacityZeroAlwaysFallsBack)
     constexpr size_t size = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
     auto limit = std::make_shared<LongConnectionLimit>(0);   /// no slots available
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/128 * 1024,
-        limit, 2 * 1024 * 1024, 1024 * 1024);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024,
+        .max_tail_for_drain = 1024 * 1024, .long_connection_limit = limit});
     auto data = drain(ex);
 
     ASSERT_EQ(data.size(), size);
@@ -453,8 +456,9 @@ TEST_F(ReaderExecutorTest, DataCorrectAcrossSeeksWithLongConnections)
     constexpr size_t size = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
     auto limit = std::make_shared<LongConnectionLimit>(4);
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/128 * 1024,
-        limit, 2 * 1024 * 1024, 1024 * 1024);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024,
+        .max_tail_for_drain = 1024 * 1024, .long_connection_limit = limit});
 
     auto read_at = [&](size_t pos, size_t len)
     {
@@ -485,8 +489,9 @@ TEST_F(ReaderExecutorTest, IncompleteConnectionOnAbandonedDrop)
     auto limit = std::make_shared<LongConnectionLimit>(4);
     /// max_tail_for_drain = 0: a connection dropped before its bound is never drained, so it
     /// is abandoned mid-response and must count as incomplete.
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/128 * 1024,
-        limit, /*min_bytes_for_seek=*/2 * 1024 * 1024, /*max_tail_for_drain=*/0);
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024,
+        .max_tail_for_drain = 0, .long_connection_limit = limit});
 
     /// Read until a long connection is open (it has a large bound), then seek backward to
     /// abandon it mid-response.
