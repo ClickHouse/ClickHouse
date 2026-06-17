@@ -134,7 +134,7 @@ void RabbitMQSource::updateChannel()
 Chunk RabbitMQSource::generate()
 {
     auto chunk = generateImpl();
-    if (!chunk && ack_in_suffix)
+    if (!chunk && ack_in_suffix && !consumption_aborted)
     {
         LOG_TEST(log, "Will send ack on select");
         sendAck();

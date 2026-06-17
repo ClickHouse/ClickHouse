@@ -1,6 +1,7 @@
 """Test SYSTEM STOP/PAUSE/CANCEL/REFRESH and ALL BACKGROUND controls on a RabbitMQ table."""
 
 import json
+import threading
 import time
 
 import pika
@@ -389,6 +390,70 @@ def test_system_refresh_all_background(rabbitmq_cluster):
     instance.query("SYSTEM REFRESH ALL BACKGROUND")
     publish(rabbitmq_cluster, exchange, 10, 10)
     wait_dst_count(table, 20)
+
+
+def test_cancel_during_direct_select_does_not_drop_messages(rabbitmq_cluster):
+    # With rabbitmq_commit_on_select = 1 a direct SELECT acks the rows it returns to the client.
+    # A SYSTEM CANCEL that aborts an in-flight direct read must not ack that aborted block: its rows
+    # are discarded rather than returned, so acking them would silently drop them from the queue.
+    # We hammer SYSTEM CANCEL while draining with repeated direct SELECTs, then drain the remainder
+    # with no cancels in flight; every published key must still surface in some SELECT result.
+    table = "rabbitmq_direct_cancel"
+    exchange = "direct_cancel_exchange"
+    n = 20
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{exchange}',
+                     rabbitmq_commit_on_select = 1,
+                     rabbitmq_flush_interval_ms = 500,
+                     rabbitmq_row_delimiter = '\\n';
+        """
+    )
+    # Let the engine declare and bind its queue so messages published below are retained for the
+    # on-demand direct-read consumer (no materialized view is attached, so nothing consumes in the
+    # background).
+    time.sleep(3)
+    publish(rabbitmq_cluster, exchange, 0, n)
+
+    collected = set()
+
+    def drain(deadline):
+        while time.time() < deadline and len(collected) < n:
+            res = instance.query(
+                f"SELECT key FROM test.{table} "
+                f"SETTINGS stream_like_engine_allow_direct_select = 1",
+                ignore_error=True,
+            )
+            for line in res.split():
+                if line.strip():
+                    collected.add(int(line))
+
+    stop = threading.Event()
+
+    def spam_cancel():
+        while not stop.is_set():
+            instance.query(f"SYSTEM CANCEL test.{table}")
+            time.sleep(0.02)
+
+    canceller = threading.Thread(target=spam_cancel)
+    canceller.start()
+    try:
+        drain(time.time() + 20)  # drain under a storm of SYSTEM CANCELs racing the direct reads
+    finally:
+        stop.set()
+        canceller.join()
+
+    drain(time.time() + 30)  # finish draining with no cancels in flight
+
+    missing = set(range(n)) - collected
+    assert not missing, (
+        f"messages acked by an aborted direct read but never returned (lost): {sorted(missing)}"
+    )
 
 
 def test_system_stop_requires_grant(rabbitmq_cluster):
