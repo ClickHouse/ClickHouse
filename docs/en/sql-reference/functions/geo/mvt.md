@@ -306,4 +306,3 @@ for large tables, extend the inner query as shown in [Clustering](#clustering) a
 ## Limitations {#limitations}
 
 - The Web Mercator projection clamps latitude to `±85.05112878°` and does not handle antimeridian-crossing inputs.
-- No explicit feature `id` field.
