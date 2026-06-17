@@ -2,9 +2,15 @@ collator: no Top-K in plan
 0
 collator: result matches optimization off
 5
-external agg: Pattern 2 gated off
-0
+external agg: Pattern 2 still applies
+1
 external agg: Pattern 1 still applies
 1
+huge limit: gated off
+0
+limit at cap: applies
+1
+limit above cap: gated off
+0
 nullable key eviction: result matches optimization off
 10	10

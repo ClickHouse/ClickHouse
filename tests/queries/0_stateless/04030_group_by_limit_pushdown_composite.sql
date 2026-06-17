@@ -5,6 +5,9 @@
 
 -- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
+-- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
+-- gate the optimization off for the limits used here; pin it.
+SET query_plan_max_limit_for_top_k_optimization = 1000;
 
 SET enable_group_by_top_k_optimization = 1;
 

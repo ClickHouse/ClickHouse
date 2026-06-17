@@ -12,6 +12,9 @@
 SET max_threads = 1;
 -- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
+-- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
+-- gate the optimization off for the limits used here; pin it.
+SET query_plan_max_limit_for_top_k_optimization = 1000;
 -- The trivial analyzer pass handles `GROUP BY ... LIMIT` via `max_rows_to_group_by`
 -- and hides the plan-level Pattern 2; disable it to exercise the heap path.
 SET optimize_trivial_group_by_limit_query = 0;

@@ -1,6 +1,9 @@
 -- Regression tests for review fixes to the GROUP BY top-K optimization.
 
 SET enable_group_by_top_k_optimization = 1;
+-- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
+-- gate the optimization off for the limits used here; pin it.
+SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET max_threads = 1;
 -- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
@@ -29,12 +32,13 @@ INNER JOIN (
 ) AS r USING (s);
 
 -- ---------------------------------------------------------------------------
--- Pattern 2 (GROUP BY ... LIMIT without ORDER BY) is disabled when external
--- aggregation can spill: a spilled-then-evicted key would surface an incomplete
--- group in the unsorted LIMIT.  With spilling possible, the plan must not carry
--- Top-K; results stay correct either way.
+-- Pattern 2 (GROUP BY ... LIMIT without ORDER BY) stays enabled even when
+-- external aggregation is configured: the heap bounds the table so a spill
+-- never triggers, and applyLimitPushdown turns external aggregation off for the
+-- step (removing the spilled-then-evicted incomplete-group hazard).  The plan
+-- must still carry Top-K.
 -- ---------------------------------------------------------------------------
-SELECT 'external agg: Pattern 2 gated off';
+SELECT 'external agg: Pattern 2 still applies';
 SELECT count() FROM (EXPLAIN actions = 1
     SELECT k FROM (SELECT number % 100 AS k FROM numbers(1000)) GROUP BY k LIMIT 5
     SETTINGS max_bytes_ratio_before_external_group_by = 0.5
@@ -44,6 +48,30 @@ SELECT 'external agg: Pattern 1 still applies';
 SELECT count() FROM (EXPLAIN actions = 1
     SELECT k FROM (SELECT number % 100 AS k FROM numbers(1000)) GROUP BY k ORDER BY k LIMIT 5
     SETTINGS max_bytes_ratio_before_external_group_by = 0.5
+) WHERE explain LIKE '%Top-K%';
+
+-- ---------------------------------------------------------------------------
+-- A limit too large to be selective is not worth the heap overhead (it never
+-- reaches capacity, so it can neither skip nor freeze, yet copies every key and
+-- maintains the heap).  query_plan_max_limit_for_top_k_optimization (default
+-- 1000) caps it: a limit above the cap must not carry Top-K, at or below it must.
+-- ---------------------------------------------------------------------------
+SELECT 'huge limit: gated off';
+SELECT count() FROM (EXPLAIN actions = 1
+    SELECT k FROM (SELECT number % 100 AS k FROM numbers(1000)) GROUP BY k ORDER BY k LIMIT 1000000000
+    SETTINGS max_bytes_ratio_before_external_group_by = 0
+) WHERE explain LIKE '%Top-K%';
+
+SELECT 'limit at cap: applies';
+SELECT count() FROM (EXPLAIN actions = 1
+    SELECT k FROM (SELECT number % 100 AS k FROM numbers(1000)) GROUP BY k ORDER BY k LIMIT 1000
+    SETTINGS query_plan_max_limit_for_top_k_optimization = 1000, max_bytes_ratio_before_external_group_by = 0
+) WHERE explain LIKE '%Top-K%';
+
+SELECT 'limit above cap: gated off';
+SELECT count() FROM (EXPLAIN actions = 1
+    SELECT k FROM (SELECT number % 100 AS k FROM numbers(1000)) GROUP BY k ORDER BY k LIMIT 1001
+    SETTINGS query_plan_max_limit_for_top_k_optimization = 1000, max_bytes_ratio_before_external_group_by = 0
 ) WHERE explain LIKE '%Top-K%';
 
 -- ---------------------------------------------------------------------------

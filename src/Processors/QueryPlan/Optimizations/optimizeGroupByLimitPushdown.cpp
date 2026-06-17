@@ -82,6 +82,13 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     if (limit < 1)
         return 0;
 
+    /// A limit too large to be selective makes the heap pure overhead: it never
+    /// reaches capacity, so it can neither skip rows nor freeze, yet every group
+    /// still pays a key copy into `heap_column` and a `std::push_heap`.  Cap it
+    /// by `query_plan_max_limit_for_top_k_optimization` (0 = no cap).
+    if (settings.max_limit_for_top_k_optimization != 0 && limit > settings.max_limit_for_top_k_optimization)
+        return 0;
+
     if (parent_node->children.size() != 1)
         return 0;
 
@@ -145,14 +152,15 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     else
     {
         /// No explicit ORDER BY (Pattern 2).  Correctness relies on erasing
-        /// evicted keys from the hash table (`requires_pruning`), but external
-        /// aggregation spills and resets the hash table: a key spilled with a
-        /// partial state can later be evicted from the fresh heap, leaving an
-        /// incomplete group that the unsorted LIMIT may return.  Pattern 1 is
-        /// safe (its downstream sort discards evicted keys consistently across
-        /// spilled buckets); Pattern 2 is not, so skip it when spilling is possible.
-        if (params.max_bytes_before_external_group_by > 0)
-            return 0;
+        /// evicted keys from the hash table (`requires_pruning`).  External
+        /// aggregation is dangerous here: a spill flushes partial states and
+        /// resets the heap, so a spilled key later evicted from the fresh heap
+        /// would surface an incomplete group in the unsorted LIMIT.  But the
+        /// heap also bounds the table to ~1.5x the limit, so a spill never
+        /// actually triggers - `applyLimitPushdown` turns external aggregation
+        /// off for this step (see below), which both keeps the optimization and
+        /// removes the hazard.  (Pattern 1 is safe regardless: its downstream
+        /// sort discards evicted keys.)
 
         /// Default ascending order with NULLS LAST over all keys.
         num_key_columns = params.keys.size();

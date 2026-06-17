@@ -190,6 +190,15 @@ void AggregatingStep::applyLimitPushdown(
     params.top_k_keys_nulls_directions = std::move(nulls_directions_);
     params.top_k_key_columns = num_key_columns;
     params.top_k_requires_pruning = requires_pruning;
+
+    /// Pattern 2 (no ORDER BY) is only correct if evicted keys are erased from
+    /// the hash table; an external-aggregation spill would flush partial states
+    /// and reset the heap, letting a spilled-then-evicted key surface an
+    /// incomplete group in the unsorted LIMIT.  The heap already bounds the
+    /// table to ~1.5x the limit, so spilling is unnecessary - disable it for
+    /// this step to keep the optimization while removing the hazard.
+    if (requires_pruning)
+        params.max_bytes_before_external_group_by = 0;
 }
 
 const SortDescription & AggregatingStep::getSortDescription() const
