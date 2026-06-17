@@ -830,15 +830,32 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
 
+        auto part_alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context);
+
         /// Collect the union of columns that were skipped on INSERT (their values
         /// were all type-defaults and no data files were written) across all
         /// source parts. Collected unconditionally — even when serialization info
         /// is otherwise always-default — because dropping the marker would change
         /// the data read back after a later ALTER MODIFY COLUMN ... DEFAULT.
+        ///
+        /// The marker is recorded under the physical column names that existed
+        /// when the part was written. The merge materializes any on-the-fly
+        /// ALTER RENAME COLUMN into the merged part (which is written at the
+        /// current metadata version, so the rename conversion no longer exists on
+        /// read), so translate each skipped name through this part's rename map to
+        /// the current name before unioning it. Otherwise the merged part would
+        /// record the stale pre-rename name, the read path would miss it, and a
+        /// later ALTER MODIFY COLUMN ... DEFAULT on the renamed column would read
+        /// the new default expression instead of the inserted type-default.
         for (const auto & name : part->getSerializationInfos().getSkippedColumns())
-            source_skipped_columns.insert(name);
+        {
+            if (part_alter_conversions->columnHasNewName(name))
+                source_skipped_columns.insert(part_alter_conversions->getColumnNewName(name));
+            else
+                source_skipped_columns.insert(name);
+        }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
+        global_ctx->alter_conversions.push_back(std::move(part_alter_conversions));
     }
 
     /// Carry the skipped-columns marker through the merge for any skipped source
