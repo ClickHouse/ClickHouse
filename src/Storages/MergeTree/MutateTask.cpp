@@ -939,7 +939,7 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     const NameSet & materialized_projections)
 {
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
-    bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
+    bool is_full_part_storage = isFullPartStorage(ctx->source_part->getDataPartStorage());
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
