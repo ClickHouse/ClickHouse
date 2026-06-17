@@ -96,4 +96,9 @@ check_if_detached "SELECT * FROM t_reattach_cte WHERE a IN (WITH t_reattach_cte 
 # A recursive CTE resolves its self-reference through the recursive temporary table, not a real table with the
 # same name, so the real table is NOT read inside the recursive member and must NOT be detached.
 check_if_not_detached "WITH RECURSIVE t_reattach_cte AS (SELECT toUInt64(1) AS a UNION ALL SELECT a + 1 FROM t_reattach_cte WHERE a < 2) SELECT * FROM t_reattach_cte" "t_reattach_cte"
+
+# A recursive CTE's NON-RECURSIVE seed term (the first UNION member) is resolved before the recursive temporary
+# table exists, so a same-named real table read by the seed term IS read by the query and must be detached.
+# Only the recursive members (after the first) resolve the name through the recursive temporary table.
+check_if_detached "WITH RECURSIVE t_reattach_cte AS (SELECT a FROM t_reattach_cte UNION ALL SELECT a + 1 FROM t_reattach_cte WHERE a < 2) SELECT * FROM t_reattach_cte" "t_reattach_cte"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"

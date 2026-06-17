@@ -1165,18 +1165,63 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// `WITH t AS (SELECT * FROM t) SELECT * FROM t` reads the real table `t` inside the definition.
             /// Therefore the element's own name is not active while walking its own body, but its siblings are.
             ///
-            /// `WITH RECURSIVE` is the exception: a recursive member resolves a self-reference through the
-            /// recursive temporary table, not a real table with the same name. So for `WITH RECURSIVE` keep
-            /// the element's own name shadowing inside its body, otherwise `WITH RECURSIVE t AS (... FROM t ...)`
-            /// would treat `FROM t` as the real table `t` and `DETACH`/`ATTACH` a table the query does not read.
+            /// `WITH RECURSIVE` is more subtle: the analyzer resolves the non-recursive *seed* term (the
+            /// first `UNION` member) before the recursive temporary table exists, so the seed reads a real
+            /// table of the same name; only the recursive members (after the first) resolve the name through
+            /// the recursive temporary table. So the element's own name must shadow references inside the
+            /// recursive members (otherwise `WITH RECURSIVE t AS (SELECT 1 UNION ALL SELECT ... FROM t) ...`
+            /// would `DETACH`/`ATTACH` a table the query does not read), but must NOT shadow references in
+            /// the seed term (otherwise `WITH RECURSIVE t AS (SELECT ... FROM t UNION ALL ...) ...` would
+            /// miss the real table `t` that the seed term actually reads).
             for (const auto & with_child : with->children)
             {
                 auto body_ctes = active_ctes;
                 body_ctes.insert(this_level_ctes.begin(), this_level_ctes.end());
-                if (!select->recursive_with)
-                    if (const auto * with_element = with_child->as<ASTWithElement>())
+
+                const auto * with_element = with_child->as<ASTWithElement>();
+
+                if (!select->recursive_with || !with_element)
+                {
+                    /// Non-recursive CTE (or a scalar `WITH expr AS alias` binding): the element's own name
+                    /// does not shadow references inside its own body, because the analyzer hides only the
+                    /// CTE currently being resolved.
+                    if (with_element)
                         body_ctes.erase(with_element->name);
-                collectTablesInQuery(with_child, data, body_ctes);
+                    collectTablesInQuery(with_child, data, body_ctes);
+                    continue;
+                }
+
+                /// `WITH RECURSIVE name AS (seed [UNION ALL recursive ...])`: locate the `UNION` member list
+                /// so the seed term can be walked with `name` un-shadowed and the recursive members with
+                /// `name` shadowed.
+                const ASTSelectWithUnionQuery * union_query = nullptr;
+                if (with_element->subquery)
+                {
+                    union_query = with_element->subquery->as<ASTSelectWithUnionQuery>();
+                    if (!union_query)
+                        for (const auto & sub_child : with_element->subquery->children)
+                            if ((union_query = sub_child->as<ASTSelectWithUnionQuery>()))
+                                break;
+                }
+
+                const ASTPtr members = union_query ? union_query->list_of_selects : nullptr;
+                if (!members || members->children.empty())
+                {
+                    /// Unrecognized recursive body shape: conservatively keep the name shadowed across the
+                    /// whole body (it is better to miss a real table than to detach one the query does not read).
+                    collectTablesInQuery(with_child, data, body_ctes);
+                    continue;
+                }
+
+                /// Seed (first) member: the name is not yet bound to the recursive temporary table, so a
+                /// same-named real table read here is a real table the query reads — do not shadow it.
+                auto seed_ctes = body_ctes;
+                seed_ctes.erase(with_element->name);
+                collectTablesInQuery(members->children.front(), data, seed_ctes);
+
+                /// Recursive members: the name resolves to the recursive temporary table — keep it shadowed.
+                for (size_t i = 1; i < members->children.size(); ++i)
+                    collectTablesInQuery(members->children[i], data, body_ctes);
             }
         }
 
