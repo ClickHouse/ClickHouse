@@ -248,7 +248,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 
             if (node_type == QueryTreeNodeType::LIST)
             {
-                const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+                const bool standard_mode = scope.isStandardMode();
                 QueryExpressionsAliasVisitor visitor(scope.aliases, standard_mode);
                 visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -260,7 +260,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+            const bool standard_mode = scope.isStandardMode();
             QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases, standard_mode);
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
             break;
@@ -1145,7 +1145,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     IdentifierResolveContext identifier_resolve_context)
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
-    const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode = scope.isStandardMode();
     /// Alias matching keys off the first part (the alias name itself), so use part 0's quote style
     const bool use_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
@@ -1298,7 +1298,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
 )
 {
     auto full_name = identifier_lookup.identifier.getFullName();
-    const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode = scope.isStandardMode();
     const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
     auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
@@ -1601,7 +1601,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+        const bool standard_mode = scope.isStandardMode();
         const size_t parts_size = identifier_lookup.identifier.getPartsSize();
         /// For db.table: part 0 is the database, part 1 is the table; for plain `table`: part 0 is the table
         const bool database_name_case_insensitive = parts_size == 2 && identifier_lookup.isPartCaseInsensitive(0, standard_mode);
@@ -2944,7 +2944,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
-    const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode = scope.isStandardMode();
     QueryExpressionsAliasVisitor visitor(scope.aliases, standard_mode);
     visitor.visit(lambda_to_resolve.getExpression());
 
@@ -4099,7 +4099,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
-            const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+            const bool standard_mode = scope.isStandardMode();
             QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases, standard_mode);
             visitor.visit(alias_column_to_resolve->getExpression());
 
@@ -4134,7 +4134,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     }
 
     /// Enable (SQL-)standard mode (case-insensitive) if the setting is enabled
-    if (scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard)
+    if (scope.isStandardMode())
         table_expression_data.enableStandardMode();
 
     if (auto * scope_query_node = scope.scope_node->as<QueryNode>())
@@ -5532,7 +5532,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         if (alias_name.empty())
             return;
 
-        const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+        const bool standard_mode = scope.isStandardMode();
         /// A double-quoted table alias stays case-sensitive even in standard mode
         const bool register_for_ci_lookup = standard_mode && !table_expression_node->isAliasDoubleQuoted();
         if (!scope.aliases.registerAlias(IdentifierLookupContext::TABLE_EXPRESSION, alias_name, table_expression_node, register_for_ci_lookup))
@@ -5612,7 +5612,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of QUALIFY");
 
     /// Initialize aliases in query node scope
-    const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode = scope.isStandardMode();
     QueryExpressionsAliasVisitor visitor(scope.aliases, standard_mode);
 
     if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
@@ -5684,25 +5684,20 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         const String cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
         const bool cte_is_quoted = subquery_node ? subquery_node->isCTENameDoubleQuoted() : union_node->isCTENameDoubleQuoted();
 
-        /// Keep the original case as the primary key so quoted lookups (`"MyCte"`) hit the same entry
-        auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
-        if (!inserted)
-            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                "CTE with name '{}' already exists. In scope {}",
-                cte_name,
-                scope.scope_node->formatASTForErrorMessage());
-
-        /// Standard mode: unquoted CTE names collide case-insensitively (`MyCTE` vs `mycte`);
-        /// quoted names do not, since `"MyCte"` and `"mycte"` are distinct literal identifiers
-        if (standard_mode && !cte_is_quoted)
+        switch (scope.registerCTE(cte_name, node, cte_is_quoted))
         {
-            auto & originals = scope.lowercase_cte_to_original_names[Poco::toLower(cte_name)];
-            if (!originals.empty())
+            case IdentifierResolveScope::CTERegisterResult::OK:
+                break;
+            case IdentifierResolveScope::CTERegisterResult::DuplicateName:
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name '{}' already exists. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+            case IdentifierResolveScope::CTERegisterResult::CaseInsensitiveCollision:
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "CTE with name '{}' conflicts with another CTE (case-insensitive match). In scope {}",
                     cte_name,
                     scope.scope_node->formatASTForErrorMessage());
-            originals.push_back(cte_name);
         }
     }
 
@@ -5743,7 +5738,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// and the original parent-scope entries are restored after the join tree visit.
     auto transitive_lowercase_table_aliases = std::move(scope.aliases.lowercase_table_alias_to_originals);
 
-    const bool standard_mode_for_table_aliases = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode_for_table_aliases = scope.isStandardMode();
     TableExpressionsAliasVisitor table_expressions_visitor(scope, standard_mode_for_table_aliases);
     table_expressions_visitor.visit(query_node_typed.getJoinTree());
 

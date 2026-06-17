@@ -228,6 +228,16 @@ struct IdentifierResolveScope
     std::unordered_map<std::string, QueryTreeNodePtr>::iterator
     findExpressionArgument(const std::string & name, bool case_insensitive);
 
+    /// True iff the `case_insensitive_names` setting is `standard` for this scope's context
+    bool isStandardMode() const;
+
+    /// Register a CTE in this scope. Updates `cte_name_to_query_node` and, when the CTE is unquoted
+    /// in standard mode, also updates `lowercase_cte_to_original_names`. Returns true if registered;
+    /// false if the same name (case-sensitive) is already registered. Throws on case-insensitive
+    /// collision among unquoted CTEs so that `WITH MyCTE AS …, mycte AS …` is rejected.
+    enum class CTERegisterResult { OK, DuplicateName, CaseInsensitiveCollision };
+    CTERegisterResult registerCTE(const std::string & cte_name, QueryTreeNodePtr node, bool is_double_quoted);
+
     /// Dump identifier resolve scope
     [[maybe_unused]] void dump(WriteBuffer & buffer) const;
 

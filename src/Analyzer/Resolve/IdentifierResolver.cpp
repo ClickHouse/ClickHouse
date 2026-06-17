@@ -375,8 +375,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
   */
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
-    const bool standard_mode = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode = scope.isStandardMode();
     /// Full-name lookup keys off the last part; prefix lookup keys off part 0 (the bind name)
     /// so e.g. `arrayMap(item -> ITEM."Name", arr)` still binds `ITEM` to the lambda argument `item`
     const bool use_case_insensitive_full = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
@@ -415,8 +414,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
     /// Aliases are matched by the first part of the identifier, so part-0 quoting decides case sensitivity
-    const bool standard_mode = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode = scope.isStandardMode();
     const bool use_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
     if (use_case_insensitive)
@@ -428,8 +426,7 @@ bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & ide
 bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
     /// USING columns are matched by full name, so last-part quoting decides case sensitivity
-    const bool standard_mode = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode = scope.isStandardMode();
     const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
     const auto & identifier_name = identifier_lookup.identifier.getFullName();
@@ -470,8 +467,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     if (!scope.table_expression_data_for_alias_resolution || !identifier_lookup.isExpressionLookup())
         return {};
 
-    const bool standard_mode = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode = scope.isStandardMode();
     const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
     const auto & identifier = identifier_lookup.identifier;
@@ -609,8 +605,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
 bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
     /// ARRAY JOIN binds by the alias's leading part; later parts are subcolumn accesses on the array's elements
-    const bool standard_mode = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode = scope.isStandardMode();
     const bool use_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
     for (const auto & table_expression : scope.registered_table_expression_nodes)
@@ -1611,8 +1606,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
     if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolve_result;
 
-    const bool standard_mode = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool standard_mode = scope.isStandardMode();
     const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
     const auto & array_join_column_expressions = from_array_join_node.getJoinExpressions();

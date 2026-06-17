@@ -3,6 +3,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Interpreters/Context.h>
 #include <Poco/String.h>
 #include <Common/Exception.h>
@@ -13,6 +14,7 @@ namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool join_use_nulls;
+    extern const SettingsCaseInsensitiveNames case_insensitive_names;
 }
 
 namespace ErrorCodes
@@ -128,6 +130,29 @@ void IdentifierResolveScope::addExpressionArgument(const std::string & name, Que
 {
     expression_argument_name_to_node.emplace(name, std::move(node));
     lowercase_expression_arg_to_names[Poco::toLower(name)].push_back(name);
+}
+
+bool IdentifierResolveScope::isStandardMode() const
+{
+    return context && context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+}
+
+IdentifierResolveScope::CTERegisterResult
+IdentifierResolveScope::registerCTE(const std::string & cte_name, QueryTreeNodePtr node, bool is_double_quoted)
+{
+    auto [_, inserted] = cte_name_to_query_node.emplace(cte_name, std::move(node));
+    if (!inserted)
+        return CTERegisterResult::DuplicateName;
+
+    /// Standard mode: unquoted CTE names collide case-insensitively; quoted names stay distinct
+    if (isStandardMode() && !is_double_quoted)
+    {
+        auto & originals = lowercase_cte_to_original_names[Poco::toLower(cte_name)];
+        if (!originals.empty())
+            return CTERegisterResult::CaseInsensitiveCollision;
+        originals.push_back(cte_name);
+    }
+    return CTERegisterResult::OK;
 }
 
 std::unordered_map<std::string, QueryTreeNodePtr>::iterator

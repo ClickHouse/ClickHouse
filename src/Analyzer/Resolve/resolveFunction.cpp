@@ -457,7 +457,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+                const bool standard_mode = scope.isStandardMode();
                 /// Each part is case-insensitive only if NOT double-quoted; quote-style info is available on the IdentifierNode.
                 bool database_name_case_insensitive = false;
                 bool table_name_case_insensitive = false;
