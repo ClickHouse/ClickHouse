@@ -5,6 +5,8 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/IDataType.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -88,69 +90,78 @@ static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name
     return 0;
 }
 
-static NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
+/// For each output column that traces back to `input_name`, return how much to add to the source
+/// NDV to bound the output NDV. The offset counts null-collapsing hops (see below); a plain
+/// propagating hop adds zero.
+static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
 {
-    NameSet output_names;
+    std::unordered_map<String, UInt64> output_offsets;
 
-    std::unordered_set<const ActionsDAG::Node *> input_nodes;
+    /// Nodes known to trace back to the source input, mapped to their offset to it. Seeded with the
+    /// source inputs (offset zero); resolved outputs are added so aliases inherit their offset.
+    std::unordered_map<const ActionsDAG::Node *, UInt64> resolved_offsets;
     for (const auto * node : actions.getInputs())
     {
         if (input_name == node->result_name)
-            input_nodes.insert(node);
+            resolved_offsets[node] = 0;
     }
 
     std::unordered_set<const ActionsDAG::Node *> visited_nodes;
     for (const auto * out_node : actions.getOutputs())
     {
-
-        std::stack<const ActionsDAG::Node *> nodes_to_process;
-        nodes_to_process.push(out_node);
+        /// Each stack entry is a node paired with the offset accumulated from `out_node` to it.
+        std::stack<std::pair<const ActionsDAG::Node *, UInt64>> nodes_to_process;
+        nodes_to_process.push({out_node, 0});
 
         while (!nodes_to_process.empty())
         {
-            const auto * node = nodes_to_process.top();
+            auto [node, offset_to_node] = nodes_to_process.top();
             nodes_to_process.pop();
 
-            auto [_, inserted] = visited_nodes.insert(node);
-            if (!inserted)
+            auto resolved_it = resolved_offsets.find(node);
+            if (resolved_it != resolved_offsets.end())
             {
-                /// Node was already visited, check if it was an input or if it was already remapped to and input
-                if (input_nodes.contains(node))
-                    output_names.insert(out_node->result_name);
+                /// Reached the source input (or a node already remapped to it); sum both path segments.
+                UInt64 total_offset = offset_to_node + resolved_it->second;
+                output_offsets[out_node->result_name] = total_offset;
+                resolved_offsets[out_node] = total_offset;
                 break;
             }
 
-            if (input_nodes.contains(node))
-            {
-                /// We reached an input node so add the current output node name to list of remapped
-                output_names.insert(out_node->result_name);
-                /// Also add this output node to the list of inputs to handle more aliases pointing to it
-                input_nodes.insert(out_node);
+            if (!visited_nodes.insert(node).second)
                 break;
-            }
 
             if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
             {
-                nodes_to_process.push(node->children[0]);
+                nodes_to_process.push({node->children[0], offset_to_node});
             }
             else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
             {
                 auto number_of_args = functionDoesNotChangeNumberOfValues(node->function_base->getName(), node->children.size());
-                /// A deterministic single-argument function cannot produce more distinct values than
-                /// its argument, so bound the output column's NDV by the argument's (e.g. `toYear(date)`).
+                UInt64 child_offset = offset_to_node;
+                /// A deterministic single-argument function has at most as many distinct values as
+                /// its argument, so bound the output NDV by the argument's (e.g. `toYear(date)`).
                 if (number_of_args == 0 && node->children.size() == 1 && node->function_base->isDeterministic())
+                {
                     number_of_args = 1;
+                    /// NDV counts only non-null values. A function turning a Nullable argument into a
+                    /// non-Nullable result (e.g. `isNull`) maps NULL to one extra counted value, so
+                    /// add one to the bound.
+                    if (isNullableOrLowCardinalityNullable(node->children[0]->result_type)
+                        && !isNullableOrLowCardinalityNullable(node->result_type))
+                        child_offset += 1;
+                }
                 for (const auto * child : node->children)
                 {
                     if (number_of_args == 0)
                         break;
                     number_of_args -= 1;
-                    nodes_to_process.push(child);
+                    nodes_to_process.push({child, child_offset});
                 }
             }
         }
     }
-    return output_names;
+    return output_offsets;
 }
 
 /// If we have stats for column names for storage we need to find corresponding internal column names
@@ -160,8 +171,14 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
     mapped = {};
     for (const auto & [name, value] : original)
     {
-        for (const auto & remapped : backTrackColumnsInDag(name, actions))
-            mapped[remapped] = value;
+        for (const auto & [remapped, ndv_offset] : backTrackColumnsInDag(name, actions))
+        {
+            ColumnStats stats = value;
+            /// Add the offset, guarding against overflow when the source NDV is near the maximum.
+            if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - ndv_offset)
+                stats.num_distinct_values += ndv_offset;
+            mapped[remapped] = stats;
+        }
     }
 }
 

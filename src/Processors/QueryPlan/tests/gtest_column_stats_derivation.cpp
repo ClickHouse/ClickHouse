@@ -4,6 +4,7 @@
 #include <Common/tests/gtest_global_register.h>
 
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -134,6 +135,62 @@ TEST(ColumnStatsDerivation, AttributesDerivedColumnToCorrectSource)
 
     EXPECT_EQ(stats["year"].num_distinct_values, 2556u);
     EXPECT_EQ(stats["neg"].num_distinct_values, 1000u);
+}
+
+/// NDV counts only non-null values. A null-aware function such as `isNull` maps NULL to one extra
+/// counted value, so its bound is the argument's NDV plus one. A null-preserving function over the
+/// same Nullable argument keeps the exact bound, since NULL stays NULL and is uncounted on both sides.
+TEST(ColumnStatsDerivation, NullAwareFunctionAddsOneToBound)
+{
+    tryRegisterFunctions();
+
+    const UInt64 distinct_dates = 2556;
+
+    auto nullable_date_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDate>());
+    ActionsDAG dag;
+    const auto & date_input = dag.addInput("d", nullable_date_type);
+
+    /// Nullable -> non-Nullable UInt8: NULL maps to one counted value, so the bound gains one.
+    addOutputFunction(dag, "isNull", {&date_input}, "is_null");
+    addOutputFunction(dag, "isNotNull", {&date_input}, "is_not_null");
+    /// Nullable -> Nullable: NULL stays NULL, so the exact bound still holds.
+    addOutputFunction(dag, "toYear", {&date_input}, "year");
+
+    auto stats = statsOf("d", distinct_dates);
+    remapColumnStats(stats, dag);
+
+    EXPECT_EQ(stats["is_null"].num_distinct_values, distinct_dates + 1);
+    EXPECT_EQ(stats["is_not_null"].num_distinct_values, distinct_dates + 1);
+    EXPECT_EQ(stats["year"].num_distinct_values, distinct_dates);
+}
+
+/// The +1 from a null-aware hop is carried along the rest of the chain, regardless of its position:
+/// a downstream null-preserving function keeps it, and an upstream one does not consume it.
+TEST(ColumnStatsDerivation, NullAwareFunctionInChainCarriesOffset)
+{
+    tryRegisterFunctions();
+
+    const UInt64 distinct_dates = 2556;
+
+    auto nullable_date_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDate>());
+    ActionsDAG dag;
+    const auto & date_input = dag.addInput("d", nullable_date_type);
+
+    /// toString(isNull(d)): isNull adds one, the downstream toString preserves it.
+    const auto & is_null = dag.addFunction(
+        FunctionFactory::instance().get("isNull", getContext().context), {&date_input}, "is_null");
+    addOutputFunction(dag, "toString", {&is_null}, "is_null_string");
+
+    /// isNull(toStartOfMonth(d)): the upstream null-preserving hop keeps the bound exact, then isNull adds one.
+    const auto & start_of_month = dag.addFunction(
+        FunctionFactory::instance().get("toStartOfMonth", getContext().context), {&date_input}, "start_of_month");
+    addOutputFunction(dag, "isNull", {&start_of_month}, "month_is_null");
+
+    auto stats = statsOf("d", distinct_dates);
+    remapColumnStats(stats, dag);
+
+    EXPECT_EQ(stats["is_null_string"].num_distinct_values, distinct_dates + 1);
+    EXPECT_EQ(stats["month_is_null"].num_distinct_values, distinct_dates + 1);
 }
 
 /// The bound propagates through a chain of deterministic single-argument functions: no link can
