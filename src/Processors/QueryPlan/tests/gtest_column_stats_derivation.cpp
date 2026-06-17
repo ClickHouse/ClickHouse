@@ -51,10 +51,10 @@ TEST(ColumnStatsDerivation, DeterministicSingleArgFunctionBoundsDistinctValues)
     ActionsDAG dag;
     const auto & date_input = dag.addInput("d", date_type);
 
-    /// Single-argument deterministic functions of a date column, each bounded by the date's NDV.
+    /// Single-argument deterministic functions whose distinct count is genuinely bounded by the
+    /// date's NDV, with no smaller fixed codomain (unlike `toMonth`, which is always <= 12 and would
+    /// warrant a tighter constant bound instead).
     addOutputFunction(dag, "toYear", {&date_input}, "year");
-    addOutputFunction(dag, "toMonth", {&date_input}, "month");
-    addOutputFunction(dag, "toDayOfWeek", {&date_input}, "day_of_week");
     addOutputFunction(dag, "toStartOfMonth", {&date_input}, "start_of_month");
     addOutputFunction(dag, "toString", {&date_input}, "as_string");
     /// `materialize` is in the explicit pass-through list and must keep working.
@@ -66,8 +66,6 @@ TEST(ColumnStatsDerivation, DeterministicSingleArgFunctionBoundsDistinctValues)
     remapColumnStats(stats, dag);
 
     EXPECT_EQ(stats["year"].num_distinct_values, distinct_dates);
-    EXPECT_EQ(stats["month"].num_distinct_values, distinct_dates);
-    EXPECT_EQ(stats["day_of_week"].num_distinct_values, distinct_dates);
     EXPECT_EQ(stats["start_of_month"].num_distinct_values, distinct_dates);
     EXPECT_EQ(stats["as_string"].num_distinct_values, distinct_dates);
     EXPECT_EQ(stats["materialized"].num_distinct_values, distinct_dates);
@@ -136,4 +134,44 @@ TEST(ColumnStatsDerivation, AttributesDerivedColumnToCorrectSource)
 
     EXPECT_EQ(stats["year"].num_distinct_values, 2556u);
     EXPECT_EQ(stats["neg"].num_distinct_values, 1000u);
+}
+
+/// The bound propagates through a chain of deterministic single-argument functions: no link can
+/// increase the distinct count, so the final output is still bounded by the source column. A
+/// multi-argument link anywhere in the chain breaks the propagation.
+TEST(ColumnStatsDerivation, ChainOfFunctionsPropagatesBound)
+{
+    tryRegisterFunctions();
+
+    auto date_type = std::make_shared<DataTypeDate>();
+    auto int_type = std::make_shared<DataTypeInt64>();
+    ActionsDAG dag;
+    const auto & date_input = dag.addInput("d", date_type);
+    const auto & int_input = dag.addInput("n", int_type);
+
+    /// toString(toStartOfMonth(d)) -- two single-argument functions in a row.
+    const auto & start_of_month = dag.addFunction(
+        FunctionFactory::instance().get("toStartOfMonth", getContext().context), {&date_input}, "start_of_month");
+    addOutputFunction(dag, "toString", {&start_of_month}, "formatted_month");
+
+    /// toString(abs(negate(n))) -- three single-argument functions in a row.
+    const auto & neg = dag.addFunction(
+        FunctionFactory::instance().get("negate", getContext().context), {&int_input}, "neg");
+    const auto & magnitude = dag.addFunction(
+        FunctionFactory::instance().get("abs", getContext().context), {&neg}, "magnitude");
+    addOutputFunction(dag, "toString", {&magnitude}, "formatted_magnitude");
+
+    /// negate(plus(n, n)) -- a multi-argument link breaks the chain, so the bound stops there.
+    const auto & doubled = dag.addFunction(
+        FunctionFactory::instance().get("plus", getContext().context), {&int_input, &int_input}, "doubled");
+    addOutputFunction(dag, "negate", {&doubled}, "neg_doubled");
+
+    std::unordered_map<String, ColumnStats> stats;
+    stats["d"] = ColumnStats{.num_distinct_values = 2556};
+    stats["n"] = ColumnStats{.num_distinct_values = 1000};
+    remapColumnStats(stats, dag);
+
+    EXPECT_EQ(stats["formatted_month"].num_distinct_values, 2556u);
+    EXPECT_EQ(stats["formatted_magnitude"].num_distinct_values, 1000u);
+    EXPECT_EQ(stats.count("neg_doubled"), 0u);
 }
