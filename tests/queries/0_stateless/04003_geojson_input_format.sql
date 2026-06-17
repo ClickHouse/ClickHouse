@@ -510,3 +510,120 @@ FROM format('GeoJSON', 'id String', '{
         {"type": "Feature", "id": "1", "geometry": null, "properties": null}
     ]
 }');
+
+-- A numeric 'id' is valid per RFC 7946 and is stored verbatim as text (here 42).
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": 42, "geometry": null, "properties": {}}
+    ]
+}');
+
+-- A large integer 'id' keeps its exact value.
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": 123456789012345678, "geometry": null, "properties": {}}
+    ]
+}');
+
+-- A numeric 'id' is accepted even when reading numbers as strings is disabled.
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": 42, "geometry": null, "properties": {}}
+    ]
+}')
+SETTINGS input_format_json_read_numbers_as_strings = 0;
+
+-- A Feature's 'id' must be a JSON string or number, so an object value is rejected.
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": {"a": 1}, "geometry": null, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- An array 'id' is rejected.
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": [1, 2], "geometry": null, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A boolean 'id' is rejected.
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": true, "geometry": null, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A malformed 'id' is validated and rejected even when 'id' is not a requested output column.
+SELECT count()
+FROM format('GeoJSON', 'geometry Geometry', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": {"a": 1}, "geometry": null, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- The 'id' column must have type String.
+SELECT *
+FROM format('GeoJSON', 'id UInt64, geometry Geometry, properties JSON', '{"type":"FeatureCollection","features":[]}'); -- { serverError BAD_ARGUMENTS }
+
+-- A duplicate 'geometry' member within a feature is rejected as bad input.
+SELECT count()
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": null, "geometry": null, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A duplicate 'properties' member within a feature is rejected as bad input.
+SELECT count()
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": null, "properties": {}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A coordinate with a trailing dot ('1.') is a non-JSON spelling and is rejected.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1., 0]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A single trailing ';' is tolerated so a document can be supplied as inline INSERT data.
+SELECT count()
+FROM format('GeoJSON', '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":{}}]};');
+
+-- Only the 'geometry' column may be selected.
+SELECT variantType(geometry)
+FROM format('GeoJSON', 'geometry Geometry', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0]}, "properties": {}}
+    ]
+}');
+
+-- Only the 'properties' column may be selected.
+SELECT JSONExtractString(properties, 'name') AS name
+FROM format('GeoJSON', 'properties Nullable(JSON)', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": null, "properties": {"name": "Berlin"}}
+    ]
+}');
