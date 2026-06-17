@@ -1090,8 +1090,10 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     , keeper_context(keeper_context_)
 {
     // ── Deserialisation thread pool (C4) ──────────────────────────────────────────────────────
-    // Compute effective thread count.  Setting 0 → auto (min(4, cores/2), capped to 8).
+    // Compute effective thread count.  0 → auto (clamp(cores/2, 1, 4)); explicit values clamped to [1, 8].
     // Never created under snapshots_lock — pool construction is safe here.
+    // RocksDB managers never read V8 snapshots, so the pool is memory-storage-only.
+    if constexpr (!use_rocksdb)
     {
         const auto & cs = keeper_context->getCoordinationSettings();
         const uint64_t raw = static_cast<uint64_t>(cs[CoordinationSetting::snapshot_deser_threads]);

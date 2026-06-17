@@ -2256,7 +2256,7 @@ TEST(KeeperV8Header, ChunkCountExceedsBufferCapacity)
 
 /// Verify that the V8 write path produces a structurally valid snapshot buffer.
 /// Serializes a small in-memory storage to V8 format via serializeSnapshotToBuffer
-/// (explicit version bypass — MAX_SUPPORTED_SNAPSHOT_VERSION is still V7).
+/// (`MAX_SUPPORTED_SNAPSHOT_VERSION` is V8; `SnapshotVersion::V8` is passed directly for clarity).
 TEST(KeeperSnapshotV8Write, InspectBytes)
 {
     ChangelogDirTest snap_dir("./v8write_test_snap");
@@ -2348,7 +2348,7 @@ TEST(KeeperSnapshotV8Write, DiskInspectBytes)
     addNode(storage, "/q", "v2");
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 5;
 
-    // Explicit V8 version bypass — MAX_SUPPORTED_SNAPSHOT_VERSION is still V7.
+    // V8 is the maximum supported version; SnapshotVersion::V8 is passed directly for clarity.
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(
         &storage, /*up_to_log_idx=*/5, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
 
@@ -3276,6 +3276,15 @@ TEST(KeeperSnapshotV8Validation, MetadataTailTamperedRejected)
 
 /// Append a junk byte after the cluster config in the SESSIONS frame.  The full
 /// deserialiser must throw CORRUPTED_DATA — verifying the F2-sessions-frame-no-eof-drain fix.
+/// Verifies the SESSIONS-frame EOF drain (the second `if (!rbuf.eof())` check, after the
+/// optional cluster-config section is fully consumed).
+///
+/// The snapshot is serialized WITH a cluster config so the SESSIONS frame contains:
+///   active_sessions_size (8 bytes)  +  VarUInt(cluster_config_size)  +  cluster_config_bytes
+/// A single trailing garbage byte is then appended AFTER the complete cluster-config bytes,
+/// so readVarUInt and readStrict both succeed and the corruption is only detected by the drain
+/// check.  This ensures the test exercises that specific code path rather than a readVarUInt
+/// EOF error from an incomplete VarUInt sequence.
 TEST(KeeperSnapshotV8Validation, SessionsTrailingBytesRejected)
 {
     ChangelogDirTest snap_dir("./v8val_sesseof");
@@ -3290,8 +3299,12 @@ TEST(KeeperSnapshotV8Validation, SessionsTrailingBytesRejected)
     addNode(storage, "/node1", "v1");
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 7;
 
+    // Serialize WITH a cluster config so the SESSIONS frame includes a length-prefixed
+    // cluster-config block.  The trailing byte is appended AFTER the complete cluster-config
+    // so only the drain `if (!rbuf.eof())` fires — not readVarUInt.
+    auto cluster_cfg = std::make_shared<nuraft::cluster_config>();
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
-        &storage, /*up_to_log_idx=*/7, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+        &storage, /*up_to_log_idx=*/7, cluster_cfg, DB::SnapshotVersion::V8);
     DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
@@ -3310,16 +3323,25 @@ TEST(KeeperSnapshotV8Validation, SessionsTrailingBytesRejected)
     }
     ASSERT_LT(sess_idx, frames.size()) << "No SESSIONS frame found";
 
-    // Decompress the SESSIONS frame and append a junk byte after all content.
+    // Decompress the SESSIONS frame (already contains the complete cluster-config block)
+    // and append a single trailing garbage byte AFTER it.
     std::string sess_bytes = decompressV8Frame(buf, sess_idx);
-    sess_bytes += '\xFF'; // trailing garbage
+    sess_bytes += '\xAB'; // one byte past the last valid byte of the cluster-config block
 
     // Replace the SESSIONS frame with the tampered version.
     auto tampered = replaceFirstFrameOfType(buf, V8ChunkType::SESSIONS, sess_bytes);
 
-    // Full deserialiser must detect the trailing byte (F2 fix).
-    EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true), DB::Exception)
-        << "deserializeSnapshotFromBuffer must throw on trailing bytes in SESSIONS frame";
+    // Must throw CORRUPTED_DATA from the drain check (not a generic read error).
+    try
+    {
+        mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true);
+        FAIL() << "deserializeSnapshotFromBuffer must throw on trailing bytes in SESSIONS frame";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA)
+            << "Expected CORRUPTED_DATA from SESSIONS-frame drain, got: " << e.message();
+    }
 }
 
 /// Regression for F1-zstd-frame-completion-not-verified: when a V8 frame's compressed_size
@@ -3628,6 +3650,145 @@ TEST(KeeperSnapshotV8Parallel, ParallelVsSequential)
         << "Re-serialized buffers must have identical size";
     EXPECT_EQ(std::memcmp(rebuf1->data_begin(), rebuf8->data_begin(), rebuf1->size()), 0)
         << "Re-serialized buffers must be byte-identical (deterministic splice order)";
+}
+
+/// Plan test #9: follower `apply_snapshot` of a V8 buffer replaces committed state and
+/// correctly restores ephemerals, ACL usage, and nodes_digest.
+///
+/// Uses `snapshot_chunk_size=2` to force multiple NODES frames so the parallel
+/// decompression+parse path (C4) is exercised inside the storage lock.
+/// `snapshot_deser_threads=2` is set explicitly on the receiving state machine so
+/// the parallel path runs deterministically regardless of host CPU count.
+TEST(KeeperMemorySnapshotApplyTest, ApplyV8SnapshotReplacesCommittedState)
+{
+    ChangelogDirTest snapshots("./v8apply_snapshots");
+    ChangelogDirTest rocks("./v8apply_rocksdb");
+
+    // State machine uses snapshot_deser_threads=2 to force the parallel deserialization
+    // path regardless of the CI host's CPU count (default 0=auto may resolve to 1
+    // on low-core machines and skip the parallel code path).
+    auto sm_settings = std::make_shared<DB::CoordinationSettings>();
+    (*sm_settings)[DB::CoordinationSetting::compress_snapshots_with_zstd_format] = true;
+    (*sm_settings)[DB::CoordinationSetting::snapshot_deser_threads] = 2;
+    auto sm_ctx = std::make_shared<DB::KeeperContext>(true, sm_settings);
+    sm_ctx->setLocalLogsPreprocessed();
+    sm_ctx->setDigestEnabled(true);
+    sm_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("V8ApplySmDisk", "./v8apply_snapshots"));
+    sm_ctx->setRocksDBDisk(std::make_shared<DB::DiskLocal>("V8ApplySmRocksDisk", "./v8apply_rocksdb"));
+    sm_ctx->setRocksDBOptions();
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(
+        nullptr, snapshots_queue, sm_ctx, nullptr);
+    state_machine->init();
+
+    // Commit a node that the V8 snapshot must overwrite.
+    auto old_entry = makeCreateEntry(*state_machine, "/old_before_v8", "stale_data");
+    state_machine->pre_commit(1, old_entry->get_buf());
+    state_machine->commit(1, old_entry->get_buf());
+    ASSERT_TRUE(state_machine->getStorageUnsafe().container.contains("/old_before_v8"));
+
+    // Build source storage: 5 user nodes + 1 ephemeral, spanning multiple chunks.
+    // chunk_size=2 → 6 user nodes (root + /a + /b + /a/c + /eph + /b_acl) → 3 NODES frames (2+2+2).
+    // /b_acl carries a non-zero acl_id to exercise the ACL restoration path.
+    auto src_settings = std::make_shared<DB::CoordinationSettings>();
+    (*src_settings)[DB::CoordinationSetting::snapshot_chunk_size] = 2;
+    auto src_ctx = std::make_shared<DB::KeeperContext>(true, src_settings);
+    src_ctx->setLocalLogsPreprocessed();
+    src_ctx->setRocksDBOptions();
+    src_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("V8ApplySrcDisk", "./v8apply_snapshots"));
+    src_ctx->setDigestEnabled(true);
+
+    DB::KeeperMemoryStorage snap_storage(500, "", src_ctx);
+
+    // Register an ACL in the source storage so it is serialized in the V8 METADATA frame.
+    // acl_id is deterministically 1 (first registration).
+    const DB::ACLId test_acl_id = snap_storage.acl_map.convertACLs({{31, "world", "anyone"}});
+    snap_storage.acl_map.addUsage(test_acl_id);
+    const Coordination::ACLs expected_acl = {{31, "world", "anyone"}};
+
+    addNode(snap_storage, "/a",     "data_a");
+    addNode(snap_storage, "/b",     "data_b");
+    addNode(snap_storage, "/a/c",   "data_ac");
+    addNode(snap_storage, "/eph",   "eph_val", /*ephemeral_owner=*/42);
+    addNode(snap_storage, "/b_acl", "acl_data", /*ephemeral_owner=*/0, test_acl_id);
+    TSA_SUPPRESS_WARNING_FOR_WRITE(snap_storage.zxid) = 10;
+    snap_storage.session_id_counter = 100;
+    snap_storage.committed_ephemerals[42].insert("/eph");
+    ++snap_storage.committed_ephemeral_nodes;
+    snap_storage.addSessionID(42, 30000);
+
+    // Serialize as V8 using a KeeperSnapshotManager backed by the source context.
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> src_mgr(3, src_ctx, /*compress_zstd=*/true);
+    nuraft::ptr<nuraft::buffer> v8_buf;
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+            &snap_storage, /*up_to_log_idx=*/10, /*cluster_config=*/nullptr,
+            DB::SnapshotVersion::V8);
+        v8_buf = src_mgr.serializeSnapshotToBuffer(snap);
+    }
+    ASSERT_NE(v8_buf, nullptr);
+    // Verify the buffer is actually a V8 snapshot (starts with "CKFS" magic).
+    ASSERT_GE(v8_buf->size(), 4u);
+    EXPECT_EQ(std::memcmp(v8_buf->data_begin(), "CKFS", 4), 0)
+        << "Serialized buffer must start with V8 magic 'CKFS'";
+
+    // Install the V8 snapshot into the state machine via the follower path.
+    nuraft::snapshot snapshot_meta(10, 0, std::make_shared<nuraft::cluster_config>());
+    saveSingleObjectSnapshot(*state_machine, snapshot_meta, v8_buf);
+    EXPECT_TRUE(state_machine->apply_snapshot(snapshot_meta));
+
+    // ── Post-apply assertions ────────────────────────────────────────────────────────────────
+    const auto & storage = state_machine->getStorageUnsafe();
+
+    // Committed state replaced: old node gone, new nodes present.
+    EXPECT_FALSE(storage.container.contains("/old_before_v8"))
+        << "Pre-snapshot node must be removed after apply_snapshot";
+    ASSERT_TRUE(storage.container.contains("/a"));
+    ASSERT_TRUE(storage.container.contains("/b"));
+    ASSERT_TRUE(storage.container.contains("/a/c"));
+    ASSERT_TRUE(storage.container.contains("/eph"));
+    ASSERT_TRUE(storage.container.contains("/b_acl"));
+    EXPECT_EQ(std::string(storage.container.getValue("/a").getData()),     "data_a");
+    EXPECT_EQ(std::string(storage.container.getValue("/b").getData()),     "data_b");
+    EXPECT_EQ(std::string(storage.container.getValue("/a/c").getData()),   "data_ac");
+    EXPECT_EQ(std::string(storage.container.getValue("/eph").getData()),   "eph_val");
+    EXPECT_EQ(std::string(storage.container.getValue("/b_acl").getData()), "acl_data");
+
+    // Children rebuilt: /a has exactly one child (/a/c).
+    EXPECT_EQ(storage.container.getValue("/a").getChildren().size(), 1u)
+        << "/a must have exactly one child after V8 apply_snapshot";
+
+    // Ephemeral bookkeeping correct.
+    EXPECT_EQ(storage.committed_ephemeral_nodes, 1u)
+        << "committed_ephemeral_nodes must be 1 after V8 apply";
+    {
+        auto eit = storage.committed_ephemerals.find(42);
+        ASSERT_NE(eit, storage.committed_ephemerals.end())
+            << "Owner 42 must be present in committed_ephemerals";
+        EXPECT_EQ(eit->second.count("/eph"), 1u)
+            << "/eph must be tracked as an ephemeral owned by session 42";
+    }
+
+    // ACL usage correctly restored: the ACL mapping for test_acl_id must be present
+    // in the loaded storage's acl_map (serialized in the V8 METADATA frame, deserialized
+    // by the parallel NODES-frame path that batches acl_usage into acl_map.addUsageBatch).
+    {
+        const auto & mapping = storage.acl_map.getMapping();
+        ASSERT_EQ(mapping.count(test_acl_id), 1u)
+            << "ACL id " << test_acl_id << " must be present in acl_map after V8 apply_snapshot";
+        EXPECT_EQ(mapping.at(test_acl_id), expected_acl)
+            << "ACL for id " << test_acl_id << " must match the original ACL after V8 apply_snapshot";
+        EXPECT_EQ(storage.container.getValue("/b_acl").acl_id, test_acl_id)
+            << "/b_acl must retain its acl_id after V8 apply_snapshot";
+    }
+
+    // Digest must be non-zero (recalculated from node data since digestEnabled=true on load).
+    EXPECT_NE(storage.nodes_digest, 0u)
+        << "nodes_digest must be non-zero after V8 apply_snapshot with digest enabled";
+
+    // last_commit_index must reflect the snapshot index.
+    EXPECT_EQ(state_machine->last_commit_index(), 10u);
 }
 
 } // namespace DB

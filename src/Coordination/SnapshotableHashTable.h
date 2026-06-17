@@ -296,7 +296,10 @@ public:
             }
             return *this;
         }
-        ~LocalInsertBatch() { freeOwnedKeys(); }
+        ~LocalInsertBatch()
+        {
+            freeOwnedKeys();
+        }
 
         /// Frees keys still owned by this batch (i.e. nodes not yet spliced into the table).
         /// After buildMapFromBatches splices `nodes` out, it is empty and this is a no-op.
@@ -310,7 +313,10 @@ public:
         }
 
         /// Allocate a key owned by the table's arena (just `new char[size]`; thread-safe).
-        KeyPtr allocateKey(size_t size) { return KeyPtr{new char[size], KeyDeleter{size, arena}}; }
+        KeyPtr allocateKey(size_t size)
+        {
+            return KeyPtr{new char[size], KeyDeleter{size, arena}};
+        }
 
         /// Append one parsed node. version/active_in_map are set later by buildMapFromBatches.
         void emplace(KeyPtr key_data, size_t key_size, V value)
@@ -320,7 +326,10 @@ public:
             nodes.push_back(std::move(elem));
         }
 
-        size_t size() const { return nodes.size(); }
+        size_t size() const
+        {
+            return nodes.size();
+        }
     };
 
     // Compile-time guarantee that splice() is O(1): the batch list and the table list share
