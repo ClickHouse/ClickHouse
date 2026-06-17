@@ -116,39 +116,57 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
             "Silk::FiberStreamSocketImpl::sendBytes: non-zero flags ({}) not supported",
             flags);
 
-    throttleSend(static_cast<size_t>(length), getBlocking());
+    chassert(getBlocking());
 
-    uint64_t bytes_written = 0;
-    silk::FiberScheduler::IoFuture future;
-    iovec iov{const_cast<void *>(buffer), static_cast<size_t>(length)};
-    silk::FiberScheduler::write(sockfd(), &iov, 1, 0, &bytes_written, &future);
+    int total = 0;
+    const char * ptr = static_cast<const char *>(buffer);
+    Poco::Timespan remaining = getSendTimeout();
+    const bool has_timeout = remaining.totalMicroseconds() > 0;
 
-    const Poco::Timespan timeout = getSendTimeout();
-    int r = 0;
-    if (timeout.totalMicroseconds() > 0)
+    while (total < length)
     {
-        r = silk::FiberFuture::waitWithTimeout(
-            &future,
-            static_cast<uint64_t>(timeout.totalMicroseconds()) * 1000);
-        if (r == ETIMEDOUT)
+        throttleSend(static_cast<size_t>(length - total), getBlocking());
+
+        uint64_t bytes_written = 0;
+        silk::FiberScheduler::IoFuture future;
+        iovec iov{const_cast<char *>(ptr), static_cast<size_t>(length - total)};
+        silk::FiberScheduler::write(sockfd(), &iov, 1, 0, &bytes_written, &future);
+
+        int r = 0;
+        if (has_timeout)
         {
-            future.cancel();
-            r = future.wait();
-            if (r == ECANCELED)
+            if (remaining.totalMicroseconds() <= 0)
                 throw Poco::TimeoutException("Send timed out", peerAddress().toString());
+
+            const Poco::Timestamp started;
+            r = silk::FiberFuture::waitWithTimeout(
+                &future,
+                static_cast<uint64_t>(remaining.totalMicroseconds()) * 1000);
+            if (r == ETIMEDOUT)
+            {
+                future.cancel();
+                r = future.wait();
+                if (r == ECANCELED)
+                    throw Poco::TimeoutException("Send timed out", peerAddress().toString());
+            }
+
+            const Poco::Timespan elapsed = Poco::Timestamp() - started;
+            remaining = (elapsed < remaining) ? (remaining - elapsed) : Poco::Timespan(0);
         }
+        else
+        {
+            r = future.wait();
+        }
+
+        if (r)
+            error(r, "send");
+
+        useSendThrottlerBudget(static_cast<int>(bytes_written));
+
+        total += static_cast<int>(bytes_written);
+        ptr += bytes_written;
     }
-    else
-    {
-        r = future.wait();
-    }
-
-    if (r)
-        error(r, "send");
-
-    useSendThrottlerBudget(static_cast<int>(bytes_written));
-
-    return static_cast<int>(bytes_written);
+    return total;
 }
 
 int FiberStreamSocketImpl::receiveBytes(void * buffer, int length, int flags)
