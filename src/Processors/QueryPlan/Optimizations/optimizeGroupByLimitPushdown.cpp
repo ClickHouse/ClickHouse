@@ -127,30 +127,39 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         nulls_directions.reserve(sort_description.size());
         collators.reserve(sort_description.size());
 
-        bool has_collator = false;
         for (size_t i = 0; i < sort_description.size(); ++i)
         {
             if (sort_description[i].column_name != params.keys[i])
                 return 0;
 
+            /// A collator is owned by a `shared_ptr` in the `SortDescription`,
+            /// but `Aggregator::Params` can only hold a raw `Collator *`, whose
+            /// lifetime is not guaranteed for the duration of aggregation; the
+            /// collator is also not serialized for partial aggregation.  Collated
+            /// ORDER BY is niche, so keep it out of this optimization entirely.
+            if (sort_description[i].collator)
+                return 0;
+
             directions.push_back(sort_description[i].direction);
             nulls_directions.push_back(sort_description[i].nulls_direction);
-            collators.push_back(sort_description[i].collator ? sort_description[i].collator.get() : nullptr);
-            if (sort_description[i].collator)
-                has_collator = true;
+            collators.push_back(nullptr);
         }
-
-        /// Collators are not serialized through `AggregatingStep::serialize`, so
-        /// when this partial aggregation may be shipped across the wire we could
-        /// not reproduce the heap's ordering on the follower.
-        if (has_collator && !aggregating_step->getFinal())
-            return 0;
 
         num_key_columns = sort_description.size();
     }
     else
     {
-        /// No explicit ORDER BY: default ascending order with NULLS LAST over all keys.
+        /// No explicit ORDER BY (Pattern 2).  Correctness relies on erasing
+        /// evicted keys from the hash table (`requires_pruning`), but external
+        /// aggregation spills and resets the hash table: a key spilled with a
+        /// partial state can later be evicted from the fresh heap, leaving an
+        /// incomplete group that the unsorted LIMIT may return.  Pattern 1 is
+        /// safe (its downstream sort discards evicted keys consistently across
+        /// spilled buckets); Pattern 2 is not, so skip it when spilling is possible.
+        if (params.max_bytes_before_external_group_by > 0)
+            return 0;
+
+        /// Default ascending order with NULLS LAST over all keys.
         num_key_columns = params.keys.size();
         directions.assign(num_key_columns, 1);
         nulls_directions.assign(num_key_columns, 1);

@@ -1146,10 +1146,14 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
 
         const size_t evicted_count = method.top_k_heap.trimAndCompact([&](size_t evicted)
         {
-            /// A NULL key lives in the special null slot, not in the hash table.
-            if (method.top_k_heap.heap_column->isNullAt(evicted))
+            /// Only methods with a dedicated null slot keep the NULL key outside
+            /// the hash table.  For other methods (e.g. nullable serialized) the
+            /// NULL key is encoded into the key bytes and stored in `method.data`,
+            /// so it must be reconstructed and erased like any other key - else a
+            /// stale partial NULL group lingers and the unsorted LIMIT can return it.
+            if constexpr (requires { method.data.hasNullKeyData(); })
             {
-                if constexpr (requires { method.data.hasNullKeyData(); })
+                if (method.top_k_heap.heap_column->isNullAt(evicted))
                 {
                     if (method.data.hasNullKeyData())
                     {
@@ -1158,8 +1162,8 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
                         method.data.hasNullKeyData() = false;
                         method.data.getNullKeyData() = nullptr;
                     }
+                    return;
                 }
-                return;
             }
 
             auto key_holder = trim_state.getKeyHolder(evicted, pool);

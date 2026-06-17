@@ -10,6 +10,9 @@ SET max_threads = 1;
 -- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
 SET optimize_trivial_group_by_limit_query = 0;
+-- Pattern 2 (no ORDER BY) is disabled when external aggregation can spill; pin
+-- it off (the default ratio is non-zero) so the Pattern 2 cases below apply.
+SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
 SELECT 'Pattern 1: cardinality below LIMIT for the freeze window, then new keys arrive';
 -- First 500K rows cycle over 5 keys (the freeze threshold is 256K rows); the

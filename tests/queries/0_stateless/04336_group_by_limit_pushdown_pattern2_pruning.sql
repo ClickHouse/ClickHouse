@@ -15,6 +15,10 @@ SET max_rows_to_group_by = 0;
 -- The trivial analyzer pass handles `GROUP BY ... LIMIT` via `max_rows_to_group_by`
 -- and hides the plan-level Pattern 2; disable it to exercise the heap path.
 SET optimize_trivial_group_by_limit_query = 0;
+-- Pattern 2 (no ORDER BY) is disabled when external aggregation can spill, since
+-- a spilled-then-evicted key would surface an incomplete group in the unsorted
+-- LIMIT. Pin spilling off (the default ratio is non-zero) to exercise the path.
+SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
 SELECT 'Pattern 2 plan is marked with requires_pruning';
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT k FROM (SELECT number % 100 AS k FROM numbers(1000)) GROUP BY k LIMIT 5 SETTINGS enable_group_by_top_k_optimization = 1) WHERE explain LIKE '%Top-K%';
