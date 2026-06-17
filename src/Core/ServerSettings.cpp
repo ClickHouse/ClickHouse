@@ -1810,9 +1810,12 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
 }
 
 
-void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguration & config, const String & config_path)
+void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool skip_check)
 {
-    if (config.getBool("skip_check_for_incorrect_settings", false))
+    /// `skip_check` carries the escape hatch resolved from the layered config (so a command-line
+    /// `--skip_check_for_incorrect_settings=1` is honored); `config.getBool` covers the same flag
+    /// set inside the validated config file itself.
+    if (skip_check || config.getBool("skip_check_for_incorrect_settings", false))
         return;
 
     /// Collect all known top-level keys from ServerSettings:

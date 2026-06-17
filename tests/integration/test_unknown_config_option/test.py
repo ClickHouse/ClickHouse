@@ -82,6 +82,21 @@ node_reload = cluster_reload.add_instance(
     stay_alive=True,
 )
 
+# Escape-hatch case: `skip_check_for_incorrect_settings` must disable the new
+# unknown-key check from every supported source, including the command line.
+# This node carries the very same unknown top-level key that makes `node_bad`
+# fail to start, but is launched with `--skip_check_for_incorrect_settings=1`
+# on the command line. It must start (and survive `SYSTEM RELOAD CONFIG`)
+# exactly the way the command-line flag already disables the pre-existing
+# top-level user-setting check. `stay_alive` so the reload step can run.
+cluster_cli_skip = ClickHouseCluster(__file__, name="cli_skip")
+node_cli_skip = cluster_cli_skip.add_instance(
+    "node_cli_skip",
+    main_configs=["configs/config.d/unknown_option.xml"],
+    extra_args="--skip_check_for_incorrect_settings=1",
+    stay_alive=True,
+)
+
 
 @pytest.fixture(scope="module")
 def start_bad_cluster():
@@ -155,6 +170,13 @@ def start_reload_cluster():
     cluster_reload.start()
     yield
     cluster_reload.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_cli_skip_cluster():
+    cluster_cli_skip.start()
+    yield
+    cluster_cli_skip.shutdown()
 
 
 def test_unknown_config_option_rejected(start_bad_cluster):
@@ -274,3 +296,28 @@ def test_reload_rejects_unknown_then_accepts_config_ref(start_reload_cluster):
                 f"rm -f {bad_config_path} {good_config_path}",
             ]
         )
+
+
+def test_cli_skip_flag_disables_check(start_cli_skip_cluster):
+    # Startup coverage: `node_cli_skip` carries the same `some_completely_unknown_option`
+    # top-level key that makes `node_bad` fail to start, but it is launched with
+    # `--skip_check_for_incorrect_settings=1`. The command-line escape hatch (resolved
+    # from the layered config) must disable the unknown-key check, so the node starts.
+    assert node_cli_skip.query("SELECT 1").strip() == "1"
+
+    # Reload coverage: the command-line flag persists in the layered config across
+    # `SYSTEM RELOAD CONFIG`, so injecting another unknown top-level key and reloading
+    # must NOT raise `UNKNOWN_ELEMENT_IN_CONFIG`.
+    extra_unknown_path = "/etc/clickhouse-server/config.d/cli_skip_unknown.xml"
+    extra_unknown = (
+        "<clickhouse>"
+        "<another_completely_unknown_option>1</another_completely_unknown_option>"
+        "</clickhouse>"
+    )
+    try:
+        node_cli_skip.replace_config(extra_unknown_path, extra_unknown)
+        # `query` raises on error; a clean return proves the reload was accepted.
+        node_cli_skip.query("SYSTEM RELOAD CONFIG")
+        assert node_cli_skip.query("SELECT 1").strip() == "1"
+    finally:
+        node_cli_skip.exec_in_container(["bash", "-c", f"rm -f {extra_unknown_path}"])

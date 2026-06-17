@@ -1787,7 +1787,10 @@ try
     /// Validate the loaded XML config directly (not the layered config) so that command-line
     /// options injected by `argsToConfig` (`--config-file`, `--daemon`, `-C`, ...) and Poco-internal
     /// layers (`system`, `application`) are not mistaken for unknown top-level config keys.
-    ServerSettings::checkUnknownSettings(*loaded_config.configuration, config_path);
+    /// The `skip_check_for_incorrect_settings` escape hatch is resolved from the layered `config()`,
+    /// so it works when supplied from the command line as well as from the config file.
+    ServerSettings::checkUnknownSettings(
+        *loaded_config.configuration, config_path, config().getBool("skip_check_for_incorrect_settings", false));
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
@@ -2332,7 +2335,10 @@ try
             Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
             /// Same as on initial load: validate the reloaded XML config rather than the layered
             /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
-            ServerSettings::checkUnknownSettings(*loaded_config, config_path);
+            /// The escape hatch is resolved from the layered `config()` (which retains command-line
+            /// options across reloads), so `--skip_check_for_incorrect_settings=1` keeps working.
+            ServerSettings::checkUnknownSettings(
+                *loaded_config, config_path, config().getBool("skip_check_for_incorrect_settings", false));
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
