@@ -107,7 +107,8 @@ public:
 
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override
     {
-        return filter(request) ? creator() : nullptr;
+        /// A rule with no filters (a config rule with only `handler` and no match conditions) matches every request.
+        return (!filter || filter(request)) ? creator() : nullptr;
     }
 
 private:

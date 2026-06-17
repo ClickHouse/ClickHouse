@@ -871,3 +871,22 @@ def test_headers_regex_handler():
             {"XXX": "12a"},  # not digits as a whole
         ]:
             assert 404 == get(not_matching).status_code, not_matching
+
+
+def test_catch_all_handler():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__), "catch_all_handler", "test_catch_all_handler"
+        )
+    ) as cluster:
+        # The single rule has only <handler> and no match conditions, so it must match every request
+        # (any path, with or without a query string) instead of throwing an exception.
+        for path in [
+            "",  # root
+            "anything",
+            "a/b/c",  # a nested path
+            "anything?param=value",  # query string present
+        ]:
+            response = cluster.instance.http_request(path, method="GET")
+            assert response.status_code == 200, f"{path} -> {response.status_code}"
+            assert response.content == b"catch-all matched", path

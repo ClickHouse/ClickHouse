@@ -466,6 +466,8 @@ Allows using custom HTTP handlers.
 To add a new http handler simply add a new `<rule>`.
 Rules are checked from top to bottom as defined,
 and the first match will run the handler.
+A rule with no match conditions (only `handler`) matches every request; since rules are checked in order,
+such a rule is only useful as a fallback placed last.
 
 The following settings can be configured by sub-tags (all these sub-tags are optional except `handler`):
 
