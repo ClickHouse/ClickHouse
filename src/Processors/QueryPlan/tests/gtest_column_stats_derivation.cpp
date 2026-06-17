@@ -39,9 +39,8 @@ const ActionsDAG::Node & addOutputFunction(
 
 }
 
-/// `remapColumnStats` must carry an input column's distinct-value count to every output that is a
-/// deterministic single-argument function of it. A function cannot produce more distinct values
-/// than its argument, so the argument's count is a valid upper bound for the derived column.
+/// A deterministic single-argument function inherits its argument's distinct count as an upper
+/// bound, since it cannot produce more distinct values than its argument.
 TEST(ColumnStatsDerivation, DeterministicSingleArgFunctionBoundsDistinctValues)
 {
     tryRegisterFunctions();
@@ -52,8 +51,7 @@ TEST(ColumnStatsDerivation, DeterministicSingleArgFunctionBoundsDistinctValues)
     ActionsDAG dag;
     const auto & date_input = dag.addInput("d", date_type);
 
-    /// Common single-argument deterministic functions of a date column. Each output column's
-    /// distinct count is bounded by the date column's distinct count.
+    /// Single-argument deterministic functions of a date column, each bounded by the date's NDV.
     addOutputFunction(dag, "toYear", {&date_input}, "year");
     addOutputFunction(dag, "toMonth", {&date_input}, "month");
     addOutputFunction(dag, "toDayOfWeek", {&date_input}, "day_of_week");

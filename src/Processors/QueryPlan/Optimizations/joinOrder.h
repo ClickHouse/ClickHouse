@@ -110,11 +110,9 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
 namespace QueryPlanOptimizations
 {
 
-/// Propagate per-column statistics from the inputs of `actions` to its outputs.
-/// An output column inherits an input's stats when it is the input itself, an alias of it,
-/// or a deterministic single-argument function of it (in which case the input's distinct
-/// count is an upper bound for the output's, since a function cannot increase the number of
-/// distinct values). The stats map is replaced in place with stats keyed by output names.
+/// Propagate per-column statistics through `actions`, rekeying the map in place by output name.
+/// An output inherits an input's stats when it is that input, an alias of it, or a deterministic
+/// single-argument function of it (which cannot increase the distinct count).
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
 
 }
