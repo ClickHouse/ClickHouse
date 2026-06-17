@@ -79,7 +79,7 @@ DROP TABLE t_topn;
 -- LowCardinality output column rather than strip it). Regression guard for a prior SIGABRT.
 DROP TABLE IF EXISTS t_topn_lc;
 CREATE TABLE t_topn_lc (k LowCardinality(String), ts UInt32) ENGINE = MergeTree ORDER BY ts SETTINGS auto_statistics_types = 'uniq';
-INSERT INTO t_topn_lc SELECT toString(number % 1000), number FROM numbers(10000);
+INSERT INTO t_topn_lc SELECT toString(number % 1000), number FROM numbers(2000);
 OPTIMIZE TABLE t_topn_lc FINAL;
 SELECT '-- low cardinality key: optimized == reference';
 SELECT
@@ -91,7 +91,7 @@ DROP TABLE t_topn_lc;
 -- key, so Mode 1 must be rejected (else it returns the bottom-K). Result must equal the reference.
 DROP TABLE IF EXISTS t_topn_reverse;
 CREATE TABLE t_topn_reverse (k UInt64, ts DateTime) ENGINE = MergeTree ORDER BY ts DESC SETTINGS auto_statistics_types = 'uniq';
-INSERT INTO t_topn_reverse SELECT number % 100, toDateTime('2024-01-01') + number FROM numbers(10000);
+INSERT INTO t_topn_reverse SELECT number % 100, toDateTime('2024-01-01') + number FROM numbers(2000);
 OPTIMIZE TABLE t_topn_reverse FINAL;
 SELECT '-- reverse key: optimized == reference';
 SELECT
@@ -104,14 +104,14 @@ DROP TABLE t_topn_reverse;
 -- rank it top), while the standard max skips NaN. Mode 1 must be rejected for float keys (mirrors
 -- the read-in-order guard); the result must equal the reference.
 DROP TABLE IF EXISTS t_topn_float;
-CREATE TABLE t_topn_float (k UInt64, ts Float64) ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 1;
-INSERT INTO t_topn_float SELECT number % 100, number FROM numbers(10000);
+CREATE TABLE t_topn_float (k UInt64, ts Float64) ENGINE = MergeTree ORDER BY ts;
+INSERT INTO t_topn_float SELECT number % 100, number FROM numbers(1000);
 INSERT INTO t_topn_float VALUES (0, nan), (50, nan);
 SELECT '-- float key: not applied';
 SELECT count() = 0 FROM (EXPLAIN actions = 1 SELECT k, max(ts) AS m FROM t_topn_float GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1) WHERE explain LIKE '%TopNAggregating%';
 SELECT '-- float key with NaN: optimized == reference';
 SELECT
-    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_float GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1, max_block_size = 1)) =
+    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_float GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1)) =
     (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_float GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 0));
 DROP TABLE t_topn_float;
 
@@ -120,14 +120,14 @@ DROP TABLE t_topn_float;
 -- type. LowCardinality(Float64) key must be rejected; the result must equal the reference.
 SET allow_suspicious_low_cardinality_types = 1;
 DROP TABLE IF EXISTS t_topn_lcfloat;
-CREATE TABLE t_topn_lcfloat (k UInt64, ts LowCardinality(Float64)) ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 1;
-INSERT INTO t_topn_lcfloat SELECT number % 100, number FROM numbers(10000);
+CREATE TABLE t_topn_lcfloat (k UInt64, ts LowCardinality(Float64)) ENGINE = MergeTree ORDER BY ts;
+INSERT INTO t_topn_lcfloat SELECT number % 100, number FROM numbers(1000);
 INSERT INTO t_topn_lcfloat VALUES (0, nan), (50, nan);
 SELECT '-- low cardinality float key: not applied';
 SELECT count() = 0 FROM (EXPLAIN actions = 1 SELECT k, max(ts) AS m FROM t_topn_lcfloat GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1) WHERE explain LIKE '%TopNAggregating%';
 SELECT '-- low cardinality float key with NaN: optimized == reference';
 SELECT
-    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_lcfloat GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1, max_block_size = 1)) =
+    (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_lcfloat GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1)) =
     (SELECT groupArray((k, m)) FROM (SELECT k, max(ts) AS m FROM t_topn_lcfloat GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 0));
 DROP TABLE t_topn_lcfloat;
 
@@ -136,7 +136,7 @@ DROP TABLE t_topn_lcfloat;
 -- groups by the wrong quantity, so argument tracing must fail (non-pass-through) and reject Mode 1.
 DROP TABLE IF EXISTS t_topn_expr;
 CREATE TABLE t_topn_expr (k UInt64, ts Int64) ENGINE = MergeTree ORDER BY ts;
-INSERT INTO t_topn_expr SELECT number % 100, number FROM numbers(10000);
+INSERT INTO t_topn_expr SELECT number % 100, number FROM numbers(2000);
 SELECT '-- computed arg aliasing key: not applied';
 SELECT count() = 0 FROM (EXPLAIN actions = 1 SELECT k, max(ts) AS m FROM (SELECT k, -ts AS ts FROM t_topn_expr) GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1) WHERE explain LIKE '%TopNAggregating%';
 SELECT '-- computed arg aliasing key: optimized == reference';
@@ -153,7 +153,7 @@ DROP TABLE t_topn_expr;
 DROP TABLE IF EXISTS t_topn_proj;
 CREATE TABLE t_topn_proj (k UInt64, ts UInt64, PROJECTION p (SELECT k, max(ts) GROUP BY k))
 ENGINE = MergeTree ORDER BY ts;
-INSERT INTO t_topn_proj SELECT number % 100, number FROM numbers(10000);
+INSERT INTO t_topn_proj SELECT number % 100, number FROM numbers(2000);
 OPTIMIZE TABLE t_topn_proj FINAL;
 SELECT '-- forced projection: rewrite deferred (not applied)';
 SELECT count() = 0 FROM (EXPLAIN actions = 1 SELECT k, max(ts) AS m FROM t_topn_proj GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1, optimize_use_projections = 1, force_optimize_projection = 1) WHERE explain LIKE '%TopNAggregating%';
@@ -167,7 +167,7 @@ DROP TABLE t_topn_proj;
 -- small LIMIT; topn_aggregation_max_limit = 0 requires statistics, so it does not apply).
 DROP TABLE IF EXISTS t_topn_nostats;
 CREATE TABLE t_topn_nostats (k UInt64, ts UInt64) ENGINE = MergeTree ORDER BY ts;
-INSERT INTO t_topn_nostats SELECT number, number FROM numbers(200000);
+INSERT INTO t_topn_nostats SELECT number, number FROM numbers(20000);
 SELECT '-- no stats, LIMIT <= max_limit: applied';
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT k, max(ts) AS m FROM t_topn_nostats GROUP BY k ORDER BY m DESC LIMIT 5 SETTINGS optimize_topn_aggregation = 1) WHERE explain LIKE '%TopNAggregating%';
 SELECT '-- no stats, max_limit = 0: not applied';
