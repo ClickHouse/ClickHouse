@@ -769,10 +769,29 @@ void IcebergMetadata::createInitial(
         throw;
     }
 
+    bool success = false;
+    String filename_version_hint;
+    SCOPE_EXIT({
+        if (!success)
+        {
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(filename));
+                if (!filename_version_hint.empty())
+                    object_storage->removeObjectIfExists(StoredObject(filename_version_hint));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    });
+
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
-        auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+        auto version_hint_path = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
+        writeMessageToFile("1", version_hint_path, object_storage, local_context, "*", "");
+        filename_version_hint = version_hint_path;
     }
 
     if (catalog)
@@ -782,6 +801,8 @@ void IcebergMetadata::createInitial(
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
+
+    success = true;
 }
 
 Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTableStateSnapshot(

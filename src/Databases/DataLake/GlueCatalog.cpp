@@ -20,6 +20,7 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <base/scope_guard.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -609,6 +610,24 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
 
     String effective_metadata_path = new_metadata_path;
 
+    DB::ObjectStoragePtr written_metadata_storage;
+    String written_metadata_file;
+    bool registered = false;
+
+    SCOPE_EXIT({
+        if (written_metadata_storage && !registered)
+        {
+            try
+            {
+                written_metadata_storage->removeObjectIfExists(DB::StoredObject(written_metadata_file));
+            }
+            catch (...)
+            {
+                DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    });
+
     if (effective_metadata_path.empty() && metadata_content && metadata_content->has("location"))
     {
         String table_location = metadata_content->getValue<String>("location");
@@ -625,6 +644,9 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
         String metadata_str = DB::removeEscapedSlashes(oss.str());
 
         DB::Iceberg::writeMessageToFile(metadata_str, metadata_filename, object_storage, getContext(), "*", "");
+
+        written_metadata_storage = object_storage;
+        written_metadata_file = metadata_filename;
 
         effective_metadata_path = "s3://" + bucket_name + "/" + metadata_filename;
     }
@@ -661,6 +683,8 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
 
     if (!response.IsSuccess())
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
+
+    registered = true;
 }
 
 bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
