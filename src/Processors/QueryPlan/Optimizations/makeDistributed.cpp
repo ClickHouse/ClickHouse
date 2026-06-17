@@ -124,6 +124,39 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
     }
 }
 
+/// Read-only check that every equi-join key pair has a common supertype for the shuffle hash.
+/// preCalculateKeys() mutates the join step in place (it materializes function-wrapped keys as
+/// extra inputs), so the shuffle path must reject a type-incompatible join BEFORE that mutation;
+/// otherwise the bail-out below would leave the step with an input that no child produces, and the
+/// per-stage deserialize would later abort in the JoinExpressionActions constructor. Mirrors the
+/// key-pair selection in JoinStepLogical::preCalculateKeys.
+static bool shuffleJoinKeysHaveCommonType(const JoinOperator & join_info)
+{
+    for (const auto & expr : join_info.expression)
+    {
+        auto [predicate_op, lhs, rhs] = expr.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals)
+            continue;
+        if (!((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())))
+            continue;
+
+        const auto & left_type = lhs.getType();
+        const auto & right_type = rhs.getType();
+        if (left_type->equals(*right_type))
+            continue;
+
+        try
+        {
+            getLeastSupertype(DataTypes{left_type, right_type});
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 /// Replaces LogicalJoin step with a subtree like this:
 ///
 ///   GatherExchange
@@ -208,6 +241,11 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
             "Estimated number of rows in right source: {}. Using {} buckets for shuffle join",
             row_count_b.transform(toString<UInt64>).value_or("unknown"),
             bucket_count);
+
+        /// Bail before preCalculateKeys() mutates the join step: if any key pair lacks a common
+        /// supertype the shuffle cannot hash both sides together, so keep this join single-node.
+        if (!shuffleJoinKeysHaveCommonType(join_info))
+            return;
 
         /// Extract expressions for calculating join on keys
         auto key_dags = join_step->preCalculateKeys(source_a->step->getOutputHeader(), source_b->step->getOutputHeader());
