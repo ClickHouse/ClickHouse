@@ -11,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 
@@ -173,11 +174,13 @@ size_t MergeTreeBitmapStore::gcObsoleteBitmaps(
     if (to_remove.empty())
         return 0;
 
-    /// Drop exactly the versions whose files were unlinked from the in-memory index. If a
-    /// removal throws partway, the index must still match disk — otherwise a later readBitmap
-    /// could select a version whose file is gone and throw.
-    auto forgetRemovedVersions = [&](const std::vector<BitmapVersion> & removed)
-    {
+    std::vector<BitmapVersion> removed;
+    removed.reserve(to_remove.size());
+
+    /// Reconcile the in-memory index with exactly the versions whose files were unlinked, on every
+    /// exit. If a removal throws partway, csns_per_part must still match disk — otherwise a later
+    /// readBitmap could select a version whose file is gone and throw.
+    SCOPE_EXIT({
         if (removed.empty())
             return;
         std::unique_lock lock(csns_mutex);
@@ -192,30 +195,19 @@ size_t MergeTreeBitmapStore::gcObsoleteBitmaps(
                                return std::find(removed.begin(), removed.end(), v) != removed.end();
                            }),
             cached_csns.end());
-    };
+    });
 
-    std::vector<BitmapVersion> removed;
-    removed.reserve(to_remove.size());
-    try
+    for (auto v : to_remove)
     {
-        for (auto v : to_remove)
-        {
-            storage.removeFileIfExists(DeleteBitmap::fileNameForCsn(v));
-            removed.push_back(v);
-            if (cache)
-                cache->remove(DeleteBitmapCache::makeKey(part_id, v));
-            LOG_TRACE(getLogger("MergeTreeBitmapStore"),
-                      "UNIQUE KEY: removed obsolete delete bitmap delete_bitmap_{}.rbm (committed={}, oldest_snapshot={})",
-                      v, committed_csn, oldest_snapshot_csn);
-        }
-    }
-    catch (...)
-    {
-        forgetRemovedVersions(removed);
-        throw;
+        storage.removeFileIfExists(DeleteBitmap::fileNameForCsn(v));
+        removed.push_back(v);
+        if (cache)
+            cache->remove(DeleteBitmapCache::makeKey(part_id, v));
+        LOG_TRACE(getLogger("MergeTreeBitmapStore"),
+                  "UNIQUE KEY: removed obsolete delete bitmap delete_bitmap_{}.rbm (committed={}, oldest_snapshot={})",
+                  v, committed_csn, oldest_snapshot_csn);
     }
 
-    forgetRemovedVersions(removed);
     return removed.size();
 }
 
