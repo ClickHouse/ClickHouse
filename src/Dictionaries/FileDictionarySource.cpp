@@ -80,7 +80,6 @@ Poco::Timestamp FileDictionarySource::getLastModification() const
 }
 
 
-void registerDictionarySourceFile(DictionarySourceFactory & factory);
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,

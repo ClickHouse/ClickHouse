@@ -96,7 +96,7 @@ private:
     /// We put those descriptors into our own epoll which is used by external executor.
     TimerDescriptor timer;
     Poco::Timespan timeout;
-    AsyncEventTimeoutType timeout_type{};
+    AsyncEventTimeoutType timeout_type;
     std::atomic_bool is_timer_alarmed = false;
     int connection_fd = -1;
     int pipe_fd[2] = { -1, -1 };

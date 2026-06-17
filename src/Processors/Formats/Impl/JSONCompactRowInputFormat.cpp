@@ -65,7 +65,6 @@ bool JSONCompactFormatReader::checkForSuffix()
     return JSONUtils::checkAndSkipArrayEnd(*in);
 }
 
-void registerInputFormatJSONCompact(FormatFactory & factory);
 void registerInputFormatJSONCompact(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONCompact", [](
