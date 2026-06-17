@@ -31,12 +31,22 @@ SELECT COUNT(*) FROM tab WHERE v1 <= 500;
 
 SELECT COUNT(*) FROM tab WHERE id2 > 'k3';
 
--- projection should not be used
+-- Projection should NOT be used: the base-table minmax index on `v1` filters `v1 <= 500` down to
+-- fewer marks than the `id2`-ordered projection would read, so reading the main table is cheaper.
+-- The `EXPLAIN` confirms the read source is the main table (`default.tab`), not the projection.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN SELECT COUNT(*) FROM tab WHERE id2 > 'k3' AND v1 <= 500
+) WHERE explain ILIKE '%ReadFromMergeTree%';
 SELECT COUNT(*) FROM tab WHERE id2 > 'k3' AND v1 <= 500 SETTINGS max_rows_to_read = 640; -- 10 granules
 
 SELECT COUNT(*) FROM tab WHERE id2 >= 'k7';
 
--- projection will be used
+-- Projection WILL be used: the base-table minmax index on `v1` is not selective enough here, so the
+-- `id2`-ordered projection reads fewer marks. The `EXPLAIN` confirms the read source is the
+-- projection (`proj1`).
+SELECT trimLeft(explain) FROM (
+    EXPLAIN SELECT COUNT(*) FROM tab WHERE id2 >= 'k7' AND v1 <= 500
+) WHERE explain ILIKE '%ReadFromMergeTree%';
 SELECT COUNT(*) FROM tab WHERE id2 >= 'k7' AND v1 <= 500 SETTINGS max_rows_to_read = 4000;
 
 DROP TABLE tab;
