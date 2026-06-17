@@ -3801,23 +3801,6 @@ struct PageCacheFixture
     }
 };
 
-/// Inline pool whose submitJob can be toggled to reject ("queue full"): runs
-/// accepted jobs synchronously on the calling thread - deterministic put-step
-/// scheduling outcomes with zero worker-thread timing.
-class TogglePool : public PrefetchThreadPool
-{
-public:
-    TogglePool() : PrefetchThreadPool(NoWorkers{}) {}
-    std::shared_ptr<JobHandle> submitJob(std::function<void()> task) override
-    {
-        if (fail.load())
-            return nullptr;
-        task();
-        return makeCompletedJobHandleForTest();
-    }
-    std::atomic<bool> fail{false};
-};
-
 }
 
 TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
@@ -3904,106 +3887,6 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
         EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), src_before)
             << "warm pass must be served entirely from the page cache";
         EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesFromPageCache), 0u);
-    }
-}
-
-TEST(ReaderExecutor, PutStepParkReschedAbandonLadder)
-{
-    /// Pool-full handling for deferred fills: rejected at schedule -> parked
-    /// (`PutPoolFull`), one reschedule at the next executor touch, abandoned if
-    /// still rejected (`PutAbandoned`) - and reads stay byte-correct either way
-    /// (a dropped fill only loses cache residency).
-    constexpr size_t FILE_SIZE = 8000;
-    constexpr size_t WINDOW = 2000;
-    constexpr size_t BLOCK = 500;
-    String content(FILE_SIZE, 0);
-    for (size_t i = 0; i < content.size(); ++i)
-        content[i] = static_cast<char>('0' + (i % 10));
-
-    auto make_objects = [&]
-    {
-        StoredObjects objects;
-        objects.emplace_back("obj", "", FILE_SIZE);
-        return objects;
-    };
-
-    /// Reschedule case: park the put at window 2's collect, let the next
-    /// window's sweep reschedule it successfully.
-    {
-        auto source = std::make_shared<MemorySourceReader>(
-            std::unordered_map<String, String>{{"obj", content}});
-        PageCacheFixture pc;
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-        caches.push_back(pc.provider(BLOCK, FILE_SIZE));
-        auto pool = std::make_shared<TogglePool>();
-        TestThreadGroup tg;
-        {
-            ReaderExecutor::Options executor_options;
-            executor_options.window_size = WINDOW;
-            executor_options.min_bytes_for_seek = 0;
-            executor_options.block_size = BLOCK;
-            executor_options.prefetch_pool = pool;
-            executor_options.cache_filler_pool = pool;
-            ReaderExecutor executor(source, make_objects(), caches, executor_options);
-
-            auto w1 = executor.readNextWindow();   /// sync; launches machine for w2 (inline fetch)
-            ASSERT_FALSE(w1.empty());
-            pool->fail.store(true);                /// w2's collect: put schedule rejected -> parked
-            auto w2 = executor.readNextWindow();
-            ASSERT_FALSE(w2.empty());
-            EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorPutPoolFull), 0u);
-            pool->fail.store(false);               /// next sweep grants the reschedule
-            String rest;
-            while (true)
-            {
-                auto chain = executor.readNextWindow();
-                if (chain.empty())
-                    break;
-                for (const auto & node : chain.getNodes())
-                    rest.append(node.data(), node.size);
-            }
-            EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorPutAbandoned), 0u)
-                << "a granted reschedule must not abandon the fill";
-            EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync), 0u);
-        }
-    }
-
-    /// Abandon case: the pool stays full through the reschedule.
-    {
-        auto source = std::make_shared<MemorySourceReader>(
-            std::unordered_map<String, String>{{"obj", content}});
-        PageCacheFixture pc;
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-        caches.push_back(pc.provider(BLOCK, FILE_SIZE));
-        auto pool = std::make_shared<TogglePool>();
-        TestThreadGroup tg;
-        String all;
-        {
-            ReaderExecutor::Options executor_options;
-            executor_options.window_size = WINDOW;
-            executor_options.min_bytes_for_seek = 0;
-            executor_options.block_size = BLOCK;
-            executor_options.prefetch_pool = pool;
-            executor_options.cache_filler_pool = pool;
-            ReaderExecutor executor(source, make_objects(), caches, executor_options);
-
-            auto w1 = executor.readNextWindow();
-            ASSERT_FALSE(w1.empty());
-            for (const auto & node : w1.getNodes())
-                all.append(node.data(), node.size);
-            pool->fail.store(true);                /// parks w2's put AND blocks new launches
-            while (true)
-            {
-                auto chain = executor.readNextWindow();
-                if (chain.empty())
-                    break;
-                for (const auto & node : chain.getNodes())
-                    all.append(node.data(), node.size);
-            }
-        }
-        EXPECT_EQ(all, content) << "an abandoned fill must not affect served bytes";
-        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorPutAbandoned), 0u)
-            << "a put parked twice must be abandoned";
     }
 }
 

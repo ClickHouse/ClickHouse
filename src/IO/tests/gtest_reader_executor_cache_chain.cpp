@@ -417,13 +417,11 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
         << "warm chain must serve everything without touching the source";
 }
 
-/// SE put-lane (S1-S2): with a `CacheFiller` pool, `use_put_lane` routes deferred fills and
-/// promotes through the per-executor FIFO lane (one in flight) instead of `put_machines`. This
-/// asserts the lane serves CORRECT bytes (cold and warm) and actually POPULATES the chain (the
-/// warm re-read is cheaper than fully cold), i.e. it writes without corrupting the read path
-/// and the executor dtor drains it. Strict throughput parity with the old 2-concurrent path -
-/// single-in-flight legitimately defers more fills under load - is measured on the
-/// realistic-size metric grid (S3), not asserted here.
+/// The put lane is the deferred-fill path: with a `CacheFiller` pool, deferred fills and
+/// promotes route through the per-executor FIFO lane (one in flight). This asserts the lane
+/// serves CORRECT bytes (cold and warm) and actually POPULATES the chain (the warm re-read is
+/// cheaper than fully cold), i.e. it writes without corrupting the read path and the executor
+/// dtor drains it.
 TEST_F(ReaderExecutorCacheChain, PutLanePopulatesCacheLikePutMachines)
 {
     constexpr size_t segment_size = 64;
@@ -449,7 +447,6 @@ TEST_F(ReaderExecutorCacheChain, PutLanePopulatesCacheLikePutMachines)
     opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
     opts.prefetch_pool = pool;
     opts.cache_filler_pool = pool;   /// defer fills -> the put lane
-    opts.use_put_lane = true;
 
     const size_t src_before_cold = sourceRequestsSoFar();
     {
