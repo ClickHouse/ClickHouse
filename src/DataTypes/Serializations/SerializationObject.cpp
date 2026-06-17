@@ -583,6 +583,10 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             auto deserialize = [&, batch_start, batch_end, cache_ptr = cache_copy.get()]()
             {
                 auto settings_copy = settings;
+                /// A nested Object level must deserialize sequentially: re-entering the pool here would
+                /// create a second callbacks_mutex and re-wrap the already-safe getter, which TSAN flags
+                /// as a lock-order-inversion across recycled stack-mutex addresses.
+                settings_copy.prefixes_deserialization_thread_pool = nullptr;
                 settings_copy.getter = safe_getter;
                 settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
                 settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
