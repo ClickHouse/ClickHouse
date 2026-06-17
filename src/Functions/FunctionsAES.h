@@ -33,7 +33,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int OPENSSL_ERROR;
 }
 
 
@@ -42,12 +41,7 @@ namespace OpenSSLDetails
 [[noreturn]] void onError(std::string error_message);
 std::string_view foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, std::string_view key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key);
 
-using EVP_CIPHER_ptr = std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)>;
-
-/// Fetches a provider-backed cipher via EVP_CIPHER_fetch, which (unlike a legacy cipher with
-/// prov == NULL) avoids implicit EVP_CIPHER_fetch calls on every EVP_EncryptInit_ex /
-/// EVP_DecryptInit_ex invocation in OpenSSL 3.x. Returns nullptr for an unknown cipher name.
-EVP_CIPHER_ptr fetchCipher(std::string_view name);
+const EVP_CIPHER * getCipherByName(std::string_view name);
 
 enum class CompatibilityMode : uint8_t
 {
@@ -142,7 +136,7 @@ inline void validateIV(std::string_view iv_value, const size_t cipher_iv_size)
 }
 
 template <typename Impl>
-class FunctionEncrypt final : public IFunction
+class FunctionEncrypt : public IFunction
 {
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
@@ -200,13 +194,9 @@ private:
         if (mode.empty() || !mode.starts_with("aes-"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
 
-        /// Fetch a provider-backed cipher once per block to avoid implicit EVP_CIPHER_fetch
-        /// on every EVP_EncryptInit_ex call in the per-row loop.
-        /// See https://github.com/ClickHouse/ClickHouse/issues/65116
-        auto fetched_cipher = fetchCipher(mode);
-        if (fetched_cipher == nullptr)
+        const auto * evp_cipher = getCipherByName(mode);
+        if (evp_cipher == nullptr)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
-        const auto * evp_cipher = fetched_cipher.get();
 
         const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
 
@@ -217,7 +207,7 @@ private:
 
         ColumnPtr result_column;
         if (arguments.size() <= 3)
-            result_column = doEncrypt(fetched_cipher.get(), input_rows_count, input_column, key_column, nullptr, nullptr);
+            result_column = doEncrypt(evp_cipher, input_rows_count, input_column, key_column, nullptr, nullptr);
         else
         {
             const auto iv_column = arguments[3].column;
@@ -226,7 +216,7 @@ private:
 
             if (arguments.size() <= 4)
             {
-                result_column = doEncrypt(fetched_cipher.get(), input_rows_count, input_column, key_column, iv_column, nullptr);
+                result_column = doEncrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, nullptr);
             }
             else
             {
@@ -234,7 +224,7 @@ private:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "AAD can be only set for GCM-mode");
 
                 const auto aad_column = arguments[4].column;
-                result_column = doEncrypt(fetched_cipher.get(), input_rows_count, input_column, key_column, iv_column, aad_column);
+                result_column = doEncrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
         }
 
@@ -279,8 +269,6 @@ private:
         using namespace OpenSSLDetails;
 
         auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-        if (!evp_ctx_ptr)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed");
         auto * evp_ctx = evp_ctx_ptr.get();
 
         const auto block_size = static_cast<size_t>(EVP_CIPHER_block_size(evp_cipher));
@@ -310,7 +298,7 @@ private:
 
         auto * encrypted = encrypted_result_column_data.data();
 
-        KeyHolder<mode> key_holder{};
+        KeyHolder<mode> key_holder;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -422,7 +410,7 @@ private:
 
 /// decrypt(string, key, block_mode[, init_vector])
 template <typename Impl>
-class FunctionDecrypt final : public IFunction
+class FunctionDecrypt : public IFunction
 {
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
@@ -481,13 +469,9 @@ private:
         if (mode.empty() || !mode.starts_with("aes-"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
 
-        /// Fetch a provider-backed cipher once per block to avoid implicit EVP_CIPHER_fetch
-        /// on every EVP_DecryptInit_ex call in the per-row loop.
-        /// See https://github.com/ClickHouse/ClickHouse/issues/65116
-        auto fetched_cipher = fetchCipher(mode);
-        if (fetched_cipher == nullptr)
+        const auto * evp_cipher = getCipherByName(mode);
+        if (evp_cipher == nullptr)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
-        const auto * evp_cipher = fetched_cipher.get();
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
@@ -497,7 +481,7 @@ private:
         ColumnPtr result_column;
         if (arguments.size() <= 3)
         {
-            result_column = doDecrypt<use_null_when_decrypt_fail>(fetched_cipher.get(), input_rows_count, input_column, key_column, nullptr, nullptr);
+            result_column = doDecrypt<use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, nullptr, nullptr);
         }
         else
         {
@@ -507,7 +491,7 @@ private:
 
             if (arguments.size() <= 4)
             {
-                result_column = doDecrypt<use_null_when_decrypt_fail>(fetched_cipher.get(), input_rows_count, input_column, key_column, iv_column, nullptr);
+                result_column = doDecrypt<use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, nullptr);
             }
             else
             {
@@ -515,7 +499,7 @@ private:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "AAD can be only set for GCM-mode");
 
                 const auto aad_column = arguments[4].column;
-                result_column = doDecrypt<use_null_when_decrypt_fail>(fetched_cipher.get(), input_rows_count, input_column, key_column, iv_column, aad_column);
+                result_column = doDecrypt<use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
         }
 
@@ -560,8 +544,6 @@ private:
         using namespace OpenSSLDetails;
 
         auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-        if (!evp_ctx_ptr)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed");
         auto * evp_ctx = evp_ctx_ptr.get();
 
         [[maybe_unused]] const auto block_size = static_cast<size_t>(EVP_CIPHER_block_size(evp_cipher));
@@ -599,8 +581,7 @@ private:
 
         auto * decrypted = decrypted_result_column_data.data();
 
-        KeyHolder<mode> key_holder{};
-
+        KeyHolder<mode> key_holder;
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             // 0: prepare key if required
