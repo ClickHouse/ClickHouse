@@ -1808,10 +1808,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 
     QueryTreeNodes matched_column_nodes;
 
+    const bool standard_mode = scope.isStandardMode();
     for (const auto & column : matched_columns)
     {
         const auto & column_name = column.name;
-        if (!matcher_node_typed.isMatchingColumn(column_name))
+        if (!matcher_node_typed.isMatchingColumn(column_name, standard_mode))
             continue;
 
         if (table_expression_data)
@@ -1925,7 +1926,20 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
     chassert(matcher_node_typed.isQualified());
 
+    /// Propagate the qualifier's per-part quote styles so that resolution in `standard` mode
+    /// honours `"T".*` vs `T.*` (the former stays case-sensitive).
+    const auto & qualifier_quote_styles = matcher_node_typed.getQualifiedIdentifierQuoteStyles();
+    auto build_quote_flags = [&]
+    {
+        std::vector<bool> flags;
+        flags.reserve(qualifier_quote_styles.size());
+        for (auto style : qualifier_quote_styles)
+            flags.push_back(style == IdentifierQuoteStyle::DoubleQuote);
+        return flags;
+    };
+
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
+    expression_identifier_lookup.is_part_double_quoted = build_quote_flags();
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
@@ -1960,9 +1974,10 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
         auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
+        const bool standard_mode = scope.isStandardMode();
         for (const auto & element_name : element_names)
         {
-            if (!matcher_node_typed.isMatchingColumn(element_name))
+            if (!matcher_node_typed.isMatchingColumn(element_name, standard_mode))
                 continue;
 
             auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
@@ -1989,6 +2004,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     identifier_resolve_settings.allow_to_check_database_catalog = false;
 
     auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
+    table_identifier_lookup.is_part_double_quoted = build_quote_flags();
     auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings);
     auto table_expression_node = table_identifier_resolve_result.resolved_identifier;
 
@@ -2189,7 +2205,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                     auto & join_using_column_node = join_using_node->as<ColumnNode &>();
                     const auto & join_using_column_name = join_using_column_node.getColumnName();
 
-                    if (!matcher_node_typed.isMatchingColumn(join_using_column_name))
+                    if (!matcher_node_typed.isMatchingColumn(join_using_column_name, scope.isStandardMode()))
                         continue;
 
                     const auto & join_using_column_nodes_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();

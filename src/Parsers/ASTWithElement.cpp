@@ -2,6 +2,7 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -21,7 +22,11 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
+    /// Preserve original double-quoting so format/reparse keeps the CTE name case-sensitive in `standard` mode
+    if (name_is_double_quoted)
+        writeDoubleQuotedString(name, ostr);
+    else
+        settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
     if (aliases)
     {
         const bool prep_whitespace = frame.expression_list_prepend_whitespace;

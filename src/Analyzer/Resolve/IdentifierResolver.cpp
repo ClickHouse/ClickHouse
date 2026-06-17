@@ -956,9 +956,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         const auto & table_name = table_expression_data.table_name;
         const auto & database_name = table_expression_data.database_name;
 
-        if (parts_size == 1 && path_start == table_name)
+        /// Used by qualified matcher resolution (`T.*`, `T.COLUMNS(...)`), which disables the
+        /// database-catalog fallback, so per-part case-insensitive matching has to happen here too
+        const bool tbl_standard_mode = table_expression_data.standard_mode;
+        auto eq = [tbl_standard_mode, &identifier_lookup](const std::string & a, const std::string & b, size_t part)
+        {
+            const bool case_insensitive = identifier_lookup.isPartCaseInsensitive(part, tbl_standard_mode);
+            return case_insensitive ? Poco::icompare(a, b) == 0 : a == b;
+        };
+
+        if (parts_size == 1 && eq(path_start, table_name, 0))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        else if (parts_size == 2 && eq(path_start, database_name, 0) && eq(identifier[1], table_name, 1))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         else
             return {};

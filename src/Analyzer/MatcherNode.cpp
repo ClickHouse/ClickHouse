@@ -1,5 +1,7 @@
 #include <Analyzer/MatcherNode.h>
 
+#include <Poco/String.h>
+
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
@@ -121,10 +123,14 @@ MatcherNode::MatcherNode(MatcherNodeType matcher_type_,
     columns_identifiers_set.reserve(columns_identifiers.size());
 
     for (auto & column_identifier : columns_identifiers)
-        columns_identifiers_set.insert(column_identifier.getFullName());
+    {
+        const auto & full_name = column_identifier.getFullName();
+        columns_identifiers_set.insert(full_name);
+        columns_identifiers_lowercase_set.insert(Poco::toLower(full_name));
+    }
 }
 
-bool MatcherNode::isMatchingColumn(const std::string & column_name)
+bool MatcherNode::isMatchingColumn(const std::string & column_name, bool standard_mode)
 {
     if (matcher_type == MatcherNodeType::ASTERISK)
         return true;
@@ -132,7 +138,32 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name)
     if (columns_matcher)
         return RE2::PartialMatch(column_name, *columns_matcher);
 
-    return columns_identifiers_set.contains(column_name);
+    if (columns_identifiers_set.contains(column_name))
+        return true;
+
+    /// Standard mode: an unquoted COLUMNS argument should match a case-different column name.
+    /// Argument quote styles live in `columns_identifiers_quote_styles`; if no part of an
+    /// argument was double-quoted, that argument can match case-insensitively.
+    if (!standard_mode)
+        return false;
+
+    const auto lowered = Poco::toLower(column_name);
+    if (!columns_identifiers_lowercase_set.contains(lowered))
+        return false;
+
+    for (size_t i = 0; i < columns_identifiers.size(); ++i)
+    {
+        bool any_part_quoted = false;
+        if (i < columns_identifiers_quote_styles.size())
+            for (auto style : columns_identifiers_quote_styles[i])
+                if (style == IdentifierQuoteStyle::DoubleQuote)
+                    any_part_quoted = true;
+        if (any_part_quoted)
+            continue;
+        if (Poco::icompare(columns_identifiers[i].getFullName(), column_name) == 0)
+            return true;
+    }
+    return false;
 }
 
 void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -211,9 +242,12 @@ QueryTreeNodePtr MatcherNode::cloneImpl() const
 
     matcher_node->matcher_type = matcher_type;
     matcher_node->qualified_identifier = qualified_identifier;
+    matcher_node->qualified_identifier_quote_styles = qualified_identifier_quote_styles;
     matcher_node->columns_identifiers = columns_identifiers;
+    matcher_node->columns_identifiers_quote_styles = columns_identifiers_quote_styles;
     matcher_node->columns_matcher = columns_matcher;
     matcher_node->columns_identifiers_set = columns_identifiers_set;
+    matcher_node->columns_identifiers_lowercase_set = columns_identifiers_lowercase_set;
 
     return matcher_node;
 }

@@ -1,0 +1,20 @@
+--- Unqualified COLUMNS(unquoted) matches case-insensitively ---
+Alice
+Bob
+Alice
+Bob
+--- Unqualified COLUMNS("DoubleQuoted") is case-sensitive ---
+Alice
+Bob
+0
+--- Unquoted qualified matcher table name ---
+Alice
+Bob
+--- Quoted qualified matcher table name stays case-sensitive ---
+Alice
+Bob
+--- Quoted alias survives format/reparse ---
+1	1
+--- Quoted CTE name survives format/reparse ---
+1
+1	2

@@ -688,7 +688,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         auto & qualified_identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_asterisk->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
+        auto matcher = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
+        matcher->setQualifiedIdentifierQuoteStyles(qualified_identifier.getQuoteStyles());
+        result = std::move(matcher);
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
@@ -817,38 +819,51 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * columns_list_matcher = expression->as<ASTColumnsListMatcher>())
     {
         Identifiers column_list_identifiers;
+        std::vector<std::vector<IdentifierQuoteStyle>> column_list_identifiers_quote_styles;
         column_list_identifiers.reserve(columns_list_matcher->column_list->children.size());
+        column_list_identifiers_quote_styles.reserve(columns_list_matcher->column_list->children.size());
 
         for (auto & column_list_child : columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
+            column_list_identifiers_quote_styles.push_back(column_list_identifier.getQuoteStyles());
         }
 
         auto column_transformers = buildColumnTransformers(columns_list_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(std::move(column_list_identifiers), std::move(column_transformers));
+        auto matcher = std::make_shared<MatcherNode>(std::move(column_list_identifiers), std::move(column_transformers));
+        matcher->setColumnsIdentifierQuoteStyles(std::move(column_list_identifiers_quote_styles));
+        result = std::move(matcher);
     }
     else if (const auto * qualified_columns_regexp_matcher = expression->as<ASTQualifiedColumnsRegexpMatcher>())
     {
         auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
+        auto matcher = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
+        matcher->setQualifiedIdentifierQuoteStyles(qualified_identifier.getQuoteStyles());
+        result = std::move(matcher);
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {
         auto & qualified_identifier = qualified_columns_list_matcher->qualifier->as<ASTIdentifier &>();
 
         Identifiers column_list_identifiers;
+        std::vector<std::vector<IdentifierQuoteStyle>> column_list_identifiers_quote_styles;
         column_list_identifiers.reserve(qualified_columns_list_matcher->column_list->children.size());
+        column_list_identifiers_quote_styles.reserve(qualified_columns_list_matcher->column_list->children.size());
 
         for (auto & column_list_child : qualified_columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
+            column_list_identifiers_quote_styles.push_back(column_list_identifier.getQuoteStyles());
         }
 
         auto column_transformers = buildColumnTransformers(qualified_columns_list_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_list_identifiers), std::move(column_transformers));
+        auto matcher = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_list_identifiers), std::move(column_transformers));
+        matcher->setQualifiedIdentifierQuoteStyles(qualified_identifier.getQuoteStyles());
+        matcher->setColumnsIdentifierQuoteStyles(std::move(column_list_identifiers_quote_styles));
+        result = std::move(matcher);
     }
     else if (const auto * query_parameter = expression->as<ASTQueryParameter>())
     {
