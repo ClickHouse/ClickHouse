@@ -266,7 +266,7 @@ void listFilesWithRegexpMatchingImpl(
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
                 const auto normalized_path = fs::path(it->path()).lexically_normal().string();
-                const bool inserted = !matched_paths || matched_paths->find(normalized_path) == matched_paths->end();
+                const bool inserted = !matched_paths || !matched_paths->contains(normalized_path);
                 if (inserted)
                 {
                     std::error_code size_ec;
