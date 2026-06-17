@@ -9,11 +9,16 @@
 --   4. ALTER DELETE rewrites the part keeping only a small slice, shrinking the bloom_filter
 --      back under the threshold -> packed again.
 --
--- We don't read the on-disk file list directly (won't work on object-storage-backed deploys);
--- instead we observe layout via skp_idx.packed checksum presence in system.parts.files-style
--- counts and via EXPLAIN indexes = 1 (the index must still gate granules in both layouts).
+-- secondary_indices_compressed_bytes stays > 0 in both layouts, so it can't prove the spill on
+-- its own. Instead we track the layout via system.parts.files (a file count, object-storage
+-- safe): a packed bloom_filter lives inside skp_idx.packed (one shared archive file), while a
+-- spilled one becomes two standalone files (.idx + .cmrk2), so the part's file count goes up by
+-- one on the spill and back down on the repack. We record the count per phase in a side table
+-- and assert the relative change (never absolute counts, which random merge-tree settings
+-- perturb). EXPLAIN indexes = 1 additionally confirms the index keeps gating granules throughout.
 
 DROP TABLE IF EXISTS t_pack_trans;
+DROP TABLE IF EXISTS t_pack_trans_files;
 CREATE TABLE t_pack_trans
 (
     id UInt64,
@@ -26,6 +31,10 @@ SETTINGS min_bytes_for_wide_part = 0,
          packed_skip_index_max_bytes = 4096,
          auto_statistics_types = '',
          index_granularity = 1024;
+
+-- Remembers the active part's file count at each phase so later phases can compare against the
+-- packed baseline without printing absolute counts.
+CREATE TABLE t_pack_trans_files (phase String, files UInt64) ENGINE = Memory;
 
 -- ---------------------------------------------------------------------------------------------
 -- 1. One small part: bloom_filter is well under the threshold -> packed.
@@ -47,6 +56,10 @@ CHECK TABLE t_pack_trans SETTINGS check_query_single_value_result = 1;
 INSERT INTO t_pack_trans SELECT number + 1024, toString(number * 31337) FROM numbers(1024);
 INSERT INTO t_pack_trans SELECT number + 2048, toString(number * 53)    FROM numbers(1024);
 OPTIMIZE TABLE t_pack_trans FINAL;
+-- Packed baseline: a single merged part with the index inside the archive. Phase 3 (also a
+-- merged part, so the same per-column bookkeeping) is compared against this count.
+INSERT INTO t_pack_trans_files SELECT 'phase2_packed', files
+FROM system.parts WHERE database = currentDatabase() AND table = 't_pack_trans' AND active;
 SELECT 'phase2_index_materialized', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_pack_trans' AND active;
 SELECT 'phase2_filtered_lookup_old', count() FROM t_pack_trans WHERE w = '7919';
@@ -59,12 +72,16 @@ CHECK TABLE t_pack_trans SETTINGS check_query_single_value_result = 1;
 -- ---------------------------------------------------------------------------------------------
 INSERT INTO t_pack_trans SELECT number + 3072, toString(number * 991) FROM numbers(10240);
 OPTIMIZE TABLE t_pack_trans FINAL;
+INSERT INTO t_pack_trans_files SELECT 'phase3_spilled', files
+FROM system.parts WHERE database = currentDatabase() AND table = 't_pack_trans' AND active;
 SELECT 'phase3_index_materialized', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_pack_trans' AND active;
--- After the spill, the per-file substream files are visible in system.parts_columns -- but
--- those describe columns, not indices. Use system.parts.files instead: when the bloom_filter
--- is packed there's ONE archive file extra; when it's spilled, there are TWO standalone files
--- (.idx + .cmrk2) instead. So files_after_spill > files_when_packed is the invariant.
+-- The spill is the actual signal under test: the standalone .idx + .cmrk2 files replace the
+-- single shared archive file, so this merged part has strictly more files than the packed
+-- merged part of phase 2 (same column layout, only the index layout differs).
+SELECT 'phase3_spilled_has_more_files_than_packed',
+       (SELECT files FROM t_pack_trans_files WHERE phase = 'phase3_spilled')
+     > (SELECT files FROM t_pack_trans_files WHERE phase = 'phase2_packed');
 SELECT 'phase3_filtered_lookup', count() FROM t_pack_trans WHERE w = '7919';
 CHECK TABLE t_pack_trans SETTINGS check_query_single_value_result = 1;
 
@@ -73,10 +90,19 @@ CHECK TABLE t_pack_trans SETTINGS check_query_single_value_result = 1;
 --    bloom_filter shrinks back under the threshold -> packed again.
 -- ---------------------------------------------------------------------------------------------
 ALTER TABLE t_pack_trans DELETE WHERE id >= 1024 SETTINGS mutations_sync = 2;
+INSERT INTO t_pack_trans_files SELECT 'phase4_repacked', files
+FROM system.parts WHERE database = currentDatabase() AND table = 't_pack_trans' AND active;
 SELECT 'phase4_index_materialized', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_pack_trans' AND active;
+-- Repacked: the bloom_filter is back under the threshold, so the standalone .idx + .cmrk2 files
+-- collapse into the shared archive and the part has fewer files than the spilled phase 3 (this
+-- mutated part shares phase 3's column layout, so only the index layout moves the count).
+SELECT 'phase4_repacked_fewer_files_than_spilled',
+       (SELECT files FROM t_pack_trans_files WHERE phase = 'phase4_repacked')
+     < (SELECT files FROM t_pack_trans_files WHERE phase = 'phase3_spilled');
 SELECT 'phase4_filtered_lookup', count() FROM t_pack_trans WHERE w = '7919';
 SELECT 'phase4_filtered_lookup_unknown', count() FROM t_pack_trans WHERE w = '31337';
 CHECK TABLE t_pack_trans SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_pack_trans;
+DROP TABLE t_pack_trans_files;

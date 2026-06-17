@@ -7,9 +7,11 @@ phase2_filtered_lookup_old	1
 phase2_filtered_lookup_new	1
 1
 phase3_index_materialized	1
+phase3_spilled_has_more_files_than_packed	1
 phase3_filtered_lookup	1
 1
 phase4_index_materialized	1
+phase4_repacked_fewer_files_than_spilled	1
 phase4_filtered_lookup	1
 phase4_filtered_lookup_unknown	0
 1
