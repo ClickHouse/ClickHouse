@@ -262,6 +262,7 @@ namespace FailPoints
     extern const char rmt_delay_execute_drop_range[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
+    extern const char replicated_alter_fail_after_local_metadata_before_zk[];
 }
 
 namespace ErrorCodes
@@ -6946,9 +6947,33 @@ void StorageReplicatedMergeTree::alter(
     /// settings) and only then does `disk_scope`'s destructor roll the freshly-registered inline
     /// disk back. Without this restore the replica would keep settings resolving to a disk no
     /// longer present in `DiskSelector` / `FileCacheFactory`. See issue #63019.
+    ///
+    /// `local_metadata_durably_written` covers a second, durable window: the settings/comment
+    /// branch writes the modified create query to the LOCAL metadata file via
+    /// `DatabaseCatalog::alterTable` BEFORE the ZooKeeper `tryMulti` commit. If `tryMulti` returns
+    /// a non-`ZOK` error (or any later pre-commit step throws), restoring only the in-memory state
+    /// would leave the durable local metadata ahead of ZooKeeper: a restart would reload the failed
+    /// setting, and on the inline-disk path the file would reference a disk `disk_scope` is about to
+    /// roll back. So the revert also rewrites the local metadata file back to `old_metadata`. The
+    /// flag is set right after the local write succeeds and cleared after a successful ZK commit.
     StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(query_context, false);
     bool live_metadata_mutated = false;
+    bool local_metadata_durably_written = false;
     SCOPE_EXIT({
+        if (local_metadata_durably_written)
+        {
+            try
+            {
+                /// Rewrite the durable local metadata file back to the pre-ALTER state before
+                /// `disk_scope` rolls the inline disk back, so the file never references a removed
+                /// disk and a restart does not reload the failed setting. See issue #63019.
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, old_metadata, /*validate_new_create_query=*/true);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to revert durable local metadata after a failed settings ALTER");
+            }
+        }
         if (live_metadata_mutated)
         {
             try
@@ -7079,6 +7104,21 @@ void StorageReplicatedMergeTree::alter(
             /// Only the comment and/or settings changed here, so it is okay to assume alterTable won't throw as neither
             /// of them are validated in alterTable.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+
+            /// The local metadata file is now durably ahead of ZooKeeper (the `tryMulti` below has
+            /// not run yet). Arm the durable rollback so a non-`ZOK` commit or a later throw rewrites
+            /// the file back to `old_metadata` before `disk_scope` rolls any inline disk back. See
+            /// issue #63019.
+            local_metadata_durably_written = true;
+
+            /// Test-only: emulate a `tryMulti` failure / pre-commit throw AFTER the local metadata
+            /// write but BEFORE the ZooKeeper commit, to prove the durable local rollback runs. See
+            /// 04164 and issue #63019.
+            fiu_do_on(FailPoints::replicated_alter_fail_after_local_metadata_before_zk,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED,
+                    "Injected failure after local metadata write, before ZooKeeper commit");
+            });
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our
@@ -7208,8 +7248,10 @@ void StorageReplicatedMergeTree::alter(
 
     /// ZooKeeper `tryMulti` returned ZOK. The metadata transition is now durable in ZK and
     /// the new inline disk (if any) is permanently part of the table; commit the scope so
-    /// the destructor does not roll the disk back, and disarm the in-memory settings revert.
+    /// the destructor does not roll the disk back, and disarm both the in-memory settings revert
+    /// and the durable local-metadata revert (the local file now matches the committed ZK state).
     live_metadata_mutated = false;
+    local_metadata_durably_written = false;
     disk_scope.commit();
 
     table_lock_holder.unlock();

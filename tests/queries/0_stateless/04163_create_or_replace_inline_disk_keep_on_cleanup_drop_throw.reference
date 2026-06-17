@@ -1,0 +1,3 @@
+create_or_replace_failed_with_injected_fault: yes
+disk_kept_after_failed_cleanup: 1
+leftover_temp_table_queryable: 0

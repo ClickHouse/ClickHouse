@@ -206,6 +206,13 @@ namespace FailPoints
     /// rename failure. Used by 04162 to prove the caller-owned scope rolls a freshly-registered
     /// custom disk back when the outer CREATE OR REPLACE fails after the inner create (issue #63019).
     extern const char create_or_replace_fail_after_inner_create[];
+
+    /// Test-only: throw inside the catch path of `doCreateOrReplaceTable` when it tries to DROP the
+    /// leftover temporary table. The temporary table's metadata is still durable and references the
+    /// inline custom disk, so on this path the caller-owned scope must be committed (disk kept), not
+    /// rolled back. Used by 04163 to prove the disk is not rolled out from under durable metadata
+    /// when cleanup fails (issue #63019).
+    extern const char create_or_replace_fail_cleanup_drop[];
 }
 
 namespace fs = std::filesystem;
@@ -2481,10 +2488,24 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             auto drop_context = make_drop_context();
             try
             {
+                /// Test-only: emulate a cleanup DROP that itself throws. The temporary table's
+                /// metadata is still durable and references the inline custom disk, so the scope
+                /// must be committed (disk kept) rather than rolled back. See 04163, issue #63019.
+                fiu_do_on(FailPoints::create_or_replace_fail_cleanup_drop,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in CREATE OR REPLACE cleanup DROP");
+                });
                 InterpreterDropQuery(ast_drop, drop_context).execute();
             }
             catch (...)
             {
+                /// The cleanup DROP failed, so the temporary table's metadata is still durable and
+                /// keeps referencing the inline custom disk. Rolling the disk registration back here
+                /// (via `~CustomDiskRegistrationScope`) would leave that durable metadata pointing at
+                /// a disk no longer present in `DiskSelector` / `FileCacheFactory`. Commit the scope
+                /// instead so the disk is kept while a table still references it; a later DROP of the
+                /// leftover temporary table will release it through the normal path. See issue #63019.
+                create_disk_scope.commit();
                 tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
             }
         }
