@@ -54,6 +54,11 @@ public:
     /// Add/remove usage of some id. Used to remove unused ACLs.
     void addUsage(ACLId acl_id);
     void removeUsage(ACLId acl_id);
+
+    /// Batch-add usage counts from a per-worker accumulator map (id -> count).
+    /// Acquires map_mutex exactly once regardless of batch size.
+    /// Used by the V8 parallel snapshot deserializer to merge per-frame ACL counters.
+    void addUsageBatch(const std::unordered_map<ACLId, uint64_t> & batch);
 };
 
 }

@@ -4,6 +4,7 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperSnapshotV8.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperStorage.h>
@@ -2000,5 +2001,254 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateSnapshotKeepsPreviousMetadataAndAll
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin.zstd"));
     EXPECT_FALSE(fs::exists("./snapshots/tmp_snapshot_2.bin.zstd"));
 }
+
+// ---------------------------------------------------------------------------
+// V8 header pack/unpack + bounds validation tests (C1 — inert scaffolding)
+// These tests exercise KeeperSnapshotV8.h / .cpp independently of the actual
+// snapshot write or read paths, which are added in later commits.
+// ---------------------------------------------------------------------------
+
+namespace DB
+{
+
+/// Build a minimal valid 3-frame header (METADATA, NODES, SESSIONS) and round-trip through
+/// packV8Header + parseAndValidateV8Header.
+TEST(KeeperV8Header, RoundTripMinimal)
+{
+    const size_t hdr_size = v8HeaderSize(3);
+    // Frames start right after the header; no gaps.
+    std::vector<V8FrameDescriptor> frames = {
+        {V8ChunkType::METADATA, hdr_size,         100},
+        {V8ChunkType::NODES,    hdr_size + 100,   200},
+        {V8ChunkType::SESSIONS, hdr_size + 300,    50},
+    };
+    const size_t total_size = hdr_size + 350;
+
+    std::vector<char> buf(total_size, '\0');
+    packV8Header(frames, buf.data());
+
+    auto parsed = parseAndValidateV8Header(buf.data(), total_size);
+
+    ASSERT_EQ(parsed.size(), 3u);
+    EXPECT_EQ(parsed[0].type, V8ChunkType::METADATA);
+    EXPECT_EQ(parsed[0].compressed_offset, hdr_size);
+    EXPECT_EQ(parsed[0].compressed_size, 100u);
+    EXPECT_EQ(parsed[1].type, V8ChunkType::NODES);
+    EXPECT_EQ(parsed[1].compressed_offset, hdr_size + 100);
+    EXPECT_EQ(parsed[1].compressed_size, 200u);
+    EXPECT_EQ(parsed[2].type, V8ChunkType::SESSIONS);
+    EXPECT_EQ(parsed[2].compressed_offset, hdr_size + 300);
+    EXPECT_EQ(parsed[2].compressed_size, 50u);
+}
+
+/// Multiple NODES frames round-trip correctly (K > 1 per the write path).
+TEST(KeeperV8Header, RoundTripMultipleNodesFrames)
+{
+    const uint64_t chunk_count = 5; // METADATA + 3 NODES + SESSIONS
+    const size_t hdr_size = v8HeaderSize(chunk_count);
+
+    std::vector<V8FrameDescriptor> frames;
+    frames.push_back({V8ChunkType::METADATA, hdr_size, 80});
+    frames.push_back({V8ChunkType::NODES, hdr_size + 80, 300});
+    frames.push_back({V8ChunkType::NODES, hdr_size + 380, 250});
+    frames.push_back({V8ChunkType::NODES, hdr_size + 630, 150});
+    frames.push_back({V8ChunkType::SESSIONS, hdr_size + 780, 40});
+    const size_t total_size = hdr_size + 820;
+
+    std::vector<char> buf(total_size, '\0');
+    packV8Header(frames, buf.data());
+
+    auto parsed = parseAndValidateV8Header(buf.data(), total_size);
+
+    ASSERT_EQ(parsed.size(), 5u);
+    EXPECT_EQ(parsed[0].type, V8ChunkType::METADATA);
+    EXPECT_EQ(parsed[1].type, V8ChunkType::NODES);
+    EXPECT_EQ(parsed[2].type, V8ChunkType::NODES);
+    EXPECT_EQ(parsed[3].type, V8ChunkType::NODES);
+    EXPECT_EQ(parsed[4].type, V8ChunkType::SESSIONS);
+    EXPECT_EQ(parsed[4].compressed_size, 40u);
+}
+
+/// Frames with gaps between them (non-contiguous) are still valid.
+TEST(KeeperV8Header, RoundTripWithGapsBetweenFrames)
+{
+    const size_t hdr_size = v8HeaderSize(3);
+    const size_t gap = 128;
+    std::vector<V8FrameDescriptor> frames = {
+        {V8ChunkType::METADATA, hdr_size,                        100},
+        {V8ChunkType::NODES,    hdr_size + 100 + gap,            200},
+        {V8ChunkType::SESSIONS, hdr_size + 100 + gap + 200 + gap, 50},
+    };
+    const size_t total_size = frames.back().compressed_offset + frames.back().compressed_size;
+
+    std::vector<char> buf(total_size, '\0');
+    packV8Header(frames, buf.data());
+
+    auto parsed = parseAndValidateV8Header(buf.data(), total_size);
+    ASSERT_EQ(parsed.size(), 3u);
+    EXPECT_EQ(parsed[1].compressed_offset, hdr_size + 100 + gap);
+}
+
+// --- Rejection tests ---------------------------------------------------------
+
+TEST(KeeperV8Header, RejectsBufTooSmall)
+{
+    // A buffer of 12 bytes (< 13) must be rejected immediately.
+    std::vector<char> buf(12, '\0');
+    EXPECT_THROW(parseAndValidateV8Header(buf.data(), 12), DB::Exception);
+}
+
+TEST(KeeperV8Header, RejectsWrongMagic)
+{
+    const size_t hdr_size = v8HeaderSize(3);
+    std::vector<V8FrameDescriptor> frames = {
+        {V8ChunkType::METADATA, hdr_size, 10},
+        {V8ChunkType::NODES,    hdr_size + 10, 20},
+        {V8ChunkType::SESSIONS, hdr_size + 30, 10},
+    };
+    std::vector<char> buf(hdr_size + 40, '\0');
+    packV8Header(frames, buf.data());
+
+    // Overwrite first magic byte with garbage.
+    buf[0] = 'X';
+    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+}
+
+TEST(KeeperV8Header, RejectsChunkCountTwo)
+{
+    // chunk_count == 2 is always invalid (need at least METADATA+NODES+SESSIONS=3).
+    const size_t hdr_size = v8HeaderSize(2);
+    std::vector<char> buf(hdr_size + 100, '\0');
+
+    // Write a syntactically-valid 2-chunk header.
+    std::vector<V8FrameDescriptor> frames_2 = {
+        {V8ChunkType::METADATA, hdr_size, 50},
+        {V8ChunkType::SESSIONS, hdr_size + 50, 50},
+    };
+    packV8Header(frames_2, buf.data());
+
+    // Should throw CORRUPTED_DATA (chunk_count < 3).
+    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+}
+
+TEST(KeeperV8Header, RejectsChunkCountZeroAndOne)
+{
+    for (uint64_t cc : {uint64_t{0}, uint64_t{1}})
+    {
+        const size_t hdr_size = v8HeaderSize(cc);
+        std::vector<char> buf(hdr_size + 10, '\0');
+        // Write magic + version + chunk_count manually.
+        memcpy(buf.data(), KEEPER_V8_MAGIC.data(), 4);
+        buf[4] = KEEPER_V8_VERSION;
+        memcpy(buf.data() + 5, &cc, 8);
+        EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+    }
+}
+
+TEST(KeeperV8Header, RejectsOffsetOverlappingHeader)
+{
+    // A frame that starts before the header ends.
+    const size_t hdr_size = v8HeaderSize(3);
+    std::vector<V8FrameDescriptor> frames = {
+        {V8ChunkType::METADATA, hdr_size - 1, 100}, // overlaps header
+        {V8ChunkType::NODES,    hdr_size + 100, 200},
+        {V8ChunkType::SESSIONS, hdr_size + 300, 50},
+    };
+    std::vector<char> buf(hdr_size + 350, '\0');
+    packV8Header(frames, buf.data());
+    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+}
+
+TEST(KeeperV8Header, RejectsOverlappingFrames)
+{
+    // Frame 1 starts before frame 0 ends (overlapping by 1 byte).
+    const size_t hdr_size = v8HeaderSize(3);
+    std::vector<V8FrameDescriptor> frames = {
+        {V8ChunkType::METADATA, hdr_size, 100},
+        {V8ChunkType::NODES,    hdr_size + 99, 200}, // starts 1 byte before frame 0 ends
+        {V8ChunkType::SESSIONS, hdr_size + 299, 50},
+    };
+    std::vector<char> buf(hdr_size + 349, '\0');
+    packV8Header(frames, buf.data());
+    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+}
+
+TEST(KeeperV8Header, RejectsFrameExceedingBufferSize)
+{
+    // A frame whose end extends beyond the buffer.
+    const size_t hdr_size = v8HeaderSize(3);
+    std::vector<V8FrameDescriptor> frames = {
+        {V8ChunkType::METADATA, hdr_size, 100},
+        {V8ChunkType::NODES,    hdr_size + 100, 200},
+        {V8ChunkType::SESSIONS, hdr_size + 300, 9999}, // way too large
+    };
+    std::vector<char> buf(hdr_size + 350, '\0'); // total_size only covers first two frames
+    packV8Header(frames, buf.data());
+    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+}
+
+TEST(KeeperV8Header, RejectsWrongFirstChunkType)
+{
+    // First chunk must be METADATA, not NODES.
+    const size_t hdr_size = v8HeaderSize(3);
+    std::vector<V8FrameDescriptor> frames = {
+        {V8ChunkType::NODES,    hdr_size, 100},     // wrong: should be METADATA
+        {V8ChunkType::NODES,    hdr_size + 100, 200},
+        {V8ChunkType::SESSIONS, hdr_size + 300, 50},
+    };
+    std::vector<char> buf(hdr_size + 350, '\0');
+    packV8Header(frames, buf.data());
+    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+}
+
+TEST(KeeperV8Header, RejectsWrongLastChunkType)
+{
+    // Last chunk must be SESSIONS, not NODES.
+    const size_t hdr_size = v8HeaderSize(3);
+    std::vector<V8FrameDescriptor> frames = {
+        {V8ChunkType::METADATA, hdr_size, 100},
+        {V8ChunkType::NODES,    hdr_size + 100, 200},
+        {V8ChunkType::NODES,    hdr_size + 300, 50}, // wrong: should be SESSIONS
+    };
+    std::vector<char> buf(hdr_size + 350, '\0');
+    packV8Header(frames, buf.data());
+    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+}
+
+TEST(KeeperV8Header, RejectsNonMonotonicOffsets)
+{
+    // First frame at a higher offset than the second — non-monotonic.
+    const size_t hdr_size = v8HeaderSize(3);
+    std::vector<V8FrameDescriptor> frames = {
+        {V8ChunkType::METADATA, hdr_size + 300, 10},
+        {V8ChunkType::NODES,    hdr_size + 100, 200}, // starts before frame 0 ends
+        {V8ChunkType::SESSIONS, hdr_size + 300, 50},
+    };
+    std::vector<char> buf(hdr_size + 400, '\0');
+    packV8Header(frames, buf.data());
+    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+}
+
+TEST(KeeperV8Header, ChunkCountExceedsBufferCapacity)
+{
+    // chunk_count so large that v8HeaderSize(chunk_count) > buf_size.
+    std::vector<char> buf(16, '\0');
+    memcpy(buf.data(), KEEPER_V8_MAGIC.data(), 4);
+    buf[4] = KEEPER_V8_VERSION;
+    uint64_t big = 100; // v8HeaderSize(100) = 1713, but buf is only 16 bytes
+    memcpy(buf.data() + 5, &big, 8);
+    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+}
+
+TEST(KeeperV8Header, v8HeaderSizeComputation)
+{
+    // Verify the constexpr formula: 13 + 17 * chunk_count.
+    EXPECT_EQ(v8HeaderSize(0),   13u);
+    EXPECT_EQ(v8HeaderSize(1),   30u);
+    EXPECT_EQ(v8HeaderSize(3),   64u);
+    EXPECT_EQ(v8HeaderSize(100), 1713u);
+}
+
+} // namespace DB
 
 #endif

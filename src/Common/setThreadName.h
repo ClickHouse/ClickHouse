@@ -75,6 +75,7 @@ namespace DB
     M(KEEPER_RESPONSE, "KeeperResponse") \
     M(KEEPER_SNAPSHOT, "KeeperSnapshot") \
     M(KEEPER_SNAPSHOT_S3, "KeeperSnapS3") \
+    M(KEEPER_SNAPSHOT_LOAD, "KeeperSnapLoad") \
     M(KEEPER_COMMIT, "KeeperCommit") \
     M(KEEPER_APPEND, "KeeperAppend") \
     M(KEEPER_READ, "KeeperRead") \

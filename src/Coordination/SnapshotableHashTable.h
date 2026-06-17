@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int CORRUPTED_DATA;
 }
 
 template<typename V>
