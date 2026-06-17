@@ -189,6 +189,24 @@ if (OS_DARWIN)
     file(WRITE "${_avx512_dst}" "${_avx512_content}")
 endif()
 
+# On FreeBSD (and any non-Linux OS), TryEnableAmx() in flags.cc calls
+# syscall(SYS_arch_prctl, ...) which is Linux-specific and missing on FreeBSD.
+# Patch a copy of flags.cc in the build directory to restrict that syscall to
+# Linux by replacing the x86_64-only guard with a Linux+x86_64 guard.
+if (NOT OS_LINUX)
+    set(_flags_src "${SCANN_SOURCE_DIR}/scann/utils/intrinsics/flags.cc")
+    set(_flags_dst "${CMAKE_CURRENT_BINARY_DIR}/flags.cc")
+    configure_file("${_flags_src}" "${_flags_dst}" COPYONLY)
+    file(READ "${_flags_dst}" _flags_content)
+    string(REPLACE
+        "#ifdef __x86_64__"
+        "#if defined(__x86_64__) && defined(__linux__)"
+        _flags_content "${_flags_content}")
+    file(WRITE "${_flags_dst}" "${_flags_content}")
+    list(REMOVE_ITEM SCANN_SOURCES "${_flags_src}")
+    list(APPEND SCANN_SOURCES "${_flags_dst}")
+endif()
+
 # ---------------------------------------------------------------------------
 # 4. Build the library
 # ---------------------------------------------------------------------------
