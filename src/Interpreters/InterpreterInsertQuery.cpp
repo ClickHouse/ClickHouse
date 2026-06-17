@@ -693,6 +693,8 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
             && !select_query->orderBy()
             && !select_query->limitBy()
             && !select_query->limitLength()
+            && !select_query->limitAfter()
+            && !select_query->limitUntil()
             && !hasAggregateFunctions(select_query));
     }
     return false;

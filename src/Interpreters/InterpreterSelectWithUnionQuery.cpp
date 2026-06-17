@@ -376,8 +376,26 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     {
         if (settings[Setting::limit] > 0)
         {
+            bool always_read_till_end = settings[Setting::exact_rows_before_limit];
+
+            /// When a child query uses LIMIT AFTER/UNTIL with WITH TOTALS, LimitRangeTransform
+            /// is configured to drain the input for totals. The outer settings LimitStep must
+            /// not close the pipeline before that drain completes.
+            const auto * ast = query_ptr->as<ASTSelectWithUnionQuery>();
+            if (ast)
+            {
+                for (const auto & child : ast->list_of_selects->children)
+                {
+                    if (const auto * sq = child->as<ASTSelectQuery>())
+                    {
+                        if ((sq->limitAfter() || sq->limitUntil()) && sq->group_by_with_totals)
+                            always_read_till_end = true;
+                    }
+                }
+            }
+
             auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), settings[Setting::limit], settings[Setting::offset], settings[Setting::exact_rows_before_limit]);
+                query_plan.getCurrentHeader(), settings[Setting::limit], settings[Setting::offset], always_read_till_end);
             limit->setStepDescription("LIMIT OFFSET for SETTINGS");
             query_plan.addStep(std::move(limit));
         }
