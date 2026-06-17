@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/** This an efficient iterator that iterates over all (strict) non-empty subsets of a given
+/** Iterator that iterates over all (strict) non-empty subsets of a given
 * input set S (excluding the empty subset).
 */
 template <std::unsigned_integral UInt>
@@ -74,7 +74,7 @@ public:
     void enumerate(Consumer & consumer, const Graph & query_graph);
 private:
     UInt64 nr_relations{0};
-    UInt64 budget{0}; // budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
+    UInt64 budget{0}; // budget cap on # of ccps enumerated by DPsub
     LoggerPtr log;
 };
 
