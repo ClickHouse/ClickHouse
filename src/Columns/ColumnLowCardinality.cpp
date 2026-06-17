@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <base/types.h>
 #include <base/sort.h>
@@ -327,10 +326,16 @@ void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
     getDictionary().skipSerializedInArena(in);
 }
 
-WeakHash32 ColumnLowCardinality::getWeakHash32() const
+void ColumnLowCardinality::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    WeakHash32 dict_hash = getDictionary().getNestedColumn()->getWeakHash32();
-    return idx.getWeakHash(dict_hash);
+    const auto & nested = getDictionary().getNestedColumn();
+    const size_t dict_size = nested->size();
+
+    PaddedPODArray<UInt32> dict_hash(dict_size);
+    if (dict_size)
+        nested->computeHashInto(0, dict_size, dict_hash.data(), true);
+
+    idx.computeHashInto(dict_hash, row_begin, row_end, hash_out, initial);
 }
 
 void ColumnLowCardinality::updateHashFast(SipHash & hash) const
@@ -630,6 +635,37 @@ ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 li
     auto sub_keys = getDictionary().getNestedColumn()->index(*indexes_map, 0);
 
     return {std::move(sub_keys), std::move(sub_indexes)};
+}
+
+PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, size_t limit) const
+{
+    /// Work and memory are O(limit), not O(dictionary): MergeTreeIndexAggregatorBloomFilter
+    /// calls this once per granule over the same (possibly large) block dictionary. Result
+    /// order is arbitrary.
+    HashSet<UInt64> seen;
+
+    const IColumn & indexes = getIndexes();
+    auto populate = [&](const auto & positions)
+    {
+        for (size_t i = 0; i < limit; ++i)
+            seen.insert(positions[offset + i]);
+    };
+
+    switch (idx.getSizeOfIndexType())
+    {
+        case sizeof(UInt8): populate(assert_cast<const ColumnUInt8 &>(indexes).getData()); break;
+        case sizeof(UInt16): populate(assert_cast<const ColumnUInt16 &>(indexes).getData()); break;
+        case sizeof(UInt32): populate(assert_cast<const ColumnUInt32 &>(indexes).getData()); break;
+        case sizeof(UInt64): populate(assert_cast<const ColumnUInt64 &>(indexes).getData()); break;
+        default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
+    }
+
+    PaddedPODArray<UInt64> distinct;
+    distinct.reserve(seen.size());
+    for (const auto & cell : seen)
+        distinct.push_back(cell.getKey());
+
+    return distinct;
 }
 
 ColumnPtr ColumnLowCardinality::countKeys() const
