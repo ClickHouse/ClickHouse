@@ -149,6 +149,12 @@ String renderFunctionDoc(const FunctionDocumentation & doc)
 
 void addRow(MutableColumns & res_columns, EntityType type, const String & name, const String & description)
 {
+    /// `system.documentation` is a help surface, so an entity without any documentation (an empty `description`)
+    /// has nothing to show and is not exposed. This in particular drops internal functions, which carry
+    /// `FunctionDocumentation::INTERNAL_FUNCTION_DOCS` with an empty description.
+    if (description.empty())
+        return;
+
     res_columns[0]->insert(name);
     res_columns[1]->insert(static_cast<Int8>(type));
     res_columns[2]->insert(description);
@@ -161,9 +167,16 @@ void addFunctionLike(MutableColumns & res_columns, EntityType type, const Factor
     for (const auto & name : factory.getAllRegisteredNames())
     {
         if (factory.isAlias(name))
+        {
             addRow(res_columns, type, name, "Alias of `" + factory.aliasTo(name) + "`.");
-        else
-            addRow(res_columns, type, name, renderFunctionDoc(factory.getDocumentation(name)));
+            continue;
+        }
+
+        const auto documentation = factory.getDocumentation(name);
+        /// Internal functions are not part of the user-facing documentation.
+        if (documentation.category == FunctionDocumentation::Category::Internal)
+            continue;
+        addRow(res_columns, type, name, renderFunctionDoc(documentation));
     }
 }
 
@@ -211,10 +224,17 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
         const auto & factory = TableFunctionFactory::instance();
         for (const auto & name : factory.getAllRegisteredNames())
         {
-            String description;
-            if (auto documentation = factory.tryGetDocumentation(name))
-                description = renderFunctionDoc(*documentation);
-            addRow(res_columns, EntityType::TableFunction, name, description);
+            if (factory.isAlias(name))
+            {
+                addRow(res_columns, EntityType::TableFunction, name, "Alias of `" + factory.aliasTo(name) + "`.");
+                continue;
+            }
+
+            const auto documentation = factory.tryGetDocumentation(name);
+            /// Skip table functions without public documentation (no docs at all or internal-only).
+            if (!documentation || documentation->category == FunctionDocumentation::Category::Internal)
+                continue;
+            addRow(res_columns, EntityType::TableFunction, name, renderFunctionDoc(*documentation));
         }
     }
 

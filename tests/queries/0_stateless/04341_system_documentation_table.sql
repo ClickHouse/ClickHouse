@@ -34,3 +34,11 @@ FROM system.documentation WHERE type = 'Table Engine' AND name = 'MergeTree';
 
 -- Aliases are rendered as a reference to the canonical entity.
 SELECT count() > 0 FROM system.documentation WHERE description LIKE 'Alias of %';
+
+-- Table function aliases are rendered as a reference to the canonical entity as well,
+-- instead of duplicating the documentation of the canonical table function.
+SELECT description FROM system.documentation WHERE type = 'Table Function' AND name = 'timeSeriesData';
+
+-- It is a help surface: entities without documentation (in particular, internal functions) are not exposed,
+-- so there are no rows with an empty description.
+SELECT count() FROM system.documentation WHERE description = '';
