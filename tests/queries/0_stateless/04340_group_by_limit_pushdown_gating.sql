@@ -1,4 +1,8 @@
--- Regression tests for review fixes to the GROUP BY top-K optimization.
+-- Gating and applicability of the GROUP BY top-K optimization: when it stays on
+-- (external aggregation), when it is kept out (non-binding limit, non-prefix
+-- ORDER BY), and correctness at the edges (nullable key eviction).
+-- (Collated ORDER BY is also kept out, but that is not tested here because
+-- COLLATE needs ICU, which some builds lack.)
 
 SET enable_group_by_top_k_optimization = 1;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
@@ -8,28 +12,6 @@ SET max_threads = 1;
 -- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
 SET optimize_trivial_group_by_limit_query = 0;
-
--- ---------------------------------------------------------------------------
--- Collated ORDER BY is kept out of the optimization: the top-K heap compares
--- with IColumn::compareAt, which ignores collation, so the optimizer bails on
--- any collated ORDER BY column.  The plan must not carry Top-K, and the result
--- must still be correct.
--- ---------------------------------------------------------------------------
-SELECT 'collator: no Top-K in plan';
-SELECT count() FROM (EXPLAIN actions = 1
-    SELECT s FROM (SELECT toString(number % 100) AS s FROM numbers(1000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-    SETTINGS max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0
-) WHERE explain LIKE '%Top-K%';
-
-SELECT 'collator: result matches optimization off';
-SELECT count() FROM (
-    SELECT s FROM (SELECT toString(number % 100) AS s FROM numbers(10000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-    SETTINGS enable_group_by_top_k_optimization = 1
-) AS l
-INNER JOIN (
-    SELECT s FROM (SELECT toString(number % 100) AS s FROM numbers(10000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
-    SETTINGS enable_group_by_top_k_optimization = 0
-) AS r USING (s);
 
 -- ---------------------------------------------------------------------------
 -- Pattern 2 (GROUP BY ... LIMIT without ORDER BY) stays enabled even when
@@ -95,3 +77,29 @@ SELECT count(), countIf(same) FROM (
         SETTINGS enable_group_by_top_k_optimization = 0
     ) AS r ON l.k IS NOT DISTINCT FROM r.k
 );
+
+-- ---------------------------------------------------------------------------
+-- ORDER BY that is not a leading prefix of the GROUP BY keys (a subset out of
+-- order, or reordered) is left unoptimized: the optimizer's positional gate
+-- (sort_description[i] == keys[i]) bails.  No Top-K in the plan, and results
+-- stay correct.  (Optimizing this is a documented follow-up.)
+-- ---------------------------------------------------------------------------
+SELECT 'non-prefix ORDER BY: not optimized';
+SELECT count() FROM (EXPLAIN actions = 1
+    SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(1000)) GROUP BY a, b ORDER BY b LIMIT 5
+) WHERE explain LIKE '%Top-K%';
+
+SELECT 'reordered ORDER BY: not optimized';
+SELECT count() FROM (EXPLAIN actions = 1
+    SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(1000)) GROUP BY a, b ORDER BY b, a LIMIT 5
+) WHERE explain LIKE '%Top-K%';
+
+SELECT 'non-prefix ORDER BY: result matches optimization off';
+SELECT count() FROM (
+    SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(100000)) GROUP BY a, b ORDER BY b, a LIMIT 5
+    SETTINGS enable_group_by_top_k_optimization = 1
+) AS l
+INNER JOIN (
+    SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(100000)) GROUP BY a, b ORDER BY b, a LIMIT 5
+    SETTINGS enable_group_by_top_k_optimization = 0
+) AS r USING (a, b);
