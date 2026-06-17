@@ -16,7 +16,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree()
 ORDER BY (id)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, text_index_posting_list_block_size = 10000;
 
 INSERT INTO tab SELECT number, ['abc'], ['abc'] FROM numbers(512);
 INSERT INTO tab SELECT number, ['foo'], ['foo'] FROM numbers(512);

@@ -28,12 +28,12 @@ MergeTreeIndexConditionPtr MergeTreeIndexLegacyHypothesis::createIndexCondition(
     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index of type 'hypothesis' is no longer supported. Please drop the index");
 }
 
-MergeTreeIndexPtr legacyHypothesisIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr legacyHypothesisIndexCreator(const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     return std::make_shared<MergeTreeIndexLegacyHypothesis>(index);
 }
 
-void legacyHypothesisIndexValidator(const IndexDescription &, bool attach)
+void legacyHypothesisIndexValidator(const IndexDescription &, bool attach, const MergeTreeSettings & /*settings*/)
 {
     if (!attach)
         throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index of type 'hypothesis' is no longer supported. Please drop the index");

@@ -1082,7 +1082,7 @@ static void assertIndexColumnsType(const Block & header)
 }
 
 MergeTreeIndexPtr bloomFilterIndexCreator(
-    const IndexDescription & index)
+    const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     double false_positive_rate = 0.025;
 
@@ -1098,7 +1098,7 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
         index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
 }
 
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach)
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     assertIndexColumnsType(index.sample_block);
 

@@ -1910,6 +1910,8 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
 | `in_order`                       | selects the first ZooKeeper node, if it's not available then the second, and so on.                                            |
 | `nearest_hostname`               | selects a ZooKeeper node with a hostname that is most similar to the server's hostname, hostname is compared with name prefix. |
 | `hostname_levenshtein_distance`  | just like nearest_hostname, but it compares hostname in a levenshtein distance manner.                                         |
+| `hostname_longest_common_prefix` | just like nearest_hostname, but prefers the node whose hostname shares the longest common prefix with the server's hostname.   |
+| `hostname_longest_common_suffix` | just like nearest_hostname, but prefers the node whose hostname shares the longest common suffix with the server's hostname.   |
 | `first_or_random`                | selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.                |
 | `round_robin`                    | selects the first ZooKeeper node, if reconnection happens selects the next.                                                    |
 
@@ -1931,7 +1933,7 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / hostname_longest_common_prefix / hostname_longest_common_suffix / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
     <!-- Optional. Enable 64-bit transaction IDs. -->
     <use_xid_64>false</use_xid_64>

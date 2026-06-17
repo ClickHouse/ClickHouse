@@ -491,6 +491,14 @@ enum class SearchOrphanedPartsDisks : uint8_t
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 
+enum class TextIndexPostingListCodec : uint8_t
+{
+    None,
+    Bitpacking
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
+
 /// NOTE: Part level min-max index depends on strict columns order.
 ///       That means if you want to add new columns segment to index - it will not be materialized until
 ///       previous segment will be materialized in all data parts via mutation or merge.

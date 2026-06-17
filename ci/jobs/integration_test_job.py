@@ -31,6 +31,12 @@ mem_gb = round(Utils.physical_memory() // (1024**3), 1)
 
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
+# Flaky/targeted checks run with --dist=each, so every worker runs the full set
+# of changed modules concurrently (each with its own Docker cluster) instead of
+# splitting modules across workers. A worker's peak footprint is therefore much
+# larger, so it needs a bigger memory budget to avoid exhausting the container
+# cgroup and tripping the kernel OOM killer (see OOM_IN_DMESG_TEST_NAME).
+MAX_MEM_PER_WORKER_DIST_EACH = 20
 
 INFRASTRUCTURE_ERROR_PATTERNS = [
     "timed out after",
@@ -640,9 +646,16 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if args.workers:
         workers = args.workers
     else:
+        # --dist=each (flaky/targeted checks) makes every worker run all modules,
+        # so budget more memory per worker than the module-splitting loadfile runs.
+        mem_per_worker = (
+            MAX_MEM_PER_WORKER_DIST_EACH
+            if is_flaky_check or is_targeted_check
+            else MAX_MEM_PER_WORKER
+        )
         print("ncpu:", ncpu)
         print("mem_gb:", mem_gb)
-        workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
+        workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // mem_per_worker) or 1
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
     clickhouse_server_config_dir = f"{Utils.cwd()}/programs/server"
