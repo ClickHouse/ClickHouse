@@ -1107,8 +1107,10 @@ std::unordered_set<UUID> UsersConfigParser::getAllowedIDs(
     std::unordered_set<UUID> ids;
     for (const auto & key : keys)
     {
-        /// Config keys have dots escaped with a backslash, but entity UUIDs are generated from the un-escaped name.
+        /// Entity UUIDs are generated from the un-escaped name, but a config written for an older server may
+        /// reference the entity by the escaped config-key spelling, whose UUID is generated from the raw key.
         ids.emplace(generateID(type, unescapeDots(key)));
+        ids.emplace(generateID(type, key));
     }
     return ids;
 }

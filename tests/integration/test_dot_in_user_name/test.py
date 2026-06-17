@@ -1,6 +1,8 @@
+import hashlib
+
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -8,6 +10,19 @@ node = cluster.add_instance(
     user_configs=[
         "configs/users.xml",
     ],
+    stay_alive=True,
+)
+# A node starting on an older version that stores a dotted entity name in its escaped spelling, used to
+# verify that references persisted by that version still resolve after upgrading to the un-escaping version.
+node_bc = cluster.add_instance(
+    "node_bc",
+    user_configs=[
+        "configs/users_bc.xml",
+    ],
+    image="clickhouse/clickhouse-server",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    stay_alive=True,
+    with_installed_binary=True,
 )
 
 
@@ -137,3 +152,71 @@ def test_legacy_escaped_references_to_dotted_entities():
         "SELECT count()>0 FROM system.current_roles WHERE role_name = 'my.role'",
         user="legacy.user",
     ) == "1\n"
+
+
+def _users_xml_id(name, unique_char):
+    """Mirror of UsersConfigParser::generateID for users.xml entities."""
+    digest = hashlib.md5(
+        name.encode() + (unique_char + "USRSXML").encode()
+    ).digest()
+    b = bytes(
+        [
+            digest[7], digest[6], digest[5], digest[4],
+            digest[3], digest[2],
+            digest[1], digest[0],
+            digest[15], digest[14],
+            digest[13], digest[12], digest[11], digest[10], digest[9], digest[8],
+        ]
+    ).hex()
+    return f"{b[0:8]}-{b[8:12]}-{b[12:16]}-{b[16:20]}-{b[20:32]}"
+
+
+def test_disk_grant_with_legacy_escaped_role_id_resolves():
+    """A grant persisted in a non-XML storage references a users.xml role by its raw UUID. An older server
+    generated that UUID from the escaped name (`my\\.role`); after un-escaping the role is loaded under a
+    different UUID. The legacy UUID must still resolve to the role, otherwise the grant is silently dropped."""
+
+    canonical = _users_xml_id("my.role", "R")
+    legacy = _users_xml_id("my\\.role", "R")
+    assert canonical != legacy
+
+    node.query("DROP USER IF EXISTS disk_user")
+    node.query("CREATE USER disk_user")
+    node.query("GRANT `my.role` TO disk_user")
+    # Self-check the id encoding against the server: the live role must carry the canonical UUID.
+    assert (
+        node.query("SELECT id FROM system.roles WHERE name = 'my.role'").strip()
+        == canonical
+    )
+
+    # Rewrite the persisted grant to the legacy UUID, reproducing what an older server stored on disk.
+    node.stop_clickhouse()
+    node.exec_in_container(
+        ["bash", "-c", f"sed -i 's/{canonical}/{legacy}/g' /var/lib/clickhouse/access/*.sql"]
+    )
+    node.start_clickhouse()
+
+    assert "my.role" in node.query("SHOW GRANTS FOR disk_user")
+    node.query("DROP USER disk_user")
+
+
+def test_backward_compat_legacy_escaped_user_id_resolves():
+    """End-to-end backward compatibility: an older server stores the dotted user under its escaped name
+    `bc\\.user` and persists a quota in disk storage referencing that user by the escaped-name UUID. After
+    upgrading to the un-escaping version the user is loaded under `bc.user` with a different UUID, so the
+    quota's reference must be bridged for it to still apply."""
+
+    # On the old server the dotted user is stored escaped, so reference it with the backslash doubled.
+    node_bc.query(
+        "CREATE QUOTA test_bc_quota FOR INTERVAL 1 hour MAX queries = 100 TO `bc\\\\.user`"
+    )
+    assert "bc.user" in node_bc.query("SHOW CREATE QUOTA test_bc_quota").replace(
+        "\\.", "."
+    )
+
+    node_bc.restart_with_latest_version()
+
+    # The user is now loaded un-escaped; the quota persisted by the old server must still resolve to it.
+    assert node_bc.query("SELECT count() FROM system.users WHERE name = 'bc.user'") == "1\n"
+    assert "bc.user" in node_bc.query("SHOW CREATE QUOTA test_bc_quota")
+    node_bc.query("DROP QUOTA test_bc_quota")
