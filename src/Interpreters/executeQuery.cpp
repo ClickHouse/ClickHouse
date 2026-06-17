@@ -2542,6 +2542,18 @@ void executeQuery(
             /// It's possible to have queries without input and output.
         }
 
+        /// Query with `implicit_transaction` is committed here because:
+        /// 1. `onFinish` is invoked after the transaction is committed.
+        /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
+        /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
+        /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
+        ///
+        /// It must also be committed before the AST fuzzer runs: the fuzzer resets the transaction stored
+        /// in the session and query contexts (see executeASTFuzzerQueries), which would otherwise leave the
+        /// executor's running flag set while `context->getCurrentTransaction()` is already gone.
+        if (implicit_tcl_executor->transactionRunning())
+            implicit_tcl_executor->commit(context);
+
         if (!flags.internal && ast)
         {
             Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
@@ -2575,14 +2587,6 @@ void executeQuery(
         }
         throw;
     }
-
-    /// Query with `implicit_transaction` is committed here because:
-    /// 1. `onFinish` is invoked after the transaction is committed.
-    /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
-    /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
-    /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
-    if (implicit_tcl_executor->transactionRunning())
-        implicit_tcl_executor->commit(context);
 
     /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
     context->releaseQuerySlot();
