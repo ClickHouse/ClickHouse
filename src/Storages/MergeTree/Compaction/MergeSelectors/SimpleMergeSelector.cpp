@@ -60,22 +60,30 @@ public:
         }
 
         /// Re-check the small-parts batching gate after trimming, using the trimmed range's
-        /// `max_size` and `max_age` (not the pre-trim values). If the right tail contained
-        /// the only large or only old part, the pre-trim max would falsely bypass this gate
-        /// even though the surviving range is exactly the all-small-fresh batch the user
-        /// wants to defer. Recomputing over `[begin, end)` is the only correct check.
+        /// `max_size`, `max_age` and `min_age` (not the pre-trim values). If the right tail
+        /// contained the only large or only old part, the pre-trim max would falsely bypass
+        /// this gate even though the surviving range is exactly the all-small-fresh batch the
+        /// user wants to defer. Recomputing over `[begin, end)` is the only correct check.
+        /// As in `allow` (and the `min_parts_to_merge_at_once` re-check above), a range that
+        /// qualifies for force-merge by age takes precedence and is exempt from the minimum.
         if (settings.small_parts_min_count
             && range_size < settings.small_parts_min_count)
         {
             size_t trimmed_max_size = 0;
             time_t trimmed_max_age = 0;
+            time_t trimmed_min_age = begin->age;
             for (auto it = begin; it != end; ++it)
             {
                 trimmed_max_size = std::max(trimmed_max_size, it->size);
                 trimmed_max_age = std::max(trimmed_max_age, it->age);
+                trimmed_min_age = std::min(trimmed_min_age, it->age);
             }
 
-            if (trimmed_max_size < settings.small_parts_threshold
+            const bool qualifies_for_force_merge = settings.min_age_to_force_merge
+                && static_cast<size_t>(trimmed_min_age) >= settings.min_age_to_force_merge;
+
+            if (!qualifies_for_force_merge
+                && trimmed_max_size < settings.small_parts_threshold
                 && static_cast<size_t>(trimmed_max_age) < settings.small_parts_max_age)
                 return;
         }

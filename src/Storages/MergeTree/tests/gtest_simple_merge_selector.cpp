@@ -463,3 +463,55 @@ TEST(SimpleMergeSelector, MinAgeToForceMergeOverridesMinPartsAfterTrim)
     ASSERT_FALSE(selected.empty())
         << "min_age_to_force_merge must still override min_parts_to_merge_at_once after trimming";
 }
+
+
+/// Companion test for the small-parts gate: the post-trim `small_parts_min_count` re-check
+/// must keep the precedence that `allow` gives to `min_age_to_force_merge`. A range whose
+/// parts have all aged past the force-merge threshold merges regardless of the minimum part
+/// count, even when trimming shrinks it below that minimum.
+///
+/// The parts here are aged into the window `[min_age_to_force_merge, small_parts_max_age)`:
+/// they are old enough to force-merge (age >= 100) but still younger than the small-parts
+/// gate's own release valve (`small_parts_max_age = 600`). So only force-merge precedence —
+/// not the gate's `max_age` escape hatch — can let them through. Without the exemption the
+/// gate would defer these force-aged parts until `small_parts_max_age`, breaking the
+/// force-merge contract and diverging from both `allow` and the `min_parts_to_merge_at_once`
+/// re-check.
+TEST(SimpleMergeSelector, MinAgeToForceMergeOverridesSmallPartsMinCountAfterTrim)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 5;
+    settings.small_parts_threshold = 10 * 1024 * 1024;
+    settings.small_parts_min_count = 8;
+    settings.small_parts_max_age = 600;
+    settings.min_age_to_force_merge = 100;
+    settings.enable_heuristic_to_remove_small_parts_at_right = true;
+
+    PartsRange parts;
+    auto add_part = [&](int64_t block, size_t size, time_t age)
+    {
+        auto name = fmt::format("all_{0}_{0}_0", block);
+        auto info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+        parts.push_back(PartProperties{
+            .name = name,
+            .info = info,
+            .size = size,
+            .age = age,
+            .rows = 1000,
+        });
+    };
+
+    /// Same [9 MiB, 7 x 64 KiB] geometry that the small-parts trim tests use (the 64 KiB
+    /// tail is < 1% of the sum, so it is trimmed down to two parts), but all parts have
+    /// age 200: past `min_age_to_force_merge` (100), below `small_parts_max_age` (600).
+    add_part(0, 9 * 1024 * 1024, 200);
+    for (int64_t i = 1; i < 8; ++i)
+        add_part(i, 64 * 1024, 200);
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    PartsRanges selected = selector.select({parts}, constraints, nullptr);
+
+    ASSERT_FALSE(selected.empty())
+        << "min_age_to_force_merge must still override small_parts_min_count after trimming";
+}
