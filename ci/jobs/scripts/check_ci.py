@@ -720,6 +720,9 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
     failures_to_process = []
     unknown_failures = []
     issues_created_count = 0
+    # Cleared if a catalog refresh fails, so we never auto-create issues against
+    # an untrustworthy (possibly empty) set of known issues.
+    catalog_trusted = True
 
     # Check if workflow has unknown failures before matching against open issues
     workflow_has_unknown_failures = False
@@ -758,9 +761,15 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
             not issue_catalog
             or issue_catalog.updated_at < datetime.now().timestamp() - 10 * 60
         ):
-            issue_catalog = TestCaseIssueCatalog.from_gh(verbose=False, repo=repo)
-            issue_catalog.name = catalog_name
-            issue_catalog.dump()
+            try:
+                issue_catalog = TestCaseIssueCatalog.from_gh(verbose=False, repo=repo)
+                issue_catalog.name = catalog_name
+                issue_catalog.dump()
+            except Exception as e:
+                print(f"ERROR: failed to load issue catalog from {repo}: {e}")
+                catalog_trusted = False
+                if not issue_catalog:
+                    issue_catalog = TestCaseIssueCatalog()
         print(f"Loaded {len(issue_catalog.active_test_issues)} active issues from {repo}\n")
 
         # For non-public repos, also load public repo issues since the same flaky
@@ -777,10 +786,18 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
                 or public_catalog.updated_at
                 < datetime.now().timestamp() - 10 * 60
             ):
-                public_catalog = TestCaseIssueCatalog.from_gh(
-                    verbose=False, repo=PUBLIC_REPO
-                )
-                public_catalog.dump()
+                try:
+                    public_catalog = TestCaseIssueCatalog.from_gh(
+                        verbose=False, repo=PUBLIC_REPO
+                    )
+                    public_catalog.dump()
+                except Exception as e:
+                    print(
+                        f"ERROR: failed to load issue catalog from {PUBLIC_REPO}: {e}"
+                    )
+                    catalog_trusted = False
+                    if not public_catalog:
+                        public_catalog = TestCaseIssueCatalog()
             print(
                 f"Loaded {len(public_catalog.active_test_issues)} active issues from {PUBLIC_REPO}\n"
             )
@@ -825,6 +842,14 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
                         unknown_failures.append((result.name, sub_result))
                         continue
                     failures_to_process.append((result.name, sub_result))
+
+    if failures_to_process and not catalog_trusted:
+        print(
+            "\nWARNING: the issue catalog could not be reliably loaded; "
+            "skipping automatic issue creation to avoid filing duplicates."
+        )
+        unknown_failures.extend(failures_to_process)
+        failures_to_process = []
 
     if not_finished_jobs:
         if not UserPrompt.confirm(

@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -56,34 +57,45 @@ def fetch_github_issues(
         base_cmd = f"gh issue list {repo_arg} {label_args} --state {state} --json number,title,body,closedAt,labels,url --limit {limit_per_request}"
         print(f"Fetching {state} issues with label '{label}'...")
 
-    try:
-        output = Shell.get_output(base_cmd, verbose=True)
+    # Fail closed: a failed lookup must raise rather than look like "no issues",
+    # otherwise callers would treat the catalog as empty and could create
+    # duplicate issues. A genuinely empty result (exit 0, empty/`[]` output) is
+    # distinct from a fetch error (non-zero exit).
+    last_error = ""
+    for attempt in range(3):
+        returncode, output, stderr = Shell.get_res_stdout_stderr(
+            base_cmd, verbose=(attempt == 0)
+        )
+        if returncode == 0:
+            break
+        last_error = stderr or f"exit code {returncode}"
+        print(f"WARNING: 'gh issue list' failed (attempt {attempt + 1}/3): {last_error}")
+        if attempt < 2:
+            time.sleep(2 * (attempt + 1))
+    else:
+        raise RuntimeError(
+            f"Failed to fetch issues for label '{label}' from GitHub: {last_error}"
+        )
 
-        if not output or not output.strip():
-            print(f"  No issues found for label '{label}' with state '{state}'")
-            return []
-
-        issues = json.loads(output)
-        if not issues:
-            print(f"  No issues found for label '{label}' with state '{state}'")
-            return []
-
-        all_issues.extend(issues)
-        print(f"  Found {len(all_issues)} issues")
-
-        # If the limit was hit, print a warning — there may be more issues to page
-        if len(issues) == limit_per_request:
-            print(
-                f"  WARNING: Reached limit of {limit_per_request} issues. There may be more issues not fetched."
-            )
-
-        return all_issues
-    except json.JSONDecodeError as e:
-        print(f"ERROR: Failed to parse JSON response for label '{label}': {e}")
+    if not output or not output.strip():
+        print(f"  No issues found for label '{label}' with state '{state}'")
         return []
-    except Exception as e:
-        print(f"ERROR: Failed to fetch issues with label '{label}': {e}")
+
+    issues = json.loads(output)
+    if not issues:
+        print(f"  No issues found for label '{label}' with state '{state}'")
         return []
+
+    all_issues.extend(issues)
+    print(f"  Found {len(all_issues)} issues")
+
+    # If the limit was hit, print a warning — there may be more issues to page
+    if len(issues) == limit_per_request:
+        print(
+            f"  WARNING: Reached limit of {limit_per_request} issues. There may be more issues not fetched."
+        )
+
+    return all_issues
 
 
 class IssueLabels:
