@@ -265,6 +265,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
     result_union_node->cte_name = cte_name;
+    result_union_node->cte_name_is_double_quoted = cte_name_is_double_quoted;
 
     return result_union_node;
 }

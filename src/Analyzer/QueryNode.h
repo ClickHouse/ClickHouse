@@ -142,6 +142,9 @@ public:
         cte_name = std::move(cte_name_value);
     }
 
+    bool isCTENameDoubleQuoted() const noexcept { return cte_name_is_double_quoted; }
+    void setCTENameDoubleQuoted(bool value) { cte_name_is_double_quoted = value; }
+
     /// Returns true if query node is a MATERIALIZED CTE, false otherwise
     bool isMaterialized() const noexcept
     {
@@ -709,6 +712,7 @@ private:
     bool is_limit_by_all = false;
 
     std::string cte_name;
+    bool cte_name_is_double_quoted = false;
     NamesAndTypes projection_columns;
     Names projection_aliases_to_override;
     ContextMutablePtr context;

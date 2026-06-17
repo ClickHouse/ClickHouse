@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+            {"case_insensitive_names", "default", "default", "New setting controlling SQL-standard case-insensitive identifier resolution"},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -105,7 +106,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
             {"query_cache_for_subqueries", false, false, "New setting to enable propagation of `use_query_cache` into all subqueries. Without it, subqueries are only cached on explicit per-subquery `SETTINGS use_query_cache = true` opt-in."},
-            {"case_insensitive_names", "default", "default", "New setting"},
             {"iceberg_data_file_size_lower_threshold_compaction", 10_MiB, 10_MiB, "New setting"},
             {"iceberg_data_file_size_upper_threshold_compaction", 10_GiB, 10_GiB, "New setting"},
             {"iceberg_max_number_datafiles_to_compact", 1000, 1000, "New setting"},

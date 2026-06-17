@@ -97,6 +97,8 @@ private:
     {
         std::string_view cte_name;
         bool is_materialized = false;
+        /// Whether the CTE definition name was written as `"X"` rather than X
+        bool name_is_double_quoted = false;
     };
 
     QueryTreeNodePtr buildSelectOrUnionExpression(
@@ -201,6 +203,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
+    union_node->setCTENameDoubleQuoted(cte_data.name_is_double_quoted);
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_with_union_query);
 
@@ -244,6 +247,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
+    union_node->setCTENameDoubleQuoted(cte_data.name_is_double_quoted);
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_intersect_except_query);
 
@@ -318,6 +322,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());
     current_query_tree->setCTEName(std::string(cte_data.cte_name));
+    current_query_tree->setCTENameDoubleQuoted(cte_data.name_is_double_quoted);
     current_query_tree->setIsMaterialized(cte_data.is_materialized);
     current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
@@ -798,6 +803,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         CommonTableExpressionData cte_data = {
             .cte_name = with_element->name,
             .is_materialized = with_element->is_materialized,
+            .name_is_double_quoted = with_element->name_is_double_quoted,
         };
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, cte_data /*cte_data*/, with_element->aliases /*aliases*/, context);
 

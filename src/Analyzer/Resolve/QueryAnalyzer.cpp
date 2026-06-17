@@ -5696,6 +5696,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (!subquery_is_cte)
             continue;
         const String cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
+        const bool cte_is_quoted = subquery_node ? subquery_node->isCTENameDoubleQuoted() : union_node->isCTENameDoubleQuoted();
 
         /// Keep the original case as the primary key so quoted lookups (`"MyCte"`) hit the same entry
         auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
@@ -5705,9 +5706,18 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 cte_name,
                 scope.scope_node->formatASTForErrorMessage());
 
-        /// Track lowercase variants for case-insensitive lookups; ambiguity is reported at lookup time
-        if (standard_mode)
-            scope.lowercase_cte_to_original_names[Poco::toLower(cte_name)].push_back(cte_name);
+        /// Standard mode: unquoted CTE names collide case-insensitively (`MyCTE` vs `mycte`);
+        /// quoted names do not, since `"MyCte"` and `"mycte"` are distinct literal identifiers
+        if (standard_mode && !cte_is_quoted)
+        {
+            auto & originals = scope.lowercase_cte_to_original_names[Poco::toLower(cte_name)];
+            if (!originals.empty())
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name '{}' conflicts with another CTE (case-insensitive match). In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+            originals.push_back(cte_name);
+        }
     }
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
