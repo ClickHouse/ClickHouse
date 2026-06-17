@@ -235,7 +235,7 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock 
             /// the SLRU_Protected/SLRU_Probationary type, not SplitCache_Data/System.
             original_queue_types[candidate.get()] = queue_iterator->getNestedOrThis()->getType();
 
-            queue_iterator->invalidate();
+            queue_iterator->invalidateBeforeRemove(lock);
 
             chassert(candidate->releasable());
             candidate->file_segment->markDelayedRemovalAndResetQueueIterator();

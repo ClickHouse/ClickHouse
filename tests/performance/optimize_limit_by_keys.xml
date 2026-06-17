@@ -1,0 +1,7 @@
+<test>
+     <!-- optimize_injective_functions_in_limit_by: toString(number % 1000) is unwrapped to number % 1000 via query tree pass-->
+    <query>SELECT number FROM numbers_mt(100000000) LIMIT 1 BY toString(number % 1000) FORMAT Null</query>
+
+     <!-- optimize_limit_by_function_keys: sipHash64(number % 1000) is removed via query tree pass-->
+    <query>SELECT number FROM numbers_mt(100000000) LIMIT 1 BY number % 1000, sipHash64(number % 1000) FORMAT Null</query>
+</test>
