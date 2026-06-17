@@ -6850,11 +6850,21 @@ void StorageReplicatedMergeTree::alter(
     if (commands.areNonReplicatedAlterCommands())
     {
         merge_strategy_picker.refreshState();
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+
+        /// Caller-owned disk-registration scope: an inline `disk = disk(...)` in
+        /// `future_metadata.settings_changes` is registered tentatively and committed only
+        /// after `alterTable` has succeeded; if `alterTable` throws, the scope's destructor
+        /// rolls the new disk back from `DiskSelector` / `FileCacheFactory`. Mirrors the
+        /// `isSettingsAlter` branch above. See `MergeTreeData::changeSettings` and issue #63019.
+        DiskFromAST::CustomDiskRegistrationScope disk_scope(query_context);
+        /// Snapshot the live metadata before `changeSettings` mutates `storage_settings`, so the
+        /// failure path can restore it before `disk_scope` rolls the new inline disk back.
+        StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(query_context, false);
+        changeSettings(future_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
 
         /// changeSettings is the sole writer of the setting-derived escape fields and has
-        /// already committed them; carry them into future_metadata so the comment commit
-        /// below does not revert the index filename policy (commands.apply never sets them).
+        /// already mutated the live metadata; carry them into future_metadata so the comment
+        /// commit below does not revert the index filename policy (commands.apply never sets them).
         auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
         future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
         for (auto & index : future_metadata.secondary_indices)
@@ -6862,8 +6872,24 @@ void StorageReplicatedMergeTree::alter(
 
         setInMemoryMetadata(future_metadata);
 
-        /// It is safe to ignore exceptions here as only settings and comments are changed, neither of which is validated in `alterTable`
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        try
+        {
+            /// It is safe to ignore exceptions here as only settings and comments are changed, neither of which is validated in `alterTable`
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// `changeSettings` already installed the new settings (and any inline disk) in the
+            /// live state. If the metadata write throws, restore the old settings and metadata
+            /// before `disk_scope`'s destructor removes the freshly-registered disk, otherwise the
+            /// replica would keep settings resolving to a disk no longer present in `DiskSelector`.
+            /// Mirrors the `isSettingsAlter` branch above. See issue #63019.
+            LOG_ERROR(log, "Failed to alter table in database, reverting changes");
+            setInMemoryMetadata(old_metadata);
+            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            throw;
+        }
+        disk_scope.commit();
         return;
     }
 
