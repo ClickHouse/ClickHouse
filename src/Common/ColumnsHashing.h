@@ -373,7 +373,7 @@ struct HashMethodSerialized
     IColumn::SerializationSettings serialization_settings;
     PaddedPODArray<char> serialized_buffer;
     std::vector<std::string_view> serialized_keys;
-    WeakHash32 hashes{0};
+    PaddedPODArray<UInt32> hashes;
     std::unique_ptr<PrefetchingHelper> prefetching;
     size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
@@ -584,7 +584,7 @@ struct HashMethodABSerialized
     PaddedPODArray<UInt64> row_sizes;
     PODArray<char> serialized_buffer;
     std::vector<ABStringRef> serialized_keys;
-    WeakHash32 hashes{0};
+    PaddedPODArray<UInt32> hashes;
 
     HashMethodABSerialized(const ColumnRawPtrs & key_columns_, const Sizes & key_sizes_, const HashMethodContextPtr &)
         : num_keys(key_columns_.size())
@@ -677,13 +677,13 @@ struct HashMethodABSerialized
                 key_columns[i]->batchSerializeValueIntoMemory(memories, &ab_serialization_settings);
         }
 
-        hashes.reset(rows);
+        hashes.resize_exact(rows);
         for (size_t i = 0; i < rows; ++i)
         {
             if (row_sizes[i] <= std::numeric_limits<UInt32>::max())
             {
                 auto h = static_cast<UInt32>(StringRefHash()({memories[i] - row_sizes[i], row_sizes[i]}));
-                hashes.getData()[i] = h;
+                hashes[i] = h;
                 if (row_sizes[i] < 12)
                     serialized_keys[i].low |= static_cast<uint32_t>(h);
                 else
@@ -691,7 +691,7 @@ struct HashMethodABSerialized
             }
             else
             {
-                hashes.getData()[i] = static_cast<UInt32>(row_sizes[i]);
+                hashes[i] = static_cast<UInt32>(row_sizes[i]);
                 serialized_keys[i].high |= 0x8000000000000000ULL;
                 serialized_keys[i].low = row_sizes[i];
             }

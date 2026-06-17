@@ -246,7 +246,7 @@ struct HashMethodABString : public columns_hashing_impl::HashMethodBase<
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
-    WeakHash32 hashes{0};
+    PaddedPODArray<UInt32> hashes;
 
     HashMethodABString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
@@ -254,7 +254,7 @@ struct HashMethodABString : public columns_hashing_impl::HashMethodBase<
         const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
         offsets = column_string.getOffsets().data();
         chars = column_string.getChars().data();
-        auto & data = hashes.getData();
+        auto & data = hashes;
         size_t rows = column_string.size();
         data.resize_exact(rows);
         for (size_t i = 0; i < rows; ++i)
@@ -276,11 +276,11 @@ struct HashMethodABString : public columns_hashing_impl::HashMethodBase<
         if constexpr (place_string_to_arena)
         {
             return ArenaABStringHolder{
-                ABStringRef::build(reinterpret_cast<const char *>(chars + offsets[row - 1]), getSize(row), hashes.getData()[row]), pool};
+                ABStringRef::build(reinterpret_cast<const char *>(chars + offsets[row - 1]), getSize(row), hashes[row]), pool};
         }
         else
         {
-            return ABStringRef::build(reinterpret_cast<const char *>(chars + offsets[row - 1]), getSize(row), hashes.getData()[row]);
+            return ABStringRef::build(reinterpret_cast<const char *>(chars + offsets[row - 1]), getSize(row), hashes[row]);
         }
     }
 
