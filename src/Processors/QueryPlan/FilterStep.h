@@ -51,11 +51,10 @@ public:
     void decorrelateActions() { actions_dag.decorrelate(); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     void setPreventInputRemoval() { prevent_input_removal = true; }
-    bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
