@@ -22,7 +22,7 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+number+AS+id+FROM+numbers
 # 2. Corrupt the first byte of the compressed stream. It is part of the 16-byte block checksum
 # (the compressed payload starts after the checksum, so the data itself stays intact), so the
 # only observable effect is whether checksum verification is on.
-DATA_FILE="${CLICKHOUSE_TMP}/05017_block.native"
+DATA_FILE="${CLICKHOUSE_TMP}/04342_block.native"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+number+AS+id+FROM+numbers(100)+FORMAT+Native&compress=1" > "$DATA_FILE"
 python3 -c "
 import sys
