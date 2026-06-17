@@ -187,7 +187,7 @@ T fuzzyRandomInteger(pcg64 & rng)
             }
         }
 
-        T result{};
+        T result;
         memcpy(&result, words, sizeof(T));
         return result;
     }
@@ -846,7 +846,7 @@ ColumnPtr fillColumnWithRandomData(
 namespace
 {
 
-class GenerateSource final : public ISource
+class GenerateSource : public ISource
 {
 public:
     GenerateSource(
@@ -954,7 +954,6 @@ VirtualColumnsDescription StorageGenerateRandom::createVirtuals()
 }
 
 
-void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory)
 {
     factory.registerStorage("GenerateRandom", [](const StorageFactory::Arguments & args)
@@ -979,7 +978,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         if (engine_args.size() >= 2)
         {
             engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[0], "max_string_length");
         }
 
         if (engine_args.size() == 3)

@@ -112,7 +112,7 @@ void QueryDAG::appendExpression(const ActionsDAG & expression)
         dag = std::move(cloned);
 }
 
-static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
+const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
 {
     auto & outputs = dag.getOutputs();
     for (auto it = outputs.begin(); it != outputs.end(); ++it)

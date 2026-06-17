@@ -63,9 +63,10 @@ namespace
 {
 }
 
-extern const char * auto_time_zones[];
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
-int mainEntryClickHouseFormat(int argc, char ** argv);
+extern const char * auto_time_zones[];
 
 int mainEntryClickHouseFormat(int argc, char ** argv)
 {
@@ -85,7 +86,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
             ("backslash", "add a backslash at the end of each line of the formatted query")
-            ("no_rainbow_parentheses", "bypass highlighting of matching parentheses in distinct colors")
             ("allow_settings_after_format_in_insert", "allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
             ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
@@ -102,9 +102,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         if (options.contains("help"))
         {
-            std::cout << "Usage: clickhouse format [options] < query" << std::endl;
+            std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
             std::cout << desc << std::endl;
-            return 0;
+            return 1;
         }
 
         bool hilite = options.contains("hilite");
@@ -114,7 +114,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         size_t max_line_length = options["max_line_length"].as<size_t>();
         bool obfuscate = options.contains("obfuscate");
         bool backslash = options.contains("backslash");
-        bool rainbow_parentheses = !options.contains("no_rainbow_parentheses");
         bool allow_settings_after_format_in_insert = options.contains("allow_settings_after_format_in_insert");
         bool show_secrets = options["show_secrets"].as<bool>();
         bool semicolon_inline = options.contains("semicolons_inline");
@@ -304,7 +303,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         String formatted_query = query_buf.str();
 #if USE_REPLXX
                         if (hilite)
-                            formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);
+                            formatted_query = highlighted(formatted_query, *context);
 #endif
                         str_buf.write(formatted_query.data(), formatted_query.size());
 
@@ -358,7 +357,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         String formatted_query = str_buf.str();
 #if USE_REPLXX
                         if (hilite)
-                            formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);
+                            formatted_query = highlighted(formatted_query, *context);
 #endif
                         WriteBufferFromOStream res_cout(std::cout, 4096);
 

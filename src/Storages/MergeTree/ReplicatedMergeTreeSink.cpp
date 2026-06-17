@@ -52,7 +52,6 @@ namespace Setting
     extern const SettingsUInt64 insert_keeper_max_retries;
     extern const SettingsUInt64 insert_keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
     extern const SettingsBool optimize_on_insert;
 }
@@ -353,7 +352,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         profile_events_scope.reset();
         UInt64 elapsed_ns = watch.elapsed();
 
-        size_t max_insert_delayed_streams_for_parallel_write = 0;
+        size_t max_insert_delayed_streams_for_parallel_write;
         if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
             max_insert_delayed_streams_for_parallel_write = settings[Setting::max_insert_delayed_streams_for_parallel_write];
         else if (support_parallel_write)
@@ -394,11 +393,6 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     finishDelayed(zookeeper);
     delayed_parts = std::move(current_parts);
-    /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
-    /// part immediately to make its rows visible without waiting for the next consume()
-    /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
-    if (settings[Setting::input_format_max_block_wait_ms] != 0)
-        finishDelayed(zookeeper);
 
     ++num_blocks_processed;
 }
@@ -714,9 +708,6 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
     /// For now, consider it is ok. See 02461_alter_update_respect_part_column_type_bug for an example.
     ///
     /// metadata_snapshot->check(part->getColumns());
-#if CLICKHOUSE_CLOUD
-    part->is_prewarmed = true;
-#endif
 
     CommitRetryContext retry_context;
 
@@ -1355,7 +1346,7 @@ ZooKeeperWithFaultInjectionPtr ReplicatedMergeTreeSink::createKeeper(String name
 {
     const auto & settings = context->getSettingsRef();
     return ZooKeeperWithFaultInjection::createInstance(
-        static_cast<double>(settings[Setting::insert_keeper_fault_injection_probability]),
+        settings[Setting::insert_keeper_fault_injection_probability],
         settings[Setting::insert_keeper_fault_injection_seed],
         storage.getZooKeeper(),
         name,

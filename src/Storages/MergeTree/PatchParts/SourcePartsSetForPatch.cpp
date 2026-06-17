@@ -167,13 +167,13 @@ void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
 
 void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
 {
-    UInt8 version = 0;
+    UInt8 version;
     readBinaryLittleEndian(version, in);
 
     if (version != VERSION)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of SourcePartsSetForPatch: {}", std::to_string(version));
 
-    UInt64 num_parts = 0;
+    UInt64 num_parts;
     readBinaryLittleEndian(num_parts, in);
 
     for (size_t i = 0; i < num_parts; ++i)

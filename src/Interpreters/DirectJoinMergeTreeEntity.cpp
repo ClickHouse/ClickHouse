@@ -88,7 +88,7 @@ static std::unique_ptr<FilterStep> buildFilterStepWithIn(const ColumnWithTypeAnd
     DataTypePtr set_type = std::make_shared<DataTypeSet>();
     auto future_set = std::make_shared<FutureSetFromTuple>(CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{key_column}, false, SizeLimits{});
 
-    auto set_column = ColumnConst::create(ColumnSet::create(1, future_set), 0);
+    auto set_column = ColumnSet::create(1, future_set);
     const auto * set_node = &filter_dag.addColumn(ColumnWithTypeAndName(std::move(set_column), set_type, "__set"));
 
     auto in_function = FunctionFactory::instance().get("in", nullptr);

@@ -27,7 +27,7 @@ ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, co
             if (!column || !column->type->tryGetSubcolumnType(subcolumn_name))
                 continue;
 
-            const ActionsDAG::Node * column_input_node = nullptr;
+            const ActionsDAG::Node * column_input_node;
             /// Check if we don't have input with this column yet.
             if (auto it = input_nodes.find(column->name); it == input_nodes.end())
             {
