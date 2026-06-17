@@ -214,7 +214,23 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!checkTableFilePath(table_path, context_, throw_on_error))
         return {};
 
-    auto ast_function_ptr = makeASTFunction("file", make_intrusive<ASTLiteral>(table_path));
+    /// Choose the path passed to the `file` table function so that
+    /// `getPathsListOnDisk` resolves it unambiguously. For local disks `table_path`
+    /// is host-absolute and is recognized by its disk-root prefix. For object-storage
+    /// disks (e.g. `s3_plain`) the disk root is a relative object-key prefix, so a
+    /// qualified path is itself relative and indistinguishable from raw user input;
+    /// `file()` no longer strips a relative prefix (that would mis-target a different
+    /// object). Pass the disk-relative path explicitly, which `file()` resolves
+    /// against the disk root.
+    String file_path = table_path;
+    if (auto user_files_volume = context_->getUserFilesVolume())
+    {
+        auto [disk, relative] = splitUserFilesAbsolutePath(table_path, user_files_volume->getDisks());
+        if (disk && !fs::path(disk->getPath()).is_absolute())
+            file_path = relative;
+    }
+
+    auto ast_function_ptr = makeASTFunction("file", make_intrusive<ASTLiteral>(file_path));
 
     auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_);
     if (!table_function)

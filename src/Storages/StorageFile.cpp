@@ -682,27 +682,41 @@ Strings getPathsListOnDisk(
     const Disks disks = volume->getDisks();
     const bool has_globs = path_with_globs.find_first_of("*?{") != std::string::npos;
 
-    /// A path is "disk-qualified" when it already carries a configured disk's root
-    /// prefix (e.g. produced by `DatabaseFilesystem` or by passing an absolute path).
-    /// For local disks that prefix is host-absolute (starts with '/'), but for
-    /// object-storage disks (e.g. `s3_plain`) `disk->getPath()` is a relative
-    /// object-key prefix, so a leading-slash test is insufficient. Probe the disks
-    /// directly so a disk-qualified path is not mistaken for a relative one and
-    /// re-prefixed (which would double the disk root, e.g. `<root>/<root>/file`).
-    auto [qualified_disk, qualified_relative] = splitUserFilesAbsolutePath(path_with_globs, disks);
-
+    /// A path is treated as "disk-qualified" (already carrying a configured disk's
+    /// root prefix) only when it is host-absolute. For local disks the root is
+    /// host-absolute, so a user-supplied absolute path under it - or a host-absolute
+    /// path produced by `DatabaseFilesystem` on a local disk - is matched here and
+    /// the prefix is stripped.
+    ///
+    /// We deliberately do NOT try to recognize a disk-qualified path among *relative*
+    /// inputs. For object-storage disks (e.g. `s3_plain`) `disk->getPath()` is itself
+    /// a relative object-key prefix, so a relative user path can legitimately begin
+    /// with that prefix (e.g. `file('root/data/disks/user_files/x.csv')`). Stripping
+    /// it would silently retarget the read/write to a different object at the disk
+    /// root and could overwrite unrelated data. A relative path is therefore always
+    /// resolved against the disk root and never mistaken for an already-qualified one.
+    /// `DatabaseFilesystem` passes a disk-relative path for object-storage disks for
+    /// the same reason, so nothing here needs to strip a relative prefix.
     DiskPtr assigned_disk;
     String relative_pattern;
-    if (qualified_disk)
+    if (fs::path(path_with_globs).is_absolute())
     {
-        assigned_disk = qualified_disk;
-        relative_pattern = normalizeDiskRelativePath(qualified_relative);
+        auto [qualified_disk, qualified_relative] = splitUserFilesAbsolutePath(path_with_globs, disks);
+        if (qualified_disk)
+        {
+            assigned_disk = qualified_disk;
+            relative_pattern = normalizeDiskRelativePath(qualified_relative);
+        }
+        else
+        {
+            /// Host-absolute but outside every user-files disk: reject.
+            /// `normalizeDiskRelativePath` throws on the leading '/'.
+            relative_pattern = normalizeDiskRelativePath(path_with_globs);
+        }
     }
     else
     {
-        /// Not under any disk root. A host-absolute path here is necessarily outside
-        /// every user-files disk, so reject it; `normalizeDiskRelativePath` throws on
-        /// a leading '/'. Relative paths are resolved against the disk root below.
+        /// Relative path: always resolved against the disk root below.
         relative_pattern = normalizeDiskRelativePath(path_with_globs);
     }
 

@@ -476,3 +476,48 @@ def test_s3_filesystem_database_survives_restart():
         node_s3.query("SELECT * FROM test_fs_db_s3_restart.`t.csv`").strip() == "42"
     )
     node_s3.query("DROP DATABASE test_fs_db_s3_restart")
+
+
+def test_s3_relative_path_starting_with_disk_root_prefix():
+    """A relative `file()` path that begins with the s3_plain disk's own key prefix
+    (as reported by `system.disks`) must be treated as a genuine relative path under
+    the disk root - not mistaken for an already-disk-qualified path and silently
+    stripped down to a different object at the disk root.
+
+    Regression for the path-resolution ambiguity in `getPathsListOnDisk`: for an
+    object-storage disk `disk->getPath()` is itself a relative object-key prefix, so a
+    user path like `<prefix>/nested.csv` is a valid relative object name. Previously
+    the leading prefix was stripped, so a write to `<prefix>/nested.csv` and a read of
+    the short `nested.csv` would hit the *same* object, which could silently read the
+    wrong object or overwrite unrelated data."""
+    disk_path = node_s3.query(
+        "SELECT path FROM system.disks WHERE name = 'disk_s3_plain'"
+    ).strip()
+    # The bug premise only holds when the disk root is a relative key prefix.
+    assert disk_path, "disk_s3_plain has no path"
+    assert not disk_path.startswith("/"), f"unexpected absolute disk path: {disk_path}"
+
+    long_rel = disk_path.rstrip("/") + "/prefix_collision.csv"
+
+    # Write a row through the long relative path (which begins with the disk prefix).
+    node_s3.query(
+        f"INSERT INTO FUNCTION file('{long_rel}', 'CSV', 'x UInt64') SELECT 777"
+    )
+
+    # The long relative path must round-trip to the same row.
+    assert (
+        node_s3.query(f"SELECT * FROM file('{long_rel}', 'CSV', 'x UInt64')").strip()
+        == "777"
+    )
+
+    # The short path is a *different* object at the disk root and must not exist.
+    # With the bug, the long path was stripped to the short one, so this read would
+    # have returned 777 instead of failing.
+    short_read = node_s3.query_and_get_error(
+        "SELECT * FROM file('prefix_collision.csv', 'CSV', 'x UInt64')"
+    )
+    assert (
+        "FILE_DOESNT_EXIST" in short_read
+        or "Cannot stat" in short_read
+        or "doesn't exist" in short_read
+    ), short_read
