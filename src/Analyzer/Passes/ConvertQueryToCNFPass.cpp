@@ -736,15 +736,18 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
 
     auto new_node = cnf->toQueryTree();
 
-    /// Constraint reduction can collapse a filter into a bare correlated subquery. For example,
-    /// with `CONSTRAINT c ASSUME (a <= b) AND (b <= c) AND (c <= d) AND (d <= a)` (so all columns
-    /// are equal), the filter
+    /// Constraint reduction can collapse a filter into a standalone correlated subquery. For example,
+    /// with `CONSTRAINT c ASSUME (a <= b) AND (b <= c) AND (c <= d) AND (d <= a)` (so all columns are
+    /// equal), the filter
     ///     WHERE (b < d) OR (SELECT a < c)
     /// reduces to
     ///     WHERE (SELECT a < c)
-    /// because `b < d` is always false. A correlated subquery used as a whole predicate cannot be
-    /// decorrelated, so keep the original node instead of the collapsed one. `new_node` is null when
-    /// the filter reduces to a constant and is dropped entirely, which is fine to apply.
+    /// because `b < d` is always false. A standalone correlated subquery predicate is not always
+    /// decorrelated correctly today: the outer plan may not keep the captured columns (e.g.
+    /// `SELECT count() ... WHERE (SELECT a < c)` raises NOT_FOUND_COLUMN_IN_BLOCK, while `SELECT *`
+    /// works). Keep the original filter so the optimization never turns a working query into a
+    /// failing one. `new_node` is null when the filter reduces to a constant and is dropped, which is
+    /// fine to apply.
     if (new_node && isCorrelatedQueryOrUnionNode(new_node))
         return;
 
