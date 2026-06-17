@@ -247,14 +247,24 @@ target_include_directories(_scann SYSTEM PUBLIC
 target_compile_definitions(_scann PUBLIC SCANN_CMAKE_MODE=1)
 
 # On ppc64le, ClickHouse defines -D__SSE2__=1 for SSE2 emulation via AltiVec.
-# Eigen detects __SSE2__ and includes its SSE PacketMath, which uses
+# Eigen detects __SSE2__ and includes its SSE PacketMath, which calls
 # _mm_loadu_si64 — a newer intrinsic absent from the ppc64le emulation layer.
-# Suppressing Eigen vectorization avoids the SSE code path.  The trade-off is
-# slower Eigen matrix operations (K-means, GMM, PCA, projection) during index
-# building on ppc64le; query throughput is unaffected because ScaNN's search
-# hot path uses its own highway-based SIMD dispatch.
+# _mm_loadu_si64(p) and _mm_loadl_epi64((__m128i const*)(p)) are functionally
+# identical (load 64 bits into the low half, zero the high half); the only
+# difference is the parameter type (void const* vs __m128i const*).  On ppc64le
+# in LE mode, _mm_loadl_epi64 uses *(long long*)ptr which tolerates unaligned
+# addresses, matching the semantics of _mm_loadu_si64.  A forced-include compat
+# header defines the missing intrinsic via its equivalent so Eigen's SSE2
+# vectorization path compiles without disabling SIMD entirely.
 if (ARCH_PPC64LE)
-    target_compile_definitions(_scann PRIVATE EIGEN_DONT_VECTORIZE)
+    set(_ppc_compat_h "${CMAKE_CURRENT_BINARY_DIR}/scann_ppc64le_compat.h")
+    file(WRITE "${_ppc_compat_h}"
+        "#pragma once\n"
+        "#if defined(__powerpc64__) && defined(__SSE2__) && !defined(_mm_loadu_si64)\n"
+        "#  define _mm_loadu_si64(p) _mm_loadl_epi64((__m128i const *)(p))\n"
+        "#endif\n"
+    )
+    target_compile_options(_scann PRIVATE "-include" "${_ppc_compat_h}")
 endif()
 
 target_compile_options(_scann PRIVATE -w)
