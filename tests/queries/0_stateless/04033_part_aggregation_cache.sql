@@ -74,3 +74,23 @@ SELECT k, sum(v) FROM t_part_agg_cache GROUP BY k ORDER BY k;
 
 DROP TABLE t_part_agg_cache;
 SYSTEM DROP PART AGGREGATION CACHE;
+
+-- Column-order correctness: the populator sorts the columns it reads, but `Aggregator` resolves the
+-- GROUP BY key and aggregate-argument positions from `aggregator_header` and then consumes blocks
+-- positionally. When the key sorts after the argument (`SELECT z, sum(a)`, so the sorted read order is
+-- `[a, z]` while `aggregator_header` is `[z, a]`), the populator must project each block back onto
+-- `aggregator_header` before aggregating; otherwise it would swap the key and the argument and cache
+-- wrong states. Cold (populate) and warm (served from cache) results must both match the plain
+-- single-pass aggregation. The other cases above use `(k, v)` with the key sorting first, so only this
+-- one exercises the reorder.
+DROP TABLE IF EXISTS t_part_agg_cache_colorder;
+CREATE TABLE t_part_agg_cache_colorder (a UInt64, z UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_part_agg_cache_colorder VALUES (100, 1), (200, 1);
+INSERT INTO t_part_agg_cache_colorder VALUES (300, 2), (400, 1);
+-- z=1: 100+200+400=700, z=2: 300. Cold query populates the cache.
+SELECT z, sum(a) FROM t_part_agg_cache_colorder GROUP BY z ORDER BY z;
+-- Same result, served from the warm cache.
+SELECT z, sum(a) FROM t_part_agg_cache_colorder GROUP BY z ORDER BY z;
+
+DROP TABLE t_part_agg_cache_colorder;
+SYSTEM DROP PART AGGREGATION CACHE;
