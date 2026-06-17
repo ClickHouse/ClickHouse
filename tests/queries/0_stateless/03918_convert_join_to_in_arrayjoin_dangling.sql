@@ -9,6 +9,11 @@
 -- normal JOIN plan, which is correct. Co-located with #96989 (Bug A) and
 -- the JOIN-ON arrayJoin duplicate-execution fix in the same family.
 
+-- `query_plan_convert_join_to_in` and `arrayJoin` in JOIN ON are new-analyzer
+-- features; the old analyzer rejects `arrayJoin` in JOIN ON with
+-- INVALID_JOIN_ON_EXPRESSION, so force the new analyzer here.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS lt_03918_dangling;
 DROP TABLE IF EXISTS rt_03918_dangling;
 
