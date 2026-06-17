@@ -22,7 +22,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 |---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `host:port`         | MySQL server address.                                                                                                                                                                                                                                                 |
 | `database`          | Remote database name.                                                                                                                                                                                                                                                 |
-| `table`             | Remote table name.                                                                                                                                                                                                                                                    |
+| `table`             | Remote table name, or a query passed to MySQL as is (see [Passing a query instead of a table name](#passing-a-query)).                                                                                                                                                  |
 | `user`              | MySQL user.                                                                                                                                                                                                                                                           |
 | `password`          | User password.                                                                                                                                                                                                                                                        |
 | `replace_query`     | Flag that converts `INSERT INTO` queries to `REPLACE INTO`. Possible values:<br/>    - `0` - The query is executed as `INSERT INTO`.<br/>    - `1` - The query is executed as `REPLACE INTO`.                                                                          |
@@ -33,6 +33,17 @@ Arguments also can be passed using [named collections](operations/named-collecti
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+
+## Passing a query instead of a table name {#passing-a-query}
+
+Instead of a table name, the third argument can be a `SELECT` query that is passed to MySQL as is. The structure of the resulting table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+
+```sql
+SELECT * FROM mysql('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+SELECT * FROM mysql('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`MySQL`](/engines/table-engines/integrations/mysql) table engine.
 
 Supports multiple replicas that must be listed by `|`. For example:
 

@@ -564,7 +564,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
         return std::make_shared<StorageMaterializedPostgreSQL>(
-                args.table_id, args.mode, configuration.database, configuration.table, connection_info,
+                args.table_id, args.mode, configuration.database, configuration.table_or_query.getTableName(), connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };

@@ -22,7 +22,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 |---------------|----------------------------------------------------------------------------|
 | `host:port`   | PostgreSQL server address.                                                 |
 | `database`    | Remote database name.                                                      |
-| `table`       | Remote table name.                                                         |
+| `table`       | Remote table name, or a query passed to PostgreSQL as is (see [Passing a query instead of a table name](#passing-a-query)). |
 | `user`        | PostgreSQL user.                                                           |
 | `password`    | User password.                                                             |
 | `schema`      | Non-default table schema. Optional.                                        |
@@ -45,6 +45,17 @@ In the `INSERT` query to distinguish table function `postgresql(...)` from table
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
 All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
+
+## Passing a query instead of a table name {#passing-a-query}
+
+Instead of a table name, the third argument can be a `SELECT` query that is passed to PostgreSQL as is. The structure of the resulting table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+
+```sql
+SELECT * FROM postgresql('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`PostgreSQL`](/engines/table-engines/integrations/postgresql) table engine.
 
 `INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
 

@@ -55,6 +55,11 @@ public:
     {
         return name;
     }
+
+    /// The 3rd argument may be a query passed to MySQL as is - a subquery `(SELECT ...)` or `query('SELECT ...')`.
+    /// Such an argument must not be analyzed as an ordinary expression.
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {2}; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
     const char * getStorageEngineName() const override { return "MySQL"; }
@@ -98,7 +103,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table, context);
+    return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table_or_query, context);
 }
 
 StoragePtr TableFunctionMySQL::executeImpl(
@@ -112,7 +117,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),
         configuration->database,
-        configuration->table,
+        configuration->table_or_query,
         configuration->replace_query,
         configuration->on_duplicate_clause,
         cached_columns,

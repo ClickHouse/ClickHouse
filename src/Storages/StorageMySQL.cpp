@@ -6,20 +6,24 @@
 
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/convertMySQLDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
@@ -53,13 +57,21 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
+    extern const int INCORRECT_QUERY;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+/// Infer the structure of a result of a user-provided query by executing it with a `LIMIT 0` on the MySQL side.
+ColumnsDescription doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_);
 }
 
 StorageMySQL::StorageMySQL(
     const StorageID & table_id_,
     mysqlxx::PoolWithFailover && pool_,
     const std::string & remote_database_name_,
-    const std::string & remote_table_name_,
+    const TableNameOrQuery & remote_table_or_query_,
     const bool replace_query_,
     const std::string & on_duplicate_clause_,
     const ColumnsDescription & columns_,
@@ -70,7 +82,7 @@ StorageMySQL::StorageMySQL(
     : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_database_name(remote_database_name_)
-    , remote_table_name(remote_table_name_)
+    , remote_table_or_query(remote_table_or_query_)
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(std::make_unique<MySQLSettings>(mysql_settings_))
@@ -81,7 +93,7 @@ StorageMySQL::StorageMySQL(
 
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(*pool, remote_database_name, remote_table_name, context_);
+        auto columns = getTableStructureFromData(*pool, remote_database_name, remote_table_or_query, context_);
         storage_metadata.setColumns(columns);
     }
     else
@@ -104,9 +116,13 @@ VirtualColumnsDescription StorageMySQL::createVirtuals()
 ColumnsDescription StorageMySQL::getTableStructureFromData(
     mysqlxx::PoolWithFailover & pool_,
     const String & database,
-    const String & table,
+    const TableNameOrQuery & table_or_query,
     const ContextPtr & context_)
 {
+    if (table_or_query.isQuery())
+        return doQueryResultStructure(pool_, table_or_query.getQuery(), context_);
+
+    const auto & table = table_or_query.getTableName();
     const auto & settings = context_->getSettingsRef();
     const auto tables_and_columns = fetchTablesColumnsList(pool_, database, {table}, settings, settings[Setting::mysql_datatypes_support_level]);
 
@@ -129,15 +145,19 @@ void StorageMySQL::readImpl(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    String query = transformQueryForExternalDatabase(
-        query_info,
-        column_names,
-        storage_snapshot->metadata->getColumns().getOrdinary(),
-        IdentifierQuotingStyle::BackticksMySQL,
-        LiteralEscapingStyle::Regular,
-        remote_database_name,
-        remote_table_name,
-        context_);
+    String query;
+    if (remote_table_or_query.isQuery())
+        query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
+    else
+        query = transformQueryForExternalDatabase(
+            query_info,
+            column_names,
+            storage_snapshot->metadata->getColumns().getOrdinary(),
+            IdentifierQuotingStyle::BackticksMySQL,
+            LiteralEscapingStyle::Regular,
+            remote_database_name,
+            remote_table_or_query.getTableName(),
+            context_);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
@@ -279,17 +299,20 @@ private:
 
 SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    if (remote_table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a MySQL table representing the result of a query");
+
     return std::make_shared<StorageMySQLSink>(
         *this,
         metadata_snapshot,
         remote_database_name,
-        remote_table_name,
+        remote_table_or_query.getTableName(),
         pool->get(),
         local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert]);
 }
 
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
-    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table)
+    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table_or_query)
 {
     StorageMySQL::Configuration configuration;
 
@@ -299,8 +322,14 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
         optional_arguments.insert(name);
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
-    if (require_table)
-        required_arguments.insert("table");
+    if (require_table_or_query)
+    {
+        /// The data source is either a remote table or a query passed to MySQL as is.
+        if (named_collection.has("query"))
+            required_arguments.insert("query");
+        else
+            required_arguments.insert("table");
+    }
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
@@ -320,8 +349,13 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     configuration.username = named_collection.getAny<String>({"username", "user"});
     configuration.password = named_collection.get<String>("password");
     configuration.database = named_collection.getAny<String>({"db", "database"});
-    if (require_table)
-        configuration.table = named_collection.get<String>("table");
+    if (require_table_or_query)
+    {
+        if (named_collection.has("query"))
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, named_collection.get<String>("query"));
+        else
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, named_collection.get<String>("table"));
+    }
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);
     configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
     configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
@@ -344,18 +378,27 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
     {
         if (engine_args.size() < 5 || engine_args.size() > 7)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage MySQL requires 5-7 parameters: "
-                            "MySQL('host:port' (or 'addresses_pattern'), database, table, "
+                            "MySQL('host:port' (or 'addresses_pattern'), database, table (or query), "
                             "'user', 'password'[, replace_query, 'on_duplicate_clause']).");
 
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context_);
+        /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
+        auto maybe_query = tryGetExternalDatabaseQuery(engine_args[2], context_);
+        for (size_t i = 0; i < engine_args.size(); ++i)
+        {
+            if (i == 2 && maybe_query)
+                continue;
+            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], context_);
+        }
 
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 3306);
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
+        if (maybe_query)
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);
+        else
+            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(engine_args[2], "table"));
         configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
         configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
         if (engine_args.size() >= 6)
@@ -413,7 +456,7 @@ void registerStorageMySQL(StorageFactory & factory)
             args.table_id,
             std::move(pool),
             configuration.database,
-            configuration.table,
+            configuration.table_or_query,
             configuration.replace_query,
             configuration.on_duplicate_clause,
             args.columns,
@@ -651,6 +694,40 @@ SETTINGS enable_compression = 1;
 )DOCS_MD",
         .syntax = "ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, on_duplicate_clause])",
         .related = {"PostgreSQL", "SQLite", "MongoDB"}});
+}
+
+namespace
+{
+ColumnsDescription doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_)
+{
+    /// Wrap the query in a derived table and run it with `LIMIT 0` to obtain the result columns metadata
+    /// without fetching any rows. The wrapping mirrors how the data is read later (see buildQueryForExternalDatabaseSubquery),
+    /// so the inferred column names match the names referenced when reading.
+    const auto limited_select = "SELECT * FROM (" + select_query + ") AS __subquery LIMIT 0";
+    auto connection = pool_.get();
+    auto query = connection->query(limited_select);
+    auto query_result = query.use();
+
+    const auto num_fields = query_result.getNumFields();
+    if (num_fields == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MySQL query returned no columns: {}", select_query);
+
+    const auto & settings = context_->getSettingsRef();
+    ColumnsDescription columns;
+    for (size_t i = 0; i < num_fields; ++i)
+    {
+        auto & field = query_result.getField(i);
+        columns.add(ColumnDescription(
+            query_result.getFieldName(i),
+            convertMySQLDataType(settings[Setting::mysql_datatypes_support_level], field)));
+    }
+
+    /// Drain the (empty) result so that the connection is left in a consistent state for reuse.
+    while (query_result.fetch())
+        ;
+
+    return columns;
+}
 }
 
 }

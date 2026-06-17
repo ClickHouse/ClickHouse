@@ -1054,6 +1054,57 @@ def test_postgres_array_parser_dimension_underflow(started_cluster):
     cursor.execute("DROP TABLE test_array_underflow")
 
 
+def test_postgres_query_passing(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    table_name = "test_query_passing"
+    dim_name = "test_query_passing_dim"
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"DROP TABLE IF EXISTS {dim_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (a integer, b text, c integer)")
+    cursor.execute(f"CREATE TABLE {dim_name} (a integer, factor integer)")
+
+    # Populate via the plain (table-name) form of the table function.
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION postgresql('{host}', 'postgres', '{table_name}', 'postgres', '{pg_pass}') "
+        "SELECT number, concat('name_', toString(number)), 3 FROM numbers(100)"
+    )
+    cursor.execute(f"INSERT INTO {dim_name} VALUES (1, 10), (2, 100)")
+
+    # query('...') form: the WHERE is executed on the PostgreSQL side.
+    q_func = f"postgresql('{host}', 'postgres', query('SELECT * FROM {table_name} WHERE a % 2 = 0'), 'postgres', '{pg_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_func}").rstrip() == "50"
+    assert node1.query(f"SELECT sum(c) FROM {q_func}").rstrip() == "150"
+
+    # subquery form.
+    q_subq = f"postgresql('{host}', 'postgres', (SELECT a, b FROM {table_name} WHERE a < 10), 'postgres', '{pg_pass}')"
+    assert node1.query(f"SELECT count() FROM {q_subq}").rstrip() == "10"
+    assert node1.query(f"SELECT b FROM {q_subq} ORDER BY a LIMIT 1").rstrip() == "name_0"
+
+    # A JOIN passed to PostgreSQL as is.
+    q_join = (
+        f"postgresql('{host}', 'postgres', "
+        f"query('SELECT t.a AS a, t.c * d.factor AS calculated FROM {table_name} AS t JOIN {dim_name} AS d ON t.a = d.a'), "
+        f"'postgres', '{pg_pass}')"
+    )
+    assert node1.query(f"SELECT sum(calculated) FROM {q_join}").rstrip() == str(3 * 10 + 3 * 100)
+
+    # Engine with a query: reading works, writing is rejected.
+    node1.query("DROP TABLE IF EXISTS pg_engine_query")
+    node1.query(
+        f"CREATE TABLE pg_engine_query "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', query('SELECT a, b FROM {table_name} WHERE a < 5'), 'postgres', '{pg_pass}')"
+    )
+    assert node1.query("SELECT count() FROM pg_engine_query").rstrip() == "5"
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        "INSERT INTO pg_engine_query VALUES (1, 'x')"
+    )
+    node1.query("DROP TABLE pg_engine_query")
+
+    cursor.execute(f"DROP TABLE {table_name}")
+    cursor.execute(f"DROP TABLE {dim_name}")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
