@@ -463,6 +463,15 @@ private:
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;
     PrewhereInfoPtr deferred_prewhere_info;
+
+    /// Whether primary key / skip index analysis ran with an actual (non-deferred) filter.
+    /// Deferred filters (FINAL with `apply_prewhere_after_final` / `apply_row_policy_after_final`)
+    /// are excluded from index analysis, so they never reduce the selected mark count. The
+    /// read-in-order PK-selectivity guard in `requestReadingInOrder` relies on this to avoid
+    /// misfiring on what is effectively a full scan. It mirrors the deferred-stripped filter DAG
+    /// passed to `buildIndexes` (`query_info.filter_actions_dag` still carries deferred filters).
+    bool index_analysis_had_filter = false;
+
     bool skip_partition_pruning = false;
 
     LoggerPtr log;

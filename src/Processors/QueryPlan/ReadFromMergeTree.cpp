@@ -2364,6 +2364,12 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 deferred_prewhere_info != nullptr);
         }
 
+        /// Record whether index analysis actually had a filter to work with, after deferred
+        /// filters were stripped above. `index_filter_dag` is null when every filter was
+        /// deferred (FINAL with `apply_prewhere_after_final` / `apply_row_policy_after_final`),
+        /// which the read-in-order PK-selectivity guard must treat as a full scan.
+        index_analysis_had_filter = index_filter_dag != nullptr;
+
         /// Build indexes before PREWHERE sets. KeyCondition (inside buildIndexes) calls
         /// buildOrderedSetInplace only for IN sets whose left argument maps to key columns,
         /// so ordered sets are built only when actually needed for primary key analysis.
@@ -2936,11 +2942,13 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// used: a full-scan `ORDER BY pk` has `selected_marks_pk == total_marks_pk` because
     /// nothing was filtered, not because the index failed — switching that case to parallel
     /// reading with global sort would replace a low-memory streaming plan with one that can
-    /// hit `MEMORY_LIMIT_EXCEEDED`. A deferred PREWHERE (FINAL with `apply_prewhere_after_final`)
-    /// is excluded from index analysis, so it never reduces `selected_marks_pk`; treating it as
-    /// a PK filter would misfire the guard on what is effectively a full scan, so we require the
-    /// PREWHERE to be non-deferred.
-    const bool has_filter_for_pk = (query_info.prewhere_info && !deferred_prewhere_info) || query_info.filter_actions_dag;
+    /// hit `MEMORY_LIMIT_EXCEEDED`. Deferred filters (FINAL with `apply_prewhere_after_final`
+    /// or `apply_row_policy_after_final`) are excluded from index analysis, so they never reduce
+    /// `selected_marks_pk`; treating them as a PK filter would misfire the guard on what is
+    /// effectively a full scan. We therefore use `index_analysis_had_filter`, which reflects the
+    /// deferred-stripped filter DAG actually passed to `buildIndexes`. Note that
+    /// `query_info.filter_actions_dag` still carries the deferred filters and must not be used here.
+    const bool has_filter_for_pk = index_analysis_had_filter;
     if (apply_pk_selectivity_check && has_filter_for_pk && read_limit == 0 && !query_has_limit && !is_parallel_reading_from_replicas)
     {
         const double max_ratio = static_cast<double>(context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio]);
