@@ -209,7 +209,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(disk_from_ast_pause_after_tentative_registration) \
     PAUSEABLE_ONCE(disk_from_ast_unscoped_observer_pause_after_sentinel) \
     ONCE(create_table_fail_after_disk_registration_before_metadata) \
-    ONCE(database_ordinary_alter_table_fail)
+    ONCE(database_ordinary_alter_table_fail) \
+    ONCE(storage_merge_tree_alter_fail_after_change_settings_before_metadata)
 
 namespace FailPoints
 {

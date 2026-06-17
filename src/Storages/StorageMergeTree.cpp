@@ -82,6 +82,7 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
+    extern const char storage_merge_tree_alter_fail_after_change_settings_before_metadata[];
 }
 
 namespace Setting
@@ -127,6 +128,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
     extern const int NOT_ENOUGH_SPACE;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
@@ -537,21 +539,31 @@ void StorageMergeTree::alter(
 
         {
             /// Caller-owned disk-registration scope. `changeSettings` registers any inline
-            /// `disk = disk(...)` setting tentatively against this scope; the scope is
-            /// committed only after `alterTable` succeeds. If `alterTable` throws, the
-            /// catch-block reverts metadata via a second `changeSettings(old, ...)` call
-            /// (with no scope so the legacy local-scope path commits immediately) and the
-            /// outer scope's destructor rolls the new disk back from `DiskSelector` /
-            /// `FileCacheFactory`. See `MergeTreeData::changeSettings` and issue #63019.
+            /// `disk = disk(...)` setting tentatively against this scope and immediately mutates
+            /// the live in-memory `storage_settings`; the scope is committed only after the whole
+            /// metadata transition succeeds. The entire sequence (`changeSettings` ->
+            /// `checkTTLExpressions` -> `setProperties` -> `alterTable`) runs inside one `try`: any
+            /// throw reverts the live metadata via a second `changeSettings(old, ...)` /
+            /// `setProperties(old, ...)` call BEFORE `disk_scope`'s destructor rolls the new disk
+            /// back, so the table never ends up pointing at a disk no longer present in
+            /// `DiskSelector` / `FileCacheFactory`. See `MergeTreeData::changeSettings` and issue #63019.
             DiskFromAST::CustomDiskRegistrationScope disk_scope(local_context);
-            changeSettings(new_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
-            checkTTLExpressions(new_metadata, old_metadata);
-
-            /// Reinitialize primary key because primary key column types might have changed.
-            setProperties(new_metadata, old_metadata, false, local_context);
-
             try
             {
+                changeSettings(new_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
+                checkTTLExpressions(new_metadata, old_metadata);
+
+                /// Reinitialize primary key because primary key column types might have changed.
+                setProperties(new_metadata, old_metadata, false, local_context);
+
+                /// Throws in the window after `changeSettings` (live settings mutated, inline disk
+                /// registered) but before the metadata write, proving the catch below reverts the
+                /// live settings before `disk_scope` rolls the new disk back. See 04159 and issue #63019.
+                fiu_do_on(FailPoints::storage_merge_tree_alter_fail_after_change_settings_before_metadata,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in StorageMergeTree::alter after changeSettings");
+                });
+
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
             }
             catch (...)
