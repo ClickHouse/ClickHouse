@@ -63,7 +63,6 @@ SnapshotSummary::SnapshotSummary(
             totals.records += u.added_records;
             totals.files_size += u.added_files_size;
             totals.data_files += u.added_files;
-            totals.equality_deletes = 0;
             break;
         }
         case SnapshotSummaryOperation::OVERWRITE:
@@ -73,9 +72,8 @@ SnapshotSummary::SnapshotSummary(
             totals.files_size += u.added_files_size - u.removed_files_size;
             totals.data_files += u.added_files - u.deleted_data_files;
             totals.delete_files += u.added_delete_files;
-            /// FIXME: this is correct only while we don't support equality deletes
             totals.position_deletes += u.added_position_deletes;
-            totals.equality_deletes = 0;
+            totals.equality_deletes += u.added_equality_deletes;
             break;
         }
         case SnapshotSummaryOperation::DELETE:
@@ -84,10 +82,9 @@ SnapshotSummary::SnapshotSummary(
             totals.records -= u.removed_records;
             totals.files_size -= u.removed_files_size;
             totals.data_files -= u.deleted_data_files;
-            totals.delete_files -= u.removed_position_delete_files;
-            /// FIXME: this is correct only while we don't support equality deletes
+            totals.delete_files -= u.removed_position_delete_files + u.removed_equality_delete_files;
             totals.position_deletes -= u.removed_position_deletes;
-            totals.equality_deletes = 0;
+            totals.equality_deletes -= u.removed_equality_deletes;
             break;
         }
         case SnapshotSummaryOperation::REPLACE:
@@ -96,6 +93,9 @@ SnapshotSummary::SnapshotSummary(
             totals.records += u.added_records - u.removed_records;
             totals.files_size += u.added_files_size - u.removed_files_size;
             totals.data_files += u.added_files - u.deleted_data_files;
+            totals.delete_files += u.added_delete_files - u.removed_delete_files;
+            totals.position_deletes += u.added_position_deletes - u.removed_position_deletes;
+            totals.equality_deletes += u.added_equality_deletes - u.removed_equality_deletes;
             break;
         }
     }
@@ -175,7 +175,10 @@ SnapshotSummary::Expected SnapshotSummary::fromJSON(const Poco::JSON::Object & o
             .added_records = get_optional_uint64(Iceberg::f_added_records),
             .added_files_size = get_optional_uint64(Iceberg::f_added_files_size),
             .added_delete_files = get_optional_uint64(Iceberg::f_added_delete_files),
+            .added_position_delete_files = get_optional_uint64(Iceberg::f_added_position_delete_files),
             .added_position_deletes = get_optional_uint64(Iceberg::f_added_position_deletes),
+            .added_equality_delete_files = get_optional_uint64(Iceberg::f_added_equality_delete_files),
+            .added_equality_deletes = get_optional_uint64(Iceberg::f_added_equality_deletes),
             .deleted_data_files = get_deleted_data_files(),
             .removed_records = get_optional_uint64(Iceberg::f_deleted_records),
             .removed_files_size = get_optional_uint64(Iceberg::f_removed_files_size),
@@ -188,6 +191,8 @@ SnapshotSummary::Expected SnapshotSummary::fromJSON(const Poco::JSON::Object & o
             .removed_files_size = get_optional_uint64(Iceberg::f_removed_files_size),
             .removed_position_delete_files = get_optional_uint64(Iceberg::f_removed_position_delete_files),
             .removed_position_deletes = get_optional_uint64(Iceberg::f_removed_position_deletes),
+            .removed_equality_delete_files = get_optional_uint64(Iceberg::f_removed_equality_delete_files),
+            .removed_equality_deletes = get_optional_uint64(Iceberg::f_removed_equality_deletes),
             .num_partitions = get_optional_uint64(Iceberg::f_changed_partition_count),
         };
     else if (operation_str == Iceberg::f_replace)
@@ -195,9 +200,19 @@ SnapshotSummary::Expected SnapshotSummary::fromJSON(const Poco::JSON::Object & o
             .added_files = get_optional_uint64(Iceberg::f_added_data_files),
             .added_records = get_optional_uint64(Iceberg::f_added_records),
             .added_files_size = get_optional_uint64(Iceberg::f_added_files_size),
+            .added_delete_files = get_optional_uint64(Iceberg::f_added_delete_files),
+            .added_position_delete_files = get_optional_uint64(Iceberg::f_added_position_delete_files),
+            .added_position_deletes = get_optional_uint64(Iceberg::f_added_position_deletes),
+            .added_equality_delete_files = get_optional_uint64(Iceberg::f_added_equality_delete_files),
+            .added_equality_deletes = get_optional_uint64(Iceberg::f_added_equality_deletes),
             .deleted_data_files = get_deleted_data_files(),
             .removed_records = get_optional_uint64(Iceberg::f_deleted_records),
             .removed_files_size = get_optional_uint64(Iceberg::f_removed_files_size),
+            .removed_delete_files = get_optional_uint64(Iceberg::f_removed_delete_files),
+            .removed_position_delete_files = get_optional_uint64(Iceberg::f_removed_position_delete_files),
+            .removed_position_deletes = get_optional_uint64(Iceberg::f_removed_position_deletes),
+            .removed_equality_delete_files = get_optional_uint64(Iceberg::f_removed_equality_delete_files),
+            .removed_equality_deletes = get_optional_uint64(Iceberg::f_removed_equality_deletes),
             .num_partitions = get_optional_uint64(Iceberg::f_changed_partition_count),
         };
     else
@@ -258,7 +273,13 @@ void SnapshotSummary::forEachField(std::function<void(std::string_view, std::str
             set_as_string(Iceberg::f_added_records, u.added_records);
             set_as_string(Iceberg::f_added_files_size, u.added_files_size);
             set_as_string(Iceberg::f_added_delete_files, u.added_delete_files);
+            if (u.added_position_delete_files > 0)
+                set_as_string(Iceberg::f_added_position_delete_files, u.added_position_delete_files);
             set_as_string(Iceberg::f_added_position_deletes, u.added_position_deletes);
+            if (u.added_equality_delete_files > 0)
+                set_as_string(Iceberg::f_added_equality_delete_files, u.added_equality_delete_files);
+            if (u.added_equality_deletes > 0)
+                set_as_string(Iceberg::f_added_equality_deletes, u.added_equality_deletes);
             set_as_string(Iceberg::f_deleted_data_files, u.deleted_data_files);
             /// `removed-data-files` is a legacy alias of `deleted-data-files`, kept for Spark compatibility.
             set_as_string(Iceberg::f_removed_data_files, u.deleted_data_files);
@@ -279,6 +300,10 @@ void SnapshotSummary::forEachField(std::function<void(std::string_view, std::str
                 set_as_string(Iceberg::f_removed_position_delete_files, u.removed_position_delete_files);
             if (u.removed_position_deletes > 0)
                 set_as_string(Iceberg::f_removed_position_deletes, u.removed_position_deletes);
+            if (u.removed_equality_delete_files > 0)
+                set_as_string(Iceberg::f_removed_equality_delete_files, u.removed_equality_delete_files);
+            if (u.removed_equality_deletes > 0)
+                set_as_string(Iceberg::f_removed_equality_deletes, u.removed_equality_deletes);
             set_as_string(Iceberg::f_changed_partition_count, u.num_partitions);
             break;
         }
@@ -289,10 +314,30 @@ void SnapshotSummary::forEachField(std::function<void(std::string_view, std::str
             set_as_string(Iceberg::f_added_data_files, u.added_files);
             set_as_string(Iceberg::f_added_records, u.added_records);
             set_as_string(Iceberg::f_added_files_size, u.added_files_size);
+            if (u.added_delete_files > 0)
+                set_as_string(Iceberg::f_added_delete_files, u.added_delete_files);
+            if (u.added_position_delete_files > 0)
+                set_as_string(Iceberg::f_added_position_delete_files, u.added_position_delete_files);
+            if (u.added_position_deletes > 0)
+                set_as_string(Iceberg::f_added_position_deletes, u.added_position_deletes);
+            if (u.added_equality_delete_files > 0)
+                set_as_string(Iceberg::f_added_equality_delete_files, u.added_equality_delete_files);
+            if (u.added_equality_deletes > 0)
+                set_as_string(Iceberg::f_added_equality_deletes, u.added_equality_deletes);
             set_as_string(Iceberg::f_deleted_data_files, u.deleted_data_files);
             set_as_string(Iceberg::f_removed_data_files, u.deleted_data_files);
             set_as_string(Iceberg::f_deleted_records, u.removed_records);
             set_as_string(Iceberg::f_removed_files_size, u.removed_files_size);
+            if (u.removed_delete_files > 0)
+                set_as_string(Iceberg::f_removed_delete_files, u.removed_delete_files);
+            if (u.removed_position_delete_files > 0)
+                set_as_string(Iceberg::f_removed_position_delete_files, u.removed_position_delete_files);
+            if (u.removed_position_deletes > 0)
+                set_as_string(Iceberg::f_removed_position_deletes, u.removed_position_deletes);
+            if (u.removed_equality_delete_files > 0)
+                set_as_string(Iceberg::f_removed_equality_delete_files, u.removed_equality_delete_files);
+            if (u.removed_equality_deletes > 0)
+                set_as_string(Iceberg::f_removed_equality_deletes, u.removed_equality_deletes);
             set_as_string(Iceberg::f_changed_partition_count, u.num_partitions);
             break;
         }
