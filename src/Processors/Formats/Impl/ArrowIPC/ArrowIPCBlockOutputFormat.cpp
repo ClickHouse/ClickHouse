@@ -268,6 +268,13 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::substituteDictionar
     if (!plan.hasAnyDictionary())
         return {column, type};
 
+    /// `substituteDictionaries` runs before `RecordBatchEncoder` materializes constants, so a `ColumnConst`
+    /// — a constant `LowCardinality` value, or a constant container with a nested `LowCardinality` — would
+    /// reach the `ColumnLowCardinality`/container `assert_cast`s below and throw a bad cast. Materialize it
+    /// to a full column first (only needed on the dictionary path; plain constants are handled downstream).
+    if (isColumnConst(*column))
+        return substituteDictionaries(column->convertToFullColumnIfConst(), type, plan);
+
     if (plan.here)
         return encodeDictionaryColumn(column, type, *plan.here);
 
