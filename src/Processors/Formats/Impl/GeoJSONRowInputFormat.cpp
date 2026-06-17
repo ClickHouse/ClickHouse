@@ -587,6 +587,9 @@ void GeoJSONRowInputFormat::resetParser()
 
 void GeoJSONRowInputFormat::validateTopLevelTypeMember(ReadBuffer & buf)
 {
+    /// A second top-level `type` member, whether before or after the `features` array, is a duplicate.
+    if (top_level_type_validated)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate top-level 'type' member");
     String type;
     readJSONString(type, buf, format_settings.json);
     if (type != "FeatureCollection")
