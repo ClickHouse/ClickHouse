@@ -68,9 +68,6 @@ public:
 
     void reset(QuotaType quota_type) const;
 
-    /// Returns the information about consumption of the first governing quota.
-    std::optional<QuotaUsage> getUsage() const;
-
     /// Returns the information about consumption of all governing quotas.
     std::vector<QuotaUsage> getAllUsage() const;
 

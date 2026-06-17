@@ -2225,11 +2225,6 @@ std::shared_ptr<const EnabledQuota> Context::getQuota() const
 }
 
 
-std::optional<QuotaUsage> Context::getQuotaUsage() const
-{
-    return getAccess()->getQuotaUsage();
-}
-
 std::vector<QuotaUsage> Context::getQuotaUsages() const
 {
     return getAccess()->getQuotaUsages();

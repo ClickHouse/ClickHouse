@@ -37,6 +37,11 @@ ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${quota_user} KEYED BY user_name FOR INTER
 echo "--- both quotas are enforced for the user (system.quota_usage shows both) ---"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT replaceOne(quota_name, '_${CLICKHOUSE_DATABASE}', '') FROM system.quota_usage WHERE quota_name IN ('${quota_hash}', '${quota_user}') ORDER BY quota_name"
 
+# `SHOW CREATE QUOTA CURRENT` must also report every quota governing the session, not a single one
+# chosen non-deterministically. The order of the quotas is not guaranteed, so the names are sorted.
+echo "--- SHOW CREATE QUOTA CURRENT lists every enforced quota (previously only one) ---"
+${CLICKHOUSE_CLIENT} --user "${user}" -q "SHOW CREATE QUOTA CURRENT" | grep -oP '(?<=CREATE QUOTA )\S+' | sed "s/_${CLICKHOUSE_DATABASE}//" | sort
+
 echo "--- normalized_query_hash quota: query_selects = 2 per query pattern is enforced ---"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT number FROM numbers(1) FORMAT Null"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT number FROM numbers(1) FORMAT Null"
