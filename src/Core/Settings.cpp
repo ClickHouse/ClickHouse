@@ -5965,10 +5965,10 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 )", 0) \
     DECLARE(UInt64, max_streams_for_union_step, 0, R"(
-Limits the number of simultaneously active data streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`, because `UNION DISTINCT` is implemented via a `UNION ALL` step followed by a `DISTINCT` step). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied.
+Limits the number of simultaneously active data streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`, because `UNION DISTINCT` is implemented via a `UNION ALL` step followed by a `DISTINCT` step). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied. The limit is also not applied when the query plan requires each output stream of the `UNION` to stay individually sorted (for example, when the read-in-order optimization is applied across the `UNION`); in that case correctness of the ordering takes precedence and narrowing is skipped.
 )", 0) \
     DECLARE(Float, max_streams_for_union_step_to_max_threads_ratio, 8, R"(
-This ratio multiplied by `max_threads` determines a limit on simultaneously active streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`). The actual limit is the minimum of this computed value and `max_streams_for_union_step` (either one being 0 means it is ignored). For example, with `max_threads = 8` and this ratio set to 1, at most 8 streams will be active. Set to 0 to disable this ratio-based limit.
+This ratio multiplied by `max_threads` determines a limit on simultaneously active streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`). The actual limit is the minimum of this computed value and `max_streams_for_union_step` (either one being 0 means it is ignored). For example, with `max_threads = 8` and this ratio set to 1, at most 8 streams will be active. Set to 0 to disable this ratio-based limit. Like `max_streams_for_union_step`, the limit is not applied when the query plan requires each output stream of the `UNION` to stay individually sorted.
 )", 0) \
     DECLARE(Bool, optimize_aggregators_of_group_by_keys, true, R"(
 Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section
@@ -5978,6 +5978,16 @@ Replaces injective functions by it's arguments in GROUP BY section
 )", 0) \
     DECLARE(Bool, optimize_group_by_function_keys, true, R"(
 Eliminates functions of other keys in GROUP BY section
+)", 0) \
+    DECLARE(Bool, optimize_limit_by_function_keys, true, R"(
+Eliminates functions of other keys in LIMIT BY section.
+
+Example: `LIMIT 5 BY x, f(x)` becomes `LIMIT 5 BY x`.
+)", 0) \
+    DECLARE(Bool, optimize_injective_functions_in_limit_by, true, R"(
+Replaces injective functions by their arguments in LIMIT BY section.
+
+Example: `LIMIT 5 BY toString(x)` becomes `LIMIT 5 BY x`.
 )", 0) \
     DECLARE(Bool, optimize_group_by_constant_keys, true, R"(
 Optimize GROUP BY when all keys in block are constant
@@ -7549,6 +7559,9 @@ Allow to add compound identifiers to nested. This is a compatibility setting bec
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the new analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
     )", 0) \
+    DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
+Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
+    )", 0) \
     \
     DECLARE(Timezone, session_timezone, "", R"(
 Sets the implicit time zone of the current session or query.
@@ -8125,7 +8138,7 @@ Run all tasks of a distributed query plan locally. Useful for testing and debugg
     DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 8, R"(
+    DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
