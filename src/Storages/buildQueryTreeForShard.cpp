@@ -665,12 +665,6 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
 
 void inlineAndDisambiguateAliasColumns(QueryTreeNodePtr & query_tree_to_modify, const ContextPtr & context)
 {
-    /// TEMPORARY (CI verification): disable the duplicate-ALIAS disambiguation to confirm that the new
-    /// regression tests actually reproduce the bug (they must fail without the fix). This commit will
-    /// be reverted to re-enable the fix once CI has demonstrated the failure.
-    if (query_tree_to_modify)
-        return;
-
     /// Snapshot the projection-item structural hashes BEFORE ReplaseAliasColumnsVisitor
     /// inlines ALIAS columns.  These "original" hashes identify what the outer planner
     /// (which sees the un-inlined query tree) will treat as equivalent: items with the
