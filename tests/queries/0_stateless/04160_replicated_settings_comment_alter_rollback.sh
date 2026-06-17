@@ -36,6 +36,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TBL="${CLICKHOUSE_DATABASE}.t_04160_rmt"
 
+# Defense-in-depth cleanup. The test enables the failpoint and disables it inline, but if
+# the ALTER between enable and disable hangs or throws unexpectedly the server-wide
+# failpoint could stay enabled and disrupt later tests on the same server. Always disable
+# it and drop the table on exit. `DISABLE` on an inactive failpoint and DROP IF EXISTS are
+# no-ops, so this is safe alongside the normal cleanup tail.
+trap '
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT database_ordinary_alter_table_fail" 2>/dev/null || true
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TBL} SYNC" 2>/dev/null || true
+' EXIT
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TBL} SYNC"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TBL} (a Int32) ENGINE =

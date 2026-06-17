@@ -27,6 +27,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Defense-in-depth cleanup. Each `run_case` enables the failpoint and disables it inline,
+# but if the ALTER between enable and disable hangs or throws unexpectedly the server-wide
+# failpoint could stay enabled and disrupt later tests on the same server. Always disable
+# it and drop both per-label tables on exit. `DISABLE` on an inactive failpoint and DROP
+# IF EXISTS are no-ops, so this is safe alongside the per-case cleanup.
+trap '
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT database_ordinary_alter_table_fail" 2>/dev/null || true
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_04157_mt SYNC; DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_04157_rmt SYNC;" 2>/dev/null || true
+' EXIT
+
 run_case() {
     local label=$1
     local engine=$2

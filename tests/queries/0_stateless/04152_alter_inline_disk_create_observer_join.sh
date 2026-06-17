@@ -39,6 +39,20 @@ TABLE_REJ="${CLICKHOUSE_DATABASE}.rejector_table"
 SHADOW_TABLE="${CLICKHOUSE_DATABASE}.shadow_table"
 ALTER_LOG="${CLICKHOUSE_TMP}/04152_alter_${CLICKHOUSE_TEST_UNIQUE_NAME}.log"
 
+# Defense-in-depth cleanup. If anything before the success tail fails (e.g. a
+# `SYSTEM WAIT FAILPOINT ... PAUSE` timeout), the server-wide pauseable failpoint
+# could stay enabled and a background client could stay paused, disrupting later
+# tests on the same server. Always disable the failpoint, kill any background PID,
+# and drop the tables on exit. `NOTIFY`/`DISABLE` on an inactive failpoint and DROP
+# IF EXISTS are no-ops, so this is safe alongside the normal cleanup tail.
+trap '
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM NOTIFY FAILPOINT disk_from_ast_pause_after_tentative_registration" 2>/dev/null || true
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT disk_from_ast_pause_after_tentative_registration" 2>/dev/null || true
+    [ -n "${ALTER_PID:-}" ] && kill "${ALTER_PID}" 2>/dev/null; wait "${ALTER_PID:-}" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${SHADOW_TABLE}; DROP TABLE IF EXISTS ${TABLE_REJ};" 2>/dev/null || true
+    rm -f "${ALTER_LOG}"
+' EXIT
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_REJ}; DROP TABLE IF EXISTS ${SHADOW_TABLE};"
 
 # REJECTOR table has its own object-storage disk; the storage-policy migration

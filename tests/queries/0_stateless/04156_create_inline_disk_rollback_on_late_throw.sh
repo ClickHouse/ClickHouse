@@ -48,6 +48,17 @@ TABLE_FAIL="${CLICKHOUSE_DATABASE}.fail_table"
 TABLE_FRESH="${CLICKHOUSE_DATABASE}.fresh_table"
 FAIL_LOG="${CLICKHOUSE_TMP}/04156_fail_${CLICKHOUSE_TEST_UNIQUE_NAME}.log"
 
+# Defense-in-depth cleanup. If anything between enabling the failpoint and the success
+# tail fails, the server-wide failpoint could stay enabled and disrupt later tests on the
+# same server. Always disable the failpoint and drop the tables on exit. `DISABLE` on an
+# inactive failpoint and DROP IF EXISTS are no-ops, so this is safe alongside the normal
+# cleanup tail.
+trap '
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT create_table_fail_after_disk_registration_before_metadata" 2>/dev/null || true
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_FRESH}; DROP TABLE IF EXISTS ${TABLE_FAIL}; DROP TABLE IF EXISTS ${TABLE_BASE};" 2>/dev/null || true
+    rm -f "${FAIL_LOG}"
+' EXIT
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_BASE}; DROP TABLE IF EXISTS ${TABLE_FAIL}; DROP TABLE IF EXISTS ${TABLE_FRESH};"
 
 # Base object-storage disk, committed via a real table so the cache disk below has a
