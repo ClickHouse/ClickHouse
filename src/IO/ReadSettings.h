@@ -146,6 +146,12 @@ struct ReadSettings
     /// instead of the legacy matryoshka of read buffers. The executor reads in
     /// blocks of `buffer_size` bytes.
     bool use_reader_executor = false;
+    /// `ReaderExecutor` long-connection knobs (used only on the executor path):
+    /// reuse a held source connection across sequential windows, the forward-gap
+    /// bound bridged on it, and the tail drained to complete a dropped connection.
+    bool reader_executor_use_long_connections = true;
+    size_t reader_executor_min_bytes_for_seek = 2097152;
+    size_t reader_executor_max_tail_for_drain = 1048576;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;

@@ -157,6 +157,11 @@ void ReadPipeline::needDecryption(String path, size_t buffer_size, KeyFinderFunc
         .key_finder = std::move(key_finder)});
 }
 
+void ReadPipeline::needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit)
+{
+    long_connection_limit = std::move(limit);
+}
+
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 {
     if (!source)
@@ -243,7 +248,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         return nullptr;
     }
 
-    auto executor = std::make_unique<ReaderExecutor>(source_reader, source->objects, block_size);
+    auto executor = std::make_unique<ReaderExecutor>(
+        source_reader, source->objects, block_size,
+        long_connection_limit,
+        settings.reader_executor_min_bytes_for_seek,
+        settings.reader_executor_max_tail_for_drain);
 
     return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }

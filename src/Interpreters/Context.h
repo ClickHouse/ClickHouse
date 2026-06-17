@@ -192,6 +192,7 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
@@ -1163,6 +1164,10 @@ public:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
 
     AsyncLoader & getAsyncLoader() const;
+
+    /// Global limit on source connections `ReaderExecutor` keeps open for sequential-read
+    /// reuse (lazily created from `max_remote_read_connections`).
+    std::shared_ptr<LongConnectionLimit> getLongConnectionLimit() const;
 
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     ExternalDictionariesLoader & getExternalDictionariesLoader();

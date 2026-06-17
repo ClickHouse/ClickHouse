@@ -452,6 +452,7 @@ namespace
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     \
     \
+    DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
     Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
