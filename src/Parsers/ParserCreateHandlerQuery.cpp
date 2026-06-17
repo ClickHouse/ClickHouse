@@ -139,15 +139,25 @@ bool ParserCreateHandlerQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     if (s_as.ignore(pos, expected))
     {
-        bool in_parens = ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected);
-
         ParserQuery query_p(end);
         ASTPtr inner_query;
-        if (!query_p.parse(pos, inner_query, expected))
-            return false;
 
-        if (in_parens && !ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-            return false;
+        /// Parse the inner query directly. `ParserQuery` already accepts `SELECT` queries that begin with a
+        /// parenthesis - in particular `UNION`/`INTERSECT`/`EXCEPT`, which are formatted with parenthesized
+        /// operands like `(SELECT ...) EXCEPT (SELECT ...)`. So a leading parenthesis must not be stripped up
+        /// front as a disambiguation wrapper, otherwise only the first operand would be consumed and the rest
+        /// of the query left dangling - which also broke the format/parse round-trip for such handlers.
+        if (!query_p.parse(pos, inner_query, expected))
+        {
+            /// Fall back to a single pair of wrapping parentheses for query kinds that `ParserQuery` does not
+            /// accept inside parentheses on their own (for example `AS (SHOW DATABASES)`).
+            if (!ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+                return false;
+            if (!query_p.parse(pos, inner_query, expected))
+                return false;
+            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                return false;
+        }
 
         query->query = inner_query;
         query->children.push_back(inner_query);

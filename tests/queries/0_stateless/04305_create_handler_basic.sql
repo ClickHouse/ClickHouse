@@ -46,6 +46,27 @@ CREATE HANDLER h04305_fmt URL '/test_04305/fmt' AS SELECT 1 FORMAT JSONEachRow;
 SELECT query, create_query FROM system.handlers WHERE name = 'h04305_fmt';
 DROP HANDLER h04305_fmt;
 
+-- UNION/INTERSECT/EXCEPT queries are formatted with parenthesized operands (e.g. `(SELECT 1) EXCEPT (SELECT 2)`).
+-- The CREATE statement must format and parse back unchanged, both for the persisted statement (re-parsed on
+-- reload) and for the AST fuzzer's format/parse consistency check.
+CREATE HANDLER h04305_union URL '/test_04305/union' AS SELECT 1 UNION ALL SELECT 2;
+SELECT query, create_query FROM system.handlers WHERE name = 'h04305_union';
+DROP HANDLER h04305_union;
+
+CREATE HANDLER h04305_except URL '/test_04305/except' AS SELECT 1 EXCEPT ALL SELECT 2;
+SELECT query, create_query FROM system.handlers WHERE name = 'h04305_except';
+DROP HANDLER h04305_except;
+
+CREATE HANDLER h04305_intersect URL '/test_04305/intersect' AS SELECT 1 INTERSECT ALL SELECT 2;
+SELECT query, create_query FROM system.handlers WHERE name = 'h04305_intersect';
+DROP HANDLER h04305_intersect;
+
+-- The operands may also be parenthesized in the source, which previously failed to parse because the leading
+-- parenthesis was mistaken for the optional disambiguation wrapper around the whole query.
+CREATE HANDLER h04305_union_paren URL '/test_04305/union_paren' AS (SELECT 1) UNION ALL (SELECT 2);
+SELECT query FROM system.handlers WHERE name = 'h04305_union_paren';
+DROP HANDLER h04305_union_paren;
+
 -- PROTOCOL, URL PREFIX, METHODS and TYPE clauses.
 CREATE HANDLER h04305_b PROTOCOL my_proto URL PREFIX '/test_04305/b/' METHODS (GET, POST) TYPE query AS SELECT 'b';
 SELECT name, protocol, url_match_type, url, methods, type FROM system.handlers WHERE name = 'h04305_b';
