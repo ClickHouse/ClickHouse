@@ -67,7 +67,9 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
 
     handler->query = create.query->formatWithSecretsOneLine();
     /// Precompute the set of query parameters once, so the per-request handler path does not re-parse the query.
-    handler->receive_params = analyzeReceiveQueryParams(handler->query);
+    /// Collect them from the already-parsed AST rather than re-parsing the formatted string: re-parsing would
+    /// apply the default parser depth/backtrack limits and could reject a query the user's parser settings accepted.
+    handler->receive_params = analyzeReceiveQueryParams(create.query);
 
     /// Build a normalized, complete CREATE HANDLER statement for persistence and introspection.
     auto normalized = create.clone();
