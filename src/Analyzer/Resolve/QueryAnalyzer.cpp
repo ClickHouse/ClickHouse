@@ -3852,6 +3852,9 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         }
     }
 
+    if (!nullable_group_by_keys.empty())
+        registerNullableGroupByKeys(nullable_group_by_keys, scope);
+
     /// With group_by_use_nulls the projection (and the other clauses) are re-resolved after GROUP BY
     /// so that expressions equal to a key become Nullable via the scope.nullable_group_by_keys
     /// lookup. Clear the resolution caches so that this re-resolution actually re-runs instead of
