@@ -29,9 +29,8 @@ public:
     CommandSed() : ICommand("CommandSed")
     {
         command_name = "sed";
-        /// Only a single `sed` expression with no options is supported: the expression is passed
-        /// to `sed` as one argument. Multiple expressions (`-e ... -e ...`) or per-expression
-        /// options (e.g. `-n` together with an address like `4,10p`) are not supported.
+        // Only supports single sed expressions.
+        // Multiple expressions or per-expressions options are not supported.
         description = "Apply a single `sed` expression to a file on the current disk, in place";
         options_description.add_options()(
             "expression", po::value<String>(), "sed expression to apply (mandatory, positional)")(
@@ -51,10 +50,7 @@ public:
         if (!disk.getDisk()->existsFile(path))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path, disk.getDisk()->getName());
 
-        /// Write `sed`'s output to a sibling temp file, then atomically replace the original.
-        /// This avoids buffering the whole file in memory and never reads and rewrites the
-        /// same file concurrently: the original is untouched until the final swap. On any
-        /// failure the temp file is removed and the original is left intact.
+        /// Write sed's output to a temp file. Later, it will replace the original.
         String temp_path = path + ".sed.tmp";
         if (disk.getDisk()->existsFile(temp_path) || disk.getDisk()->existsDirectory(temp_path))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporary file {} on disk {} already exists", temp_path, disk.getDisk()->getName());
@@ -72,27 +68,22 @@ public:
             auto out = disk.getDisk()->writeFile(temp_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
             SCOPE_EXIT_SAFE(out->cancel());
 
-            /// Start `sed` only after both disk buffers are open. If opening the source or temp file
-            /// throws, the child is not yet running, so unwinding cannot leave a `sed` process with an
-            /// open `stdin` to be reaped by the blocking destructor -- which would otherwise hang.
-            /// Pass the expression as a separate argument so it is never interpreted by the
-            /// shell. `sed` reads its input from `stdin` and writes the result to `stdout`.
+            // 1. It's important to start sed after the disk buffers are opened. This way,
+            // any errors thrown while opening the files do not leave the sed process hanging.
+            // 2. The expression is passed as a separate argument for safety -- otherwise, it could
+            // be interpreted by the shell.
             ShellCommand::Config config{R"(exec sed -- "$0")"};
             config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy(true, SIGTERM);
             config.arguments.push_back(expression);
             auto command = ShellCommand::execute(config);
 
-            /// Feed the file into `sed`'s `stdin` from a separate thread while we read its
-            /// `stdout` here, to avoid a deadlock when the data exceeds the pipe buffer.
+            // Feed the file into sed's stdin from a separate thread from the one that reads
+            // stdout.
             std::exception_ptr feeder_exception;
             std::thread feeder(
                 [&]
                 {
-                    /// On any exit, close sed's stdin so sed sees EOF and the main thread
-                    /// cannot block forever reading sed's stdout. cancel() first so close()
-                    /// does not flush: if finalize() threw inside close(), the ::close(fd)
-                    /// would be skipped and the fd would leak, reintroducing the hang. It is
-                    /// a no-op when the close() in the happy path already finalized the buffer.
+                    // On any exit, cancel and close sed's stdin. It is a no-op on the happy path.
                     SCOPE_EXIT_SAFE({ command->in.cancel(); command->in.close(); });
                     try
                     {
@@ -111,11 +102,8 @@ public:
             }
             catch (...)
             {
-                /// The feeder may be blocked in write(): we are no longer draining sed's
-                /// stdout, so sed's pipes fill up and it stops reading stdin. Terminate sed
-                /// to break the pipes; the feeder then fails with a broken pipe, runs its
-                /// scope guard and exits, making join() safe. The child has not been reaped
-                /// yet, so the pid cannot have been reused.
+                /// Without SIGTERM, could have the following failure path:
+                /// failed write -> sed's stdout undrained -> pipes full -> stdin blocked -> feeder.join() hangs.
                 if (0 != ::kill(command->getPid(), SIGTERM))
                     LOG_WARNING(log, "Cannot send SIGTERM to sed (pid {}): {}", command->getPid(), errnoToString());
                 feeder.join();
@@ -123,18 +111,16 @@ public:
             }
             feeder.join();
 
-            /// Drain `sed`'s stderr before reaping it: `wait` closes the stderr pipe, so it must
-            /// be read first. `sed`'s stdout already hit EOF above, meaning `sed` has exited and
-            /// its stderr write end is closed, so this read sees EOF and cannot block. `sed` errors
-            /// are tiny, so buffering the whole output is fine.
+            /// Drain sed's stderr before calling command->wait().
+            /// For simplicity, this code assumes stderr output is small and does not need to be concurrently drained.
+            /// It could hang if the user intentionally writes a large output to stderr (e.g., sed 'w /dev/stderr' foo.txt).
             String stderr_content;
             readStringUntilEOF(stderr_content, command->err);
             boost::trim(stderr_content);
 
-            /// Check `sed`'s exit status before the feeder error. If `sed` exits early (e.g. an
-            /// invalid expression), the feeder thread sees a broken pipe while writing to `sed`'s
-            /// stdin -- but that is only a symptom, so `sed`'s own diagnostic must take precedence.
-            /// Throws if `sed` exited with a non-zero code.
+            /// Check sed's exit status before the feeder error. If sed exits early (e.g. an invalid
+            /// expression), the feeder thread sees a broken pipe when writing to stdin. So sed
+            /// failures should take prcedence.
             try
             {
                 command->wait();
@@ -148,14 +134,9 @@ public:
 
             if (feeder_exception)
             {
-                /// sed exited successfully, but the feeder still failed. One case is
-                /// benign: a valid script may stop reading its input early (e.g. `1q`),
-                /// which closes the read end of the pipe; once the pipe buffer fills,
-                /// our write to sed's stdin fails with EPIPE. Since sed exited with 0,
-                /// that broken pipe is expected behavior, not an error.
-                /// Anything else (e.g. a disk read error on the source file) must
-                /// propagate: sed would have seen a premature EOF and still exited 0,
-                /// and ignoring the error would replace the file with truncated output.
+                /// sed exited successfully, but the feeder failed.
+                /// This could be a benign case: a valid script that stops reading the
+                /// input early (eg, '1q') and causes writes to fail with EPIPE.
                 try
                 {
                     std::rethrow_exception(feeder_exception);
