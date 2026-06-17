@@ -195,8 +195,6 @@ public:
     size_t cursorForTest() const { return read_plan.cursor; }
     size_t stepCountForTest() const { return read_plan.schedule.steps.size(); }
     ByteRange stepOutputForTest(size_t i) const { return read_plan.schedule.steps[i].output; }
-    bool stepIsHitForTest(size_t i) const { return !read_plan.schedule.steps[i].require_retrieve.has_value(); }
-    std::optional<size_t> stepRequireRetrieveForTest(size_t i) const { return read_plan.schedule.steps[i].require_retrieve; }
     int retrievePhaseForTest(size_t i) const { return static_cast<int>(read_plan.retrieve_status[i].phase); }
 
     /// Test-only: the continuity estimator's predicted reach after the last plan
