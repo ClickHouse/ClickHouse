@@ -2041,29 +2041,6 @@ std::optional<ReaderExecutor::LongConnection> ReaderExecutor::takeLong(std::opti
     return taken;
 }
 
-void ReaderExecutor::openLongForTest(size_t phys_offset, size_t reach)
-{
-    auto ranges = offset_map.map(ByteRange{phys_offset, 1});
-    chassert(!ranges.empty());
-    const auto & pr = ranges.front();
-    const size_t obj_file_offset = phys_offset - pr.object_offset;
-    const size_t phys_bound = std::min<size_t>(clampReach(reach, phys_offset), obj_file_offset + pr.object.bytes_size);
-    const size_t read_end = phys_bound - obj_file_offset;
-    LongConnectionSlot slot = long_connection_limit
-        ? long_connection_limit->tryAcquire(long_connection_limit)
-        : LongConnectionSlot{};
-    openLong(long_conn, pr.object, pr.object_offset, read_end, std::move(slot), stats);
-}
-
-ChainedBuffers ReaderExecutor::serveFromLongForTest(size_t phys_offset, size_t want)
-{
-    auto ranges = offset_map.map(ByteRange{phys_offset, want});
-    chassert(!ranges.empty());
-    const auto & pr = ranges.front();
-    auto blocks = allocateBlocks(want, block_size, {});
-    return serveFromLong(long_conn, pr.object_offset, std::move(blocks), phys_offset, /*stop=*/nullptr, stats);
-}
-
 void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled)
 {
 

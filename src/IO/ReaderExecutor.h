@@ -34,6 +34,7 @@ namespace DB
 class PrefetchThreadPool;
 class ReaderExecutorLog;
 class FetchMachineRunner;
+class ReaderExecutorInspector;
 
 /// Reads a logical file (one or more `StoredObject`s mapped by `OffsetMap`)
 /// through a fastest-first cache chain, falling back to the source. Tuned for
@@ -172,54 +173,10 @@ public:
     /// first - `totalSize` is meaningless in that case.
     bool hasUnknownSize() const { return offset_map.hasUnknownSize(); }
 
-    /// Test-only probes of the machine state.
-    bool hasInflightPrefetch() const { return machine != nullptr; }
-    size_t inflightPrefetchSize() const { return machine ? machine->requested_range.size : 0; }
-    size_t abandonedPrefetchCount() const { return abandoned_machines.size(); }
-
-    /// Test-only: the current look-ahead plan geometry (null until the first
-    /// plan is built), for validating `buildSchedule` against the live walk.
-    std::shared_ptr<const CoverageMap> planGeometryForTest() const { return read_plan.geometry(); }
-
-    /// Test-only: the per-job status sidecar is allocated 1:1 with the
-    /// schedule's jobs on every plan build.
-    bool retrieveStatusMatchesScheduleForTest() const
-    {
-        return read_plan.retrieve_status.size() == read_plan.schedule.retrieves.size();
-    }
-    size_t retrieveStatusSizeForTest() const { return read_plan.retrieve_status.size(); }
-
-    /// Test-only: the assert-spine shadow state (cursor / steps / per-job phase).
-    /// The cursor + phases are only MAINTAINED under DEBUG_OR_SANITIZER_BUILD, so the
-    /// shadow-walk tests assert on them only in such builds.
-    size_t cursorForTest() const { return read_plan.cursor; }
-    size_t stepCountForTest() const { return read_plan.schedule.steps.size(); }
-    ByteRange stepOutputForTest(size_t i) const { return read_plan.schedule.steps[i].output; }
-    int retrievePhaseForTest(size_t i) const { return static_cast<int>(read_plan.retrieve_status[i].phase); }
-
-    /// Test-only: the continuity estimator's predicted reach after the last plan
-    /// feed, for verifying the wiring.
-    size_t predictedReachForTest() const { return continuity_tracker.predictedReach(); }
-
-    /// Test-only probes / drivers of the long-connection mechanics (not yet wired
-    /// into the production read path).
-    bool hasLongConnForTest() const { return long_conn.has_value(); }
-    size_t longConnPositionForTest() const { return long_conn ? long_conn->current_position : 0; }
-    size_t longConnBoundForTest() const { return long_conn ? long_conn->read_until : 0; }
-    bool longConnServesForTest(const String & path) const { return long_conn && long_conn->servesObject(path); }
-    bool longConnCanContinueForTest(size_t off, size_t want) const
-    {
-        return long_conn && long_conn->canContinue(off, want, min_bytes_for_seek);
-    }
-    bool shouldOpenLongForTest(size_t phys_off) const { return shouldOpenLong(phys_off); }
-    size_t clampReachForTest(size_t reach, size_t phys_off) const { return clampReach(reach, phys_off); }
-    size_t scheduleLookaheadReachForTest(size_t phys_off) const { return scheduleLookaheadReach(phys_off); }
-    void openLongForTest(size_t phys_offset, size_t reach);
-    ChainedBuffers serveFromLongForTest(size_t phys_offset, size_t want);
-    void dropLongForTest() { dropLong(long_conn, stats); }
-    UInt64 incompleteConnectionsForTest() const { return stats.get(Stats::IncompleteConnections); }
-    UInt64 sourceRequestsForTest() const { return stats.get(Stats::SourceRequests); }
-    bool machineHasLongConnForTest() const { return machine && machine->long_conn.has_value(); }
+    /// All test-only observability (state probes + long-connection drivers) lives
+    /// in the `ReaderExecutorInspector` friend, kept out of this production class.
+    /// See `src/IO/tests/ReaderExecutorInspector.h`.
+    friend class ReaderExecutorInspector;
 
     /// Merge ranges separated by less than `min_gap`, to reduce request count.
     static VectorWithMemoryTracking<ByteRange> mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap);

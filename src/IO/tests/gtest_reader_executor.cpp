@@ -1,4 +1,5 @@
 #include <IO/ReaderExecutor.h>
+#include <IO/tests/ReaderExecutorInspector.h>
 #include <IO/PlanSchedule.h>
 #include <IO/BufferSourceReader.h>
 #include <IO/IFileBasedSourceReader.h>
@@ -713,12 +714,12 @@ TEST(ReaderExecutor, SeekTriggersPrefetch)
     ReaderExecutor executor(source, objects, {}, executor_options);
 
     /// Before the first readNextWindow nothing has been prefetched yet.
-    EXPECT_FALSE(executor.hasInflightPrefetch());
+    EXPECT_FALSE(inspect(executor).hasInflightPrefetch());
 
     /// Seek to a position outside any existing prefetch range. Must queue
     /// a fresh prefetch for the new position right away.
     executor.seek(2500);
-    EXPECT_TRUE(executor.hasInflightPrefetch())
+    EXPECT_TRUE(inspect(executor).hasInflightPrefetch())
         << "seek must trigger a new prefetch when prefetch_pool is set";
 
     /// And the prefetched data is the one we actually consume next.
@@ -744,7 +745,7 @@ TEST(ReaderExecutor, SeekWithoutPoolDoesNotCrash)
     /// No `prefetch_pool` in Options — sync path.
 
     executor.seek(400);
-    EXPECT_FALSE(executor.hasInflightPrefetch());
+    EXPECT_FALSE(inspect(executor).hasInflightPrefetch());
 
     auto chain = executor.readNextWindow();
     EXPECT_EQ(chain.range().offset, 400u);
@@ -779,7 +780,7 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
         ReaderExecutor executor(source, objects, {}, executor_options);
 
         ChainedBuffers chain = executor.readNextWindow();   // synchronous full-window read, then schedules a prefetch
-        return {chain.range().size, executor.hasInflightPrefetch(), executor.inflightPrefetchSize()};
+        return {chain.range().size, inspect(executor).hasInflightPrefetch(), inspect(executor).inflightPrefetchSize()};
     };
 
     const Reading normal = measure(0.50);
@@ -1463,13 +1464,13 @@ TEST(ReaderExecutor, ConsumePathCancelledPrefetchIsStashedForDrain)
     /// for window 2 that queues behind the blocked worker.
     auto w1 = executor.readNextWindow();
     ASSERT_FALSE(w1.empty());
-    ASSERT_TRUE(executor.hasInflightPrefetch());
+    ASSERT_TRUE(inspect(executor).hasInflightPrefetch());
 
     /// Window 2: the prefetch is still Queued, so tryCancel succeeds on the
     /// consume path and the cancelled handle must be stashed for the drain.
     auto w2 = executor.readNextWindow();
     ASSERT_FALSE(w2.empty());
-    EXPECT_EQ(executor.abandonedPrefetchCount(), 1u)
+    EXPECT_EQ(inspect(executor).abandonedPrefetchCount(), 1u)
         << "consume-path cancelled prefetch must be stashed for ~ReaderExecutor to drain";
 
     /// Release the worker so it finishes `blocker`, then pulls the cancelled
@@ -1509,11 +1510,11 @@ TEST(ReaderExecutor, ConsumePathCancelledPrefetchStashedBeforeThrowingSyncRead)
 
     auto w1 = executor.readNextWindow();
     ASSERT_FALSE(w1.empty());
-    ASSERT_TRUE(executor.hasInflightPrefetch());
+    ASSERT_TRUE(inspect(executor).hasInflightPrefetch());
 
     /// Window 2: tryCancel succeeds, then the fallback read throws.
     EXPECT_THROW(executor.readNextWindow(), DB::Exception);
-    EXPECT_EQ(executor.abandonedPrefetchCount(), 1u)
+    EXPECT_EQ(inspect(executor).abandonedPrefetchCount(), 1u)
         << "cancelled prefetch must be stashed before the throwing fallback read";
 
     release_worker.set_value();
@@ -3239,7 +3240,7 @@ TEST(ReaderExecutor, ResidentRunOverlapsDownstreamGapPrefetch)
     EXPECT_EQ(r1.range().size, 100u);
     /// The crux: the cursor is resident at 100, but the first gap ahead [200,300) is now
     /// prefetched - overlapping the resident run that precedes it.
-    EXPECT_TRUE(executor.hasInflightPrefetch())
+    EXPECT_TRUE(inspect(executor).hasInflightPrefetch())
         << "the first gap ahead must prefetch during the resident run (overlap)";
 
     /// Resident run [100,200) from cache, served WHILE the [200,300) prefetch is in flight
@@ -3248,7 +3249,7 @@ TEST(ReaderExecutor, ResidentRunOverlapsDownstreamGapPrefetch)
     auto r2 = executor.readNextWindow();
     EXPECT_EQ(r2.range().offset, 100u);
     EXPECT_EQ(r2.range().size, 100u);
-    EXPECT_TRUE(executor.hasInflightPrefetch());
+    EXPECT_TRUE(inspect(executor).hasInflightPrefetch());
 
     /// Cold gap [200,300) - the cursor reaches it and consumes the overlapped prefetch.
     auto r3 = executor.readNextWindow();
@@ -4113,7 +4114,7 @@ void validateScheduleMatchesReality(
     {
         auto chain = executor.readNextWindow();
         if (!geom)
-            geom = executor.planGeometryForTest();  /// the initial (and only) plan
+            geom = inspect(executor).planGeometry();  /// the initial (and only) plan
         if (chain.empty())
             break;
         outputs.push_back(chain.range());
@@ -4213,8 +4214,8 @@ TEST(ReaderExecutor, RetrieveStatusSizedToSchedule)
     ReaderExecutor executor(src, objects, {page, fs}, opts);
 
     executor.readNextWindow();  // builds the first plan
-    EXPECT_GT(executor.retrieveStatusSizeForTest(), 0u) << "the island leaves gaps to fetch";
-    EXPECT_TRUE(executor.retrieveStatusMatchesScheduleForTest())
+    EXPECT_GT(inspect(executor).retrieveStatusSize(), 0u) << "the island leaves gaps to fetch";
+    EXPECT_TRUE(inspect(executor).retrieveStatusMatchesSchedule())
         << "retrieve_status must be 1:1 with the schedule's jobs";
 }
 
@@ -4254,15 +4255,15 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
             break;
         ++windows;
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-        const size_t c = executor.cursorForTest();
-        ASSERT_LT(c, executor.stepCountForTest());
-        const auto step = executor.stepOutputForTest(c);
+        const size_t c = inspect(executor).cursor();
+        ASSERT_LT(c, inspect(executor).stepCount());
+        const auto step = inspect(executor).stepOutput(c);
         const size_t pos = executor.getPosition();  // physical == logical (no encryption)
         EXPECT_TRUE(step.offset <= pos && pos <= step.offset + step.size)
             << "cursor step [" << step.offset << "," << step.offset + step.size
             << ") must contain position " << pos;
-        for (size_t i = 0; i < executor.retrieveStatusSizeForTest(); ++i)
-            if (executor.retrievePhaseForTest(i) >= 2 /*Ready*/)
+        for (size_t i = 0; i < inspect(executor).retrieveStatusSize(); ++i)
+            if (inspect(executor).retrievePhase(i) >= 2 /*Ready*/)
                 saw_ready = true;
 #endif
     }
@@ -4488,7 +4489,7 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     {
         auto chain = executor.readNextWindow();
         if (!geom)
-            geom = executor.planGeometryForTest();
+            geom = inspect(executor).planGeometry();
         if (chain.empty())
             break;
     }
@@ -4655,11 +4656,11 @@ TEST(ReaderExecutor, ScheduleLookaheadReachBridgesSmallCachedRuns)
 
     /// From 0: stream the cold [0,128K), bridge the 32K run [128K,160K), stream the cold
     /// [160K,256K), then STOP at the 64K run [256K,320K) (== min_bytes_for_seek, not bridged).
-    EXPECT_EQ(executor.scheduleLookaheadReachForTest(0), 256u * 1024u);
+    EXPECT_EQ(inspect(executor).scheduleLookaheadReach(0), 256u * 1024u);
     /// From just after the bridged run: same stop at the wide run.
-    EXPECT_EQ(executor.scheduleLookaheadReachForTest(160 * 1024), 256u * 1024u);
+    EXPECT_EQ(inspect(executor).scheduleLookaheadReach(160 * 1024), 256u * 1024u);
     /// From past the wide run: only cold remains, so it streams to the plan end (the file).
-    EXPECT_EQ(executor.scheduleLookaheadReachForTest(320 * 1024), file);
+    EXPECT_EQ(inspect(executor).scheduleLookaheadReach(320 * 1024), file);
 }
 
 TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
@@ -4701,15 +4702,15 @@ TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
             result.append(node.data(), node.size);
         ++n;
         if (n == 1)
-            reach_after_1 = executor.predictedReachForTest();
+            reach_after_1 = inspect(executor).predictedReach();
         if (n == 3)
-            reach_after_3 = executor.predictedReachForTest();
+            reach_after_3 = inspect(executor).predictedReach();
     }
 
     EXPECT_EQ(result, content);                          /// full read, no corruption
     EXPECT_EQ(reach_after_1, seg) << "first plan fed exactly one segment";
     EXPECT_EQ(reach_after_3, 3 * seg) << "accumulated three segments, no double-feed/gap";
-    EXPECT_EQ(executor.predictedReachForTest(), file)
+    EXPECT_EQ(inspect(executor).predictedReach(), file)
         << "the estimator captured the full contiguous read across all plans";
 }
 
@@ -4765,27 +4766,27 @@ TEST(ReaderExecutor, LongConnectionContiguousServeReleasesAtBound)
     LongConnRig rig(size, /*min_bytes_for_seek=*/4096, block, /*max_tail_for_drain=*/1024);
     auto & ex = *rig.executor;
 
-    ex.openLongForTest(/*phys_offset=*/0, /*reach=*/size);
-    EXPECT_TRUE(ex.hasLongConnForTest());
-    EXPECT_EQ(ex.longConnPositionForTest(), 0u);
-    EXPECT_EQ(ex.longConnBoundForTest(), size);
-    EXPECT_TRUE(ex.longConnServesForTest("obj"));
+    inspect(ex).openLong(/*phys_offset=*/0, /*reach=*/size);
+    EXPECT_TRUE(inspect(ex).hasLongConn());
+    EXPECT_EQ(inspect(ex).longConnPosition(), 0u);
+    EXPECT_EQ(inspect(ex).longConnBound(), size);
+    EXPECT_TRUE(inspect(ex).longConnServes("obj"));
     EXPECT_EQ(rig.limit->getActiveCount(), 1u);
 
     String got;
     size_t pos = 0;
-    while (ex.hasLongConnForTest() && pos < size)
+    while (inspect(ex).hasLongConn() && pos < size)
     {
-        ChainedBuffers w = ex.serveFromLongForTest(pos, block);
+        ChainedBuffers w = inspect(ex).serveFromLong(pos, block);
         ASSERT_GT(w.totalBytes(), 0u);
         got += chainBytes(w);
         pos += w.totalBytes();
     }
 
     EXPECT_EQ(got, rig.content);                         /// byte-exact contiguous read
-    EXPECT_FALSE(ex.hasLongConnForTest());               /// released at bound
+    EXPECT_FALSE(inspect(ex).hasLongConn());               /// released at bound
     EXPECT_EQ(rig.limit->getActiveCount(), 0u);          /// slot freed
-    EXPECT_EQ(ex.incompleteConnectionsForTest(), 0u);    /// clean exhaust, no I
+    EXPECT_EQ(inspect(ex).incompleteConnections(), 0u);    /// clean exhaust, no I
 }
 
 TEST(ReaderExecutor, LongConnectionBridgesSmallForwardGap)
@@ -4795,23 +4796,23 @@ TEST(ReaderExecutor, LongConnectionBridgesSmallForwardGap)
     const size_t min_seek = 8192;
     LongConnRig rig(size, min_seek, block, /*max_tail_for_drain=*/1024);
     auto & ex = *rig.executor;
-    ex.openLongForTest(0, size);
+    inspect(ex).openLong(0, size);
 
-    ChainedBuffers w0 = ex.serveFromLongForTest(0, block);
+    ChainedBuffers w0 = inspect(ex).serveFromLong(0, block);
     EXPECT_EQ(chainBytes(w0), rig.content.substr(0, block));
-    EXPECT_EQ(ex.longConnPositionForTest(), block);
+    EXPECT_EQ(inspect(ex).longConnPosition(), block);
 
     /// canContinue truth table at frontier `block`:
-    EXPECT_TRUE(ex.longConnCanContinueForTest(block + 2048, block));         /// forward, gap <= min_seek
-    EXPECT_FALSE(ex.longConnCanContinueForTest(block + min_seek + 1, block)); /// gap > min_seek
-    EXPECT_FALSE(ex.longConnCanContinueForTest(0, block));                   /// backward
-    EXPECT_FALSE(ex.longConnCanContinueForTest(size - 100, block));          /// off+want past bound
+    EXPECT_TRUE(inspect(ex).longConnCanContinue(block + 2048, block));         /// forward, gap <= min_seek
+    EXPECT_FALSE(inspect(ex).longConnCanContinue(block + min_seek + 1, block)); /// gap > min_seek
+    EXPECT_FALSE(inspect(ex).longConnCanContinue(0, block));                   /// backward
+    EXPECT_FALSE(inspect(ex).longConnCanContinue(size - 100, block));          /// off+want past bound
 
     /// Serve across a 2048-byte forward gap -> bridged (frontier jumps past the gap).
     const size_t gap_off = block + 2048;
-    ChainedBuffers w1 = ex.serveFromLongForTest(gap_off, block);
+    ChainedBuffers w1 = inspect(ex).serveFromLong(gap_off, block);
     EXPECT_EQ(chainBytes(w1), rig.content.substr(gap_off, block));
-    EXPECT_EQ(ex.longConnPositionForTest(), gap_off + block);                /// gap discarded, not re-served
+    EXPECT_EQ(inspect(ex).longConnPosition(), gap_off + block);                /// gap discarded, not re-served
 }
 
 TEST(ReaderExecutor, LongConnectionDropBeforeBoundCountsIncomplete)
@@ -4820,13 +4821,13 @@ TEST(ReaderExecutor, LongConnectionDropBeforeBoundCountsIncomplete)
     const size_t block = 4096;
     LongConnRig rig(size, 4096, block, /*max_tail_for_drain=*/1024);
     auto & ex = *rig.executor;
-    ex.openLongForTest(0, size);                         /// bound = 64 KiB
-    ex.serveFromLongForTest(0, block);                   /// transferred 4 KiB; tail to bound >> drain
-    EXPECT_TRUE(ex.hasLongConnForTest());
+    inspect(ex).openLong(0, size);                         /// bound = 64 KiB
+    inspect(ex).serveFromLong(0, block);                   /// transferred 4 KiB; tail to bound >> drain
+    EXPECT_TRUE(inspect(ex).hasLongConn());
 
-    ex.dropLongForTest();                                /// tail too big to drain -> incomplete
-    EXPECT_FALSE(ex.hasLongConnForTest());
-    EXPECT_EQ(ex.incompleteConnectionsForTest(), 1u);
+    inspect(ex).dropLong();                                /// tail too big to drain -> incomplete
+    EXPECT_FALSE(inspect(ex).hasLongConn());
+    EXPECT_EQ(inspect(ex).incompleteConnections(), 1u);
     EXPECT_EQ(rig.limit->getActiveCount(), 0u);
 }
 
@@ -4837,14 +4838,14 @@ TEST(ReaderExecutor, LongConnectionDropDrainsSmallTail)
     const size_t drain = 2048;
     LongConnRig rig(size, 4096, block, drain);
     auto & ex = *rig.executor;
-    ex.openLongForTest(0, /*reach=*/block + 1024);       /// bound = 5120
-    EXPECT_EQ(ex.longConnBoundForTest(), block + 1024);
-    ex.serveFromLongForTest(0, block);                   /// position 4096; tail 1024 <= drain
-    EXPECT_TRUE(ex.hasLongConnForTest());
+    inspect(ex).openLong(0, /*reach=*/block + 1024);       /// bound = 5120
+    EXPECT_EQ(inspect(ex).longConnBound(), block + 1024);
+    inspect(ex).serveFromLong(0, block);                   /// position 4096; tail 1024 <= drain
+    EXPECT_TRUE(inspect(ex).hasLongConn());
 
-    ex.dropLongForTest();                                /// drains the 1 KiB tail to the bound
-    EXPECT_FALSE(ex.hasLongConnForTest());
-    EXPECT_EQ(ex.incompleteConnectionsForTest(), 0u);    /// completed -> not incomplete
+    inspect(ex).dropLong();                                /// drains the 1 KiB tail to the bound
+    EXPECT_FALSE(inspect(ex).hasLongConn());
+    EXPECT_EQ(inspect(ex).incompleteConnections(), 0u);    /// completed -> not incomplete
     EXPECT_EQ(rig.limit->getActiveCount(), 0u);
 }
 
@@ -4854,9 +4855,9 @@ TEST(ReaderExecutor, LongConnectionClampReachAndShouldOpen)
     LongConnRig rig(size, 4096, 4096, 1024);
     auto & ex = *rig.executor;
 
-    EXPECT_EQ(ex.clampReachForTest(/*reach=*/size * 4, /*phys_off=*/1000), size); /// clamped to file end
-    EXPECT_EQ(ex.clampReachForTest(/*reach=*/2000, /*phys_off=*/1000), 3000u);    /// within file, unchanged
-    EXPECT_FALSE(ex.shouldOpenLongForTest(0));            /// open path not wired (Stage 1)
+    EXPECT_EQ(inspect(ex).clampReach(/*reach=*/size * 4, /*phys_off=*/1000), size); /// clamped to file end
+    EXPECT_EQ(inspect(ex).clampReach(/*reach=*/2000, /*phys_off=*/1000), 3000u);    /// within file, unchanged
+    EXPECT_FALSE(inspect(ex).shouldOpenLong(0));            /// open path not wired (Stage 1)
 }
 
 TEST(ReaderExecutor, LongConnectionForegroundDrainsWholeFile)
@@ -4882,8 +4883,8 @@ TEST(ReaderExecutor, LongConnectionForegroundDrainsWholeFile)
     opts.long_connection_limit = limit;          /// no prefetch pool: pure synchronous reads
     ReaderExecutor ex(source, objects, {}, opts);
 
-    ex.openLongForTest(0, size);                 /// foreground holds [0, size); one open GET
-    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);   /// the open
+    inspect(ex).openLong(0, size);                 /// foreground holds [0, size); one open GET
+    EXPECT_EQ(inspect(ex).sourceRequests(), 1u);   /// the open
 
     String got;
     while (true)
@@ -4895,8 +4896,8 @@ TEST(ReaderExecutor, LongConnectionForegroundDrainsWholeFile)
     }
 
     EXPECT_EQ(got, content);                     /// byte-exact
-    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);   /// one GET served the whole file (drained, not re-opened)
-    EXPECT_FALSE(ex.hasLongConnForTest());       /// drained to its bound + released
+    EXPECT_EQ(inspect(ex).sourceRequests(), 1u);   /// one GET served the whole file (drained, not re-opened)
+    EXPECT_FALSE(inspect(ex).hasLongConn());       /// drained to its bound + released
     EXPECT_EQ(limit->getActiveCount(), 0u);
 }
 
@@ -4925,16 +4926,16 @@ TEST(ReaderExecutor, LongConnectionDrainedAcrossPrefetchWindows)
     opts.long_connection_limit = limit;
     ReaderExecutor ex(source, objects, {}, opts);
 
-    ex.openLongForTest(0, size);
-    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);
+    inspect(ex).openLong(0, size);
+    EXPECT_EQ(inspect(ex).sourceRequests(), 1u);
 
     /// Window 1: foreground drains [0,100), then carries the connection into the prefetch
     /// machine, whose worker drains [100,200) (advancing it, not yet at bound).
     auto r1 = ex.readNextWindow();
     EXPECT_EQ(r1.range().size, window);
-    EXPECT_TRUE(ex.hasInflightPrefetch());
-    EXPECT_TRUE(ex.machineHasLongConnForTest());   /// carried + worker-advanced
-    EXPECT_FALSE(ex.hasLongConnForTest());
+    EXPECT_TRUE(inspect(ex).hasInflightPrefetch());
+    EXPECT_TRUE(inspect(ex).machineHasLongConn());   /// carried + worker-advanced
+    EXPECT_FALSE(inspect(ex).hasLongConn());
 
     String got = chainBytes(r1);
     while (true)
@@ -4946,8 +4947,8 @@ TEST(ReaderExecutor, LongConnectionDrainedAcrossPrefetchWindows)
     }
 
     EXPECT_EQ(got, content);                       /// byte-exact across fg + worker drains
-    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);     /// ONE GET served the whole file
-    EXPECT_FALSE(ex.hasLongConnForTest());         /// exhausted at bound
+    EXPECT_EQ(inspect(ex).sourceRequests(), 1u);     /// ONE GET served the whole file
+    EXPECT_FALSE(inspect(ex).hasLongConn());         /// exhausted at bound
     EXPECT_EQ(limit->getActiveCount(), 0u);
 }
 
@@ -4993,9 +4994,9 @@ TEST(ReaderExecutor, LongConnectionOpensOnPrefetchPath)
     }
 
     EXPECT_EQ(got, content);
-    EXPECT_EQ(ex.sourceRequestsForTest(), 1u);     /// opened once at the prefetch launch, carried across windows
-    EXPECT_EQ(ex.incompleteConnectionsForTest(), 0u);
-    EXPECT_FALSE(ex.hasLongConnForTest());          /// drained at the object end
+    EXPECT_EQ(inspect(ex).sourceRequests(), 1u);     /// opened once at the prefetch launch, carried across windows
+    EXPECT_EQ(inspect(ex).incompleteConnections(), 0u);
+    EXPECT_FALSE(inspect(ex).hasLongConn());          /// drained at the object end
     EXPECT_EQ(limit->getActiveCount(), 0u);
 }
 
@@ -5025,23 +5026,23 @@ TEST(ReaderExecutor, LongConnectionDroppedWhenCannotContinue)
     opts.long_connection_limit = limit;
     ReaderExecutor ex(source, objects, {}, opts);
 
-    ex.openLongForTest(0, size);
+    inspect(ex).openLong(0, size);
     auto r0 = ex.readNextWindow();                 /// drains [0,100); frontier at 100
     EXPECT_EQ(chainBytes(r0), content.substr(0, window));
-    EXPECT_TRUE(ex.hasLongConnForTest());
-    EXPECT_EQ(ex.longConnPositionForTest(), window);
+    EXPECT_TRUE(inspect(ex).hasLongConn());
+    EXPECT_EQ(inspect(ex).longConnPosition(), window);
 
     ex.seek(window / 2);                           /// backward; seek keeps the connection
-    EXPECT_TRUE(ex.hasLongConnForTest());
+    EXPECT_TRUE(inspect(ex).hasLongConn());
 
     auto r1 = ex.readNextWindow();                 /// cannot continue (backward) -> drop, then reopen
     EXPECT_EQ(chainBytes(r1), content.substr(window / 2, window));
-    EXPECT_TRUE(ex.hasLongConnForTest());          /// a fresh connection serves the new forward run
-    EXPECT_EQ(ex.longConnPositionForTest(), window / 2 + window);
+    EXPECT_TRUE(inspect(ex).hasLongConn());          /// a fresh connection serves the new forward run
+    EXPECT_EQ(inspect(ex).longConnPosition(), window / 2 + window);
     /// The dropped connection accounts an incomplete connection (tail too big to drain).
     /// The precise drop accounting in isolation is covered by
     /// LongConnectionDropBeforeBoundCountsIncomplete.
-    EXPECT_GE(ex.incompleteConnectionsForTest(), 1u);
+    EXPECT_GE(inspect(ex).incompleteConnections(), 1u);
     EXPECT_EQ(limit->getActiveCount(), 1u);        /// the reopened connection holds the slot
 }
 
@@ -5091,11 +5092,11 @@ TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)
     read_to(3 * window);
     read_to(4 * window);
     read_to(5 * window);
-    EXPECT_TRUE(ex.hasLongConnForTest()) << "a long connection is engaged for the forward run";
+    EXPECT_TRUE(inspect(ex).hasLongConn()) << "a long connection is engaged for the forward run";
 
     /// The long connection coalesces the five windows into far fewer GETs than the
     /// one-per-window a short connection would pay, spanning the advancing extent.
-    EXPECT_LT(ex.sourceRequestsForTest(), 5u) << "coalesced across windows, not one GET per window";
-    EXPECT_GE(ex.sourceRequestsForTest(), 1u);
+    EXPECT_LT(inspect(ex).sourceRequests(), 5u) << "coalesced across windows, not one GET per window";
+    EXPECT_GE(inspect(ex).sourceRequests(), 1u);
     EXPECT_EQ(got, content.substr(0, 5 * window));      /// [0,500) served byte-exact
 }
