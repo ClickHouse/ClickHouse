@@ -154,6 +154,12 @@ static CoreAnalysisResult buildExpressionCoreDAG(
         if (subquery_tree)
         {
             auto subquery_options = SelectQueryOptions{}.subquery();
+            /// Mirror `Planner::addBuildSubqueriesForSetsStepIfNeeded`: the set is built
+            /// here (via `buildSetInplace`) before the surrounding query materializes its
+            /// CTEs, so the set subquery must materialize any `WITH ... AS MATERIALIZED`
+            /// CTEs it references itself.  Without this, the set could read an
+            /// unmaterialized CTE.
+            subquery_options.forceMaterializeCTE();
             subquery_options.ignore_limits = false;
             Planner subquery_planner(
                 subquery_tree,
