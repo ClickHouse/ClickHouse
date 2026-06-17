@@ -927,14 +927,29 @@ create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
     ;
 
 -- new report for all queries with all metrics (no page yet)
+-- The trailing changed_threshold/unstable_threshold columns are the per-query
+-- thresholds computed in report_thresholds above (the 0.15/0.25 floors raised
+-- by historical and per-test thresholds). They are exported so downstream
+-- consumers (e.g. .claude/tools/fetch_perf_report.py) can classify queries
+-- with the same effective thresholds as the CI gate instead of only the floor
+-- constants. They are appended at the end to keep the existing column
+-- positions stable for older consumers.
 create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.tsv') as
     select metric_name, left, right, diff,
         floor(left > right ? left / right : right / left, 3),
-        stat_threshold, test, query_index, query_display_name
+        stat_threshold,
+        query_metric_stats.test test, query_metric_stats.query_index query_index,
+        query_display_names.query_display_name query_display_name,
+        report_thresholds.changed_threshold changed_threshold,
+        report_thresholds.unstable_threshold unstable_threshold
     from query_metric_stats
     left join query_display_names
         on query_metric_stats.test = query_display_names.test
             and query_metric_stats.query_index = query_display_names.query_index
+    left join report_thresholds
+        on query_display_names.test = report_thresholds.test
+            and query_display_names.query_index = report_thresholds.query_index
+            and query_display_names.query_display_name = report_thresholds.query_display_name
     order by test, query_index;
 " 2> >(tee -a report/errors.log 1>&2)
 

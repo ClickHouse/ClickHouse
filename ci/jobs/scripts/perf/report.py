@@ -663,6 +663,11 @@ if args.report == "main":
         # as a small cluster of related queries with large magnitudes that the
         # per-query thresholds catch on their own. The false positive rate
         # should be kept < 1%.
+        #
+        # This threshold must stay synchronized with SLOWER_QUERIES_FAIL_THRESHOLD
+        # in ci/jobs/performance_tests.py: that script discards the status
+        # embedded here and recomputes the final Praktika status by reparsing the
+        # "N slower" message below, so the effective gate lives there.
         if slower_queries > 10:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")
