@@ -9,7 +9,7 @@ namespace DB
 {
 
 template <typename Type>
-class SerializationEnum final : public SerializationNumber<Type>
+class SerializationEnum : public SerializationNumber<Type>
 {
 private:
     using typename SerializationNumber<Type>::FieldType;

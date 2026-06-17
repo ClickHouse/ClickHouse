@@ -26,14 +26,16 @@ public:
     void subscribe() override;
 
 protected:
+    void nackMessage(natsMsg * msg) override;
+
     NATSSubscriptionPtr subscribeToSubject(const String & subject);
 
     const String stream_name;
     const String consumer_name;
 
     std::unique_ptr<jsCtx, decltype(&jsCtx_Destroy)> jet_stream_ctx;
-    jsOptions jet_stream_options{};
-    jsSubOptions subscribe_options{};
+    jsOptions jet_stream_options;
+    jsSubOptions subscribe_options;
 };
 
 }

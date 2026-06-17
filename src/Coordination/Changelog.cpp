@@ -566,7 +566,7 @@ struct ChangelogReadResult
 ChangelogRecord readChangelogRecord(ReadBuffer & read_buf, const std::string & filepath)
 {
     /// Read checksum
-    Checksum record_checksum = 0;
+    Checksum record_checksum;
     readIntBinary(record_checksum, read_buf);
 
     /// Read header

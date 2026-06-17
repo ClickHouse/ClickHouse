@@ -42,7 +42,9 @@ MySQLSettings::MySQLSettings(const MySQLSettings & settings) : impl(std::make_un
 {
 }
 
-MySQLSettings::MySQLSettings(MySQLSettings && settings) noexcept = default;
+MySQLSettings::MySQLSettings(MySQLSettings && settings) noexcept : impl(std::make_unique<MySQLSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 MySQLSettings::~MySQLSettings() = default;
 

@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class FunctionInitialQueryID final : public IFunction
+class FunctionInitialQueryID : public IFunction
 {
     const String initial_query_id;
 

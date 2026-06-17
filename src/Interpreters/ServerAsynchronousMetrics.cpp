@@ -72,6 +72,8 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
         max = x;
 }
 
+}
+
 #if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
 
 /// For one connection pool group, observe each tracked socket's rmem/wmem into the
@@ -136,8 +138,6 @@ void updateHTTPConnectionPoolTCPBufferMetrics(
 }
 
 #endif
-
-}
 
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,

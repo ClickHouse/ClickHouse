@@ -102,13 +102,13 @@ void NegativeLimitByStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
 {
-    UInt64 group_length = 0;
-    UInt64 group_offset = 0;
+    UInt64 group_length;
+    UInt64 group_offset;
 
     readVarUInt(group_length, ctx.in);
     readVarUInt(group_offset, ctx.in);
 
-    UInt64 num_columns = 0;
+    UInt64 num_columns;
     readVarUInt(num_columns, ctx.in);
     Names columns(num_columns);
     for (auto & column : columns)
@@ -122,7 +122,6 @@ void NegativeLimitByStep::applyOrder(SortDescription sort_description)
     in_order = sort_description.hasPrefix(columns);
 }
 
-void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("NegativeLimitBy", NegativeLimitByStep::deserialize);

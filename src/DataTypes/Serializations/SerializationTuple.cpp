@@ -233,7 +233,7 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
             }
             else
             {
-                bool ok = false;
+                bool ok;
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
                     ok = SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(element_column, istr, settings, elems[i]);
                 else

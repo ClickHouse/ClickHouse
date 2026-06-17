@@ -25,12 +25,12 @@ using namespace DB;
 using namespace std::literals;
 }
 
-[[maybe_unused]] static std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> parser)
+std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> parser)
 {
     return ostr << "Parser: " << parser->getName();
 }
 
-static std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
+std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
 {
     // New line characters are removed because at the time of writing this the unit test results are parsed from the
     // command line output, and multi-line string representations are breaking the parsing logic.

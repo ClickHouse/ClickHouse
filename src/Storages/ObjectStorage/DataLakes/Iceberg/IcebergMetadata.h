@@ -114,7 +114,7 @@ public:
     bool supportsDelete() const override { return true; }
     void mutate(
         const MutationCommands & commands,
-        StoragePtr storage_ptr,
+        StorageObjectStorageConfigurationPtr configuration,
         ContextPtr context,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,

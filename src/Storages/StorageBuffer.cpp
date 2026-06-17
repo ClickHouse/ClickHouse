@@ -44,9 +44,7 @@
 #include <Columns/IColumn.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -206,7 +204,7 @@ VirtualColumnsDescription StorageBuffer::createVirtuals()
 }
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferSource final : public ISource
+class BufferSource : public ISource
 {
     ColumnPtr fillVirtualColumn(const String & name, const DataTypePtr & type, size_t num_rows) const
     {
@@ -703,7 +701,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 }
 
 
-class BufferSink final : public SinkToStorage, WithContext
+class BufferSink : public SinkToStorage, WithContext
 {
 public:
     explicit BufferSink(
@@ -1288,7 +1286,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     setInMemoryMetadata(new_metadata);
 }
 
-static UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
+UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
 {
     /**
       * Do not force UInt64 type for args, otherwise it'll be backward incompatible,
@@ -1310,7 +1308,6 @@ static UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_
     return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value);
 }
 
-void registerStorageBuffer(StorageFactory & factory);
 void registerStorageBuffer(StorageFactory & factory)
 {
     /** Buffer(db, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)

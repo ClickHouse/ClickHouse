@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Compression/CachedCompressedReadBuffer.h>
-#include <IO/ReadPipeline.h>
 
 #include <base/getThreadId.h>
 #include <base/range.h>
@@ -75,25 +74,16 @@ void MergeTreeReaderStream::init()
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
     //// Empty buffer does not makes progress.
-    if (!read_settings.local_fs_settings.buffer_size || !read_settings.remote_fs_settings.buffer_size)
+    if (!read_settings.local_fs_buffer_size || !read_settings.remote_fs_buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
-
-    auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        ReadPipeline pipeline;
-        data_part_storage->prepareRead(
-            path_prefix + data_file_extension,
-            read_settings,
-            estimated_sum_mark_range_bytes,
-            pipeline);
-
-        return pipeline.build();
-    };
 
     /// Initialize the objects that shall be used to perform read operations.
     if (!settings.is_compressed)
     {
-        auto buffer = build_read_buffer();
+        auto buffer = data_part_storage->readFile(
+            path_prefix + data_file_extension,
+            read_settings,
+            estimated_sum_mark_range_bytes);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -107,17 +97,12 @@ void MergeTreeReaderStream::init()
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
             [this, estimated_sum_mark_range_bytes, read_settings]()
-                -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
-                ReadPipeline pipeline;
-                data_part_storage->prepareRead(
+                return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes,
-                    pipeline);
-
-                return pipeline.build();
+                    estimated_sum_mark_range_bytes);
             },
             uncompressed_cache,
             settings.allow_different_codecs);
@@ -135,7 +120,10 @@ void MergeTreeReaderStream::init()
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            build_read_buffer(), settings.allow_different_codecs);
+            data_part_storage->readFile(
+                path_prefix + data_file_extension,
+                read_settings,
+                estimated_sum_mark_range_bytes), settings.allow_different_codecs);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -177,8 +165,6 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
 
 void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
 {
-    init();
-
     if (compressed_data_buffer)
     {
         compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
@@ -190,24 +176,6 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
 
         plain_file_buffer->seek(mark.offset_in_compressed_file, SEEK_SET);
     }
-}
-
-bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) const
-{
-    auto marks = marks_loader->loadMarks();
-    size_t num_transitions = 0;
-    MarkInCompressedFile last_mark{std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()};
-    for (size_t i = 0; i < marks_count; ++i)
-    {
-        auto mark = marks->getMark(i, 0);
-        if (mark != last_mark)
-        {
-            last_mark = mark;
-            if (++num_transitions > max_transitions)
-                return false;
-        }
-    }
-    return true;
 }
 
 void MergeTreeReaderStream::seekToStart()

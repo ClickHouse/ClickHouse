@@ -80,9 +80,16 @@ FileCacheSettings::FileCacheSettings(const FileCacheSettings & settings)
 {
 }
 
-FileCacheSettings::FileCacheSettings(FileCacheSettings && settings) noexcept = default;
+FileCacheSettings::FileCacheSettings(FileCacheSettings && settings) noexcept
+    : impl(std::make_unique<FileCacheSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
-FileCacheSettings & FileCacheSettings::operator=(FileCacheSettings && settings) noexcept = default;
+FileCacheSettings & FileCacheSettings::operator=(FileCacheSettings && settings) noexcept
+{
+    impl = std::make_unique<FileCacheSettingsImpl>(std::move(*settings.impl));
+    return *this;
+}
 
 bool FileCacheSettings::operator==(const FileCacheSettings & settings) const noexcept
 {

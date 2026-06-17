@@ -76,8 +76,8 @@ using ChangelogFileOperationPtr = std::shared_ptr<ChangelogFileOperation>;
 struct ChangelogFileDescription
 {
     std::string prefix;
-    uint64_t from_log_index{};
-    uint64_t to_log_index{};
+    uint64_t from_log_index;
+    uint64_t to_log_index;
     std::string extension;
 
     DiskPtr disk;
@@ -292,8 +292,8 @@ private:
     struct FileReadInfo
     {
         ChangelogFileDescriptionPtr file_description;
-        size_t position{};
-        size_t count{};
+        size_t position;
+        size_t count;
     };
 
     struct PrefetchInfo
@@ -462,7 +462,7 @@ private:
 
     struct AppendLog
     {
-        uint64_t index{};
+        uint64_t index;
         nuraft::ptr<nuraft::log_entry> log_entry;
     };
 
