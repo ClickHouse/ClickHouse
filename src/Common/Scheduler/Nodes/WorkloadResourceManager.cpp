@@ -259,11 +259,11 @@ String WorkloadResourceManager::Workload::getParent() const
     return assert_cast<ASTCreateWorkloadQuery *>(workload_entity.get())->getWorkloadParent();
 }
 
-WorkloadResourceManager::WorkloadResourceManager(IWorkloadEntityStorage & storage_)
-    : storage(storage_)
+WorkloadResourceManager::WorkloadResourceManager(std::shared_ptr<IWorkloadEntityStorage> storage_)
+    : storage(std::move(storage_))
     , log{getLogger("WorkloadResourceManager")}
 {
-    subscription = storage.getAllEntitiesAndSubscribe(
+    subscription = storage->getAllEntitiesAndSubscribe(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
         {
             for (const auto & [entity_type, entity_name, entity] : events)

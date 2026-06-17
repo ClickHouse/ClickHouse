@@ -7,6 +7,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <base/types.h>
 #include <Common/Allocator.h>
+#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 
 #include <boost/noncopyable.hpp>
@@ -187,6 +188,7 @@ private:
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
         SubsetOfColumnsSupportChecker subset_of_columns_support_checker;
         PrewhereSupportChecker prewhere_support_checker;
+        Documentation documentation;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -318,6 +320,9 @@ public:
     void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator);
     void registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator_with_metadata);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
+
+    /// Attach embedded documentation to a format by its name.
+    void setDocumentation(const String & name, Documentation documentation);
 
     /// Register file extension for format
     void registerFileExtension(const String & extension, const String & format_name);

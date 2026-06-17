@@ -421,9 +421,12 @@ include(cmake/limit_jobs.cmake)
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# Increase stack size on Musl. We need big stack for our recursive-descend parser.
+# Increase stack size on Musl. We need big stack for our recursive-descend parser
+# and for analyzer passes that recurse on deeply-nested join trees (e.g.
+# 1000-join queries). Match glibc's 8 MiB default; musl reads this from
+# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB).
 if (USE_MUSL)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
 endif ()
 
 include(cmake/dbms_glob_sources.cmake)

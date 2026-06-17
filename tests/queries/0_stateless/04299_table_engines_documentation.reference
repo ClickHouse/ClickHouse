@@ -1,0 +1,8 @@
+Distributed	1	1
+Memory	1	1
+Merge	1	1
+MergeTree	1	1
+Null	1	1
+ReplicatedMergeTree	1	1
+1	1
+['ReplicatedMergeTree']

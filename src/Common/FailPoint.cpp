@@ -72,9 +72,17 @@ static struct InitFiu
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(distributed_cache_fail_continue_request) \
+    ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
+    ONCE(distributed_cache_fail_simple_request) \
+    ONCE(distributed_cache_server_fail_read_request) \
+    ONCE(distributed_cache_server_fail_metrics_request) \
+    ONCE(distributed_cache_server_fail_show_request) \
+    ONCE(distributed_cache_server_fail_show_streaming) \
+    REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
@@ -149,6 +157,7 @@ static struct InitFiu
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
+    REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
@@ -194,7 +203,9 @@ static struct InitFiu
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     PAUSEABLE(transaction_after_commit_pause) \
-    REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc)
+    REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
+    REGULAR(tcp_handler_fail_connection_setup) \
+    REGULAR(distributed_plan_status_check_reenqueue_fault)
 
 namespace FailPoints
 {

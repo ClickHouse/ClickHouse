@@ -264,6 +264,10 @@ public:
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
+    /// True if a coordinator-side snapshot boundary is pinned (e.g. select_sequential_consistency).
+    /// Such a read cannot be distributed: a worker reads from its own snapshot and cannot reproduce it.
+    bool hasPinnedBlockNumbers() const { return max_block_numbers_to_read != nullptr; }
+
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
@@ -388,12 +392,12 @@ public:
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
-#if CLICKHOUSE_CLOUD
     /// In distributed query plan, this step will be executed in a distributed manner - shards will be read in parallel.
     void setDistributedRead(size_t bucket_count);
+    /// Parts (by name) every worker buckets over, so the partition is identical across replicas.
+    void setDistributedReadParts(Names part_names);
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
-#endif
 
     bool canRemoveUnusedColumns() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
@@ -410,9 +414,11 @@ public:
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
-#if CLICKHOUSE_CLOUD
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
-#endif
+
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
     MergeTreeSettingsPtr data_settings;
@@ -566,19 +572,17 @@ private:
 
     std::optional<TopKFilterInfo> top_k_filter_info;
     ProjectionIndexReadDescription projection_index_read_desc;
-#if CLICKHOUSE_CLOUD
     /// This is set when this step is part of a distributed query plan and it will be executed in a distributed manner.
     /// "bucket_id" task parameter will be used to determine what part of the data to read.
     size_t distributed_read_bucket_count = 0;
-#endif
+    /// Coordinator-selected parts a distributed-read worker buckets over. Empty otherwise.
+    Names distributed_read_part_names;
 };
-#if CLICKHOUSE_CLOUD
 /// Filter the mark ranges for a single part's worth of ranges for a specific bucket.
 /// `effective_bucket_index` is updated in-place so that consecutive calls across multiple parts
 /// maintain even distribution — small ranges that cannot be split do not all fall into bucket 0.
 /// NOTE: For distributed queries on full replicas, all reader nodes must receive the same
 ///       `parts_with_ranges` list so that `effective_bucket_index` advances identically.
 MarkRanges filterMarkRangesForBucket(const MarkRanges & ranges, size_t & effective_bucket_index, size_t total_buckets);
-#endif
 
 }

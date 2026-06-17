@@ -4055,6 +4055,63 @@ def test_write_column_order(started_cluster):
     assert num_rows * 2 == int(instance.query(f"SELECT count() FROM {table_name}"))
 
 
+def test_write_schema_mismatch_raises_user_error(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_write_schema_mismatch")
+
+    # Case 1: a Nested column declared in the table definition flattens to
+    # subcolumns (c0.c1), which do not match the table-level write schema (c0).
+    nested_file = f"/var/lib/clickhouse/user_files/{table_name}_nested"
+    nested_type = pa.list_(pa.struct([("c1", pa.int32())]))
+    nested_schema = pa.schema([("c0", nested_type)])
+    write_deltalake(
+        f"file:///{nested_file}",
+        pa.Table.from_arrays([pa.array([], type=nested_type)], schema=nested_schema),
+        mode="overwrite",
+    )
+    LocalUploader(instance).upload_directory(f"/{nested_file}/", f"/{nested_file}/")
+
+    nested_table = randomize_table_name("nested")
+    instance.query(
+        f"CREATE TABLE {nested_table} (c0 Nested(c1 Int32)) "
+        f"ENGINE = DeltaLakeLocal('/{nested_file}') "
+        f"SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    error = instance.query_and_get_error(
+        f"INSERT INTO {nested_table} (c0.c1) SELECT [1, 2, 3]"
+    )
+    assert "INCOMPATIBLE_COLUMNS" in error
+    assert "do not match" in error
+
+    # Case 2: explicit structure inserts a subset of the table's columns.
+    subset_file = f"/var/lib/clickhouse/user_files/{table_name}_subset"
+    subset_schema = pa.schema([("c1", pa.int32()), ("c0", pa.int32())])
+    write_deltalake(
+        f"file:///{subset_file}",
+        pa.Table.from_arrays(
+            [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())],
+            schema=subset_schema,
+        ),
+        mode="overwrite",
+    )
+    LocalUploader(instance).upload_directory(f"/{subset_file}/", f"/{subset_file}/")
+
+    error = instance.query_and_get_error(
+        f"INSERT INTO TABLE FUNCTION deltaLakeLocal('/{subset_file}', 'Parquet', 'c0 Int32') (c0) "
+        f"VALUES (1)"
+    )
+    assert "INCOMPATIBLE_COLUMNS" in error
+    assert "do not match" in error
+
+    # Server stays alive: a well-formed write to the same table still works.
+    instance.query(
+        f"INSERT INTO TABLE FUNCTION deltaLakeLocal('/{subset_file}') (c1, c0) VALUES (1, 2)"
+    )
+    assert "1\t2" == instance.query(
+        f"SELECT c1, c0 FROM deltaLakeLocal('/{subset_file}')"
+    ).strip()
+
+
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_type_from_storage_def(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]

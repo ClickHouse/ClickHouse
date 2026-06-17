@@ -40,7 +40,7 @@ Using named collections:
     <named_collections>
         <hudi_conf>
             <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
-            <access_key_id>ABC123<access_key_id>
+            <access_key_id>ABC123</access_key_id>
             <secret_access_key>Abc+123</secret_access_key>
         </hudi_conf>
     </named_collections>

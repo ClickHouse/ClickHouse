@@ -1565,16 +1565,26 @@ struct FunctionsStressTestThread
 
         if (constraints.integer_at_most.has_value())
         {
-            /// res = if(res > limit, 0, res)
+            /// res = if(abs(res) > limit, 0, res)
+            /// abs() is applied so that large negative values are clamped too: a large negative value is
+            /// just as dangerous as a large positive one (e.g. a large negative arrayResize size pads the
+            /// array from the front), and the one-sided `res > limit` check would let it through.
             /// (0 instead of limit or random just because it's less code)
             /// (why not use min2? because it always returns Float64)
 
-            ColumnsWithTypeAndName args {res};
-            args.emplace_back(ColumnConst::create(ColumnUInt64::create(1, *constraints.integer_at_most), options.rows_per_batch), std::make_shared<DataTypeUInt64>(), "limit");
             ColumnWithTypeAndName mask;
             try
             {
-                /// mask = greater(res, limit)
+                /// comparand = abs(res)
+                auto abs_func = FunctionFactory::instance().get("abs", context)->build({res});
+                ColumnWithTypeAndName comparand;
+                comparand.type = abs_func->getResultType();
+                comparand.column = abs_func->execute({res}, comparand.type, options.rows_per_batch, false);
+                comparand.name = "abs";
+
+                /// mask = greater(abs(res), limit)
+                ColumnsWithTypeAndName args {comparand};
+                args.emplace_back(ColumnConst::create(ColumnUInt64::create(1, *constraints.integer_at_most), options.rows_per_batch), std::make_shared<DataTypeUInt64>(), "limit");
                 auto func = FunctionFactory::instance().get("greater", context)->build(args);
                 mask.type = func->getResultType();
                 mask.column = func->execute(args, mask.type, options.rows_per_batch, false);
@@ -1591,7 +1601,7 @@ struct FunctionsStressTestThread
             if (mask.column)
             {
                 /// res = if(mask, 0, res)
-                args = {
+                ColumnsWithTypeAndName args = {
                     mask,
                     ColumnWithTypeAndName(res.type->createColumnConstWithDefaultValue(options.rows_per_batch), res.type, "zero"),
                     res};

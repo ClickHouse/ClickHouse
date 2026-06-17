@@ -72,7 +72,6 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
         ],
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
-        JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],

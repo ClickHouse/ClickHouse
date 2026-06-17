@@ -5,9 +5,7 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
-#ifdef OS_LINUX
-#    include <unistd.h>
-#endif
+#include <base/getL2CacheSize.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
@@ -220,15 +218,8 @@ concept HasPrefetchMemberFunc = requires
 
 size_t getMinBytesForPrefetch()
 {
-    size_t l2_size = 0;
-
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-    if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-        l2_size = ret;
-#endif
-
-    /// 256KB looks like a reasonable default L2 size. 4 is empirical constant.
-    return 4 * std::max<size_t>(l2_size, 256 * 1024);
+    /// 4 is empirical constant.
+    return 4 * getL2CacheSize();
 }
 
 UInt64 & getCountState(DB::AggregateDataPtr __restrict place) /// NOLINT(readability-non-const-parameter)

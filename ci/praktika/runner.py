@@ -152,6 +152,10 @@ class Runner:
         else:
             print("Read GH Environment from workflow data")
             env = _Environment.from_workflow_data()
+        # Record the KV-data keys inherited from the initial (config) job so the
+        # job's `data` output later carries only what this job itself added (see
+        # _post_run), not the whole inherited bucket duplicated into every job.
+        env.JOB_KV_DATA_BASE_KEYS = list(env.JOB_KV_DATA.keys())
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
@@ -657,7 +661,14 @@ class Runner:
                     result.set_link(link)
 
         # run after post hooks as they might modify workflow kv data
-        job_outputs = env.JOB_KV_DATA
+        # Non-initial jobs inherit the whole JOB_KV_DATA from the initial (config)
+        # job at startup (see _setup_env / _Environment.from_workflow_data). Emit
+        # only the keys this job itself added, so every job's `data` output does
+        # not re-duplicate the inherited bucket into toJson(needs).
+        base_keys = set(env.JOB_KV_DATA_BASE_KEYS or [])
+        job_outputs = {
+            k: v for k, v in env.JOB_KV_DATA.items() if k not in base_keys
+        }
         print(f"Job's output: [{list(job_outputs.keys())}]")
         if is_initial_job:
             output = dataclasses.asdict(env)

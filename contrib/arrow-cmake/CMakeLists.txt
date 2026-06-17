@@ -483,7 +483,37 @@ add_definitions(-DARROW_WITH_ZSTD)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zstd.cc" ${ARROW_SRCS})
 
 
+# Enable Arrow's SIMD codepaths (bit unpacking, byte stream split, UTF-8 validation); otherwise they fall back
+# to scalar. These headers include <xsimd/xsimd.hpp>, hence the xsimd dependency. Our production target is ARM,
+# where NEON is part of the aarch64 baseline. On x86 we follow X86_ARCH_LEVEL: the build already targets
+# x86-64-v${X86_ARCH_LEVEL}, so when it is >= 3 (AVX2/BMI2 guaranteed) the AVX2 sources compile under the base
+# -march with no extra flags. Lower levels keep the scalar path.
+#
+# The defines are applied with target_compile_definitions(... PUBLIC) below rather than add_definitions(),
+# because Arrow's SIMD entry points are inline in headers: ClickHouse code that includes them (e.g. the native
+# Parquet decoder calling ByteStreamSplitDecode) must see the same defines to pick the SIMD path.
+set(ARROW_SIMD_DEFS "")
+if (ARCH_AARCH64)
+    set(ARROW_SIMD_DEFS ARROW_HAVE_NEON)
+elseif (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
+    set(ARROW_SIMD_DEFS
+        ARROW_HAVE_SSE4_2 ARROW_HAVE_AVX2 ARROW_HAVE_BMI2
+        ARROW_HAVE_RUNTIME_SSE4_2 ARROW_HAVE_RUNTIME_AVX2 ARROW_HAVE_RUNTIME_BMI2)
+    # bpacking's unpack() has no compile-time AVX2 path, only a runtime-dispatched one, so its source is needed.
+    SET(ARROW_SRCS ${ARROW_SRCS}
+        "${LIBRARY_DIR}/util/bpacking_simd_avx2.cc"
+        "${LIBRARY_DIR}/util/byte_stream_split_internal_avx2.cc")
+    if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 4)
+        list (APPEND ARROW_SIMD_DEFS ARROW_HAVE_AVX512 ARROW_HAVE_RUNTIME_AVX512)
+        SET(ARROW_SRCS ${ARROW_SRCS} "${LIBRARY_DIR}/util/bpacking_simd_avx512.cc")
+    endif ()
+endif ()
+
+
 add_library(_arrow ${ARROW_SRCS})
+if (ARROW_SIMD_DEFS)
+    target_compile_definitions(_arrow PUBLIC ${ARROW_SIMD_DEFS})
+endif ()
 add_library(ch_contrib::arrow ALIAS _arrow)
 
 target_link_libraries(_arrow PRIVATE
@@ -502,6 +532,8 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::curl
 )
 target_link_libraries(_arrow PUBLIC _orc)
+# PUBLIC so the xsimd headers are visible to _parquet too (it links _arrow PUBLIC).
+target_link_libraries(_arrow PUBLIC ch_contrib::xsimd)
 
 add_dependencies(_arrow protoc)
 

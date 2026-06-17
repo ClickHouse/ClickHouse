@@ -100,7 +100,7 @@ if [ $((RANDOM % 2)) -eq 0 ]; then
 fi
 
 # Start server from previous release
-configure "${configure_opts[@]}"
+configure "${configure_opts[@]}" --previous-release
 
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml

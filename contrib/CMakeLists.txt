@@ -78,6 +78,7 @@ add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
+add_contrib (libpng-cmake libpng) # requires: zlib
 add_contrib (capnproto-cmake capnproto)
 add_contrib (yaml-cpp-cmake yaml-cpp)
 add_contrib (re2-cmake re2)
@@ -92,7 +93,8 @@ add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
 # parquet/arrow/orc
-add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
+add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
+add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd
 add_contrib (avro-cmake avro) # requires: snappy
 add_contrib (openldap-cmake openldap)
 add_contrib (msgpack-c-cmake msgpack-c)

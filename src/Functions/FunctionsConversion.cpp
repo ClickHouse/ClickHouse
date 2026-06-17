@@ -261,8 +261,12 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
         nested_result = nested_result->convertToFullColumnIfConst();
 
         /// Expand the result back to original size, filling filtered-out rows with defaults.
-        nested_result->assumeMutable()->expand(filter, false);
-        return nested_result;
+        /// nested_convert may return the input variant subcolumn unchanged (e.g. toString of a
+        /// String variant), so nested_result can alias it; mutate() clones when shared, unlike
+        /// assumeMutable() which would expand the shared subcolumn in place and corrupt the source.
+        auto mutable_result = IColumn::mutate(std::move(nested_result));
+        mutable_result->expand(filter, false);
+        return mutable_result;
     }
 
     /// General case: multiple variants. Convert each variant separately and assemble row-by-row.

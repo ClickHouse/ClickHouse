@@ -178,6 +178,9 @@ public:
     /// Target column name
     IAST * rename_to = nullptr;
 
+    /// For MODIFY COLUMN ADD ENUM VALUES
+    ASTPtr add_enum_values;
+
     /// For MODIFY REFRESH
     IAST * refresh = nullptr;
 
@@ -256,6 +259,9 @@ public:
 
     ASTExpressionList * command_list = nullptr;
 
+    /// Useful if we already have a DDL lock
+    bool no_ddl_lock = false;
+
     bool isSettingsAlter() const;
 
     bool isFreezeAlter() const;
@@ -271,6 +277,11 @@ public:
     bool isMovePartitionToDiskOrVolumeAlter() const;
 
     bool isCommentAlter() const;
+
+    /// Every command modifies settings or comments: any mix of MODIFY SETTING /
+    /// RESET SETTING / COMMENT COLUMN / MODIFY COMMENT / comment-only MODIFY COLUMN.
+    /// The single-type isSettingsAlter / isCommentAlter miss such mixed batches.
+    bool isSettingsOrCommentAlter() const;
 
     String getID(char) const override;
 

@@ -45,6 +45,11 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int INVALID_SCHEDULER_NODE;
+}
+
 namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;
@@ -187,7 +192,9 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
     explicit ResourceTest(size_t thread_count = 1)
         : ResourceTestManager(thread_count, DoNotInitManager)
     {
-        manager = std::make_shared<WorkloadResourceManager>(storage);
+        /// The test owns `storage` on the stack, so pass a non-owning shared_ptr.
+        manager = std::make_shared<WorkloadResourceManager>(
+            std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}));
     }
 
     void query(const String & query_str)
@@ -445,6 +452,125 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
     sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
+}
+
+// Regression test: a thread reuses the `ResourceGuard::Request::local()` thread-local instance across requests.
+// After a request fails (queue destroyed), a subsequent request granted on the same thread must not observe the
+// previous request's stale `exception` and spuriously throw `RESOURCE_ACCESS_DENIED`.
+// The failing request uses the `Lock::Defer` path here, so `~ResourceGuard()` runs and brings the request back to
+// the `Finished` state; only the stale `exception` would leak without the fix in `Request::enqueue()`.
+TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDeferRequestIsGranted)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD production IN all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD analytics IN all SETTINGS max_io_requests = 1");
+
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+
+    // Leader holds the only `production` slot so the worker's request stays queued and is failed by the drop.
+    t.async("production", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait();
+        sync_after_drop.arrive_and_wait();
+    });
+
+    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
+
+    t.async("production", "res1", [&] (ResourceLink prod_link)
+    {
+        // A healthy resource link in a sibling workload that is not affected by dropping `production`'s queue.
+        ClassifierPtr c_analytics = t.manager->acquire("analytics");
+        ResourceLink analytics_link = c_analytics->get("res1");
+
+        {
+            TestGuard g(t, prod_link, 1, EnqueueOnly);
+            sync_before_drop.arrive_and_wait(); // resource request is enqueued
+            g.waitFailed("is about to be destructed"); // request fails; `~g` finishes it but leaves a stale `exception`
+        }
+
+        // Reuse the thread-local `Request` for a request that is granted: it must not throw.
+        // NOTE: an uncaught exception in this worker thread would be swallowed, so assert explicitly.
+        EXPECT_NO_THROW({
+            ResourceGuard g2(ResourceGuard::Metrics::getIOWrite(), analytics_link, 1, ResourceGuard::Lock::Default);
+            g2.consume(1);
+            g2.unlock(1);
+        });
+    });
+
+    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    t.query("CREATE WORKLOAD child IN production");
+    sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
+}
+
+// Regression test for the `Lock::Default` failure path: when `ResourceGuard`'s constructor throws (the request
+// failed in `enqueue()` or `wait()`), `~ResourceGuard()` does not run, so the reused thread-local `Request` must be
+// restored to the `Finished` state by the constructor itself. Otherwise the next request enqueued on the same thread
+// would hit `chassert(state == Finished)`.
+TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDefaultRequestIsGranted)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD production IN all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD analytics IN all SETTINGS max_io_requests = 1");
+
+    std::barrier<std::__empty_completion> sync_leader_ready(2);
+    std::barrier<std::__empty_completion> sync_worker_ready(2);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+
+    // Leader holds the only `production` slot so the worker's request can never be granted before the drop.
+    t.async("production", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_leader_ready.arrive_and_wait();
+        sync_after_drop.arrive_and_wait();
+    });
+
+    t.async("production", "res1", [&] (ResourceLink prod_link)
+    {
+        ClassifierPtr c_analytics = t.manager->acquire("analytics");
+        ResourceLink analytics_link = c_analytics->get("res1");
+
+        sync_worker_ready.arrive_and_wait(); // about to enqueue the failing request
+
+        // `Lock::Default` enqueues and waits inside the constructor. The request is failed by the drop (either it is
+        // queued and `wait()` throws `RESOURCE_ACCESS_DENIED`, or the queue is already gone and `enqueue()` throws
+        // `INVALID_SCHEDULER_NODE`); in both cases the constructor throws and `~ResourceGuard()` does not run.
+        try
+        {
+            ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), prod_link, 1, ResourceGuard::Lock::Default);
+            FAIL() << "expected the request on a dropped queue to fail";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_TRUE(e.code() == ErrorCodes::RESOURCE_ACCESS_DENIED || e.code() == ErrorCodes::INVALID_SCHEDULER_NODE);
+        }
+
+        // Reuse the thread-local `Request` for a request that is granted: it must not abort or throw.
+        // NOTE: an uncaught exception in this worker thread would be swallowed, so assert explicitly.
+        EXPECT_NO_THROW({
+            ResourceGuard g2(ResourceGuard::Metrics::getIOWrite(), analytics_link, 1, ResourceGuard::Lock::Default);
+            g2.consume(1);
+            g2.unlock(1);
+        });
+    });
+
+    sync_leader_ready.arrive_and_wait(); // leader is holding the `production` slot
+    sync_worker_ready.arrive_and_wait(); // worker is about to enqueue its (doomed) request
+    t.query("CREATE WORKLOAD child IN production"); // triggers FifoQueue destruction, failing the worker's request
+    sync_after_drop.arrive_and_wait(); // release the leader
 
     t.wait(); // Wait for threads to finish before destructing locals
 }

@@ -3,6 +3,9 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
+
+#include <optional>
 
 namespace Poco::Util
 {
@@ -56,6 +59,13 @@ struct ServerSettings
     SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const;
+
+    /// Some server settings can be changed without a restart (e.g. memory and cache limits, thread pool sizes).
+    /// When this happens, the live value held by the component diverges from the value stored in `*this`,
+    /// which still reflects only what was last loaded from the config.
+    /// This function returns the live value (as a string) for such settings, or `std::nullopt` when the setting
+    /// has no live-value override and the configured value in `*this` is authoritative.
+    std::optional<String> tryGetLiveValueAsString(ContextPtr context, std::string_view name) const;
 
 private:
     std::unique_ptr<ServerSettingsImpl> impl;

@@ -732,6 +732,16 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
         limit_offset = field.safeGet<UInt64>();
     }
 
+    /// `arrayJoin` in the projection expands one input row into several output rows after the
+    /// source has run. Capping the source to `limit + offset` rows would truncate input BEFORE
+    /// expansion, so hard consumers of `trivial_limit` (StorageLoop, system.zeros, generateRandom)
+    /// could drop output rows that the LIMIT should keep. See issue #82279 and the sibling guard
+    /// in `numbersLikeUtils::shouldPushdownLimit`. (The `ARRAY JOIN` clause is lowered to a
+    /// separate table expression in the analyzer, so it is not a single-table read and never
+    /// reaches this optimization.)
+    if (hasFunctionNode(main_query_node.getProjectionNode(), "arrayJoin"))
+        return 0;
+
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
       * but LIMIT is specified with UInt64 value, and limit + offset < max_block_size,
       * then as the block size we will use limit + offset (not to read more from the table than requested),

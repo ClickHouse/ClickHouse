@@ -386,6 +386,11 @@ void KeeperContext::setSnapshotDisk(DiskPtr disk)
     latest_snapshot_storage = snapshot_storage;
 }
 
+void KeeperContext::setLatestSnapshotDisk(DiskPtr disk)
+{
+    latest_snapshot_storage = std::move(disk);
+}
+
 DiskPtr KeeperContext::getStateFileDisk() const
 {
     return getDisk(state_file_storage);

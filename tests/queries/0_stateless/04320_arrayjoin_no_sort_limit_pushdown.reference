@@ -1,0 +1,42 @@
+-- bot repro: arrayJoin with empty-array prefix
+3
+4
+5
+-- bot repro, old analyzer
+3
+4
+5
+-- multi-element arrayJoin
+0	0
+0	10
+1	1
+-- MergeTree, no ORDER BY, LIMIT 3
+3
+-- loop() source, LIMIT 3
+3
+4
+5
+-- loop() source, old analyzer
+3
+4
+5
+-- loop() source, optimizations disabled
+3
+4
+5
+-- loop() source, LIMIT 3 OFFSET 1
+4
+5
+6
+-- loop() source, ARRAY JOIN clause, old analyzer
+3
+4
+5
+-- loop() without arrayJoin still terminates (optimization fires)
+0
+1
+2
+-- unreferenced WITH arrayJoin does not block pushdown
+0
+1
+2

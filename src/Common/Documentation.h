@@ -24,6 +24,10 @@ namespace DB
   * - the version when the component was introduced;
   * - a list of related components.
   *
+  * The list of related components is documentation cross-reference metadata: it may name components
+  * that are not available in the current build (e.g. disabled by a compile-time option), so it should
+  * not be interpreted as a guarantee that every referenced component is registered in this server.
+  *
   * The description should be represented in Markdown (or just plaintext).
   *
   * Documentation does not support multiple languages.
