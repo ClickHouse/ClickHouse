@@ -21,21 +21,18 @@ namespace DB
 /// Returns a sorted vector of unique doc_ids that match the phrase.
 struct TextIndexPhraseSearch
 {
-    /// Intersect two position lists with a given positional shift.
+    /// Intersect two position lists (struct-of-arrays) with a given positional shift.
     /// For a phrase "A B", shift=1: term B must be at position (term A position + 1).
-    /// Returns entries where the phrase constraint is satisfied.
-    static std::vector<RoaringishEntry> intersect(
-        const std::vector<RoaringishEntry> & lhs,
-        const std::vector<RoaringishEntry> & rhs,
-        UInt32 shift);
+    /// Returns a PositionList of entries where the phrase constraint is satisfied.
+    static PositionList intersect(const PositionList & lhs, const PositionList & rhs, UInt32 shift);
 
     /// Multi-term phrase search.
     /// position_lists[0] = positions for first term, [1] = second term, etc.
     /// Returns sorted unique doc_ids where the full phrase matches.
-    static std::vector<UInt32> phraseSearch(const std::vector<std::vector<RoaringishEntry>> & position_lists);
+    static PaddedPODArray<UInt32> phraseSearch(const std::vector<PositionList> & position_lists);
 
     /// Extract unique sorted doc_ids from a position list.
-    static std::vector<UInt32> extractDocIds(const std::vector<RoaringishEntry> & entries);
+    static PaddedPODArray<UInt32> extractDocIds(const PositionList & pl);
 };
 
 }

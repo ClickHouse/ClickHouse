@@ -854,50 +854,55 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
 
     if (doc_ids_it == phrase_search_doc_ids.end())
     {
-        /// Cache miss: read position data and compute phrase intersection.
-        /// Token metadata (position offset + HasPositions flag) comes from the granule's analyzer,
-        /// which collects per-token info during the dictionary scan.
-        const auto & all_token_infos = granule->getAnalyzer().getAllTokenInfos();
+        /// Phrase result is a posting list (sorted doc-ids): computed once per (part, query) via the postings cache (Phrase key), shared across the part's readers.
+        const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+        auto phrase_key = TextIndexPostingsCache::hash(
+            granule->getIndexIdForCaches(), cache_key, static_cast<UInt8>(TextIndexPostingsCacheKind::Phrase));
 
-        std::vector<UInt64> position_offsets;
-        position_offsets.reserve(search_query->phrase_tokens.size());
-        for (const auto & token : search_query->phrase_tokens)
+        auto cell = condition_text.postingsCache()->getOrSet(phrase_key, [&]
         {
-            auto it = all_token_infos.find(token);
-            if (it == all_token_infos.end() || !(it->second->header & PostingsSerialization::Flags::HasPositions))
+            const auto & all_token_infos = granule->getAnalyzer().getAllTokenInfos();
+
+            std::vector<UInt64> position_offsets;
+            position_offsets.reserve(search_query->phrase_tokens.size());
+            for (const auto & token : search_query->phrase_tokens)
             {
-                position_offsets.clear();
-                break;
+                auto it = all_token_infos.find(token);
+                if (it == all_token_infos.end() || !(it->second->header & PostingsSerialization::Flags::HasPositions))
+                {
+                    position_offsets.clear();
+                    break;
+                }
+
+                const auto & token_info = *it->second;
+                position_offsets.emplace_back(token_info.position_offset);
             }
 
-            const auto & token_info = *it->second;
-            position_offsets.emplace_back(token_info.position_offset);
-        }
-        position_offsets.shrink_to_fit();
-
-        if (position_offsets.empty())
-        {
-            doc_ids_it = phrase_search_doc_ids.emplace(cache_key, std::vector<UInt32>{}).first;
-        }
-        else
-        {
-            std::vector<std::vector<RoaringishEntry>> position_lists;
-            position_lists.reserve(position_offsets.size());
-
-            auto * data_buffer = positions_stream->getDataBuffer();
-            for (auto position_offset : position_offsets)
+            PaddedPODArray<UInt32> matching;
+            if (!position_offsets.empty())
             {
-                positions_stream->seekToMark({position_offset, 0});
-                auto & positions = position_lists.emplace_back();
-                TextIndexPositionCodec::decode(*data_buffer, positions);
+                std::vector<PositionList> position_lists;
+                position_lists.reserve(position_offsets.size());
+
+                auto * data_buffer = positions_stream->getDataBuffer();
+                for (auto position_offset : position_offsets)
+                {
+                    positions_stream->seekToMark({position_offset, 0});
+                    auto & positions = position_lists.emplace_back();
+                    TextIndexPositionCodec::decode(*data_buffer, positions);
+                }
+
+                matching = TextIndexPhraseSearch::phraseSearch(position_lists);
             }
 
-            auto matching = TextIndexPhraseSearch::phraseSearch(position_lists);
-            doc_ids_it = phrase_search_doc_ids.emplace(cache_key, std::move(matching)).first;
-        }
+            return std::make_shared<TextIndexPostingsCacheCell>(
+                std::make_shared<PaddedPODArray<UInt32>>(std::move(matching)));
+        });
+
+        doc_ids_it = phrase_search_doc_ids.emplace(cache_key, std::get<FlatPostingsPtr>(cell->value)).first;
     }
 
-    const auto & matching_doc_ids = doc_ids_it->second;
+    const auto & matching_doc_ids = *doc_ids_it->second;
 
     for (UInt32 doc_id : matching_doc_ids)
     {

@@ -2,7 +2,9 @@
 
 #include <base/types.h>
 #include <Common/HashTable/StringHashMap.h>
+#include <Common/PODArray.h>
 
+#include <limits>
 #include <tuple>
 #include <vector>
 
@@ -141,5 +143,29 @@ private:
 };
 
 using TokenToPositionListMap = StringHashMap<PositionListBuilder>;
+
+/// Struct-of-arrays form of a roaringish position list, used on the query/decode path.
+///
+/// Decoding de-interleaves the on-disk AoS entries straight into these three lanes — no temp
+/// buffers, no SoA->AoS copy — so the decoded footprint is just the data (12 bytes/entry).
+/// Phrase search consumes this form directly, computing the (doc_id, group) merge key inline.
+/// Entries are sorted ascending by key() and unique per (doc_id, group).
+struct PositionList
+{
+    PaddedPODArray<UInt32> doc;
+    PaddedPODArray<UInt32> group;
+    PaddedPODArray<UInt32> bitmap;
+
+    size_t size() const { return doc.size(); }
+    bool empty() const { return doc.empty(); }
+    void clear() { doc.clear(); group.clear(); bitmap.clear(); }
+    void resize(size_t n) { doc.resize(n); group.resize(n); bitmap.resize(n); }
+    void reserve(size_t n) { doc.reserve(n); group.reserve(n); bitmap.reserve(n); }
+
+    /// (doc_id, group) intersection key.
+    UInt64 key(size_t i) const { return (static_cast<UInt64>(doc[i]) << 32) | group[i]; }
+
+    void pushBack(UInt32 d, UInt32 g, UInt32 b) { doc.push_back(d); group.push_back(g); bitmap.push_back(b); }
+};
 
 }

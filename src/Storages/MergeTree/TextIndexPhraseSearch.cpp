@@ -3,67 +3,60 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <limits>
+#include <utility>
+#include <vector>
 
 namespace DB
 {
 
-std::vector<RoaringishEntry> TextIndexPhraseSearch::intersect(
-    const std::vector<RoaringishEntry> & lhs,
-    const std::vector<RoaringishEntry> & rhs,
-    UInt32 shift)
+PositionList TextIndexPhraseSearch::intersect(const PositionList & lhs, const PositionList & rhs, UInt32 shift)
 {
+    PositionList result;
     if (lhs.empty() || rhs.empty() || shift == 0)
-        return {};
+        return result;
 
     chassert(shift < RoaringishEntry::BITMAP_BITS);
 
-    std::vector<RoaringishEntry> result;
-    result.reserve(std::min(lhs.size(), rhs.size()));
+    /// Collect matches as (key, bitmap); the intersection is small relative to the inputs.
+    /// key = (doc_id << 32) | group, computed inline from the SoA lanes.
+    std::vector<std::pair<UInt64, UInt32>> matches;
+    matches.reserve(std::min(lhs.size(), rhs.size()));
 
+    const size_t ln = lhs.size();
+    const size_t rn = rhs.size();
     size_t lhs_idx = 0;
     size_t rhs_idx = 0;
 
-    while (lhs_idx < lhs.size() && rhs_idx < rhs.size())
+    while (lhs_idx < ln && rhs_idx < rn)
     {
-        UInt64 lhs_key = lhs[lhs_idx].key();
-        UInt64 rhs_key = rhs[rhs_idx].key();
+        UInt64 lhs_key = lhs.key(lhs_idx);
+        UInt64 rhs_key = rhs.key(rhs_idx);
 
         if (lhs_key == rhs_key)
         {
-            /// Phase 1: same (doc_id, group).
-            /// Shift LHS bitmap left and AND with RHS bitmap.
-            UInt32 lhs_shifted = lhs[lhs_idx].bitmap << shift;
-            UInt32 matched_positions_bitmap = lhs_shifted & rhs[rhs_idx].bitmap;
-
+            /// Phase 1: same (doc_id, group). Shift LHS bitmap left and AND with RHS.
+            UInt32 lhs_shifted = lhs.bitmap[lhs_idx] << shift;
+            UInt32 matched_positions_bitmap = lhs_shifted & rhs.bitmap[rhs_idx];
             if (matched_positions_bitmap)
-            {
-                RoaringishEntry entry = rhs[rhs_idx];
-                entry.bitmap = matched_positions_bitmap;
-                result.push_back(entry);
-            }
+                matches.emplace_back(rhs_key, matched_positions_bitmap);
 
-            /// Phase 2: boundary crossing.
-            /// High bits of LHS bitmap overflow into the next group.
+            /// Phase 2: boundary crossing. High bits of LHS bitmap overflow into group+1.
             /// Skip when group is at max to avoid crossing into a different document.
-            UInt32 overflow_positions_bitmap = lhs[lhs_idx].bitmap >> (RoaringishEntry::BITMAP_BITS - shift);
-            if (overflow_positions_bitmap && lhs[lhs_idx].group < std::numeric_limits<UInt32>::max())
+            UInt32 overflow_positions_bitmap = lhs.bitmap[lhs_idx] >> (RoaringishEntry::BITMAP_BITS - shift);
+            if (overflow_positions_bitmap && lhs.group[lhs_idx] < std::numeric_limits<UInt32>::max())
             {
                 UInt64 boundary_key = lhs_key + 1; /// Same doc_id, group+1.
 
-                /// Scan forward in RHS for the boundary key.
                 size_t i = rhs_idx + 1;
-                while (i < rhs.size() && rhs[i].key() < boundary_key)
+                while (i < rn && rhs.key(i) < boundary_key)
                     ++i;
 
-                if (i < rhs.size() && rhs[i].key() == boundary_key)
+                if (i < rn && rhs.key(i) == boundary_key)
                 {
-                    UInt32 boundary_match = overflow_positions_bitmap & rhs[i].bitmap;
+                    UInt32 boundary_match = overflow_positions_bitmap & rhs.bitmap[i];
                     if (boundary_match)
-                    {
-                        RoaringishEntry entry = rhs[i];
-                        entry.bitmap = boundary_match;
-                        result.push_back(entry);
-                    }
+                        matches.emplace_back(boundary_key, boundary_match);
                 }
             }
 
@@ -73,20 +66,15 @@ std::vector<RoaringishEntry> TextIndexPhraseSearch::intersect(
         else if (lhs_key < rhs_key)
         {
             /// Phase 2 for non-matching LHS: check if LHS overflows into RHS's group.
-            UInt32 overflow_positions_bitmap = lhs[lhs_idx].bitmap >> (RoaringishEntry::BITMAP_BITS - shift);
-            if (overflow_positions_bitmap && lhs[lhs_idx].group < std::numeric_limits<UInt32>::max())
+            UInt32 overflow_positions_bitmap = lhs.bitmap[lhs_idx] >> (RoaringishEntry::BITMAP_BITS - shift);
+            if (overflow_positions_bitmap && lhs.group[lhs_idx] < std::numeric_limits<UInt32>::max())
             {
                 UInt64 boundary_key = lhs_key + 1;
-
                 if (boundary_key == rhs_key)
                 {
-                    UInt32 boundary_match = overflow_positions_bitmap & rhs[rhs_idx].bitmap;
+                    UInt32 boundary_match = overflow_positions_bitmap & rhs.bitmap[rhs_idx];
                     if (boundary_match)
-                    {
-                        RoaringishEntry entry = rhs[rhs_idx];
-                        entry.bitmap = boundary_match;
-                        result.push_back(entry);
-                    }
+                        matches.emplace_back(boundary_key, boundary_match);
                 }
             }
             ++lhs_idx;
@@ -97,23 +85,34 @@ std::vector<RoaringishEntry> TextIndexPhraseSearch::intersect(
         }
     }
 
-    /// Coalesce duplicate (doct_id, group) entries
-    std::sort(result.begin(), result.end());
+    if (matches.empty())
+        return result;
 
-    size_t write_idx = 0;
-    for (size_t read_idx = 0; read_idx < result.size(); ++read_idx)
+    /// Sort by key and coalesce duplicate (doc_id, group) keys (OR their bitmaps).
+    /// Sorting by key alone suffices: same-key entries become adjacent and bitmap OR is
+    /// order-independent.
+    std::sort(matches.begin(), matches.end(),
+              [](const auto & a, const auto & b) { return a.first < b.first; });
+
+    result.reserve(matches.size());
+    for (size_t i = 0; i < matches.size();)
     {
-        if (write_idx > 0 && result[write_idx - 1].sameBucket(result[read_idx]))
-            result[write_idx - 1].mergeBitmap(result[read_idx]);
-        else
-            result[write_idx++] = result[read_idx];
+        const UInt64 k = matches[i].first;
+        UInt32 bm = matches[i].second;
+        size_t j = i + 1;
+        while (j < matches.size() && matches[j].first == k)
+        {
+            bm |= matches[j].second;
+            ++j;
+        }
+        result.pushBack(static_cast<UInt32>(k >> 32), static_cast<UInt32>(k & 0xFFFFFFFFu), bm);
+        i = j;
     }
-    result.resize(write_idx);
 
     return result;
 }
 
-std::vector<UInt32> TextIndexPhraseSearch::phraseSearch(const std::vector<std::vector<RoaringishEntry>> & position_lists)
+PaddedPODArray<UInt32> TextIndexPhraseSearch::phraseSearch(const std::vector<PositionList> & position_lists)
 {
     if (position_lists.empty())
         return {};
@@ -121,32 +120,35 @@ std::vector<UInt32> TextIndexPhraseSearch::phraseSearch(const std::vector<std::v
     if (position_lists.size() == 1)
         return extractDocIds(position_lists[0]);
 
-    /// Chain pairwise intersections: ((list[0] ∩₁ list[1]) ∩₂ list[2]) ...
-    /// Each intersection uses shift=1 (consecutive tokens).
-    std::vector<RoaringishEntry> current = position_lists[0];
+    /// Chain pairwise intersections with shift=1 (consecutive tokens):
+    ///   ((list[0] ∩ list[1]) ∩ list[2]) ...
+    PositionList current = intersect(position_lists[0], position_lists[1], 1);
 
-    for (size_t k = 1; k < position_lists.size(); ++k)
+    for (size_t k = 2; k < position_lists.size(); ++k)
     {
-        current = intersect(current, position_lists[k], 1);
         if (current.empty())
             return {};
+        current = intersect(current, position_lists[k], 1);
     }
+
+    if (current.empty())
+        return {};
 
     return extractDocIds(current);
 }
 
-std::vector<UInt32> TextIndexPhraseSearch::extractDocIds(const std::vector<RoaringishEntry> & entries)
+PaddedPODArray<UInt32> TextIndexPhraseSearch::extractDocIds(const PositionList & pl)
 {
-    std::vector<UInt32> doc_ids;
-    doc_ids.reserve(entries.size());
+    PaddedPODArray<UInt32> doc_ids;
+    doc_ids.reserve(pl.size());
 
     UInt32 prev_doc = std::numeric_limits<UInt32>::max();
-    for (const auto & entry : entries)
+    for (size_t i = 0; i < pl.size(); ++i)
     {
-        if (entry.doc_id != prev_doc)
+        if (pl.doc[i] != prev_doc)
         {
-            doc_ids.push_back(entry.doc_id);
-            prev_doc = entry.doc_id;
+            doc_ids.push_back(pl.doc[i]);
+            prev_doc = pl.doc[i];
         }
     }
 

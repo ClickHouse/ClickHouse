@@ -24,8 +24,12 @@ public:
     /// Returns the number of bytes written.
     static void encode(const std::vector<RoaringishEntry> & entries, WriteBuffer & out);
 
-    /// Reads into a vector of RoaringishEntry values.
+    /// Reads into a vector of RoaringishEntry values (the build/merge path).
     static void decode(ReadBuffer & in, std::vector<RoaringishEntry> & entries);
+
+    /// Reads into struct-of-arrays form (the query/phrase-search path): de-interleaves the
+    /// on-disk AoS entries into pl.doc/group/bitmap.
+    static void decode(ReadBuffer & in, PositionList & pl);
 };
 
 }
