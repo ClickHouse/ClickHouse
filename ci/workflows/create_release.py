@@ -21,6 +21,12 @@ workflow = Workflow.Config(
     event=Workflow.Event.DISPATCH,
     jobs=[release_job],
     secrets=SECRETS + [robot_token_secret],
+    # Releases mutate shared state (tags, package repos, Docker tags); never run
+    # two concurrently. Mirrors the legacy workflow's `concurrency: group: release`.
+    concurrency_group="release",
+    # auto_releases.yml reuses this workflow via `uses:`, which requires a
+    # `workflow_call` trigger in addition to `workflow_dispatch`.
+    enable_workflow_call=True,
     inputs=[
         Workflow.Config.InputConfig(
             name="ref",
@@ -55,6 +61,12 @@ workflow = Workflow.Config(
             is_required=False,
             default_value="false",
             is_boolean=True,
+        ),
+        Workflow.Config.InputConfig(
+            name="assignee",
+            description="GitHub login to assign the changelog PR to (optional)",
+            is_required=False,
+            default_value="",
         ),
     ],
 )
