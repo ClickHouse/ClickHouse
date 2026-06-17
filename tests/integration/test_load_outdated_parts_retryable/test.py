@@ -30,6 +30,15 @@ OUTDATED_POST_CLEANUP_MOVE_FAILPOINT = (
 UNEXPECTED_POST_CLEANUP_MOVE_FAILPOINT = (
     "mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception"
 )
+# loadUnexpectedDataParts schedules one worker per unexpected part. A retryable error while scheduling a
+# later worker (CANNOT_SCHEDULE_TASK) must reschedule the task (pure scheduling pressure) WITHOUT dropping
+# an error already stored by an earlier worker. These two failpoints reproduce that race: the first makes
+# an already-scheduled worker fail non-retryably (a real inconsistent-part error), the second makes a later
+# schedule fail retryably (it only fires once a worker has been scheduled, so the worker error is stored first).
+UNEXPECTED_SCHEDULE_FAILPOINT = "mergetree_load_unexpected_parts_inject_schedule_failure"
+UNEXPECTED_WORKER_NONRETRYABLE_FAILPOINT = (
+    "mergetree_load_unexpected_parts_inject_worker_nonretryable_exception"
+)
 
 # Every retryable interrupt in loadOutdatedDataParts logs this single line, regardless of which of the
 # three failpoints fired. loadUnexpectedDataParts logs its own line.
@@ -346,5 +355,107 @@ def test_retryable_exception_after_unexpected_cleanup_move_fails_fast():
     # Restart reconciles the already-detached directory cleanly and the data on the merged part is intact.
     node.start_clickhouse()
     assert node.query(f"SELECT count() FROM {table}").strip() == "2000"
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def _make_unexpected_parts(table, zk_path):
+    # Build a replicated table with several inactive (merge source) parts left on disk, then delete their
+    # nodes from ZooKeeper so the next ATTACH sees them as UNEXPECTED parts (on disk, not expected). The
+    # merged part keeps all the data, so the unexpected parts are covered and the row count stays correct.
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (key UInt64) ENGINE = ReplicatedMergeTree('{zk_path}', '1') ORDER BY key
+        SETTINGS replicated_max_ratio_of_wrong_parts = 1, max_suspicious_broken_parts = 100,
+                 old_parts_lifetime = 600, merge_tree_clear_old_parts_interval_seconds = 600,
+                 cleanup_delay_period = 600, max_cleanup_delay_period = 600
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(1000)")
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(1000, 1000)")
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(2000, 1000)")
+    # Merge the three inserted parts into one active part; the sources stay on disk as inactive parts.
+    node.query(f"OPTIMIZE TABLE {table} FINAL")
+
+    inactive = (
+        node.query(
+            f"SELECT name FROM system.parts WHERE table = '{table}' AND active = 0 ORDER BY name"
+        )
+        .strip()
+        .splitlines()
+    )
+    zk = cluster.get_kazoo_client("zoo1")
+    deleted = 0
+    for name in inactive:
+        zk_part = os.path.join(zk_path, "replicas/1/parts", name)
+        if zk.exists(zk_part):
+            zk.delete(zk_part)
+            deleted += 1
+    # The schedule-failure failpoint only fires once a worker has already been scheduled, so the test needs
+    # at least two unexpected parts: one to schedule a worker, one whose scheduling then fails.
+    assert deleted >= 2
+
+
+def test_nonretryable_worker_error_not_masked_by_retryable_schedule_failure():
+    # loadUnexpectedDataParts schedules one worker per unexpected part. If an already-scheduled worker stores
+    # a non-retryable (genuinely inconsistent-part) error and then scheduling a LATER worker fails with a
+    # retryable CANNOT_SCHEDULE_TASK, the loader must still fail fast on the worker error. Before the fix the
+    # local runner's destructor only waited (did not rethrow) while the scheduling error unwound straight to
+    # the function-level catch, which saw only the retryable error and rescheduled, masking the real
+    # inconsistency. Now the runner is drained and the worker error rethrown before the scheduling error.
+    table = "t_unexpected_mask"
+    zk_path = "/clickhouse/tables/t_unexpected_mask"
+    _make_unexpected_parts(table, zk_path)
+
+    # Snapshot the reschedule-interrupt count; with the fix it must NOT grow (fail fast on the worker error).
+    interrupts_before = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG))
+
+    # First scheduled worker fails non-retryably; scheduling the next worker then fails retryably.
+    node.query(f"SYSTEM ENABLE FAILPOINT {UNEXPECTED_WORKER_NONRETRYABLE_FAILPOINT}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {UNEXPECTED_SCHEDULE_FAILPOINT}")
+    node.query(f"DETACH TABLE {table}")
+    # The replicated attach thread blocks until unexpected parts finish loading, so run ATTACH async; the
+    # server fails fast and terminates underneath it.
+    node.get_query_request(f"ATTACH TABLE {table}")
+
+    node.wait_for_log_line(TERMINATE_LOG, timeout=90)
+    wait_for_process_stop(node)
+    # The retryable scheduling error must NOT have caused a reschedule: the worker's non-retryable error is
+    # drained and rethrown first. The pre-fix code masked it (the scheduling error rescheduled) and would
+    # have logged this line before looping forever instead of terminating.
+    assert int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG)) == interrupts_before
+
+    # A restart with no failpoints loads the (valid, covered) unexpected parts cleanly; data is intact.
+    node.start_clickhouse()
+    assert node.query(f"SELECT count() FROM {table}").strip() == "3000"
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_retryable_schedule_failure_while_loading_unexpected_parts_reschedules():
+    # The other half of the same contract: pure scheduling pressure (a retryable CANNOT_SCHEDULE_TASK with
+    # no worker error) must still reschedule the task and eventually load every part, not fail fast. This is
+    # the legitimate retry path the masking fix above must not break.
+    table = "t_unexpected_sched"
+    zk_path = "/clickhouse/tables/t_unexpected_sched"
+    _make_unexpected_parts(table, zk_path)
+
+    interrupts_before = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG))
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {UNEXPECTED_SCHEDULE_FAILPOINT}")
+    node.query(f"DETACH TABLE {table}")
+    # ATTACH blocks until loading finishes; the loader reschedules on each scheduling failure and makes
+    # progress one part per pass, so run it async and watch for the reschedule line.
+    attach = node.get_query_request(f"ATTACH TABLE {table}")
+
+    # The reschedule path fired (server stayed up instead of terminating).
+    wait_for_log_count_above(node, UNEXPECTED_INTERRUPT_LOG, interrupts_before)
+    assert node.query("SELECT 1").strip() == "1"
+
+    # Clear the scheduling pressure; the remaining parts schedule in one pass and ATTACH returns.
+    node.query(f"SYSTEM DISABLE FAILPOINT {UNEXPECTED_SCHEDULE_FAILPOINT}")
+    attach.get_answer()
+    assert node.query(f"SELECT count() FROM {table}").strip() == "3000"
 
     node.query(f"DROP TABLE {table} SYNC")

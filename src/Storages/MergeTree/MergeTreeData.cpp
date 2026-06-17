@@ -383,6 +383,8 @@ namespace FailPoints
     extern const char mergetree_load_outdated_parts_inject_post_cleanup_move_retryable_exception[];
     extern const char mergetree_load_unexpected_parts_inject_post_load_retryable_exception[];
     extern const char mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception[];
+    extern const char mergetree_load_unexpected_parts_inject_schedule_failure[];
+    extern const char mergetree_load_unexpected_parts_inject_worker_nonretryable_exception[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -2883,6 +2885,10 @@ try
     ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_UNEXPECTED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
+    /// A retryable error caught while scheduling a worker; rethrown only after the runner is drained below.
+    std::exception_ptr schedule_error;
+    /// Only used to gate the scheduling-failure failpoint so a worker is scheduled before scheduling fails.
+    bool any_unexpected_part_scheduled = false;
     for (auto & load_state : unexpected_data_parts)
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
@@ -2897,10 +2903,16 @@ try
             runner.waitForAllToFinishAndRethrowFirstError();
             return;
         }
+
         /// Capturing load_state by reference is fine here because it's a reference to this, which outlives runner
-        runner.enqueueAndKeepTrack([this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
+        auto load_unexpected_part = [this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
         {
             auto local_component_guard = Coordination::setCurrentComponent(component_name);
+
+            fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_worker_nonretryable_exception,
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Injected non-retryable failure while loading unexpected part {}", load_state.loading_info->name);
+            });
 
             /// A retry after a retryable detach failure re-enters here with the part already loaded; load it
             /// only once so we resume at the detach step instead of building the part again.
@@ -2942,9 +2954,38 @@ try
             /// Mark done only after the optional detach finished: a retryable failure above reschedules this
             /// part and the rescheduled run must redo the detach rather than skip it.
             load_state.finished = true;
-        }, Priority{});
+        };
+
+        try
+        {
+            fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_schedule_failure,
+            {
+                if (any_unexpected_part_scheduled)
+                    throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected scheduling failure while loading unexpected part {}", load_state.loading_info->name);
+            });
+
+            runner.enqueueAndKeepTrack(std::move(load_unexpected_part), Priority{});
+            any_unexpected_part_scheduled = true;
+        }
+        catch (...)
+        {
+            /// Scheduling the worker (ThreadPool::scheduleOrThrow) can itself throw, e.g. a retryable
+            /// CANNOT_SCHEDULE_TASK. A non-retryable error fails fast. A retryable one is saved and rethrown
+            /// only after the runner is drained below (see there), so a worker error is not masked.
+            if (!isRetryableException(std::current_exception()))
+                throw;
+            schedule_error = std::current_exception();
+            break;
+        }
     }
+    /// Drain the workers and rethrow the first worker error BEFORE handling a scheduling error: an already
+    /// scheduled worker may have stored a non-retryable inconsistent-part failure that must fail fast, and
+    /// a retryable scheduling error would otherwise reschedule the task and mask it. The local runner's
+    /// destructor only waits (it does not rethrow), so a scheduling error unwinding straight to the
+    /// function-level catch would drop that worker error. Mirrors loadOutdatedDataParts.
     runner.waitForAllToFinishAndRethrowFirstError();
+    if (schedule_error)
+        std::rethrow_exception(schedule_error);
     LOG_DEBUG(log, "Loaded {} unexpected data parts", unexpected_data_parts.size());
 
     {
