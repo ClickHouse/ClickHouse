@@ -104,9 +104,10 @@ class Labels:
 class VersionType:
     NEW = "new"
     TESTING = "testing"
+    PRESTABLE = "prestable"
     STABLE = "stable"
     LTS = "lts"
-    VALID = {NEW, TESTING, STABLE, LTS}
+    VALID = {NEW, TESTING, PRESTABLE, STABLE, LTS}
 
 
 class ClickHouseVersion:
@@ -795,7 +796,7 @@ class ReleaseInfo:
             # release server-side but returns a transient error, the retry hits
             # "already exists" and still fails. Treat that as success by
             # verifying the release exists after any failure.
-            if not Shell.check(cmd_create, verbose=True, retries=5, retry_delay=2):
+            if not Shell.check(cmd_create, verbose=True, retries=5):
                 # The recovery `gh release view` is invoked precisely when GitHub's
                 # API has been flaky. Retry it under the same policy so a single
                 # transient 5xx on the verify path doesn't fail the release.
@@ -803,7 +804,6 @@ class ReleaseInfo:
                     f"gh release view --repo {repo} {self.release_tag}",
                     verbose=True,
                     retries=5,
-                    retry_delay=2,
                 ), f"Failed to create release {self.release_tag}"
             # On a rerun some assets may already be uploaded. Fetch the list and
             # skip those files to avoid redundant uploads.
@@ -818,7 +818,7 @@ class ReleaseInfo:
                 if name in uploaded:
                     print(f"Asset {name} already uploaded — skipping")
                     continue
-                Shell.check(cmd, strict=True, verbose=True, retries=5, retry_delay=2)
+                Shell.check(cmd, strict=True, verbose=True, retries=5)
             self.release_url = (
                 f"https://github.com/{GITHUB_REPOSITORY}/releases/tag/{self.release_tag}"
             )

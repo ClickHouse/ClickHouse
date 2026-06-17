@@ -111,6 +111,12 @@ def main():
     dry_run_flag = "--dry-run" if args.dry_run else ""
     original_branch = Shell.get_output("git rev-parse --abbrev-ref HEAD", strict=True)
 
+    # Export the robot token once for the whole job (the legacy workflow set it
+    # as a job-level `env: GH_TOKEN`). Commands then reference `$GH_TOKEN` instead
+    # of interpolating the secret value, so praktika's verbose command logging
+    # (Shell.run prints every command) never writes the token to the job log.
+    os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
+
     results = []
     ok = True
 
@@ -119,7 +125,7 @@ def main():
         if not ok:
             return
         results.append(Result.from_commands_run(**kwargs))
-        if results[-1].status != Result.Status.SUCCESS:
+        if results[-1].status != Result.Status.OK:
             ok = False
 
     step(
@@ -201,14 +207,15 @@ def main():
         workdir=REPO_PATH,
     )
 
-    step(
-        name="Download All Release Artifacts",
-        command=[
-            f"python3 ./ci/jobs/create_release.py --download-packages"
-            f" {dry_run_flag}".strip()
-        ],
-        workdir=REPO_PATH,
-    )
+    if args.release_type == "patch" and not args.only_docker:
+        step(
+            name="Download All Release Artifacts",
+            command=[
+                f"python3 ./ci/jobs/create_release.py --download-packages"
+                f" {dry_run_flag}".strip()
+            ],
+            workdir=REPO_PATH,
+        )
 
     if not args.only_repo and not args.only_docker:
         step(
@@ -262,10 +269,10 @@ def main():
                 "echo 'Generate ChangeLog'",
                 "docker pull clickhouse/style-test:latest",
                 f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
-                f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
+                f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
                 f" clickhouse/style-test:latest"
                 f" ./tests/ci/changelog.py -v --debug-helpers"
-                f" --gh-user-or-token {_GH_TOKEN_SECRET.get_value()}"
+                f' --gh-user-or-token "$GH_TOKEN"'
                 f" --jobs=5"
                 f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
                 f"git add ./docs/changelogs/{release_tag}.md",
@@ -296,20 +303,21 @@ def main():
                 "- Not for changelog (changelog entry is not required)"
             )
 
-            os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
             Shell.check(
                 "git config user.email robot-clickhouse@users.noreply.github.com",
                 strict=True,
             )
             Shell.check("git config user.name robot-clickhouse", strict=True)
-            Shell.check(f"git checkout -b {pr_branch}", strict=True)
+            # -B so a rerun after a partial failure re-creates the branch instead
+            # of failing on "branch already exists".
+            Shell.check(f"git checkout -B {pr_branch}", strict=True)
             Shell.check("git add -A", strict=True)
             Shell.check(
                 f"git commit -m {shlex.quote(commit_msg)}",
                 strict=True,
             )
             Shell.check(
-                f"git push https://x-access-token:{_GH_TOKEN_SECRET.get_value()}@github.com/ClickHouse/ClickHouse.git {pr_branch}",
+                f"git push --force https://x-access-token:$GH_TOKEN@github.com/ClickHouse/ClickHouse.git {pr_branch}",
                 strict=True,
             )
 
@@ -320,18 +328,28 @@ def main():
                 body_file_path = body_file.name
 
             try:
-                cmd = (
-                    f"gh pr create --base master --head {shlex.quote(pr_branch)}"
-                    f" --title {shlex.quote(pr_title)}"
-                    f" --body-file {body_file_path}"
-                    f" --label 'do not test'"
-                    + (
-                        f" --assignee {shlex.quote(args.assignee)}"
-                        if args.assignee
-                        else ""
-                    )
+                # On a rerun after a partial failure the PR may already exist for
+                # this branch (the branch is force-pushed above); `gh pr create`
+                # would then fail with "already exists". Skip creation in that case.
+                existing_pr = Shell.get_output(
+                    f"gh pr list --repo ClickHouse/ClickHouse --head {shlex.quote(pr_branch)}"
+                    f" --state all --json url --jq '.[0].url'"
                 )
-                assert GH.do_command_with_retries(cmd), "Failed to create PR"
+                if existing_pr:
+                    print(f"ChangeLog PR already exists [{existing_pr}] — skipping create")
+                else:
+                    cmd = (
+                        f"gh pr create --base master --head {shlex.quote(pr_branch)}"
+                        f" --title {shlex.quote(pr_title)}"
+                        f" --body-file {body_file_path}"
+                        f" --label 'do not test'"
+                        + (
+                            f" --assignee {shlex.quote(args.assignee)}"
+                            if args.assignee
+                            else ""
+                        )
+                    )
+                    assert GH.do_command_with_retries(cmd), "Failed to create PR"
             finally:
                 os.unlink(body_file_path)
 
@@ -410,6 +428,12 @@ def main():
                 version_major = ".".join(parts[:2])
 
                 for variant, dockerfile, context in build_configs:
+                    # Older release tags may not ship every Dockerfile (e.g.
+                    # distroless was added later); skip variants whose Dockerfile
+                    # is absent at this tag, matching the legacy workflow.
+                    if not os.path.isfile(dockerfile):
+                        print(f"Skipping {variant}: {dockerfile} not found at this tag")
+                        continue
                     version_suffix = "" if variant == "ubuntu" else f"-{variant}"
                     label_version = f"{version_string}{version_suffix}"
                     tags = [
@@ -459,6 +483,11 @@ def main():
                         "docker/server/Dockerfile.alpine",
                         "docker/server",
                     ),
+                    (
+                        "distroless",
+                        "docker/server/Dockerfile.distroless",
+                        "docker/server",
+                    ),
                 ],
             ),
             workdir=REPO_PATH,
@@ -480,12 +509,17 @@ def main():
                         "docker/keeper/Dockerfile.alpine",
                         "docker/keeper",
                     ),
+                    (
+                        "distroless",
+                        "docker/keeper/Dockerfile.distroless",
+                        "docker/keeper",
+                    ),
                 ],
             ),
             workdir=REPO_PATH,
         )
 
-    # Always run — equivalent to `if: ${{ !cancelled() }}` in the workflow.
+    # Always restore git state — equivalent to `if: ${{ !cancelled() }}`.
     results.append(
         Result.from_commands_run(
             name="Checkout Back",
@@ -494,29 +528,35 @@ def main():
         )
     )
 
-    results.append(
-        Result.from_commands_run(
-            name="Update Release Info and Merge Created PRs",
-            command=[
-                f"python3 ./ci/jobs/create_release.py --merge-prs"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
+    # Merging the created PRs and marking the release "completed" are release
+    # mutations that must only happen when every preceding step succeeded.
+    # On failure we leave the in-progress status untouched so the Slack post
+    # below reports the actual failing step instead of a false "completed".
+    if ok:
+        results.append(
+            Result.from_commands_run(
+                name="Update Release Info and Merge Created PRs",
+                command=[
+                    f"python3 ./ci/jobs/create_release.py --merge-prs"
+                    f" {dry_run_flag}".strip()
+                ],
+                workdir=REPO_PATH,
+            )
         )
-    )
 
-    results.append(
-        Result.from_commands_run(
-            name="Set Release Progress to Completed",
-            command=[
-                "python3 ./ci/jobs/create_release.py --set-progress-started"
-                " --progress completed",
-                "python3 ./ci/jobs/create_release.py --set-progress-completed",
-            ],
-            workdir=REPO_PATH,
+        results.append(
+            Result.from_commands_run(
+                name="Set Release Progress to Completed",
+                command=[
+                    "python3 ./ci/jobs/create_release.py --set-progress-started"
+                    " --progress completed",
+                    "python3 ./ci/jobs/create_release.py --set-progress-completed",
+                ],
+                workdir=REPO_PATH,
+            )
         )
-    )
 
+    # Always post the final status (the completed release, or the failing step).
     results.append(
         Result.from_commands_run(
             name="Post Slack Message",
