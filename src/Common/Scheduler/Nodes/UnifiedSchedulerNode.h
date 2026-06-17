@@ -143,9 +143,11 @@ private:
             {
                 // Remove fair if the only child has left
                 chassert(root);
+                auto remaining_child = children.begin()->second;
+                detach(remaining_child); // Detach remaining child from root before destroying it
                 detach(root);
                 root.reset();
-                return children.begin()->second; // The last child is a new root now
+                return remaining_child; // The last child is a new root now
             }
             else if (children.empty())
                 return {}; // We have detached the last child
@@ -253,6 +255,7 @@ private:
     {
         SchedulerNodePtr queue; /// FifoQueue node is used if there are no children
         ChildrenBranch branch; /// Used if there is at least one child
+        WorkloadSettings settings;
 
         SchedulerNodePtr getRoot()
         {
@@ -263,8 +266,9 @@ private:
         }
 
         // Should be called after constructor, before any other methods
-        [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_)
+        [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_, const WorkloadSettings & settings_)
         {
+            settings = settings_;
             createQueue(event_queue_);
             return queue;
         }
@@ -296,7 +300,9 @@ private:
     private:
         void createQueue(EventQueue * event_queue_)
         {
-            queue = std::make_shared<FifoQueue>(event_queue_, SchedulerNodeInfo{});
+            SchedulerNodeInfo node_info{};
+            node_info.queue_size = settings.getQueueSize();
+            queue = std::make_shared<FifoQueue>(event_queue_, node_info);
             queue->basename = "fifo";
         }
 
@@ -323,7 +329,7 @@ private:
         [[nodiscard]] SchedulerNodePtr initialize(EventQueue * event_queue_, const WorkloadSettings & settings_)
         {
             settings = settings_;
-            SchedulerNodePtr node = branch.initialize(event_queue_);
+            SchedulerNodePtr node = branch.initialize(event_queue_, settings);
             if (settings.hasSemaphore())
             {
                 semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, settings.getSemaphoreMaxRequests(), settings.getSemaphoreMaxCost());
@@ -551,8 +557,8 @@ protected: // Hide all the ISchedulerNode interface methods as an implementation
     {
         if (immediate_child.get() == child)
         {
-            child_active = false; // deactivate
-            immediate_child->setParent(nullptr); // detach
+            immediate_child->setParent(nullptr); // detach first: cancels pending activations and waits for any in-progress activateChild
+            child_active = false; // deactivate (safe: no concurrent activateChild after cancelActivation)
             immediate_child.reset();
         }
     }

@@ -4,6 +4,7 @@
 #include <Common/ICachePolicy.h>
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
+#include <Common/CurrentMetrics.h>
 
 #include <base/UUID.h>
 #include <base/defines.h>
@@ -44,15 +45,29 @@ public:
     static constexpr auto DEFAULT_SIZE_RATIO = 0.5l;
 
     /// Use this ctor if you only care about the cache size but not internals like the cache policy.
-    explicit CacheBase(size_t max_size_in_bytes, size_t max_count = NO_MAX_COUNT, double size_ratio = DEFAULT_SIZE_RATIO)
-        : CacheBase("SLRU", max_size_in_bytes, max_count, size_ratio)
+    explicit CacheBase(
+        CurrentMetrics::Metric size_in_bytes_metric,
+        CurrentMetrics::Metric count_metric,
+        size_t max_size_in_bytes,
+        size_t max_count = NO_MAX_COUNT,
+        double size_ratio = DEFAULT_SIZE_RATIO)
+        : CacheBase("SLRU", size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio)
     {
     }
 
     /// Use this ctor if the user should be able to configure the cache policy and cache sizes via settings. Supports only general-purpose policies LRU and SLRU.
-    explicit CacheBase(std::string_view cache_policy_name, size_t max_size_in_bytes, size_t max_count, double size_ratio)
+    explicit CacheBase(
+        std::string_view cache_policy_name,
+        CurrentMetrics::Metric size_in_bytes_metric,
+        CurrentMetrics::Metric count_metric,
+        size_t max_size_in_bytes,
+        size_t max_count,
+        double size_ratio)
     {
-        auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
+        auto on_remove_entry_function = [this](size_t weight_loss, const MappedPtr & mapped_ptr)
+        {
+            onEntryRemoval(weight_loss, mapped_ptr);
+        };
 
         if (cache_policy_name.empty())
         {
@@ -63,12 +78,12 @@ public:
         if (cache_policy_name == "LRU")
         {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<LRUPolicy>(max_size_in_bytes, max_count, on_weight_loss_function);
+            cache_policy = std::make_unique<LRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_remove_entry_function);
         }
         else if (cache_policy_name == "SLRU")
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<SLRUPolicy>(max_size_in_bytes, max_count, size_ratio, on_weight_loss_function);
+            cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_remove_entry_function);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
@@ -99,6 +114,27 @@ public:
         else
             ++misses;
         return res;
+    }
+
+    std::vector<MappedPtr> getMany(const std::vector<Key> & keys)
+    {
+        std::vector<MappedPtr> values;
+        values.resize(keys.size());
+
+        std::lock_guard lock(mutex);
+
+        for (size_t i = 0; i < keys.size(); ++i)
+        {
+            auto res = cache_policy->get(keys[i]);
+            if (res)
+                ++hits;
+            else
+                ++misses;
+
+            values[i] = std::move(res);
+        }
+
+        return values;
     }
 
     bool contains(const Key & key) const
@@ -209,6 +245,25 @@ public:
         cache_policy->remove(predicate);
     }
 
+    /// O(1) "remove iff" by key: looks up the resident under `key` and
+    /// removes it only when `predicate(resident)` returns true. Returns
+    /// whether the entry was removed. Atomic with respect to concurrent
+    /// set/get/remove (single mutex acquisition for lookup + remove).
+    ///
+    /// Note: the predicate is invoked with a `MappedPtr` copy of the stored
+    /// shared_ptr (cache_policy->get also bumps LRU position as a side
+    /// effect), so the predicate sees `use_count() == stored_refs + 1`.
+    /// Callers reasoning about use_count should account for the extra ref.
+    bool removeIfMatches(const Key & key, std::function<bool(const MappedPtr &)> predicate)
+    {
+        std::lock_guard lock(mutex);
+        auto value = cache_policy->get(key);
+        if (!value || !predicate(value))
+            return false;
+        cache_policy->remove(key);
+        return true;
+    }
+
     size_t sizeInBytes() const
     {
         std::lock_guard lock(mutex);
@@ -225,6 +280,12 @@ public:
     {
         std::lock_guard lock(mutex);
         return cache_policy->maxSizeInBytes();
+    }
+
+    size_t maxCount() const
+    {
+        std::lock_guard lock(mutex);
+        return cache_policy->maxCount();
     }
 
     void setMaxCount(size_t max_count)
@@ -323,8 +384,9 @@ private:
 
     InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
 
-    /// Override this method if you want to track how much weight was lost in removeOverflow method.
-    virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) {}
+    /// This is called when an entry is being evicted from the cache.
+    /// Override this method if you want to handle individual entry removals from cache
+    virtual void onEntryRemoval(size_t /*weight_loss*/, const MappedPtr &) { }
 };
 
 

@@ -4,6 +4,7 @@ sidebar_label: 'COLUMN'
 sidebar_position: 37
 slug: /sql-reference/statements/alter/column
 title: 'Column Manipulations'
+doc_type: 'reference'
 ---
 
 A set of queries that allow changing the table structure.
@@ -28,6 +29,7 @@ The following actions are supported:
 - [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
 - [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - Changes column settings.
 - [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
+- [MODIFY COLUMN ADD ENUM VALUES](#modify-column-add-enum-values) - Adds new values to Enum.
 - [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 These actions are described in detail below.
 
@@ -140,8 +142,12 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 ## MODIFY COLUMN {#modify-column}
 
 ```sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
-ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+MODIFY COLUMN [IF EXISTS] name
+    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    | ADD ENUM VALUES ( 'name' [= number] [, ...] )
+ALTER COLUMN [IF EXISTS] name
+    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
 
 This query changes the `name` column properties:
@@ -155,6 +161,8 @@ This query changes the `name` column properties:
 - TTL
 
 - Column-level Settings
+
+- Enum Values for Enum/Enum8/Enum16 types
 
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#column_compression_codec).
 
@@ -212,6 +220,10 @@ The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
+:::note
+Please be careful when changing a Nullable column to Non-Nullable. Make sure it doesn't have any NULL values, otherwise it will cause problems when reading from it. In that case, the workaround would be to Kill the mutation and revert the column back to Nullable type.
+:::
+
 ## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
@@ -233,7 +245,6 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 **See Also**
 
 - [REMOVE TTL](ttl.md).
-
 
 ## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
@@ -269,6 +280,24 @@ Reset column setting `max_compress_block_size` to it's default value:
 
 ```sql
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
+```
+
+## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
+
+Adds new values to a column of type `Enum`, `Enum8`, `Enum16`, `Nullable(Enum)`, `Nullable(Enum8)` or `Nullable(Enum16)`
+
+Syntax:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('EnumName' [= number], ...);
+```
+
+**Example**
+
+Add two values to column `enum_column_name`:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
 ```
 
 ## MATERIALIZE COLUMN {#materialize-column}
@@ -332,6 +361,8 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 ## Limitations {#limitations}
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
+
+Renaming columns with dots in their names is partially supported. Dots are reserved for [Nested](/sql-reference/data-types/nested-data-structures/nested) sub-column access, so the prefix (parent name) must remain the same. Only the suffix (sub-column name) can be changed. For example, `a.b` can be renamed to `a.c`, but renaming `a.b` to `b.d` is not allowed because it changes the Nested parent prefix.
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 

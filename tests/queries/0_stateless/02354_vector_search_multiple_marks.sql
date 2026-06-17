@@ -1,8 +1,7 @@
--- Tags: no-fasttest, no-ordinary-database
+-- Tags: no-fasttest, no-ordinary-database, no-tsan
+-- no-tsan: generating data takes too long
 
 -- Tests correctness of vector similarity index with > 1 mark
-
-SET allow_experimental_vector_similarity_index = 1;
 
 DROP TABLE IF EXISTS tab;
 

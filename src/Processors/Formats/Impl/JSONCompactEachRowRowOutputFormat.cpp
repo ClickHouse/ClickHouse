@@ -11,7 +11,7 @@ namespace DB
 
 
 JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & settings_,
         bool with_names_,
         bool with_types_)
@@ -115,6 +115,7 @@ void JSONCompactEachRowRowOutputFormat::resetFormatterImpl()
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 }
 
+void registerOutputFormatJSONCompactEachRow(FormatFactory & factory);
 void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
 {
     for (bool yield_strings : {false, true})
@@ -124,12 +125,13 @@ void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
             factory.registerOutputFormat(format_name, [yield_strings, with_names, with_types](
                 WriteBuffer & buf,
                 const Block & sample,
-                const FormatSettings & format_settings)
+                const FormatSettings & format_settings,
+                FormatFilterInfoPtr /*format_filter_info*/)
             {
                 FormatSettings settings = format_settings;
                 settings.json.serialize_as_strings = yield_strings;
 
-                return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, settings, with_names, with_types);
+                return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings, with_names, with_types);
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);

@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS events0;
 DROP TABLE IF EXISTS probe0;
 
 SET session_timezone = 'UTC';
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET join_algorithm = 'full_sorting_merge';
 SET join_use_nulls = 1;
 

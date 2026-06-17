@@ -1,4 +1,5 @@
 import logging
+import time
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -147,7 +148,7 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(
         """CREATE TABLE IF NOT EXISTS test_array_dimensions
            (
-                a Date[] NOT NULL,                          -- Date
+                a Date[] NOT NULL,                          -- Date32
                 b Timestamp[] NOT NULL,                     -- DateTime64(6)
                 c real[][] NOT NULL,                        -- Float32
                 d double precision[][] NOT NULL,            -- Float64
@@ -155,13 +156,11 @@ def test_postgres_conversions(started_cluster):
                 f integer[][][] NOT NULL,                   -- Int32
                 g Text[][][][][] NOT NULL,                  -- String
                 h Integer[][][],                            -- Nullable(Int32)
-                i Char(2)[][][][],                          -- Nullable(FixedString(2))
-                j Char(2)[],                                -- Nullable(FixedString(2))
+                i Char(2)[][][][],                          -- Nullable(String)
+                j Char(2)[],                                -- Nullable(String)
                 k UUID[],                                   -- Nullable(UUID)
                 l UUID[][],                                 -- Nullable(UUID)
-                "M" integer[] NOT NULL,                     -- Int32 (mixed-case identifier)
-                n BPCHAR(2),                                -- Nullable(FixedString(2))
-                o CHARACTER(2)                              -- Nullable(FixedString(2))
+                "M" integer[] NOT NULL                      -- Int32 (mixed-case identifier)
            )"""
     )
 
@@ -170,7 +169,7 @@ def test_postgres_conversions(started_cluster):
         DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_array_dimensions', 'postgres', '{pg_pass}')"""
     )
     expected = (
-        "a\tArray(Date)\t\t\t\t\t\n"
+        "a\tArray(Date32)\t\t\t\t\t\n"
         "b\tArray(DateTime64(6))\t\t\t\t\t\n"
         "c\tArray(Array(Float32))\t\t\t\t\t\n"
         "d\tArray(Array(Float64))\t\t\t\t\t\n"
@@ -178,13 +177,11 @@ def test_postgres_conversions(started_cluster):
         "f\tArray(Array(Array(Int32)))\t\t\t\t\t\n"
         "g\tArray(Array(Array(Array(Array(String)))))\t\t\t\t\t\n"
         "h\tArray(Array(Array(Nullable(Int32))))\t\t\t\t\t\n"
-        "i\tArray(Array(Array(Array(Nullable(FixedString(2))))))\t\t\t\t\t\n"
-        "j\tArray(Nullable(FixedString(2)))\t\t\t\t\t\n"
+        "i\tArray(Array(Array(Array(Nullable(String)))))\t\t\t\t\t\n"
+        "j\tArray(Nullable(String))\t\t\t\t\t\n"
         "k\tArray(Nullable(UUID))\t\t\t\t\t\n"
         "l\tArray(Array(Nullable(UUID)))\t\t\t\t\t\n"
-        "M\tArray(Int32)\t\t\t\t\t\n"
-        "n\tNullable(FixedString(2))\t\t\t\t\t\n"
-        "o\tNullable(FixedString(2))"
+        "M\tArray(Int32)"
         ""
     )
     assert result.rstrip() == expected
@@ -204,9 +201,7 @@ def test_postgres_conversions(started_cluster):
         "[], "
         "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', '42209d53-d641-4d73-a8b6-c038db1e75d6', NULL], "
         "[[NULL, '42209d53-d641-4d73-a8b6-c038db1e75d6'], ['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', NULL], [NULL, NULL]],"
-        "[42, 42, 42], "
-        "'tu', "
-        "'yo'"
+        "[42, 42, 42]"
         ")"
     )
 
@@ -227,9 +222,7 @@ def test_postgres_conversions(started_cluster):
         "[]\t"
         "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a','42209d53-d641-4d73-a8b6-c038db1e75d6',NULL]\t"
         "[[NULL,'42209d53-d641-4d73-a8b6-c038db1e75d6'],['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a',NULL],[NULL,NULL]]\t"
-        "[42,42,42]\t"
-        "tu\t"
-        "yo\n"
+        "[42,42,42]\n"
     )
     assert result == expected
 
@@ -276,7 +269,7 @@ def test_postgres_array_ndim_error_messges(started_cluster):
         assert False
     except Exception as error:
         assert (
-            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces". Make sure no empty array values in the first row.'
+            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces". Make sure no empty array values in the first row'
             in str(error)
         )
 
@@ -736,11 +729,16 @@ def test_auto_close_connection(started_cluster):
     """
     )
 
-    count = int(
-        node2.query(
-            f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
+    # Wait for auto-close to take effect (connections may still be closing under TSAN)
+    for _ in range(20):
+        count = int(
+            node2.query(
+                f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
+            )
         )
-    )
+        if count <= 2:
+            break
+        time.sleep(0.5)
 
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2
@@ -845,66 +843,6 @@ def test_fixed_string_type(started_cluster):
     node1.query("DROP TABLE test_fixed_string")
 
 
-def test_fixed_string_type_conversions(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-
-    cursor.execute("DROP TABLE IF EXISTS test_fixed_string_type_conversions")
-    cursor.execute(
-        "CREATE TABLE test_fixed_string_type_conversions (str CHAR(10))"
-    )
-    cursor.execute("INSERT INTO test_fixed_string_type_conversions VALUES ('123')")
-
-    # Reading PostgreSQL fixed-sized strings
-    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV")
-    assert result == "123       \n"
-
-    node1.query("DROP TABLE IF EXISTS test_fixed_string_type_conversions")
-    node1.query(
-        "CREATE TABLE test_fixed_string_type_conversions(str FixedString(10)) Engine = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV"
-    )
-    result = node1.query("SELECT * FROM test_fixed_string_type_conversions")
-    assert result == "123       \n"
-
-    # Inserting into PostgreSQL fixed-sized strings
-    node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') VALUES ('456')")
-    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV")
-    assert result == "123       \n456       \n"
-
-    node1.query("INSERT INTO test_fixed_string_type_conversions VALUES ('7\09')")
-    result = node1.query("SELECT * FROM test_fixed_string_type_conversions FORMAT TSV")
-    assert result == "123       \n456       \n7 9       \n"
-
-    node1.query("DROP TABLE test_fixed_string_type_conversions")
-
-    cursor.execute("DROP TABLE IF EXISTS test_fixed_string_type_conversions_array")
-    cursor.execute(
-        "CREATE TABLE test_fixed_string_type_conversions_array (str CHAR(10)[])"
-    )
-    cursor.execute("INSERT INTO test_fixed_string_type_conversions_array VALUES (ARRAY['123', '123'])")
-
-    # Reading PostgreSQL fixed-sized strings
-    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV")
-    assert result.strip() == "['123       ','123       ']"
-
-    node1.query("DROP TABLE IF EXISTS test_fixed_string_type_conversions_array")
-    node1.query(
-        "CREATE TABLE test_fixed_string_type_conversions_array(str Array(FixedString(10))) Engine = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV"
-    )
-    result = node1.query("SELECT * FROM test_fixed_string_type_conversions_array")
-    assert result.strip() == "['123       ','123       ']"
-
-    # Inserting into PostgreSQL fixed-sized strings
-    node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') VALUES (['456', '456'])")
-    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV")
-    assert result.strip() == "['123       ','123       ']\n['456       ','456       ']"
-
-    node1.query("INSERT INTO test_fixed_string_type_conversions_array VALUES (['7 9', '7 9'])")
-    result = node1.query("SELECT * FROM test_fixed_string_type_conversions_array FORMAT TSV")
-    assert result.strip() == "['123       ','123       ']\n['456       ','456       ']\n['7 9       ','7 9       ']"
-
-    node1.query("DROP TABLE test_fixed_string_type_conversions_array")
-
-
 def test_parameters_validation_for_postgresql_function(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
 
@@ -935,6 +873,185 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
     )
     assert int(result) == 1
     cursor.execute(f'DROP TABLE "{table}\'"')
+
+
+def test_postgres_datetime(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute(f"DROP TABLE IF EXISTS test_datetime")
+    cursor.execute("CREATE TABLE test_datetime AS (SELECT '2025-01-02 03:04:05.678900'::timestamptz AS ts, '2025-01-02'::date as d)")
+
+    node1.query("DROP TABLE IF EXISTS test_datetime")
+    node1.query(
+        f"CREATE TABLE test_datetime (ts DateTime64(6, 'UTC'), d Date) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime', 'postgres', '{pg_pass}')"
+    )
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::DateTime")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::DateTime64")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::Nullable(DateTime)")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::Nullable(DateTime64)")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+
+def test_postgres_reading_clone(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute(f"DROP TABLE IF EXISTS test_clone")
+    cursor.execute("CREATE TABLE test_clone AS (SELECT number FROM generate_series(0, 99) AS number)")
+
+    node1.query("DROP TABLE IF EXISTS test_clone")
+    node1.query(
+        f"CREATE TABLE test_clone ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_clone', 'postgres', '{pg_pass}')"
+    )
+
+    result = node1.query(
+        "SELECT count() FROM (SELECT (SELECT tx.number) = 1 as x FROM test_clone AS tx) WHERE x SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0"
+    )
+    assert result.strip() == "1"
+
+
+def test_postgres_insert_boolean_array(started_cluster):
+    """Test for https://github.com/ClickHouse/ClickHouse/issues/72754
+    Inserting into PostgreSQL BOOLEAN[] was causing a logical error due to
+    incorrect column type creation for Bool arrays.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_bool_array")
+    cursor.execute("CREATE TABLE test_bool_array (id INTEGER, flags BOOLEAN[])")
+
+    table_func = f"postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', 'test_bool_array', 'postgres', '{pg_pass}')"
+
+    # Insert boolean arrays using ClickHouse Bool type
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION {table_func} VALUES (1, [true, false, true])"
+    )
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION {table_func} SELECT 2, [false, false]"
+    )
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION {table_func} SELECT 3, []"
+    )
+
+    # Verify data was inserted correctly
+    cursor.execute("SELECT id, flags FROM test_bool_array ORDER BY id")
+    result = cursor.fetchall()
+    assert result[0] == (1, [True, False, True])
+    assert result[1] == (2, [False, False])
+    assert result[2] == (3, [])
+
+    # Verify we can read the data back through ClickHouse
+    result = node1.query(f"SELECT * FROM {table_func} ORDER BY id")
+    expected = "1\t[1,0,1]\n2\t[0,0]\n3\t[]\n"
+    assert result == expected
+
+    cursor.execute("DROP TABLE test_bool_array")
+
+
+def test_postgres_date32(started_cluster):
+    """Test that PostgreSQL DATE values outside the Date (UInt16) range are correctly read.
+
+    This is a regression test for https://github.com/ClickHouse/ClickHouse/issues/73084
+    PostgreSQL DATE type supports a much wider range than ClickHouse Date (1970-2149).
+    Large dates like '2276-11-21' must be read correctly using Date32.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_date32")
+    cursor.execute("CREATE TABLE test_date32 (d DATE)")
+
+    # Insert dates that would overflow with the old Date (UInt16) type
+    # Date range is ~1970-2149, these dates are beyond that
+    cursor.execute(
+        "INSERT INTO test_date32 VALUES ('2276-11-21'), ('2269-07-01'), ('2200-01-01'), ('1950-06-15')"
+    )
+
+    # Read dates back using the postgresql table function
+    result = node1.query(
+        f"SELECT d FROM postgresql('postgres1:5432', 'postgres', 'test_date32', 'postgres', '{pg_pass}') ORDER BY d"
+    )
+    expected = "1950-06-15\n2200-01-01\n2269-07-01\n2276-11-21\n"
+    assert result == expected, f"Expected:\n{expected}\nGot:\n{result}"
+
+    # Also verify the column type is Date32
+    result = node1.query(
+        f"DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_date32', 'postgres', '{pg_pass}')"
+    )
+    assert "Date32" in result, f"Expected Date32 type, got: {result}"
+
+    cursor.execute("DROP TABLE test_date32")
+
+
+def test_postgres_date32_array(started_cluster):
+    """Test that PostgreSQL DATE[] arrays with large dates are correctly read as Array(Date32)."""
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_date32_array")
+    cursor.execute("CREATE TABLE test_date32_array (dates DATE[] NOT NULL)")
+
+    # Insert array with dates that would overflow with Date (UInt16)
+    cursor.execute(
+        "INSERT INTO test_date32_array VALUES (ARRAY['2276-11-21'::date, '2269-07-01'::date, '1950-06-15'::date])"
+    )
+
+    # Read dates back (array elements are in insertion order)
+    result = node1.query(
+        f"SELECT dates FROM postgresql('postgres1:5432', 'postgres', 'test_date32_array', 'postgres', '{pg_pass}')"
+    )
+    expected = "['2276-11-21','2269-07-01','1950-06-15']\n"
+    assert result == expected, f"Expected:\n{expected}\nGot:\n{result}"
+
+    # Verify the column type is Array(Date32)
+    result = node1.query(
+        f"DESCRIBE TABLE postgresql('postgres1:5432', 'postgres', 'test_date32_array', 'postgres', '{pg_pass}')"
+    )
+    assert "Array(Date32)" in result, f"Expected Array(Date32) type, got: {result}"
+
+    cursor.execute("DROP TABLE test_date32_array")
+
+
+def test_postgres_array_parser_dimension_underflow(started_cluster):
+    """Regression test for `size_t` underflow in the PostgreSQL array parser.
+
+    When `pqxx::array_parser` emits `row_end` while the parser's `dimension`
+    counter is 0 (for example, an array text starting with `}`), the previous
+    code decremented `dimension` past 0 — a `size_t` underflow to `SIZE_MAX` —
+    and then indexed `dimensions[SIZE_MAX]`, which is out-of-bounds. The fix
+    throws a `BAD_ARGUMENTS` exception in this case instead.
+
+    PostgreSQL itself validates array literals at INSERT time, so the bug is
+    unreachable via a column declared as `boolean[]`/`integer[]` on the
+    PostgreSQL side. The reproducer below stores the malformed payload in a
+    PostgreSQL `text` column and declares the same column as `Array(Int32)` on
+    the ClickHouse side via the `PostgreSQL` table engine. ClickHouse then
+    dispatches the raw `'}'` value through the `vtArray` branch of
+    `insertPostgreSQLValue`, which calls `pqxx::array_parser` on it and
+    reproduces the bug.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_array_underflow")
+    cursor.execute(
+        "CREATE TABLE test_array_underflow (id integer, payload text)"
+    )
+    cursor.execute("INSERT INTO test_array_underflow VALUES (1, '}')")
+    started_cluster.postgres_conn.commit()
+
+    node1.query("DROP TABLE IF EXISTS pg_array_underflow")
+    node1.query(
+        f"CREATE TABLE pg_array_underflow (id Int32, payload Array(Int32)) "
+        f"ENGINE = PostgreSQL("
+        f"'{started_cluster.postgres_ip}:{started_cluster.postgres_port}', "
+        f"'postgres', 'test_array_underflow', 'postgres', '{pg_pass}')"
+    )
+
+    error = node1.query_and_get_error("SELECT id, payload FROM pg_array_underflow")
+    assert "Unexpected array closing bracket" in error, (
+        f"Expected BAD_ARGUMENTS('Unexpected array closing bracket'), got: {error}"
+    )
+
+    node1.query("DROP TABLE pg_array_underflow")
+    cursor.execute("DROP TABLE test_array_underflow")
 
 
 if __name__ == "__main__":

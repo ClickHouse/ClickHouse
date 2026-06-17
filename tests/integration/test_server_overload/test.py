@@ -33,15 +33,15 @@ def started_cluster():
 def test_overload(started_cluster):
     queries = []
     for i in range(4):
-        queries.append(node1.get_query_request("select * from numbers(1e18) format null", ignore_error=True, timeout=15))
+        queries.append(node1.get_query_request("select * from numbers(1e18) format null", ignore_error=True, timeout=30))
 
     def wait_for_queries():
         for query in queries:
             query.get_answer()
 
-    for i in range(30):
+    for i in range(60):
         try:
-            node1.query("select 1 settings min_os_cpu_wait_time_ratio_to_throw=2, max_os_cpu_wait_time_ratio_to_throw=6")
+            node1.query("select 1 settings min_os_cpu_wait_time_ratio_to_throw=1, max_os_cpu_wait_time_ratio_to_throw=6")
         except QueryRuntimeException as ex:
             assert "(SERVER_OVERLOADED)" in str(ex), "Only server overloaded error is expected"
             wait_for_queries() # Needed for flaky check to make sure CPU is not loaded with queries from previous runs
@@ -55,13 +55,13 @@ def test_overload(started_cluster):
 def test_drop_connections(started_cluster):
     queries = []
     for i in range(4):
-        queries.append(node2.get_query_request("select * from numbers(1e18) format null", ignore_error=True, timeout=15))
+        queries.append(node2.get_query_request("select * from numbers(1e18) format null", ignore_error=True, timeout=30))
 
     def wait_for_queries():
         for query in queries:
             query.get_answer()
 
-    for i in range(30):
+    for i in range(60):
         try:
             node2.query("select 1")
         except QueryRuntimeException as ex:

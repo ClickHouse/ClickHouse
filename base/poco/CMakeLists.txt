@@ -1,4 +1,3 @@
-add_subdirectory (Crypto)
 add_subdirectory (Foundation)
 add_subdirectory (JSON)
 add_subdirectory (Net)

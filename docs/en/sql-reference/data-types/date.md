@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for the Date data type in ClickHouse'
 sidebar_label: 'Date'
-sidebar_position: 34
+sidebar_position: 12
 slug: /sql-reference/data-types/date
 title: 'Date'
+doc_type: 'reference'
 ---
-
-# Date
 
 A date. Stored in two bytes as the number of days since 1970-01-01 (unsigned). Allows storing values from just after the beginning of the Unix Epoch to the upper threshold defined by a constant at the compilation stage (currently, this is until the year 2149, but the final fully-supported year is 2148).
 

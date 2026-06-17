@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_CLIENT_WITH_LOGS=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=debug/g')
 
-$CLICKHOUSE_FORMAT --query "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_FORMAT --query "SYSTEM FLUSH LOGS /* all tables */"
 $CLICKHOUSE_FORMAT --query "SYSTEM FLUSH LOGS ON CLUSTER default"
 $CLICKHOUSE_FORMAT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_FORMAT --query "SYSTEM FLUSH LOGS query_log, query_views_log"

@@ -21,7 +21,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 using Sizes = std::vector<size_t>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
 
 class Chunk;
 
@@ -34,10 +34,7 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
-        :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
-        , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
-    {}
+    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_);
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -61,6 +58,9 @@ public:
     /// finishInsert and isCreated are thread-safe
     bool isCreated() const { return is_created.load(); }
 
+    /// Whether the set building was stopped early because of size limits with OverflowMode::BREAK.
+    bool isTruncated() const { return is_truncated.load(); }
+
     void checkIsCreated() const;
 
     void processDateTime64Column(const ColumnWithTypeAndName & column_to_cast, ColumnPtr & result, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map) const;
@@ -81,7 +81,7 @@ public:
 
     bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount()); }
     bool hasSetElements() const { return !set_elements.empty(); }
-    Columns getSetElements() const { checkIsCreated(); return { set_elements.begin(), set_elements.end() }; }
+    Columns getSetElements() const;
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -134,6 +134,9 @@ private:
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
 
+    /// Whether the set was truncated due to overflow with OverflowMode::BREAK.
+    std::atomic<bool> is_truncated = false;
+
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
         const ColumnRawPtrs & key_columns,
@@ -143,7 +146,7 @@ private:
 
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
-    std::vector<IColumn::WrappedPtr> set_elements;
+    MutableColumns set_elements;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
@@ -196,29 +199,6 @@ using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
 
 
-class IFunction;
-using FunctionPtr = std::shared_ptr<IFunction>;
-
-/** Class that represents single value with possible infinities.
-  * Single field is stored in column for more optimal inplace comparisons with other regular columns.
-  * Extracting fields from columns and further their comparison is suboptimal and requires extra copying.
-  */
-struct FieldValue
-{
-    explicit FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
-    void update(const Field & x);
-
-    bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
-    bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
-    bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
-
-    Field value; // Null, -Inf, +Inf
-
-    // If value is Null, uses the actual value in column
-    MutableColumnPtr column;
-};
-
-
 /// Class for checkInRange function.
 class MergeTreeSetIndex
 {
@@ -228,8 +208,8 @@ public:
       */
     struct KeyTuplePositionMapping
     {
-        size_t tuple_index;
-        size_t key_index;
+        size_t tuple_index{};
+        size_t key_index{};
         std::vector<FunctionBasePtr> functions;
     };
 
@@ -246,6 +226,25 @@ public:
     const std::vector<KeyTuplePositionMapping> & getIndexesMapping() const { return indexes_mapping; }
 
 private:
+    /** Class that represents single value with possible infinities.
+      * Single field is stored in column for more optimal inplace comparisons with other regular columns.
+      * Extracting fields from columns and further their comparison is suboptimal and requires extra copying.
+      */
+    struct FieldValue
+    {
+        explicit FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+        void update(const Field & x);
+
+        bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
+        bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
+        bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
+
+        Field value; // Null, -Inf, +Inf
+
+        // If value is Null, uses the actual value in column
+        MutableColumnPtr column;
+    };
+
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;

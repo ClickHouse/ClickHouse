@@ -4,26 +4,27 @@ description: 'The PostgreSQL engine allows `SELECT` and `INSERT` queries on data
 sidebar_label: 'PostgreSQL'
 sidebar_position: 160
 slug: /engines/table-engines/integrations/postgresql
-title: 'PostgreSQL Table Engine'
+title: 'PostgreSQL table Engine'
+doc_type: 'guide'
 ---
 
 The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
 
 :::note
-Currently, only PostgreSQL versions 12 and up are supported.
+Currently, only PostgreSQL versions 12 and up are supported for the table engine.
 :::
 
-:::note Replicating or migrating Postgres data with with PeerDB
-> In addition to the Postgres table engine, you can use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).
+:::tip
+Check out our [Managed Postgres](/docs/cloud/managed-postgres) service. Backed by NVMe storage that is physically co-located with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
 :::
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
 ```
@@ -65,7 +66,7 @@ Some parameters can be overridden by key value arguments:
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-## Implementation Details {#implementation-details}
+## Implementation details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 
@@ -112,7 +113,7 @@ In the example below replica `example01-1` has the highest priority:
 </source>
 ```
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
 ### Table in PostgreSQL {#table-in-postgresql}
 
@@ -185,8 +186,8 @@ Then inserting values from PostgreSQL table greater than the max
 
 ```sql
 INSERT INTO default.postgresql_copy
-SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
-WHERE int_id > maxIntID;
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
+WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
 ```
 
 ### Selecting data from the resulting ClickHouse table {#selecting-data-from-the-resulting-clickhouse-table}
@@ -201,7 +202,7 @@ SELECT * FROM postgresql_copy WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-### Using Non-default Schema {#using-non-default-schema}
+### Using non-default schema {#using-non-default-schema}
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
@@ -219,7 +220,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
-- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#mysql)
+- [Using PostgreSQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/postgresql)
 
 ## Related content {#related-content}
 

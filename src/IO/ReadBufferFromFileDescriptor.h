@@ -2,7 +2,7 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 
 #include <unistd.h>
 
@@ -50,6 +50,8 @@ public:
         , throttler(throttler_)
     {
     }
+
+    bool poll(size_t timeout_microseconds) override;
 
     int getFD() const
     {

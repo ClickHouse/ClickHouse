@@ -5,6 +5,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SessionTracker.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <chrono>
 #include <memory>
@@ -51,11 +52,11 @@ public:
 
     /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
     /// The function throws an exception if there is no such user or password is wrong.
-    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_ = {});
+    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const std::optional<Poco::Net::SocketAddress> & connection_address = {}, const Strings & external_roles_ = {});
 
     /// `external_roles_` names of the additional roles (over what is granted via local access control mechanisms) that would be granted to user during this session.
     /// Role is not granted if it can't be found by name via AccessControl (i.e. doesn't exist on this instance).
-    void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_ = {});
+    void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const std::optional<Poco::Net::SocketAddress> & connection_address = {}, const Strings & external_roles_ = {});
 
     // Verifies whether the user's validity extends beyond the current time.
     // Throws an exception if the user's validity has expired.

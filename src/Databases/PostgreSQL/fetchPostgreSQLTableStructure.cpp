@@ -3,7 +3,6 @@
 #if USE_LIBPQXX
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -11,6 +10,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -102,29 +102,43 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
     else if (type.starts_with("timestamp"))
         res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
-        res = std::make_shared<DataTypeDate>();
+        res = std::make_shared<DataTypeDate32>();
     else if (type == "uuid")
         res = std::make_shared<DataTypeUUID>();
     else if (type.starts_with("numeric"))
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,
         /// there will be Numeric(x, y), otherwise just Numeric
-        UInt32 precision;
-        UInt32 scale;
-        if (type.ends_with(')'))
+        UInt32 precision = 0;
+        UInt32 scale = 0;
+        if (type.ends_with(")"))
         {
-            res = DataTypeFactory::instance().get(type);
-            precision = getDecimalPrecision(*res);
-            scale = getDecimalScale(*res);
+            /// Parse precision and scale directly from e.g. "numeric(78,0)" instead of going
+            /// through DataTypeFactory, because Decimal rejects a precision above 76 before we
+            /// get a chance to map it to Int256.
+            auto open_bracket_pos = type.find('(');
+            std::string args = type.substr(open_bracket_pos + 1, type.size() - open_bracket_pos - 2);
+            auto comma_pos = args.find(',');
+            std::string precision_str = args.substr(0, comma_pos);
+            boost::trim(precision_str);
+            precision = parse<UInt32>(precision_str);
+            if (comma_pos != std::string::npos)
+            {
+                std::string scale_str = args.substr(comma_pos + 1);
+                boost::trim(scale_str);
+                scale = parse<UInt32>(scale_str);
+            }
 
-            if (precision <= DecimalUtils::max_precision<Decimal32>)
-                res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal64>)
-                res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal128>)
-                res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal256>)
-                res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+            if (precision <= DecimalUtils::max_precision<Decimal256>)
+                /// createDecimal validates the precision/scale (in particular it rejects scale > precision,
+                /// e.g. numeric(5, 7)) and dispatches to the smallest Decimal type that fits the precision.
+                res = createDecimal<DataTypeDecimal>(precision, scale);
+            else if (scale == 0)
+                /// PostgreSQL numeric with precision higher than Decimal256 supports (76 digits) and no
+                /// fractional part (e.g. numeric(78, 0), used to store 256-bit integers). It cannot be
+                /// represented as a ClickHouse Decimal, so use Int256. Values that do not fit into Int256
+                /// are rejected at insert time (see insertPostgreSQLValue).
+                res = std::make_shared<DataTypeInt256>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
         }
@@ -135,26 +149,9 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
         }
     }
-    else if (type.starts_with("character("))
-    {
-        if (type.ends_with(')'))
-        {
-            const auto open_parenthesis = type.rfind('(');
-            if (open_parenthesis != String::npos)
-            {
-                const auto close_parenthesis = type.size() - 1;
-                if (open_parenthesis + 1 != close_parenthesis)
-                {
-                    const auto size = parseFromString<size_t>(type.substr(open_parenthesis + 1, close_parenthesis - open_parenthesis - 1));
-                    res = std::make_shared<DataTypeFixedString>(size);
-                }
-            }
-        }
-    }
 
     if (!res)
         res = std::make_shared<DataTypeString>();
-
     if (is_nullable)
         res = std::make_shared<DataTypeNullable>(res);
 

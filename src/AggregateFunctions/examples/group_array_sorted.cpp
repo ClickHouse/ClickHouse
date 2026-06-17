@@ -3,15 +3,19 @@
 #include <utility>
 #include <iostream>
 
-#include "pcg_random.hpp"
+#include <pcg_random.hpp>
 
 #include <Columns/ColumnVector.h>
 #include <Common/ArenaAllocator.h>
 #include <Common/RadixSort.h>
 #include <Columns/ColumnArray.h>
+#include <Examples/clickhouse_examples.h>
 
 
 using namespace DB;
+
+namespace
+{
 
 template <typename T>
 struct GroupArraySortedDataHeap
@@ -170,7 +174,9 @@ NO_INLINE void benchmark(size_t elements, size_t max_elements)
     std::cerr << "Elapsed " << watch.elapsedMilliseconds() << " milliseconds" << '\n';
 }
 
-int main(int argc, char ** argv)
+}
+
+int mainEntryExampleGroupArraySorted(int argc, char ** argv)
 {
     (void)(argc);
     (void)(argv);

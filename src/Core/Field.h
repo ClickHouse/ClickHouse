@@ -154,6 +154,7 @@ extern template class DecimalField<Decimal64>;
 extern template class DecimalField<Decimal128>;
 extern template class DecimalField<Decimal256>;
 extern template class DecimalField<DateTime64>;
+extern template class DecimalField<Time64>;
 
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
@@ -203,11 +204,13 @@ template <> struct NearestFieldTypeImpl<Decimal64> { using Type = DecimalField<D
 template <> struct NearestFieldTypeImpl<Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldTypeImpl<Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct NearestFieldTypeImpl<DateTime64> { using Type = DecimalField<DateTime64>; };
+template <> struct NearestFieldTypeImpl<Time64> { using Type = DecimalField<Time64>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal32>> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal64>> { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal256>> { using Type = DecimalField<Decimal256>; };
 template <> struct NearestFieldTypeImpl<DecimalField<DateTime64>> { using Type = DecimalField<DateTime64>; };
+template <> struct NearestFieldTypeImpl<DecimalField<Time64>> { using Type = DecimalField<Time64>; };
 template <> struct NearestFieldTypeImpl<BFloat16> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
@@ -271,6 +274,10 @@ public:
             Null    = 0,
             UInt64  = 1,
             Int64   = 2,
+            /// Note: there's no Float32. In theory, all Float32 values are exactly representable in
+            /// Float64. But in C++ if you static_cast back and forth, the result may change.
+            /// In particular, NaN may change to a different NaN, e.g. by cvtsd2ss instruction on x86.
+            /// So when a Float32 needs to be passed-through exactly, don't use Field.
             Float64 = 3,
             UInt128 = 4,
             Int128  = 5,
@@ -313,12 +320,12 @@ public:
     /** Despite the presence of a template constructor, this constructor is still needed,
       *  since, in its absence, the compiler will still generate the default constructor.
       */
-    Field(const Field & rhs)
+    Field(const Field & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `create` before any read; zero-initializing it would clear the whole buffer on every construction of this very hot object
     {
         create(rhs);
     }
 
-    Field(Field && rhs) noexcept
+    Field(Field && rhs) noexcept // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
     {
         create(std::move(rhs));
     }
@@ -339,7 +346,7 @@ public:
     Field(const char * str) { create(std::string_view{str}); } /// NOLINT
 
     template <typename CharT>
-    Field(const CharT * data, size_t size)
+    Field(const CharT * data, size_t size) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
     {
         create(data, size);
     }
@@ -407,6 +414,8 @@ public:
     std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
+    bool isNaN() const { return which == Types::Float64 && std::isnan(get<Float64>()); }
+    bool isInf() const { return which == Types::Float64 && std::isinf(get<Float64>()); }
 
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
@@ -512,9 +521,9 @@ private:
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
-        > storage;
+        > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
 
-    Types::Which which;
+    Types::Which which{};
 
     /// This function is prone to type punning and should never be used outside of Field class,
     /// whenever it is used within this class the stored type should be checked in advance.
@@ -614,7 +623,9 @@ private:
 
     ALWAYS_INLINE void destroy()
     {
-        switch (which)
+        auto old_which = which;
+        which = Types::Null;    /// for exception safety in subsequent calls to destroy and create, when create fails.
+        switch (old_which)
         {
             case Types::String:
                 destroy<String>();
@@ -637,15 +648,13 @@ private:
             case Types::CustomType:
                 destroy<CustomType>();
                 break;
-            default:
+            default: [[likely]]
                  break;
         }
-
-        which = Types::Null;    /// for exception safety in subsequent calls to destroy and create, when create fails.
     }
 
     template <typename T>
-    void destroy()
+    NO_INLINE void destroy()
     {
         T * MAY_ALIAS ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();
@@ -679,6 +688,7 @@ template <> struct Field::TypeToEnum<DecimalField<Decimal64>>{ static constexpr 
 template <> struct Field::TypeToEnum<DecimalField<Decimal128>>{ static constexpr Types::Which value = Types::Decimal128; };
 template <> struct Field::TypeToEnum<DecimalField<Decimal256>>{ static constexpr Types::Which value = Types::Decimal256; };
 template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static constexpr Types::Which value = Types::Decimal64; };
+template <> struct Field::TypeToEnum<DecimalField<Time64>>{ static constexpr Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static constexpr Types::Which value = Types::AggregateFunctionState; };
 template <> struct Field::TypeToEnum<CustomType>{ static constexpr Types::Which value = Types::CustomType; };
 template <> struct Field::TypeToEnum<bool>{ static constexpr Types::Which value = Types::Bool; };
@@ -725,7 +735,7 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 
 template <typename T>
 requires not_field_or_bool_or_stringlike<T>
-Field::Field(T && rhs)
+Field::Field(T && rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `createConcrete` before any read
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
@@ -832,7 +842,15 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 void writeFieldBinary(const Field & x, WriteBuffer & buf);
 Field readFieldBinary(ReadBuffer & buf);
 
-String toString(const Field & x);
+String fieldToString(const Field & x);
+
+/// Check if a Field contains a NaN value.
+/// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
+inline bool isNaNField(const Field & f)
+{
+    return f.isNaN();
+}
+
 }
 
 template <>
@@ -853,6 +871,6 @@ struct fmt::formatter<DB::Field>
     template <typename FormatContext>
     auto format(const DB::Field & x, FormatContext & ctx) const
     {
-        return fmt::format_to(ctx.out(), "{}", toString(x));
+        return fmt::format_to(ctx.out(), "{}", fieldToString(x));
     }
 };

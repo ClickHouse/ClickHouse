@@ -27,11 +27,11 @@ using IColumnFilter = PaddedPODArray<UInt8>;
 /// For this, we don't clear sorting prefix value and hash table after a range is processed,
 /// only right before a new range processing
 ///
-class DistinctSortedStreamTransform : public ISimpleTransform
+class DistinctSortedStreamTransform final : public ISimpleTransform
 {
 public:
     DistinctSortedStreamTransform(
-        const Block & header_,
+        SharedHeader header_,
         const SizeLimits & output_size_limits_,
         UInt64 limit_hint_,
         const SortDescription & sorted_columns_descr_,

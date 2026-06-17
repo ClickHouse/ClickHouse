@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Defines.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
 
@@ -19,7 +20,8 @@ public:
         IServer & server_,
         const PrometheusRequestHandlerConfig & config_,
         const AsynchronousMetrics & async_metrics_,
-        std::shared_ptr<PrometheusMetricsWriter> metrics_writer_);
+        std::shared_ptr<PrometheusMetricsWriter> metrics_writer_,
+        std::unordered_map<String, String> response_headers_ = {});
     ~PrometheusRequestHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_) override;
@@ -45,12 +47,15 @@ private:
     class ExposeMetricsImpl;
     class RemoteWriteImpl;
     class RemoteReadImpl;
+    class QueryAPIImpl;
     std::unique_ptr<Impl> impl;
 
     String http_method;
     std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
+    size_t http_response_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     ProfileEvents::Event write_event;
     bool send_stacktrace = false;
+    std::unordered_map<String, String> response_headers;
 };
 
 }

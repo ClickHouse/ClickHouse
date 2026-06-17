@@ -1,35 +1,35 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 SELECT 'The Default for query_cache_system_table_handling is = throw';
 -- Test that the query cache rejects queries that involve system tables.
 SELECT * FROM system.one SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 SELECT count(*) FROM system.query_cache;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 SELECT 'Check behavior of query_cache_system_table_handling = throw';
 -- Test that the query cache rejects queries that involve system tables.
 SELECT * FROM system.one SETTINGS use_query_cache = 1, query_cache_system_table_handling = 'throw'; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 SELECT count(*) FROM system.query_cache;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 SELECT 'Check behavior of query_cache_system_table_handling = save';
 -- Test that the query cache saves the result of queries that involve system tables.
 SELECT * FROM system.one SETTINGS use_query_cache = 1, query_cache_system_table_handling = 'save';
 SELECT count(*) FROM system.query_cache;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 SELECT 'Check behavior of query_cache_system_table_handling = ignore';
 -- Test that the query cache ignores the result of queries that involve system tables.
 SELECT * FROM system.one SETTINGS use_query_cache = 1, query_cache_system_table_handling = 'ignore';
 SELECT count(*) FROM system.query_cache;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 SELECT 'Other tests';
 
@@ -67,4 +67,4 @@ CREATE TABLE system.system (c UInt64) ENGINE = Memory;
 SElECT * FROM system.system SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 DROP TABLE system.system;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;

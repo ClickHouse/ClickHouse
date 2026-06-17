@@ -33,6 +33,7 @@ from test_storage_delta.test import (
 from helpers.s3_tools import (
     prepare_s3_bucket,
 )
+from helpers.spark_tools import ResilientSparkSession
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 METADATA_SERVER_HOSTNAME = "resolver"
@@ -72,10 +73,17 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
+        if int(cluster.instances["node_with_session_token"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
+            pytest.skip(
+                "DeltaLake engine is not available"
+            )
+
         prepare_s3_bucket(cluster)
         start_metadata_server(cluster)
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
         start_metadata_server(cluster)
 
         yield cluster

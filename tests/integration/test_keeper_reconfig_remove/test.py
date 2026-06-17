@@ -5,14 +5,26 @@ import typing as tp
 
 import pytest
 
+from multiprocessing.dummy import Pool
+
 import helpers.keeper_utils as ku
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
-node1 = cluster.add_instance("node1", main_configs=["configs/keeper1.xml"])
-node2 = cluster.add_instance("node2", main_configs=["configs/keeper2.xml"])
-node3 = cluster.add_instance("node3", main_configs=["configs/keeper3.xml"])
+
+# we set with_zookeeper=True because we modify keeper cluster used in nodes
+# using Keeper cluster that is changed with reconfig can lead to errors in ClickHouse server or a really slow shutdown 
+# (e.g. when paired with `with_remote_database_disk`), which is not relevant for this test
+node1 = cluster.add_instance(
+    "node1", main_configs=["configs/keeper1.xml"], with_zookeeper=True, stay_alive=True
+)
+node2 = cluster.add_instance(
+    "node2", main_configs=["configs/keeper2.xml"], with_zookeeper=True, stay_alive=True
+)
+node3 = cluster.add_instance(
+    "node3", main_configs=["configs/keeper3.xml"], with_zookeeper=True, stay_alive=True
+)
 
 log_msg_removed = "has been removed from the cluster"
 zk1, zk2, zk3 = None, None, None
@@ -38,12 +50,41 @@ def create_client(node: ClickHouseInstance):
     )
 
 
+def start_clickhouse(node):
+    node.start_clickhouse()
+
+
+def cleanup_keepers():
+    nodes = [node1, node2, node3]
+
+    for node in nodes:
+        node.stop_clickhouse()
+
+    p = Pool(3)
+    waiters = []
+
+    for node in nodes:
+        node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/log"])
+        node.exec_in_container(
+            ["rm", "-rf", "/var/lib/clickhouse/coordination/snapshots"]
+        )
+        waiters.append(p.apply_async(start_clickhouse, args=(node,)))
+
+    for waiter in waiters:
+        waiter.wait()
+
+    for node in nodes:
+        ku.wait_until_connected(cluster, node)
+
+
 def test_reconfig_remove_followers_from_3(started_cluster):
     """
     Remove 1 follower node from cluster of 3.
     Then remove another follower from two left nodes.
     Check that remaining node is in standalone mode.
     """
+
+    cleanup_keepers()
 
     global zk1, zk2, zk3
     zk1 = create_client(node1)

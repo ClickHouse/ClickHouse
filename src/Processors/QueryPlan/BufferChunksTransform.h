@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
@@ -14,12 +15,12 @@ class Block;
 /// the output whenever it is ready. It can be used
 /// to increase parallelism of execution, for example
 /// when it is adeded before MergingSortedTransform.
-class BufferChunksTransform : public IProcessor
+class BufferChunksTransform final : public IProcessor
 {
 public:
     /// OR condition is used for the limits on rows and bytes.
     BufferChunksTransform(
-        const Block & header_,
+        SharedHeader header_,
         size_t max_rows_to_buffer_,
         size_t max_bytes_to_buffer_,
         size_t limit_);

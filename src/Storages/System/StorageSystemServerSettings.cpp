@@ -6,7 +6,6 @@
 #include <Storages/System/ServerSettingColumnsParams.h>
 #include <Storages/System/StorageSystemServerSettings.h>
 
-
 namespace DB
 {
 
@@ -40,6 +39,8 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
     ServerSettings settings;
     settings.loadSettingsFromConfig(config);
 
+    /// Runtime-changeable and dynamically-derived values (such as `keeper_hosts`) are filled in by
+    /// `dumpToSystemServerSettingsColumns` via the shared `collectChangeableServerSettings` helper.
     ServerSettingColumnsParams params{res_columns, context};
     settings.dumpToSystemServerSettingsColumns(params);
 }

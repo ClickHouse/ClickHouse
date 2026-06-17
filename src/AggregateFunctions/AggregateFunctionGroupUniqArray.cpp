@@ -6,11 +6,9 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
 
@@ -138,14 +136,14 @@ struct AggregateFunctionGroupUniqArrayGenericData
 {
     static constexpr size_t INITIAL_SIZE_DEGREE = 3; /// adjustable
 
-    using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash,
+    using Set = HashSetWithSavedHashWithStackMemory<std::string_view, StringViewHash,
         INITIAL_SIZE_DEGREE>;
 
     Set value;
 };
 
 template <bool is_plain_column>
-static void deserializeAndInsertImpl(StringRef str, IColumn & data_to);
+static void deserializeAndInsertImpl(std::string_view str, IColumn & data_to);
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
  *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).
@@ -189,7 +187,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & set = this->data(place).value;
-        size_t size;
+        size_t size = 0;
         readVarUInt(size, buf);
 
         for (size_t i = 0; i < size; ++i)
@@ -202,8 +200,8 @@ public:
         if (limit_num_elems && set.size() >= max_elems)
             return;
 
-        bool inserted;
-        State::Set::LookupResult it;
+        bool inserted = false;
+        State::Set::LookupResult it = nullptr;
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
         set.emplace(key_holder, it, inserted);
     }
@@ -213,8 +211,8 @@ public:
         auto & cur_set = this->data(place).value;
         auto & rhs_set = this->data(rhs).value;
 
-        bool inserted;
-        State::Set::LookupResult it;
+        bool inserted = false;
+        State::Set::LookupResult it = nullptr;
         for (auto & rhs_elem : rhs_set)
         {
             if (limit_num_elems && cur_set.size() >= max_elems)
@@ -338,11 +336,58 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
 
 }
 
+void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Creates an array from different argument values.
+The memory consumption of this function is the same as for the [`uniqExact`](/sql-reference/aggregate-functions/reference/uniqexact) function.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+groupUniqArray(x)
+groupUniqArray(max_size)(x)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Expression.", {"Any"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"max_size", "Limits the size of the resulting array to `max_size` elements. `groupUniqArray(1)(x)` is equivalent to `[any(x)]`.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of unique values.", {"Array"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE t (x UInt8) ENGINE = Memory;
+INSERT INTO t VALUES (1), (2), (1), (3), (2), (4);
+
+SELECT groupUniqArray(x) FROM t;
+        )",
+        R"(
+┌─groupUniqArray(x)─┐
+│ [1,2,3,4]         │
+└───────────────────┘
+        )"
+    },
+    {
+        "With max_size parameter",
+        R"(
+SELECT groupUniqArray(2)(x) FROM t;
+        )",
+        R"(
+┌─groupUniqArray(2)(x)─┐
+│ [1,2]                │
+└──────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupUniqArray", { createAggregateFunctionGroupUniqArray, properties });
+    factory.registerFunction("groupUniqArray", { createAggregateFunctionGroupUniqArray, documentation, properties });
 }
 
 }
