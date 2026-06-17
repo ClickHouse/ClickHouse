@@ -88,11 +88,9 @@ public:
     /** Finalize step output columns and remove unnecessary input columns.
       * If actions dag node has same name as child input column, it is added to actions output nodes.
       *
-      * `source_const_inputs` names INPUT nodes carrying a constant value observed from the source
-      * (e.g. a view subquery result, identified as constant columns of the join-tree header). They
-      * are kept even if constant folding would otherwise orphan and erase them, so the column keeps
-      * propagating upstream as a required input and stays in the stream at distributed stage
-      * boundaries. Query-tree literals are not included, so they stay foldable.
+      * `source_const_inputs` names source-constant INPUTs to keep even if no output depends on them,
+      * so folding does not orphan-and-drop them and the column stays in the stream at distributed
+      * stage boundaries. Literals/aliases are excluded.
       */
     void finalizeInputAndOutputColumns(const NameSet & child_input_columns, const NameSet & source_const_inputs);
 

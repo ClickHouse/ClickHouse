@@ -96,12 +96,9 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
         }
     }
 
-    /// Keep INPUT nodes that carry a constant value observed from the source (named in
-    /// source_const_inputs). Constant folding re-creates such a constant as a free-standing COLUMN
-    /// output and orphans its INPUT; without keeping the INPUT it would be erased and the column would
-    /// stop propagating as a required input, dropping it from the stream. Query-tree literals are not
-    /// in source_const_inputs, so they stay foldable (keeping them would add inputs absent from the
-    /// actual stream block, causing NOT_FOUND_COLUMN_IN_BLOCK).
+    /// Keep source-constant INPUTs (named in source_const_inputs) that folding would re-create as
+    /// free-standing COLUMN outputs and orphan: they must keep flowing as required inputs so the
+    /// column stays in the stream. Literals/aliases are excluded, so they stay foldable.
     std::unordered_set<const ActionsDAG::Node *> used_inputs;
     for (const auto * input : actions->dag.getInputs())
         if (input->column && source_const_inputs.contains(input->result_name))

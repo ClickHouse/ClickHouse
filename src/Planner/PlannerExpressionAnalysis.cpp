@@ -834,11 +834,9 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     auto project_names_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     project_names_actions->dag = ActionsDAG(project_names_input);
 
-    /// `project` calls `removeUnusedActions`, which re-creates a source constant as a free-standing
-    /// COLUMN output and would otherwise orphan and erase its INPUT; keeping the INPUT lets the column
-    /// keep propagating upstream as a required input so it stays in the stream at distributed stage
-    /// boundaries. Only the constants the storage actually returned (`source_constants`) qualify;
-    /// query-tree literals and re-creatable alias constants must stay foldable.
+    /// Keep source-constant INPUTs (`source_constants`) so `project`/`removeUnusedActions` does not
+    /// fold-and-drop them; they must keep flowing as required inputs to stay in the stream at
+    /// distributed stage boundaries. Literals and re-creatable alias constants stay foldable.
     std::unordered_set<const ActionsDAG::Node *> keep_inputs;
     for (const auto * input : project_names_actions->dag.getInputs())
         if (input->column && source_constants.contains(input->result_name))

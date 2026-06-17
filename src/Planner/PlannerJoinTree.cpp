@@ -1588,13 +1588,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
     }
 
-    /// Collect constants that the storage actually returned, so the expression chain keeps them
-    /// flowing instead of folding-and-dropping them (a distributed shard must deliver every constant
-    /// the initiator expects at the stage boundary). ALIAS columns are excluded: a constant ALIAS
-    /// (e.g. `y Array(String) ALIAS ['qwqw']`) is declared on the table but not stored, so it is
-    /// re-creatable from the expression that is propagated to the shard via the query AST and may be
-    /// dropped. The header here is already renamed to column identifiers; map back to the original
-    /// name to test for ALIAS membership.
+    /// Collect constants the storage actually returned, so the chain keeps them flowing (a shard must
+    /// deliver every constant the initiator expects). ALIAS columns are excluded — re-creatable from
+    /// their expression, propagated to the shard via AST (header is already renamed to identifiers).
     NameSet source_constants;
     for (const auto & column : query_plan.getCurrentHeader()->getColumnsWithTypeAndName())
     {
