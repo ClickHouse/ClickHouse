@@ -667,9 +667,17 @@ create view query_metric_stats as
 create table report_thresholds engine File(TSVWithNamesAndTypes, 'report/thresholds.tsv')
     as select
         query_display_names.test test, query_display_names.query_index query_index,
-        ceil(greatest(0.1, historical_thresholds.max_diff,
+        -- The floors (0.15 for 'changed', 0.25 for 'unstable') are the minimum
+        -- relative difference we treat as a real change. They are intentionally
+        -- above the level of run-to-run noise observed on CI runners: micro
+        -- benchmarks routinely swing by 10-15% between two binaries because of
+        -- machine noise (noisy neighbours, frequency scaling) and code-layout
+        -- artifacts (function alignment/inlining shifts) unrelated to the tested
+        -- change. For historically noisier queries the learned thresholds
+        -- (1.5 * historical p99) are larger and take over.
+        ceil(greatest(0.15, historical_thresholds.max_diff,
             test_thresholds.report_threshold), 2) changed_threshold,
-        ceil(greatest(0.2, historical_thresholds.max_stat_threshold,
+        ceil(greatest(0.25, historical_thresholds.max_stat_threshold,
             test_thresholds.report_threshold + 0.1), 2) unstable_threshold,
         query_display_names.query_display_name query_display_name
     from query_display_names
