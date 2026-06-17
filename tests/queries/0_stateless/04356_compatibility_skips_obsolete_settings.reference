@@ -1,6 +1,6 @@
 -- { echo }
-SET compatibility = '24.8';
 
+SET compatibility = '24.8';
 SELECT value, changed FROM system.settings WHERE name = 'output_format_json_quote_64bit_integers';
 1	1
 SELECT count()
