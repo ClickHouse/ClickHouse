@@ -314,58 +314,6 @@ std::pair<KeeperResponsesForSessions, Int64> processWatchesImpl(
     return {result, process_non_persistent_watches.size()};
 }
 
-// When this function is updated, update KEEPER_CURRENT_DIGEST_VERSION!!
-template <typename Node>
-uint64_t calculateDigest(std::string_view path, const Node & node)
-{
-    SipHash hash;
-
-    hash.update(path);
-
-    auto data = node.getData();
-    if (!data.empty())
-    {
-        chassert(data.data() != nullptr);
-        hash.update(data);
-    }
-
-    hash.update(node.stats.czxid);
-    hash.update(node.stats.mzxid);
-    hash.update(node.stats.ctime());
-    hash.update(node.stats.mtime);
-    hash.update(node.stats.version);
-    hash.update(node.stats.cversion);
-    hash.update(node.stats.aversion);
-    hash.update(node.stats.ephemeralOwner());
-    hash.update(node.numChildren());
-    hash.update(node.stats.pzxid);
-
-    auto digest = hash.get64();
-
-    /// 0 means no cached digest
-    if (digest == 0)
-        return 1;
-
-    return digest;
-}
-
-}
-
-void NodeStats::copyStats(const Coordination::Stat & stat)
-{
-    czxid = stat.czxid;
-    mzxid = stat.mzxid;
-    pzxid = stat.pzxid;
-
-    mtime = stat.mtime;
-    setCtime(stat.ctime);
-
-    version = stat.version;
-    cversion = stat.cversion;
-    aversion = stat.aversion;
-
-    if (stat.ephemeralOwner != 0)
-        setEphemeralOwner(stat.ephemeralOwner);
 }
 
 KeeperMemNode & KeeperMemNode::operator=(const KeeperMemNode & other)
@@ -374,8 +322,6 @@ KeeperMemNode & KeeperMemNode::operator=(const KeeperMemNode & other)
         return *this;
 
     stats = other.stats;
-    acl_id = other.acl_id;
-    num_children = other.num_children;
 
     if (stats.data_size != 0)
     {
@@ -398,8 +344,6 @@ KeeperMemNode & KeeperMemNode::operator=(KeeperMemNode && other) noexcept
         return *this;
 
     stats = other.stats;
-    acl_id = other.acl_id;
-    num_children = other.num_children;
 
     data = std::move(other.data);
 
@@ -419,27 +363,6 @@ KeeperMemNode::KeeperMemNode(KeeperMemNode && other) noexcept
 bool KeeperMemNode::empty() const
 {
     return stats.data_size == 0 && stats.mzxid == 0;
-}
-
-void KeeperMemNode::copyStats(const Coordination::Stat & stat)
-{
-    stats.copyStats(stat);
-    num_children = stat.numChildren;
-}
-
-void KeeperMemNode::setResponseStat(Coordination::Stat & response_stat) const
-{
-    response_stat.czxid = stats.czxid;
-    response_stat.mzxid = stats.mzxid;
-    response_stat.ctime = stats.ctime();
-    response_stat.mtime = stats.mtime;
-    response_stat.version = stats.version;
-    response_stat.cversion = stats.cversion;
-    response_stat.aversion = stats.aversion;
-    response_stat.ephemeralOwner = stats.ephemeralOwner();
-    response_stat.dataLength = static_cast<int32_t>(stats.data_size);
-    response_stat.numChildren = numChildren();
-    response_stat.pzxid = stats.pzxid;
 }
 
 uint64_t KeeperMemNode::sizeInBytes() const
@@ -475,7 +398,7 @@ void KeeperMemNode::invalidateDigestCache() const
 UInt64 KeeperMemNode::getDigest(const std::string_view path) const
 {
     if (cached_digest == 0)
-        cached_digest = calculateDigest(path, *this);
+        cached_digest = stats.calculateDigest(path, getData());
 
     return cached_digest;
 };
@@ -483,8 +406,6 @@ UInt64 KeeperMemNode::getDigest(const std::string_view path) const
 void KeeperMemNode::shallowCopy(const KeeperMemNode & other)
 {
     stats = other.stats;
-    acl_id = other.acl_id;
-    num_children = other.num_children;
     if (stats.data_size != 0)
     {
         data = std::unique_ptr<char[]>(new char[stats.data_size]);
@@ -512,9 +433,7 @@ struct CreateNodeDelta
 
 struct RemoveNodeDelta
 {
-    NodeStats stat;
-    int32_t num_children;
-    ACLId acl_id;
+    KeeperNodeStats stat;
     String data;
 };
 
@@ -523,27 +442,16 @@ struct UpdateNodeStatDelta
     explicit UpdateNodeStatDelta(const KeeperMemNode & node)
         : old_stats(node.stats)
         , new_stats(node.stats)
-        , old_num_children(node.num_children)
-        , new_num_children(node.num_children)
     {}
 
-    NodeStats old_stats;
-    NodeStats new_stats;
-    int32_t old_num_children;
-    int32_t new_num_children;
+    KeeperNodeStats old_stats;
+    KeeperNodeStats new_stats;
 };
 
 struct UpdateNodeDataDelta
 {
-
     std::string old_data;
     std::string new_data;
-};
-
-struct SetACLDelta
-{
-    ACLId old_acl_id;
-    ACLId new_acl_id;
 };
 
 struct ErrorDelta
@@ -579,7 +487,6 @@ using Operation = std::variant<
     RemoveNodeDelta,
     UpdateNodeStatDelta,
     UpdateNodeDataDelta,
-    SetACLDelta,
     AddAuthDelta,
     ErrorDelta,
     SubDeltaEnd,
@@ -614,8 +521,6 @@ std::string_view deltaTypeToString(const Operation & operation)
             return "UpdateNodeStatDelta";
         else if constexpr (std::is_same_v<T, UpdateNodeDataDelta>)
             return "UpdateNodeDataDelta";
-        else if constexpr (std::is_same_v<T, SetACLDelta>)
-            return "SetACLDelta";
         else if constexpr (std::is_same_v<T, AddAuthDelta>)
             return "AddAuthDelta";
         else if constexpr (std::is_same_v<T, ErrorDelta>)
@@ -691,7 +596,7 @@ void KeeperStorage::initializeSystemNodes()
             "/",
             [](KeeperStorage::Node & node)
             {
-                node.increaseNumChildren();
+                node.stats.increaseNumChildren();
                 node.addChild(Coordination::getBaseNodeName(keeper_system_path));
                 node.invalidateDigestCache();
             }
@@ -792,7 +697,7 @@ void KeeperStorage::UncommittedState::rollbackDelta(const Delta & delta)
             if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
             {
                 chassert(node);
-                storage.acl_map.removeUsage(node->acl_id);
+                storage.acl_map.removeUsage(node->stats.acl_id);
                 node = nullptr;
             }
             else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
@@ -800,27 +705,22 @@ void KeeperStorage::UncommittedState::rollbackDelta(const Delta & delta)
                 chassert(!node);
                 node = std::make_shared<Node>();
                 node->stats = operation.stat;
-                node->num_children = operation.num_children;
                 node->setData(operation.data);
-                node->acl_id = operation.acl_id;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta>)
             {
                 chassert(node);
                 node->invalidateDigestCache();
                 node->stats = operation.old_stats;
-                node->num_children = operation.old_num_children;
+
+                if (operation.old_stats.acl_id != operation.new_stats.acl_id)
+                    storage.acl_map.removeUsage(operation.new_stats.acl_id);
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDataDelta>)
             {
                 chassert(node);
                 node->invalidateDigestCache();
                 node->setData(operation.old_data);
-            }
-            else if constexpr (std::same_as<DeltaType, SetACLDelta>)
-            {
-                node->acl_id = operation.old_acl_id;
-                storage.acl_map.removeUsage(operation.new_acl_id);
             }
         },
         delta.operation);
@@ -947,8 +847,8 @@ void KeeperStorage::UncommittedState::rollback(std::list<Delta> rollback_deltas)
                     }
                     else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
                     {
-                        if (operation.stat.ephemeralOwner() != 0)
-                            storage.uncommitted_state.ephemerals[operation.stat.ephemeralOwner()].emplace(delta.path);
+                        if (operation.stat.getEphemeralOwner() != 0)
+                            storage.uncommitted_state.ephemerals[operation.stat.getEphemeralOwner()].emplace(delta.path);
                     }
                 },
                 delta.operation);
@@ -1143,9 +1043,16 @@ Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
                         onStorageInconsistency("Node to be updated is missing");
 
                     if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta>)
+                    {
                         chassert(operation.old_stats.version == node_it->value.stats.version);
+
+                        if (operation.old_stats.acl_id != operation.new_stats.acl_id)
+                            acl_map.removeUsage(operation.old_stats.acl_id);
+                    }
                     else
+                    {
                         chassert(operation.old_data == node_it->value.getData());
+                    }
 
                     if (digest_on_commit)
                         removeDigest(node_it->value, path);
@@ -1153,10 +1060,7 @@ Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
                     auto updated_node = container.updateValue(path, [&](auto & node)
                     {
                         if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta>)
-                        {
                             node.stats = operation.new_stats;
-                            node.num_children = operation.new_num_children;
-                        }
                         else
                             node.setData(std::move(operation.new_data));
 
@@ -1172,20 +1076,6 @@ Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
                 {
                     if (!removeNode(path, operation.stat.version, digest_on_commit))
                         onStorageInconsistency("Failed to remove node");
-
-                    return Coordination::Error::ZOK;
-                }
-                else if constexpr (std::same_as<DeltaType, SetACLDelta>)
-                {
-                    auto node_it = container.find(path);
-                    if (node_it == container.end())
-                        onStorageInconsistency("Failed to set ACL because node is missing");
-
-                    chassert(node_it->value.acl_id == operation.old_acl_id);
-
-                    acl_map.removeUsage(operation.old_acl_id);
-
-                    container.updateValue(path, [&](Node & node) { node.acl_id = operation.new_acl_id; });
 
                     return Coordination::Error::ZOK;
                 }
@@ -1248,8 +1138,8 @@ bool KeeperStorage::createNode(
 
     Node created_node;
 
-    created_node.acl_id = acl_id;
-    created_node.copyStats(stat);
+    created_node.stats.copyStats(stat);
+    created_node.stats.acl_id = acl_id;
     created_node.setData(data);
 
     auto [map_key, _] = container.insert(path, std::move(created_node));
@@ -1260,7 +1150,7 @@ bool KeeperStorage::createNode(
             [child_path](KeeperMemNode & parent)
             {
                 parent.addChild(child_path);
-                chassert(parent.numChildren() == static_cast<int32_t>(parent.getChildren().size()));
+                chassert(parent.stats.getNumChildren() == static_cast<int32_t>(parent.getChildren().size()));
             }
     );
 
@@ -1287,7 +1177,7 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version, bool u
 
     KeeperStorage::Node prev_node;
     prev_node.shallowCopy(node_it->value);
-    acl_map.removeUsage(node_it->value.acl_id);
+    acl_map.removeUsage(node_it->value.stats.acl_id);
 
     container.updateValue(
         Coordination::parentNodePath(path),
@@ -1302,12 +1192,12 @@ bool KeeperStorage::removeNode(const std::string & path, int32_t version, bool u
     if (update_digest)
         removeDigest(prev_node, path);
 
-    if (prev_node.stats.ephemeralOwner() != 0)
+    if (prev_node.stats.getEphemeralOwner() != 0)
     {
         chassert(committed_ephemeral_nodes != 0);
         --committed_ephemeral_nodes;
         std::lock_guard lock(ephemeral_mutex);
-        unregisterEphemeralPath(committed_ephemerals, prev_node.stats.ephemeralOwner(), path, /*throw_if_missing=*/true);
+        unregisterEphemeralPath(committed_ephemerals, prev_node.stats.getEphemeralOwner(), path, /*throw_if_missing=*/true);
     }
 
     return true;
@@ -1426,7 +1316,7 @@ bool KeeperStorage::checkCommittedACL(std::string_view path, int32_t permission,
         std::shared_lock lock(storage_mutex);
         auto node_it = container.find(path);
         if (node_it != container.end())
-            acl_id = node_it->value.acl_id;
+            acl_id = node_it->value.stats.acl_id;
     }
 
     return checkACL(acl_id, permission, session_id, /*committed=*/ true);
@@ -1514,7 +1404,7 @@ static Coordination::Error preprocess(
     if (parent_node == nullptr)
         return Coordination::Error::ZNONODE;
 
-    if (check_acl && !storage.checkACL(parent_node->acl_id, Coordination::ACL::Create, session_id, /*committed=*/ false))
+    if (check_acl && !storage.checkACL(parent_node->stats.acl_id, Coordination::ACL::Create, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
 
     if (parent_node->stats.isEphemeral())
@@ -1526,7 +1416,7 @@ static Coordination::Error preprocess(
         if (zk_request.not_exists)
             return Coordination::Error::ZBADARGUMENTS;
 
-        auto seq_num = parent_node->stats.seqNum();
+        auto seq_num = parent_node->stats.getSeqNum();
 
         std::stringstream seq_num_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         seq_num_str.exceptions(std::ios::failbit);
@@ -1564,7 +1454,7 @@ static Coordination::Error preprocess(
 
     int32_t parent_cversion = zk_request.parent_cversion;
 
-    NodeStats new_parent_stats = parent_node->stats;
+    KeeperNodeStats new_parent_stats = parent_node->stats;
     new_parent_stats.increaseSeqNum();
 
     if (parent_cversion == -1)
@@ -1574,7 +1464,7 @@ static Coordination::Error preprocess(
 
     new_parent_stats.pzxid = std::max(storage.staging_zxid, new_parent_stats.pzxid);
 
-    int32_t new_parent_num_children = parent_node->num_children + 1;
+    new_parent_stats.increaseNumChildren();
 
     Coordination::Stat stat;
     stat.czxid = storage.staging_zxid;
@@ -1591,7 +1481,7 @@ static Coordination::Error preprocess(
     ACLId acl_id = storage.acl_map.convertACLs(node_acls);
 
     storage.prepareCreateNode(
-        parent_path, parent_node_ref, new_parent_stats, new_parent_num_children,
+        parent_path, parent_node_ref, new_parent_stats,
         path_created, child_node_ref, stat, acl_id, zk_request.data);
 
     return Coordination::Error::ZOK;
@@ -1669,13 +1559,13 @@ processLocal(const Coordination::ZooKeeperGetRequest & zk_request, KeeperStorage
     }
     else
     {
-        if (check_acl && !storage.checkACL(node_it->value.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+        if (check_acl && !storage.checkACL(node_it->value.stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
         {
             response->error = Coordination::Error::ZNOAUTH;
             return response;
         }
 
-        node_it->value.setResponseStat(response->stat);
+        node_it->value.stats.setResponseStat(response->stat);
         auto data = node_it->value.getData();
         response->data = std::string(data);
         response->error = Coordination::Error::ZOK;
@@ -1724,11 +1614,10 @@ static Coordination::Error preprocess(
     if (!parent_node)
         return zk_request.try_remove ? Coordination::Error::ZOK : Coordination::Error::ZNONODE;
 
-    if (check_acl && !storage.checkACL(parent_node->acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
+    if (check_acl && !storage.checkACL(parent_node->stats.acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
 
-    NodeStats new_parent_stats = parent_node->stats;
-    int32_t new_parent_num_children = parent_node->num_children;
+    KeeperNodeStats new_parent_stats = parent_node->stats;
 
     if (zk_request.restored_from_zookeeper_log && new_parent_stats.pzxid < storage.staging_zxid)
         new_parent_stats.pzxid = storage.staging_zxid;
@@ -1743,7 +1632,7 @@ static Coordination::Error preprocess(
 
         if (zk_request.restored_from_zookeeper_log)
         {
-            storage.prepareUpdateNodeStat(parent_path, parent_node_ref, new_parent_stats, new_parent_num_children);
+            storage.prepareUpdateNodeStat(parent_path, parent_node_ref, new_parent_stats);
             return Coordination::Error::ZOK;
         }
 
@@ -1752,7 +1641,7 @@ static Coordination::Error preprocess(
 
     if (check_acl &&
         storage.keeper_context->getCoordinationSettings()[CoordinationSetting::check_node_acl_on_remove] &&
-        !storage.checkACL(node->acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
+        !storage.checkACL(node->stats.acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
 
     if (zk_request.version != -1 && zk_request.version != node->stats.version)
@@ -1762,7 +1651,7 @@ static Coordination::Error preprocess(
 
         return Coordination::Error::ZBADVERSION;
     }
-    if (node->numChildren() != 0)
+    if (node->stats.getNumChildren() != 0)
     {
         if (zk_request.try_remove)
             return {};
@@ -1771,17 +1660,16 @@ static Coordination::Error preprocess(
     }
 
     ++new_parent_stats.cversion;
-    new_parent_num_children--;
+    new_parent_stats.decreaseNumChildren();
 
     if (node->stats.isEphemeral())
     {
         /// try deleting the ephemeral node from the uncommitted state
-        unregisterEphemeralPath(storage.uncommitted_state.ephemerals, node->stats.ephemeralOwner(), zk_request.path, /*throw_if_missing=*/false);
+        unregisterEphemeralPath(storage.uncommitted_state.ephemerals, node->stats.getEphemeralOwner(), zk_request.path, /*throw_if_missing=*/false);
     }
 
     storage.prepareRemoveNode(
-        parent_path, parent_node_ref, new_parent_stats, new_parent_num_children,
-        zk_request.path, node_ref);
+        parent_path, parent_node_ref, new_parent_stats, zk_request.path, node_ref);
 
     return Coordination::Error::ZOK;
 }
@@ -1872,7 +1760,7 @@ public:
                 uncommitted_children[node_path] = &uncommitted_node;
         }
 
-        addResult(root_path, root_node.stats, root_node.acl_id);
+        addResult(root_path, root_node.stats, root_node.stats.acl_id);
 
         /// NOLINTNEXTLINE(modernize-loop-convert): `result` grows during iteration (addResult appends).
         for (size_t i = 0; i < result.size(); ++i)
@@ -1927,7 +1815,7 @@ private:
             if (checkLimits(child_node))
                 return CollectStatus::LimitExceeded;
 
-            addResult(child_path, child_node.stats, child_node.acl_id);
+            addResult(child_path, child_node.stats, child_node.stats.acl_id);
         }
 
         return CollectStatus::Ok;
@@ -1951,23 +1839,23 @@ private:
             if (checkLimits(*node_ptr))
                 return CollectStatus::LimitExceeded;
 
-            addResult(std::string{node_path}, node_ptr->stats, node_ptr->acl_id);
+            addResult(std::string{node_path}, node_ptr->stats, node_ptr->stats.acl_id);
         }
 
         return CollectStatus::Ok;
     }
 
-    void addResult(std::string_view path, const NodeStats & stats, ACLId acl_id)
+    void addResult(std::string_view path, const KeeperNodeStats & stats, ACLId acl_id)
     {
         std::optional<int64_t> ephemeral_owner;
         if (stats.isEphemeral())
-            ephemeral_owner = stats.ephemeralOwner();
+            ephemeral_owner = stats.getEphemeralOwner();
         result.push_back({std::string{path}, acl_id, ephemeral_owner});
     }
 
     bool checkLimits(const KeeperStorage::Node & node)
     {
-        nodes_observed += node.numChildren();
+        nodes_observed += node.stats.getNumChildren();
         return nodes_observed > limit;
     }
 };
@@ -2018,11 +1906,10 @@ static Coordination::Error preprocess(
     if (!parent_node)
         return Coordination::Error::ZOK;
 
-    if (check_acl && !storage.checkACL(parent_node->acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
+    if (check_acl && !storage.checkACL(parent_node->stats.acl_id, Coordination::ACL::Delete, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
 
-    NodeStats new_parent_stats = parent_node->stats;
-    int32_t new_parent_num_children = parent_node->num_children;
+    KeeperNodeStats new_parent_stats = parent_node->stats;
 
     auto node_ref = storage.uncommitted_state.getNode(zk_request.path);
     const auto * node = node_ref.get();
@@ -2040,7 +1927,7 @@ static Coordination::Error preprocess(
         return Coordination::Error::ZNOTEMPTY;
 
     ++new_parent_stats.cversion;
-    new_parent_num_children--;
+    new_parent_stats.decreaseNumChildren();
 
     auto nodes_to_remove = collector.extractResult();
 
@@ -2053,7 +1940,7 @@ static Coordination::Error preprocess(
         }
     }
 
-    storage.prepareRemoveRecursive(parent_path, parent_node_ref, new_parent_stats, new_parent_num_children, nodes_to_remove);
+    storage.prepareRemoveRecursive(parent_path, parent_node_ref, new_parent_stats, nodes_to_remove);
 
     return Coordination::Error::ZOK;
 }
@@ -2086,7 +1973,7 @@ processLocal(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Kee
         return response;
     }
 
-    if (check_acl && !storage.checkACL(node_it->value.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+    if (check_acl && !storage.checkACL(node_it->value.stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
     {
         response->error = Coordination::Error::ZNOAUTH;
         return response;
@@ -2106,7 +1993,7 @@ processLocal(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Kee
             auto child_path = (current_path_fs / child_name).generic_string();
             auto child_it = container.find(child_path);
             chassert(child_it != container.end());
-            if (!check_acl || storage.checkACL(child_it->value.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+            if (!check_acl || storage.checkACL(child_it->value.stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
             {
                 if (response->children.size() - 1 >= zk_request.children_nodes_limit)
                 {
@@ -2148,7 +2035,7 @@ processLocal(const Coordination::ZooKeeperExistsRequest & zk_request, KeeperStor
     }
     else
     {
-        node_it->value.setResponseStat(response->stat);
+        node_it->value.stats.setResponseStat(response->stat);
         response->error = Coordination::Error::ZOK;
     }
 
@@ -2194,13 +2081,13 @@ static Coordination::Error preprocess(
     if (!node)
         return Coordination::Error::ZNONODE;
 
-    if (check_acl && !storage.checkACL(node->acl_id, Coordination::ACL::Write, session_id, /*committed=*/ false))
+    if (check_acl && !storage.checkACL(node->stats.acl_id, Coordination::ACL::Write, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
 
     if (zk_request.version != -1 && zk_request.version != node->stats.version)
         return Coordination::Error::ZBADVERSION;
 
-    NodeStats new_stats = node->stats;
+    KeeperNodeStats new_stats = node->stats;
     new_stats.version++;
     new_stats.mzxid = storage.staging_zxid;
     new_stats.mtime = time;
@@ -2210,9 +2097,9 @@ static Coordination::Error preprocess(
     auto parent_path = Coordination::parentNodePath(zk_request.path);
     auto parent_node_ref = storage.uncommitted_state.getNode(parent_path);
     const auto * parent_node = parent_node_ref.get();
-    NodeStats new_parent_stats = parent_node->stats;
+    KeeperNodeStats new_parent_stats = parent_node->stats;
     ++new_parent_stats.cversion;
-    storage.prepareUpdateNodeStat(parent_path, parent_node_ref, new_parent_stats, parent_node->num_children);
+    storage.prepareUpdateNodeStat(parent_path, parent_node_ref, new_parent_stats);
 
     return Coordination::Error::ZOK;
 }
@@ -2236,7 +2123,7 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperS
     if (node_it == container.end())
         onStorageInconsistency("Node to be updated is missing");
 
-    node_it->value.setResponseStat(response->stat);
+    node_it->value.stats.setResponseStat(response->stat);
     response->error = Coordination::Error::ZOK;
 
     return response;
@@ -2393,7 +2280,7 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, KeeperStorag
         return std::move(response);
     };
 
-    if (check_acl && !storage.checkACL(node_it->value.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+    if (check_acl && !storage.checkACL(node_it->value.stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
         return auth_error();
 
     auto list_request_type = Coordination::ListRequestType::ALL;
@@ -2414,7 +2301,7 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, KeeperStorag
 
     bool is_system_node = zk_request.path.starts_with(keeper_system_path);
 
-    if (!is_system_node && node_it->value.numChildren() == 0)
+    if (!is_system_node && node_it->value.stats.getNumChildren() == 0)
     {
         /// (Save the trouble of looking for children if we know there are none.)
     }
@@ -2459,7 +2346,7 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, KeeperStorag
             /// information should not be accessible without Read permission.
             /// (Even if only list_request_type filtering is enabled, we'll expose the
             ///  is_ephemeral flag, which is also secret.)
-            if (check_acl && !storage.checkACL(child_node.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+            if (check_acl && !storage.checkACL(child_node.stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
             {
                 auth_failed = true;
                 break;
@@ -2470,7 +2357,7 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, KeeperStorag
             if (with_stat)
             {
                 Coordination::Stat child_stat;
-                child_node.setResponseStat(child_stat);
+                child_node.stats.setResponseStat(child_stat);
                 response->stats.emplace_back(child_stat);
             }
             if (with_data)
@@ -2483,18 +2370,18 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, KeeperStorag
 #ifdef DEBUG_OR_SANITIZER_BUILD
     if (!is_system_node &&
         Coordination::ListRequestType::ALL == list_request_type &&
-        static_cast<size_t>(node_it->value.numChildren()) != response->names.size())
+        static_cast<size_t>(node_it->value.stats.getNumChildren()) != response->names.size())
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Difference between numChildren ({}) and actual children size ({}) for '{}'",
-            node_it->value.numChildren(),
+            node_it->value.stats.getNumChildren(),
             response->names.size(),
             zk_request.path);
     }
 #endif
 
-    node_it->value.setResponseStat(response->stat);
+    node_it->value.stats.setResponseStat(response->stat);
     response->error = Coordination::Error::ZOK;
 
     return response;
@@ -2519,7 +2406,7 @@ bool checkNodeStat(const Node & node, const Coordination::Stat & validator)
         return false;
     else if (validator.mzxid != -1 && validator.mzxid != verifiable.mzxid)
         return false;
-    else if (validator.ctime != -1 && validator.ctime != verifiable.ctime())
+    else if (validator.ctime != -1 && validator.ctime != verifiable.ctime)
         return false;
     else if (validator.mtime != -1 && validator.mtime != verifiable.mtime)
         return false;
@@ -2529,11 +2416,11 @@ bool checkNodeStat(const Node & node, const Coordination::Stat & validator)
         return false;
     else if (validator.aversion != -1 && validator.aversion != verifiable.aversion)
         return false;
-    else if (validator.ephemeralOwner != -1 && validator.ephemeralOwner != verifiable.ephemeralOwner())
+    else if (validator.ephemeralOwner != -1 && validator.ephemeralOwner != verifiable.getEphemeralOwner())
         return false;
     else if (validator.dataLength != -1 && validator.dataLength != static_cast<int32_t>(verifiable.data_size))
         return false;
-    else if (validator.numChildren != -1 && validator.numChildren != node.numChildren())
+    else if (validator.numChildren != -1 && validator.numChildren != node.stats.getNumChildren())
         return false;
     else if (validator.pzxid != -1 && validator.pzxid != verifiable.pzxid)
         return false;
@@ -2564,7 +2451,7 @@ Coordination::Error preprocess(
     /// Make sure to not leak `version` or `stats` information without Read permission.
     /// Revealing the existence of znode is ok; zookeeper already exposes it without permissions,
     /// e.g. through Get or Exists, which return ZNOAUTH if node exists but ZNONODE if it doesn't.
-    if (check_acl && node && !storage.checkACL(node->acl_id, Coordination::ACL::Read, session_id, /*committed=*/ false))
+    if (check_acl && node && !storage.checkACL(node->stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
 
     if (zk_request.getOpNum() == Coordination::OpNum::CheckNotExists)
@@ -2608,7 +2495,7 @@ Coordination::ZooKeeperResponsePtr processCheckRequestImpl(const Coordination::Z
     if constexpr (local)
     {
         if (check_acl && node_it != container.end() &&
-            !storage.checkACL(node_it->value.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+            !storage.checkACL(node_it->value.stats.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
         {
             response->error = Coordination::Error::ZNOAUTH;
             return response;
@@ -2733,7 +2620,7 @@ static Coordination::Error preprocess(
     if (!node)
         return Coordination::Error::ZNONODE;
 
-    if (check_acl && !storage.checkACL(node->acl_id, Coordination::ACL::Admin, session_id, /*committed=*/ false))
+    if (check_acl && !storage.checkACL(node->stats.acl_id, Coordination::ACL::Admin, session_id, /*committed=*/ false))
         return Coordination::Error::ZNOAUTH;
 
     if (zk_request.version != -1 && zk_request.version != node->stats.aversion)
@@ -2743,11 +2630,10 @@ static Coordination::Error preprocess(
     if (!fixupACL(zk_request.acls, session_id, uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
         return Coordination::Error::ZINVALIDACL;
 
-    ACLId acl_id = storage.acl_map.convertACLs(node_acls);
-
-    NodeStats new_stats = node->stats;
+    KeeperNodeStats new_stats = node->stats;
     ++new_stats.aversion;
-    storage.prepareUpdateNodeACL(zk_request.path, node_ref, new_stats, acl_id);
+    new_stats.acl_id = storage.acl_map.convertACLs(node_acls);
+    storage.prepareUpdateNodeStat(zk_request.path, node_ref, new_stats);
 
     return Coordination::Error::ZOK;
 }
@@ -2766,7 +2652,7 @@ process(const Coordination::ZooKeeperSetACLRequest & zk_request, KeeperStorage &
     auto node_it = storage.container.find(zk_request.path);
     if (node_it == storage.container.end())
         onStorageInconsistency("Failed to set ACL because node is missing");
-    node_it->value.setResponseStat(response->stat);
+    node_it->value.stats.setResponseStat(response->stat);
     response->error = Coordination::Error::ZOK;
 
     return response;
@@ -2786,14 +2672,14 @@ static Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKe
     }
     else
     {
-        if (check_acl && !storage.checkACL(node_it->value.acl_id, Coordination::ACL::Admin | Coordination::ACL::Read, session_id, /*committed=*/ true))
+        if (check_acl && !storage.checkACL(node_it->value.stats.acl_id, Coordination::ACL::Admin | Coordination::ACL::Read, session_id, /*committed=*/ true))
         {
             response->error = Coordination::Error::ZNOAUTH;
             return response;
         }
 
-        node_it->value.setResponseStat(response->stat);
-        response->acl = storage.acl_map.convertNumber(node_it->value.acl_id);
+        node_it->value.stats.setResponseStat(response->stat);
+        response->acl = storage.acl_map.convertNumber(node_it->value.stats.acl_id);
     }
 
     return response;
@@ -4125,22 +4011,20 @@ void KeeperStorage::prepareWriteCommon(std::string_view path, UncommittedNodeRef
     node_it->second.applied_zxids.push_back(staging_zxid);
 }
 
-void KeeperStorage::prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, int32_t new_num_children)
+void KeeperStorage::prepareUpdateNodeStat(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats)
 {
     prepareWriteCommon(path, node);
 
     Node * node_ptr = node.getMut();
     UpdateNodeStatDelta delta(*node_ptr);
     delta.new_stats = new_stats;
-    delta.new_num_children = new_num_children;
     staging_deltas.emplace_back(std::string{path}, staging_zxid, std::move(delta));
 
     node_ptr->invalidateDigestCache();
     node_ptr->stats = new_stats;
-    node_ptr->num_children = new_num_children;
 }
 
-void KeeperStorage::prepareUpdateNodeData(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, std::string_view new_data)
+void KeeperStorage::prepareUpdateNodeData(std::string_view path, UncommittedNodeRef node, const KeeperNodeStats & new_stats, std::string_view new_data)
 {
     prepareWriteCommon(path, node);
 
@@ -4156,25 +4040,12 @@ void KeeperStorage::prepareUpdateNodeData(std::string_view path, UncommittedNode
     node_ptr->invalidateDigestCache();
     node_ptr->setData(String{new_data});
 
-    prepareUpdateNodeStat(path, node, new_stats, node_ptr->num_children);
-}
-
-void KeeperStorage::prepareUpdateNodeACL(std::string_view path, UncommittedNodeRef node, const NodeStats & new_stats, ACLId new_acl_id)
-{
-    Node * node_ptr = node.getMut();
-
-    prepareUpdateNodeStat(path, node, new_stats, node_ptr->num_children);
-
-    staging_deltas.emplace_back(
-        std::string{path}, staging_zxid,
-        SetACLDelta{node_ptr->acl_id, new_acl_id});
-
-    node_ptr->acl_id = new_acl_id;
+    prepareUpdateNodeStat(path, node, new_stats);
 }
 
 void KeeperStorage::prepareCreateNode(
     std::string_view parent_path, UncommittedNodeRef parent,
-    const NodeStats & new_parent_stats, int32_t new_parent_num_children,
+    const KeeperNodeStats & new_parent_stats,
     std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
     ACLId acl_id, std::string_view data)
 {
@@ -4186,7 +4057,7 @@ void KeeperStorage::prepareCreateNode(
     ///  number of node lookups when committing Create request from 3 to 2, as currently it looks up
     ///  the parent twice: to update stats and to add child. Same story for Remove.)
 
-    prepareUpdateNodeStat(parent_path, parent, new_parent_stats, new_parent_num_children);
+    prepareUpdateNodeStat(parent_path, parent, new_parent_stats);
 
     if (!node.it.has_value())
         node.it = uncommitted_state.nodes.emplace(std::string{path}, typename UncommittedState::UncommittedNode{}).first;
@@ -4201,9 +4072,9 @@ void KeeperStorage::prepareCreateNode(
     chassert(!node_it->second.node);
     node_it->second.node = std::make_shared<Node>();
     Node * node_ptr = node_it->second.node.get();
-    node_ptr->copyStats(stat);
+    node_ptr->stats.copyStats(stat);
+    node_ptr->stats.acl_id = acl_id;
     node_ptr->setData(String{data});
-    node_ptr->acl_id = acl_id;
 }
 
 void KeeperStorage::prepareRemoveNodeWithoutUpdatingParent(
@@ -4213,26 +4084,26 @@ void KeeperStorage::prepareRemoveNodeWithoutUpdatingParent(
     const Node * node_ptr = node.get();
     staging_deltas.emplace_back(
         std::string{path}, staging_zxid,
-        RemoveNodeDelta{node_ptr->stats, node_ptr->num_children, node_ptr->acl_id, std::string{node_ptr->getData()}});
+        RemoveNodeDelta{node_ptr->stats, std::string{node_ptr->getData()}});
 
     (*node.it)->second.node = nullptr;
 }
 
 void KeeperStorage::prepareRemoveNode(
     std::string_view parent_path, UncommittedNodeRef parent,
-    const NodeStats & new_parent_stats, int32_t new_parent_num_children,
+    const KeeperNodeStats & new_parent_stats,
     std::string_view path, UncommittedNodeRef node)
 {
-    prepareUpdateNodeStat(parent_path, parent, new_parent_stats, new_parent_num_children);
+    prepareUpdateNodeStat(parent_path, parent, new_parent_stats);
     prepareRemoveNodeWithoutUpdatingParent(path, node);
 }
 
 void KeeperStorage::prepareRemoveRecursive(
     std::string_view parent_path, UncommittedNodeRef parent,
-    const NodeStats & new_parent_stats, int32_t new_parent_num_children,
+    const KeeperNodeStats & new_parent_stats,
     std::deque<SubtreeNodeToRemove> nodes_to_remove)
 {
-    prepareUpdateNodeStat(parent_path, parent, new_parent_stats, new_parent_num_children);
+    prepareUpdateNodeStat(parent_path, parent, new_parent_stats);
 
     for (const auto & node_info : nodes_to_remove)
     {
@@ -4246,8 +4117,7 @@ void KeeperStorage::prepareRemoveEphemeralNodes(const std::unordered_set<std::st
     struct ParentUpdate
     {
         UncommittedNodeRef node;
-        NodeStats new_stats;
-        int32_t new_num_children = 0;
+        KeeperNodeStats new_stats;
     };
 
     std::unordered_map<
@@ -4263,7 +4133,7 @@ void KeeperStorage::prepareRemoveEphemeralNodes(const std::unordered_set<std::st
         const auto * node_ptr = node.get();
 
         /// maybe the node is deleted or recreated with different session_id in the uncommitted state
-        if (!node_ptr || node_ptr->stats.ephemeralOwner() != session_id)
+        if (!node_ptr || node_ptr->stats.getEphemeralOwner() != session_id)
             continue;
 
         auto parent_node_path = Coordination::parentNodePath(ephemeral_path);
@@ -4272,12 +4142,12 @@ void KeeperStorage::prepareRemoveEphemeralNodes(const std::unordered_set<std::st
         if (parent_update_it == parent_updates.end())
         {
             auto parent_node = uncommitted_state.getNode(parent_node_path);
-            std::tie(parent_update_it, std::ignore) = parent_updates.emplace(parent_node_path, ParentUpdate{parent_node, parent_node.get()->stats, parent_node.get()->num_children});
+            std::tie(parent_update_it, std::ignore) = parent_updates.emplace(parent_node_path, ParentUpdate{parent_node, parent_node.get()->stats});
         }
 
         auto & parent_update = parent_update_it->second;
         ++parent_update.new_stats.cversion;
-        parent_update.new_num_children--;
+        parent_update.new_stats.decreaseNumChildren();
 
         prepareRemoveNodeWithoutUpdatingParent(ephemeral_path, node);
     }
@@ -4286,7 +4156,7 @@ void KeeperStorage::prepareRemoveEphemeralNodes(const std::unordered_set<std::st
     ///       check to make sure we're not updating a node we already removed, and that we're not
     ///       removing a node that still has children.
     for (auto & [path, update] : parent_updates)
-        prepareUpdateNodeStat(path, update.node, update.new_stats, update.new_num_children);
+        prepareUpdateNodeStat(path, update.node, update.new_stats);
 }
 
 void KeeperStorage::prepareAddAuth(std::shared_ptr<KeeperStorage::AuthID> new_auth, int64_t session_id)

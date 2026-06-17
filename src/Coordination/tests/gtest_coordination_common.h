@@ -98,7 +98,7 @@ inline void addNode(DB::KeeperStorage & storage, const std::string & path, const
     node.setData(data);
     if (ephemeral_owner)
         node.stats.setEphemeralOwner(ephemeral_owner);
-    node.acl_id = acl_id;
+    node.stats.acl_id = acl_id;
     storage.container.insertOrReplace(path, node);
     auto child_it = storage.container.find(path);
     auto child_path = Coordination::getBaseNodeName(child_it->key);
@@ -107,14 +107,14 @@ inline void addNode(DB::KeeperStorage & storage, const std::string & path, const
         [&](auto & parent)
         {
             parent.addChild(child_path);
-            parent.increaseNumChildren();
+            parent.stats.increaseNumChildren();
         });
 }
 
 inline Coordination::ACLs getUncommittedACLs(const DB::KeeperStorage & storage, std::string_view path)
 {
     const auto * node = storage.uncommitted_state.getNode(path).get();
-    Coordination::ACLId acl_id = node ? node->acl_id : 0;
+    Coordination::ACLId acl_id = node ? node->stats.acl_id : 0;
     return storage.acl_map.convertNumber(acl_id);
 }
 
