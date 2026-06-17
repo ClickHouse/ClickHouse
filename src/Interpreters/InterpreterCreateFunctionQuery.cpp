@@ -26,6 +26,11 @@
 #include <IO/WriteHelpers.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/StringUtils.h>
+
+#include <Poco/DOM/DOMParser.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 #include <filesystem>
 
@@ -89,6 +94,53 @@ namespace
         if (i < content.size() && content[i] == '<')
             return ".xml";
         return ".yaml";
+    }
+
+    /// Verify that the configuration produced by the driver defines exactly the function being created.
+    /// The executable UDF loader (`ExternalUserDefinedExecutableFunctionsLoader`) indexes objects by the
+    /// `<function><name>` inside the generated XML/YAML (using `uuid`/`database` when present), not by the file
+    /// name. A buggy driver invoked for `CREATE FUNCTION foo ...` could emit a valid configuration for `bar`:
+    /// the loader would then register `bar`, while `reloadFunction("foo")` reports `foo` as missing, leaving the
+    /// persisted SQL metadata for `foo` pointing at artifacts that define a different function. Reject this here
+    /// before the configuration is published into the dynamic directory.
+    void validateGeneratedConfig(const String & config_path, const String & driver_name, const String & function_name)
+    {
+        Poco::XML::DOMParser dom_parser;
+        XMLDocumentPtr document = ConfigProcessor::parseConfig(config_path, dom_parser);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> configuration(new Poco::Util::XMLConfiguration(document));
+
+        Poco::Util::AbstractConfiguration::Keys keys;
+        configuration->keys(keys);
+
+        size_t functions_defined = 0;
+        for (const auto & key : keys)
+        {
+            if (!startsWith(key, "function"))
+                continue;
+
+            ++functions_defined;
+
+            /// Mirror `ExternalLoader`: the effective object name is the `uuid` if present, otherwise `[database.]name`.
+            String object_name = configuration->getString(key + ".uuid", "");
+            if (object_name.empty())
+            {
+                object_name = configuration->getString(key + ".name", "");
+                const String database = configuration->getString(key + ".database", "");
+                if (!database.empty())
+                    object_name = database + "." + object_name;
+            }
+
+            if (object_name != function_name)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Driver '{}' generated a configuration for function '{}', but the function being created is '{}'. "
+                    "A driver must produce a configuration for exactly the function it is invoked for",
+                    driver_name, object_name, function_name);
+        }
+
+        if (functions_defined == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Driver '{}' generated a configuration that does not define any function (expected '{}')",
+                driver_name, function_name);
     }
 
     String createDriverWorkingDirectory(const ContextPtr & context)
@@ -235,6 +287,10 @@ namespace
                 WriteBufferFromFile out(tmp_path);
                 writeString(generated_config, out);
                 out.finalize();
+
+                /// Reject a configuration that does not define exactly `function_name` before publishing it,
+                /// while the temporary file is not yet visible to the executable UDF loader.
+                validateGeneratedConfig(tmp_path, driver->name, function_name);
 
                 WriteBufferFromFile working_dir_out(working_dir_metadata_tmp_path);
                 writeString(std::filesystem::path(result.working_dir).filename().string(), working_dir_out);

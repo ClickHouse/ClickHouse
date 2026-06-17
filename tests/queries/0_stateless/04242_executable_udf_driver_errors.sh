@@ -31,6 +31,24 @@ exit 0
 EOF
 chmod +x "$WORK_DIR/silent_driver.sh"
 
+# A driver that exits 0 and emits a valid config, but for a different function name than requested.
+cat > "$WORK_DIR/wrong_name_driver.sh" <<'EOF'
+#!/bin/sh
+cat <<'CFG'
+<functions>
+    <function>
+        <type>executable</type>
+        <name>some_other_function</name>
+        <return_type>Int64</return_type>
+        <format>TabSeparated</format>
+        <command>cat</command>
+    </function>
+</functions>
+CFG
+exit 0
+EOF
+chmod +x "$WORK_DIR/wrong_name_driver.sh"
+
 cat > "$WORK_DIR/drivers.xml" <<EOF
 <clickhouse>
     <driver>
@@ -40,6 +58,10 @@ cat > "$WORK_DIR/drivers.xml" <<EOF
     <driver>
         <name>silent_driver</name>
         <create_command>${WORK_DIR}/silent_driver.sh</create_command>
+    </driver>
+    <driver>
+        <name>wrong_name_driver</name>
+        <create_command>${WORK_DIR}/wrong_name_driver.sh</create_command>
     </driver>
 </clickhouse>
 EOF
@@ -96,3 +118,17 @@ if echo "$OUTPUT3" | grep -q "is not registered"; then
 else
     echo "MISSING_UNKNOWN_MARKER in: $OUTPUT3"
 fi
+
+# A driver generating a config for a different function name must be rejected before publishing,
+# so the loader cannot register a function under a name other than the one being created.
+OUTPUT4=$(run "CREATE FUNCTION fn_mismatch ARGUMENTS (x UInt8) RETURNS Int64 ENGINE = wrong_name_driver() AS 'x';")
+if echo "$OUTPUT4" | grep -q "generated a configuration for function 'some_other_function'"; then
+    echo "name_mismatch_detected"
+else
+    echo "MISSING_MISMATCH_MARKER in: $OUTPUT4"
+fi
+
+# The rejected attempt must not publish a config (under either name) or persist SQL metadata.
+test -f "$WORK_DIR/dyn/fn_mismatch.xml" && echo "mismatch_config_leaked" || echo "mismatch_config_clean"
+test -f "$WORK_DIR/dyn/some_other_function.xml" && echo "mismatch_other_config_leaked" || echo "mismatch_other_config_clean"
+test -f "$WORK_DIR/user_defined/function_fn_mismatch.sql" && echo "mismatch_sql_leaked" || echo "mismatch_sql_clean"
