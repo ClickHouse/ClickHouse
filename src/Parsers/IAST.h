@@ -105,7 +105,6 @@ public:
                 BitfieldStruct::ParentFlags::RESERVED_BITS < BitfieldStruct::RESERVED_BITS,
                 "Derived RESERVED_BITS must be greater than parent's");
         }
-
         return *reinterpret_cast<const BitfieldStruct *>(&flags_storage);
     }
 
