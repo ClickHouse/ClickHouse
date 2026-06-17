@@ -297,9 +297,14 @@ def _build_base_cte(args, data_path):
         FROM file('{data_path}', 'TSV')
     ),
     filtered AS (
+        -- The 0.15 ('changed') and 0.25 ('unstable') floors mirror the
+        -- report_thresholds floors in ci/jobs/scripts/perf/compare.sh. Keep
+        -- them synchronized: anything below these is treated as run-to-run CI
+        -- noise (machine jitter, code-layout artifacts) rather than a real
+        -- change, so this helper and CI agree on which queries are flagged.
         SELECT *,
-            (abs(diff) >= stat_threshold AND abs(diff) > 0.1) AS is_changed,
-            (NOT (abs(diff) >= stat_threshold AND abs(diff) > 0.1) AND stat_threshold > 0.2) AS is_unstable,
+            (abs(diff) >= stat_threshold AND abs(diff) > 0.15) AS is_changed,
+            (NOT (abs(diff) >= stat_threshold AND abs(diff) > 0.15) AND stat_threshold > 0.25) AS is_unstable,
             if(diff > 0, 'slower', if(diff < 0, 'faster', 'same')) AS direction
         FROM data
         WHERE {where_clause}
