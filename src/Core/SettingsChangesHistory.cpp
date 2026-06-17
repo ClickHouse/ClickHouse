@@ -1247,6 +1247,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"allow_tuple_element_aggregation", false, false, "New setting"},
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
+            {"text_index_dictionary_block_size", 512, 512, "New setting"},
+            {"text_index_dictionary_block_frontcoding_compression", true, true, "New setting"},
+            {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},
+            {"text_index_posting_list_codec", "none", "none", "New setting"},
             {"materialize_projections_on_insert", true, true, "New setting"},
             {"materialize_projections_on_merge", false, false, "New setting"},
         });
