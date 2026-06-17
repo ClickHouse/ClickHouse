@@ -45,6 +45,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IDiskTransaction.h>
 
+#include <cassert>
 #include <chrono>
 
 #include <boost/range/adaptor/map.hpp>
@@ -844,7 +845,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         {
             for (auto & data_file : data_files)
             {
-                Mark mark{};
+                Mark mark;
                 mark.read(*marks_rb);
                 data_file.marks[i] = mark;
             }
@@ -920,7 +921,7 @@ void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing *
 
 void StorageLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    chassert(table_path != new_path_to_table_data);
+    assert(table_path != new_path_to_table_data);
     {
         disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(table_path, new_path_to_table_data);
@@ -1306,7 +1307,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             {
                 for (size_t j = 0; j != num_data_files; ++j)
                 {
-                    Mark mark{};
+                    Mark mark;
                     mark.read(*marks_rb);
                     mark.rows += old_num_rows[j];     /// Adjust the number of rows.
                     mark.offset += old_data_sizes[j]; /// Adjust the offset.
@@ -1353,7 +1354,6 @@ void ReadFromStorageLogStep::initializePipeline(QueryPipelineBuilder & pipeline,
     pipeline.init(std::move(pipe));
 }
 
-void registerStorageLog(StorageFactory & factory);
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

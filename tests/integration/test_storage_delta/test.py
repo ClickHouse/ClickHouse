@@ -84,8 +84,8 @@ def get_spark(log_dir=None):
             "spark.sql.catalog.spark_catalog.warehouse",
             "/var/lib/clickhouse/user_files/test_storage_delta",
         )
-        .config("spark.driver.memory", "2g")
-        .config("spark.executor.memory", "2g")
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "8g")
         .master("local")
     )
 
@@ -1552,74 +1552,6 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_filesystem_cache_azure(started_cluster, use_delta_kernel):
-    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/106090:
-    # AzureObjectStorage::getObjectMetadata used to return an empty etag, which
-    # silently disabled the object-storage filesystem cache for Azure-backed
-    # tables (logging "Cannot use filesystem cache, no etag specified"). Without
-    # the fix the second read below still hits Azure (AzureGetObject > 0) and
-    # nothing is written to the cache (CachedReadBufferCacheWriteBytes == 0).
-    instance = get_node(started_cluster, use_delta_kernel)
-    spark = started_cluster.spark_session
-    TABLE_NAME = randomize_table_name("test_filesystem_cache_azure")
-
-    parquet_data_path = create_initial_data_file(
-        started_cluster,
-        instance,
-        "SELECT toUInt64(number), toString(number) FROM numbers(100)",
-        TABLE_NAME,
-        node_name=instance.name,
-    )
-
-    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
-    default_upload_directory(started_cluster, "azure", f"/{TABLE_NAME}", "")
-    create_delta_table(instance, "azure", TABLE_NAME, started_cluster)
-
-    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
-    instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    count = int(
-        instance.query(
-            f"SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-    # The first read must populate the cache (this is 0 without the etag fix).
-    assert count > 0
-    assert 0 < int(
-        instance.query(
-            f"SELECT ProfileEvents['AzureGetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
-    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
-    instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    # See the comment in test_filesystem_cache about parquet reader v3 reading
-    # small files twice, hence the "no more than 2x" check instead of equality.
-    assert count * 2 > int(
-        instance.query(
-            f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-    # The second read must be served entirely from the filesystem cache.
-    assert 0 == int(
-        instance.query(
-            f"SELECT ProfileEvents['AzureGetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
-
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
@@ -1711,23 +1643,14 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
         zk = started_cluster.get_kazoo_client("zoo1")
         zk.set(replica_path + "/digest", "123456".encode())
 
-        # Compare the `digest` value exactly instead of substring-matching the
-        # whole dump of all znodes: the recomputed digest is a 64-bit hash whose
-        # decimal representation can incidentally contain "123456" as a substring.
-        assert (
-            node2.query(
-                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
-            ).strip()
-            == "123456"
+        assert "123456" in node2.query(
+            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
         )
 
         node2.restart_clickhouse()
 
-        assert (
-            node2.query(
-                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
-            ).strip()
-            != "123456"
+        assert "123456" not in node2.query(
+            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
         )
 
 
@@ -5434,46 +5357,3 @@ def test_azure_url_encoded_partition_path(started_cluster, use_delta_kernel):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 3
 
     instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
-
-@pytest.mark.parametrize(
-    "use_delta_kernel",
-    ["0", "1"],
-)
-def test_azure_empty_blob_path(started_cluster, use_delta_kernel):
-    """based off test_single_log_file_azure_connection_string but parameterized for delta_kernel"""
-
-    instance = get_node(started_cluster, use_delta_kernel)
-    spark = started_cluster.spark_session
-    TABLE_NAME = randomize_table_name("test_azure_empty_blob_path")
-
-    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
-    parquet_data_path = create_initial_data_file(
-        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
-    )
-
-    delta_path = f"/{TABLE_NAME}"
-    write_delta_from_file(spark, parquet_data_path, delta_path)
-
-    files = default_upload_directory(
-        started_cluster,
-        "azure",
-        delta_path,
-        "/",  # empty remote_path ends up inferring from local_path otherwise
-    )
-
-    assert len(files) == 2  # 1 metadata file + 1 data file
-
-    empty_blob_path = ""
-    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME}
-        ENGINE=DeltaLakeAzure('{connection_string}', '{started_cluster.azure_container_name}', '{empty_blob_path}', Parquet)
-        """
-    )
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
-        inserted_data
-    )

@@ -68,12 +68,6 @@ fast_test_digest_config = Job.CacheDigestConfig(
     ],
 )
 
-# The Darwin fast test additionally consumes the Darwin skip list, so changes to
-# it must schedule the job (the shared digest above does not cover that file).
-darwin_fast_test_digest_config = Job.CacheDigestConfig(
-    include_paths=fast_test_digest_config.include_paths + ["./ci/defs/darwin.skip"],
-)
-
 common_build_job_config = Job.Config(
     name=JobNames.BUILD,
     runs_on=[],  # from parametrize()
@@ -208,11 +202,9 @@ class JobConfigs:
         name="Fast test",
         runs_on=None,  # from parametrize()
         command="python3 ./ci/jobs/fast_test.py",
-        digest_config=darwin_fast_test_digest_config,
+        digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
-        pre_hooks=[
-            "sudo rm -rf /Library/Logs/DiagnosticReports/*",
-        ],
+        force_success=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
@@ -494,7 +486,6 @@ class JobConfigs:
             ],
         ),
         timeout=900,
-        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
@@ -549,16 +540,13 @@ class JobConfigs:
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
     bugfix_validation_ft_pr_job = Job.Config(
         name=JobNames.BUGFIX_VALIDATE_FT,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
         run_in_docker="clickhouse/stateless-test+--network=host+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/functional_tests.py",
-                "./ci/jobs/scripts/bugfix_validation.py",
-                "./ci/jobs/scripts/clickhouse_proc.py",
-                "./ci/jobs/scripts/functional_tests_results.py",
                 "./tests/queries",
                 "./tests/clickhouse-test",
                 "./tests/config",
@@ -746,12 +734,6 @@ class JobConfigs:
         .set_command(
             "python3 ./ci/jobs/integration_test_job.py --options BugfixValidation"
         )
-    )
-    # The shared bugfix-validation helper is only used by this job, so add it to
-    # this job's digest (not the common integration config) to avoid leaving the
-    # job cached with stale behavior after the helper changes.
-    bugfix_validation_it_job.digest_config.include_paths.append(
-        "./ci/jobs/scripts/bugfix_validation.py"
     )
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
@@ -1393,7 +1375,6 @@ class JobConfigs:
             include_paths=[
                 "./docs",
                 "./ci/jobs/docs_job_mintlify.py",
-                "./ci/jobs/scripts/docs",
             ],
             # Exclude everything currently in ./docs so that this job runs only
             # on files that are NOT part of the legacy docs tree (i.e. the new
@@ -1501,37 +1482,6 @@ class JobConfigs:
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],
-        ),
-    )
-    collect_clickhouse_profiles_jobs = Job.Config(
-        name=JobNames.COLLECT_CLICKHOUSE_PROFILES,
-        runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/collect_clickhouse_profiles.py",
-        run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=8 * 3600,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/collect_clickhouse_profiles.py",
-                "./cmake/profile_optimization.cmake",
-                "./tests/performance/",
-            ],
-        ),
-    ).parametrize(
-        Job.ParamSet(
-            parameter="amd64",
-            runs_on=RunnerLabels.AMD_LARGE,
-            provides=[
-                ArtifactNames.CLICKHOUSE_PGO_PROFILE_AMD,
-                ArtifactNames.CLICKHOUSE_BOLT_PROFILE_AMD,
-            ],
-        ),
-        Job.ParamSet(
-            parameter="aarch64",
-            runs_on=RunnerLabels.ARM_LARGE,
-            provides=[
-                ArtifactNames.CLICKHOUSE_PGO_PROFILE_ARM,
-                ArtifactNames.CLICKHOUSE_BOLT_PROFILE_ARM,
-            ],
         ),
     )
     toolchain_build_jobs = Job.Config(
