@@ -2116,6 +2116,12 @@ static MutationCommand createFastMaterializeTTLCommand(time_t delta)
     ast->type = ASTAlterCommand::MATERIALIZE_TTL;
     ast->ttl_delta = delta;
     command.type = MutationCommand::FAST_MATERIALIZE_TTL;
+    /// `ast_text` is what gets persisted to the replicated log / ZooKeeper for this mutation,
+    /// serialized as `MATERIALIZE TTL <delta>`. This syntax is intentionally not understood by
+    /// servers built without the fast `MODIFY TTL` optimization, so a mixed-version cluster cannot
+    /// process such a mutation until every replica is upgraded. This is a deliberate trade-off
+    /// (the optimization is unconditional, with no gating setting); if it proves problematic the
+    /// whole feature can be reverted.
     command.ast_text = ast->formatWithSecretsOneLine();
     command.ttl_delta = delta;
     return command;
