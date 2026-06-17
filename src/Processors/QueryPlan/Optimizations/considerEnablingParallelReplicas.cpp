@@ -399,23 +399,24 @@ void considerEnablingParallelReplicas(
                 /// parallel_replicas_index_analysis_only_on_coordinator (analyze once, reuse on the replica).
                 /// For a plain table-on-top plan the freshly built branch read has no analysis yet. But when a
                 /// JOIN sits on top, findReadingStep descends into one side, and that side's read may already
-                /// have been analyzed while planning the join (e.g. a scalar subquery in the query). Don't
-                /// blindly overwrite it: if it is already analyzed for the same parallelized table, keep its own
-                /// (equivalent) result; if it somehow belongs to a different table, the read we found is not the
-                /// one we estimated against, so skip the optimization rather than apply a mismatched analysis.
+                /// have been analyzed while planning the join (e.g. a top-level DISTINCT or a scalar subquery in
+                /// the query). In that case keep its own analysis instead of overwriting it: it is the same
+                /// parallelized table (findReadingStep runs the same descent on the hash-matched JOIN node in
+                /// both plans, and the swap_streams case is already diverted to the throw above), so the existing
+                /// result is equivalent. A read for a *different* table would mean the single-node and
+                /// parallel-replicas plans diverged at the matched node - a broken invariant, so fail loudly
+                /// rather than silently apply a mismatched analysis.
                 if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
                 {
                     local_replica_plan_reading_step->setAnalyzedResult(analysis);
                 }
                 else if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
                 {
-                    LOG_DEBUG(
-                        getLogger("optimizeTree"),
-                        "Local parallel replicas branch read is already analyzed for a different table ({} != {}). "
-                        "Skipping optimization",
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Parallel replicas branch read is analyzed for table {} but the single-node plan reads {}",
                         local_replica_plan_reading_step->getStorageID().getNameForLogs(),
                         source_reading_step->getStorageID().getNameForLogs());
-                    return;
                 }
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
