@@ -2,9 +2,7 @@
 
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Core/UUID.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 
 #include <base/types.h>
@@ -25,21 +23,41 @@ struct DeleteBitmapWeightFunction
     }
 };
 
-/// Process-wide cache of deserialized `DeleteBitmap` objects, keyed by
-/// (part UUID or storage UUID + relative part name hash) ⊕ bitmap version.
+/// Cache key for a deserialized `DeleteBitmap`: the part-identity string plus the bitmap version.
 ///
-/// We deliberately do NOT key by `(part_storage_path + version)` string —
-/// ClickHouse already has plenty of cases where different part names alias the
-/// same rows after rename (ATTACH PARTITION, projections); using the part's
-/// stable UUID + the bitmap version avoids aliasing bugs and keeps the
-/// key size to `UInt128` (compatible with the idiomatic `UInt128TrivialHash`
-/// used by `MarkCache` / `PrimaryIndexCache`).
-///
-/// The key encoding is done by `DeleteBitmapCache::makeKey(part_id, version)`.
-class DeleteBitmapCache : public CacheBase<UInt128, DeleteBitmap, UInt128TrivialHash, DeleteBitmapWeightFunction>
+/// `part_id` is the caller's stable cache identity — the part UUID, or the `disk:path` fallback
+/// when the UUID is nil (see `IMergeTreeDataPart::getDeleteBitmapCacheIdentity`). It is kept as an
+/// explicit field (rather than folded into one opaque hash together with the version) so `dropPart`
+/// can evict every cached version of a single part via `removeEntriesForPart` without enumerating
+/// versions. This mirrors `VectorSimilarityIndexCache`, which keys by part path and removes per part.
+struct DeleteBitmapCacheKey
+{
+    String part_id;
+    BitmapVersion version;
+
+    bool operator==(const DeleteBitmapCacheKey & other) const
+    {
+        return version == other.version && part_id == other.part_id;
+    }
+};
+
+struct DeleteBitmapCacheKeyHash
+{
+    size_t operator()(const DeleteBitmapCacheKey & key) const
+    {
+        SipHash hash;
+        hash.update(key.part_id.size());
+        hash.update(key.part_id.data(), key.part_id.size());
+        hash.update(key.version);
+        return hash.get64();
+    }
+};
+
+/// Process-wide cache of deserialized `DeleteBitmap` objects, keyed by part identity ⊕ version.
+class DeleteBitmapCache : public CacheBase<DeleteBitmapCacheKey, DeleteBitmap, DeleteBitmapCacheKeyHash, DeleteBitmapWeightFunction>
 {
 private:
-    using Base = CacheBase<UInt128, DeleteBitmap, UInt128TrivialHash, DeleteBitmapWeightFunction>;
+    using Base = CacheBase<DeleteBitmapCacheKey, DeleteBitmap, DeleteBitmapCacheKeyHash, DeleteBitmapWeightFunction>;
 
 public:
     DeleteBitmapCache(
@@ -52,19 +70,18 @@ public:
     {
     }
 
-    /// Derive the cache key from a part-identifying string (typically the
-    /// part's UUID-as-string, with a fallback to disk:path when the UUID
-    /// is nil — caller's choice) and the bitmap version.
-    ///
-    /// Collision model: SipHash-128 of `part_id` mixed with `version`.
-    /// 128 bits is ample headroom for process-lifetime cache keys.
-    static UInt128 makeKey(const String & part_id, BitmapVersion version)
+    static DeleteBitmapCacheKey makeKey(const String & part_id, BitmapVersion version)
     {
-        SipHash hash;
-        hash.update(part_id.size());
-        hash.update(part_id.data(), part_id.size());
-        hash.update(version);
-        return hash.get128();
+        return DeleteBitmapCacheKey{part_id, version};
+    }
+
+    /// Evict every cached version of `part_id`. Used by `dropPart` so a dropped part's bitmaps
+    /// cannot alias a later incarnation that reuses the same `disk:path` identity, and so eviction
+    /// does not depend on the store's in-memory version index (which `installBitmap` may have
+    /// invalidated). Mirrors `VectorSimilarityIndexCache::removeEntriesFromCache`.
+    void removeEntriesForPart(const String & part_id)
+    {
+        Base::remove([&part_id](const Key & key, const MappedPtr &) { return key.part_id == part_id; });
     }
 };
 

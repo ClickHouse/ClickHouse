@@ -193,6 +193,28 @@ TEST(MergeTreeBitmapStoreTest, DropPartErasesInMemoryStateAndCache)
     EXPECT_NE(bm_after.get(), bm_first.get());
 }
 
+TEST(MergeTreeBitmapStoreTest, DropPartEvictsCacheAfterInstallInvalidatedVersionIndex)
+{
+    PartStorageFixture fx;
+    auto cache = makeCache();
+    MergeTreeBitmapStore store{&cache};
+
+    /// Install v3 and read it so the content cache holds an entry for (p, 3).
+    store.installBitmap(*fx.storage, "p", "part", /*csn=*/3, bitmapWithRow(30));
+    auto [bm3, v3] = store.readBitmap(*fx.storage, /*snapshot_csn=*/3, "p");
+    ASSERT_EQ(v3, 3u);
+    ASSERT_NE(cache.get(DeleteBitmapCache::makeKey("p", 3)), nullptr);
+
+    /// Installing a newer version invalidates the store's in-memory version index for "p".
+    store.installBitmap(*fx.storage, "p", "part", /*csn=*/7, bitmapWithRow(70));
+
+    /// dropPart must still evict the cached (p, 3) entry even though the version index is gone.
+    /// Regression: dropPart used to early-return when the index entry was absent, leaving a stale
+    /// bitmap that a reused disk:path identity could read.
+    store.dropPart("p");
+    EXPECT_EQ(cache.get(DeleteBitmapCache::makeKey("p", 3)), nullptr);
+}
+
 /// The monotonicity violation is a LOGICAL_ERROR: it aborts in debug/sanitizer
 /// builds and throws otherwise. Death tests are unreliable under the sanitizer
 /// fork-in-threaded-context, so exercise the rejection only on the throw path

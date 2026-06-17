@@ -208,19 +208,22 @@ size_t MergeTreeBitmapStore::gcObsoleteBitmaps(
 
 void MergeTreeBitmapStore::dropPart(const std::string & part_id)
 {
-    std::vector<BitmapVersion> csns_to_invalidate;
     {
         std::unique_lock lock(csns_mutex);
-        auto it = csns_per_part.find(part_id);
-        if (it == csns_per_part.end())
-            return;
-        csns_to_invalidate = std::move(it->second);
-        csns_per_part.erase(it);
+        csns_per_part.erase(part_id);
     }
 
+    /// Evict the cache by part identity, not by the in-memory version list: `installBitmap`
+    /// invalidates that list, so a drop right after an install would otherwise evict nothing and
+    /// leave stale bitmaps that could alias a reused `disk:path` identity. Per-part removal mirrors
+    /// `VectorSimilarityIndexCache::removeEntriesFromCache`.
+    ///
+    /// A read that missed the cache and is mid-`getOrSet` can still reinsert its bitmap after this
+    /// returns; that in-flight-load race is a property of `CacheBase` shared by every per-part
+    /// load-through cache (MarkCache, PrimaryIndexCache, VectorSimilarityIndexCache) and is left to
+    /// CacheBase, not worked around here.
     if (cache)
-        for (auto v : csns_to_invalidate)
-            cache->remove(DeleteBitmapCache::makeKey(part_id, v));
+        cache->removeEntriesForPart(part_id);
 }
 
 }
