@@ -27,6 +27,7 @@
 #include <Interpreters/Context.h>
 
 #include <IO/CompressedReadBufferWrapper.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/Progress.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -172,37 +173,61 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             current_manifest_file_iterator = nullptr;
         }
 
-        /// Find the next manifest file with matching content type.
-        while (manifest_file_index < data_snapshot->manifest_list_entries.size())
-        {
-            const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_file_index++];
-            if (manifest_list_entry.content_type != manifest_file_content_type)
-                continue;
-
-            auto manifest_file_cacheable_part = Iceberg::getManifestFile(
-                object_storage,
-                persistent_components,
-                local_context,
-                log,
-                manifest_list_entry.manifest_file_path,
-                manifest_list_entry.manifest_file_byte_size);
-
-            current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
-                manifest_file_cacheable_part.deserializer,
-                manifest_list_entry.manifest_file_path,
-                persistent_components.path_resolver,
-                *persistent_components.schema_processor,
-                manifest_list_entry.added_sequence_number,
-                manifest_list_entry.added_snapshot_id,
-                local_context,
-                filter_dag,
-                table_snapshot->schema_id);
-            break;
-        }
-
-        if (!current_manifest_file_iterator)
+        /// Make sure a prefetch of the next matching manifest is in flight.
+        schedulePrefetchIfPossible();
+        if (!prefetched_manifest.has_value())
             return std::nullopt;
+
+        // Get the downloaded manifest file.
+        auto manifest_file_cacheable_part = prefetched_manifest->future.get();
+        const auto & manifest_list_entry = data_snapshot->manifest_list_entries[prefetched_manifest->manifest_list_index];
+
+        current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
+            manifest_file_cacheable_part.deserializer,
+            manifest_list_entry.manifest_file_path,
+            persistent_components.path_resolver,
+            *persistent_components.schema_processor,
+            manifest_list_entry.added_sequence_number,
+            manifest_list_entry.added_snapshot_id,
+            local_context,
+            filter_dag,
+            table_snapshot->schema_id);
+
+        prefetched_manifest.reset();
+
+        /// Start prefetch the next manifest file.
+        schedulePrefetchIfPossible();
     }
+}
+
+void SingleThreadIcebergKeysIterator::schedulePrefetchIfPossible()
+{
+    if (!data_snapshot || prefetched_manifest.has_value())
+        return;
+
+    while (manifest_file_index < data_snapshot->manifest_list_entries.size())
+    {
+        const size_t index = manifest_file_index++;
+        const auto & manifest_list_entry = data_snapshot->manifest_list_entries[index];
+        if (manifest_list_entry.content_type != manifest_file_content_type)
+            continue;
+
+        auto fetch = [this,
+                      path = manifest_list_entry.manifest_file_path,
+                      bytes = manifest_list_entry.manifest_file_byte_size]()
+        {
+            return Iceberg::getManifestFile(object_storage, persistent_components, local_context, log, path, bytes);
+        };
+        prefetched_manifest = PrefetchedManifest{index, prefetch_runner(std::move(fetch), Priority{})};
+        return;
+    }
+}
+
+SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
+{
+    /// The scheduled task captures `this`, so it must not outlive the iterator.
+    if (prefetched_manifest.has_value())
+        prefetched_manifest->future.wait();
 }
 
 SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
@@ -236,7 +261,11 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     , persistent_components(persistent_components_)
     , log(getLogger("IcebergIterator"))
     , manifest_file_content_type(manifest_file_content_type_)
+    , prefetch_runner(threadPoolCallbackRunnerUnsafe<Iceberg::ManifestFileCacheableInfo>(
+          getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR))
 {
+    /// Warm the first manifest fetch.
+    schedulePrefetchIfPossible();
 }
 
 IcebergIterator::IcebergIterator(
