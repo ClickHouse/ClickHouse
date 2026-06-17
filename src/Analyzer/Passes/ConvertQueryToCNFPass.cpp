@@ -31,15 +31,11 @@ namespace
 {
 
 /// Constraint-based optimization is scoped to a single query node: each (sub)query is optimized
-/// independently. Subqueries must therefore be treated as opaque boundaries, both when one is a
-/// clause root (e.g. constraint reduction collapses `cond OR (subquery)` to just the subquery) and
-/// when one is nested inside an expression (e.g. `exists((subquery))`). Crossing the boundary would
-/// rewrite a subquery's correlated columns, which must stay plain ColumnNodes for decorrelation.
-bool isSubquery(const QueryTreeNodePtr & node)
-{
-    auto node_type = node->getNodeType();
-    return node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
-}
+/// independently. Subqueries (`isSubqueryNodeType`) must therefore be treated as opaque boundaries,
+/// both when one is a clause root (e.g. constraint reduction collapses `cond OR (subquery)` to just
+/// the subquery) and when one is nested inside an expression (e.g. `exists((subquery))`). Crossing
+/// the boundary would rewrite a subquery's correlated columns, which must stay plain ColumnNodes for
+/// decorrelation.
 
 std::optional<Analyzer::CNF> tryConvertQueryToCNF(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
@@ -171,8 +167,8 @@ void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTree
 {
     /// Do not cross into subqueries: replacing a correlated column with its constant equivalent
     /// would corrupt the subquery's correlated_columns_list, which the planner expects to hold
-    /// ColumnNodes (see isSubquery).
-    if (isSubquery(term))
+    /// ColumnNodes (see isSubqueryNodeType).
+    if (isSubqueryNodeType(term->getNodeType()))
         return;
 
     const auto equal_constant = graph.getEqualConst(term);
@@ -437,7 +433,7 @@ public:
 
     static bool needChildVisit(const VisitQueryTreeNodeType &, const VisitQueryTreeNodeType & child)
     {
-        return !isSubquery(child);
+        return !isSubqueryNodeType(child->getNodeType());
     }
 
     void visitImpl(const QueryTreeNodePtr & node)
@@ -496,7 +492,7 @@ public:
 
     static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
-        return !isSubquery(child);
+        return !isSubqueryNodeType(child->getNodeType());
     }
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -612,7 +608,7 @@ void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expr
             /// expression; a clause that is itself a subquery is the visit root, so guard it here.
             const auto run_unless_subquery = [&](QueryTreeNodePtr & node)
             {
-                if (!isSubquery(node))
+                if (!isSubqueryNodeType(node->getNodeType()))
                     function(node);
             };
 
