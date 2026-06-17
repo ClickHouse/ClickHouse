@@ -606,30 +606,72 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         limit_length = top_length;
 
     /// LIMIT length [WITH TIES] | LIMIT offset, length [WITH TIES]
+    /// Also handles LIMIT [n] AFTER / UNTIL after LIMIT BY.
     if (s_limit.ignore(pos, expected))
     {
         if (!limit_by_length || limit_length)
             return false;
 
         ParserToken s_comma(TokenType::Comma);
+        ParserKeyword s_after(Keyword::AFTER);
+        ParserKeyword s_until(Keyword::UNTIL);
 
-        if (!exp_elem.parse(pos, limit_length, expected))
-            return false;
-
-        if (s_comma.ignore(pos, expected))
+        if (s_after.ignore(pos, expected))
         {
-            limit_offset = limit_length;
+            if (!expression_p.parse(pos, limit_after, expected))
+                return false;
+            select_query->limit_after_all = s_all.ignore(pos, expected);
+            if (s_until.ignore(pos, expected))
+            {
+                if (!expression_p.parse(pos, limit_until, expected))
+                    return false;
+            }
+        }
+        else if (s_until.ignore(pos, expected))
+        {
+            if (!expression_p.parse(pos, limit_until, expected))
+                return false;
+        }
+        else
+        {
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
-        }
-        else if (s_offset.ignore(pos, expected))
-        {
-            if (!exp_elem.parse(pos, limit_offset, expected))
-                return false;
-        }
 
-        if (s_with_ties.ignore(pos, expected))
-            select_query->limit_with_ties = true;
+            if (s_comma.ignore(pos, expected))
+            {
+                limit_offset = limit_length;
+                if (!exp_elem.parse(pos, limit_length, expected))
+                    return false;
+            }
+            else if (s_offset.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_offset, expected))
+                    return false;
+            }
+
+            if (limit_length)
+            {
+                if (s_after.ignore(pos, expected))
+                {
+                    if (!expression_p.parse(pos, limit_after, expected))
+                        return false;
+                    select_query->limit_after_all = s_all.ignore(pos, expected);
+                    if (s_until.ignore(pos, expected))
+                    {
+                        if (!expression_p.parse(pos, limit_until, expected))
+                            return false;
+                    }
+                }
+                else if (s_until.ignore(pos, expected))
+                {
+                    if (!expression_p.parse(pos, limit_until, expected))
+                        return false;
+                }
+            }
+
+            if (s_with_ties.ignore(pos, expected))
+                select_query->limit_with_ties = true;
+        }
     }
 
     /// WITH TIES was used without ORDER BY
