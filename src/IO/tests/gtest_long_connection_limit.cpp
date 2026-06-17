@@ -40,6 +40,8 @@ TEST(LongConnectionLimit, MoveTransfersOwnershipWithoutDoubleRelease)
     EXPECT_EQ(limit->getActiveCount(), 1u);
 
     LongConnectionSlot moved = std::move(a);
+    /// Intentionally inspect the moved-from slot: its move leaves it defined-empty.
+    // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
     EXPECT_FALSE(static_cast<bool>(a));   /// moved-from holds nothing
     EXPECT_TRUE(static_cast<bool>(moved));
     EXPECT_EQ(limit->getActiveCount(), 1u);   /// still exactly one unit held
