@@ -446,11 +446,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             /// otherwise the Set/BloomFilter stays as fallback. Carry the rendezvous key (`id.key`),
             /// NOT the stable display name: the filter is registered in the lookup under that key, so
             /// `HashJoin::publishSharedRuntimeFilters` must find/replace it under the same key.
-            if (join_step->getJoinSettings().enable_join_runtime_filter_shared_fixed_hash_table
+            if (join_step->getJoinSettings().join_runtime_filter_from_fixed_hash_table
                 && !check_left_does_not_contain)
             {
-                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(
-                    id.key, join_key_build_side.name);
+                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(id.key, join_key_build_side.name);
             }
         }
 
