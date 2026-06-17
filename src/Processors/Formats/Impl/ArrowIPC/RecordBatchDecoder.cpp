@@ -864,7 +864,19 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_l
 
     /// Unions have no validity buffer; handle them before consuming one.
     if (field.type.kind == TypeKind::Union)
+    {
+        /// An Arrow union carries no top-level validity bitmap, so a node that nonetheless reports nulls is
+        /// malformed: there is no bitmap to say which rows are null, and `decodeUnion` would decode the
+        /// type-id/value buffers as if every row were valid. Reject a non-zero (or unknown, i.e. negative)
+        /// null count. Real `Variant` nulls travel through the explicit `null` child /
+        /// `ColumnVariant::NULL_DISCRIMINATOR`, not a FieldNode null count.
+        if (node.null_count() != 0)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC Union field '{}' has no validity bitmap but its FieldNode reports {} nulls",
+                field.name, node.null_count());
         return decodeUnion(field, rows);
+    }
 
     /// An Arrow `null`-typed field carries no buffers at all (not even validity); it is an all-null
     /// column. Decode it as an all-null `Nullable(Nothing)` (matching `fieldToCHType` and how the library
