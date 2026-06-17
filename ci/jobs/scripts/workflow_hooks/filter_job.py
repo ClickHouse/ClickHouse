@@ -323,24 +323,26 @@ def should_skip_job(job_name):
             ):
                 return True, "Skipped: only CI scripts changed; running amd_asan_ubsan integration batch 1 only"
 
-    # Test-only changes: when every changed file is a stateless test that the
-    # flaky checks already run (across all sanitizer/debug/binary builds), the
-    # full functional suite only re-runs unchanged, unrelated tests. Skip the
-    # non-flaky Stateless/Stateful jobs and rely on the flaky checks. Coverage
-    # jobs are kept so the coverage report stays complete.
-    if (
-        _info_cache.pr_number
-        and (
+    # Test-only changes: the flaky checks already run these exact tests across
+    # all sanitizer/debug/binary builds, so the full functional suite only
+    # re-runs unchanged, unrelated tests. Skip the non-flaky Stateless/Stateful
+    # jobs and the whole LLVM coverage pipeline (its build, stateless/integration/
+    # unit coverage jobs, and the coverage merge), and rely on the flaky checks.
+    # The LLVM coverage merge is skipped too, so the master coverage number is
+    # not updated from a partial run.
+    if _info_cache.pr_number and only_changed_stateless_tests(changed_files):
+        is_full_functional_suite = (
             job_name.startswith(JobNames.STATELESS)
             or job_name.startswith(JobNames.STATEFUL)
+        ) and "flaky" not in job_name.lower()
+        is_llvm_coverage = (
+            "llvm_coverage" in job_name.lower()
+            or job_name == JobNames.LLVM_COVERAGE
         )
-        and "flaky" not in job_name.lower()
-        and "coverage" not in job_name.lower()
-        and only_changed_stateless_tests(changed_files)
-    ):
-        return (
-            True,
-            "Skipped, only stateless test files changed - covered by the flaky checks",
-        )
+        if is_full_functional_suite or is_llvm_coverage:
+            return (
+                True,
+                "Skipped, only stateless test files changed - covered by the flaky checks",
+            )
 
     return False, ""
