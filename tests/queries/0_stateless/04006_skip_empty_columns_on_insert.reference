@@ -108,3 +108,9 @@ b
 key
 case20_data
 1	100	
+case21_columns_in_part
+a
+key
+case21_post_rename_merge_alter
+1	100	0
+2	200	0

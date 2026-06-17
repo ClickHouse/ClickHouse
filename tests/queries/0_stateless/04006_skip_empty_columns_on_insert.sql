@@ -763,3 +763,53 @@ SELECT 'case20_data';
 SELECT * FROM t_skip_empty_version_gate ORDER BY key;
 
 DROP TABLE t_skip_empty_version_gate;
+
+-- ============================================================================
+-- CASE 21: A skipped column that is renamed on the fly and then merged keeps its
+-- inserted type-default after a DEFAULT change on the new name. The merge
+-- materializes the rename into the merged part (written at the current metadata
+-- version, so the on-the-fly rename conversion no longer exists on read), so
+-- MergeTask must translate each source part's skipped-columns marker through its
+-- rename map before storing it on the merged part. Otherwise the merged part
+-- records the stale pre-rename name, fillMissingColumns misses it, and the later
+-- ALTER MODIFY COLUMN ... DEFAULT returns the new default instead of the inserted
+-- type-default. This is the merge-after-rename order, distinct from rename only
+-- (case 19) and merge only (case 18).
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_rename_merge_default;
+
+CREATE TABLE t_skip_empty_rename_merge_default
+(
+    key UInt64,
+    a UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_skipped_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- b=0 (type-default) in both parts → b is skipped in both.
+INSERT INTO t_skip_empty_rename_merge_default (key, a, b) VALUES (1, 100, 0);
+INSERT INTO t_skip_empty_rename_merge_default (key, a, b) VALUES (2, 200, 0);
+
+-- Rename the skipped column, then merge: the merged part is written under the
+-- new name c and must carry the skipped-columns marker as c (not the stale b).
+ALTER TABLE t_skip_empty_rename_merge_default RENAME COLUMN b TO c;
+OPTIMIZE TABLE t_skip_empty_rename_merge_default FINAL;
+
+SELECT 'case21_columns_in_part';
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_rename_merge_default' AND active
+ORDER BY column;
+
+-- Give the new name a DEFAULT expression. c must still read as 0, not 999.
+ALTER TABLE t_skip_empty_rename_merge_default MODIFY COLUMN c UInt64 DEFAULT 999;
+
+SELECT 'case21_post_rename_merge_alter';
+SELECT key, a, c FROM t_skip_empty_rename_merge_default ORDER BY key;
+
+DROP TABLE t_skip_empty_rename_merge_default;
