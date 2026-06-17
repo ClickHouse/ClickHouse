@@ -24,7 +24,7 @@ void packV8Header(std::span<const V8FrameDescriptor> frames, char * buf) noexcep
     *reinterpret_cast<uint8_t *>(buf) = KEEPER_V8_VERSION;
     buf += 1;
 
-    // chunk_count (8 bytes LE)
+    // chunk_count (8 bytes, native byte order)
     uint64_t count = static_cast<uint64_t>(frames.size());
     memcpy(buf, &count, 8);
     buf += 8;

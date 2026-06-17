@@ -7,6 +7,7 @@
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperSnapshotV8.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
@@ -16,6 +17,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <base/sort.h>
@@ -25,6 +28,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <zstd.h>
 
 namespace ProfileEvents
 {
@@ -37,6 +41,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_COMPRESS;
     extern const int KEEPER_EXCEPTION;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
@@ -46,6 +51,7 @@ namespace ErrorCodes
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 rocksdb_load_batch_size;
+    extern const CoordinationSettingsUInt64 snapshot_chunk_size;
 }
 
 
@@ -298,11 +304,236 @@ namespace
         buffer->pos(0);
         return SnapshotMetadata::deserialize(*buffer);
     }
+
+    /// Serialize a V8 (chunked independently-compressed ZSTD) snapshot into `raw_out`.
+    ///
+    /// The caller must NOT wrap `raw_out` with a compression layer — V8 manages its own
+    /// per-frame ZSTD compression. A placeholder header of v8HeaderSize(chunk_count) zeroed
+    /// bytes is written first; the caller backpatches it after this function returns the
+    /// frame descriptor table.
+    ///
+    /// Frame layout written:
+    ///   1 × METADATA  — version byte, snapshot_meta, zxid+digest, session_id, ACL map
+    ///   K × NODES     — each: uint64_t node_count, then node_count V7-encoded path+node pairs
+    ///   1 × SESSIONS  — sorted sessions + optional cluster config
+    ///
+    /// K = ceil(total_non_system_nodes / chunk_size_limit), minimum 1.
+    template <typename Storage>
+    std::vector<V8FrameDescriptor> serializeV8(
+        const KeeperStorageSnapshot<Storage> & snapshot,
+        WriteBuffer & raw_out,
+        KeeperContextPtr keeper_context)
+    {
+        const size_t system_nodes = keeper_context->getSystemNodesWithData().size();
+        const size_t total_nodes = snapshot.snapshot_container_size > system_nodes
+            ? snapshot.snapshot_container_size - system_nodes
+            : 0;
+
+        const size_t chunk_size_limit = std::max(
+            static_cast<size_t>(1),
+            static_cast<size_t>(keeper_context->getCoordinationSettings()[CoordinationSetting::snapshot_chunk_size]));
+
+        // At least 1 NODES frame even for empty storage (root "/" always present in practice,
+        // but guard against edge cases with min-1).
+        const size_t nodes_chunk_count = total_nodes == 0
+            ? 1
+            : (total_nodes + chunk_size_limit - 1) / chunk_size_limit;
+        const uint64_t total_chunk_count = 1 + nodes_chunk_count + 1; // METADATA + N*NODES + SESSIONS
+
+        // Write zeroed header placeholder; backpatched by the caller after frames are written.
+        const size_t header_size = v8HeaderSize(total_chunk_count);
+        {
+            static const char kZeros[64] = {};
+            size_t remaining = header_size;
+            while (remaining > 0)
+            {
+                const size_t batch = std::min(remaining, sizeof(kZeros));
+                raw_out.write(kZeros, batch);
+                remaining -= batch;
+            }
+        }
+
+        // Reusable ZSTD compression context (level 3, content checksum for integrity).
+        ZSTD_CCtx * cctx = ZSTD_createCCtx();
+        if (!cctx)
+            throw Exception(ErrorCodes::CANNOT_COMPRESS,
+                "V8 snapshot: failed to create ZSTD compression context");
+        SCOPE_EXIT({ ZSTD_freeCCtx(cctx); });
+        ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, 3);
+        ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
+
+        std::vector<V8FrameDescriptor> frames;
+        frames.reserve(total_chunk_count);
+
+        // Compress the finalised `scratch` buffer and write one ZSTD frame to `raw_out`.
+        // Records the frame descriptor (type, absolute offset, compressed size).
+        auto compress_and_record = [&](V8ChunkType type, WriteBufferFromOwnString & scratch) -> void
+        {
+            const std::string & uncompressed = scratch.str(); // finalises if not already
+            const size_t max_compressed = ZSTD_compressBound(uncompressed.size());
+            std::string compressed(max_compressed, '\0');
+            const size_t compressed_size = ZSTD_compress2(
+                cctx,
+                compressed.data(), max_compressed,
+                uncompressed.data(), uncompressed.size());
+            if (ZSTD_isError(compressed_size))
+                throw Exception(ErrorCodes::CANNOT_COMPRESS,
+                    "V8 snapshot ZSTD compression failed: {}", ZSTD_getErrorName(compressed_size));
+            const uint64_t offset = static_cast<uint64_t>(raw_out.count());
+            raw_out.write(compressed.data(), compressed_size);
+            frames.push_back(V8FrameDescriptor{type, offset, static_cast<uint64_t>(compressed_size)});
+        };
+
+        // ── METADATA frame ────────────────────────────────────────────────────────
+        {
+            WriteBufferFromOwnString scratch;
+            writeBinary(static_cast<uint8_t>(SnapshotVersion::V8), scratch);
+            serializeSnapshotMetadata(snapshot.snapshot_meta, scratch);
+            // V8 >= V5: always write zxid + digest
+            writeBinary(snapshot.zxid, scratch);
+            if (keeper_context->digestEnabled())
+            {
+                writeBinary(static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION), scratch);
+                writeBinary(snapshot.nodes_digest, scratch);
+            }
+            else
+            {
+                writeBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), scratch);
+            }
+            writeBinary(snapshot.session_id, scratch);
+
+            // ACL map — sorted for determinism across replicas (same as legacy serialiser).
+            std::vector<std::pair<ACLId, Coordination::ACLs>> sorted_acl_map(
+                snapshot.acl_map.begin(), snapshot.acl_map.end());
+            ::sort(sorted_acl_map.begin(), sorted_acl_map.end());
+            writeBinary(sorted_acl_map.size(), scratch);
+            for (const auto & [acl_id, acls] : sorted_acl_map)
+            {
+                writeBinary(acl_id, scratch); // V8 always uses V7+ uint32_t ACLId
+                writeBinary(acls.size(), scratch);
+                for (const auto & acl : acls)
+                {
+                    writeBinary(acl.permissions, scratch);
+                    writeBinary(acl.scheme, scratch);
+                    writeBinary(acl.id, scratch);
+                }
+            }
+            compress_and_record(V8ChunkType::METADATA, scratch);
+        }
+
+        // ── NODES frames ──────────────────────────────────────────────────────────
+        // Each frame: uint64_t node_count | node_count × (path binary + V7-encoded node).
+        // The node_count is written as a zero placeholder and backpatched after the loop.
+        {
+            size_t remaining_nodes = total_nodes;
+            auto it = snapshot.begin;
+            size_t container_pos = 0;
+
+            for (size_t chunk_idx = 0; chunk_idx < nodes_chunk_count; ++chunk_idx)
+            {
+                const size_t nodes_for_this_chunk = std::min(remaining_nodes, chunk_size_limit);
+
+                WriteBufferFromOwnString scratch;
+                // Reserve 8 bytes for node_count (backpatched after iteration).
+                static const char kZero8[8] = {};
+                scratch.write(kZero8, sizeof(kZero8));
+
+                uint64_t actual_node_count = 0;
+
+                while (actual_node_count < nodes_for_this_chunk
+                    && container_pos < snapshot.snapshot_container_size)
+                {
+                    const auto & path = it->key;
+
+                    // Skip system node children of /keeper (they are not persisted).
+                    if (Coordination::matchPath(path, keeper_system_path)
+                        == Coordination::PathMatchResult::IS_CHILD)
+                    {
+                        const bool last = (container_pos + 1 >= snapshot.snapshot_container_size);
+                        if (!last)
+                            ++it;
+                        ++container_pos;
+                        continue;
+                    }
+
+                    const auto & node = it->value;
+                    if (node.stats.mzxid > snapshot.zxid)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "V8 serialize: node mzxid {} > snapshot zxid {}",
+                            node.stats.mzxid, snapshot.zxid);
+
+                    writeBinary(path, scratch);
+                    // V8 reuses V7 per-node encoding (METADATA version byte = 8 is a
+                    // frame tag, not a node-encoding selector). The C3 reader must decode
+                    // each node with readNode(…, SnapshotVersion::V7, …).
+                    writeNode(node, SnapshotVersion::V7, scratch);
+                    ++actual_node_count;
+
+                    const bool last = (container_pos + 1 >= snapshot.snapshot_container_size);
+                    if (!last)
+                        ++it;
+                    ++container_pos;
+                }
+
+                remaining_nodes -= actual_node_count;
+
+                // Backpatch node_count into the first 8 bytes of the scratch buffer.
+                std::string & s = scratch.str(); // finalises
+                memcpy(s.data(), &actual_node_count, sizeof(actual_node_count));
+                compress_and_record(V8ChunkType::NODES, scratch);
+            }
+        }
+
+        // ── SESSIONS frame ────────────────────────────────────────────────────────
+        {
+            WriteBufferFromOwnString scratch;
+
+            // Sorted sessions for determinism across replicas (same as legacy serialiser).
+            std::vector<std::pair<int64_t, int64_t>> sorted_sessions(
+                snapshot.session_and_timeout.begin(), snapshot.session_and_timeout.end());
+            ::sort(sorted_sessions.begin(), sorted_sessions.end());
+            writeBinary(sorted_sessions.size(), scratch);
+            for (const auto & [session_id, timeout] : sorted_sessions)
+            {
+                writeBinary(session_id, scratch);
+                writeBinary(timeout, scratch);
+                KeeperStorageBase::AuthIDs ids;
+                if (snapshot.session_and_auth.contains(session_id))
+                    ids = snapshot.session_and_auth.at(session_id);
+                writeBinary(ids.size(), scratch);
+                for (const auto & [scheme, id] : ids)
+                {
+                    writeBinary(scheme, scratch);
+                    writeBinary(id, scratch);
+                }
+            }
+
+            // Optional cluster config: absent config is represented by EOF, exactly as in
+            // the legacy serialiser (V1-V7). The C3 SESSIONS reader must use
+            // `if (!in.eof())` here — never substitute a length-prefix reader for this
+            // field, as alloc(0) would feed an empty buffer to ClusterConfig::deserialize.
+            if (snapshot.cluster_config)
+            {
+                auto cluster_buf = snapshot.cluster_config->serialize();
+                writeVarUInt(cluster_buf->size(), scratch);
+                scratch.write(reinterpret_cast<const char *>(cluster_buf->data_begin()), cluster_buf->size());
+            }
+
+            compress_and_record(V8ChunkType::SESSIONS, scratch);
+        }
+
+        return frames;
+    }
 }
 
 template<typename Storage>
 void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Storage> & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
+    if (snapshot.version >= SnapshotVersion::V8)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "V8 snapshots must be written via serializeV8 (which manages per-frame compression "
+            "and header backpatch), not via the legacy streaming serialiser");
+
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
 
@@ -1015,6 +1246,24 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotB
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::serializeSnapshotToBuffer(const KeeperStorageSnapshot<Storage> & snapshot) const
 {
+    if (snapshot.version >= SnapshotVersion::V8)
+    {
+        // V8: write directly to the nuraft buffer without a compression wrapper.
+        // serializeV8 writes a zero-filled header placeholder followed by independently-
+        // compressed ZSTD frames, and returns the frame descriptor table.
+        // We backpatch the real header via memcpy into the contiguous nuraft::buffer.
+        auto writer = std::make_unique<WriteBufferFromNuraftBuffer>();
+        auto * raw_ptr = writer.get();
+        auto frames = serializeV8(snapshot, *writer, keeper_context);
+        writer->finalize();
+        auto buf = raw_ptr->getBuffer();
+        const size_t hdr_size = v8HeaderSize(frames.size());
+        std::vector<char> header_buf(hdr_size);
+        packV8Header(frames, header_buf.data());
+        std::memcpy(buf->data_begin(), header_buf.data(), hdr_size);
+        return buf;
+    }
+
     std::unique_ptr<WriteBufferFromNuraftBuffer> writer = std::make_unique<WriteBufferFromNuraftBuffer>();
     auto * buffer_raw_ptr = writer.get();
     std::unique_ptr<WriteBuffer> compressed_writer;
@@ -1231,24 +1480,64 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
         }
 
         writer = disk->writeFile(snapshot_file_name);
-        if (compress_snapshots_zstd)
-            compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
+
+        if (snapshot.version >= SnapshotVersion::V8)
+        {
+            // V8: write directly without a compression wrapper; serializeV8 manages
+            // its own per-frame ZSTD compression. After all frames are written we
+            // capture the total byte count (U3: before seeking back so the metric
+            // reflects the real file size, not the post-seek position), then seek to
+            // position 0 and overwrite the placeholder header.
+            auto * raw_writer = writer.get();
+            auto frames = serializeV8(snapshot, *raw_writer, keeper_context);
+
+            // U3: capture total bytes BEFORE seeking back to avoid recording the
+            // seek-back position (0 + header_size) instead of the real file size.
+            const size_t bytes_written = raw_writer->count();
+            ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
+
+            raw_writer->next(); // flush internal buffer to OS before seeking
+
+            auto * seekable = dynamic_cast<WriteBufferFromFileDescriptor *>(raw_writer);
+            if (!seekable)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "V8 snapshot disk writer does not support seek — cannot backpatch header");
+            seekable->seek(0, SEEK_SET);
+
+            const size_t hdr_size = v8HeaderSize(frames.size());
+            std::vector<char> header_buf(hdr_size);
+            packV8Header(frames, header_buf.data());
+            raw_writer->write(header_buf.data(), hdr_size);
+            raw_writer->finalize();
+
+            Stopwatch watch;
+            raw_writer->sync();
+            ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+
+            writer.reset();
+        }
         else
-            compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+        {
+            if (compress_snapshots_zstd)
+                compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
+            else
+                compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
-        const size_t bytes_before = compressed_writer->count();
-        KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
-        const size_t bytes_written = compressed_writer->count() - bytes_before;
-        ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
+            const size_t bytes_before = compressed_writer->count();
+            KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
+            const size_t bytes_written = compressed_writer->count() - bytes_before;
+            ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
 
-        compressed_writer->finalize();
+            compressed_writer->finalize();
 
-        Stopwatch watch;
-        compressed_writer->sync();
-        ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+            Stopwatch watch;
+            compressed_writer->sync();
+            ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
-        compressed_writer.reset();
-        writer.reset();
+            compressed_writer.reset();
+            writer.reset();
+        }
+
         disk->removeFile(tmp_snapshot_file_name);
     }
     catch (...)

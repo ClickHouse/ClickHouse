@@ -9,6 +9,7 @@
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperStorage.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/tests/gtest_global_context.h>
 
@@ -27,6 +28,9 @@
 
 #include <base/scope_guard.h>
 
+#include <zstd.h>
+
+#include <fstream>
 #include <limits>
 #include <stdexcept>
 #include <thread>
@@ -35,6 +39,11 @@ namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+}
+
+namespace ProfileEvents
+{
+    extern const Event KeeperSnapshotWrittenBytes;
 }
 
 namespace
@@ -2238,6 +2247,149 @@ TEST(KeeperV8Header, ChunkCountExceedsBufferCapacity)
     uint64_t big = 100; // v8HeaderSize(100) = 1713, but buf is only 16 bytes
     memcpy(buf.data() + 5, &big, 8);
     EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+}
+
+/// Verify that the V8 write path produces a structurally valid snapshot buffer.
+/// Serializes a small in-memory storage to V8 format via serializeSnapshotToBuffer
+/// (explicit version bypass — MAX_SUPPORTED_SNAPSHOT_VERSION is still V7).
+TEST(KeeperSnapshotV8Write, InspectBytes)
+{
+    ChangelogDirTest snap_dir("./v8write_test_snap");
+
+    // Set up a minimal KeeperContext with default settings.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    // Create a small storage with a few nodes.
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/alpha",   "hello");
+    addNode(storage, "/beta",    "world");
+    addNode(storage, "/gamma",   "data");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 10;
+
+    // Build a V8 snapshot (explicit version bypass — gate not opened until C3).
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(
+        &storage, /*up_to_log_idx=*/10, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, /*compress_zstd=*/true);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+
+    ASSERT_NE(buf, nullptr);
+    ASSERT_GT(buf->size(), 0u);
+
+    const char * data = reinterpret_cast<const char *>(buf->data_begin());
+    const size_t data_size = buf->size();
+
+    // Parse and validate the V8 header; throws on any structural violation.
+    auto frames = parseAndValidateV8Header(data, data_size);
+
+    // Must have METADATA + at least 1 NODES + SESSIONS.
+    ASSERT_GE(frames.size(), DB::KEEPER_V8_MIN_CHUNK_COUNT);
+
+    // Frame ordering: METADATA first, SESSIONS last, all middle frames are NODES.
+    EXPECT_EQ(frames.front().type, V8ChunkType::METADATA);
+    EXPECT_EQ(frames.back().type,  V8ChunkType::SESSIONS);
+    for (size_t i = 1; i + 1 < frames.size(); ++i)
+        EXPECT_EQ(frames[i].type, V8ChunkType::NODES) << "Frame " << i << " should be NODES";
+
+    // Every frame must begin with the ZSTD magic bytes (0x28 0xB5 0x2F 0xFD).
+    static constexpr unsigned char kZstdMagic[4] = {0x28, 0xB5, 0x2F, 0xFD};
+    for (size_t i = 0; i < frames.size(); ++i)
+    {
+        const auto & f = frames[i];
+        ASSERT_GE(data_size, f.compressed_offset + 4u) << "Frame " << i << " too short for magic check";
+        EXPECT_EQ(memcmp(data + f.compressed_offset, kZstdMagic, 4), 0)
+            << "Frame " << i << " does not start with ZSTD magic";
+    }
+
+    // Decompress the first NODES frame and verify the node_count prefix.
+    {
+        const auto & nf = frames[1]; // first NODES frame
+        const size_t max_out = nf.compressed_size * 20 + 1024; // generous upper bound
+        std::string decompressed(max_out, '\0');
+        const size_t actual = ZSTD_decompress(
+            decompressed.data(), max_out,
+            data + nf.compressed_offset, nf.compressed_size);
+        ASSERT_FALSE(ZSTD_isError(actual)) << ZSTD_getErrorName(actual);
+        ASSERT_GE(actual, sizeof(uint64_t)) << "Decompressed NODES frame shorter than node_count field";
+        uint64_t node_count = 0;
+        memcpy(&node_count, decompressed.data(), sizeof(node_count));
+        // Storage has 4 non-system nodes: /, /alpha, /beta, /gamma (system nodes excluded).
+        // With the default chunk_size_limit (100000), all 4 fit in one NODES frame.
+        EXPECT_GE(node_count, 1u) << "NODES frame must have at least the root node";
+    }
+}
+
+/// Verify the V8 disk write path (serializeSnapshotToDisk):
+///  - frame structure/ordering on raw file bytes
+///  - ZSTD magic at each frame offset
+///  - KeeperSnapshotWrittenBytes equals actual file size (U3 fix: captured before seek-back)
+TEST(KeeperSnapshotV8Write, DiskInspectBytes)
+{
+    ChangelogDirTest snap_dir("./v8disk_test_snap");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    auto snap_disk = std::make_shared<DB::DiskLocal>("SnapDiskDisk", snap_dir.path);
+    keeper_context->setSnapshotDisk(snap_disk);
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/p", "v1");
+    addNode(storage, "/q", "v2");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 5;
+
+    // Explicit V8 version bypass — MAX_SUPPORTED_SNAPSHOT_VERSION is still V7.
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(
+        &storage, /*up_to_log_idx=*/5, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, /*compress_zstd=*/false);
+
+    // Capture the global KeeperSnapshotWrittenBytes counter before writing.
+    const auto written_before = ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotWrittenBytes].load();
+
+    auto file_info = manager.serializeSnapshotToDisk(snapshot);
+    ASSERT_NE(file_info, nullptr);
+
+    const auto written_after = ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotWrittenBytes].load();
+    const uint64_t reported_bytes = written_after - written_before;
+
+    // Read the snapshot file as raw bytes.
+    const std::string abs_path = snap_dir.path + "/" + file_info->path;
+    std::ifstream raw_file(abs_path, std::ios::binary | std::ios::ate);
+    ASSERT_TRUE(raw_file.is_open()) << "Cannot open V8 disk snapshot: " << abs_path;
+    const size_t file_size = static_cast<size_t>(raw_file.tellg());
+    raw_file.seekg(0, std::ios::beg);
+    std::string raw(file_size, '\0');
+    raw_file.read(raw.data(), static_cast<std::streamsize>(file_size));
+    raw_file.close();
+
+    // U3 fix: reported bytes must equal actual file size (count() captured before seek-back).
+    EXPECT_EQ(reported_bytes, file_size)
+        << "KeeperSnapshotWrittenBytes mismatch — count() was captured after seek-back (U3 bug)";
+
+    ASSERT_GT(file_size, 0u);
+
+    // Parse and validate the V8 header.
+    auto frames = parseAndValidateV8Header(raw.data(), file_size);
+
+    ASSERT_GE(frames.size(), DB::KEEPER_V8_MIN_CHUNK_COUNT);
+    EXPECT_EQ(frames.front().type, V8ChunkType::METADATA);
+    EXPECT_EQ(frames.back().type,  V8ChunkType::SESSIONS);
+    for (size_t i = 1; i + 1 < frames.size(); ++i)
+        EXPECT_EQ(frames[i].type, V8ChunkType::NODES) << "Frame " << i << " should be NODES";
+
+    static constexpr unsigned char kZstdMagic[4] = {0x28, 0xB5, 0x2F, 0xFD};
+    for (size_t i = 0; i < frames.size(); ++i)
+    {
+        ASSERT_GE(file_size, frames[i].compressed_offset + 4u) << "Frame " << i << " too short";
+        EXPECT_EQ(memcmp(raw.data() + frames[i].compressed_offset, kZstdMagic, 4), 0)
+            << "Frame " << i << " does not start with ZSTD magic";
+    }
 }
 
 TEST(KeeperV8Header, v8HeaderSizeComputation)

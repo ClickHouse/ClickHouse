@@ -15,7 +15,7 @@ namespace DB
 ///   [Header — uncompressed, preallocated placeholder, backpatched after frames]
 ///     magic[4]         = "CKFS"   (0x43 0x4B 0x46 0x53)  != ZSTD magic, != LZ4 header
 ///     uint8_t  version = 8
-///     uint64_t chunk_count                              (little-endian)
+///     uint64_t chunk_count                              (native byte order)
 ///     per chunk (chunk_count times):
 ///       uint8_t  chunk_type                            // METADATA=0, NODES=1, SESSIONS=2
 ///       uint64_t compressed_offset                     // absolute byte offset from buffer start
@@ -63,7 +63,9 @@ constexpr size_t v8HeaderSize(uint64_t chunk_count) noexcept
 /// Write a V8 header into `buf`.
 /// `buf` must point to at least v8HeaderSize(frames.size()) writable bytes.
 /// The frame descriptors must already contain valid type/offset/size values.
-/// Values are stored in native byte order (all supported ClickHouse platforms are LE).
+/// Values are stored in native byte order (no byte-swapping is applied).
+/// Homogeneous-architecture cluster assumption: all Keeper nodes must share the same
+/// CPU architecture, so the binary format is read back with matching native byte order.
 void packV8Header(std::span<const V8FrameDescriptor> frames, char * buf) noexcept;
 
 /// Parse a V8 header from `buf` and return the frame descriptors.
