@@ -124,12 +124,8 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
     }
 }
 
-/// Read-only check that every equi-join key pair has a common supertype for the shuffle hash.
-/// preCalculateKeys() mutates the join step in place (it materializes function-wrapped keys as
-/// extra inputs), so the shuffle path must reject a type-incompatible join BEFORE that mutation;
-/// otherwise the bail-out below would leave the step with an input that no child produces, and the
-/// per-stage deserialize would later abort in the JoinExpressionActions constructor. Mirrors the
-/// key-pair selection in JoinStepLogical::preCalculateKeys.
+/// True if every equi-join key pair has a common supertype. Must run before preCalculateKeys()
+/// mutates the join step. Key selection mirrors JoinStepLogical::preCalculateKeys.
 static bool shuffleJoinKeysHaveCommonType(const JoinOperator & join_info)
 {
     for (const auto & expr : join_info.expression)
@@ -242,8 +238,8 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
             row_count_b.transform(toString<UInt64>).value_or("unknown"),
             bucket_count);
 
-        /// Bail before preCalculateKeys() mutates the join step: if any key pair lacks a common
-        /// supertype the shuffle cannot hash both sides together, so keep this join single-node.
+        /// Keep type-incompatible joins single-node. Must precede preCalculateKeys(): bailing after
+        /// it would leave the step with an input no child produces (LOGICAL_ERROR on deserialize).
         if (!shuffleJoinKeysHaveCommonType(join_info))
             return;
 
