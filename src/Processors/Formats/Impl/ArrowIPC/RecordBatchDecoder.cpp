@@ -168,7 +168,7 @@ ColumnPtr RecordBatchDecoder::buildNullMap(const Slice & validity, size_t rows, 
     return null_map;
 }
 
-ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
+ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows, bool date32_as_number)
 {
     const ArrowType & type = field.type;
     DataTypePtr inner_type = fieldToCHType(field, settings, /*make_nullable=*/false, /*allow_null_type=*/true);
@@ -266,12 +266,19 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             const Slice values = nextBuffer();
             if (type.unit == flatbuf::DateUnit_DAY)
             {
-                /// date32: days since the epoch, maps to Date32 (Int32). Enforce the same range/overflow
-                /// contract as the Apache Arrow library reader (`readColumnWithDate32Data`): a day number
-                /// outside ClickHouse's allowed Date32 range is saturated or rejected according to
-                /// `date_time_overflow_behavior` (its default `Ignore`, like `Throw`, rejects — preserving
-                /// the pre-`date_time_overflow_behavior` behavior) instead of leaving an invalid Date32 in
-                /// the result.
+                /// date32: days since the epoch, maps to Date32 (Int32). When the requested header type is
+                /// numeric, read the raw day number without the range check (matching the Apache Arrow
+                /// library reader's numeric type-hint behavior); `buildChunk` then casts it to the number.
+                if (date32_as_number)
+                {
+                    fillFixed<ColumnInt32>(*column, rows, values, sizeof(Int32));
+                    break;
+                }
+                /// Otherwise enforce the same range/overflow contract as the library reader
+                /// (`readColumnWithDate32Data`): a day number outside ClickHouse's allowed Date32 range is
+                /// saturated or rejected according to `date_time_overflow_behavior` (its default `Ignore`,
+                /// like `Throw`, rejects — preserving the pre-`date_time_overflow_behavior` behavior)
+                /// instead of leaving an invalid Date32 in the result.
                 checkBufferSize(values, requiredBytes(rows, sizeof(Int32)), "date32");
                 auto & data = assert_cast<ColumnInt32 &>(*column).getData();
                 data.resize(rows);
@@ -845,7 +852,7 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
         std::move(local_discriminators), std::move(offsets), std::move(compact), local_to_global);
 }
 
-ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_low_cardinality)
+ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_low_cardinality, bool date32_as_number)
 {
     const flatbuf::FieldNode & node = nextNode();
     /// `FieldNode::length` is signed IPC metadata; reject a negative (corrupted) length before casting,
@@ -900,7 +907,7 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_l
     if (field.dictionary)
         return decodeDictionary(field, rows, validity, node.null_count(), allow_low_cardinality);
 
-    ColumnPtr inner = decodeInner(field, rows);
+    ColumnPtr inner = decodeInner(field, rows, date32_as_number);
 
     /// Only wrap in Nullable when the type allows it; Array/Map/Tuple cannot be inside Nullable in
     /// ClickHouse, so (matching the Apache Arrow library reader) their outer validity is dropped.
@@ -1017,7 +1024,7 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
 
 std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::vector<ArrowField> & fields,
-    const std::unordered_set<String> * keep_top_level_fields)
+    const std::unordered_set<String> * keep_top_level_fields, const std::unordered_set<String> * date32_numeric_target_fields)
 {
     current_batch = &batch;
     node_index = 0;
@@ -1048,20 +1055,22 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
     result.reserve(fields.size());
     for (const ArrowField & field : fields)
     {
-        if (keep_top_level_fields)
+        String normalized_name = field.name;
+        if (case_insensitive)
+            boost::to_lower(normalized_name);
+
+        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
         {
-            String name = field.name;
-            if (case_insensitive)
-                boost::to_lower(name);
-            if (!keep_top_level_fields->contains(name))
-            {
-                /// Unrequested column: advance the node/buffer cursors past it without decoding, so a
-                /// SELECT of a subset of columns neither pays for nor fails on columns it did not request.
-                skipField(field);
-                pruned = true;
-                continue;
-            }
+            /// Unrequested column: advance the node/buffer cursors past it without decoding, so a
+            /// SELECT of a subset of columns neither pays for nor fails on columns it did not request.
+            skipField(field);
+            pruned = true;
+            continue;
         }
+
+        /// A top-level date32 column whose requested header type is numeric is read as the raw day number
+        /// (no Date32 range check); see decodeField/decodeInner.
+        const bool date32_as_number = date32_numeric_target_fields && date32_numeric_target_fields->contains(normalized_name);
 
         DecodedColumn decoded;
         decoded.name = field.name;
@@ -1069,7 +1078,7 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
         /// A top-level dictionary-encoded field decodes into a LowCardinality column of its value type.
         if (field.dictionary && decoded.type->canBeInsideLowCardinality())
             decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
-        decoded.column = decodeField(field, /*allow_low_cardinality=*/true);
+        decoded.column = decodeField(field, /*allow_low_cardinality=*/true, date32_as_number);
         if (decoded.column->size() != batch_rows)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
@@ -1235,9 +1244,10 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
 
 std::vector<RecordBatchDecoder::DecodedColumn>
 RecordBatchDecoder::decodeBatch(
-    const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::unordered_set<String> * keep_top_level_fields)
+    const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::unordered_set<String> * keep_top_level_fields,
+    const std::unordered_set<String> * date32_numeric_target_fields)
 {
-    return decodeColumns(batch, body, schema.fields, keep_top_level_fields);
+    return decodeColumns(batch, body, schema.fields, keep_top_level_fields, date32_numeric_target_fields);
 }
 
 }

@@ -62,14 +62,20 @@ public:
     /// (their buffers consumed but not materialized), so a `SELECT` of a subset of columns does not pay
     /// for — or fail on — unrequested columns. The set holds field names normalized the same way the
     /// reader matches them to the header (lower-cased when case-insensitive matching is on).
+    /// `date32_numeric_target_fields` (normalized like `keep_top_level_fields`) names the top-level
+    /// `date32` fields whose requested header type is numeric; those are decoded as the raw `Int32` day
+    /// number without the `Date32` range/overflow check, matching the Apache Arrow library reader's numeric
+    /// type-hint behavior.
     std::vector<DecodedColumn> decodeBatch(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body,
-        const std::unordered_set<String> * keep_top_level_fields = nullptr);
+        const std::unordered_set<String> * keep_top_level_fields = nullptr,
+        const std::unordered_set<String> * date32_numeric_target_fields = nullptr);
 
     /// Decodes an explicit list of fields (used for dictionary batches, which carry one value column).
     std::vector<DecodedColumn> decodeColumns(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::vector<ArrowField> & fields,
-        const std::unordered_set<String> * keep_top_level_fields = nullptr);
+        const std::unordered_set<String> * keep_top_level_fields = nullptr,
+        const std::unordered_set<String> * date32_numeric_target_fields = nullptr);
 
 private:
     Slice nextBuffer();
@@ -78,12 +84,15 @@ private:
     /// `allow_low_cardinality` is set only for top-level fields: a dictionary-encoded field decodes into
     /// a LowCardinality column there, but a dictionary nested inside Array/Map/Tuple/Union is materialized
     /// to its plain value column (matching the type `fieldToCHType` declares for the nested field).
-    ColumnPtr decodeField(const ArrowField & field, bool allow_low_cardinality = false);
+    /// `date32_as_number` (only set for a top-level `date32` field with a numeric header target) reads the
+    /// raw `Int32` day number without the `Date32` range/overflow check; it is never propagated to nested
+    /// fields, which always apply the check.
+    ColumnPtr decodeField(const ArrowField & field, bool allow_low_cardinality = false, bool date32_as_number = false);
     /// Advances the node/buffer/variadic cursors over `field` exactly as `decodeField` would, without
     /// reading or materializing its data. Used to skip an unrequested top-level column while keeping the
     /// flat node/buffer cursors aligned for the columns that follow.
     void skipField(const ArrowField & field);
-    ColumnPtr decodeInner(const ArrowField & field, size_t rows);
+    ColumnPtr decodeInner(const ArrowField & field, size_t rows, bool date32_as_number = false);
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows);
     ColumnPtr decodeDictionary(
         const ArrowField & field, size_t rows, const Slice & validity, int64_t null_count, bool allow_low_cardinality);

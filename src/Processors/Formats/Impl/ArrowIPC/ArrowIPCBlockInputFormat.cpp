@@ -219,10 +219,15 @@ void ArrowIPCBlockInputFormat::prepareReader()
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
     auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
     requested_top_level_fields.clear();
+    date32_numeric_target_fields.clear();
     for (const auto & header_column : getPort().getHeader())
     {
         requested_top_level_fields.insert(normalize(header_column.name));
         requested_top_level_fields.insert(normalize(Nested::extractTableName(header_column.name)));
+        /// A `date32` column requested as a numeric type is read raw (the decoder checks this set in the
+        /// `date32` path); mirrors the Apache Arrow library reader's numeric type-hint handling.
+        if (isNumber(removeNullable(removeLowCardinality(header_column.type))))
+            date32_numeric_target_fields.insert(normalize(header_column.name));
     }
 
     prepared = true;
@@ -642,7 +647,7 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                 }
 
                 message_reader->readBody(msg.body_length, body_buffer);
-                auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields);
+                auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields, &date32_numeric_target_fields);
                 Chunk chunk = buildChunk(decoded, num_rows);
 
                 const size_t batch_end = in->count();
@@ -715,7 +720,7 @@ Chunk ArrowIPCBlockInputFormat::readFile()
         return getChunkForCount(num_rows);
 
     message_reader->readBody(msg.body_length, body_buffer);
-    auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields);
+    auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields, &date32_numeric_target_fields);
     return buildChunk(decoded, num_rows);
 }
 

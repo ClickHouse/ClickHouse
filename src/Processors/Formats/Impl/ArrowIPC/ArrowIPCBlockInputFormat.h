@@ -79,6 +79,10 @@ private:
     /// The decoder skips every other column so a SELECT of a subset of columns does not decode — or fail
     /// on — the unrequested ones. Empty until `prepareReader` runs.
     std::unordered_set<String> requested_top_level_fields;
+    /// Top-level field names whose requested header type is numeric (normalized like the set above): a
+    /// `date32` column among them is read as the raw `Int32` day number without the `Date32` range check,
+    /// matching the Apache Arrow library reader's numeric type-hint behavior.
+    std::unordered_set<String> date32_numeric_target_fields;
     bool prepared = false;
     PODArray<char> body_buffer;
 
