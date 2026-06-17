@@ -694,7 +694,7 @@ void QueryPlan::explainPlan(
             {
                 bool is_last_plan = (plan_idx + 1 == child_plans.size());
                 child_plan->explainPlan(buffer, options, offset + stack.size(),
-                                        max_description_length, precomputed_pretty_names, base_prefix, is_last_plan);
+                                        max_description_length, precomputed_pretty_names, base_prefix, is_last_plan, steps_to_stats);
                 ++plan_idx;
             }
 
