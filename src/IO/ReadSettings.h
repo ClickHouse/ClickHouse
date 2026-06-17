@@ -141,17 +141,20 @@ struct ReadSettings
     bool use_page_cache_for_object_storage = false;
     PageCacheSettings page_cache_settings;
 
-    /// Experimental pipeline read executor (`use_reader_executor`). When set,
-    /// `ReadPipeline::build` routes supported reads through `ReaderExecutor`
-    /// instead of the legacy matryoshka of read buffers. The executor reads in
-    /// blocks of `buffer_size` bytes.
-    bool use_reader_executor = false;
-    /// `ReaderExecutor` long-connection knobs (used only on the executor path):
-    /// reuse a held source connection across sequential windows, the forward-gap
-    /// bound bridged on it, and the tail drained to complete a dropped connection.
-    bool reader_executor_use_long_connections = true;
-    size_t reader_executor_min_bytes_for_seek = 2097152;
-    size_t reader_executor_max_tail_for_drain = 1048576;
+    /// Experimental pipeline read executor. When `enabled`, `ReadPipeline::build` routes supported
+    /// reads through `ReaderExecutor` instead of the legacy matryoshka of read buffers (reading in
+    /// blocks of `buffer_size`). The long-connection knobs apply only on the executor path: reuse a
+    /// held source connection across sequential windows (`use_long_connections`), the forward gap
+    /// bridged on it rather than reopening (`min_bytes_for_seek`), and the tail drained to complete a
+    /// dropped connection (`max_tail_for_drain`).
+    struct ReaderExecutorSettings
+    {
+        bool enabled = false;
+        bool use_long_connections = true;
+        size_t min_bytes_for_seek = 2097152;
+        size_t max_tail_for_drain = 1048576;
+    };
+    ReaderExecutorSettings reader_executor;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;

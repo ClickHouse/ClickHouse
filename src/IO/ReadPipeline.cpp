@@ -195,7 +195,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() const
 {
     const auto & settings = source->read_settings;
-    if (!settings.use_reader_executor)
+    if (!settings.reader_executor.enabled)
         return nullptr;
 
     /// The executor does not implement caches, decryption, async prefetch, or the
@@ -251,8 +251,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     auto executor = std::make_unique<ReaderExecutor>(
         source_reader, source->objects, block_size,
         long_connection_limit,
-        settings.reader_executor_min_bytes_for_seek,
-        settings.reader_executor_max_tail_for_drain);
+        settings.reader_executor.min_bytes_for_seek,
+        settings.reader_executor.max_tail_for_drain);
 
     return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }
