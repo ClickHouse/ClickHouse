@@ -452,7 +452,13 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                         ErrorCodes::INCORRECT_DATA,
                         "Arrow IPC string column has a corrupted offset (prev {}, end {}, data size {})",
                         prev, end, data_slice.length);
-                string_column.insertData(data_slice.ptr + prev, static_cast<size_t>(end - prev));
+                /// A valid all-empty string array has a zero-length (hence `nullptr`) data buffer; forming
+                /// `data_slice.ptr + prev` would be undefined pointer arithmetic on null even though no bytes
+                /// are read. Insert the empty value without touching the data pointer.
+                if (end == prev)
+                    string_column.insertData("", 0);
+                else
+                    string_column.insertData(data_slice.ptr + prev, static_cast<size_t>(end - prev));
                 prev = end;
             }
             break;
