@@ -3,7 +3,6 @@
 #include <Processors/Port.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
-#include <Processors/StepWallClock.h>
 
 #include <atomic>
 #include <list>
@@ -12,6 +11,7 @@
 #include <fmt/format.h>
 
 class EventCounter;
+class StepWallClock;
 
 
 namespace DB

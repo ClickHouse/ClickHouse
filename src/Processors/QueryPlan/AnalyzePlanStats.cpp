@@ -5,6 +5,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/StepWallClock.h>
 #include <base/defines.h>
 #include <base/types.h>
 
