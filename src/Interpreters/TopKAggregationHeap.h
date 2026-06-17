@@ -11,7 +11,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
-#include <Columns/Collator.h>
 
 namespace DB
 {
@@ -21,8 +20,8 @@ namespace DB
   *
   * Supports both single-column and composite (multi-column) keys.
   * For composite keys, the heap stores a `ColumnTuple` of sub-columns
-  * and performs lexicographic comparison with per-column direction,
-  * NULLS direction, and collators.
+  * and performs lexicographic comparison with per-column direction and
+  * NULLS direction.
   *
   * The heap itself is a plain `std::vector<size_t>` of row indices into
   * `heap_column`, manipulated through `std::push_heap` / `std::pop_heap` /
@@ -44,10 +43,6 @@ struct TopKAggregationHeap
 
     /// Per-column NULLS/NaNs directions.
     std::vector<int> nulls_directions;
-
-    /// Per-column collators for comparison (`nullptr` entries mean no collation for that column).
-    /// For single-column keys this has exactly one element.
-    std::vector<const Collator *> collators;
 
     /// True when the heap stores composite (multi-column) keys via `ColumnTuple`.
     bool is_composite = false;
@@ -108,8 +103,7 @@ struct TopKAggregationHeap
         size_t total_group_by_keys,
         size_t cap,
         const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs,
-        const std::vector<const Collator *> & cols)
+        const std::vector<int> & null_dirs)
     {
         if (heap_column)
             return;
@@ -122,13 +116,12 @@ struct TopKAggregationHeap
                 *key_columns[0],
                 cap,
                 dirs.empty() ? 1 : dirs[0],
-                null_dirs.empty() ? 1 : null_dirs[0],
-                cols.empty() ? nullptr : cols[0]);
+                null_dirs.empty() ? 1 : null_dirs[0]);
         }
         else
         {
             ColumnRawPtrs heap_cols(key_columns.begin(), key_columns.begin() + heap_key_count);
-            init(heap_cols, cap, dirs, null_dirs, cols);
+            init(heap_cols, cap, dirs, null_dirs);
         }
     }
 
@@ -150,8 +143,8 @@ struct TopKAggregationHeap
     /// Same as above, but for callers that have a raw typed pointer to the
     /// source column data (`AggregationMethodOneNumber`).  When the heap was
     /// initialised with a known numeric column type, this bypasses the virtual
-    /// `IColumn::compareAt` dispatch.  Otherwise (collated, composite, or
-    /// unknown numeric type) it transparently falls back to the virtual path;
+    /// `IColumn::compareAt` dispatch.  Otherwise (composite or unknown numeric
+    /// type) it transparently falls back to the virtual path;
     /// `source_typed_data` may be `nullptr` to opt out.
     bool shouldSkip(const void * source_typed_data, const ColumnRawPtrs & source_columns, size_t source_row) const
     {
@@ -228,7 +221,7 @@ struct TopKAggregationHeap
             const size_t candidate = heap_indices.back();
 
             /// Never evict a key that ties with the boundary.  Distinct keys can
-            /// compare equal (-0.0/+0.0, NaN payloads, collation), and an equal
+            /// compare equal (-0.0/+0.0, NaN payloads), and an equal
             /// key is a legitimate member of the top-K result - the downstream
             /// LIMIT may break the tie either way.  Evicting it would destroy
             /// its aggregate state while later rows for it are re-admitted
@@ -306,12 +299,10 @@ private:
         const IColumn & source_column,
         size_t cap,
         int direction,
-        int nulls_direction,
-        const Collator * col)
+        int nulls_direction)
     {
         directions = {direction};
         nulls_directions = {nulls_direction};
-        collators = {col};
         is_composite = false;
         setCapacity(cap);
         heap_column = source_column.cloneEmpty();
@@ -328,8 +319,7 @@ private:
         const ColumnRawPtrs & source_columns,
         size_t cap,
         const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs,
-        const std::vector<const Collator *> & cols)
+        const std::vector<int> & null_dirs)
     {
         const size_t n = source_columns.size();
         is_composite = true;
@@ -342,10 +332,6 @@ private:
         nulls_directions.assign(n, 1);
         for (size_t i = 0; i < null_dirs.size() && i < n; ++i)
             nulls_directions[i] = null_dirs[i];
-
-        collators.assign(n, nullptr);
-        for (size_t i = 0; i < cols.size() && i < n; ++i)
-            collators[i] = cols[i];
 
         MutableColumns sub_columns;
         sub_columns.reserve(n);
@@ -401,13 +387,11 @@ private:
         return 0;
     }
 
-    /// Compare a row in `lhs` against a row in `rhs` honoring the per-column collator
-    /// and NULLS direction stored at position `column_index`.  Encapsulates the
-    /// `compareAt` / `compareAtWithCollation` switch used in three places.
+    /// Compare a row in `lhs` against a row in `rhs` honoring the NULLS direction
+    /// stored at position `column_index`.  Encapsulates the `compareAt` call used
+    /// in three places.
     int compareColumns(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row, size_t column_index) const
     {
-        if (collators[column_index])
-            return lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_directions[column_index], *collators[column_index]);
         return lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[column_index]);
     }
 
@@ -417,7 +401,7 @@ private:
     /// each `std::*_heap` call and never persisted as a member of the heap.
     ///
     /// When a typed numeric fast path is installed at init time (single-column,
-    /// non-collated, plain numeric), `numeric_cmp_fn` is dispatched directly,
+    /// plain numeric), `numeric_cmp_fn` is dispatched directly,
     /// avoiding the virtual `IColumn::compareAt` call on every comparison.
     struct HeapComparator
     {
@@ -504,15 +488,12 @@ private:
     }
 
     /// Resolve the typed numeric fast paths for `shouldSkip` and the heap comparator.
-    /// Called once at init time from the single-column `init`; `collators` has
-    /// exactly one entry at that point.
+    /// Called once at init time from the single-column `init`.
     void initNumericSkipFn()
     {
         should_skip_numeric_fn = nullptr;
         numeric_cmp_fn = nullptr;
         fill_skip_bitmap_fn = nullptr;
-        if (collators[0])
-            return;
 
         switch (heap_column->getDataType())
         {

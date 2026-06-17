@@ -61,7 +61,6 @@ public:
         size_t top_k,
         std::vector<int> directions,
         std::vector<int> nulls_directions,
-        std::vector<const Collator *> collators,
         size_t num_key_columns,
         bool requires_pruning);
     bool memoryBoundMergingWillBeUsed() const;

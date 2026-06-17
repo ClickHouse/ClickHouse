@@ -137,7 +137,6 @@ public:
         size_t top_k_keys = 0;
         std::vector<int> top_k_keys_directions;            // per-column ORDER BY directions
         std::vector<int> top_k_keys_nulls_directions;      // per-column NULLS/NaNs directions
-        std::vector<const Collator *> top_k_keys_collators;  // per-column collators for ORDER BY COLLATE
         /// How many leading GROUP BY key columns the heap compares on.
         /// Equals the number of ORDER BY columns (which is a prefix of GROUP BY keys).
         size_t top_k_key_columns = 0;

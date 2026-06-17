@@ -7,10 +7,10 @@ SET max_rows_to_group_by = 0;
 SET optimize_trivial_group_by_limit_query = 0;
 
 -- ---------------------------------------------------------------------------
--- Collated ORDER BY is kept out of the optimization: a collator is owned by a
--- shared_ptr in the SortDescription but Aggregator::Params can only hold a raw
--- pointer, whose lifetime is not guaranteed.  The plan must not carry Top-K,
--- and the result must still be correct.
+-- Collated ORDER BY is kept out of the optimization: the top-K heap compares
+-- with IColumn::compareAt, which ignores collation, so the optimizer bails on
+-- any collated ORDER BY column.  The plan must not carry Top-K, and the result
+-- must still be correct.
 -- ---------------------------------------------------------------------------
 SELECT 'collator: no Top-K in plan';
 SELECT count() FROM (EXPLAIN actions = 1
