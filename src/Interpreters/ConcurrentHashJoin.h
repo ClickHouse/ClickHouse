@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
@@ -13,8 +12,6 @@
 
 namespace DB
 {
-
-struct SelectQueryInfo;
 
 /**
  * The default `HashJoin` is not thread-safe for inserting the right table's rows; thus, it is done on a single thread.

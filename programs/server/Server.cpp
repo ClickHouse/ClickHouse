@@ -3140,6 +3140,9 @@ try
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
 
+        if (has_trace_collector)
+            global_context->initializeTraceCollector();
+
 #if defined(OS_LINUX)
         if (oom_canary)
             oom_canary->start();
@@ -3185,9 +3188,6 @@ try
     DatabaseCatalog::instance().startReplicatedDDLQueries();
 
     LOG_DEBUG(log, "Loaded metadata.");
-
-    if (has_trace_collector)
-        global_context->initializeTraceCollector();
 
 #if defined(OS_LINUX)
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
