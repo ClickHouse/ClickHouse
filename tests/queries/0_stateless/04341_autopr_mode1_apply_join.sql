@@ -9,17 +9,27 @@
 -- wrong local branch, or doesn't report ParallelReplicasUsedCount would slip through. For INNER,
 -- LEFT and RIGHT: a first run collects stats, a second run applies parallel replicas. Assert that
 -- parallel replicas were actually used AND that the result matches the non-parallel-replicas baseline.
+--
+-- The apply runs are TOP-LEVEL SELECTs on purpose: that is what goes through the AutoPR cost decision.
+-- An INSERT ... SELECT would enable parallel replicas unconditionally (bypassing AutoPR), so it would
+-- not test this path. Each apply run self-checks its result against the non-PR baseline via a scalar
+-- subquery, which stays above the matched aggregation and does not disturb the parallel-replicas plan.
 
 DROP TABLE IF EXISTS aj_big;
 DROP TABLE IF EXISTS aj_small;
 DROP TABLE IF EXISTS aj_baseline;
-DROP TABLE IF EXISTS aj_pr;
 
 -- Small index_granularity so reads produce enough blocks for the statistics collector.
 CREATE TABLE aj_big (key UInt64, payload String) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity=128;
 CREATE TABLE aj_small (key UInt64) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity=128;
 INSERT INTO aj_big SELECT number, toString(cityHash64(number)) FROM numbers(5e5);
 INSERT INTO aj_small SELECT number * 2 FROM numbers(2.5e5);
+
+-- Compute baselines with parallel replicas explicitly OFF. The test harness may randomize
+-- enable_parallel_replicas / automatic_parallel_replicas_mode on; if the baseline joins ran in
+-- mode 2 they would collect stats for these join keys and the later `collect` run would then find
+-- them and apply, breaking the collect=0 / apply=1 assertion below.
+SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 -- Non-parallel-replicas baselines. `sum` is order-independent, so robust to row-order differences.
 CREATE TABLE aj_baseline (kind String, c UInt64) ENGINE = Memory;
@@ -41,37 +51,36 @@ SET automatic_parallel_replicas_min_bytes_per_replica=0, merge_tree_min_bytes_pe
 -- External aggregation is not supported, i.e. no statistics would be reported.
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
-CREATE TABLE aj_pr (kind String, c UInt64) ENGINE = Memory;
-
--- INNER: first run collects stats; second run applies parallel replicas and captures the result.
+-- INNER: big left side is parallelized (child 0). First run collects, second applies + self-checks.
 SELECT sum(cityHash64(t1.payload)) FROM aj_big AS t1 INNER JOIN aj_small AS t2 USING (key) FORMAT Null SETTINGS log_comment='04341_join_inner_collect';
-INSERT INTO aj_pr SELECT 'inner', sum(cityHash64(t1.payload)) FROM aj_big AS t1 INNER JOIN aj_small AS t2 USING (key) SETTINGS log_comment='04341_join_inner_apply';
+SELECT 'inner' AS kind, sum(cityHash64(t1.payload)) = (SELECT c FROM aj_baseline WHERE kind='inner') AS result_ok
+    FROM aj_big AS t1 INNER JOIN aj_small AS t2 USING (key) SETTINGS log_comment='04341_join_inner_apply';
 
 -- LEFT: big left side is parallelized (child 0).
 SELECT sum(cityHash64(t1.payload)) FROM aj_big AS t1 LEFT JOIN aj_small AS t2 USING (key) FORMAT Null SETTINGS log_comment='04341_join_left_collect';
-INSERT INTO aj_pr SELECT 'left', sum(cityHash64(t1.payload)) FROM aj_big AS t1 LEFT JOIN aj_small AS t2 USING (key) SETTINGS log_comment='04341_join_left_apply';
+SELECT 'left' AS kind, sum(cityHash64(t1.payload)) = (SELECT c FROM aj_baseline WHERE kind='left') AS result_ok
+    FROM aj_big AS t1 LEFT JOIN aj_small AS t2 USING (key) SETTINGS log_comment='04341_join_left_apply';
 
 -- RIGHT: big table on the right is parallelized (child 1).
 SELECT sum(cityHash64(t2.payload)) FROM aj_small AS t1 RIGHT JOIN aj_big AS t2 USING (key) FORMAT Null SETTINGS log_comment='04341_join_right_collect';
-INSERT INTO aj_pr SELECT 'right', sum(cityHash64(t2.payload)) FROM aj_small AS t1 RIGHT JOIN aj_big AS t2 USING (key) SETTINGS log_comment='04341_join_right_apply';
+SELECT 'right' AS kind, sum(cityHash64(t2.payload)) = (SELECT c FROM aj_baseline WHERE kind='right') AS result_ok
+    FROM aj_small AS t1 RIGHT JOIN aj_big AS t2 USING (key) SETTINGS log_comment='04341_join_right_apply';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- (1) Correctness: the applied-PR result must equal the non-PR baseline for every join kind.
-SELECT b.kind, b.c = p.c AS result_matches_baseline
-FROM aj_baseline AS b INNER JOIN aj_pr AS p USING (kind)
-ORDER BY b.kind;
-
--- (2) Apply path: the second (apply) run of each join kind must actually use parallel replicas.
+-- Correctness was checked inline above (each apply printed `<kind> 1`). Now assert the AutoPR cost
+-- decision itself: the first (collect) run must NOT use parallel replicas (no stats yet), and the
+-- second (apply) run must. That collect=0 / apply=1 pattern is what distinguishes the AutoPR algorithm
+-- from unconditional application - if parallel replicas were applied unconditionally, the collect run
+-- would also report 1.
 SELECT log_comment, ProfileEvents['ParallelReplicasUsedCount'] > 0 AS pr_used
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
-  AND (current_database = currentDatabase()) AND (log_comment LIKE '04341_join_%_apply') AND (type = 'QueryFinish')
+  AND (current_database = currentDatabase()) AND (log_comment LIKE '04341_join_%') AND (type = 'QueryFinish')
 ORDER BY log_comment;
 
 DROP TABLE aj_big;
 DROP TABLE aj_small;
 DROP TABLE aj_baseline;
-DROP TABLE aj_pr;
