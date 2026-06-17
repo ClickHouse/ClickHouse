@@ -138,7 +138,10 @@ private:
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
 
+    /// Deserializer for the merged output part, using the destination codec resolved from the index definition.
     PostingsSerialization postings_serialization;
+    /// Per-source deserializers, each using the codec read from that source part's own header.
+    std::vector<PostingsSerialization> source_postings_serializations;
 
     bool is_initialized = false;
 };
