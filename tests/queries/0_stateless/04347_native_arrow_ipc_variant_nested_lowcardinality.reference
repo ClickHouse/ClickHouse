@@ -1,0 +1,15 @@
+OK   Variant(Array(LowCardinality)): native writer deferred to the library writer (identical, dictionary schema kept)
+['a','b']
+['a','b']
+['a','b']
+[]
+[]
+[]
+OK   Variant(Tuple(LowCardinality)): native writer deferred to the library writer (identical, dictionary schema kept)
+('0')
+('0')
+('1')
+('1')
+('2')
+('2')
+OK   Array(LowCardinality): encoded by the native writer (no over-fallback)

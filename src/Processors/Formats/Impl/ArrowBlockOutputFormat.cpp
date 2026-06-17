@@ -135,9 +135,44 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
 
 namespace
 {
-/// True if `type` has a `Variant` with a `LowCardinality` alternative anywhere in its tree. The native
-/// writer materializes such an alternative to plain values, so with dictionary output requested it cannot
-/// reproduce the library writer's nested-dictionary union child — defer the column to the library writer.
+/// True if `type`'s tree contains a `LowCardinality` anywhere (under any Nullable/Array/Tuple/Map/Variant
+/// wrapper).
+bool typeContainsLowCardinality(const DataTypePtr & type)
+{
+    if (type->lowCardinality())
+        return true;
+    const DataTypePtr t = removeNullable(removeLowCardinality(type));
+    const WhichDataType which(t);
+    if (which.isArray())
+        return typeContainsLowCardinality(assert_cast<const DataTypeArray &>(*t).getNestedType());
+    if (which.isTuple())
+    {
+        for (const auto & e : assert_cast<const DataTypeTuple &>(*t).getElements())
+            if (typeContainsLowCardinality(e))
+                return true;
+        return false;
+    }
+    if (which.isMap())
+    {
+        const auto & m = assert_cast<const DataTypeMap &>(*t);
+        return typeContainsLowCardinality(m.getKeyType()) || typeContainsLowCardinality(m.getValueType());
+    }
+    if (which.isVariant())
+    {
+        for (const auto & v : assert_cast<const DataTypeVariant &>(*t).getVariants())
+            if (typeContainsLowCardinality(v))
+                return true;
+        return false;
+    }
+    return false;
+}
+
+/// True if `type` has a `Variant` (anywhere in its tree) one of whose alternatives contains a
+/// `LowCardinality` — directly or nested inside an Array/Tuple/Map. The native writer treats `Variant` as a
+/// dictionary boundary, materializing any such alternative to plain values, so with dictionary output
+/// requested it cannot reproduce the library writer's nested-dictionary union child — defer the column to
+/// the library writer. (A `LowCardinality` *not* under a `Variant` is dictionary-encoded natively, so the
+/// search for a `Variant` must come first; only inside one does any nested `LowCardinality` force fallback.)
 bool variantHasLowCardinalityAlternative(const DataTypePtr & type)
 {
     const DataTypePtr t = removeNullable(removeLowCardinality(type));
@@ -145,7 +180,7 @@ bool variantHasLowCardinalityAlternative(const DataTypePtr & type)
     if (which.isVariant())
     {
         for (const auto & v : assert_cast<const DataTypeVariant &>(*t).getVariants())
-            if (v->lowCardinality() || variantHasLowCardinalityAlternative(v))
+            if (typeContainsLowCardinality(v))
                 return true;
         return false;
     }
