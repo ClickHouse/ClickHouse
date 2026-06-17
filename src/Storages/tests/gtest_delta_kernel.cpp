@@ -126,15 +126,7 @@ std::optional<std::string> findBuilderOption(
 }
 }
 
-/// Regression test for https://github.com/ClickHouse/support-escalation/issues/7917
-///
-/// Reading a Delta table via Unity catalog on Azure vends a SAS token, so the engine
-/// arguments become [abfss_url, sas_token]. That 2-argument path sets storage_account_url
-/// and sas_auth but never assigns auth_method, leaving it the default-constructed
-/// ConnectionString variant alternative (index 0, holding an empty string) - the user did
-/// not actually supply a connection string. The delta-kernel Azure builder must still emit
-/// azure_storage_account_name (derived from the storage_account_url hostname); otherwise
-/// object_store rejects the build with "Account must be specified (in builder_build)".
+/// Empty connection string
 TEST(DeltaLakeAzureKernelHelper, VendedSasTokenSetsAccountName)
 {
     DB::AzureBlobStorage::ConnectionParams params;
