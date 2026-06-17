@@ -7410,7 +7410,8 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     {
         const String old_name = loaded_parts[i]->name;
 
-        output.writeExistingPart(loaded_parts[i]);
+        const bool deduplicate_part = !are_restoring_replica.load();
+        output.writeExistingPart(loaded_parts[i], deduplicate_part);
 
         renamed_parts.old_and_new_names[i].old_dir.clear();
 
