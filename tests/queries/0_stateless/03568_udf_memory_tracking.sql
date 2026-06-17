@@ -1,3 +1,5 @@
+-- Tags: long
+
 SET log_queries = 1;
 
 -- max_block_size = 1 makes each row its own block, exercising per-block executable-UDF memory tracking.
