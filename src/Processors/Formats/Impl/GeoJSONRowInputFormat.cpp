@@ -476,6 +476,11 @@ void validateGeoJSONGeometryMembers(
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "GeoJSON: geometry of type 'GeometryCollection' is missing the 'geometries' member");
+        /// A 'coordinates' member belongs only to a coordinates-based geometry; reject it on a
+        /// GeometryCollection rather than buffering and ignoring it.
+        if (!raw_coordinates.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "GeoJSON: a 'GeometryCollection' must not have a 'coordinates' member");
         /// `geometries` must be an array of geometry objects; validate that it is an array and that
         /// each member is itself a well-formed geometry, so a malformed payload (e.g. a scalar or a
         /// collection containing a truncated child) is rejected rather than loaded as NULL.
