@@ -13,7 +13,6 @@
 #include <Storages/RocksDB/RocksDBSettings.h>
 #include <Storages/StorageFactory.h>
 
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Processors/ISource.h>
@@ -36,7 +35,6 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
-#include <Common/SharedLockGuard.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/filesystemHelpers.h>
@@ -81,8 +79,6 @@ extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ROCKSDB_ERROR;
 extern const int NOT_IMPLEMENTED;
-extern const int TABLE_IS_DROPPED;
-extern const int TYPE_MISMATCH;
 }
 
 using FieldVectorPtr = std::shared_ptr<FieldVector>;
@@ -104,7 +100,7 @@ static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfigurati
     return options;
 }
 
-class EmbeddedRocksDBSource final : public ISource
+class EmbeddedRocksDBSource : public ISource
 {
 public:
     EmbeddedRocksDBSource(
@@ -371,25 +367,18 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
             }
 
-            {
-                SharedLockGuard lock(rocksdb_ptr_mx);
-                if (!rocksdb_ptr)
-                    throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
-                auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
-                if (!status.ok())
-                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
-            }
+            auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
+            if (!status.ok())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
         }
 
         return;
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
-    auto alter = commands.front().ast();
-    const auto column_to_update = getColumnToUpdateExpression(*alter);
     for (const auto & key_name : primary_keys)
     {
-        if (column_to_update.contains(key_name))
+        if (commands.front().column_to_update_expression.contains(key_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", key_name);
     }
 
@@ -441,9 +430,7 @@ bool StorageEmbeddedRocksDB::optimize(
     if (cleanup)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type EmbeddedRocksDB");
 
-    SharedLockGuard lock(rocksdb_ptr_mx);
-    if (!rocksdb_ptr)
-        return true;
+    std::shared_lock lock(rocksdb_ptr_mx);
     rocksdb::CompactRangeOptions compact_options;
     auto status = rocksdb_ptr->CompactRange(compact_options, nullptr, nullptr);
     if (!status.ok())
@@ -487,7 +474,7 @@ public:
         {
             va_list backup_ap;
             va_copy(backup_ap, ap);
-            std::array<char, 1024> stack; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - written by `vsnprintf` before read
+            std::array<char, 1024> stack;
             if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
             {
                 va_end(backup_ap);
@@ -639,7 +626,7 @@ void StorageEmbeddedRocksDB::initDB()
 
     if (ttl > 0)
     {
-        rocksdb::DBWithTTL * db = nullptr;
+        rocksdb::DBWithTTL * db;
         status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
         if (!status.ok())
         {
@@ -649,7 +636,7 @@ void StorageEmbeddedRocksDB::initDB()
     }
     else
     {
-        rocksdb::DB * db = nullptr;
+        rocksdb::DB * db;
         if (read_only)
             status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
         else
@@ -728,16 +715,7 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
     const auto & sample_block = getOutputHeader();
     if (all_scan)
     {
-        std::unique_ptr<rocksdb::Iterator> iterator;
-        {
-            SharedLockGuard lock(storage.rocksdb_ptr_mx);
-            if (!storage.rocksdb_ptr)
-            {
-                pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
-                return;
-            }
-            iterator.reset(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
-        }
+        auto iterator = std::unique_ptr<rocksdb::Iterator>(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
         iterator->SeekToFirst();
         auto source = std::make_shared<EmbeddedRocksDBSource>(storage, storage_snapshot, sample_block, std::move(iterator), max_block_size);
         source->setStorageLimits(query_info.storage_limits);
@@ -886,7 +864,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
 {
-    SharedLockGuard lock(rocksdb_ptr_mx);
+    std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return nullptr;
     return rocksdb_ptr->GetOptions().statistics;
@@ -895,7 +873,7 @@ std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistic
 std::vector<rocksdb::Status>
 StorageEmbeddedRocksDB::multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const
 {
-    SharedLockGuard lock(rocksdb_ptr_mx);
+    std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
     return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
@@ -919,7 +897,7 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
 
         if (!key_type->equals(*primary_key_type))
             throw DB::Exception(
-                ErrorCodes::TYPE_MISMATCH,
+                ErrorCodes::LOGICAL_ERROR,
                 "Primary key type mismatch, expected {}, got {}.",
                 primary_key_types[i]->getName(),
                 keys[i].type->getName());
@@ -1013,10 +991,10 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
 {
     if (!query_context->getSettingsRef()[Setting::optimize_trivial_approximate_count_query])
         return {};
-    SharedLockGuard lock(rocksdb_ptr_mx);
+    std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
-    UInt64 estimated_rows = 0;
+    UInt64 estimated_rows;
     if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
         return {};
     return estimated_rows;
@@ -1024,10 +1002,10 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
 
 std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
 {
-    SharedLockGuard lock(rocksdb_ptr_mx);
+    std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
-    UInt64 estimated_bytes = 0;
+    UInt64 estimated_bytes;
     if (!rocksdb_ptr->GetAggregatedIntProperty("rocksdb.estimate-live-data-size", &estimated_bytes))
         return {};
     return estimated_bytes;
@@ -1046,7 +1024,6 @@ void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr quer
     }
 }
 
-void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
@@ -1057,248 +1034,14 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
     };
 
-    factory.registerStorage("EmbeddedRocksDB", create, features, Documentation{
-        .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-# EmbeddedRocksDB table engine
-
-<CloudNotSupportedBadge />
-
-This engine allows integrating ClickHouse with [RocksDB](http://rocksdb.org/).
-
-## Creating a table {#creating-a-table}
-
-```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-(
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-    ...
-) ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(primary_key_name)
-[ SETTINGS name=value, ... ]
-```
-
-Engine parameters:
-
-- `ttl` - time to live for values. TTL is accepted in seconds. If TTL is 0, regular RocksDB instance is used (without TTL).
-- `rocksdb_dir` - path to the directory of an existed RocksDB or the destination path of the created RocksDB. Open the table with the specified `rocksdb_dir`.
-- `read_only` - when `read_only` is set to true, read-only mode is used. For storage with TTL, compaction will not be triggered (neither manual nor automatic), so no expired entries are removed.
-- `primary_key_name` – any column name in the column list.
-- `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
-- columns other than the primary key will be serialized in binary as `rocksdb` value in corresponding order.
-- queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `rocksdb`.
-
-Engine settings:
-
-- `optimize_for_bulk_insert` – Table is optimized for bulk insertions (insert pipeline will create SST files and import to rocksdb database instead of writing to memtables); default value: `1`.
-- `bulk_insert_block_size` - Minimum size of SST files (in term of rows) created by bulk insertion; default value: `1048449`.
-
-Example:
-
-```sql
-CREATE TABLE test
-(
-    `key` String,
-    `v1` UInt32,
-    `v2` String,
-    `v3` Float32
-)
-ENGINE = EmbeddedRocksDB
-PRIMARY KEY key
-```
-
-## Metrics {#metrics}
-
-There is also `system.rocksdb` table, that expose rocksdb statistics:
-
-```sql
-SELECT
-    name,
-    value
-FROM system.rocksdb
-
-┌─name──────────────────────┬─value─┐
-│ no.file.opens             │     1 │
-│ number.block.decompressed │     1 │
-└───────────────────────────┴───────┘
-```
-
-## Configuration {#configuration}
-
-You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wiki/Option-String-and-Option-Map) using config:
-
-```xml
-<rocksdb>
-    <options>
-        <max_background_jobs>8</max_background_jobs>
-    </options>
-    <column_family_options>
-        <num_levels>2</num_levels>
-    </column_family_options>
-    <tables>
-        <table>
-            <name>TABLE</name>
-            <options>
-                <max_background_jobs>8</max_background_jobs>
-            </options>
-            <column_family_options>
-                <num_levels>2</num_levels>
-            </column_family_options>
-        </table>
-    </tables>
-</rocksdb>
-```
-
-By default trivial approximate count optimization is turned off, which might affect the performance `count()` queries. To enable this
-optimization set up `optimize_trivial_approximate_count_query = 1`. Also, this setting affects `system.tables` for EmbeddedRocksDB engine,
-turn on the settings to see approximate values for `total_rows` and `total_bytes`.
-
-## Supported operations {#supported-operations}
-
-### Inserts {#inserts}
-
-When new rows are inserted into `EmbeddedRocksDB`, if the key already exists, the value will be updated, otherwise a new key is created.
-
-Example:
-
-```sql
-INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
-```
-
-### Deletes {#deletes}
-
-Rows can be deleted using `DELETE` query or `TRUNCATE`.
-
-```sql
-DELETE FROM test WHERE key LIKE 'some%' AND v1 > 1;
-```
-
-```sql
-ALTER TABLE test DELETE WHERE key LIKE 'some%' AND v1 > 1;
-```
-
-```sql
-TRUNCATE TABLE test;
-```
-
-### Updates {#updates}
-
-Values can be updated using the `ALTER TABLE` query. The primary key cannot be updated.
-
-```sql
-ALTER TABLE test UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
-```
-
-### Joins {#joins}
-
-A special `direct` join with EmbeddedRocksDB tables is supported.
-This direct join avoids forming a hash table in memory and accesses
-the data directly from the EmbeddedRocksDB.
-
-With large joins you may see much lower memory usage with direct joins
-because the hash table is not created.
-
-To enable direct joins:
-```sql
-SET join_algorithm = 'direct, hash'
-```
-
-:::tip
-When the `join_algorithm` is set to `direct, hash`, direct joins will be used
-when possible, and hash otherwise.
-:::
-
-#### Example {#example}
-
-##### Create and populate an EmbeddedRocksDB table {#create-and-populate-an-embeddedrocksdb-table}
-```sql
-CREATE TABLE rdb
-(
-    `key` UInt32,
-    `value` Array(UInt32),
-    `value2` String
-)
-ENGINE = EmbeddedRocksDB
-PRIMARY KEY key
-```
-
-```sql
-INSERT INTO rdb
-    SELECT
-        toUInt32(sipHash64(number) % 10) AS key,
-        [key, key+1] AS value,
-        ('val2' || toString(key)) AS value2
-    FROM numbers_mt(10);
-```
-
-##### Create and populate a table to join with table `rdb` {#create-and-populate-a-table-to-join-with-table-rdb}
-
-```sql
-CREATE TABLE t2
-(
-    `k` UInt16
-)
-ENGINE = TinyLog
-```
-
-```sql
-INSERT INTO t2 SELECT number AS k
-FROM numbers_mt(10)
-```
-
-##### Set the join algorithm to `direct`{#set-the-join-algorithm-to-direct}
-
-```sql
-SET join_algorithm = 'direct'
-```
-
-##### An INNER JOIN {#an-inner-join}
-```sql
-SELECT *
-FROM
-(
-    SELECT k AS key
-    FROM t2
-) AS t2
-INNER JOIN rdb ON rdb.key = t2.key
-ORDER BY key ASC
-```
-```response
-┌─key─┬─rdb.key─┬─value──┬─value2─┐
-│   0 │       0 │ [0,1]  │ val20  │
-│   2 │       2 │ [2,3]  │ val22  │
-│   3 │       3 │ [3,4]  │ val23  │
-│   6 │       6 │ [6,7]  │ val26  │
-│   7 │       7 │ [7,8]  │ val27  │
-│   8 │       8 │ [8,9]  │ val28  │
-│   9 │       9 │ [9,10] │ val29  │
-└─────┴─────────┴────────┴────────┘
-```
-
-### More information on Joins {#more-information-on-joins}
-- [`join_algorithm` setting](/operations/settings/settings.md#join_algorithm)
-- [JOIN clause](/sql-reference/statements/select/join.md)
-)DOCS_MD",
-        .syntax = "ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(key)",
-        .related = {"Redis"}});
+    factory.registerStorage("EmbeddedRocksDB", create, features);
 }
 
 void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
 {
     for (const auto & command : commands)
-    {
         if (!command.isCommentAlter() && !command.isSettingsAlter())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
-
-        /// Validate setting values before `IStorage::alter` persists the metadata file,
-        /// otherwise an invalid value blocks attach on the next restart. See issue #88443.
-        if (command.type == AlterCommand::MODIFY_SETTING)
-        {
-            for (const auto & change : command.settings_changes)
-                RocksDBSettings::checkCanSet(change.name, change.value);
-        }
-    }
 }
 
 }

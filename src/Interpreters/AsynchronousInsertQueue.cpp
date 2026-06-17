@@ -479,7 +479,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         {
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
-            ConcatReadBuffer::Buffers buffers;
+            std::vector<std::unique_ptr<ReadBuffer>> buffers;
             buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
             buffers.emplace_back(std::move(read_buf));
 
@@ -1120,12 +1120,6 @@ try
 
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
-
-        /// Propagate the process list element to the pipeline so that the executor enables
-        /// per-processor profiling (otherwise elapsed_us and *_wait_elapsed_us stay zero in
-        /// system.processors_profile_log for async insert flushes). The normal query path does
-        /// this in executeQuery, but the flush builds and runs the pipeline directly.
-        pipeline.setProcessListElement(insert_context->getProcessListElement());
 
         query_log_elem = logQueryStart(
             query_start_time,
