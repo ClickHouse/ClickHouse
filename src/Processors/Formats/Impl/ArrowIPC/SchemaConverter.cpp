@@ -143,6 +143,12 @@ ArrowType parseType(const flatbuf::Field & field)
             type.precision = t->precision();
             type.scale = t->scale();
             type.decimal_bit_width = t->bitWidth();
+            /// Arrow decimals are 32-, 64-, 128- or 256-bit. The decoder uses `decimal_bit_width / 8` as
+            /// the physical stride, so reject any other width here rather than fabricating a layout from it.
+            if (type.decimal_bit_width != 32 && type.decimal_bit_width != 64 && type.decimal_bit_width != 128
+                && type.decimal_bit_width != 256)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA, "Arrow IPC decimal has an unsupported bit width {}", type.decimal_bit_width);
             break;
         }
         case flatbuf::Type_Date:
