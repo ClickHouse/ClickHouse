@@ -1136,7 +1136,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
 
     auto out = new_storage.writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     HashingWriteBuffer hashing(*out);
-    writer.finalize(hashing);
+    auto [packed_index, _] = writer.finalize(hashing);
     hashing.finalize();
 
     auto & checksum = checksums.files[packed_filename];
@@ -1150,6 +1150,16 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     /// leave the new part referencing an archive whose contents weren't flushed.
     if (sync)
         out->sync();
+
+    /// Seed new_storage's reader from the in-memory index, mirroring fillSkipIndicesChecksums.
+    /// On object-storage disks with a non-fake transaction (Keeper metadata) the archive's
+    /// metadata isn't committed until the part transaction commits, which happens after
+    /// finalizeMutatedPart. With columns_and_secondary_indices_sizes_lazy_calculation=0 the
+    /// size accounting runs inside finalizeMutatedPart, before that commit; without this seed
+    /// getSkipIndicesPackedReader probes the disk, misses the not-yet-committed archive, caches
+    /// nullptr, and the surviving packed index's size is latched at zero.
+    if (auto * disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&new_storage))
+        disk_storage->seedSkipIndicesPackedReader(packed_index);
 }
 
 }
