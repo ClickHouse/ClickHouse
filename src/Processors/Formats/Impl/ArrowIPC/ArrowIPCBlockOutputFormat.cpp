@@ -23,8 +23,15 @@
 #include <IO/WriteBuffer.h>
 #include <IO/NetUtils.h>
 
+#include <utility>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+}
 
 namespace
 {
@@ -41,7 +48,18 @@ std::pair<DataTypePtr, MutableColumnPtr> makeIndexColumn(
         auto & data = column->getData();
         data.resize(indexes.size());
         for (size_t i = 0; i < indexes.size(); ++i)
+        {
+            /// The accumulated global index must fit the configured Arrow dictionary index type; once the
+            /// dictionary grows past that type's range the narrowing cast would wrap a valid index into a
+            /// wrong (possibly negative) one. Reject it, matching the Apache Arrow library writer's
+            /// `checkIfIndexesTypeIsExceeded`, instead of silently corrupting the indices.
+            if (!std::in_range<ValueType>(indexes[i]))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Arrow IPC dictionary index {} does not fit the {}-bit {} index type: the dictionary is too large",
+                    indexes[i], dict.index_bit_width, dict.index_is_signed ? "signed" : "unsigned");
             data[i] = static_cast<ValueType>(indexes[i]);
+        }
     };
 
     if (dict.index_bit_width == 64)
