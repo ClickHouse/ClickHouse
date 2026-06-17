@@ -165,6 +165,19 @@ void validateRingCoordinates(const Array & ring)
             "GeoJSON: a Polygon ring must be closed (its first and last positions must be equal)");
 }
 
+/// Guard against unbounded recursion while parsing a nested JSON value. A value nested deeper than the
+/// configured limit raises an exception, and the real stack depth is probed every
+/// `STACK_CHECK_INTERVAL` levels so a pathological document is rejected before it overflows the stack.
+constexpr size_t STACK_CHECK_INTERVAL = 1024;
+
+void checkJSONNestingDepth(size_t current_depth, const FormatSettings::JSON & json_settings)
+{
+    if (unlikely(current_depth > json_settings.max_depth))
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "GeoJSON is too deep");
+    if (unlikely(current_depth > 0 && current_depth % STACK_CHECK_INTERVAL == 0))
+        checkStackSize();
+}
+
 /// Strictly skip a JSON value, requiring commas between object members and array elements.
 /// Unlike `skipJSONField`, which tolerates missing separators, this rejects malformed JSON
 /// even inside ignored fields (e.g. a skipped `bbox` object `{"a":1 "b":2}`).
@@ -172,11 +185,7 @@ void validateRingCoordinates(const Array & ring)
 /// (e.g. under a `bbox` key) raise `TOO_DEEP_RECURSION` rather than exhausting the parser stack.
 void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_settings, size_t current_depth = 0)
 {
-    if (unlikely(current_depth > json_settings.max_depth))
-        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "GeoJSON is too deep");
-
-    if (unlikely(current_depth > 0 && current_depth % 1024 == 0))
-        checkStackSize();
+    checkJSONNestingDepth(current_depth, json_settings);
 
     skipWhitespaceIfAny(buf);
     if (buf.eof())
@@ -310,10 +319,7 @@ void validateGeoJSONGeometryMembers(
 /// documents are still rejected rather than silently loaded as NULL.
 void validateGeoJSONGeometry(ReadBuffer & buf, const FormatSettings & format_settings, size_t current_depth)
 {
-    if (unlikely(current_depth > format_settings.json.max_depth))
-        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "GeoJSON is too deep");
-    if (unlikely(current_depth > 0 && current_depth % 1024 == 0))
-        checkStackSize();
+    checkJSONNestingDepth(current_depth, format_settings.json);
 
     /// Each member of a `GeometryCollection` must be a geometry object. Unlike a Feature's top-level
     /// `geometry` member, a JSON `null` is not a valid geometry here, so reject any non-object value.
