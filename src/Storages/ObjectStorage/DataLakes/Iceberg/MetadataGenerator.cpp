@@ -289,9 +289,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySnapshot(
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathFromMetadata & metadata_file_path,
-    Int64 parent_snapshot_id,
-    std::optional<Int64> user_defined_snapshot_id,
-    std::optional<Int64> user_defined_timestamp)
+    Int64 parent_snapshot_id)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
@@ -301,7 +299,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
         new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
-    Int64 snapshot_id = user_defined_snapshot_id.value_or(static_cast<Int64>(dis(gen)));
+    Int64 snapshot_id = static_cast<Int64>(dis(gen));
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -309,7 +307,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
-    Int64 timestamp = user_defined_timestamp.value_or(ms.count());
+    Int64 timestamp = ms.count();
     new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
     metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 

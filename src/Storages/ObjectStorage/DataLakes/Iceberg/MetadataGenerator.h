@@ -43,9 +43,7 @@ public:
     NextMetadataResult generateManifestOnlySnapshot(
         FileNamesGenerator & generator,
         const Iceberg::IcebergPathFromMetadata & metadata_file_path,
-        Int64 parent_snapshot_id,
-        std::optional<Int64> user_defined_snapshot_id = std::nullopt,
-        std::optional<Int64> user_defined_timestamp = std::nullopt);
+        Int64 parent_snapshot_id);
 
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);
