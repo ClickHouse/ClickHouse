@@ -958,6 +958,16 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
     if (field.type.kind == TypeKind::Null)
         return;
 
+    /// RunEndEncoded has no buffers of its own — not even validity (its nulls live in the `values` child).
+    /// The reader cannot decode it, but its layout is known well enough to skip an unrequested column: just
+    /// its two children (run_ends, values). Handle it before consuming the validity buffer below.
+    if (field.type.kind == TypeKind::Unsupported && field.type.skip_layout == ArrowType::SkipLayout::RunEndEncoded)
+    {
+        for (const ArrowField & child : field.type.children)
+            skipField(child);
+        return;
+    }
+
     /// Validity buffer, present for every other field.
     nextBuffer();
 
@@ -1024,9 +1034,21 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
         case TypeKind::Union:
             break; /// handled above
         case TypeKind::Unsupported:
-            /// The buffer layout of an unsupported Arrow type is unknown, so its buffers cannot be skipped
-            /// to reach later columns. A `SELECT` of other columns from a file with such an (unrequested)
-            /// column therefore still fails — but with a clear error rather than a cursor desync.
+            /// ListView/LargeListView: an offsets buffer and a sizes buffer (after the validity buffer
+            /// consumed above), then the single child. The reader cannot decode these, but skipping an
+            /// unrequested one keeps the other columns readable. (RunEndEncoded is handled before the
+            /// validity buffer above, so it never reaches here.)
+            if (field.type.skip_layout == ArrowType::SkipLayout::ListView)
+            {
+                nextBuffer(); /// offsets
+                nextBuffer(); /// sizes
+                skipField(field.type.children.at(0));
+                break;
+            }
+            /// The buffer layout of any other unsupported Arrow type is unknown, so its buffers cannot be
+            /// skipped to reach later columns. A `SELECT` of other columns from a file with such an
+            /// (unrequested) column therefore still fails — but with a clear error rather than a cursor
+            /// desync.
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Native Arrow IPC reader cannot skip the unsupported Arrow type {} of field '{}'",

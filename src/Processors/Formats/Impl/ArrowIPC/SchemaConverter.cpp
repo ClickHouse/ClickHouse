@@ -291,6 +291,36 @@ ArrowType parseType(const flatbuf::Field & field)
             }
             break;
         }
+        /// View-list and run-end-encoded types the reader cannot decode, but whose physical buffer layout
+        /// is known. Keep them as `Unsupported` placeholders (so schema inference can drop them and a
+        /// `SELECT` of such a column errors clearly), but parse their children and record the layout so
+        /// `skipField` can advance the node/buffer cursors past an *unrequested* column of this type and
+        /// keep subset-of-columns reads working.
+        case flatbuf::Type_ListView:
+            type.kind = TypeKind::Unsupported;
+            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
+            type.skip_layout = ArrowType::SkipLayout::ListView;
+            type.children = parseChildren(field.children());
+            requireSingleChild(type, "ListView");
+            break;
+        case flatbuf::Type_LargeListView:
+            type.kind = TypeKind::Unsupported;
+            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
+            type.skip_layout = ArrowType::SkipLayout::ListView;
+            type.children = parseChildren(field.children());
+            requireSingleChild(type, "LargeListView");
+            break;
+        case flatbuf::Type_RunEndEncoded:
+            type.kind = TypeKind::Unsupported;
+            type.unsupported_type_name = flatbuf::EnumNameType(field.type_type());
+            type.skip_layout = ArrowType::SkipLayout::RunEndEncoded;
+            type.children = parseChildren(field.children());
+            if (type.children.size() != 2)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC RunEndEncoded type must have exactly two children (run_ends, values), got {}",
+                    type.children.size());
+            break;
         default:
             /// Keep an unsupported Arrow type as a placeholder rather than failing here, so schema
             /// inference can drop the column with
