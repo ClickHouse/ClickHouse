@@ -20,22 +20,6 @@ ThreadGroupPtr getCurrentThreadGroup()
 }
 
 ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
-    : ThreadGroupSwitcher(std::move(thread_group_), allow_existing_group)
-{
-    if (!thread_group)
-        return;
-
-    try
-    {
-        setThreadName(thread_name);
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {
     try
@@ -54,17 +38,18 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, bool allo
                 return;
             }
             else if (!allow_existing_group)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread is already attached to a group (master_thread_id {})", prev_thread_group->master_thread_id);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
             else
                 CurrentThread::detachFromGroupIfNotDetached();
         }
 
         if (!prev_thread)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread to a group, but the ThreadStatus is not initialized");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread ({}) to a group, but the ThreadStatus is not initialized", thread_name);
 
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
         CurrentThread::attachToGroup(thread_group);
+        setThreadName(thread_name);
     }
     catch (...)
     {
