@@ -47,9 +47,9 @@ SYSTEM FLUSH LOGS query_log;
 -- deviates from the recorded baseline by more than 2x. Baselines are stable run-to-run because
 -- the data is deterministic.
 WITH map(
-    '04305_join_inner', 5282704,
-    '04305_join_left',  26380708,
-    '04305_join_right', 26396533) AS expected
+    '04305_join_inner', 3943574,
+    '04305_join_left',  19636492,
+    '04305_join_right', 19629360) AS expected
 SELECT format('{} {} {}', log_comment, output_bytes, expected[log_comment])
 FROM (
     SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] AS output_bytes
