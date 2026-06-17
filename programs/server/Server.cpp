@@ -554,6 +554,7 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int INVALID_SETTING_VALUE;
+    extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int BAD_ARGUMENTS;
 }
