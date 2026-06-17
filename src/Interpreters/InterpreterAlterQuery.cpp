@@ -216,7 +216,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                             command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
                 }
             }
-          
+
             /// When session_timezone is set, string literals compared to DateTime columns
             /// must be wrapped with explicit timezone to avoid misinterpretation in the
             /// background mutation thread which lacks the session context.

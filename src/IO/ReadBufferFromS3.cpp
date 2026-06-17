@@ -48,6 +48,7 @@ namespace S3RequestSetting
 namespace FailPoints
 {
     extern const char s3_read_buffer_throw_expired_token[];
+    extern const char s3_send_request_throw_expired_token[];
 }
 
 namespace ErrorCodes
@@ -532,6 +533,19 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     ProfileEvents::increment(ProfileEvents::S3GetObject);
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
+
+    /// Simulate a real `ExpiredToken` error returned from S3, used by integration tests for
+    /// the credentials refresh callback path in `processException`. Unlike
+    /// `s3_read_buffer_throw_expired_token` (which is gated by `if (impl)` in `nextImpl` and
+    /// therefore only fires on multi-fill streaming reads), this failpoint fires inside
+    /// `sendRequest` itself, so it covers both `nextImpl`-driven reads and the
+    /// `readBigAt` range-read path used by Parquet column-chunk reads.
+    fiu_do_on(FailPoints::s3_send_request_throw_expired_token,
+    {
+        throw S3Exception(
+            Aws::S3::S3Errors::UNKNOWN,
+            "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired.");
+    });
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
 

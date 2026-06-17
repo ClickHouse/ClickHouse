@@ -1206,7 +1206,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"shared_merge_tree_sync_parts_on_partition_operations", trueOrFalseSettingNoOracle},
     {"short_circuit_function_evaluation_for_nulls", trueOrFalseSetting},
     {"short_circuit_function_evaluation_for_nulls_threshold", probRangeSetting},
-    {"show_data_lake_catalogs_in_system_tables", trueOrFalseSettingNoOracle},
+    {"show_remote_databases_in_system_tables", trueOrFalseSettingNoOracle},
     {"show_create_query_identifier_quoting_rule",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -1306,6 +1306,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_text_index_postings_cache", trueOrFalseSetting},
     {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"use_variant_default_implementation_for_comparisons", trueOrFalseSettingNoOracle},
+    {"variant_throw_on_type_mismatch", trueOrFalseSettingNoOracle},
+    {"dynamic_throw_on_type_mismatch", trueOrFalseSettingNoOracle},
     {"use_with_fill_by_sorting_prefix", trueOrFalseSetting},
     {"validate_enum_literals_in_operators", trueOrFalseSettingNoOracle},
     {"validate_experimental_and_suspicious_types_inside_nested_types", trueOrFalseSettingNoOracle},
