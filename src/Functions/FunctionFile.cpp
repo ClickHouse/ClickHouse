@@ -37,7 +37,7 @@ bool isStringOrNull(const IDataType & type)
 }
 
 /// A function to read file as a string.
-class FunctionFile final : public IFunction
+class FunctionFile : public IFunction
 {
 public:
     static constexpr auto name = "file";

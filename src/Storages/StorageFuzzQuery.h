@@ -49,7 +49,7 @@ private:
 };
 
 
-class FuzzQuerySource final : public ISource
+class FuzzQuerySource : public ISource
 {
 public:
     FuzzQuerySource(

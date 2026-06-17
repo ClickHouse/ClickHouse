@@ -207,7 +207,7 @@ bool tryGetNumericValueFromJSONElement(
                     break;
 
                 /// Try to parse float and convert it to integer.
-                Float64 tmp_float = 0;
+                Float64 tmp_float;
                 rb.position() = rb.buffer().begin();
                 if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
                 {
@@ -282,7 +282,7 @@ public:
             return true;
         }
 
-        NumberType value{};
+        NumberType value;
         if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, error))
         {
             if (error.empty())
@@ -704,7 +704,7 @@ public:
             return true;
         }
 
-        time_t value = 0;
+        time_t value;
         if (element.isString())
         {
             if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
@@ -713,15 +713,9 @@ public:
                 return false;
             }
         }
-        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
+        else if (element.isUInt64() && insert_settings.allow_type_conversion)
         {
-            if (element.isInt64() && (element.getInt64() < 0))
-            {
-                error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
-                return false;
-            }
-
-            value = element.isInt64() ? element.getInt64() : element.getUInt64();
+            value = element.getUInt64();
         }
         else
         {
@@ -775,7 +769,7 @@ public:
             return true;
         }
 
-        time_t value = 0;
+        time_t value;
         if (element.isString())
         {
             if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
@@ -784,9 +778,9 @@ public:
                 return false;
             }
         }
-        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
+        else if (element.isUInt64() && insert_settings.allow_type_conversion)
         {
-            value = element.isInt64() ? element.getInt64() : element.getUInt64();
+            value = element.getUInt64();
         }
         else
         {
@@ -1828,12 +1822,7 @@ public:
     {
         if (element.isNull() && format_settings.null_as_default)
         {
-            auto & column_object = assert_cast<ColumnObject &>(column);
-            for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
-                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
-            for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
-                dynamic_column->insertDefault();
-            column_object.getSharedDataColumn().insertDefault();
+            column.insertDefault();
             return true;
         }
 
@@ -2168,7 +2157,7 @@ private:
 
                 if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
                 {
-                    time_t value = 0;
+                    time_t value;
                     if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
@@ -2255,7 +2244,7 @@ private:
 
                 if (format_settings.try_infer_datetimes && !format_settings.try_infer_datetimes_only_datetime64)
                 {
-                    time_t value = 0;
+                    time_t value;
                     if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         encodeDataType(getDataTypesCache().getType("DateTime"), buf);

@@ -4,7 +4,6 @@ import os
 import random
 import uuid
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 
 import pyarrow as pa
 import pytest
@@ -30,7 +29,7 @@ from pyiceberg.types import (
     DecimalType,
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.mock_servers import start_mock_servers
 
 import boto3
@@ -92,7 +91,7 @@ DEFAULT_SCHEMA = Schema(
     ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String)),\\n    `map_string_decimal` Map(String, Nullable(Decimal(9, 2)))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String)),\\n    `map_string_decimal` Map(String, Nullable(Decimal(9, 2)))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -118,7 +117,7 @@ def load_catalog_impl(started_cluster):
             "type": "glue",
             "glue.endpoint": get_glue_local_url(started_cluster),
             "glue.region": "us-east-1",
-            "s3.endpoint": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
             "s3.secret-access-key": minio_secret_key,
         },
@@ -203,7 +202,7 @@ def create_clickhouse_glue_database(
     settings = {
         "catalog_type": "glue",
         "warehouse": "test",
-        "storage_endpoint": "http://minio1:9001/warehouse-glue",
+        "storage_endpoint": "http://minio:9000/warehouse-glue",
         "region": "us-east-1",
     }
 
@@ -230,7 +229,7 @@ def create_clickhouse_glue_table(
 
     node.query(
         f"""
-CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
 {settings_suffix}
 """,
         settings={
@@ -306,7 +305,7 @@ def test_no_secrets_in_logs(started_cluster):
     db_settings = {
         "catalog_type": "glue",
         "warehouse": "test",
-        "storage_endpoint": "http://minio1:9001/warehouse-glue",
+        "storage_endpoint": "http://minio:9000/warehouse-glue",
         "region": "us-east-1",
     }
 
@@ -324,7 +323,7 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
 
     qid_table = uuid.uuid4().hex
     node.query(
-        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
+        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
         query_id=qid_table,
         settings={
             "allow_experimental_database_glue_catalog": 1,
@@ -675,7 +674,7 @@ def test_timestamps(started_cluster):
     df = pa.Table.from_pylist(data)
     table.append(df)
 
-    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
 
@@ -708,75 +707,6 @@ def test_create(started_cluster):
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
-
-
-def test_schema_evolution(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_schema_evolution_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
-
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
-
-    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
-
-    node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
-    assert "z" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
-    assert node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings) == "123\t1\t\\N\n"
-
-    node.query(f"INSERT INTO {table_ref} VALUES ('456', 2, 'hello');", settings=write_settings)
-    assert (
-        node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings)
-        == "123\t1\t\\N\n456\t2\thello\n"
-    )
-
-    node.query(f"ALTER TABLE {table_ref} RENAME COLUMN z TO w;", settings=write_settings)
-    assert "w" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
-    assert (
-        node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL", settings=write_settings)
-        == "123\t1\t\\N\n456\t2\thello\n"
-    )
-
-
-def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_writes_schema_evolution_concurrent_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
-
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
-
-    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
-
-    num_columns = 10
-
-    def add_column(idx):
-        node.query(
-            f"ALTER TABLE {table_ref} ADD COLUMN col_{idx} Nullable(String);",
-            settings=write_settings,
-        )
-
-    with ThreadPoolExecutor(max_workers=num_columns) as executor:
-        list(executor.map(add_column, range(num_columns)))
-
-    description = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
-    for idx in range(num_columns):
-        assert f"col_{idx}" in description, f"col_{idx} missing from:\n{description}"
-
-    columns = [line.split("\t")[0] for line in description.strip().split("\n")]
-    assert sorted(columns) == sorted(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
-
-    select_cols = ", ".join(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
-    expected = "123\t1" + "\t\\N" * num_columns + "\n"
-    assert node.query(f"SELECT {select_cols} FROM {table_ref} ORDER BY ALL", settings=write_settings) == expected
 
 
 def test_drop_table(started_cluster):

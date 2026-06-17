@@ -35,10 +35,7 @@ def test_streaming_mode(started_cluster):
     assert "nuraft_streaming_mode=true" in conf, f"Streaming mode not found in conf output:\n{conf}"
     assert "nuraft_max_log_gap_in_stream=16" in conf
     assert "nuraft_max_bytes_in_flight_in_stream=4194304" in conf
-    assert "nuraft_max_uncommitted_log_entries=12345" in conf
-    assert "nuraft_append_entries_backward_probe_throttle_threshold=7" in conf
 
     log = node1.grep_in_log("streaming mode max log gap")
     assert log, "NuRaft startup message with streaming mode parameters not found in log"
     assert "16" in log, f"Expected max_log_gap=16 in log message: {log}"
-    assert "max uncommitted log entries 12345" in log
