@@ -21,11 +21,31 @@ POST_LOAD_FAILPOINT = "mergetree_load_outdated_parts_inject_post_load_retryable_
 UNEXPECTED_POST_LOAD_FAILPOINT = (
     "mergetree_load_unexpected_parts_inject_post_load_retryable_exception"
 )
+# Fire a retryable error AFTER a cleanup step already moved the part's on-disk directory
+# (renameToDetached for broken parts, remove() for duplicates). The original path is gone at that
+# point, so requeueing+reloading would chase a moved/missing path; the loaders must fail fast instead.
+OUTDATED_POST_CLEANUP_MOVE_FAILPOINT = (
+    "mergetree_load_outdated_parts_inject_post_cleanup_move_retryable_exception"
+)
+UNEXPECTED_POST_CLEANUP_MOVE_FAILPOINT = (
+    "mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception"
+)
 
 # Every retryable interrupt in loadOutdatedDataParts logs this single line, regardless of which of the
 # three failpoints fired. loadUnexpectedDataParts logs its own line.
 OUTDATED_INTERRUPT_LOG = "Loading of outdated parts was interrupted by a retryable error"
 UNEXPECTED_INTERRUPT_LOG = "Loading of unexpected parts was interrupted by a retryable error"
+# Both loaders log this just before std::terminate when they decide to fail fast.
+TERMINATE_LOG = "Will terminate to avoid undefined behaviour due to inconsistent set of parts"
+
+
+def wait_for_process_stop(node, timeout=120):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if node.get_process_pid("clickhouse") is None:
+            return
+        time.sleep(0.5)
+    raise AssertionError(f"clickhouse process did not stop within {timeout}s")
 
 
 def wait_for_log_count_above(node, substring, baseline, timeout=30):
@@ -50,7 +70,9 @@ def started_cluster():
         cluster.start()
         yield cluster
     finally:
-        cluster.shutdown()
+        # The post-cleanup-move cases intentionally std::terminate the server (fail-fast on an
+        # unsafe-to-retry error), leaving a <Fatal> line in the log, so do not treat it as a crash.
+        cluster.shutdown(ignore_fatal=True)
 
 
 @pytest.mark.parametrize(
@@ -202,5 +224,127 @@ def test_retryable_exception_while_loading_unexpected_parts_does_not_terminate()
             break
         time.sleep(0.5)
     assert detached == "1"
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_retryable_exception_after_outdated_cleanup_move_fails_fast():
+    # Not every retryable error in the outdated-parts loader can be retried by requeueing the part.
+    # The broken-part (renameToDetached) and duplicate (remove()) cleanup steps MOVE the part's
+    # on-disk directory before returning, so once the move starts the original path is gone. Requeueing
+    # the part would make the retry reload a moved/missing path: for duplicates a transient remove error
+    # would turn into the broken-part path and a later terminate, for broken parts the retry would detach
+    # the wrong path. The loader must instead fail fast (std::terminate) for these side-effecting failures,
+    # exactly as it does for a genuinely inconsistent on-disk part. A restart then reconciles the
+    # already-moved directory cleanly, so fail-fast does not cause a crash loop.
+    #
+    # This exercises the broken-part branch (renameToDetached); the duplicate branch (remove()) shares the
+    # same `cleanup_moved_directory` guard and catch, so it fails fast through the identical code.
+    node.query("DROP TABLE IF EXISTS t_outdated_move SYNC")
+    node.query(
+        """
+        CREATE TABLE t_outdated_move (a UInt64, b String) ENGINE = MergeTree ORDER BY a
+        SETTINGS old_parts_lifetime = 600, merge_tree_clear_old_parts_interval_seconds = 600
+        """
+    )
+    node.query("INSERT INTO t_outdated_move SELECT number, toString(number) FROM numbers(1000)")
+    node.query("INSERT INTO t_outdated_move SELECT number, toString(number) FROM numbers(1000, 1000)")
+    node.query("INSERT INTO t_outdated_move SELECT number, toString(number) FROM numbers(2000, 1000)")
+    # The merge source parts stay on disk as inactive (outdated) parts until old_parts_lifetime expires.
+    node.query("OPTIMIZE TABLE t_outdated_move FINAL")
+
+    data_path = node.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE name = 't_outdated_move'"
+    ).strip()
+    # Pick one inactive (outdated) part and corrupt it on disk so the outdated loader fails to load it
+    # and marks it broken, which routes it through renameToDetached (a directory-moving cleanup step).
+    outdated_part = node.query(
+        "SELECT name FROM system.parts WHERE table = 't_outdated_move' AND active = 0 ORDER BY name LIMIT 1"
+    ).strip()
+    assert outdated_part
+    node.exec_in_container(
+        ["bash", "-c", f"mv {data_path}/{outdated_part}/columns.txt {data_path}/{outdated_part}/columns.txt.bak"]
+    )
+
+    # Snapshot the reschedule-interrupt count before enabling the failpoint. With the fix the loader fails
+    # fast for this side-effecting failure, so the count must NOT grow; the pre-fix requeue-on-any-retryable
+    # behaviour would log this line (and chase the moved/missing directory) before any terminate.
+    interrupts_before = int(node.count_in_log(OUTDATED_INTERRUPT_LOG))
+
+    # Inject a retryable error right after the broken part's directory is moved to detached, then force
+    # the background outdated loader to run. The loader must NOT requeue the part (its directory has
+    # already moved); it must fail fast and terminate.
+    node.query(f"SYSTEM ENABLE FAILPOINT {OUTDATED_POST_CLEANUP_MOVE_FAILPOINT}")
+    node.query("DETACH TABLE t_outdated_move")
+    node.query("ATTACH TABLE t_outdated_move")
+
+    # The loader runs on a background thread; it logs the fatal line and calls std::terminate.
+    node.wait_for_log_line(TERMINATE_LOG, timeout=90)
+    wait_for_process_stop(node)
+    # The reschedule-interrupt line must NOT appear for this case: a side-effecting cleanup failure is not
+    # retried (that is exactly the bug - requeueing would chase the moved/missing directory). This is the
+    # discriminator from the pre-fix behaviour, which would requeue and log the line before terminating.
+    assert int(node.count_in_log(OUTDATED_INTERRUPT_LOG)) == interrupts_before
+
+    # The directory was already moved to detached before the terminate, so a restart reconciles cleanly
+    # (no crash loop) and the data is intact.
+    node.start_clickhouse()
+    assert node.query("SELECT count() FROM t_outdated_move").strip() == "3000"
+    node.query("SYSTEM WAIT LOADING PARTS t_outdated_move", timeout=60)
+    assert node.query("SELECT count() FROM t_outdated_move").strip() == "3000"
+
+    node.query("DROP TABLE t_outdated_move SYNC")
+
+
+def test_retryable_exception_after_unexpected_cleanup_move_fails_fast():
+    # loadUnexpectedDataParts has the same side-effecting-cleanup hazard: a retryable error thrown after
+    # renameToDetached already moved the broken part's directory cannot be retried by reloading the part
+    # on its now-moved path, so the loader must fail fast (std::terminate) rather than reschedule. This is
+    # distinct from the post-load (pre-detach) failpoint, which is safely retried (the dir is still there).
+    table = "t_unexpected_move"
+    zk_path = "/clickhouse/tables/t_unexpected_move"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (key UInt64) ENGINE = ReplicatedMergeTree('{zk_path}', '1') ORDER BY key
+        SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts = 0
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(1000)")
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(1000, 1000)")
+    node.query(f"OPTIMIZE TABLE {table} FINAL")
+
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE name = '{table}'"
+    ).strip()
+    # Make all_0_0_0 an unexpected BROKEN part: drop it from ZooKeeper (no longer expected) and remove the
+    # file the unexpected loader reads (count.txt) so loadUnexpectedDataPart fails non-retryably and marks
+    # it broken, which routes it through renameToDetached (the directory-moving cleanup step we fail fast on).
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.delete(os.path.join(zk_path, "replicas/1/parts", "all_0_0_0"))
+    node.exec_in_container(
+        ["bash", "-c", f"mv {data_path}/all_0_0_0/count.txt {data_path}/all_0_0_0/count.txt.bak"]
+    )
+
+    # Snapshot the reschedule-interrupt count; with the fix it must NOT grow (fail fast, no requeue).
+    interrupts_before = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG))
+
+    # Inject a retryable error right after the broken unexpected part is detached (its directory moved),
+    # then force loading. The loader must fail fast and terminate rather than reschedule the moved part.
+    node.query(f"SYSTEM ENABLE FAILPOINT {UNEXPECTED_POST_CLEANUP_MOVE_FAILPOINT}")
+    node.query(f"DETACH TABLE {table}")
+    # The replicated attach thread blocks until unexpected parts finish loading, so run ATTACH async; the
+    # server terminates underneath it.
+    node.get_query_request(f"ATTACH TABLE {table}")
+
+    node.wait_for_log_line(TERMINATE_LOG, timeout=90)
+    wait_for_process_stop(node)
+    # The reschedule-interrupt line must NOT appear: a post-move failure is not retried (discriminator
+    # from the pre-fix requeue behaviour, which would log it and reload the moved part before terminating).
+    assert int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG)) == interrupts_before
+
+    # Restart reconciles the already-detached directory cleanly and the data on the merged part is intact.
+    node.start_clickhouse()
+    assert node.query(f"SELECT count() FROM {table}").strip() == "2000"
 
     node.query(f"DROP TABLE {table} SYNC")

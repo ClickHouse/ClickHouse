@@ -380,7 +380,9 @@ namespace FailPoints
     extern const char mergetree_load_outdated_parts_inject_retryable_exception[];
     extern const char mergetree_load_outdated_parts_inject_schedule_failure[];
     extern const char mergetree_load_outdated_parts_inject_post_load_retryable_exception[];
+    extern const char mergetree_load_outdated_parts_inject_post_cleanup_move_retryable_exception[];
     extern const char mergetree_load_unexpected_parts_inject_post_load_retryable_exception[];
+    extern const char mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -2913,7 +2915,29 @@ try
             });
 
             if (load_state.is_broken)
-                load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+            {
+                /// renameToDetached moves the part directory before returning (rename updates the storage
+                /// path only after moveDirectory). Past this point the original directory is gone, so a
+                /// retryable error must not reschedule and reload this part on its stale path - fail fast
+                /// for the same reason as the outdated-parts loader (see load_outdated_part).
+                try
+                {
+                    load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+
+                    fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception,
+                    {
+                        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure after moving the directory of unexpected part {}", load_state.part->name);
+                    });
+                }
+                catch (...)
+                {
+                    if (isRetryableException(std::current_exception()))
+                        throw Exception(ErrorCodes::CORRUPTED_DATA,
+                            "Unexpected part {} hit a retryable error after its directory was moved during detach, "
+                            "cannot retry safely: {}", load_state.part->name, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+                    throw;
+                }
+            }
 
             /// Mark done only after the optional detach finished: a retryable failure above reschedules this
             /// part and the rescheduled run must redo the detach rather than skip it.
@@ -3021,6 +3045,11 @@ try
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
             LoadPartResult res;
+            /// Set right before a cleanup step that moves the part's on-disk directory (renameToDetached
+            /// for broken parts, remove() for duplicates). Once the move has begun, the directory my_part
+            /// points at is gone, so a retryable error from that point on cannot be retried by reloading
+            /// the original path and must fail fast instead of being requeued (see the catch below).
+            bool cleanup_moved_directory = false;
             try
             {
                 fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_retryable_exception,
@@ -3041,12 +3070,27 @@ try
                 if (res.is_broken)
                 {
                     forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
+                    /// renameToDetached / remove move the part directory before returning (rename updates the
+                    /// storage path only after moveDirectory; remove renames to delete_tmp_ and leaves part_dir
+                    /// pointing at the original). Past this point the original directory is gone, so a retryable
+                    /// error must not requeue my_part (the retry would reload a moved/missing path) - fail fast.
+                    cleanup_moved_directory = true;
                     res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
                 }
                 else if (res.part->is_duplicate)
+                {
+                    cleanup_moved_directory = true;
                     res.part->remove();
+                }
                 else
                     preparePartForRemoval(res.part);
+
+                fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_post_cleanup_move_retryable_exception,
+                {
+                    /// Only meaningful after a directory-moving cleanup step ran above.
+                    if (cleanup_moved_directory)
+                        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure after moving the directory of outdated part {}", my_part->name);
+                });
 
                 /// Count the part only after its cleanup finished: a retryable failure below requeues it and
                 /// the rescheduled run loads it again, which must not double-count it.
@@ -3059,6 +3103,16 @@ try
                 /// transient, so put the part back and let the rescheduled task retry it instead of dropping it.
                 if (!is_async || !isRetryableException(std::current_exception()))
                     throw;
+
+                /// A retryable error thrown after a cleanup step already moved the part directory cannot be
+                /// retried by reloading my_part: its original path no longer exists, so the reload would hit
+                /// the broken/duplicate path on a stale name (turning a transient remove error into a later
+                /// terminate, or re-detaching the wrong path). Fail fast as for a genuine inconsistency by
+                /// rethrowing a non-retryable error, which the function-level catch turns into terminate.
+                if (cleanup_moved_directory)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Outdated part {} hit a retryable error after its directory was moved during cleanup, "
+                        "cannot retry safely: {}", my_part->name, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
 
                 /// A published normal Outdated part must be rolled back before requeueing, else the retry
                 /// reloads its directory as a fresh part and the duplicate-part path removes it while it is
