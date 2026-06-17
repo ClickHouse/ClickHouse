@@ -5207,7 +5207,22 @@ void MergeTreeData::changeSettings(
                     for (const String & disk_name : all_diff_disk_names)
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
+
+                        bool contains_table_data = false;
                         if (disk->existsDirectory(relative_data_path))
+                        {
+                            for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+                            {
+                                if (it->name() == DETACHED_DIR_NAME
+                                    && disk->isDirectoryEmpty(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+                                    continue;
+
+                                contains_table_data = true;
+                                break;
+                            }
+                        }
+
+                        if (contains_table_data)
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
                     }
 
