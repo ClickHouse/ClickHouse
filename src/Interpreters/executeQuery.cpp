@@ -1806,6 +1806,11 @@ static BlockIO executeQueryImpl(
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && out_ast && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
             && settings[Setting::allow_experimental_analyzer]
+            /// The requested processing stage is not part of the cache key, and a non-`Complete`
+            /// stage (e.g. `with_mergeable_state`) changes the plan contract and output header
+            /// (aggregate states vs. finalized values). Only cache fully-completed plans so an
+            /// entry stored for one stage can never be reused for another.
+            && stage == QueryProcessingStage::Complete
             /// The parallel replicas coordinator operates on storage-bound read steps which are
             /// absent from logical (cached) plans.
             && settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
