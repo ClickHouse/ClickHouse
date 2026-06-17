@@ -802,15 +802,29 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     result.schema = parseSchema(*footer->schema());
     /// Footer blocks are untrusted: a negative offset/metadata/body length would, after being passed on as
     /// a seek target, a metadata bound, or a body size, become a huge unsigned value or seek out of range.
-    /// Reject them here so a malformed footer fails cleanly instead of driving an oversized read later.
-    auto add_block = [](std::vector<ArrowFileBlock> & blocks, const flatbuf::Block * block)
+    /// And the block's metadata+body must lie within the data region (before the footer): otherwise a
+    /// corrupt footer could set a huge `bodyLength` (with a matching `Message.bodyLength` at `offset`) and
+    /// make `readBody` resize the body buffer to that footer-controlled length before EOF is hit. Reject
+    /// both here so a malformed footer fails cleanly instead of driving an oversized read later. The bound
+    /// is checked incrementally against `footer_offset` so the sum cannot overflow.
+    const int64_t data_region_end = footer_offset;
+    auto add_block = [data_region_end](std::vector<ArrowFileBlock> & blocks, const flatbuf::Block * block)
     {
-        if (block->offset() < 0 || block->metaDataLength() < 0 || block->bodyLength() < 0)
+        const int64_t offset = block->offset();
+        const int32_t metadata_length = block->metaDataLength();
+        const int64_t body_length = block->bodyLength();
+        if (offset < 0 || metadata_length < 0 || body_length < 0)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Arrow file footer block has a negative offset/metadata/body length ({}, {}, {})",
-                block->offset(), block->metaDataLength(), block->bodyLength());
-        blocks.push_back({.offset = block->offset(), .metadata_length = block->metaDataLength(), .body_length = block->bodyLength()});
+                offset, metadata_length, body_length);
+        if (offset > data_region_end || metadata_length > data_region_end - offset
+            || body_length > data_region_end - offset - metadata_length)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow file footer block (offset {}, metadata {}, body {}) extends past the data region end {}",
+                offset, metadata_length, body_length, data_region_end);
+        blocks.push_back({.offset = offset, .metadata_length = metadata_length, .body_length = body_length});
     };
     if (footer->dictionaries())
         for (const auto * block : *footer->dictionaries())
