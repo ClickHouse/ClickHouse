@@ -19,6 +19,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     String filter_column_name_,
     const DataTypePtr & filter_column_type_,
     String filter_name_,
+    String filter_key_,
     size_t filters_to_merge_,
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_bytes_,
@@ -34,6 +35,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     , filter_column_original_type(header_->getByPosition(filter_column_position).type)
     , filter_column_target_type(filter_column_type_)
     , filter_name(filter_name_)
+    , filter_key(std::move(filter_key_))
     , query_context(std::move(query_context_))
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
@@ -105,10 +107,16 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
 
 void BuildRuntimeFilterTransform::finish()
 {
+    /// A deserialized step has no random key and is never executed in practice; nothing to register.
+    if (filter_key.empty())
+        return;
     if (!query_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterTransform");
     auto filter_lookup = query_context->getRuntimeFilterLookup();
-    filter_lookup->add(filter_name, std::move(built_filter));
+    /// Register under the random key (matches the probe-side `__applyFilter`), not the displayed
+    /// stable `filter_name`. Keeping the key off the plan means it never enters a plan-step hash.
+    /// The stable name is passed alongside for readable stats logging (the key is opaque).
+    filter_lookup->add(filter_key, filter_name, std::move(built_filter));
 }
 
 }
