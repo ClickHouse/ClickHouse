@@ -1,9 +1,13 @@
--- The top-K heap freezes itself when it has observed many rows without ever
--- skipping one or evicting a key (e.g. the number of distinct keys does not
--- exceed the LIMIT) - in that state every group is complete in the hash table
--- and the per-row boundary check is pure overhead.  These tests pin the
--- correctness of the freeze: results must match the non-optimized plan even
--- when the key cardinality grows after the heap froze.
+-- The top-K heap freezes itself once it has observed many rows while full but
+-- has never skipped or evicted (i.e. the number of distinct keys equals the
+-- LIMIT): the per-row boundary check is then pure overhead.  These tests pin
+-- freeze correctness - results must match the non-optimized plan, including
+-- when smaller keys arrive after the heap froze - and assert the freeze path
+-- actually ran (AggregationTopKHeapsFrozen > 0).
+--
+-- Freeze needs skipped_rows == 0, evicted_keys == 0 and a full heap, so the
+-- distinct-key count during the observation window must equal the LIMIT: fewer
+-- never fills the heap, more makes it skip/evict.
 
 SET enable_group_by_top_k_optimization = 1;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny), which would
@@ -13,41 +17,35 @@ SET max_threads = 1;
 -- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
 SET max_rows_to_group_by = 0;
 SET optimize_trivial_group_by_limit_query = 0;
--- Pattern 2 (no ORDER BY) is disabled when external aggregation can spill; pin
--- it off (the default ratio is non-zero) so the Pattern 2 cases below apply.
+-- Pattern 2 disables external aggregation itself, but pin spilling off so the
+-- freeze window is deterministic.
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
-SELECT 'Pattern 1: cardinality below LIMIT for the freeze window, then new keys arrive';
--- First 500K rows cycle over 5 keys (the freeze threshold is 256K rows); the
--- rest introduce 100 new keys, some of which belong to the true top-3.
-SELECT k, count() FROM
-(
-    SELECT if(number < 500000, toUInt32(number % 5 + 50), toUInt32(number % 100)) AS k
-    FROM numbers(600000)
-)
-GROUP BY k ORDER BY k ASC LIMIT 3;
-
-SELECT 'Pattern 1 result matches the non-optimized plan';
+SELECT 'Pattern 1 freeze then smaller keys: result matches non-optimized';
+-- First 400K rows use exactly LIMIT (3) distinct keys {1000,1001,1002}, so the
+-- heap fills but never skips/evicts and freezes (threshold 256K rows, blocks
+-- <= 100K so the freeze fires inside the warm-up); the rest introduce smaller
+-- keys {0..99} that are the true top-3.  A frozen heap must not drop them.
 SELECT count() FROM
 (
-    SELECT k, count() AS c FROM (SELECT if(number < 500000, toUInt32(number % 5 + 50), toUInt32(number % 100)) AS k FROM numbers(600000)) GROUP BY k ORDER BY k ASC LIMIT 3
+    SELECT k, count() AS c FROM (SELECT if(number < 400000, 1000 + number % 3, number % 100)::UInt32 AS k FROM numbers(600000)) GROUP BY k ORDER BY k ASC LIMIT 3
     SETTINGS enable_group_by_top_k_optimization = 1
 ) AS optimized
 INNER JOIN
 (
-    SELECT k, count() AS c FROM (SELECT if(number < 500000, toUInt32(number % 5 + 50), toUInt32(number % 100)) AS k FROM numbers(600000)) GROUP BY k ORDER BY k ASC LIMIT 3
+    SELECT k, count() AS c FROM (SELECT if(number < 400000, 1000 + number % 3, number % 100)::UInt32 AS k FROM numbers(600000)) GROUP BY k ORDER BY k ASC LIMIT 3
     SETTINGS enable_group_by_top_k_optimization = 0
 ) AS full USING (k, c);
 
-SELECT 'Pattern 2: every returned group carries its complete aggregate after a freeze';
+SELECT 'Pattern 2 freeze (cardinality == LIMIT): every returned group complete';
 SELECT count(), countIf(complete) FROM
 (
     SELECT l.s = f.s AS complete
-    FROM (SELECT k, sum(v) AS s FROM (SELECT toUInt32(number % 7) AS k, 1 AS v FROM numbers(600000)) GROUP BY k LIMIT 5 SETTINGS enable_group_by_top_k_optimization = 1) AS l
-    INNER JOIN (SELECT k, sum(v) AS s FROM (SELECT toUInt32(number % 7) AS k, 1 AS v FROM numbers(600000)) GROUP BY k SETTINGS enable_group_by_top_k_optimization = 0) AS f USING (k)
+    FROM (SELECT k, sum(v) AS s FROM (SELECT (number % 5)::UInt32 AS k, 1 AS v FROM numbers(600000)) GROUP BY k LIMIT 5 SETTINGS enable_group_by_top_k_optimization = 1) AS l
+    INNER JOIN (SELECT k, sum(v) AS s FROM (SELECT (number % 5)::UInt32 AS k, 1 AS v FROM numbers(600000)) GROUP BY k SETTINGS enable_group_by_top_k_optimization = 0) AS f USING (k)
 );
 
-SELECT 'Composite Pattern 2 with cardinality equal to LIMIT (perf-regression shape)';
+SELECT 'Composite Pattern 2 freeze (cardinality == LIMIT, q3 shape)';
 SELECT count(), countIf(complete) FROM
 (
     SELECT l.s = f.s AS complete
@@ -57,3 +55,12 @@ SELECT count(), countIf(complete) FROM
 
 SELECT 'Eviction-heavy stream must not freeze (results stay top-K correct)';
 SELECT k, count() FROM (SELECT toUInt32(999999 - number) % 1000000 AS k FROM numbers(1000000)) GROUP BY k ORDER BY k ASC LIMIT 3;
+
+-- Prove the freeze path actually ran (the cardinality == LIMIT cases above must
+-- have frozen at least one heap); otherwise this test could pass with adaptive
+-- freezing dead.
+SELECT 'freeze path ran';
+SYSTEM FLUSH LOGS query_log;
+SELECT sum(ProfileEvents['AggregationTopKHeapsFrozen']) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Select';

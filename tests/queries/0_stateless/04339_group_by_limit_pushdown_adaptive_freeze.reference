@@ -1,14 +1,12 @@
-Pattern 1: cardinality below LIMIT for the freeze window, then new keys arrive
-0	1000
-1	1000
-2	1000
-Pattern 1 result matches the non-optimized plan
+Pattern 1 freeze then smaller keys: result matches non-optimized
 3
-Pattern 2: every returned group carries its complete aggregate after a freeze
+Pattern 2 freeze (cardinality == LIMIT): every returned group complete
 5	5
-Composite Pattern 2 with cardinality equal to LIMIT (perf-regression shape)
+Composite Pattern 2 freeze (cardinality == LIMIT, q3 shape)
 10	10
 Eviction-heavy stream must not freeze (results stay top-K correct)
 0	1
 1	1
 2	1
+freeze path ran
+1
