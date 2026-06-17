@@ -683,6 +683,20 @@ bool ColumnLowCardinality::containsNull() const
     return getDictionary().nestedColumnIsNullable() && idx.containsDefault();
 }
 
+void ColumnLowCardinality::applyNegatedNullMap(const NullMap & map, size_t offset)
+{
+    if (!nestedIsNullable())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot apply a null map to {} with a non-nullable dictionary", getName());
+
+    if (offset + map.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Null map of size {} at offset {} does not match {} of size {}",
+            map.size(), offset, getName(), size());
+
+    idx.setIndexesWhereMaskZero(map, getDictionary().getNullValueIndex(), offset);
+}
+
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
