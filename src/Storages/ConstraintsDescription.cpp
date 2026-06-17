@@ -2,6 +2,7 @@
 
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/TreeCNFConverter.h>
+#include <Interpreters/misc.h>
 #include <Planner/AnalyzeExpression.h>
 
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -10,6 +11,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <Core/Defines.h>
@@ -32,14 +34,34 @@ namespace ErrorCodes
 namespace
 {
 
-/// Check whether the top-level constraint expression is a bare subquery
-/// (e.g. `CHECK (SELECT 1)`).  Bare subqueries are rejected because they
-/// do not make sense as boolean constraint expressions.
-/// Subqueries inside function calls like `IN (SELECT ...)` are allowed —
-/// they are handled as "not-ready sets" built at insert time.
-bool isBareSubquery(const ASTPtr & ast)
+/// Recursively detect a subquery that would be executed during `CHECK` constraint
+/// validation on every insert.  Such subqueries are dangerous because they run
+/// arbitrary work for each inserted block, so both bare subqueries (`CHECK (SELECT 1)`)
+/// and scalar subqueries nested under functions (`CHECK equals((SELECT 1), 1)`) are
+/// rejected.  The single allowed exception is the set side of an `IN`-family operator
+/// (`x IN (SELECT ...)`): it becomes a "not-ready set" built lazily at insert time
+/// (see `getExpressions`), which matches the legacy behaviour.
+bool containsForbiddenSubquery(const ASTPtr & ast)
 {
-    return ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>();
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        return true;
+
+    if (const auto * func = ast->as<ASTFunction>(); func && functionIsInOrGlobalInOperator(func->name) && func->arguments)
+    {
+        /// Validate every argument except the set side (the last one), which is
+        /// allowed to be a subquery handled as a not-ready set.
+        const auto & arguments = func->arguments->children;
+        for (size_t i = 0; i + 1 < arguments.size(); ++i)
+            if (containsForbiddenSubquery(arguments[i]))
+                return true;
+        return false;
+    }
+
+    for (const auto & child : ast->children)
+        if (containsForbiddenSubquery(child))
+            return true;
+
+    return false;
 }
 
 }
@@ -161,8 +183,9 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
         {
             ASTPtr expr = constraint_ptr->expr->clone();
-            if (isBareSubquery(expr))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subqueries are not allowed in CHECK constraints");
+            if (containsForbiddenSubquery(expr))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Subqueries are not allowed in CHECK constraints, except on the right-hand side of an IN operator");
             /// Do not build `IN (subquery)` sets eagerly here: the constraint actions are
             /// compiled while the INSERT pipeline is being constructed (in the
             /// `CheckConstraintsTransform` constructor), before the sample-block handshake.
