@@ -20,6 +20,10 @@ ClickHouse supports several types of user defined functions (UDFs):
 - [SQL UDFs](#sql-user-defined-functions) are defined with `CREATE FUNCTION` purely in SQL. They are inlined/expanded into the query plan (no process boundary), making them lightweight and ideal for reusing expression logic or simplifying complex calculated columns.
 - [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) run code compiled to WebAssembly inside a sandbox within the server process. They offer lower per‑call overhead than external executables with better isolation than native extensions, making them suitable for custom algorithms written in languages that can target WASM (e.g. C/C++/Rust).
 
+:::note[ClickHouse Cloud]
+In ClickHouse Cloud you can create UDFs from the SQL console or upload your own Python code through the Cloud console UI. See [User-defined functions in Cloud](/cloud/features/user-defined-functions) for the Cloud-specific workflow, including how to bundle your code into the `.zip` archive the UI expects.
+:::
+
 ## Executable User Defined Functions {#executable-user-defined-functions}
 
 <PrivatePreviewBadge/>
