@@ -54,6 +54,7 @@ namespace Setting
     extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
     extern const SettingsBool optimize_on_insert;
+    extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
 namespace ServerSetting
@@ -169,6 +170,12 @@ ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink()
         partition.temp_part->cancel();
     }
     delayed_parts.clear();
+}
+
+void ReplicatedMergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
+{
+    synchronously_commit_part_for_dependent_views
+        = has_dependent_views && context->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views];
 }
 
 size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper)
@@ -392,7 +399,11 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     deduplication_info->setPartWriterHashes(all_partitions_block_ids, chunk.getNumRows());
 
     finishDelayed(zookeeper);
+
     delayed_parts = std::move(current_parts);
+
+    if (synchronously_commit_part_for_dependent_views)
+        finishDelayed(zookeeper);
 
     ++num_blocks_processed;
 }
