@@ -245,10 +245,9 @@ TEST(ColumnStatsDerivation, SharedIntermediateNodeResolvesForAllOutputs)
     EXPECT_EQ(stats["year_uint"].num_distinct_values, distinct_dates);
 }
 
-/// `firstNonDefault(a, b)` (the JOIN USING merged key) draws values from both arguments, so its
-/// derived NDV must be an upper bound over both sources and must not depend on the order the source
-/// columns are processed in. The largest source bound is kept.
-TEST(ColumnStatsDerivation, FirstNonDefaultTakesUpperBoundOverSources)
+/// `firstNonDefault(a, b)` (the JOIN USING merged key) draws values from both arguments, so a single
+/// source's NDV is not a valid upper bound for it. No stats are propagated for such multi-source hops.
+TEST(ColumnStatsDerivation, FirstNonDefaultDoesNotPropagateBound)
 {
     tryRegisterFunctions();
 
@@ -264,7 +263,7 @@ TEST(ColumnStatsDerivation, FirstNonDefaultTakesUpperBoundOverSources)
     stats["b"] = ColumnStats{.num_distinct_values = 1000};
     remapColumnStats(stats, dag);
 
-    EXPECT_EQ(stats["merged"].num_distinct_values, 1000u);
+    EXPECT_EQ(stats.count("merged"), 0u);
 }
 
 /// A very long chain of single-argument functions resolves without hitting a recursion-depth limit,
