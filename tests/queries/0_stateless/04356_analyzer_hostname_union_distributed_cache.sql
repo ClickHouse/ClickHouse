@@ -61,3 +61,22 @@ FROM
     GROUP BY port
 )
 SETTINGS enable_analyzer = 1;
+
+-- getServerPort has its own non-FunctionConstantBase resolver/base pair; cover it
+-- explicitly so that any future regression where it stops reporting isServerConstant
+-- is caught.
+SELECT count() AS distinct_ports, sum(x) AS total
+FROM
+(
+    SELECT port, sum(x) AS x
+    FROM
+    (
+        SELECT getServerPort('tcp_port') AS port, 0 AS x
+        UNION ALL
+        SELECT getServerPort('tcp_port') AS port, count() AS x
+        FROM clusterAllReplicas('test_cluster_two_shards', system.one)
+        GROUP BY port
+    )
+    GROUP BY port
+)
+SETTINGS enable_analyzer = 1;
