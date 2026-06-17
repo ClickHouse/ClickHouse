@@ -616,36 +616,62 @@ class CommitStatusCheck:
             return None
         return Result.from_file("/tmp/result_sync_pr.json")
 
-    @staticmethod
-    def find_pr_states(pr_number) -> dict:
-        """Map each repo (public, private) that has this PR number to its state.
+    # gh emits this exact GraphQL message only when the PR genuinely does not
+    # exist. Any other failure (inaccessible repo, auth, network) is a lookup
+    # error, not a definitive "absent", and must fail closed.
+    PR_NOT_FOUND_MARKER = "Could not resolve to a PullRequest"
 
-        PR numbers are repo-local, so the same number can exist in both repos.
-        State is one of OPEN/CLOSED/MERGED; repos without the PR are omitted.
+    @classmethod
+    def get_pr_state(cls, pr_number, repo):
+        """Look up a PR's state in one repo.
+
+        Returns (state, error): state is OPEN/CLOSED/MERGED or None when the PR
+        is genuinely absent; error is a message when the lookup itself failed
+        (and state is then None and must not be treated as "absent").
         """
-        states = {}
-        for repo in (PUBLIC_REPO, SYNC_REPO):
-            raw = Shell.get_output(
-                f"gh pr view {pr_number} --json state --jq '.state' --repo {repo} 2>/dev/null"
-            )
-            if raw and raw.strip():
-                states[repo] = raw.strip()
-        return states
+        rc, out, err = Shell.get_res_stdout_stderr(
+            f"gh pr view {pr_number} --json state --jq '.state' --repo {repo}",
+            verbose=False,
+        )
+        if rc == 0 and out.strip():
+            return out.strip(), None
+        if cls.PR_NOT_FOUND_MARKER in err:
+            return None, None
+        return None, err or f"gh pr view exited with code {rc}"
 
-    @staticmethod
-    def resolve_pr_repo(pr_number, repo_override=None) -> Optional[str]:
+    @classmethod
+    def resolve_pr_repo(cls, pr_number, repo_override=None) -> Optional[str]:
         """Pick the repo to operate on for a PR number.
 
         Honors an explicit override; otherwise prefers the repo where the PR is
-        open. Returns None when the number is open in both repos (ambiguous) or
-        does not exist in either.
+        open. Fails closed (returns None) when a lookup errors, when the number
+        is open in both repos (ambiguous), or when it does not exist in either.
         """
-        states = CommitStatusCheck.find_pr_states(pr_number)
         if repo_override:
-            if repo_override not in states:
+            state, error = cls.get_pr_state(pr_number, repo_override)
+            if error:
+                print(
+                    f"ERROR: failed to look up PR #{pr_number} in {repo_override}: {error}"
+                )
+                return None
+            if not state:
                 print(f"ERROR: PR #{pr_number} not found in {repo_override}")
                 return None
             return repo_override
+
+        states = {}
+        for repo in (PUBLIC_REPO, SYNC_REPO):
+            state, error = cls.get_pr_state(pr_number, repo)
+            if error:
+                print(
+                    f"ERROR: failed to look up PR #{pr_number} in {repo}: {error}\n"
+                    f"Cannot safely auto-detect the repo; "
+                    f"rerun with --repo public|private."
+                )
+                return None
+            if state:
+                states[repo] = state
+
         if not states:
             print(
                 f"ERROR: PR #{pr_number} not found in {PUBLIC_REPO} or {SYNC_REPO}"
