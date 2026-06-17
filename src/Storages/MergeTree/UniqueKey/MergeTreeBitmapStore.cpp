@@ -105,14 +105,30 @@ void MergeTreeBitmapStore::installBitmap(
     DeleteBitmapFileOps::writeBitmapToStorage(storage, csn, bitmap, part_name);
     ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapUpdates);
 
-    /// The durable write above is the commit point. Invalidate the cached CSN index rather than
-    /// rebuilding it here: a rebuild reads disk and could throw after the write, leaving
-    /// csns_per_part stale so a later readBitmap misses the just-committed version. Dropping the
-    /// entry makes the next read re-enumerate disk truth (which now includes `csn`), and also
-    /// absorbs a racing `dropPart`. The per-version delete-bitmap content cache is left intact —
-    /// bitmaps are immutable by version, so a reader at `snapshot < csn` still needs the prior one.
-    std::unique_lock lock(csns_mutex);
-    csns_per_part.erase(part_id);
+    /// The durable write above is the commit point; now republish the version index from disk truth.
+    /// ASSIGN it under the lock (do not erase): a concurrent reader in `snapshotCsns` may have scanned
+    /// the pre-install file set and be about to `try_emplace` it — assigning the fresh list overwrites
+    /// that stale publish, whereas erasing would let the reader's stale list win and miss `csn`.
+    /// If the re-enumeration throws after the durable write, drop the entry so the next read re-scans
+    /// disk truth (which already includes `csn`) instead of trusting a stale cached list.
+    try
+    {
+        auto files = DeleteBitmapFileOps::enumerateFiles(storage);
+        std::vector<BitmapVersion> csns;
+        csns.reserve(files.size());
+        for (const auto & f : files)
+            csns.push_back(f.version);
+        std::sort(csns.begin(), csns.end());
+
+        std::unique_lock lock(csns_mutex);
+        csns_per_part[part_id] = std::move(csns);
+    }
+    catch (...)
+    {
+        std::unique_lock lock(csns_mutex);
+        csns_per_part.erase(part_id);
+        throw;
+    }
 }
 
 std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapStore::readBitmap(
