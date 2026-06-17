@@ -817,7 +817,16 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
     /// be excluded or the virtual size and stack count are wildly inflated.
     /// Filtering on a non-`VM_PROT_NONE` protection keeps only the real stacks,
     /// matching `vmmap`'s `Stack` totals exactly.
+    ///
+    /// `mach_vm_region_recurse` is not a flat iterator: an entry can be a
+    /// submap (e.g. the shared region) whose real object entries live one
+    /// level deeper, and `pages_resident`/`user_tag` are only meaningful for
+    /// leaf object entries. `depth` is in/out -- the kernel descends up to
+    /// `depth` levels and reports the depth it reached. So we descend into any
+    /// submap (without advancing `addr`) and only accumulate leaf entries,
+    /// rather than assuming pthread stacks are never nested.
     mach_vm_address_t addr = 0;
+    natural_t depth = 0;
     UInt64 stack_count = 0;
     UInt64 stack_size_bytes = 0;
     UInt64 stack_rss_bytes = 0;
@@ -825,7 +834,6 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
     while (true)
     {
         mach_vm_size_t size = 0;
-        natural_t depth = 0;
         vm_region_submap_info_data_64_t info;
         mach_msg_type_number_t info_count = VM_REGION_SUBMAP_INFO_COUNT_64;
 
@@ -840,6 +848,15 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
         if (kr != KERN_SUCCESS)
             break; /// KERN_INVALID_ADDRESS once we walk past the last region.
 
+        if (info.is_submap)
+        {
+            /// Descend into the submap on the next call; do not advance `addr`
+            /// and never accumulate a submap aggregate (its `pages_resident`
+            /// is not a valid RSS sample).
+            ++depth;
+            continue;
+        }
+
         if (info.user_tag == VM_MEMORY_STACK && info.protection != VM_PROT_NONE)
         {
             ++stack_count;
@@ -847,7 +864,7 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
             stack_rss_bytes += static_cast<UInt64>(info.pages_resident) * vm_page_size;
         }
 
-        addr += size; /// Advance past the current region.
+        addr += size; /// Advance past this leaf region.
     }
 
     thread_stack_stats.count = stack_count;
