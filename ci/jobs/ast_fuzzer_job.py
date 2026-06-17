@@ -86,8 +86,10 @@ def _format_status_error(exc: Exception, log_paths) -> str:
             "clickhouse-server pid file is never created), a fuzzer-harness "
             "error, or an infrastructure problem (job timeout, out of memory, "
             "docker/orchestration). Inspect the log tails below to determine the "
-            "cause; a normal fuzzer finding instead writes status.tsv with a FAIL "
-            "status and a stack trace." + tails_str
+            "cause; a normal fuzzer finding instead writes a complete status.tsv "
+            "(the three numeric fields server_died, server_exit_code, "
+            "fuzzer_exit_code), which run_fuzz_job then reports as FAIL with a "
+            "stack trace parsed from the logs." + tails_str
         )
 
     tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
