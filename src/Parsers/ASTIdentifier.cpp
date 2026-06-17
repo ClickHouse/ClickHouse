@@ -111,17 +111,23 @@ const String & ASTIdentifier::name() const
 
 void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    auto format_element = [&](const String & elem_name)
+    /// Preserve per-part quote style so format/reparse round-trips do not silently change
+    /// case-sensitivity semantics in `standard` mode.
+    auto format_element = [&](const String & elem_name, IdentifierQuoteStyle quote)
     {
+        std::string_view to_write = elem_name;
         if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
         {
             ostr << special_delimiter_and_identifier->first;
-            settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);
+            to_write = special_delimiter_and_identifier->second;
         }
+
+        if (quote == IdentifierQuoteStyle::DoubleQuote)
+            writeDoubleQuotedString(to_write, ostr);
+        else if (quote == IdentifierQuoteStyle::Backtick)
+            writeBackQuotedString(to_write, ostr);
         else
-        {
-            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
-        }
+            settings.writeIdentifier(ostr, String(to_write), /*ambiguous=*/false);
     };
 
     if (compound())
@@ -140,7 +146,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
                 ++j;
             }
             else
-                format_element(name_parts[i]);
+                format_element(name_parts[i], getQuoteStyleAt(i));
         }
     }
     else
@@ -149,7 +155,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
         if (name.empty() && !children.empty())
             children.front()->format(ostr, settings, state, frame);
         else
-            format_element(name);
+            format_element(name, getQuoteStyleAt(0));
     }
 }
 

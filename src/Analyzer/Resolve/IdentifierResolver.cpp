@@ -708,8 +708,9 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         return false;
     }
 
+    /// Bind check keys off the base column (part 0); full-name check uses last-part quoting
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), column_case_insensitive)
-        || table_expression_data.canBindIdentifier(IdentifierView(identifier), column_case_insensitive))
+        || table_expression_data.canBindIdentifier(IdentifierView(identifier), part_case_insensitive(0)))
         return true;
 
     if (identifier.getPartsSize() == 1)
@@ -1008,7 +1009,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), column_case_insensitive))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
 
-    if (table_expression_data.canBindIdentifier(IdentifierView(identifier), column_case_insensitive))
+    /// The bind check is keyed off the base column (part 0), not the trailing subcolumn part.
+    /// For mixed-quoting like `Data."Name"`, the unquoted `Data` must bind case-insensitively
+    /// even though the quoted `"Name"` field stays exact.
+    if (table_expression_data.canBindIdentifier(IdentifierView(identifier), part_case_insensitive(0)))
     {
         /** This check is insufficient to determine whether and identifier can be resolved from table expression.
           * A further check will be performed in `tryResolveIdentifierFromStorage` to see if we have such a subcolumn.

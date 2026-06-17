@@ -324,7 +324,7 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         ReadBufferFromMemory buf(pos->begin, pos->size());
         String s;
-        IdentifierQuoteStyle quote_style;
+        IdentifierQuoteStyle quote_style = IdentifierQuoteStyle::None;
 
         if (*pos->begin == '`')
         {

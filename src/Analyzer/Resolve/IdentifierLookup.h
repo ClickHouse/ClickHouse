@@ -105,8 +105,11 @@ struct IdentifierLookup
 
 inline bool operator==(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
 {
+    /// Include per-part quote info so the identifier-resolve cache cannot serve an unquoted
+    /// case-insensitive hit to a later double-quoted (case-sensitive) lookup of the same text.
     return lhs.identifier.getFullName() == rhs.identifier.getFullName()
-        && lhs.lookup_context == rhs.lookup_context;
+        && lhs.lookup_context == rhs.lookup_context
+        && lhs.is_part_double_quoted == rhs.is_part_double_quoted;
 }
 
 [[maybe_unused]] inline bool operator!=(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
@@ -118,8 +121,11 @@ struct IdentifierLookupHash
 {
     size_t operator()(const IdentifierLookup & identifier_lookup) const
     {
-        return std::hash<std::string>()(identifier_lookup.identifier.getFullName())
+        size_t h = std::hash<std::string>()(identifier_lookup.identifier.getFullName())
             ^ static_cast<uint8_t>(identifier_lookup.lookup_context);
+        for (bool quoted : identifier_lookup.is_part_double_quoted)
+            h = (h * 31) ^ static_cast<size_t>(quoted);
+        return h;
     }
 };
 
