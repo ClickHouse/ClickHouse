@@ -137,32 +137,41 @@ void FieldVisitorHash::operator() (const Object & x) const
     }
 }
 
+/// Normalize a decimal by stripping trailing zeros so that values comparing
+/// equal via DecimalField::operator== (which rescales) always hash identically.
+template <typename T>
+static void hashDecimalNormalized(SipHash & hash, UInt8 type, const DecimalField<T> & x)
+{
+    hash.update(type);
+    auto v = x.getValue().value;
+    UInt32 s = x.getScale();
+    while (s > 0 && v % 10 == 0)
+    {
+        v /= 10;
+        --s;
+    }
+    hash.update(v);
+    hash.update(s);
+}
+
 void FieldVisitorHash::operator() (const DecimalField<Decimal32> & x) const
 {
-    UInt8 type = Field::Types::Decimal32;
-    hash.update(type);
-    hash.update(x.getValue().value);
+    hashDecimalNormalized(hash, Field::Types::Decimal32, x);
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal64> & x) const
 {
-    UInt8 type = Field::Types::Decimal64;
-    hash.update(type);
-    hash.update(x.getValue().value);
+    hashDecimalNormalized(hash, Field::Types::Decimal64, x);
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal128> & x) const
 {
-    UInt8 type = Field::Types::Decimal128;
-    hash.update(type);
-    hash.update(x.getValue().value);
+    hashDecimalNormalized(hash, Field::Types::Decimal128, x);
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal256> & x) const
 {
-    UInt8 type = Field::Types::Decimal256;
-    hash.update(type);
-    hash.update(x.getValue().value);
+    hashDecimalNormalized(hash, Field::Types::Decimal256, x);
 }
 
 void FieldVisitorHash::operator() (const AggregateFunctionStateData & x) const

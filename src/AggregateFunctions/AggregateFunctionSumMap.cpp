@@ -75,23 +75,15 @@ struct FieldHash
                 const auto & s = x.safeGet<String>();
                 return CityHash_v1_0_2::CityHash64(s.data(), s.size());
             }
-            case Field::Types::Decimal32:
-                return intHash64(static_cast<UInt64>(x.safeGet<DecimalField<Decimal32>>().getValue().value));
-            case Field::Types::Decimal64:
-                return intHash64(static_cast<UInt64>(x.safeGet<DecimalField<Decimal64>>().getValue().value));
-            case Field::Types::Decimal128:
-                return UInt128Hash()(std::bit_cast<UInt128>(x.safeGet<DecimalField<Decimal128>>().getValue().value));
             case Field::Types::Int128:
                 return UInt128Hash()(std::bit_cast<UInt128>(x.safeGet<Int128>()));
             case Field::Types::UInt256:
                 return UInt256Hash()(x.safeGet<UInt256>());
             case Field::Types::Int256:
                 return UInt256Hash()(std::bit_cast<UInt256>(x.safeGet<Int256>()));
-            case Field::Types::Decimal256:
-                return UInt256Hash()(std::bit_cast<UInt256>(x.safeGet<DecimalField<Decimal256>>().getValue().value));
             default:
             {
-                /// Compound types (Array, Tuple, Map, etc.) — use SipHash as fallback.
+                /// Decimals, compound types (Array, Tuple, Map, etc.) — use FieldVisitorHash.
                 SipHash hash;
                 applyVisitor(FieldVisitorHash(hash), x);
                 return hash.get64();
