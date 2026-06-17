@@ -34,17 +34,14 @@ SETTINGS use_columns_cache = 1,
          enable_reads_from_columns_cache = 1
 "
 
+# The populating query above must have written the table's columns to the cache.
+# Filter by the table name, not the data part name (`part` is `all_1_1_0`, which
+# never contains the table name).
 $CLICKHOUSE_CLIENT -q "
-SELECT
-    column,
-    row_end - row_begin as row_count,
-    rows,
-    bytes > 0 as has_bytes
+SELECT count() > 0
 FROM system.columns_cache
-WHERE (database = '' OR database = currentDatabase())
-  AND part LIKE '%t_system_cache_test%'
-ORDER BY column, row_begin
-FORMAT Null
+WHERE database = currentDatabase()
+  AND table = 't_system_cache_test'
 "
 
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
@@ -52,8 +49,8 @@ $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 $CLICKHOUSE_CLIENT -q "
 SELECT count(*) as cache_entries
 FROM system.columns_cache
-WHERE (database = '' OR database = currentDatabase())
-  AND part LIKE '%t_system_cache_test%'
+WHERE database = currentDatabase()
+  AND table = 't_system_cache_test'
 "
 
 $CLICKHOUSE_CLIENT -q "
