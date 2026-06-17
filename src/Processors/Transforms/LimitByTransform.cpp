@@ -269,7 +269,11 @@ void LimitByTransform::transform(Chunk & chunk)
 {
     LOG_TEST(getLogger("LimitByTransform"), "Transform a chunk in LimitByTransform");
 
-    chassert(output_slices.empty());
+    /// `output_slices` is a member scratch buffer reused across chunks. A previous call may
+    /// have thrown after populating it (for example MEMORY_LIMIT_EXCEEDED while the grouping
+    /// hash table grows), and `ISimpleTransform::work` keeps this transform alive and calls
+    /// it again on the next chunk, so always start from an empty buffer.
+    output_slices.clear();
 
     const UInt64 row_count = chunk.getNumRows();
     if (row_count == 0)
@@ -324,7 +328,6 @@ void LimitByTransform::transform(Chunk & chunk)
         return;
 
     const UInt64 output_row_count = materializeSlicesIntoChunk(chunk, std::move(chunk_columns), row_count, output_slices);
-    output_slices.clear();
 
     if (rows_before_limit_at_least)
         rows_before_limit_at_least->add(output_row_count);
@@ -392,7 +395,9 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
 {
     LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Transform a chunk in LimitBySortedStreamTransform");
 
-    chassert(output_slices.empty());
+    /// See `LimitByTransform::transform`: a previous call may have thrown after populating
+    /// this reused scratch buffer, so start each chunk from empty.
+    output_slices.clear();
 
     const UInt64 row_count = chunk.getNumRows();
     if (row_count == 0)
@@ -452,7 +457,6 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         return;
 
     const UInt64 output_row_count = materializeSlicesIntoChunk(chunk, std::move(chunk_columns), row_count, output_slices);
-    output_slices.clear();
 
     if (rows_before_limit_at_least)
         rows_before_limit_at_least->add(output_row_count);
