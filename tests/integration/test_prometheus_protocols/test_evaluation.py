@@ -1,3 +1,6 @@
+import math
+import struct
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -16,6 +19,9 @@ node = cluster.add_instance(
     with_prometheus_reader=True,
     with_prometheus_receiver=True,
 )
+
+
+STALE_NAN = struct.unpack("<d", struct.pack("<Q", 0x7ff0000000000002))[0]
 
 
 # Sends data [ ({'label_name1': 'label_value1], ...}, {timestamp1: value1, ...} ), ... ]
@@ -152,6 +158,96 @@ def send_test_data():
                     230: 13,
                 },
             )
+        ]
+    )
+
+    send_data(
+        [
+            (
+                {"__name__": "counter_values", "job": "counter"},
+                {
+                    100: 0,
+                    110: 1,
+                    120: 3,
+                    130: 2,
+                    140: 4,
+                    190: 5,
+                    200: 1,
+                    210: 2,
+                },
+            ),
+            (
+                {"__name__": "special_counter_values", "case": "nan-inf"},
+                {
+                    100: 1,
+                    110: math.nan,
+                    120: math.nan,
+                    130: math.inf,
+                    140: math.inf,
+                    150: -math.inf,
+                },
+            ),
+            (
+                {"__name__": "testcounter_reset_middle_total"},
+                {
+                    0: 0,
+                    300: 10,
+                    600: 20,
+                    900: 30,
+                    1200: 40,
+                    1500: 0,
+                    1800: 10,
+                    2100: 20,
+                    2400: 30,
+                    2700: 40,
+                    3000: 50,
+                },
+            ),
+            (
+                {"__name__": "regression_inf"},
+                {
+                    0: -math.inf,
+                    300: 0,
+                    600: 80,
+                    900: 160,
+                    1200: 240,
+                    1500: 320,
+                    1800: 400,
+                    2100: 480,
+                    2400: 560,
+                    2700: 640,
+                    3000: 720,
+                    3300: math.inf,
+                },
+            ),
+            (
+                {"__name__": "regression_ms"},
+                {
+                    0: 0,
+                    1: 2,
+                    2: 4,
+                },
+            ),
+            (
+                {"__name__": "stale_counter"},
+                {
+                    100: 1,
+                    110: 2,
+                    120: STALE_NAN,
+                    130: 4,
+                    140: 5,
+                },
+            ),
+            (
+                {"__name__": "stale_gauge"},
+                {
+                    100: 1,
+                    110: 2,
+                    120: STALE_NAN,
+                    130: 4,
+                    140: 5,
+                },
+            ),
         ]
     )
 
@@ -437,7 +533,12 @@ def do_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert execute_query_in_prometheus(query, timestamp) == result
+    actual_prometheus_result = execute_query_in_prometheus(query, timestamp)
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), (
+        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
+    )
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to(
@@ -446,9 +547,14 @@ def do_query_test(
 
     actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
     assert (
-        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        http_api_response_close_to(
+            actual_result_from_http_api, actual_prometheus_result, eps=eps
+        )
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+    ), (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, "
+        f"prometheus_result: {actual_prometheus_result}"
+    )
 
 
 def do_query_test_expect_error(
@@ -482,8 +588,13 @@ def do_range_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert (
-        execute_range_query_in_prometheus(query, start_time, end_time, step) == result
+    actual_prometheus_result = execute_range_query_in_prometheus(
+        query, start_time, end_time, step
+    )
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), (
+        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
     )
 
     actual_chresult = execute_range_query_in_clickhouse_sql(
@@ -497,9 +608,14 @@ def do_range_query_test(
         query, start_time, end_time, step
     )
     assert (
-        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        http_api_response_close_to(
+            actual_result_from_http_api, actual_prometheus_result, eps=eps
+        )
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+    ), (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, "
+        f"prometheus_result: {actual_prometheus_result}"
+    )
 
 
 # Evaluates a query in ClickHouse only (no comparison with Prometheus) and checks the result.
@@ -521,6 +637,29 @@ def do_clickhouse_only_query_test(
     assert http_api_response_close_to(
         actual_result_from_http_api, result, eps=eps
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
+def do_clickhouse_only_query_test_expect_error(query, timestamp, expected_cherror):
+    assert expected_cherror in execute_query_in_clickhouse_sql(
+        query, timestamp, expect_error=True
+    )
+    assert expected_cherror in execute_query_in_clickhouse_http_api(
+        query, timestamp, expect_error=True
+    )
+
+
+def test_native_promql_error_paths():
+    do_clickhouse_only_query_test_expect_error(
+        "sort(test)",
+        130,
+        "Function sort is not implemented",
+    )
+
+    do_clickhouse_only_query_test_expect_error(
+        "day_of_week(test, test)",
+        130,
+        "Function 'day_of_week' expects 1 arguments, but was called with 2 arguments",
+    )
 
 
 def test_up():
@@ -647,6 +786,35 @@ def test_instant_selectors():
     )
 
 
+def test_timestamp_modifier_fixed_evaluation_time():
+    do_query_test(
+        "test @ 130",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "3"]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "1970-01-01 00:04:10.000",
+                "3",
+            ]
+        ],
+    )
+
+    do_range_query_test(
+        "last_over_time(test[45s] @ 130)",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "3"], [190, "3"], [250, "3"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:10.000',3),('1970-01-01 00:03:10.000',3),('1970-01-01 00:04:10.000',3)]",
+            ]
+        ],
+    )
+
+
 def test_function_over_time():
     do_query_test(
         "last_over_time(test[45s])[120s:15s]",
@@ -709,6 +877,38 @@ def test_function_over_time():
         ],
     )
 
+    # Behavior: `@` on a subquery range vector fixes the whole subquery grid;
+    # downstream range functions consume all fixed samples.
+    do_query_test(
+        "last_over_time(test[45s:15s] @ 210)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [210, "8"]}]}',
+        [["[('__name__','test')]", "1970-01-01 00:03:30.000", 8]],
+    )
+    do_query_test(
+        "deriv(test[45s:15s] @ 210)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "0.13333333333333333"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 0.13333333333333333]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "predict_linear(test[45s:15s] @ 210, 60)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "15.666666666666668"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 15.666666666666668]],
+        eps=1e-9,
+    )
+    do_range_query_test(
+        "deriv(test[45s:15s] @ 210)",
+        120,
+        210,
+        45,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0.13333333333333333"], [165, "0.13333333333333333"], [210, "0.13333333333333333"]]}]}',
+        [["[]", "[('1970-01-01 00:02:00.000',0.13333333333333333),('1970-01-01 00:02:45.000',0.13333333333333333),('1970-01-01 00:03:30.000',0.13333333333333333)]"]],
+        eps=1e-9,
+    )
+
     do_query_test(
         "delta(test[45s])[120s:15s]",
         210,
@@ -731,6 +931,200 @@ def test_function_over_time():
                 "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.06666666666666667),('1970-01-01 00:02:30.000',0.1),('1970-01-01 00:02:45.000',0.05555555555555555),('1970-01-01 00:03:30.000',0.08333333333333333)]",
             ]
         ],
+    )
+
+    # Behavior: Prometheus `increase` uses counter extrapolation per grid step and omits insufficient windows.
+    do_query_test(
+        "increase(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "3"], [150, "4.5"], [165, "2.5"], [210, "3.75"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',3),('1970-01-01 00:02:30.000',4.5),('1970-01-01 00:02:45.000',2.5),('1970-01-01 00:03:30.000',3.75)]",
+            ]
+        ],
+    )
+
+    # Behavior: Prometheus `deriv` returns per-second least-squares slope over float samples only.
+    do_query_test(
+        "deriv(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.1"], [150, "0.11"], [165, "0.1"], [210, "0.15"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.1),('1970-01-01 00:02:30.000',0.11),('1970-01-01 00:02:45.000',0.1),('1970-01-01 00:03:30.000',0.15)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus `predict_linear` predicts `duration` seconds after each evaluation timestamp.
+    do_query_test(
+        "predict_linear(test[45s], 60)[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "9.166666666666668"], [150, "11.6"], [165, "12.5"], [210, "16.5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',9.166666666666668),('1970-01-01 00:02:30.000',11.6),('1970-01-01 00:02:45.000',12.5),('1970-01-01 00:03:30.000',16.5)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus permits scalar-grid prediction horizons and uses the per-step scalar value.
+    do_query_test(
+        "predict_linear(test[45s], time() - 75)[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "9.166666666666668"], [150, "13.25"], [165, "15.5"], [210, "27.75"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',9.166666666666668),('1970-01-01 00:02:30.000',13.25),('1970-01-01 00:02:45.000',15.5),('1970-01-01 00:03:30.000',27.75)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus omits output for `increase`, `deriv`, and `predict_linear` when fewer than two usable float samples are selected.
+    do_query_test("increase(test[5s])", 180, '{"resultType": "vector", "result": []}', [])
+    do_query_test("deriv(test[5s])", 180, '{"resultType": "vector", "result": []}', [])
+    do_query_test("predict_linear(test[5s], 60)", 180, '{"resultType": "vector", "result": []}', [])
+    do_query_test("increase(no_such_metric[45s])", 210, '{"resultType": "vector", "result": []}', [])
+    do_query_test("deriv(no_such_metric[45s])", 210, '{"resultType": "vector", "result": []}', [])
+    do_query_test("predict_linear(no_such_metric[45s], 60)", 210, '{"resultType": "vector", "result": []}', [])
+
+    # Behavior: Prometheus applies `offset` to the selector data window while keeping function semantics anchored to the outer evaluation timestamp.
+    do_query_test(
+        "increase(test[45s] offset 70s)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "3.5"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 3.5]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "deriv(test[45s] offset 70s)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "0.11"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 0.11]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "predict_linear(test[45s] offset 70s, 60)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "18.2"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 18.2]],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus allows negative `offset`, selecting future samples relative to the evaluation timestamp.
+    do_query_test(
+        "predict_linear(test[45s] offset -20s, 60)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "22.4"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 22.4]],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus `@` fixes selector samples but `predict_linear` still predicts relative to each outer evaluation timestamp.
+    do_query_test(
+        "predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)",
+        3000,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [3000, "76.81818181818181"]}]}',
+        [["[]", "1970-01-01 00:50:00.000", 76.81818181818181]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)",
+        600,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [600, "51.36363636363637"]}]}',
+        [["[]", "1970-01-01 00:10:00.000", 51.36363636363637]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)",
+        4200,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [4200, "89.54545454545455"]}]}',
+        [["[]", "1970-01-01 01:10:00.000", 89.54545454545455]],
+        eps=1e-9,
+    )
+    do_range_query_test(
+        "predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)",
+        600,
+        4200,
+        1800,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[600, "51.36363636363637"], [2400, "70.45454545454547"], [4200, "89.54545454545455"]]}]}',
+        [["[]", "[('1970-01-01 00:10:00.000',51.36363636363637),('1970-01-01 00:40:00.000',70.45454545454547),('1970-01-01 01:10:00.000',89.54545454545455)]"]],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus regression functions return `NaN` when infinities make the least-squares regression invalid.
+    do_query_test(
+        "deriv(regression_inf[100m])",
+        6000,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [6000, "NaN"]}]}',
+        [["[]", "1970-01-01 01:40:00.000", "nan"]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "predict_linear(regression_inf[100m], 6000)",
+        6000,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [6000, "NaN"]}]}',
+        [["[]", "1970-01-01 01:40:00.000", "nan"]],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus `increase` lets regular `NaN`/`Inf` flow through IEEE counter arithmetic instead of filtering them as stale.
+    do_query_test(
+        "increase(special_counter_values[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"case": "nan-inf"}, "value": [150, "NaN"]}]}',
+        [["[('case','nan-inf')]", "1970-01-01 00:02:30.000", "nan"]],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus regression x-values and prediction horizons are seconds regardless of ClickHouse timestamp storage scale.
+    do_query_test(
+        "deriv(regression_ms[3s])",
+        2,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [2, "2"]}]}',
+        [["[]", "1970-01-01 00:00:02.000", 2]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "predict_linear(regression_ms[3s], 3)",
+        2,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [2, "10"]}]}',
+        [["[]", "1970-01-01 00:00:02.000", 10]],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus instant selectors reject a series if the newest lookback sample is stale.
+    do_query_test("stale_gauge", 125, '{"resultType": "vector", "result": []}', [])
+
+    # Behavior: Prometheus matrix selectors skip stale markers before range functions see samples.
+    do_query_test(
+        "increase(stale_counter[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [150, "6"]}]}',
+        [["[]", "1970-01-01 00:02:30.000", 6]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "deriv(stale_gauge[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [150, "0.1"]}]}',
+        [["[]", "1970-01-01 00:02:30.000", 0.1]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "predict_linear(stale_gauge[60s], 60)",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [150, "12"]}]}',
+        [["[]", "1970-01-01 00:02:30.000", 12]],
+        eps=1e-9,
     )
 
     do_query_test(
