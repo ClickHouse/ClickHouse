@@ -13,7 +13,6 @@
 #include <filesystem>
 #include <thread>
 #include <set>
-#include <vector>
 
 namespace
 {
@@ -159,7 +158,7 @@ try
     }
     return core_entries.empty() ? /*unexpected format*/ std::thread::hardware_concurrency() : static_cast<unsigned>(core_entries.size());
 }
-catch (const std::exception &)
+catch (...)
 {
     return std::thread::hardware_concurrency(); /// parsing error
 }

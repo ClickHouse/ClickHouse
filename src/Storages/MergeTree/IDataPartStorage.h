@@ -1,13 +1,13 @@
 #pragma once
-#include <Core/NamesAndTypes.h>
-#include <Disks/WriteMode.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteSettings.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <base/types.h>
-#include <Common/TransactionID.h>
+#include <Core/NamesAndTypes.h>
+#include <Interpreters/TransactionVersionMetadata.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Disks/WriteMode.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
 #include <memory>
 #include <optional>
@@ -138,15 +138,17 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const = 0;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const
     {
         if (existsFile(name))
-            return readFile(name, settings, read_hint);
+            return readFile(name, settings, read_hint, file_size);
         return {};
     }
 
@@ -309,7 +311,7 @@ public:
     /// A special const method to write transaction file.
     /// It's const, because file with transaction metadata
     /// can be modified after part creation.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(const String & txn_file_name, WriteMode mode) const = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const = 0;
 
     virtual void createFile(const String & name) = 0;
     virtual void moveFile(const String & from_name, const String & to_name) = 0;
@@ -344,10 +346,6 @@ public:
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
-
-    /// Returns true if underlying filesystem is case-insensitive,
-    /// e.g. file_name and FILE_NAME are the same files.
-    virtual bool isCaseInsensitive() const = 0;
 };
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;

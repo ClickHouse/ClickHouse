@@ -3,8 +3,8 @@ description: 'Documentation for MySQL Table Engine'
 sidebar_label: 'MySQL'
 sidebar_position: 138
 slug: /engines/table-engines/integrations/mysql
-title: 'MySQL table engine'
-doc_type: 'reference'
+title: 'The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data
+  that is stored on a remote MySQL server.'
 ---
 
 # MySQL table engine
@@ -196,4 +196,4 @@ Default value: `300`.
 ## See also {#see-also}
 
 - [The mysql table function](../../../sql-reference/table-functions/mysql.md)
-- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
+- [Using MySQL as a dictionary source](/sql-reference/dictionaries#mysql)

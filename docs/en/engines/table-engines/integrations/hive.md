@@ -4,13 +4,12 @@ description: 'The Hive engine allows you to perform `SELECT` queries on HDFS Hiv
 sidebar_label: 'Hive'
 sidebar_position: 84
 slug: /engines/table-engines/integrations/hive
-title: 'Hive table engine'
-doc_type: 'guide'
+title: 'Hive'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Hive table engine
+# Hive
 
 <CloudNotSupportedBadge/>
 

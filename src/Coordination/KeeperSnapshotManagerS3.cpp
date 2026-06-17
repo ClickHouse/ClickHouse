@@ -124,7 +124,8 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             enable_s3_requests_logging,
             /* for_disk_s3 = */ false,
             /* opt_disk_name = */ {},
-            /* request_throttler = */ {},
+            /* get_request_throttler = */ {},
+            /* put_request_throttler = */ {},
             new_uri.uri.getScheme());
 
         client_configuration.endpointOverride = new_uri.endpoint;
@@ -175,7 +176,7 @@ std::shared_ptr<KeeperSnapshotManagerS3::S3Configuration> KeeperSnapshotManagerS
 
 void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapshot_file_info)
 {
-    const auto & [snapshot_path, snapshot_disk] = snapshot_file_info;
+    const auto & [snapshot_path, snapshot_disk, snapshot_size] = snapshot_file_info;
     try
     {
         auto s3_client = getSnapshotS3Client();
@@ -285,7 +286,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
 void KeeperSnapshotManagerS3::snapshotS3Thread()
 {
-    DB::setThreadName(ThreadName::KEEPER_SNAPSHOT_S3);
+    setThreadName("KeeperS3SnpT");
 
     while (!shutdown_called)
     {

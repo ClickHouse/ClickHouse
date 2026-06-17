@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <optional>

@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/LockGuardWithStopWatch.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
@@ -11,11 +10,10 @@
 namespace DB
 {
 
-BackgroundJobsAssignee::BackgroundJobsAssignee(IBackgroundOperation & data_, const StorageID & storage_id_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
+BackgroundJobsAssignee::BackgroundJobsAssignee(MergeTreeData & data_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
     , type(type_)
     , data(data_)
-    , storage_id(storage_id_)
     , rng(randomSeed())
     , sleep_settings(getSettings())
 {
@@ -113,31 +111,19 @@ void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
     if (!holder)
-        holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        holder = getContext()->getSchedulePool().createTask("BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
 
     holder->activateAndSchedule();
 }
 
-void BackgroundJobsAssignee::updateStorageID(const StorageID & new_id)
-{
-    storage_id = new_id;
-}
-
 void BackgroundJobsAssignee::finish()
 {
-    /// Move the holder to a local variable under the lock, then release the lock
-    /// before calling deactivate(). We cannot hold holder_mutex during deactivate()
-    /// because it waits for the background task (threadFunc) to finish, and threadFunc
-    /// calls trigger()/postpone() which also lock holder_mutex — that would deadlock.
-    BackgroundSchedulePoolTaskHolder local_holder;
+    /// No lock here, because scheduled tasks could call trigger method
+    if (holder)
     {
-        std::lock_guard lock(holder_mutex);
-        local_holder = std::move(holder);
-    }
+        holder->deactivate();
 
-    if (local_holder)
-    {
-        local_holder->deactivate();
+        auto storage_id = data.getStorageID();
 
         getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);

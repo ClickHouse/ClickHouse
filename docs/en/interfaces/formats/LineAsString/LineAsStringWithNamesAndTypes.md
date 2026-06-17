@@ -6,7 +6,6 @@ keywords: ['LineAsStringWithNamesAndTypes']
 output_format: true
 slug: /interfaces/formats/LineAsStringWithNamesAndTypes
 title: 'LineAsStringWithNamesAndTypes'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

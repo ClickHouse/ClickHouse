@@ -4,8 +4,6 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Interpreters/Context_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
 
@@ -38,7 +36,7 @@ class ISink;
 class ReadProgressCallback;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class QueryResultCacheWriter;
 
@@ -138,14 +136,13 @@ public:
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
 
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
-    void addCompletedPipeline(QueryPipeline && other);
-    void addCompletedPipeline(const QueryPipeline & other);
+    void addCompletedPipeline(QueryPipeline other);
 
     const Processors & getProcessors() const { return *processors; }
 
     /// For pulling pipeline, convert structure to expected.
     /// Trash, need to remove later.
-    void convertStructureTo(const ColumnsWithTypeAndName & columns, const ContextPtr & context);
+    void convertStructureTo(const ColumnsWithTypeAndName & columns);
 
     void reset();
     void cancel() noexcept;

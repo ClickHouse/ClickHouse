@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import platform
 import re
 import subprocess
 import sys
@@ -9,6 +8,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
+import platform
 
 import requests
 
@@ -317,7 +317,7 @@ class Shell:
             proc.wait()
             retcode = proc.returncode
             if strict:
-                assert retcode == 0, f"Command failed with exit code {retcode}: {command}"
+                assert retcode == 0
         return retcode == 0
 
 

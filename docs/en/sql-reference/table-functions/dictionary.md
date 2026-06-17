@@ -5,12 +5,11 @@ sidebar_label: 'dictionary'
 sidebar_position: 47
 slug: /sql-reference/table-functions/dictionary
 title: 'dictionary'
-doc_type: 'reference'
 ---
 
 # dictionary Table Function
 
-Displays the [dictionary](../statements/create/dictionary/overview.md) data as a ClickHouse table. Works the same way as [Dictionary](../../engines/table-engines/special/dictionary.md) engine.
+Displays the [dictionary](../../sql-reference/dictionaries/index.md) data as a ClickHouse table. Works the same way as [Dictionary](../../engines/table-engines/special/dictionary.md) engine.
 
 ## Syntax {#syntax}
 

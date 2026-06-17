@@ -106,7 +106,7 @@ private:
     struct KeeperConfigurationWrapper
     {
         /// Our port
-        int port = -1;
+        int port;
         /// Our config
         KeeperServerConfigPtr config;
         /// Password to access keeper

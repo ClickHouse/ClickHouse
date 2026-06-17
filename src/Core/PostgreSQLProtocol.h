@@ -5,7 +5,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
-#include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
@@ -15,7 +14,6 @@
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
-#include <algorithm>
 #include <unordered_map>
 #include <utility>
 
@@ -135,10 +133,9 @@ enum class MessageType : Int32
     FUNCTION_CALL_RESPONSE = 191,
 };
 
-/** Column 'typelem' from 'pg_type' table. NB: not all types are compatible with PostgreSQL's ones */
+//// Column 'typelem' from 'pg_type' table. NB: not all types are compatible with PostgreSQL's ones
 enum class ColumnType : Int32
 {
-    BOOL = 16,
     CHAR = 18,
     INT8 = 20,
     INT2 = 21,
@@ -160,7 +157,7 @@ public:
     ColumnTypeSpec(ColumnType type_, Int16 len_) : type(type_), len(len_) {}
 };
 
-ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
+ColumnTypeSpec convertTypeIndexToPostgresColumnTypeSpec(TypeIndex type_index);
 
 class MessageTransport
 {
@@ -941,9 +938,9 @@ private:
     FormatCode format_code;
 
 public:
-    FieldDescription(const String & name_, const DataTypePtr & data_type, FormatCode format_code_ = FormatCode::TEXT)
+    FieldDescription(const String & name_, TypeIndex type_index, FormatCode format_code_ = FormatCode::TEXT)
     : name(name_)
-    , type_spec(convertDataTypeToPostgresColumnTypeSpec(data_type))
+    , type_spec(convertTypeIndexToPostgresColumnTypeSpec(type_index))
     , format_code(format_code_)
     {}
 
@@ -1242,41 +1239,12 @@ public:
 };
 
 
-/**
-* CommandComplete message for PostgreSQL wire protocol
-* Reference: https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-COMMANDCOMPLETE
-*/
 class CommandComplete : BackendMessage
 {
 public:
-    enum Command
-    {
-        BEGIN = 0,
-        COMMIT = 1,
-        INSERT = 2,
-        DELETE = 3,
-        UPDATE = 4,
-        SELECT = 5,
-        MOVE = 6,
-        FETCH = 7,
-        COPY = 8,
-        PREPARE = 9,
-        CREATE_TABLE = 10,
-        CREATE_DATABASE = 11,
-        DROP_TABLE = 12,
-        DROP_DATABASE = 13,
-        ALTER_TABLE = 14,
-        TRUNCATE = 15,
-        USE = 16,
-        SET = 17
-    };
+    enum Command {BEGIN = 0, COMMIT = 1, INSERT = 2, DELETE = 3, UPDATE = 4, SELECT = 5, MOVE = 6, FETCH = 7, COPY = 8, EXECUTE = 9};
 private:
-    String enum_to_string[18] =
-    {
-        "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
-        "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
-        "TRUNCATE", "USE", "SET"
-    };
+    String enum_to_string[10] = {"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE"};
 
     String value;
 
@@ -1284,21 +1252,10 @@ public:
     CommandComplete(Command cmd_, Int32 rows_count_)
     {
         value = enum_to_string[cmd_];
-
-        // Commands that include row count according to PostgreSQL protocol
-        // Note: UPDATE and DELETE in ClickHouse always return 0 because ClickHouse uses
-        // lightweight deletes/updates that don't track affected rows in the same way as PostgreSQL
-        bool include_row_count = (cmd_ == Command::INSERT || cmd_ == Command::DELETE ||
-                                  cmd_ == Command::UPDATE || cmd_ == Command::SELECT ||
-                                  cmd_ == Command::MOVE || cmd_ == Command::FETCH || cmd_ == Command::COPY);
-
-        if (include_row_count)
-        {
-            String add = " ";
-            if (cmd_ == Command::INSERT)
-                add = " 0 ";  // OID (always 0 for ClickHouse tables)
-            value += add + std::to_string(rows_count_);
-        }
+        String add = " ";
+        if (cmd_ == Command::INSERT)
+            add = " 0 ";
+        value += add + std::to_string(rows_count_);
     }
 
     void serialize(WriteBuffer & out) const override
@@ -1318,73 +1275,20 @@ public:
         return MessageType::COMMAND_COMPLETE;
     }
 
-    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly
-    static String extractNormalizedPrefix(const String & query, size_t max_len)
-    {
-        String prefix;
-        prefix.reserve(max_len);
-
-        bool prev_was_space = true;
-
-        for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
-        {
-            if (std::isspace(query[i]))
-            {
-                if (!prev_was_space)
-                {
-                    prefix.push_back(' ');
-                    prev_was_space = true;
-                }
-            }
-            else
-            {
-                prefix.push_back(static_cast<char>(std::toupper(query[i])));
-                prev_was_space = false;
-            }
-        }
-
-        return prefix;
-    }
-
     static Command classifyQuery(const String & query)
     {
-        static const std::vector<std::pair<String, Command>> query_patterns = {
-            {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
-            {"CREATE TABLE", Command::CREATE_TABLE},
-            {"CREATE DATABASE", Command::CREATE_DATABASE},
-            {"DROP TABLE", Command::DROP_TABLE},
-            {"DROP DATABASE", Command::DROP_DATABASE},
-            {"ALTER TABLE", Command::ALTER_TABLE},
-            {"TRUNCATE", Command::TRUNCATE},
-            {"BEGIN", Command::BEGIN},
-            {"COMMIT", Command::COMMIT},
-            {"INSERT", Command::INSERT},
-            {"DELETE", Command::DELETE},
-            {"UPDATE", Command::UPDATE},
-            {"SELECT", Command::SELECT},
-            {"MOVE", Command::MOVE},
-            {"FETCH", Command::FETCH},
-            {"COPY", Command::COPY},
-            {"PREPARE", Command::PREPARE},
-            {"USE", Command::USE}, // ClickHouse-specific, not have in PostgreSQL
-            {"SET", Command::SET},
-        };
-
-        // Calculate max pattern length from query_patterns
-        static const size_t MAX_PATTERN_LEN = []()
+        std::vector<String> query_types({"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE"});
+        for (size_t i = 0; i != query_types.size(); ++i)
         {
-            size_t max_len = 0;
-            for (const auto & [pattern, _] : query_patterns)
-                max_len = std::max(pattern.size(), max_len);
-            return max_len;
-        }();
+            String::const_iterator iter = std::search(
+                query.begin(),
+                query.end(),
+                query_types[i].begin(),
+                query_types[i].end(),
+                [](char a, char b){return std::toupper(a) == b;});
 
-        String prefix = extractNormalizedPrefix(query, MAX_PATTERN_LEN);
-
-        for (const auto & [pattern, command] : query_patterns)
-        {
-            if (prefix.starts_with(pattern))
-                return command;
+            if (iter != query.end())
+                return static_cast<Command>(i);
         }
 
         return Command::SELECT;
@@ -1644,7 +1548,7 @@ public:
 
             for (auto user_authentication_type : user_authentication_types)
             {
-                if (type_to_method.contains(user_authentication_type))
+                if (type_to_method.find(user_authentication_type) != type_to_method.end())
                 {
                     type_to_method[user_authentication_type]->authenticate(user_name, session, mt, address);
                     mt.send(Messaging::AuthenticationOk(), true);

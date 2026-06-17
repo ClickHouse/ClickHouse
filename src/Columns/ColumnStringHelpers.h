@@ -3,7 +3,8 @@
 #include <cstring>
 #include <cassert>
 
-#include <Common/Exception.h>
+#include <Columns/IColumn.h>
+#include <Common/PODArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <IO/WriteBufferFromVector.h>
