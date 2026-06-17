@@ -614,7 +614,11 @@ class ReleaseInfo:
         print(
             f"Create and push new release branch [{new_release_branch}], commit [{self.commit_sha}]"
         )
-        with checkout("master"):
+        # Cut the branch from the exact released commit, not ambient master:
+        # the workflow may be dispatched with a SHA, and master can move between
+        # release selection and this step, which would otherwise point the tag
+        # and the branch at different commits.
+        with checkout(self.commit_sha):
             with checkout_new(new_release_branch):
                 Shell.check(
                     f"{GIT_PREFIX} push --set-upstream origin {new_release_branch}",
@@ -990,9 +994,11 @@ class PackageDownloader:
 
         for macos_binary, job_name in self.macos_binary_to_job_name.items():
             local_path = self.LOCAL_DIR + "/" + macos_binary
-            if Path(local_path).is_file():
-                print(f"Already downloaded, skip: [{macos_binary}]")
-                continue
+            # macOS binaries have fixed, version-less local names (e.g.
+            # `clickhouse-macos`). Unlike the deb/rpm/tgz files there is no
+            # version in the name to make a stale copy distinguishable, so a
+            # leftover file from an earlier release on a reused runner must not
+            # be skipped — always re-download to overwrite it.
             print(f"Downloading: [{job_name}] binary to [{macos_binary}]")
             s3_path = "/".join([
                 self.s3_release_prefix,

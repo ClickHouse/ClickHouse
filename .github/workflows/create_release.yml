@@ -98,7 +98,7 @@ jobs:
           EOF
           )
           cat > ./ci/tmp/workflow_inputs.json << 'EOF'
-          ${{ toJson(github.event.inputs) }}
+          ${{ github.event.inputs && toJson(github.event.inputs) || toJson(inputs) }}
           EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}

@@ -75,9 +75,12 @@ def parse_args() -> argparse.Namespace:
     )
     args = parser.parse_args()
 
-    # When CLI args are absent, fall back to workflow dispatch inputs (CI runs).
+    # When CLI args are absent, fall back to workflow inputs (CI runs).
+    # workflow_dispatch passes strings; workflow_call passes native types
+    # (e.g. booleans), so coerce to str before the callers do `.lower()`.
     def _wi(name: str) -> str:
-        return Info.get_workflow_input_value(name) or ""
+        value = Info.get_workflow_input_value(name)
+        return "" if value is None else str(value)
 
     if args.ref is None:
         args.ref = _wi("ref")
@@ -134,6 +137,21 @@ def main():
             "git fetch --unshallow --no-recurse-submodules origin ||:",
             "git fetch --no-recurse-submodules origin",
             "git fetch --tags --no-recurse-submodules origin",
+        ],
+        workdir=REPO_PATH,
+    )
+
+    step(
+        name="Configure Git Auth for Release Pushes",
+        command=[
+            # The checkout step authenticates `origin` with the default
+            # GITHUB_TOKEN through an http extraheader. Release pushes (tags,
+            # the new release branch, the version-bump branch) must use the
+            # robot token instead so they carry the right permissions and
+            # trigger downstream workflows such as ReleaseBranchCI. Drop the
+            # extraheader and let gh's credential helper supply $GH_TOKEN.
+            "git config --unset-all http.https://github.com/.extraheader || true",
+            "gh auth setup-git",
         ],
         workdir=REPO_PATH,
     )

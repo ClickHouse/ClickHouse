@@ -133,6 +133,9 @@ def test_generated_workflow_preserves_release_invariants():
     assert "workflow_dispatch:" in yml
     assert "workflow_call:" in yml
     assert "ROBOT_CLICKHOUSE_COMMIT_TOKEN:" in yml
+    # The env setup must read the `inputs` context too, otherwise workflow_call
+    # (auto_releases) runs get an empty github.event.inputs and lose `ref`.
+    assert "toJson(inputs)" in yml
     # Boolean dispatch inputs render as checkboxes.
     assert "type: boolean" in yml
 

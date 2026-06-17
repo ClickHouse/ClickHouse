@@ -213,9 +213,17 @@ concurrency:
 
         TEMPLATE_SETUP_ENVS_INPUTS = """\
           cat > {WORKFLOW_INPUTS_FILE} << 'EOF'
-          ${{{{ toJson(github.event.inputs) }}}}
+          {INPUTS_EXPR}
           EOF\
 """
+
+        # workflow_dispatch inputs live in `github.event.inputs`; workflow_call
+        # inputs (a reusable-workflow run) arrive in the `inputs` context with
+        # `github.event.inputs` null. This expression picks whichever is present.
+        WORKFLOW_INPUTS_EXPR_DISPATCH = "${{ toJson(github.event.inputs) }}"
+        WORKFLOW_INPUTS_EXPR_WITH_CALL = (
+            "${{ github.event.inputs && toJson(github.event.inputs) || toJson(inputs) }}"
+        )
 
         TEMPLATE_PY_INSTALL = """
       - name: Set up Python
@@ -388,9 +396,15 @@ class PullRequestPushYamlGen:
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENV_VARS.format(VAR_NAME=var)
                 )
             if self.workflow_config.event == Workflow.Event.DISPATCH:
+                inputs_expr = (
+                    YamlGenerator.Templates.WORKFLOW_INPUTS_EXPR_WITH_CALL
+                    if self.workflow_config.config.enable_workflow_call
+                    else YamlGenerator.Templates.WORKFLOW_INPUTS_EXPR_DISPATCH
+                )
                 secrets_envs.append(
                     YamlGenerator.Templates.TEMPLATE_SETUP_ENVS_INPUTS.format(
-                        WORKFLOW_INPUTS_FILE=Settings.WORKFLOW_INPUTS_FILE
+                        WORKFLOW_INPUTS_FILE=Settings.WORKFLOW_INPUTS_FILE,
+                        INPUTS_EXPR=inputs_expr,
                     )
                 )
 
