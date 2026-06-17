@@ -50,8 +50,11 @@ struct ChunkInfoRowNumbers : public ChunkInfo
 /// Structure for storing information about buckets that IInputFormat needs to read.
 struct FileBucketInfo
 {
-    virtual void serialize(WriteBuffer & buffer) = 0;
-    virtual void deserialize(ReadBuffer & buffer) = 0;
+    /// `protocol_version` is the negotiated cluster-processing protocol version (see
+    /// `DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`). Implementations must gate any field added in a
+    /// newer version on it so the payload stays decodable across mixed-version clusters.
+    virtual void serialize(WriteBuffer & buffer, size_t protocol_version) = 0;
+    virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
     virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;

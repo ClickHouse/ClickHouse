@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include <Core/ProtocolDefines.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -286,15 +287,19 @@ std::optional<size_t> NativeParquetSchemaReader::readNumberOrRows()
     return size_t(file_metadata.num_rows);
 }
 
-void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
+void ParquetFileBucketInfo::serialize(WriteBuffer & buffer, size_t protocol_version)
 {
     writeVarUInt(row_group_ids.size(), buffer);
     for (auto chunk : row_group_ids)
         writeVarUInt(chunk, buffer);
-    writeVarUInt(file_num_row_groups, buffer);
+    /// `file_num_row_groups` was added later, so it is only present from this protocol version on.
+    /// Writing it unconditionally would misalign the stream when talking to an older peer that does
+    /// not expect it (and would leave the field unread, breaking the following payload).
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT)
+        writeVarUInt(file_num_row_groups, buffer);
 }
 
-void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
+void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer, size_t protocol_version)
 {
     size_t size_chunks = 0;
     readVarUInt(size_chunks, buffer);
@@ -306,7 +311,12 @@ void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
         readVarUInt(bucket, buffer);
         row_group_ids[i] = bucket;
     }
-    readVarUInt(file_num_row_groups, buffer);
+    /// An older peer does not send `file_num_row_groups`; leave it 0 ("unknown"), which disables the
+    /// row-group-count check on the read path. See the comment on the field.
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT)
+        readVarUInt(file_num_row_groups, buffer);
+    else
+        file_num_row_groups = 0;
 }
 
 String ParquetFileBucketInfo::getIdentifier() const

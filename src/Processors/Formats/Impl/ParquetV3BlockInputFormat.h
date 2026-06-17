@@ -27,8 +27,8 @@ struct ParquetFileBucketInfo : public FileBucketInfo
 
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_, size_t file_num_row_groups_ = 0);
-    void serialize(WriteBuffer & buffer) override;
-    void deserialize(ReadBuffer & buffer) override;
+    void serialize(WriteBuffer & buffer, size_t protocol_version) override;
+    void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
     String getIdentifier() const override;
     String getFormatName() const override
     {
