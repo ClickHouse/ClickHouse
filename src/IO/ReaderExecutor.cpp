@@ -1850,6 +1850,30 @@ size_t ReaderExecutor::clampReach(size_t reach, size_t phys_off) const
     return end;
 }
 
+size_t ReaderExecutor::boundedReach(size_t phys_off) const
+{
+    /// The physical reach a long connection opened at `phys_off` actually gets, BEFORE any
+    /// extent floor: the estimator's `predictedReach` clamped to the file end, then clamped
+    /// DOWN at the next WIDE cached run the plan shows - a resident run at/above
+    /// `min_bytes_for_seek` before `plan_end`, where the channel must stop (that region is
+    /// served from cache / filled down, not over-read; holes strictly below the bound are
+    /// bridged by `LongConnection::canContinue` on the open GET). A run cut by the plan
+    /// boundary appears short here and is not a real stop, so the trajectory stays free to
+    /// extend past the look-ahead. This is the SINGLE reach source shared by the open trigger
+    /// (`shouldOpenLong`) and the channel bound (`longConnectionBound`), so the two can never
+    /// disagree on how far the channel reaches. Reads only the tracker scalar + plan geometry.
+    size_t reach = clampReach(continuity_tracker.predictedReach(), phys_off);
+    const auto & geom = read_plan.geometry();
+    if (geom)
+    {
+        const size_t wide = scheduleLookaheadReach(phys_off);
+        const auto res = wide < geom->plan_end ? geom->residentAt(wide) : CoverageMap::Resident{};
+        if (res.resident() && res.run_end - wide >= min_bytes_for_seek)
+            reach = std::min(reach, wide);
+    }
+    return reach;
+}
+
 bool ReaderExecutor::shouldOpenLong(size_t phys_off) const
 {
     /// Open a long connection when the estimator's predicted contiguous reach runs past
@@ -1862,15 +1886,16 @@ bool ReaderExecutor::shouldOpenLong(size_t phys_off) const
         = read_plan.geometry() ? read_plan.geometry()->pressure_level : MemoryPressureLevel::Normal;
     if (effectivePrefetchWindowSize(level) == 0)
         return false;
-    /// Open when the predicted forward reach runs past the current read extent - the right
-    /// boundary where a short connection stops and the next read pays a fresh request. A long
-    /// connection continues past it instead. (The channel is still bounded by `predictedReach`,
-    /// so a reverse/scattered pattern, whose reach does not lead past the extent, stays short.)
-    /// When no extent is advertised, fall back to one window.
+    /// Open when the forward reach runs past the current read extent - the right boundary
+    /// where a short connection stops and the next read pays a fresh request. A long connection
+    /// continues past it instead. The reach is `boundedReach` - the SAME value `longConnectionBound`
+    /// sizes the channel with - so the trigger never opens a "long" channel the bound would then
+    /// clamp back to the extent (a reverse/scattered pattern, or a run walled off by a near wide
+    /// cached run, stays short). When no extent is advertised, fall back to one window.
     const size_t boundary = read_extent_end
         ? (*read_extent_end + data_start_offset)
         : (phys_off + effectiveWindowSize(level));
-    return clampReach(continuity_tracker.predictedReach(), phys_off) > boundary;
+    return boundedReach(phys_off) > boundary;
 }
 
 size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const
@@ -1883,13 +1908,12 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
     /// stranding the channel before its real end. The object end caps a GET to the single
     /// object it streams.
     ///
-    /// The reach is the `predictedReach` estimate - the read's forward trajectory, which
-    /// extrapolates past the current extent - clamped at the next WIDE cached run the plan
-    /// shows (a resident run at/above `min_bytes_for_seek`: there the channel must stop - that
-    /// region is served from cache / filled down, not over-read - so the GET drains cleanly at
-    /// it instead of being abandoned mid-run). Holes strictly below the bound are bridged by
-    /// `LongConnection::canContinue` on the open GET. Both terms read only the plan geometry,
-    /// never a connection grouping baked into the schedule.
+    /// The reach (`boundedReach`: `predictedReach` clamped at the next wide cached run) is the
+    /// read's forward trajectory, which extrapolates past the current extent. It is the same
+    /// value `shouldOpenLong` triggers on, so the GET drains cleanly at a wide cached run
+    /// instead of being abandoned mid-run, and the trigger never opens a channel this bound
+    /// would clamp back to the extent. Holes strictly below the bound are bridged by
+    /// `LongConnection::canContinue` on the open GET.
     const size_t object_base = phys_offset - object_offset;
     const size_t object_end = hasUnknownSize()
         ? std::numeric_limits<size_t>::max()
@@ -1897,19 +1921,7 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
     const size_t extent = read_extent_end
         ? std::min<size_t>(*read_extent_end + data_start_offset, object_end)
         : object_end;
-    size_t reach = clampReach(continuity_tracker.predictedReach(), phys_offset);
-    const auto & geom = read_plan.geometry();
-    if (geom)
-    {
-        /// Stop the channel before a wide cached run the plan shows - but only a GENUINELY wide
-        /// run (at/above `min_bytes_for_seek`). A run cut by the plan boundary (a cached region
-        /// continuing past `plan_end`) appears short here and is not a real stop - the trajectory
-        /// estimate must be free to extend past the look-ahead. Holes below the bound are bridged.
-        const size_t wide = scheduleLookaheadReach(phys_offset);
-        const auto res = wide < geom->plan_end ? geom->residentAt(wide) : CoverageMap::Resident{};
-        if (res.resident() && res.run_end - wide >= min_bytes_for_seek)
-            reach = std::min(reach, wide);
-    }
+    const size_t reach = boundedReach(phys_offset);
     const size_t phys_bound = std::min(object_end, std::max(extent, reach));
     return phys_bound - object_base;
 }

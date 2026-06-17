@@ -722,8 +722,14 @@ private:
     /// definition: bridges resident runs strictly below `min_bytes_for_seek`.
     size_t scheduleLookaheadReach(size_t phys_off) const;
 
-    /// Whether to open a long connection at physical `phys_off`: the estimator's
-    /// predicted contiguous reach runs past the current read extent (the right boundary
+    /// The physical reach a long connection opened at `phys_off` actually gets (before any
+    /// extent floor): `predictedReach` clamped to the file end, then clamped DOWN at the next
+    /// wide cached run the plan shows. The single reach source shared by `shouldOpenLong` and
+    /// `longConnectionBound` so the open trigger and the channel bound never disagree.
+    size_t boundedReach(size_t phys_off) const;
+
+    /// Whether to open a long connection at physical `phys_off`: the `boundedReach` forward
+    /// reach runs past the current read extent (the right boundary
     /// where a short connection would stop), a connection slot is configured
     /// (`reader_executor_use_long_connections`), and pressure is not High/Critical (the
     /// open is speculative, like prefetch).

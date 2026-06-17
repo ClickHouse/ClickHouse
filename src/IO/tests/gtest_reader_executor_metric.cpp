@@ -612,7 +612,7 @@ TEST_F(ReaderExecutorMetric, SmallCachedGaps)
     auto [live, stateless] = runMatrix("small_gaps", warm, {{0, std::nullopt}});
 
     EXPECT_EQ(live.requests, 20u) << "live: above-bound holes are not bridged; reach-bounded reopens per cold run";
-    EXPECT_EQ(live.incomplete, 8u) << "a connection drains to its reach bound and reopens at the bound; only the runs whose connection over-runs into an above-bound hole are dropped there";
+    EXPECT_EQ(live.incomplete, 6u) << "a connection drains to its reach bound and reopens there; the open trigger shares that same bounded reach (`boundedReach`), so fewer connections open only to over-run into an above-bound hole than under the old raw-reach trigger";
     EXPECT_EQ(live.over_read, 0u) << "reopens land on the reach bound, not inside a segment, so no alignment-prefix slack";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window";
 }
