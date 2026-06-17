@@ -1,3 +1,4 @@
+-- index_granularity = 8192: pin the default; --random-merge-tree-settings otherwise injects a small value that splits the projection part across concurrent read streams, changing float accumulation order and making results flaky
 -- add_minmax_index_for_numeric_columns=0: Implicit indices will filter before projections
 drop table if exists projection_test;
 
