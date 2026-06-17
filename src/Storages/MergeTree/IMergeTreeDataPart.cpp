@@ -36,7 +36,6 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -1557,14 +1556,6 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     if (getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
         result.emplace(COLUMNS_SUBSTREAMS_FILE_NAME);
-
-    /// UNIQUE KEY delete bitmaps have dynamic names (`delete_bitmap_{N}.rbm`),
-    /// so they need directory iteration rather than fixed-name `existsFile`.
-    for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
-    {
-        if (DeleteBitmap::isDeleteBitmapFile(it->name()))
-            result.emplace(it->name());
-    }
 
     return result;
 }

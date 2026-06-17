@@ -13,7 +13,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Storages/MergeTree/Backup.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -915,14 +914,6 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
-
-        /// UK delete-bitmap sidecars are absent from `checksums.txt` by design;
-        /// enumerate them here so the fast path removes them too.
-        for (auto it = disk->iterateDirectory(dir); it->isValid(); it->next())
-        {
-            if (DeleteBitmap::hasDeleteBitmapPrefix(it->name()))
-                request.emplace_back(fs::path(dir) / it->name(), /*if_exists=*/true);
-        }
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);

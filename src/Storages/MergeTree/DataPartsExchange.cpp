@@ -18,7 +18,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/scope_guard.h>
@@ -743,11 +742,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
             file_name != "columns.txt" &&
             file_name != IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME &&
             file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME &&
-            file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME &&
-            /// UK delete-bitmap sidecars are checksumless on the sender; mirror that here.
-            /// TODO: UNIQUE KEY is MergeTree-only today so no bitmap traverses replication; when
-            /// ReplicatedMergeTree support lands, gate sidecar transfer behind a new protocol version.
-            !DeleteBitmap::isDeleteBitmapFile(file_name))
+            file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
