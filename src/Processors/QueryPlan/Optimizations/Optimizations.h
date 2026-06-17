@@ -54,10 +54,10 @@ struct Optimization
         bool read_in_order_through_join{};
 
         /// Mirrors `QueryPlanOptimizationSettings::join_swap_table`. `std::nullopt` means
-        /// "auto" (swap decided by `optimizeJoinLegacy` from per-side row estimations);
-        /// `true`/`false` are explicit. `topKThroughJoin` consults it because deferring to
-        /// the second-pass read-in-order would silently disable both optimizations if the
-        /// join is swapped from `LEFT` to `RIGHT` after we returned.
+        /// "auto" (swap decided by the join reorder pass `optimizeJoinLogical` from per-side
+        /// row estimations); `true`/`false` are explicit. `topKThroughJoin` consults it because
+        /// deferring to the second-pass read-in-order would silently disable both optimizations
+        /// if the join is swapped from `LEFT` to `RIGHT` after we returned.
         std::optional<bool> join_swap_table;
 
         // parallel replicas
@@ -202,7 +202,6 @@ void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns)
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);

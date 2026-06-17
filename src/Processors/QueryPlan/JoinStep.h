@@ -48,9 +48,6 @@ public:
     void setLogicalJoinInfo(LogicalJoinInfo && logical_join_info);
     bool allowPushDownToRight() const;
 
-    /// Swap automatically if not set, otherwise always or never, depending on the value
-    std::optional<bool> swap_join_tables = false;
-
     struct PrimaryKeyNamesPair
     {
         std::string lhs_name;
@@ -67,11 +64,7 @@ public:
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
-    bool isOptimized() const { return optimized; }
-    void setOptimized() { optimized = true; }
-
 private:
-    bool optimized = false;
     void updateOutputHeader() override;
 
     /// Header that expected to be returned from IJoin

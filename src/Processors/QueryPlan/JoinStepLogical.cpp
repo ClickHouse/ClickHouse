@@ -1056,7 +1056,6 @@ static void constructPhysicalStep(
         true /*use_new_analyzer*/);
     join_step->setLogicalJoinInfo(std::move(logical_join_info));
     join_step->setStepDescription(fmt::format("JOIN {}", join_ptr->pipelineType()), optimization_settings.max_step_description_length);
-    join_step->setOptimized();
     node.step = std::move(join_step);
 
     node.children = {join_left_node, join_right_node};
