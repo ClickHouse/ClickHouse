@@ -49,8 +49,6 @@ from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from test_tags import find_tag_line, parse_tags_from_line
-
 try:
     import termcolor  # type: ignore
 except ImportError:
@@ -3806,6 +3804,11 @@ class TestSuite:
     def read_test_tags_and_random_settings_limits(
         suite_dir: str, all_tests: List[str]
     ) -> (Dict[str, Set[str]], Dict[str, Dict[str, Tuple[int, int]]], Dict[str, int]):
+        # Imported here, not at module top, so loading this script via
+        # `runpy.run_path` (e.g. functional_tests_results.py grabbing exit codes)
+        # works without the script's directory on sys.path.
+        from test_tags import find_tag_line, parse_tags_from_line
+
         def get_comment_sign(filename):
             if filename.endswith(".sql") or filename.endswith(".sql.j2"):
                 return "--"
