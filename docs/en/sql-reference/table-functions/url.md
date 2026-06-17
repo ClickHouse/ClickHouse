@@ -59,9 +59,11 @@ The `url` function acts as a unified wrapper on top of the other file- and objec
 |-----------------------------------------------------|------------------------------------------------------------|
 | `http`, `https` (and any unrecognized scheme)       | the `URL` engine itself (HTTP `GET`/`POST`)                |
 | `file`                                              | the [`file`](file.md) function                             |
-| `s3`, `gs`, `gcs`, `oss`, `cos`, `cosn`, `obs`      | the [`s3`](s3.md) function                                 |
+| `s3`, `gs`, `gcs`, `oss`                            | the [`s3`](s3.md) function                                 |
 | `az`, `azure`, `abfss`, `abfs`                      | the [`azureBlobStorage`](azureBlobStorage.md) function     |
 | `hdfs`                                              | the [`hdfs`](hdfs.md) function                             |
+
+Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint without extra configuration (`s3`, plus `gs`/`gcs`/`oss`) are dispatched. Other S3-compatible vendor schemes (`cos`, `obs`, `eos`, …) are region-specific and have no default endpoint mapping, so a `cos://…` URL is treated as an unrecognized scheme and reported as an error; use the [`s3`](s3.md) function directly (with `url_scheme_mappers` configured) for those backends.
 
 For `file://`, a relative path (`file://data.csv`) is resolved inside the [user_files](/operations/server-configuration-parameters/settings#user_files_path) directory, and an absolute path (`file:///home/user/data.csv`) must point inside it as usual.
 

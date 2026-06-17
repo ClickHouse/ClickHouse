@@ -1918,9 +1918,16 @@ URLSchemeTarget classifyURLScheme(const String & url)
     if (scheme == "file")
         return URLSchemeTarget::File;
 
-    if (scheme == "s3" || scheme == "gs" || scheme == "gcs" || scheme == "oss"
-        || scheme == "cos" || scheme == "cosn" || scheme == "obs" || scheme == "eos"
-        || scheme.starts_with("s3express"))
+    /// Only the schemes normalized by the S3 URI mapper without any user configuration are
+    /// dispatched to the `S3` engine: the native `s3`, plus `gs`/`gcs`/`oss` which the default
+    /// `url_scheme_mappers` (and the built-in fallback in `S3::URI`) rewrite to a concrete endpoint.
+    /// Other S3-compatible vendor schemes (`cos`, `cosn`, `obs`, `eos`, `s3express`, ...) are
+    /// region-specific virtual-hosted hostnames rather than scheme mappings, so there is no static
+    /// endpoint to route `<scheme>://bucket/key` to. Leaving them on the plain `URL` path makes them
+    /// fail with a clear "Unsupported scheme" error instead of being silently misparsed by `S3::URI`
+    /// as a custom endpoint with the object key taken as the bucket. Use the `s3` engine/function
+    /// directly (with `url_scheme_mappers` configured) for those backends.
+    if (scheme == "s3" || scheme == "gs" || scheme == "gcs" || scheme == "oss")
         return URLSchemeTarget::S3;
 
     if (scheme == "az" || scheme == "azure" || scheme == "abfss" || scheme == "abfs")
