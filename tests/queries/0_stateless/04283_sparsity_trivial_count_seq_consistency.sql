@@ -7,7 +7,7 @@
 -- under sequential consistency it returns the quorum-acknowledged count, not the
 -- local-only one.
 
-SET optimize_trivial_count_query = 1;
+SET optimize_trivial_count_query = 1, insert_keeper_fault_injection_probability = 0;
 
 DROP TABLE IF EXISTS t_sparse_seq_consistency_r1 SYNC;
 DROP TABLE IF EXISTS t_sparse_seq_consistency_r2 SYNC;
@@ -28,12 +28,13 @@ SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5,
          serialization_info_version = 'with_types',
          min_bytes_for_wide_part = 0;
 
--- First insert, quorum-confirmed by both replicas: 4000 default zeros + 1000 ones.
--- `insert_keeper_fault_injection_probability = 0` (same as other quorum tests,
--- e.g. 01451): with CI's default 0.01 probability, the precondition check
--- retries long enough that a parallel sink can race against the first sink's
--- `/quorum/status` and throw `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE`.
-SET insert_quorum = 2, insert_quorum_parallel = 0, insert_keeper_fault_injection_probability = 0;
+-- First insert without quorum, then sync r2 so both replicas hold the part
+-- (4000 default zeros + 1000 ones). The earlier `insert_quorum = 2,
+-- insert_quorum_parallel = 0` design here was flaky under CI: randomised
+-- `max_insert_threads > 1` spawns multiple `ReplicatedMergeTreeSink`
+-- instances, and the precondition check of the second sink races against
+-- the first sink's `/quorum/status`, throwing
+-- `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE`.
 INSERT INTO t_sparse_seq_consistency_r1
 SELECT number, if(number < 4000, 0, 1)::UInt32 FROM numbers(5000)
 SETTINGS optimize_on_insert = 0;
@@ -41,10 +42,13 @@ SETTINGS optimize_on_insert = 0;
 SYSTEM SYNC REPLICA t_sparse_seq_consistency_r2;
 SYSTEM STOP FETCHES t_sparse_seq_consistency_r2;
 
--- Second insert. With FETCHES stopped on r2 the quorum is unsatisfiable, so the
--- insert times out (UNKNOWN_STATUS_OF_INSERT) but the part lands locally on r1.
--- After this, r1 has both parts locally; the second is not quorum-acknowledged.
-SET insert_quorum_timeout = 100;
+-- Second insert with quorum=2 and fetches stopped on r2: the quorum is
+-- unsatisfiable so the insert errors out, but the part lands locally on r1
+-- and `/quorum/status` is left set for it. `getMaxAddedBlocks` then clamps
+-- the per-partition max block to `pending_part.max_block - 1`, which equals
+-- the first part's block, so `select_sequential_consistency = 1` sees only
+-- the first part.
+SET insert_quorum = 2, insert_quorum_parallel = 0, insert_quorum_timeout = 100;
 INSERT INTO t_sparse_seq_consistency_r1
 SELECT number + 5000, if(number < 4000, 0, 1)::UInt32 FROM numbers(5000)
 SETTINGS optimize_on_insert = 0; -- { serverError UNKNOWN_STATUS_OF_INSERT,UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE }
@@ -59,8 +63,8 @@ SELECT 'seq0_scan',    count() FROM t_sparse_seq_consistency_r1 WHERE n = 0
              use_sparsity_info_for_pruning = 'off',
              select_sequential_consistency = 0;
 
--- With sequential consistency both paths must see only the quorum-acknowledged
--- first part: 4000 defaults. Before the fix the rewrite returned 8000 because
+-- With sequential consistency both paths must see only the first part: 4000
+-- defaults. Before the fix the rewrite returned 8000 because
 -- `getColumnDefaultnessStats` iterated `getVisibleDataPartsVector` instead of
 -- the ZK-filtered active parts list.
 SELECT 'seq1_rewrite', count() FROM t_sparse_seq_consistency_r1 WHERE n = 0
