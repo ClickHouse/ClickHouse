@@ -1148,6 +1148,109 @@ TEST(ReaderExecutor, DecryptInPlaceMultiLayer)
     EXPECT_EQ(result, plaintext);
 }
 
+#include <IO/ReaderExecutorDecryptor.h>
+
+TEST(ReaderExecutorDecryptor, ConcurrentDecryptIsReentrant)
+{
+    /// `ReaderExecutorDecryptor::decrypt` must be reentrant: it builds fresh
+    /// per-call encryptors, so several threads decrypting DISTINCT logical
+    /// offsets concurrently must not cross-talk through any shared keystream
+    /// offset. Parse a known single-layer header, then have N threads each
+    /// decrypt a distinct chunk; assert every chunk matches a single-threaded
+    /// reference decrypt of the same chunk.
+
+    String key(16, 'r');
+    FileEncryption::InitVector iv(UInt128{0xabcdef0123456789ULL});
+
+    /// Plaintext large enough for many distinct, non-overlapping chunks.
+    const size_t chunk_size = 4096;
+    const size_t num_threads = 8;
+    const size_t plaintext_size = chunk_size * num_threads;
+    String plaintext(plaintext_size, '\0');
+    for (size_t i = 0; i < plaintext_size; ++i)
+        plaintext[i] = static_cast<char>((i * 37 + 11) & 0xFF);
+
+    /// On-disk ciphertext is the payload only (decryptor operates on logical
+    /// offsets; the header lives separately in `header_bytes`).
+    const String ciphertext = aesCtrEncrypt(key, iv, plaintext);
+
+    /// Serialize the layer's header into a ChainedBuffers for `parseHeaders`.
+    String header_str;
+    {
+        DB::WriteBufferFromString wb(header_str);
+        FileEncryption::Header header;
+        header.algorithm = FileEncryption::Algorithm::AES_128_CTR;
+        header.key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
+        header.init_vector = iv;
+        header.write(wb);
+        wb.finalize();
+    }
+    ASSERT_EQ(header_str.size(), FileEncryption::Header::kSize);
+
+    DB::ChainedBuffers header_chain;
+    {
+        auto buf = std::make_shared<DB::OwnedChainedBuffer>(header_str.size());
+        memcpy(buf->data(), header_str.data(), header_str.size());
+        header_chain.append(DB::ChainedBufferNode{
+            .buffer = buf,
+            .buffer_offset = 0,
+            .size = header_str.size(),
+            .logical_offset = 0,
+        });
+    }
+
+    DB::ReaderExecutorDecryptor decryptor;
+    decryptor.addLayer("/r", 0, [&](UInt128 got_fp, const String &)
+    {
+        EXPECT_EQ(got_fp, FileEncryption::calculateKeyFingerprint(key));
+        return key;
+    });
+    decryptor.parseHeaders(header_chain);
+    ASSERT_TRUE(decryptor.initialized());
+
+    /// Single-threaded reference: decrypt each chunk in isolation.
+    std::vector<String> reference(num_threads);
+    for (size_t t = 0; t < num_threads; ++t)
+    {
+        const size_t off = t * chunk_size;
+        String chunk = ciphertext.substr(off, chunk_size);
+        decryptor.decrypt(chunk.data(), chunk.size(), off);
+        reference[t] = std::move(chunk);
+        EXPECT_EQ(reference[t], plaintext.substr(off, chunk_size));
+    }
+
+    /// Concurrent: N threads decrypt distinct offsets at once through the same
+    /// const decryptor. A start latch maximises overlap.
+    std::vector<String> got(num_threads);
+    std::latch start{static_cast<std::ptrdiff_t>(num_threads)};
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+    for (size_t t = 0; t < num_threads; ++t)
+    {
+        threads.emplace_back([&, t]
+        {
+            const size_t off = t * chunk_size;
+            String chunk = ciphertext.substr(off, chunk_size);
+            start.arrive_and_wait();
+            /// Decrypt many times to widen the race window.
+            for (int rep = 0; rep < 64; ++rep)
+            {
+                String c = ciphertext.substr(off, chunk_size);
+                decryptor.decrypt(c.data(), c.size(), off);
+                if (rep == 0)
+                    got[t] = std::move(c);
+                else
+                    EXPECT_EQ(c, reference[t]) << "thread " << t << " rep " << rep;
+            }
+        });
+    }
+    for (auto & th : threads)
+        th.join();
+
+    for (size_t t = 0; t < num_threads; ++t)
+        EXPECT_EQ(got[t], reference[t]) << "concurrent decrypt mismatch at thread " << t;
+}
+
 #endif
 
 TEST(ReaderExecutor, MergeRangesOverlapping)

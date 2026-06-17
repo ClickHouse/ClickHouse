@@ -28,6 +28,7 @@
 #include "config.h"
 #if USE_SSL
 #include <IO/FileEncryptionCommon.h>
+#include <IO/ReaderExecutorDecryptor.h>
 #endif
 
 namespace DB
@@ -154,9 +155,9 @@ public:
     /// `PipelineReadBuffer` via `decryptInPlace`).
     bool needsDecryption() const { return data_start_offset > 0; }
 
-    /// Decrypt in place at `logical_offset` using persistent per-layer CTR
-    /// encryptors; CTR is position-addressable, so the consumer decrypts only
-    /// the chunk it serves. Single-threaded per executor.
+    /// Decrypt in place at `logical_offset` via the reentrant `decryptor`; CTR
+    /// is position-addressable, so the consumer decrypts only the chunk it
+    /// serves. Safe to call from a worker concurrently with the foreground.
     void decryptInPlace(char * data, size_t size, size_t logical_offset);
 
     // ─── Introspection ───────────────────────────────────────────────────
@@ -500,17 +501,6 @@ private:
         /// `ReaderExecutorPrefetchInFlight` for this machine's lifetime.
         CurrentMetrics::Increment inflight_gauge;
     };
-
-#if USE_SSL
-    struct DecryptionLayer
-    {
-        String path;
-        size_t buffer_size;
-        KeyFinderFunc key_finder;
-        /// Populated by `initDecryption`.
-        String key;
-    };
-#endif
 
     // ─── Window serve path ───────────────────────────────────────────────
 
@@ -1011,11 +1001,7 @@ private:
     std::mutex transient_stats_mutex;
 
 #if USE_SSL
-    VectorWithMemoryTracking<DecryptionLayer> decryption_layers;
-    VectorWithMemoryTracking<FileEncryption::Header> decryption_headers;
-    bool decryption_initialized = false;
-    /// Persistent per-layer CTR encryptors, built lazily by `decryptInPlace`.
-    VectorWithMemoryTracking<FileEncryption::Encryptor> payload_encryptors;
+    ReaderExecutorDecryptor decryptor;
 #endif
     size_t data_start_offset = 0;  /// N * Header::kSize (0 when no encryption)
 

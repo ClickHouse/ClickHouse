@@ -99,7 +99,6 @@ namespace DB::FailPoints
 
 #if USE_SSL
 #include <IO/FileEncryptionCommon.h>
-#include <IO/ReadBufferFromMemory.h>
 #endif
 
 #include <Core/LogsLevel.h>
@@ -586,9 +585,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     auto t = std::make_unique<ReaderExecutor>(source, stored_objects, caches, std::move(transient_options));
 
 #if USE_SSL
-    t->decryption_layers = decryption_layers;
-    t->decryption_headers = decryption_headers;
-    t->decryption_initialized = decryption_initialized;
+    t->decryptor = decryptor;
 #endif
     t->data_start_offset = data_start_offset;
     t->read_extent_end = start_position + read_size;
@@ -612,13 +609,8 @@ void ReaderExecutor::addDecryptionLayer(
     [[maybe_unused]] KeyFinderFunc key_finder)
 {
 #if USE_SSL
-    decryption_layers.push_back(DecryptionLayer{
-        .path = std::move(path),
-        .buffer_size = buffer_size,
-        .key_finder = std::move(key_finder),
-        .key = {},
-    });
-    data_start_offset = decryption_layers.size() * FileEncryption::Header::kSize;
+    decryptor.addLayer(std::move(path), buffer_size, std::move(key_finder));
+    data_start_offset = decryptor.headerBytes();
     LOG_DEBUG(log, "Added decryption layer, data_start_offset={}", data_start_offset);
 #endif
 }
@@ -626,7 +618,7 @@ void ReaderExecutor::addDecryptionLayer(
 void ReaderExecutor::initDecryption()
 {
 #if USE_SSL
-    if (decryption_initialized || decryption_layers.empty())
+    if (decryptor.initialized() || decryptor.empty())
         return;
 
     size_t total_source_size = offset_map.totalSize();
@@ -647,8 +639,7 @@ void ReaderExecutor::initDecryption()
             "Encrypted source has {} bytes, less than header size {}",
             total_source_size, data_start_offset);
 
-    LOG_DEBUG(log, "initDecryption: reading {} headers ({} bytes)",
-        decryption_layers.size(), data_start_offset);
+    LOG_DEBUG(log, "initDecryption: reading headers ({} bytes)", data_start_offset);
 
     /// No plan built yet at init time: pass an empty geometry so the header is read
     /// purely via the source/gap path. `serveLateHits` still serves a header byte already
@@ -673,52 +664,7 @@ void ReaderExecutor::initDecryption()
             "Encrypted source returned {} header bytes, expected {} (corrupted/truncated)",
             header_chain.totalBytes(), data_start_offset);
 
-    /// Stacked encryption layout: only `h0` is plaintext; every later header
-    /// is wrapped by all layers above it (`[h0, enc0(h1), enc0(enc1(h2)), ...]`).
-    /// Parsing `hi` peels layers `0..i-1` at their current keystream offsets —
-    /// same per-layer stepping as the payload path; see `decryptInPlace`.
-    VectorWithMemoryTracking<FileEncryption::Encryptor> initialized_encryptors;
-    initialized_encryptors.reserve(decryption_layers.size());
-    size_t offset = 0;
-    for (size_t i = 0; i < decryption_layers.size(); ++i)
-    {
-        auto & layer = decryption_layers[i];
-
-        /// Copy the header's 64 bytes into a mutable buffer so we can
-        /// decrypt in place across the already-initialized layers.
-        std::array<char, FileEncryption::Header::kSize> hdr_bytes{};
-        {
-            ChainedBuffers slice = header_chain.slice(ByteRange{offset, FileEncryption::Header::kSize});
-            chassert(slice.totalBytes() == FileEncryption::Header::kSize);
-            slice.copyTo(hdr_bytes.data(), ByteRange{offset, FileEncryption::Header::kSize});
-        }
-
-        for (size_t j = 0; j < initialized_encryptors.size(); ++j)
-        {
-            const size_t layer_keystream_offset = (i - 1 - j) * FileEncryption::Header::kSize;
-            initialized_encryptors[j].setOffset(layer_keystream_offset);
-            initialized_encryptors[j].decrypt(hdr_bytes.data(), hdr_bytes.size(), hdr_bytes.data());
-        }
-
-        ReadBufferFromMemory rb(hdr_bytes.data(), hdr_bytes.size());
-        FileEncryption::Header header;
-        header.read(rb);
-        layer.key = layer.key_finder(header.key_fingerprint, layer.path);
-        decryption_headers.push_back(std::move(header));
-
-        /// Materialise this layer's encryptor for the next iteration to use.
-        initialized_encryptors.emplace_back(
-            decryption_headers.back().algorithm,
-            layer.key,
-            decryption_headers.back().init_vector);
-
-        offset += FileEncryption::Header::kSize;
-
-        LOG_DEBUG(log, "initDecryption: parsed header for {}, algorithm={}",
-            layer.path, static_cast<int>(decryption_headers.back().algorithm));
-    }
-
-    decryption_initialized = true;
+    decryptor.parseHeaders(header_chain);
 #endif
 }
 
@@ -726,37 +672,12 @@ void ReaderExecutor::decryptInPlace(
     [[maybe_unused]] char * data, [[maybe_unused]] size_t size, [[maybe_unused]] size_t logical_offset)
 {
 #if USE_SSL
-    if (decryption_layers.empty() || size == 0)
+    if (decryptor.empty() || size == 0)
         return;
 
+    chassert(!decryptor.empty());
     StatTimer decrypt_scope(stats, Stats::DecryptMicroseconds);
-
-    /// Build the per-layer CTR encryptors once and reuse them across served
-    /// chunks. CTR is position-addressable, so each call just re-seeks the
-    /// keystream. (Lazy: also covers the transient made by makeTransientForReadAt,
-    /// which copies the parsed headers but not the encryptors.)
-    if (payload_encryptors.empty())
-    {
-        payload_encryptors.reserve(decryption_layers.size());
-        for (size_t i = 0; i < decryption_layers.size(); ++i)
-            payload_encryptors.emplace_back(
-                decryption_headers[i].algorithm,
-                decryption_layers[i].key,
-                decryption_headers[i].init_vector);
-    }
-
-    /// Per-layer keystream offset: with `N` layers (0 = outermost, N-1 =
-    /// innermost), layer `i`'s stream carries the inner layers' headers ahead of
-    /// the payload, so its CTR offset for `logical_offset` is
-    /// `logical_offset + (N - 1 - i) * Header::kSize`; the innermost uses
-    /// `logical_offset`. See `ReadBufferFromEncryptedFile::nextImpl`.
-    for (size_t i = 0; i < payload_encryptors.size(); ++i)
-    {
-        const size_t layer_keystream_offset = logical_offset
-            + (payload_encryptors.size() - 1 - i) * FileEncryption::Header::kSize;
-        payload_encryptors[i].setOffset(layer_keystream_offset);
-        payload_encryptors[i].decrypt(data, size, data);
-    }
+    decryptor.decrypt(data, size, logical_offset);
 #endif
 }
 
