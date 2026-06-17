@@ -373,10 +373,15 @@ DataTypePtr AggregateFunctionTuple::getNormalizedStateType() const
     for (const auto & argument_type : argument_types)
         normalized_argument_types.emplace_back(argument_type->getNormalizedType());
 
-    const auto & nested_normalized_state = assert_cast<const DataTypeAggregateFunction &>(
-        *nested_functions.front()->getNormalizedStateType());
+    /// Keep the nested normalized state type alive in a local variable while we read its parameters:
+    /// `getNormalizedStateType` returns a freshly allocated `DataTypePtr` that holds the only
+    /// reference, so binding a reference directly to `*nested_functions.front()->getNormalizedStateType()`
+    /// would dangle once that temporary is destroyed at the end of the statement, turning the
+    /// `getParameters` call below into a use-after-free.
+    const DataTypePtr nested_normalized_state = nested_functions.front()->getNormalizedStateType();
+    const auto & nested_normalized_state_function = assert_cast<const DataTypeAggregateFunction &>(*nested_normalized_state);
     return std::make_shared<DataTypeAggregateFunction>(
-        shared_from_this(), normalized_argument_types, nested_normalized_state.getParameters());
+        shared_from_this(), normalized_argument_types, nested_normalized_state_function.getParameters());
 }
 
 namespace
