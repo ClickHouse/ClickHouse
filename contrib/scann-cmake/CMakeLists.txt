@@ -170,6 +170,25 @@ list(REMOVE_ITEM SCANN_SOURCES
     "${SCANN_SOURCE_DIR}/scann/distance_measures/many_to_many/many_to_many_sfp8.cc"
 )
 
+# On macOS, alignof(__m512i) may be less than 64 due to ABI differences,
+# causing the static_assert(alignof(result) >= 64) in int8_tile.h to fail for
+# all files that transitively include it (via sfp8_transposed.h).  Patch a copy
+# of avx512.h in the build directory to add alignas(kRegisterBytes) to the
+# registers_ member.  The build directory is placed before the ScaNN source
+# directory in include paths so the patched copy is found first.
+if (OS_DARWIN)
+    set(_avx512_src "${SCANN_SOURCE_DIR}/scann/utils/intrinsics/avx512.h")
+    set(_avx512_dst "${CMAKE_CURRENT_BINARY_DIR}/scann/utils/intrinsics/avx512.h")
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/scann/utils/intrinsics")
+    configure_file("${_avx512_src}" "${_avx512_dst}" COPYONLY)
+    file(READ "${_avx512_dst}" _avx512_content)
+    string(REPLACE
+        "  std::conditional_t<kNumRegisters == 1, IntelType, Avx512<T, 1>>"
+        "  alignas(kRegisterBytes) std::conditional_t<kNumRegisters == 1, IntelType, Avx512<T, 1>>"
+        _avx512_content "${_avx512_content}")
+    file(WRITE "${_avx512_dst}" "${_avx512_content}")
+endif()
+
 # ---------------------------------------------------------------------------
 # 4. Build the library
 # ---------------------------------------------------------------------------
@@ -180,9 +199,10 @@ add_library(_scann
 )
 
 target_include_directories(_scann SYSTEM PUBLIC
-    "${SCANN_SOURCE_DIR}"
-    # Generated .pb.h files land here, preserving "scann/proto/foo.pb.h" paths.
+    # The build directory is listed first so patched headers (e.g. avx512.h on
+    # macOS) and generated .pb.h files take precedence over the ScaNN sources.
     "${CMAKE_CURRENT_BINARY_DIR}"
+    "${SCANN_SOURCE_DIR}"
 )
 
 # Required by ScaNN to skip Bazel-only code paths.
