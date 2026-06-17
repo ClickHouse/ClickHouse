@@ -14,6 +14,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/MergeTree/AlterConversions.h>
 
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -27,6 +28,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 namespace Setting
 {
@@ -178,31 +185,28 @@ void UniqueKeyDenseIndexOps::rebuildIfMissing(MutableDataPartPtr & part) const
     if (storage.existsFile(SSTIndexWriter::FILE_NAME))
         return;
 
-    /// Bail if any UK column is missing from the part — schema drift on a
-    /// detached part, can't rebuild.
+    /// Fail closed if any UK column is missing from the part: a non-empty UK
+    /// part with no dense index would let duplicate keys slip past the probe.
+    /// The caller detaches the part as broken rather than activating it.
     const auto & part_cols = part->getColumns();
     for (const auto & uk_name : uk_names)
     {
         if (!part_cols.tryGetByName(uk_name).has_value())
-        {
-            LOG_WARNING(log, "rebuildIfMissing: part {} is missing UK column '{}'; skipping rebuild",
-                        part->name, uk_name);
-            return;
-        }
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "rebuildIfMissing: part {} is missing UK column '{}'; cannot rebuild dense index",
+                part->name, uk_name);
     }
 
-    Stopwatch rebuild_watch;
     try
     {
 #if USE_ROCKSDB
+        Stopwatch rebuild_watch;
         Block accumulated = readUniqueKeyColumns(part, metadata_snapshot, uk_names);
         if (accumulated.rows() == 0)
-        {
-            LOG_WARNING(log, "rebuildIfMissing: part {} has rows_count={} but sequential read yielded 0 rows; "
-                             "skipping rebuild",
-                        part->name, part->rows_count);
-            return;
-        }
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "rebuildIfMissing: part {} has rows_count={} but sequential read yielded 0 rows; "
+                "cannot rebuild dense index",
+                part->name, part->rows_count);
 
         const UInt64 rows = accumulated.rows();
         const auto max_encoded_size = data.getContext()->getSettingsRef()[Setting::unique_key_max_encoded_size];
@@ -223,15 +227,19 @@ void UniqueKeyDenseIndexOps::rebuildIfMissing(MutableDataPartPtr & part) const
         LOG_INFO(log, "rebuildIfMissing: rebuilt `{}` for part {} ({} rows, {} us)",
                  SSTIndexWriter::FILE_NAME, part->name, rows, elapsed_us);
 #else
-        LOG_WARNING(log,
-            "rebuildIfMissing: part {} needs SST rebuild but the server was built without RocksDB",
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "rebuildIfMissing: part {} needs a UNIQUE KEY dense index but the server was built without RocksDB",
             part->name);
 #endif
     }
     catch (...)
     {
+        /// A rebuild that throws leaves the part without a usable dense index;
+        /// surface it to the caller so the part is detached as broken rather
+        /// than activated. (Re-throw the original error.)
         tryLogCurrentException(log,
             "rebuildIfMissing: SST rebuild failed for part " + part->name);
+        throw;
     }
 }
 

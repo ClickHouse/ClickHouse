@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeySSTProbe.h>
 
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 
@@ -116,7 +117,19 @@ void SSTProbeTargetPart::findRowIndexBatch(
         if (it->Valid() && it->key().compare(key_slice) == 0)
         {
             auto value_slice = it->value();
-            out[i] = decodeRowNumberBE(value_slice.data(), value_slice.size());
+            const UInt64 row_number = decodeRowNumberBE(value_slice.data(), value_slice.size());
+            /// The decoded row number is used directly as `_part_offset` into the
+            /// part's columns. An out-of-range offset (corrupt or incompatible SST)
+            /// would read past the part's rows, so fail closed. `part` is null only
+            /// in unit tests that exercise the lookup in isolation; production
+            /// targets carry the part (see the ctor contract).
+            /// TODO(unique-key): the production probe-target factory must pass a
+            /// non-null part so this bound is enforced once INSERT probe is wired.
+            if (part && row_number >= part->rows_count)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "UNIQUE KEY SST points at row {} but part '{}' has only {} rows",
+                    row_number, part->name, part->rows_count);
+            out[i] = row_number;
         }
         else if (!it->status().ok())
         {

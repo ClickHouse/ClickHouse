@@ -5,6 +5,7 @@
 #if USE_ROCKSDB
 
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
 #include <Common/ProfileEvents.h>
@@ -472,6 +473,63 @@ TEST_F(SSTFixture, WriteFromBlockConstUKColumnAccepted)
     EXPECT_TRUE(std::filesystem::exists(finalPath()));
 }
 
+/// DESC UK prefix: `writeDenseIndex` must fall back to the unsorted writer
+/// when the UK prefix column is descending (the prefix writer would feed
+/// RocksDB decreasing keys and `Put` would reject them). The input block is
+/// laid out DESC; the resulting SST is still strictly ascending by encoded key
+/// and every key round-trips.
+TEST_F(SSTFixture, WriteDenseIndexDescPrefixFallsBackToUnsorted)
+{
+    auto type_u64 = std::make_shared<DataTypeUInt64>();
+    auto col = type_u64->createColumn();
+    auto * typed = typeid_cast<ColumnUInt64 *>(col.get());
+    /// DESC physical layout, as a part ordered by `k DESC` would store it.
+    std::vector<UInt64> values{900, 700, 500, 300, 100};
+    for (auto v : values)
+        typed->insertValue(v);
+
+    Block block;
+    block.insert({std::move(col), type_u64, "k"});
+
+    UInt64 written = UniqueKeyDenseIndexOps::writeDenseIndex(
+        *storage,
+        block,
+        /*uk_names=*/Names{"k"},
+        /*sort_names=*/Names{"k"},
+        /*sort_reverse_flags=*/std::vector<bool>{true},
+        /*permutation=*/nullptr,
+        /*max_encoded_size=*/256,
+        getContext().context);
+    ASSERT_EQ(written, values.size());
+    ASSERT_TRUE(std::filesystem::exists(finalPath()));
+
+    rocksdb::SstFileReader reader(makeReaderOptions());
+    ASSERT_TRUE(reader.Open(finalPath()).ok());
+    std::unique_ptr<rocksdb::Iterator> it(reader.NewIterator(rocksdb::ReadOptions{}));
+
+    std::vector<UInt64> observed_keys;
+    std::string prev;
+    bool first = true;
+    for (it->SeekToFirst(); it->Valid(); it->Next())
+    {
+        std::string cur = it->key().ToString();
+        if (!first)
+            ASSERT_LT(prev, cur) << "SST keys not strictly ascending — unsorted fallback did not re-sort";
+        prev = cur;
+        first = false;
+        auto k = it->key();
+        ASSERT_EQ(k.size(), 8u);
+        UInt64 decoded = 0;
+        for (size_t i = 0; i < 8; ++i)
+            decoded = (decoded << 8) | static_cast<unsigned char>(k.data()[i]);
+        observed_keys.push_back(decoded);
+    }
+
+    auto sorted = values;
+    std::sort(sorted.begin(), sorted.end());
+    EXPECT_EQ(observed_keys, sorted);
+}
+
 /// Load-time SST rebuild primitive. Mirrors the call shape
 /// `UniqueKeyDenseIndexOps::rebuildIfMissing` performs: seed a part-
 /// directory SST, simulate a part arriving without a sidecar (delete the
@@ -591,17 +649,20 @@ TEST_F(SSTFixture, DenseIndexBackingPathReflectsSSTPresence)
 #if !USE_ROCKSDB
 
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
 #include <Disks/DiskLocal.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/Exception.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <filesystem>
 #include <string>
@@ -662,6 +723,42 @@ TEST(UniqueKeyNoRocksDB, ConstructorThrowsSupportIsDisabled)
     EXPECT_THROW({
         SSTIndexWriter writer(*storage, getContext().context);
     }, DB::Exception);
+
+    std::filesystem::remove_all(tmp_path);
+}
+
+/// The INSERT entry point must also fail loudly without RocksDB: a UNIQUE KEY
+/// INSERT that cannot build the dense index must not silently publish a part
+/// with no `unique_key_index.sst`. Compiles only on USE_ROCKSDB=0; runs in the
+/// CI fast-test lane.
+TEST(UniqueKeyNoRocksDB, WriteDenseIndexOnInsertThrowsSupportIsDisabled)
+{
+    auto tmp_path = std::filesystem::temp_directory_path()
+        / ("gtest_unique_key_no_rocksdb_insert_"
+           + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
+           + "_" + std::to_string(reinterpret_cast<uintptr_t>(&tmp_path)));
+    std::filesystem::remove_all(tmp_path);
+    std::filesystem::create_directories(tmp_path / "part");
+    auto disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
+    auto volume = std::make_shared<SingleDiskVolume>("test_volume", disk);
+    auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", "part");
+
+    auto col = ColumnUInt64::create();
+    col->insert(Field(UInt64(1)));
+    col->insert(Field(UInt64(2)));
+    Block block{
+        {col->getPtr(), std::make_shared<DataTypeUInt64>(), "a"}
+    };
+
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->unique_key.column_names = {"a"};
+
+    EXPECT_THROW(
+        UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
+            *storage, metadata, block, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context),
+        DB::Exception);
+
+    EXPECT_FALSE(storage->existsFile(SSTIndexWriter::FILE_NAME));
 
     std::filesystem::remove_all(tmp_path);
 }

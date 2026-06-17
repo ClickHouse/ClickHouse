@@ -11,6 +11,12 @@
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/KeyDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageMergeTree.h>
 
 #include <Disks/DiskLocal.h>
 #include <Disks/SingleDiskVolume.h>
@@ -21,6 +27,8 @@
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
+#include <IO/SharedThreadPools.h>
 #include <Common/tests/gtest_global_context.h>
 
 #include <rocksdb/env.h>
@@ -334,6 +342,72 @@ TEST_F(UniqueKeyProbeTest, FactoryBuildsWorkingProbe)
         EXPECT_NE(dynamic_cast<UniqueKeyProbeSimple *>(probe.get()), nullptr);
         EXPECT_EQ(probeKey(*probe, 7).row_number, 4u);
     }
+}
+
+/// ---------- decoded-row bounds check ----------
+
+/// A valid 4-byte SST value that decodes to a row_number >= the part's
+/// rows_count is a corrupt/incompatible sidecar (it would index past the
+/// part's columns). With a non-null underlying part, `findRowIndexBatch` must
+/// throw CORRUPTED_DATA rather than hand back an out-of-range `_part_offset`.
+TEST_F(UniqueKeyProbeTest, DecodedRowOutOfPartBoundsThrows)
+{
+    /// Minimal MergeTree storage so we can build a part with a controlled
+    /// rows_count (pattern from gtest_trivial_count_null_snapshot).
+    getActivePartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+    getOutdatedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+    getUnexpectedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+    getPartsCleaningThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+
+    auto context = Context::createCopy(getContext().context);
+
+    StorageInMemoryMetadata metadata;
+    ColumnsDescription columns;
+    columns.add(ColumnDescription("key", std::make_shared<DataTypeUInt64>()));
+    metadata.setColumns(columns);
+    auto order_by_ast = makeASTFunction("tuple");
+    metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
+    metadata.primary_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, {}, context);
+    metadata.primary_key.definition_ast = nullptr;
+    metadata.partition_key = KeyDescription::getKeyFromAST(nullptr, metadata.columns, {}, context);
+
+    auto storage_settings = std::make_unique<MergeTreeSettings>(context->getMergeTreeSettings());
+    auto storage = std::make_shared<StorageMergeTree>(
+        StorageID("test_db", "uk_probe_bounds"),
+        "store/uk_probe_bounds/",
+        metadata,
+        LoadingStrictnessLevel::ATTACH,
+        context,
+        /*date_column_name=*/"",
+        MergeTreeData::MergingParams{},
+        std::move(storage_settings));
+
+    const String part_dir = "bounds_part";
+    std::filesystem::create_directories(base / part_dir);
+    constexpr UInt32 PART_ROWS = 3;
+    auto part = MergeTreeDataPartBuilder(*storage, "all_1_1_0", volume, "", part_dir, context->getReadSettings())
+                    .withBytesAndRows(0, PART_ROWS, 0)
+                    .build();
+    part->rows_count = PART_ROWS;
+
+    /// Seed an SST whose single entry's value decodes to row 5 — past the
+    /// part's 3 rows. `writeFromBlock` always writes valid row numbers, so
+    /// inject the malformed value directly via the raw SST writer.
+    auto part_storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", part_dir);
+    const String sst_path = part_storage->getFullPath() + "/" + SSTIndexWriter::FILE_NAME;
+    const String out_of_range_value{'\0', '\0', '\0', '\x05'}; /// BE 5
+    ASSERT_TRUE(writeSSTRawValue(sst_path, encodeKey(42), out_of_range_value));
+
+    auto handle = openSSTReaderFromPath(sst_path);
+    ASSERT_TRUE(handle.valid);
+    SSTProbeTargetPart target(part.get(), std::make_shared<DeleteBitmap>(), std::move(handle));
+
+    const String e = encodeKey(42);
+    std::vector<std::string_view> views{{e.data(), e.size()}};
+    std::vector<std::optional<UInt64>> out;
+    EXPECT_ANY_THROW(target.findRowIndexBatch(views, out));
+
+    storage->flushAndShutdown();
 }
 
 #endif

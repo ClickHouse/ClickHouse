@@ -2612,7 +2612,21 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// parts-collection lock (the active set was captured above under it).
     part_lock_holder.reset();
     for (auto & p : active_uk_parts_to_rebuild)
-        ensureUniqueKeyIndexOnLoad(p);
+    {
+        try
+        {
+            ensureUniqueKeyIndexOnLoad(p);
+        }
+        catch (...)
+        {
+            /// A UNIQUE KEY part with no dense index that cannot be rebuilt must
+            /// not stay active — the probe would miss its keys and let duplicates
+            /// through. Detach it as broken via the standard broken-part flow.
+            tryLogCurrentException(log,
+                fmt::format("Detaching part {} as broken: cannot build its UNIQUE KEY dense index", p->name));
+            forcefullyMovePartToDetachedAndRemoveFromMemory(p, "broken-on-start");
+        }
+    }
 
     PartLoadingTreeNodes unloaded_parts;
 
@@ -7451,6 +7465,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         part = std::move(builder).build();
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
+        /// UNIQUE KEY: a restored part may not ship its `unique_key_index.sst`
+        /// (older backup, or one taken before UK). Build it here so the part is
+        /// usable; a failure throws and routes the part to `mark_broken` below
+        /// (detached), matching the fail-closed contract on every other load path.
+        onPartAttachUniqueKey(part);
     };
 
     /// Broken parts can appear in a backup sometimes.

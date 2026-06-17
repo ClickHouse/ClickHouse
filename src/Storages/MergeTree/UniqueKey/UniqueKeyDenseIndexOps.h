@@ -70,7 +70,10 @@ public:
 
     /// Materializes `unique_key_index.sst` if missing. Defensive path
     /// for parts arriving without a sidecar (ATTACH / restore / fetch);
-    /// fast-paths when the SST is already on disk.
+    /// fast-paths when the SST is already on disk. Fails closed: throws
+    /// (CORRUPTED_DATA / SUPPORT_IS_DISABLED) when a non-empty UK part cannot
+    /// get a dense index (missing UK column, empty read, rebuild error, or no
+    /// RocksDB). The caller is responsible for detaching the part as broken.
     void rebuildIfMissing(MutableDataPartPtr & part) const;
 
     /// Per-part ATTACH hook: `.sst.tmp` cleanup + `rebuildIfMissing`.

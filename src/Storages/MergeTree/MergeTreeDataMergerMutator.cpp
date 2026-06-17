@@ -220,6 +220,13 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     const auto context = data.getContext();
     const auto settings = data.getSettings();
     const auto metadata_snapshot = data.getInMemoryMetadataPtr(context, false);
+
+    /// TODO(unique-key): build the dense index at merge finalization instead of
+    /// skipping merges (merge-output-index PR). No partition is mergeable while
+    /// merges stay disabled for UNIQUE KEY tables; see `selectPartsToMerge`.
+    if (metadata_snapshot && metadata_snapshot->hasUniqueKey())
+        return {};
+
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
@@ -278,6 +285,18 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const auto context = data.getContext();
     const auto settings = data.getSettings();
     const auto metadata_snapshot = data.getInMemoryMetadataPtr(context, false);
+
+    /// TODO(unique-key): build the dense index at merge finalization instead of
+    /// skipping merges (merge-output-index PR). A merge currently produces an
+    /// output part with no `unique_key_index.sst` and drops the input parts'
+    /// delete bitmaps; until the merge writer materializes both, never merge a
+    /// UNIQUE KEY table's parts.
+    if (metadata_snapshot && metadata_snapshot->hasUniqueKey())
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
+        });
+
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
@@ -339,6 +358,15 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     bool final,
     bool optimize_skip_merged_partitions)
 {
+    /// TODO(unique-key): build the dense index at merge finalization instead of
+    /// skipping merges (merge-output-index PR). Covers explicit OPTIMIZE on a
+    /// UNIQUE KEY table — the merge output would lack the dense index sidecar.
+    if (metadata_snapshot && metadata_snapshot->hasUniqueKey())
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
+        });
+
     /// time is not important in this context, since the parts will not be passed through the merge selector.
     const time_t current_time = std::time(nullptr);
     const auto storage_policy = data.getStoragePolicy();

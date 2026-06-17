@@ -1,0 +1,10 @@
+sst_present_before_detach
+yes
+active_parts_after_attach
+1
+sst_present_after_attach
+yes
+rows_after_attach
+10	a
+20	b
+30	c
