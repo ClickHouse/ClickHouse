@@ -85,6 +85,18 @@ struct IdentifierLookup
         return is_part_double_quoted.back();
     }
 
+    /// In SQL-standard mode, a part participates in case-insensitive matching only if it was not double-quoted.
+    /// These helpers consolidate the repeated `standard_mode && !isPartDoubleQuoted(...)` checks.
+    bool isPartCaseInsensitive(size_t index, bool standard_mode) const
+    {
+        return standard_mode && !isPartDoubleQuoted(index);
+    }
+
+    bool isLastPartCaseInsensitive(bool standard_mode) const
+    {
+        return standard_mode && !isLastPartDoubleQuoted();
+    }
+
     String dump() const
     {
         return identifier.getFullName() + ' ' + toString(lookup_context);

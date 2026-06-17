@@ -333,7 +333,8 @@ private:
     Databases databases TSA_GUARDED_BY(databases_mutex);
     Databases databases_without_remote TSA_GUARDED_BY(databases_mutex);
     /// Lowercase database name -> set of original-case names, used by case-insensitive resolution.
-    /// More than one entry means a case-only collision (e.g. `Foo` and `foo` both exist)
+    /// Must stay in sync with `databases` — `attachDatabase` / `detachDatabase` / `updateDatabaseName` maintain it.
+    /// More than one entry means a case-only collision (e.g. `Foo` and `foo` both exist), reported as ambiguity at lookup time
     std::unordered_map<String, std::unordered_set<String>> lowercase_db_to_original_names TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 

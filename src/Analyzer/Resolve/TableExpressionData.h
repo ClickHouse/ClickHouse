@@ -54,6 +54,9 @@ struct AnalysisTableExpressionData
     std::unordered_set<std::string> subcolumn_names; /// Subset columns that are subcolumns of other columns
     std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
 
+    /// Lowercase column name -> original-case names. Built once by `enableStandardMode()` from
+    /// `column_name_to_column_node`; do not mutate after that. Multiple entries per key are allowed
+    /// and reported as ambiguity at lookup time
     LowercaseToOriginalNamesMap lowercase_column_name_to_original_names;
 
     bool standard_mode = false;

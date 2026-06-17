@@ -1147,7 +1147,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
     const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
     /// Alias matching keys off the first part (the alias name itself), so use part 0's quote style
-    const bool use_case_insensitive = standard_mode && !identifier_lookup.isPartDoubleQuoted(0);
+    const bool use_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
     QueryTreeNodePtr * it = nullptr;
 
@@ -1299,23 +1299,19 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
 {
     auto full_name = identifier_lookup.identifier.getFullName();
     const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
-    const bool use_case_insensitive = standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+    const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
     auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
     if (cte_query_node_it == scope.cte_name_to_query_node.end() && use_case_insensitive)
     {
-        /// Unquoted lookup in standard mode — go through the lowercase index
+        /// Unquoted lookup in standard mode — go through the lowercase index. CTE registration enforces
+        /// case-insensitive uniqueness for unquoted CTEs, so the index holds at most one original per key
         auto lower_it = scope.lowercase_cte_to_original_names.find(Poco::toLower(full_name));
         if (lower_it != scope.lowercase_cte_to_original_names.end())
         {
-            const auto & originals = lower_it->second;
-            if (originals.size() > 1)
-                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                    "CTE '{}' is ambiguous: matches multiple CTEs with different cases: '{}' and '{}'. In scope {}",
-                    full_name, originals[0], originals[1],
-                    scope.scope_node->formatASTForErrorMessage());
-            cte_query_node_it = scope.cte_name_to_query_node.find(originals.front());
-            full_name = originals.front();
+            chassert(lower_it->second.size() == 1);
+            cte_query_node_it = scope.cte_name_to_query_node.find(lower_it->second.front());
+            full_name = lower_it->second.front();
         }
     }
 
@@ -1606,22 +1602,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
         const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
-        /// each part is case-insensitive only if NOT double-quoted
-        bool database_name_case_insensitive = false;
-        bool table_name_case_insensitive = false;
-        if (standard_mode)
-        {
-            size_t parts_size = identifier_lookup.identifier.getPartsSize();
-            if (parts_size == 2)
-            {
-                database_name_case_insensitive = !identifier_lookup.isPartDoubleQuoted(0);
-                table_name_case_insensitive = !identifier_lookup.isPartDoubleQuoted(1);
-            }
-            else if (parts_size == 1)
-            {
-                table_name_case_insensitive = !identifier_lookup.isPartDoubleQuoted(0);
-            }
-        }
+        const size_t parts_size = identifier_lookup.identifier.getPartsSize();
+        /// For db.table: part 0 is the database, part 1 is the table; for plain `table`: part 0 is the table
+        const bool database_name_case_insensitive = parts_size == 2 && identifier_lookup.isPartCaseInsensitive(0, standard_mode);
+        const bool table_name_case_insensitive = identifier_lookup.isPartCaseInsensitive(parts_size == 2 ? 1 : 0, standard_mode);
         resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
             identifier_lookup.identifier, scope.context, database_name_case_insensitive, table_name_case_insensitive);
     }
@@ -5548,16 +5532,18 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         if (alias_name.empty())
             return;
 
-        auto [it, inserted] = scope.aliases.alias_name_to_table_expression_node.emplace(alias_name, table_expression_node);
-        if (!inserted)
+        const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+        /// A double-quoted table alias stays case-sensitive even in standard mode
+        const bool register_for_ci_lookup = standard_mode && !table_expression_node->isAliasDoubleQuoted();
+        if (!scope.aliases.registerAlias(IdentifierLookupContext::TABLE_EXPRESSION, alias_name, table_expression_node, register_for_ci_lookup))
+        {
+            const auto & existing = scope.aliases.alias_name_to_table_expression_node.find(alias_name)->second;
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                 "Duplicate aliases {} for table expressions in FROM section are not allowed. Try to register {}. Already registered {}.",
                 alias_name,
                 table_expression_node->formatASTForErrorMessage(),
-                it->second->formatASTForErrorMessage());
-        /// Keep the lowercase alias index in sync so case-insensitive table-alias resolution finds it.
-        if (scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard)
-            scope.aliases.registerAliasCaseInsensitive(alias_name, IdentifierLookupContext::TABLE_EXPRESSION);
+                existing->formatASTForErrorMessage());
+        }
     };
 
     add_table_expression_alias_into_scope(join_tree_node);

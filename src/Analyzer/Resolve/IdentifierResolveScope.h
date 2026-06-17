@@ -139,10 +139,11 @@ struct IdentifierResolveScope
     /// Identifier lookup to result
     std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_in_lookup_process;
 
-    /// Argument can be expression like constant, column, function or table expression
+    /// Argument can be expression like constant, column, function or table expression.
+    /// Always route inserts through `addExpressionArgument(...)` so the lowercase index below stays in sync
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
-    /// used for case-insensitive expression argument lookup
+    /// Lowercase name -> list of original names, used by `findExpressionArgument(name, /*case_insensitive=*/true)`
     std::unordered_map<std::string, std::vector<std::string>> lowercase_expression_arg_to_names;
 
     ScopeAliases aliases;
@@ -155,10 +156,13 @@ struct IdentifierResolveScope
 
     std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 
-    /// CTE name to query node — stored with original case
+    /// CTE name to query node — stored with original case.
+    /// Sibling lowercase index below must stay in sync; registration in `resolveQuery` updates both,
+    /// throwing on case-insensitive collisions among unquoted CTEs
     std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
 
-    /// Lowercase CTE name -> original-case names, populated in standard mode for case-insensitive lookups
+    /// Lowercase CTE name -> original-case name (always exactly one entry per key by construction),
+    /// populated in standard mode only for unquoted CTE definitions
     std::unordered_map<std::string, std::vector<std::string>> lowercase_cte_to_original_names;
 
     /// Window name to window node

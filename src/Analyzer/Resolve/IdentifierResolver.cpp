@@ -379,8 +379,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
         && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
     /// Full-name lookup keys off the last part; prefix lookup keys off part 0 (the bind name)
     /// so e.g. `arrayMap(item -> ITEM."Name", arr)` still binds `ITEM` to the lambda argument `item`
-    const bool use_case_insensitive_full = standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
-    const bool use_case_insensitive_prefix = standard_mode && !identifier_lookup.isPartDoubleQuoted(0);
+    const bool use_case_insensitive_full = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
+    const bool use_case_insensitive_prefix = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
     auto it = scope.findExpressionArgument(identifier_lookup.identifier.getFullName(), use_case_insensitive_full);
     bool resolve_full_identifier = it != scope.expression_argument_name_to_node.end();
@@ -414,9 +414,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 
 bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    const bool use_case_insensitive = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.isLastPartDoubleQuoted();
+    /// Aliases are matched by the first part of the identifier, so part-0 quoting decides case sensitivity
+    const bool standard_mode = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool use_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
     if (use_case_insensitive)
         return scope.aliases.findCaseInsensitive(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
@@ -426,9 +427,10 @@ bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & ide
 
 bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    const bool use_case_insensitive = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.isLastPartDoubleQuoted();
+    /// USING columns are matched by full name, so last-part quoting decides case sensitivity
+    const bool standard_mode = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
     const auto & identifier_name = identifier_lookup.identifier.getFullName();
 
@@ -468,9 +470,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     if (!scope.table_expression_data_for_alias_resolution || !identifier_lookup.isExpressionLookup())
         return {};
 
-    const bool use_case_insensitive = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.isLastPartDoubleQuoted();
+    const bool standard_mode = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
     const auto & identifier = identifier_lookup.identifier;
     auto identifier_full_name = identifier.getFullName();
@@ -531,14 +533,9 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     const auto & database_name = table_expression_data.database_name;
 
     const bool standard_mode = table_expression_data.standard_mode;
-    /// Per-part quote check: unquoted parts are case-insensitive in standard mode.
-    /// Qualifier matches (db / table / alias) use the per-part flag of the corresponding part.
-    /// The column-name lookup uses `isLastPartDoubleQuoted()` since the last part is the column key.
-    auto part_case_insensitive = [&](size_t part)
-    {
-        return standard_mode && !identifier_lookup.isPartDoubleQuoted(part);
-    };
-    const bool column_case_insensitive = standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+    /// Qualifier matches (db / table / alias) use per-part quoting; the column-name lookup uses the last part's
+    auto part_case_insensitive = [&](size_t part) { return identifier_lookup.isPartCaseInsensitive(part, standard_mode); };
+    const bool column_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
     auto strings_equal = [](const std::string & a, const std::string & b, bool case_insensitive)
     {
@@ -611,9 +608,10 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
 
 bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    const bool use_case_insensitive = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.isLastPartDoubleQuoted();
+    /// ARRAY JOIN binds by the alias's leading part; later parts are subcolumn accesses on the array's elements
+    const bool standard_mode = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool use_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
     for (const auto & table_expression : scope.registered_table_expression_nodes)
     {
@@ -665,14 +663,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
+    const bool standard_mode = table_expression_data.standard_mode;
     /// Full column lookup uses the last-part quote style (the column name itself)
-    const bool use_case_insensitive = table_expression_data.standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
-    /// Subcolumn base lookup keys off the first part (the tuple/struct column itself), so e.g.
-    /// `data."Name"` can match an unquoted base column `Data` while the quoted tuple field `Name`
-    /// stays case-sensitive (the tuple-field lookup is always exact-match)
+    const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
+    /// Subcolumn base lookup keys off the first part of the trimmed identifier (the tuple/struct column),
+    /// so `data."Name"` matches an unquoted base column `Data` while the quoted tuple field `Name` stays
+    /// case-sensitive (the tuple-field lookup is always exact-match).
     const size_t identifier_qualifier_parts = identifier.getPartsSize() - identifier_without_column_qualifier.getPartsSize();
-    const bool subcolumn_base_case_insensitive
-        = table_expression_data.standard_mode && !identifier_lookup.isPartDoubleQuoted(identifier_qualifier_parts);
+    const bool subcolumn_base_case_insensitive = identifier_lookup.isPartCaseInsensitive(identifier_qualifier_parts, standard_mode);
 
     if (use_case_insensitive)
     {
@@ -897,14 +895,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     }
 
     const bool standard_mode = table_expression_data.standard_mode;
-    /// Per-part quote check: unquoted parts are case-insensitive in standard mode.
-    /// Qualifier matches (db / table / alias) use the per-part flag of the corresponding part.
-    /// The column-name lookup uses `isLastPartDoubleQuoted()` since the last part is the column key.
-    auto part_case_insensitive = [&](size_t part)
-    {
-        return standard_mode && !identifier_lookup.isPartDoubleQuoted(part);
-    };
-    const bool column_case_insensitive = standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+    /// Qualifier matches (db / table / alias) use per-part quoting; the column-name lookup uses the last part's
+    auto part_case_insensitive = [&](size_t part) { return identifier_lookup.isPartCaseInsensitive(part, standard_mode); };
+    const bool column_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
@@ -1618,9 +1611,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
     if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolve_result;
 
-    const bool use_case_insensitive = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.isLastPartDoubleQuoted();
+    const bool standard_mode = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
     const auto & array_join_column_expressions = from_array_join_node.getJoinExpressions();
     const auto & array_join_column_expressions_nodes = array_join_column_expressions.getNodes();

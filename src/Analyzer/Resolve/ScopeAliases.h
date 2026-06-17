@@ -27,7 +27,9 @@ struct ScopeAliases
 
     std::unordered_map<std::string, DataTypePtr> alias_name_to_expression_type;
 
-    /// For case-insensitive mode: lowercase alias -> list of original alias names
+    /// Lowercase alias -> list of original-case alias names, populated for unquoted aliases in standard mode.
+    /// Must stay in sync with the primary alias_name_to_*_node maps above — always route inserts through
+    /// `registerAlias(...)`, which updates both atomically and skips duplicate registrations
     std::unordered_map<std::string, std::vector<std::string>> lowercase_expression_alias_to_originals;
     std::unordered_map<std::string, std::vector<std::string>> lowercase_lambda_alias_to_originals;
     std::unordered_map<std::string, std::vector<std::string>> lowercase_table_alias_to_originals;
@@ -126,6 +128,22 @@ struct ScopeAliases
         auto & lowercase_map = getLowercaseAliasMap(lookup_context);
         String lower_name = Poco::toLower(alias_name);
         lowercase_map[lower_name].push_back(alias_name);
+    }
+
+    /// Insert into the primary alias map and (when `register_for_case_insensitive_lookup` is true) the lowercase index.
+    /// Returns true if the primary insert added a new entry; the lowercase index is updated only on a successful
+    /// primary insert so duplicate aliases never cause spurious "ambiguous" findCaseInsensitive results.
+    bool registerAlias(
+        IdentifierLookupContext lookup_context,
+        const std::string & alias_name,
+        QueryTreeNodePtr node,
+        bool register_for_case_insensitive_lookup)
+    {
+        auto & alias_map = getAliasMap(lookup_context);
+        auto [_, inserted] = alias_map.emplace(alias_name, std::move(node));
+        if (inserted && register_for_case_insensitive_lookup)
+            registerAliasCaseInsensitive(alias_name, lookup_context);
+        return inserted;
     }
 };
 
