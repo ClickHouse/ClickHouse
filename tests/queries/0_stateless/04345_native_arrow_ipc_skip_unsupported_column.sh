@@ -12,6 +12,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # column `b` is placed between two readable columns `a` and `c`, so an inexact skip would corrupt `c`.
 # Requesting the unsupported column itself must still fail with a clear error. The files are built with
 # pyarrow because ClickHouse cannot write these Arrow types.
+#
+# This matches the Apache Arrow library reader, which also cannot convert these types to ClickHouse columns
+# (it throws the same error when one is requested) and only succeeds on a subset read because it does not
+# convert unrequested columns — so the native reader is verified to be exactly as complete here: each read
+# must give the same result through both readers.
 
 DATA_FILE="${CLICKHOUSE_TMP}/04345_skip_unsupported"
 
@@ -37,17 +42,19 @@ PY
 
 for NAME in list_view large_list_view run_end_encoded; do
     for FMT in Arrow ArrowStream; do
-        echo "--- ${NAME} / ${FMT}: SELECT a, c (unsupported middle column 'b' skipped) ---"
-        ${CLICKHOUSE_LOCAL} --query "
-            SELECT a, c FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}', 'a Int32, c Int64')
-            SETTINGS input_format_arrow_use_native_reader = 1
-        "
-        echo "--- ${NAME} / ${FMT}: SELECT b (requested) -> clear error ---"
-        ${CLICKHOUSE_LOCAL} --query "
-            SELECT b FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}')
-            SETTINGS input_format_arrow_use_native_reader = 1,
-                     input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference = 0
-        " 2>&1 | grep -o "UNKNOWN_TYPE" | head -1
+        echo "--- ${NAME} / ${FMT}: SELECT a, c (unsupported middle column 'b' skipped) — native == library ---"
+        native=$(${CLICKHOUSE_LOCAL}  --query "SELECT a, c FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}', 'a Int32, c Int64') SETTINGS input_format_arrow_use_native_reader = 1")
+        library=$(${CLICKHOUSE_LOCAL} --query "SELECT a, c FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}', 'a Int32, c Int64') SETTINGS input_format_arrow_use_native_reader = 0")
+        if [ "$native" = "$library" ]; then echo "OK"; echo "$native"; else echo "MISMATCH"; fi
+
+        echo "--- ${NAME} / ${FMT}: SELECT b (requested) -> both readers reject the type ---"
+        for READER in 1 0; do
+            ${CLICKHOUSE_LOCAL} --query "
+                SELECT b FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}')
+                SETTINGS input_format_arrow_use_native_reader = ${READER},
+                         input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference = 0
+            " 2>&1 | grep -o "UNKNOWN_TYPE" | head -1
+        done
 
         rm -f "${DATA_FILE}.${NAME}.${FMT}"
     done
