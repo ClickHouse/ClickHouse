@@ -920,7 +920,8 @@ def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_is
                     print("WARNING: Issue has not been created - skipping this failure")
                     unknown_failures.append((job_name, failure_result))
                 # Let user read resolution before moving to the next failure
-                time.sleep(3)
+                if not UserPrompt.assume_yes:
+                    time.sleep(3)
             else:
                 unknown_failures.append((job_name, failure_result))
 
@@ -1233,6 +1234,17 @@ def main():
         print("\n--ci-only: skipping merge queue. Done.")
         sys.exit(0)
 
+    # Unknown failures are CI failures that were neither matched to an existing
+    # issue nor filed as a new one, so the PR is not triaged. Never enqueue past
+    # them in non-interactive mode; fail closed instead.
+    total_unknown = len(unknown_failures) + len(sync_unknown_failures)
+    if UserPrompt.assume_yes and total_unknown:
+        print(
+            f"\nERROR: {total_unknown} unknown failure(s) were not matched to or filed "
+            f"as an issue; refusing to enqueue in non-interactive (--yes) mode."
+        )
+        sys.exit(1)
+
     if not UserPrompt.confirm(
         f"Add PR #{pr_number} to the merge queue (y - continue, n - exit)?"
     ):
@@ -1241,6 +1253,14 @@ def main():
     if Shell.check(
         f"gh pr view {pr_number} --json isDraft --jq '.isDraft' --repo {repo} | grep -q true"
     ):
+        # A draft PR is explicitly marked not-ready by its author; undrafting and
+        # merging it is a deliberate decision, never something --yes should do.
+        if UserPrompt.assume_yes:
+            print(
+                "ERROR: PR is a draft; refusing to undraft and merge it in "
+                "non-interactive (--yes) mode."
+            )
+            sys.exit(1)
         if UserPrompt.confirm(f"It's a draft PR. Do you want to undraft it?"):
             Shell.check(
                 f"gh pr ready {pr_number} --repo {repo}",
