@@ -56,6 +56,10 @@ private:
     void prepareStreamReader();
     void prepareFileReader();
     void collectDictionaryFields(const std::vector<ArrowIPC::ArrowField> & fields);
+    /// Fills `reachable_dictionary_ids` with the Arrow dictionary ids referenced by the requested top-level
+    /// fields (per `requested_top_level_fields`), so the reader skips the DictionaryBatch bodies of
+    /// dictionaries used only by unrequested columns. Requires `arrow_schema` and the requested-fields set.
+    void computeReachableDictionaryIds();
     Chunk buildChunk(std::vector<ArrowIPC::RecordBatchDecoder::DecodedColumn> & decoded, size_t num_rows);
     /// Reinterprets a decoded fixed_size_binary column as UUID / big integer in place when the requested
     /// header type asks for it (the raw 16/32 bytes are reinterpreted rather than text-parsed by a cast).
@@ -83,6 +87,11 @@ private:
     /// `date32` column among them is read as the raw `Int32` day number without the `Date32` range check,
     /// matching the Apache Arrow library reader's numeric type-hint behavior.
     std::unordered_set<String> date32_numeric_target_fields;
+    /// Arrow dictionary ids referenced by the requested top-level fields (computed by
+    /// `computeReachableDictionaryIds`). A DictionaryBatch whose id is not here belongs only to unrequested
+    /// columns and its body is skipped rather than decoded, so a subset read does not pay for — or fail on —
+    /// an unrequested column's dictionary.
+    std::unordered_set<int64_t> reachable_dictionary_ids;
     bool prepared = false;
     PODArray<char> body_buffer;
 

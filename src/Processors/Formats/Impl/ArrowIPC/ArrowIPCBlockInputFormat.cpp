@@ -185,10 +185,41 @@ void checkDictionaryUnique(const ColumnPtr & values)
         }
     }
 }
+
+/// Collects every Arrow dictionary id used anywhere in `field`'s type subtree (the field itself or a
+/// dictionary nested inside its Array/Map/Tuple/Union children). Used to decide which DictionaryBatch
+/// bodies a subset read actually needs.
+void collectDictionaryIdsInSubtree(const ArrowIPC::ArrowField & field, std::unordered_set<int64_t> & out)
+{
+    if (field.dictionary)
+        out.insert(field.dictionary->id);
+    for (const auto & child : field.type.children)
+        collectDictionaryIdsInSubtree(child, out);
+}
 }
 
 void ArrowIPCBlockInputFormat::prepareReader()
 {
+    /// Determine which top-level Arrow fields the requested header needs, so the reader can skip the rest
+    /// (subset-of-columns support): a field is needed if a header column matches it by name, or is a
+    /// `Nested`/struct subcolumn of it (a header column `name.sub` keeps the field `name`) — mirroring how
+    /// `buildChunk` maps columns. This depends only on the header, so compute it before reading the file:
+    /// the file reader uses it below to skip the dictionaries of unrequested columns. Names are lower-cased
+    /// when case-insensitive matching is on, matching the lookup in `decodeColumns`.
+    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
+    auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
+    requested_top_level_fields.clear();
+    date32_numeric_target_fields.clear();
+    for (const auto & header_column : getPort().getHeader())
+    {
+        requested_top_level_fields.insert(normalize(header_column.name));
+        requested_top_level_fields.insert(normalize(Nested::extractTableName(header_column.name)));
+        /// A `date32` column requested as a numeric type is read raw (the decoder checks this set in the
+        /// `date32` path); mirrors the Apache Arrow library reader's numeric type-hint handling.
+        if (isNumber(removeNullable(removeLowCardinality(header_column.type))))
+            date32_numeric_target_fields.insert(normalize(header_column.name));
+    }
+
     if (stream)
         prepareStreamReader();
     else
@@ -211,26 +242,31 @@ void ArrowIPCBlockInputFormat::prepareReader()
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
 
-    /// Determine which top-level Arrow fields the requested header needs, so the decoder can skip the rest
-    /// (subset-of-columns support): a field is needed if a header column matches it by name, or is a
-    /// `Nested`/struct subcolumn of it (a header column `name.sub` keeps the field `name`) — mirroring how
-    /// `buildChunk` maps columns. Names are lower-cased when case-insensitive matching is on, matching the
-    /// lookup in `decodeColumns`.
-    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
-    auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
-    requested_top_level_fields.clear();
-    date32_numeric_target_fields.clear();
-    for (const auto & header_column : getPort().getHeader())
-    {
-        requested_top_level_fields.insert(normalize(header_column.name));
-        requested_top_level_fields.insert(normalize(Nested::extractTableName(header_column.name)));
-        /// A `date32` column requested as a numeric type is read raw (the decoder checks this set in the
-        /// `date32` path); mirrors the Apache Arrow library reader's numeric type-hint handling.
-        if (isNumber(removeNullable(removeLowCardinality(header_column.type))))
-            date32_numeric_target_fields.insert(normalize(header_column.name));
-    }
+    /// Collect the dictionary ids the requested columns actually reference, so the stream reader can skip
+    /// the DictionaryBatch bodies of dictionaries used only by unrequested columns. (The file reader has
+    /// already computed and used this set above, before decoding its dictionaries up front; recomputing it
+    /// here is cheap and keeps the stream path — whose dictionaries are decoded lazily while reading —
+    /// correct.)
+    computeReachableDictionaryIds();
 
     prepared = true;
+}
+
+void ArrowIPCBlockInputFormat::computeReachableDictionaryIds()
+{
+    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
+    reachable_dictionary_ids.clear();
+    for (const auto & field : arrow_schema->fields)
+    {
+        String name = field.name;
+        if (case_insensitive)
+            boost::to_lower(name);
+        /// A top-level field is kept iff its normalized name is requested — the same condition
+        /// `decodeColumns` uses to decide whether to decode or skip it. Every dictionary in a kept field's
+        /// subtree is reachable; dictionaries referenced only by skipped fields are not.
+        if (requested_top_level_fields.contains(name))
+            collectDictionaryIdsInSubtree(field, reachable_dictionary_ids);
+    }
 }
 
 void ArrowIPCBlockInputFormat::prepareStreamReader()
@@ -302,6 +338,9 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
     {
         /// Decode all dictionary batches up front (the registry must be populated before any record batch).
         collectDictionaryFields(arrow_schema->fields);
+        /// Subset reads: only the dictionaries the requested columns reference are decoded; the bodies of
+        /// dictionaries used solely by unrequested top-level fields are skipped (see the loop below).
+        computeReachableDictionaryIds();
         auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
         for (const auto & block : footer.dictionary_blocks)
         {
@@ -323,6 +362,12 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             if (!dict_batch->data())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
             const int64_t id = dict_batch->id();
+            /// A dictionary referenced only by unrequested (skipped) top-level fields is never used by the
+            /// chunk this query builds. Do not decode its body: that would be wasted work and could fail or
+            /// allocate a large/corrupt dictionary for a column the query did not ask for. The next loop
+            /// iteration seeks to the following block, so the unread body is harmless.
+            if (!reachable_dictionary_ids.contains(id))
+                continue;
             auto field_it = dictionary_value_fields.find(id);
             if (field_it == dictionary_value_fields.end())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file dictionary batch for unknown id {}", id);
@@ -670,6 +715,13 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                 if (!dict_batch->data())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch has no data");
                 const int64_t id = dict_batch->id();
+                /// Subset reads: a dictionary referenced only by unrequested (skipped) top-level fields is
+                /// never used, so skip its body instead of decoding (and possibly failing/allocating on) it.
+                if (!reachable_dictionary_ids.contains(id))
+                {
+                    message_reader->skipBody(msg.body_length);
+                    continue;
+                }
                 auto field_it = dictionary_value_fields.find(id);
                 if (field_it == dictionary_value_fields.end())
                     throw Exception(
