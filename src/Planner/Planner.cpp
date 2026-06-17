@@ -25,7 +25,6 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -1954,15 +1953,14 @@ static std::optional<UInt64> estimatePlanOutputRows(const QueryPlan::Node * node
     const auto * step = node->step.get();
 
     /// Source leaves: trust the count only when nothing is pushed into the source that could
-    /// reduce its output below the scanned size (a WHERE/PREWHERE appears as filter actions).
-    if (const auto * source = dynamic_cast<const SourceStepWithFilter *>(step))
+    /// reduce its output below the scanned size (a WHERE/PREWHERE appears as filter actions or a
+    /// row-level/prewhere filter). The per-source estimate is virtual (numbers knows its domain;
+    /// others, incl. ReadFromMergeTree whose selected_rows is not yet known here, return unknown).
+    if (const auto * source = dynamic_cast<const SourceStepWithFilterBase *>(step))
     {
-        if (source->getFilterActionsDAG())
+        if (source->getFilterActionsDAG() || source->getRowLevelFilter() || source->getPrewhereInfo())
             return {};
-        if (const auto * read_numbers = dynamic_cast<const ReadFromSystemNumbersStep *>(step))
-            return read_numbers->getEstimatedRowsCount();
-        /// Other sources (incl. ReadFromMergeTree, whose selected_rows is not yet known here): unknown.
-        return {};
+        return source->getOutputRowsEstimate();
     }
 
     /// LIMIT only caps a known child estimate at `limit` rows (after `offset`); it never raises it.

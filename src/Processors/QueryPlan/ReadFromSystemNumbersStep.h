@@ -26,8 +26,8 @@ public:
 
     String getName() const override { return "ReadFromSystemNumbers"; }
 
-    /// Estimated number of rows this source produces, if a finite limit is set.
-    std::optional<UInt64> getEstimatedRowsCount() const;
+    /// Estimated number of rows this source produces (the numbers domain, capped by a pushed LIMIT).
+    std::optional<UInt64> getOutputRowsEstimate() const override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

@@ -5,6 +5,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageSnapshot.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -64,6 +66,10 @@ public:
     virtual void applyFilters(ActionDAGNodes added_filter_nodes);
     virtual FilterDAGInfoPtr getRowLevelFilter() const { return nullptr; }
     virtual PrewhereInfoPtr getPrewhereInfo() const { return nullptr; }
+
+    /// Estimated number of rows this source produces (nullopt = unknown). Used to pre-size hash
+    /// tables in downstream operators. Concrete sources with a known count override this.
+    virtual std::optional<UInt64> getOutputRowsEstimate() const { return {}; }
 
     const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
