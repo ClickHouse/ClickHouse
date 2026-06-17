@@ -179,3 +179,83 @@ TEST_F(MetadataInMemoryTest, TestRootPathSemantics)
     std::sort(iter_paths.begin(), iter_paths.end());
     EXPECT_EQ(iter_paths, std::vector<std::string>({"a", "top_file"}));
 }
+
+/// `MergeTree` reads a part directory's mtime as the part `modification_time`
+/// (`DataPartStorageOnDiskBase::getLastModified`), and sets it on the temp part directory just
+/// before renaming it into place. Verify directories carry timestamps: `getLastModified` does
+/// not report the epoch for a directory, `setLastModified` updates it, `moveDirectory` preserves
+/// it, and `setLastModified` on a non-existent path throws instead of silently dropping it.
+TEST_F(MetadataInMemoryTest, TestDirectoryModificationTime)
+{
+    auto metadata = getMetadataStorage();
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectory("part_tmp");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    /// A freshly created directory gets the current time as its mtime, never the epoch.
+    EXPECT_GT(metadata->getLastModified("part_tmp").epochTime(), 0);
+
+    const Poco::Timestamp ts = Poco::Timestamp::fromEpochTime(1234567890);
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->setLastModified("part_tmp", ts);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    /// The set timestamp must be observable, whether or not the caller passes a trailing slash
+    /// (part directory paths are passed without one).
+    EXPECT_EQ(metadata->getLastModified("part_tmp").epochTime(), 1234567890);
+    EXPECT_EQ(metadata->getLastModified("part_tmp/").epochTime(), 1234567890);
+
+    /// Renaming the temp directory into its final place must preserve the timestamp, otherwise
+    /// the part would report a 1970 `modification_time` after the move.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->moveDirectory("part_tmp", "all_1_1_0");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("part_tmp"));
+    EXPECT_TRUE(metadata->existsDirectory("all_1_1_0"));
+    EXPECT_EQ(metadata->getLastModified("all_1_1_0").epochTime(), 1234567890);
+
+    /// `setLastModified` on a path that is neither a file nor a directory must throw.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->setLastModified("does_not_exist", ts);
+        EXPECT_THROW(transaction->commit(DB::NoCommitOptions{}), DB::Exception);
+    }
+}
+
+/// The rollback journal must restore a directory's pre-transaction mtime when a later operation
+/// in the same transaction fails, not just its existence.
+TEST_F(MetadataInMemoryTest, TestDirectoryModificationTimeRollback)
+{
+    auto metadata = getMetadataStorage();
+
+    const Poco::Timestamp original_ts = Poco::Timestamp::fromEpochTime(1000000000);
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectory("dir");
+        transaction->setLastModified("dir", original_ts);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->getLastModified("dir").epochTime(), 1000000000);
+
+    /// Update the directory mtime, then fail later in the same transaction.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->setLastModified("dir", Poco::Timestamp::fromEpochTime(2000000000));
+        /// `createMetadataFile` under a non-existent parent throws, failing the commit.
+        transaction->createMetadataFile(
+            "missing_parent/file",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k").serialize(), "missing_parent/file", 1)});
+        EXPECT_THROW(transaction->commit(DB::NoCommitOptions{}), DB::Exception);
+    }
+
+    /// The original mtime must be restored.
+    EXPECT_EQ(metadata->getLastModified("dir").epochTime(), 1000000000);
+}

@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <ranges>
+#include <set>
 #include <shared_mutex>
 
 namespace fs = std::filesystem;
@@ -105,12 +106,15 @@ Poco::Timestamp MetadataStorageInMemory::getLastModified(const std::string & pat
     if (path == "/" || path.empty())
         return {};
 
-    /// Check if it's a directory
+    /// Check if it's a directory and return its stored modification time. `MergeTree` reads
+    /// this for a part directory and exposes it as the part `modification_time`, so it must
+    /// reflect the real mtime rather than the epoch.
     std::string normalized = path;
     if (normalized.back() != '/')
         normalized += '/';
-    if (directories.contains(normalized))
-        return {};
+    auto dir_it = directories.find(normalized);
+    if (dir_it != directories.end())
+        return dir_it->second;
 
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Path does not exist: {}", path);
 }
@@ -144,7 +148,7 @@ std::vector<std::string> MetadataStorageInMemory::listDirectory(const std::strin
     }
 
     /// Find direct children among directories
-    for (const auto & dir_path : directories)
+    for (const auto & [dir_path, _] : directories)
     {
         if (dir_path.starts_with(prefix) && dir_path.size() > prefix.size())
         {
@@ -269,22 +273,19 @@ void MetadataStorageInMemoryTransaction::recordBlobGroupBefore(const std::shared
         it->second = BlobGroupSnapshot{group, *group};
 }
 
-void MetadataStorageInMemoryTransaction::recordDirInsert(const std::string & dir)
+void MetadataStorageInMemoryTransaction::recordDirBefore(const std::string & dir)
 {
-    /// Net effect tracking: if we previously erased this dir, the insert cancels it
-    /// (state returns to pre-transaction); otherwise note it so rollback can erase.
-    if (dirs_erased.erase(dir) > 0)
+    /// Capture the pre-transaction state once (first touch wins), mirroring `recordFileBefore`.
+    /// `nullopt` records that the directory did not exist before the transaction started, so a
+    /// later insert is rolled back by erasing; a stored timestamp restores both the directory's
+    /// existence and its original mtime.
+    if (dirs_undo.contains(dir))
         return;
-    if (!metadata_storage.directories.contains(dir))
-        dirs_inserted.insert(dir);
-}
-
-void MetadataStorageInMemoryTransaction::recordDirErase(const std::string & dir)
-{
-    if (dirs_inserted.erase(dir) > 0)
-        return;
-    if (metadata_storage.directories.contains(dir))
-        dirs_erased.insert(dir);
+    auto it = metadata_storage.directories.find(dir);
+    if (it == metadata_storage.directories.end())
+        dirs_undo.emplace(dir, std::nullopt);
+    else
+        dirs_undo.emplace(dir, it->second);
 }
 
 void MetadataStorageInMemoryTransaction::rollback()
@@ -302,10 +303,13 @@ void MetadataStorageInMemoryTransaction::rollback()
             metadata_storage.files.erase(path);
     }
 
-    for (const auto & dir : dirs_inserted)
-        metadata_storage.directories.erase(dir);
-    for (const auto & dir : dirs_erased)
-        metadata_storage.directories.insert(dir);
+    for (const auto & [dir, opt_timestamp] : dirs_undo)
+    {
+        if (opt_timestamp)
+            metadata_storage.directories[dir] = *opt_timestamp;
+        else
+            metadata_storage.directories.erase(dir);
+    }
 }
 
 void MetadataStorageInMemoryTransaction::commit(const TransactionCommitOptionsVariant & options)
@@ -317,10 +321,10 @@ void MetadataStorageInMemoryTransaction::commit(const TransactionCommitOptionsVa
         std::unique_lock lock(metadata_storage.metadata_mutex);
 
         /// Operation-level rollback: each operation records the pre-mutation state of
-        /// every entry it touches into `files_undo` / `blob_group_undo` / `dirs_inserted`
-        /// / `dirs_erased`. On a partial-failure exception, `rollback` replays only those
-        /// touched entries, keeping commit cost proportional to changed entries instead
-        /// of the whole `files` map (which can be very large for `borrow_from_cache`).
+        /// every entry it touches into `files_undo` / `blob_group_undo` / `dirs_undo`.
+        /// On a partial-failure exception, `rollback` replays only those touched entries,
+        /// keeping commit cost proportional to changed entries instead of the whole `files`
+        /// map (which can be very large for `borrow_from_cache`).
         try
         {
             for (auto & op : operations)
@@ -374,7 +378,27 @@ void MetadataStorageInMemoryTransaction::setLastModified(const std::string & pat
         {
             recordBlobGroupBefore(entry->blob_group);
             entry->blob_group->last_modified = timestamp;
+            return;
         }
+
+        /// Directories carry an mtime too: `MergeTree` sets a part directory's modification time
+        /// before moving it into place, then reads it back as the part `modification_time`
+        /// (`DataPartStorageOnDiskBase`). Update the stored directory timestamp, matching the
+        /// disk-backed metadata which updates the inode mtime.
+        std::string normalized = path;
+        if (!normalized.empty() && normalized.back() != '/')
+            normalized += '/';
+        auto dir_it = metadata_storage.directories.find(normalized);
+        if (dir_it != metadata_storage.directories.end())
+        {
+            recordDirBefore(normalized);
+            dir_it->second = timestamp;
+            return;
+        }
+
+        /// Match disk-backed `setLastModified`, which throws when the path is neither a file nor
+        /// a directory instead of silently dropping the update.
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Path does not exist: {}", path);
     });
 }
 
@@ -438,8 +462,11 @@ void MetadataStorageInMemoryTransaction::createDirectory(const std::string & pat
             }
         }
 
-        recordDirInsert(normalized);
-        metadata_storage.directories.insert(normalized);
+        recordDirBefore(normalized);
+        /// A new directory gets the current time as its mtime, matching `mkdir` on disk.
+        /// `try_emplace` keeps an existing directory's timestamp (re-creating is a no-op),
+        /// preserving the prior insert-is-idempotent behavior.
+        metadata_storage.directories.try_emplace(normalized, Poco::Timestamp());
     });
 }
 
@@ -467,8 +494,8 @@ void MetadataStorageInMemoryTransaction::createDirectoryRecursive(const std::str
                 throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
                     "Cannot create directory {}: a file exists at intermediate path {}", path, without_trailing_slash);
 
-            recordDirInsert(accumulated);
-            metadata_storage.directories.insert(accumulated);
+            recordDirBefore(accumulated);
+            metadata_storage.directories.try_emplace(accumulated, Poco::Timestamp());
         }
     });
 }
@@ -492,10 +519,10 @@ void MetadataStorageInMemoryTransaction::removeDirectory(const std::string & pat
         }
 
         auto dir_it = metadata_storage.directories.upper_bound(normalized);
-        if (dir_it != metadata_storage.directories.end() && dir_it->starts_with(normalized))
+        if (dir_it != metadata_storage.directories.end() && dir_it->first.starts_with(normalized))
             throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory is not empty: {}", path);
 
-        recordDirErase(normalized);
+        recordDirBefore(normalized);
         metadata_storage.directories.erase(normalized);
     });
 }
@@ -539,14 +566,14 @@ void MetadataStorageInMemoryTransaction::removeRecursive(
 
         /// Remove directories with this prefix
         auto dir_it = metadata_storage.directories.lower_bound(prefix);
-        while (dir_it != metadata_storage.directories.end() && dir_it->starts_with(prefix))
+        while (dir_it != metadata_storage.directories.end() && dir_it->first.starts_with(prefix))
         {
-            recordDirErase(*dir_it);
+            recordDirBefore(dir_it->first);
             dir_it = metadata_storage.directories.erase(dir_it);
         }
 
         /// Also remove the directory itself
-        recordDirErase(prefix);
+        recordDirBefore(prefix);
         metadata_storage.directories.erase(prefix);
     });
 }
@@ -704,26 +731,23 @@ void MetadataStorageInMemoryTransaction::moveDirectory(const std::string & path_
         for (auto & [new_path, entry] : to_move)
             metadata_storage.files[new_path] = std::move(entry);
 
-        /// Move directories
-        std::vector<std::string> dirs_to_add;
+        /// Move directories, preserving each directory's modification time. The source entry
+        /// `prefix_from` is itself part of this range (it starts with `prefix_from`), so it is
+        /// renamed to `prefix_to` here together with its whole subtree; no separate handling of
+        /// the directory itself is needed.
+        std::vector<std::pair<std::string, Poco::Timestamp>> dirs_to_add;
         auto dir_it = metadata_storage.directories.lower_bound(prefix_from);
-        while (dir_it != metadata_storage.directories.end() && dir_it->starts_with(prefix_from))
+        while (dir_it != metadata_storage.directories.end() && dir_it->first.starts_with(prefix_from))
         {
-            dirs_to_add.push_back(prefix_to + dir_it->substr(prefix_from.size()));
-            recordDirErase(*dir_it);
+            dirs_to_add.emplace_back(prefix_to + dir_it->first.substr(prefix_from.size()), dir_it->second);
+            recordDirBefore(dir_it->first);
             dir_it = metadata_storage.directories.erase(dir_it);
         }
-        for (auto & d : dirs_to_add)
+        for (auto & [d, timestamp] : dirs_to_add)
         {
-            recordDirInsert(d);
-            metadata_storage.directories.insert(std::move(d));
+            recordDirBefore(d);
+            metadata_storage.directories[d] = timestamp;
         }
-
-        /// Replace directory entry itself
-        recordDirErase(prefix_from);
-        metadata_storage.directories.erase(prefix_from);
-        recordDirInsert(prefix_to);
-        metadata_storage.directories.insert(prefix_to);
     });
 }
 

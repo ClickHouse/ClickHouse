@@ -9,7 +9,7 @@
 
 #include <map>
 #include <mutex>
-#include <set>
+#include <optional>
 #include <unordered_map>
 
 namespace DB
@@ -95,8 +95,10 @@ private:
 
     /// File metadata: path -> FileEntry
     mutable std::unordered_map<std::string, FileEntry> files;
-    /// Set of known directories
-    mutable std::set<std::string> directories;
+    /// Known directories, each mapped to its modification time. `MergeTree` reads a part
+    /// directory's mtime as the part `modification_time` (`DataPartStorageOnDiskBase::getLastModified`),
+    /// so directories must carry timestamps just like files instead of reporting the epoch.
+    mutable std::map<std::string, Poco::Timestamp> directories;
 
     std::mutex removed_objects_mutex;
     StoredObjectSet objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
@@ -154,8 +156,7 @@ private:
     /// pre-transaction state.
     void recordFileBefore(const std::string & path);
     void recordBlobGroupBefore(const std::shared_ptr<MetadataStorageInMemory::BlobGroup> & group);
-    void recordDirInsert(const std::string & dir);
-    void recordDirErase(const std::string & dir);
+    void recordDirBefore(const std::string & dir);
     void rollback();
 
     /// Pre-mutation snapshot of every file entry touched by this transaction.
@@ -172,10 +173,10 @@ private:
         MetadataStorageInMemory::BlobGroup snapshot;
     };
     std::unordered_map<MetadataStorageInMemory::BlobGroup *, BlobGroupSnapshot> blob_group_undo;
-    /// Directory entries inserted by this transaction (rollback: erase).
-    std::set<std::string> dirs_inserted;
-    /// Directory entries erased by this transaction (rollback: re-insert).
-    std::set<std::string> dirs_erased;
+    /// Pre-mutation timestamp of every directory entry touched by this transaction.
+    /// `nullopt` means the directory did not exist before the transaction started
+    /// (rollback: erase); a value restores the directory entry with its original mtime.
+    std::unordered_map<std::string, std::optional<Poco::Timestamp>> dirs_undo;
 
     MetadataStorageInMemory & metadata_storage;
 };
