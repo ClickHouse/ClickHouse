@@ -56,3 +56,5 @@
 (1,'a')
 -- round-trip: flattened header reads back positionally (use_header = 0)
 (1,'a')
+-- round-trip: CSVWithNamesAndTypes flattened header+types read back positionally (both use_header = 0)
+(1,'a')

@@ -10,7 +10,8 @@ cd "${CLICKHOUSE_TMP}" || exit 1
 
 OPTOUT_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}_optout.csv"
 FLAT_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}_flat.csv"
-trap 'rm -f "${OPTOUT_FILE}" "${FLAT_FILE}"' EXIT
+WNT_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}_wnt.csv"
+trap 'rm -f "${OPTOUT_FILE}" "${FLAT_FILE}" "${WNT_FILE}"' EXIT
 
 ${CLICKHOUSE_LOCAL} --multiquery "
 SELECT '-- CSVWithNames: header flattened to match data (default)';
@@ -104,3 +105,14 @@ SELECT (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
 SETTINGS engine_file_truncate_on_insert = 1"
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${FLAT_FILE}', CSVWithNames, 'User Tuple(ID UInt64, Name String)')
 SETTINGS input_format_with_names_use_header = 0"
+
+# CSVWithNamesAndTypes also flattens the types row, so the positional round-trip additionally
+# needs input_format_with_types_use_header = 0 (otherwise readPrefix validates the flattened
+# types row against the single top-level Tuple input field and rejects it).
+echo '-- round-trip: CSVWithNamesAndTypes flattened header+types read back positionally (both use_header = 0)'
+${CLICKHOUSE_LOCAL} --query "
+INSERT INTO FUNCTION file('${WNT_FILE}', CSVWithNamesAndTypes)
+SELECT (1::UInt64, 'a')::Tuple(ID UInt64, Name String) AS User
+SETTINGS engine_file_truncate_on_insert = 1"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${WNT_FILE}', CSVWithNamesAndTypes, 'User Tuple(ID UInt64, Name String)')
+SETTINGS input_format_with_names_use_header = 0, input_format_with_types_use_header = 0"
