@@ -991,7 +991,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     **Example**
 
     ```xml
-    <keep_alive_timeout>10</keep_alive_timeout>
+    <keep_alive_timeout>30</keep_alive_timeout>
     ```
     )", 0) \
     DECLARE(UInt64, max_keep_alive_requests, 10000, R"(
