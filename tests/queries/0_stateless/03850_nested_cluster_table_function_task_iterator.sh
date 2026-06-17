@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Tag no-fasttest: uses urlCluster/fileCluster over the HTTP port and several test clusters
+# Tag no-fasttest: uses urlCluster/fileCluster/s3Cluster over the HTTP/Minio ports and several test clusters
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/91736
 #
@@ -39,6 +39,21 @@ $CLICKHOUSE_CLIENT --query "
 SELECT count() FROM clusterAllReplicas(
     'test_cluster_one_shard_three_replicas_localhost',
     fileCluster('test_cluster_two_shards', '${DATA_FILE}', 'TSV', 'x UInt8'))
+SETTINGS prefer_localhost_replica = 0
+" 2>&1 | grep -o -m1 "cannot be nested inside another distributed query"
+
+# Shape 1, object storage: an explicit s3Cluster nested inside the outer clusterAllReplicas. The
+# object-storage *Cluster stack reaches the read task through different code than url/file
+# (StorageObjectStorageSource), so it is exercised separately. It must also be rejected, not
+# silently read once per outer replica (which would multiply the row count).
+S3_OBJECT="http://localhost:11111/test/${CLICKHOUSE_DATABASE}_03850.tsv"
+$CLICKHOUSE_CLIENT --query "INSERT INTO FUNCTION s3('${S3_OBJECT}', 'TSV', 'x UInt8') SELECT 1 SETTINGS s3_truncate_on_insert = 1"
+
+echo "--- shape 1: nested cluster table function (s3Cluster) ---"
+$CLICKHOUSE_CLIENT --query "
+SELECT count() FROM clusterAllReplicas(
+    'test_cluster_one_shard_three_replicas_localhost',
+    s3Cluster('test_cluster_two_shards', '${S3_OBJECT}', 'TSV', 'x UInt8'))
 SETTINGS prefer_localhost_replica = 0
 " 2>&1 | grep -o -m1 "cannot be nested inside another distributed query"
 
