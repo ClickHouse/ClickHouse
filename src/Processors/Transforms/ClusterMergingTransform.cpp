@@ -55,6 +55,10 @@ Int64 safeFloorToInt64(Float64 v)
 struct BucketState
 {
     size_t leader_row_index;
+    /// Row holding the smallest cluster key in the bucket. The merged aggregate state lives
+    /// in `leader_row_index`, but the emitted key value is taken from this row so the cluster
+    /// representative is deterministic regardless of input (Aggregator hash-table) order.
+    size_t min_key_row_index;
     Int64 bucket_id;
     Float64 min_cluster_key;
     Float64 max_cluster_key;
@@ -423,13 +427,17 @@ Chunk ClusterMergingTransform::generate1D()
         {
             auto & bucket = buckets[found];
             mergeAggregateStates(merged_columns, aggregates_mask, bucket.leader_row_index, i);
-            bucket.min_cluster_key = std::min(bucket.min_cluster_key, cluster_val);
+            if (cluster_val < bucket.min_cluster_key)
+            {
+                bucket.min_cluster_key = cluster_val;
+                bucket.min_key_row_index = i;
+            }
             bucket.max_cluster_key = std::max(bucket.max_cluster_key, cluster_val);
         }
         else
         {
             size_t idx = buckets.size();
-            buckets.push_back({i, bucket_id, cluster_val, cluster_val, true});
+            buckets.push_back({i, i, bucket_id, cluster_val, cluster_val, true});
             candidates.push_back(idx);
         }
     }
@@ -492,7 +500,11 @@ Chunk ClusterMergingTransform::generate1D()
             {
                 mergeAggregateStates(merged_columns, aggregates_mask, prev.leader_row_index, curr.leader_row_index);
                 prev.max_cluster_key = std::max(prev.max_cluster_key, curr.max_cluster_key);
-                prev.min_cluster_key = std::min(prev.min_cluster_key, curr.min_cluster_key);
+                if (curr.min_cluster_key < prev.min_cluster_key)
+                {
+                    prev.min_cluster_key = curr.min_cluster_key;
+                    prev.min_key_row_index = curr.min_key_row_index;
+                }
                 curr.alive = false;
             }
         }
@@ -511,8 +523,13 @@ Chunk ClusterMergingTransform::generate1D()
     {
         if (buckets[idx].alive)
         {
+            /// Aggregate state was accumulated into the leader row; key / non-cluster-key columns
+            /// (identical across the bucket except for the cluster key) come from the min-key row.
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
-                result_columns[col_idx]->insertFrom(*merged_columns[col_idx], buckets[idx].leader_row_index);
+            {
+                size_t src_row = aggregates_mask[col_idx] ? buckets[idx].leader_row_index : buckets[idx].min_key_row_index;
+                result_columns[col_idx]->insertFrom(*merged_columns[col_idx], src_row);
+            }
         }
     }
 
@@ -786,6 +803,27 @@ Chunk ClusterMergingTransform::generate2D()
         mergeAggregateStates(merged_columns, aggregates_mask, cells[root].leader_row_index, cells[ci].leader_row_index);
     }
 
+    /// Pick a deterministic representative per component: the row with the lexicographically
+    /// smallest `(x, y)` key. The merged aggregate state lives in the root cell's leader row,
+    /// so the emitted key value is taken from this representative row instead — otherwise the
+    /// representative would depend on input (Aggregator hash-table) order. `component_rep_row`
+    /// is indexed by cell; only entries for root cells are read.
+    std::vector<size_t> component_rep_row(cells.size());
+    for (size_t ci = 0; ci < cells.size(); ++ci)
+        component_rep_row[ci] = cells[ci].leader_row_index;
+
+    for (size_t ci = 0; ci < cells.size(); ++ci)
+    {
+        size_t root = dsu.find(ci);
+        for (size_t r : cells[ci].row_indices)
+        {
+            size_t & rep = component_rep_row[root];
+            int cmp_x = x_col.compareAt(r, rep, x_col, 1);
+            if (cmp_x < 0 || (cmp_x == 0 && y_col.compareAt(r, rep, y_col, 1) < 0))
+                rep = r;
+        }
+    }
+
     size_t result_rows = 0;
     for (bool r : is_root)
         if (r)
@@ -799,8 +837,12 @@ Chunk ClusterMergingTransform::generate2D()
     {
         if (!is_root[ci])
             continue;
+        size_t rep_row = component_rep_row[ci];
         for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
-            result_columns[col_idx]->insertFrom(*merged_columns[col_idx], cells[ci].leader_row_index);
+        {
+            size_t src_row = aggregates_mask[col_idx] ? cells[ci].leader_row_index : rep_row;
+            result_columns[col_idx]->insertFrom(*merged_columns[col_idx], src_row);
+        }
     }
 
     Chunk result(std::move(result_columns), result_rows);
@@ -1022,6 +1064,20 @@ Chunk ClusterMergingTransform::generateString()
         mergeAggregateStates(merged_columns, aggregates_mask, root, i);
     }
 
+    /// Pick a deterministic representative per component: the lexicographically smallest key.
+    /// The merged aggregate state lives in the DSU root row, so the emitted key value is taken
+    /// from this representative row instead — otherwise it would depend on input (Aggregator
+    /// hash-table) order. `component_rep_row` is indexed by row; only roots are read.
+    std::vector<size_t> component_rep_row(total_rows);
+    std::iota(component_rep_row.begin(), component_rep_row.end(), size_t{0});
+
+    for (size_t i = 0; i < total_rows; ++i)
+    {
+        size_t root = dsu.find(i);
+        if (strings[i] < strings[component_rep_row[root]])
+            component_rep_row[root] = i;
+    }
+
     size_t result_rows = 0;
     for (bool r : is_root)
         if (r)
@@ -1035,8 +1091,12 @@ Chunk ClusterMergingTransform::generateString()
     {
         if (!is_root[i])
             continue;
+        size_t rep_row = component_rep_row[i];
         for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
-            result_columns[col_idx]->insertFrom(*merged_columns[col_idx], i);
+        {
+            size_t src_row = aggregates_mask[col_idx] ? i : rep_row;
+            result_columns[col_idx]->insertFrom(*merged_columns[col_idx], src_row);
+        }
     }
 
     Chunk result(std::move(result_columns), result_rows);
