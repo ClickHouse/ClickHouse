@@ -253,6 +253,8 @@ struct CountingSet
     std::unique_ptr<SetMethodOneNumber<UInt64, HashMap<UInt64, Count, HashCRC32<UInt64>, CountingSetGrower>, false, Count>> key64;
     std::unique_ptr<SetMethodString<HashMapWithSavedHash<std::string_view, Count, DefaultHash<std::string_view>, CountingSetGrower>, Count>>        key_string;
     std::unique_ptr<SetMethodFixedString<HashMapWithSavedHash<std::string_view, Count, DefaultHash<std::string_view>, CountingSetGrower>, Count>>   key_fixed_string;
+    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt32, Count, HashCRC32<UInt32>, CountingSetGrower>, false, Count, false>>  keys32;
+    std::unique_ptr<SetMethodKeysFixed<HashMap<UInt64, Count, HashCRC32<UInt64>, CountingSetGrower>, false, Count, false>>  keys64;
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32, CountingSetGrower>, false, Count, false>>  keys128;
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32, CountingSetGrower>, false, Count, false>>  keys256;
     std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash, CountingSetGrower>, Count, false>>   hashed;
