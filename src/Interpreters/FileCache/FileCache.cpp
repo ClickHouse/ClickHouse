@@ -78,6 +78,7 @@ namespace FailPoints
 {
     extern const char file_cache_stall_free_space_ratio_keeping_thread[];
     extern const char file_cache_pause_before_do_eviction[];
+    extern const char file_cache_simulate_evicting_segment[];
 }
 
 namespace FileCacheSetting
@@ -98,6 +99,9 @@ namespace FileCacheSetting
     extern const FileCacheSettingsDouble keep_free_space_size_ratio;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsUInt64 keep_free_space_remove_batch;
+    extern const FileCacheSettingsNonZeroUInt64 invalidated_entries_cleanup_interval_ms;
+    extern const FileCacheSettingsNonZeroUInt64 invalidated_entries_cleanup_threshold;
+    extern const FileCacheSettingsNonZeroUInt64 invalidated_entries_cleanup_remove_batch;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
@@ -259,8 +263,8 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
-                    queue_type,
                     overcommit_eviction_evict_step,
+                    queue_type,
                     max_size,
                     max_elements,
                     "overcommit");
@@ -272,8 +276,8 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<SLRUFileCachePriority>>(
-                    queue_type,
                     overcommit_eviction_evict_step,
+                    queue_type,
                     max_size,
                     max_elements,
                     size_ratio,
@@ -310,6 +314,11 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             cache_name
         );
     }
+    main_priority->setCleanupSettings(
+        settings[FileCacheSetting::invalidated_entries_cleanup_threshold],
+        settings[FileCacheSetting::invalidated_entries_cleanup_interval_ms],
+        settings[FileCacheSetting::invalidated_entries_cleanup_remove_batch]);
+
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
@@ -443,6 +452,9 @@ void FileCache::initializeImpl(bool load_metadata)
 
     try
     {
+        /// Publish the invalidate notifier before loadMetadata spawns threads that can invalidate entries.
+        main_priority->startup(Context::getGlobalContextInstance()->getSchedulePool(), cache_guard);
+
         if (load_metadata)
             loadMetadata();
 
@@ -450,6 +462,9 @@ void FileCache::initializeImpl(bool load_metadata)
     }
     catch (...)
     {
+        /// startup() may have scheduled the background cleanup task; stop it so a retried
+        /// initialization does not leave an orphaned task rescheduling on `this`.
+        main_priority->deactivateBackgroundOperations();
         init_exception = std::current_exception();
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
@@ -470,12 +485,13 @@ CachePriorityGuard::WriteLock FileCache::lockCache() const
     return cache_guard.writeLock();
 }
 
-FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
+FileSegments FileCache::getImpl(
+    const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit, bool ignore_bypass_threshold) const
 {
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
     /// find list [segment1, ..., segmentN] of segments which intersect with given range.
 
-    if (bypass_cache_threshold && range.size() > bypass_cache_threshold)
+    if (!ignore_bypass_threshold && bypass_cache_threshold && range.size() > bypass_cache_threshold)
     {
         auto file_segment = std::make_shared<FileSegment>(
             locked_key.getKey(), range.left, range.size(), FileSegment::State::DETACHED);
@@ -491,8 +507,11 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
         if (file_segments_limit && result.size() == file_segments_limit)
             return false;
 
+        bool evicting_or_removed = file_segment_metadata.isEvictingOrRemoved(locked_key);
+        fiu_do_on(FailPoints::file_cache_simulate_evicting_segment, { evicting_or_removed = true; });
+
         FileSegmentPtr file_segment;
-        if (file_segment_metadata.isEvictingOrRemoved(locked_key))
+        if (evicting_or_removed)
         {
             file_segment = std::make_shared<FileSegment>(
                 locked_key.getKey(),
@@ -774,7 +793,9 @@ FileSegmentsHolderPtr FileCache::trySet(
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, origin);
     FileSegment::Range range(offset, offset + size - 1);
 
-    auto file_segments = getImpl(*locked_key, range, /* file_segments_limit */0);
+    /// The bypass-threshold shortcut is a read-time optimization; on a write there is no remote to
+    /// bypass to, so ignore it and let the overlap check inspect the real key contents.
+    auto file_segments = getImpl(*locked_key, range, /* file_segments_limit */0, /* ignore_bypass_threshold */true);
     if (!file_segments.empty())
         return nullptr;
 
@@ -1018,6 +1039,49 @@ FileSegmentsHolderPtr FileCache::get(
 
     assertCacheCorrectnessWithProbability();
     return holder;
+}
+
+FileSegmentsHolderPtr FileCache::getDownloadedContiguousOrEmpty(
+    const Key & key,
+    size_t offset,
+    size_t size,
+    const UserID & user_id)
+{
+    assertInitialized();
+    chassert(size);
+
+    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL, OriginInfo(user_id));
+    if (!locked_key)
+        return std::make_unique<FileSegmentsHolder>();
+
+    const FileSegment::Range range(offset, offset + size - 1);
+    /// `ignore_bypass_threshold` = true: temporary data has no remote backing, and this
+    /// function must inspect the actual downloaded segments. Without it, a read larger than
+    /// `bypass_cache_threshold` (when `enable_bypass_cache_with_threshold` is on) would get a
+    /// synthetic DETACHED placeholder from getImpl() and be wrongly reported as missing.
+    auto file_segments = getImpl(*locked_key, range, /* file_segments_limit */0, /* ignore_bypass_threshold */true);
+
+    if (file_segments.empty()
+        || file_segments.front()->range().left > offset
+        || file_segments.back()->range().right < range.right)
+        return std::make_unique<FileSegmentsHolder>();
+
+    size_t expected_left = file_segments.front()->range().left;
+    for (const auto & file_segment : file_segments)
+    {
+        /// A hole: part of the range was never written or was already removed.
+        if (file_segment->range().left != expected_left)
+            return std::make_unique<FileSegmentsHolder>();
+
+        /// The downloaded prefix must reach the needed part of the range; this also rejects
+        /// DETACHED placeholders from getImpl() — their downloaded prefix is empty.
+        if (file_segment->getCurrentWriteOffset() < std::min(file_segment->range().right + 1, offset + size))
+            return std::make_unique<FileSegmentsHolder>();
+
+        expected_left = file_segment->range().right + 1;
+    }
+
+    return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
 KeyMetadata::iterator FileCache::addFileSegment(
@@ -2102,6 +2166,8 @@ void FileCache::deactivateBackgroundOperations()
     metadata.shutdown();
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();
+    if (main_priority)
+        main_priority->deactivateBackgroundOperations();
 }
 
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const UserID & user_id)
