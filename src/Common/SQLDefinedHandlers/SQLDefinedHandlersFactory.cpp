@@ -259,10 +259,18 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     /// for `DROP IF EXISTS` it is a no-op. Either way the version-bumping removal is the source of truth.
     bool removed = metadata_storage->removeIfExists(query.handler_name);
 
-    /// Rebuild the local snapshot from the now-current persistent state before reporting the result; this
-    /// also re-arms the update watch. Doing it before the error branch matters in the stale-cache direction:
-    /// if this replica still holds the handler in `loaded_handlers` but Keeper has already removed it, a plain
-    /// `DROP` must stop serving the now-gone handler here rather than keeping it until the background watch fires.
+    /// Once `removeIfExists` returns, the persistent store has proven this handler is gone - either we removed
+    /// it here, or it was already absent. Drop it from the local snapshot first, before the full reload below,
+    /// so that even if that reload throws (a transient Keeper read error, or another stored handler that fails
+    /// to parse) this replica fail-closes and stops serving a handler the source of truth no longer has, rather
+    /// than keeping it until the background watch eventually fires.
+    loaded_handlers.erase(query.handler_name);
+    rebuildSnapshot(lock);
+
+    /// Then rebuild the local snapshot from the now-current persistent state to also pick up any concurrent
+    /// changes and re-arm the update watch. This matters in the stale-cache direction too: if this replica
+    /// still held the handler in `loaded_handlers` but Keeper had already removed it, the erase above already
+    /// stopped serving it; this reload brings in everything else another replica may have changed.
     loaded_handlers = metadata_storage->getAll();
     rebuildSnapshot(lock);
 
