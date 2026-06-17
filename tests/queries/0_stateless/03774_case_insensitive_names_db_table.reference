@@ -45,3 +45,7 @@
 --- Double-quoted table avoids ambiguity ---
 1
 2
+--- Temporary table case-insensitive lookup ---
+42
+42
+42

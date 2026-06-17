@@ -118,5 +118,15 @@ SELECT * FROM "AMBIGTABLE";
 DROP TABLE IF EXISTS AmbigTable;
 DROP TABLE IF EXISTS AMBIGTABLE;
 
+-- Temporary tables: unquoted references in standard mode resolve case-insensitively, double-quoted ones do not
+SELECT '--- Temporary table case-insensitive lookup ---';
+CREATE TEMPORARY TABLE TempCaseTbl (val Int32) ENGINE = Memory;
+INSERT INTO TempCaseTbl VALUES (42);
+SELECT val FROM TEMPCASETBL;
+SELECT val FROM tempcasetbl;
+SELECT val FROM "TempCaseTbl";
+SELECT val FROM "TEMPCASETBL"; -- { serverError UNKNOWN_TABLE }
+DROP TABLE TempCaseTbl;
+
 DROP DATABASE IF EXISTS TestDBCase;
 

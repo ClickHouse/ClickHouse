@@ -223,25 +223,33 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
             database_name = resolved_db;
     }
 
-    /// Case-insensitive resolution for table name (if not double-quoted and under setting)
+    /// Case-insensitive resolution for table name (if not double-quoted and under setting).
+    /// Mirror the default-mode lookup order in `Context::resolveStorageID`: temporary/external
+    /// tables shadow regular tables when no database is specified, so try temp first and only
+    /// fall through to the current database when no temp match exists.
     if (table_name_case_insensitive)
     {
-        /// Temporary/external tables are resolved later by Context::resolveStorageID via exact match,
-        /// so we rewrite the table name here when it differs only by case
+        bool resolved_as_temp = false;
         if (database_name.empty() && !context->isGlobalContext())
         {
             String resolved_temp_table = context->tryResolveExternalTableNameCaseInsensitive(table_name);
             if (!resolved_temp_table.empty())
+            {
                 table_name = std::move(resolved_temp_table);
+                resolved_as_temp = true;
+            }
         }
 
-        String effective_db = database_name.empty() ? context->getCurrentDatabase() : database_name;
-        auto database = DatabaseCatalog::instance().tryGetDatabase(effective_db);
-        if (database)
+        if (!resolved_as_temp)
         {
-            String resolved_table = database->tryResolveTableNameCaseInsensitive(table_name, context);
-            if (!resolved_table.empty())
-                table_name = resolved_table;
+            String effective_db = database_name.empty() ? context->getCurrentDatabase() : database_name;
+            auto database = DatabaseCatalog::instance().tryGetDatabase(effective_db);
+            if (database)
+            {
+                String resolved_table = database->tryResolveTableNameCaseInsensitive(table_name, context);
+                if (!resolved_table.empty())
+                    table_name = resolved_table;
+            }
         }
     }
 
