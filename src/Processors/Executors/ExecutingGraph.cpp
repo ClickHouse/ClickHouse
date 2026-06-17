@@ -200,6 +200,10 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
         const IProcessor & parent = *cur_node.processor();
         for (const auto & new_proc : update.to_add)
         {
+            /// Runtime-added processors (lazy reads, external sort, ...) usually have no step,
+            /// so `EXPLAIN ANALYZE` would drop their stats. Attribute them to the parent step.
+            /// The guard is deliberate: processors that already carry a step keep it.
+            /// New `updatePipeline` authors: tag processors of a different step explicitly.
             if (!new_proc->getQueryPlanStep())
                 new_proc->inheritQueryPlanStepFromParent(parent, parent.getQueryPlanStepGroup());
 
