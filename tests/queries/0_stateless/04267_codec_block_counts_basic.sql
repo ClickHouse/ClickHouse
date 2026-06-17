@@ -21,19 +21,17 @@ SELECT
     column,
     mapKeys(codec_block_counts) AS codecs,
     arrayMin(mapValues(codec_block_counts)) > 0 AS all_positive
-FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_basic' AND active
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic)
 ORDER BY column;
 
 -- Subcolumns for the tuple: subcolumn names and per-subcolumn codec names.
 SELECT
     `subcolumns.names`,
     arrayMap(m -> mapKeys(m), `subcolumns.codec_block_counts`) AS subcolumn_codecs
-FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_basic' AND active AND column = 't';
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic)
+WHERE column = 't';
 
--- A non-projected query should still work and return correct row counts.
-SELECT count() FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_basic' AND active;
+-- A query that selects no codec column stays metadata-only and still returns one row per (part, column).
+SELECT count() FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic);
 
 DROP TABLE t_basic;

@@ -2030,7 +2030,7 @@ namespace ErrorCodes
     When enabled, merges and mutations adaptively choose each block's codec for columns that use the default codec
     (no `CODEC` clause or `CODEC(Default)`). The smallest output wins among per-type candidates,
     the default codec and `NONE`, so compression is never worse than the default and incompressible blocks are stored raw.
-    Inserts are unaffected. Per-block codecs are visible in `codec_block_counts` in `system.parts_columns`.
+    Inserts are unaffected. Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/sql-reference/table-functions/mergeTreeCodecBlockCounts) table function.
     )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.

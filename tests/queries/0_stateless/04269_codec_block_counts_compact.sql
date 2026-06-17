@@ -11,9 +11,12 @@ SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 10000000
 
 INSERT INTO t_compact SELECT number, number FROM numbers(1000);
 
-SELECT part_type, column, codec_block_counts, length(`subcolumns.codec_block_counts`)
-FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_compact' AND active
+-- Confirm the part is Compact (the function has no part_type column).
+SELECT part_type FROM system.parts
+WHERE database = currentDatabase() AND table = 't_compact' AND active;
+
+SELECT column, codec_block_counts, length(`subcolumns.codec_block_counts`)
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_compact)
 ORDER BY column;
 
 DROP TABLE t_compact;

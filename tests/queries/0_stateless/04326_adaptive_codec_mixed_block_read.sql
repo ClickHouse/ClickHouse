@@ -19,8 +19,8 @@ OPTIMIZE TABLE t_adaptive_mixed FINAL;
 
 -- Sanity: x really has >1 codec, else the read below proves nothing.
 SELECT 'mixed codecs', length(codec_block_counts) > 1
-FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_adaptive_mixed' AND active AND column = 'x';
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_mixed)
+WHERE column = 'x';
 
 SELECT 'read', sum(x), count() FROM t_adaptive_mixed;
 

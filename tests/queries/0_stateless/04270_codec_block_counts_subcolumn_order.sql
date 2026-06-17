@@ -51,7 +51,7 @@ FROM numbers(100000);
 SELECT
     `subcolumns.names`,
     arrayZip(`subcolumns.names`, `subcolumns.codec_block_counts`) AS by_subcolumn
-FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_order' AND active AND column = 't';
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_order)
+WHERE column = 't';
 
 DROP TABLE t_order;

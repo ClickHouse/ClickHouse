@@ -24,14 +24,14 @@ INSERT INTO t_explicit_default_on SELECT number, number, number, number, number 
 INSERT INTO t_explicit_default_on SELECT number, number, number, number, number FROM numbers(50000, 50000);
 OPTIMIZE TABLE t_explicit_default_on FINAL;
 SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
-FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_explicit_default_on' AND active ORDER BY column;
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_explicit_default_on) ORDER BY column;
 
 SELECT 'Adaptive OFF';
 INSERT INTO t_explicit_default_off SELECT number, number, number, number, number FROM numbers(50000);
 INSERT INTO t_explicit_default_off SELECT number, number, number, number, number FROM numbers(50000, 50000);
 OPTIMIZE TABLE t_explicit_default_off FINAL;
 SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
-FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_explicit_default_off' AND active ORDER BY column;
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_explicit_default_off) ORDER BY column;
 
 -- Read back to exercise the part.
 SELECT 'read', count(), sum(a) FROM t_explicit_default_on;

@@ -27,7 +27,7 @@ OPTIMIZE TABLE t_adaptive_projection_off FINAL;
 
 -- The parent part went adaptive (T64).
 SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
-FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_adaptive_projection' AND active ORDER BY column;
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_projection) ORDER BY column;
 
 -- The projection went adaptive: its columns compress smaller than the same data with the default codec.
 SELECT

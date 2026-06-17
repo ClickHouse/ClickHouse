@@ -26,15 +26,13 @@ def start_cluster():
 def fill(table, adaptive, x_expr):
     node_old.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node_new.query(f"DROP TABLE IF EXISTS {table} SYNC")
-
-    # The old replica fetches the new replica's merged part instead of merging locally, so it reads exactly the bytes the new server wrote.
+    # always_fetch_merged_part: the old replica fetches the new replica's merged part instead of merging locally.
     node_old.query(f"""
         CREATE TABLE {table} (id UInt64, x UInt64)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/{table}', 'old')
         ORDER BY id SETTINGS always_fetch_merged_part = 1
         """)
-    # serialization_info_version=basic: otherwise the new server writes serialization.json in a format
-    # the old version cannot parse. Generic old-version write compat, unrelated to adaptive codecs.
+    # serialization_info_version=basic: otherwise the new server writes serialization.json in a format the old version cannot parse.
     node_new.query(f"""
         CREATE TABLE {table} (id UInt64, x UInt64)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/{table}', 'new')
@@ -56,8 +54,8 @@ def codecs(table, column):
     # On the new node: whether the column has any T64 block, and how many distinct codecs it uses.
     return node_new.query(f"""
         SELECT mapContains(codec_block_counts, 'T64'), length(codec_block_counts)
-        FROM system.parts_columns
-        WHERE database = currentDatabase() AND table = '{table}' AND active AND column = '{column}'
+        FROM mergeTreeCodecBlockCounts(currentDatabase(), '{table}')
+        WHERE column = '{column}'
         """)
 
 
@@ -72,8 +70,8 @@ def test_setting_off_no_change(start_cluster):
 
 
 def test_old_version_reads_uniform_adaptive_part(start_cluster):
-    # Monotonic data: T64 wins in every block, so x is a uniform single-codec stream. The old strict
-    # reader only rejects a codec change inside one stream, so it reads a uniform adaptive part fine.
+    # T64 wins in every block, so x is a uniform single-codec stream.
+    # The old strict reader rejects a codec change inside one stream, so it reads a uniform adaptive part fine.
     fill("t_adaptive_compat_uniform", adaptive=1, x_expr="number")
     assert codecs("t_adaptive_compat_uniform", "x") == "1\t1\n"
     assert (
@@ -83,8 +81,7 @@ def test_old_version_reads_uniform_adaptive_part(start_cluster):
 
 
 def test_old_version_cannot_read_mixed_codec_part(start_cluster):
-    # Low ids random (stored raw), high ids monotonic (T64), so x mixes codecs after the merge.
-    # id stays monotonic and uniform.
+    # x mixes codecs after the merge, id stays uniform due to ORDER BY.
     fill(
         "t_adaptive_compat_mixed",
         adaptive=1,
@@ -92,9 +89,8 @@ def test_old_version_cannot_read_mixed_codec_part(start_cluster):
     )
     assert codecs("t_adaptive_compat_mixed", "id") == "1\t1\n"
     assert node_new.query("""
-        SELECT length(codec_block_counts) > 1 FROM system.parts_columns
-        WHERE database = currentDatabase() AND table = 't_adaptive_compat_mixed'
-            AND active AND column = 'x'
+        SELECT length(codec_block_counts) > 1 FROM mergeTreeCodecBlockCounts(currentDatabase(), 't_adaptive_compat_mixed')
+        WHERE column = 'x'
         """) == "1\n"
 
     # The fetch is file-level, so the old replica gets the part and reads its uniform column.
@@ -102,7 +98,7 @@ def test_old_version_cannot_read_mixed_codec_part(start_cluster):
         node_old.query("SELECT count(), sum(id) FROM t_adaptive_compat_mixed")
         == "2000000\t1999999000000\n"
     )
-    # The mixed column hits a codec change mid-stream; the old version rejects it. This is the
-    # boundary the setting docstring warns about for rolling upgrades.
+
+    # The mixed column hits a codec change mid-stream. The old version rejects it.
     error = node_old.query_and_get_error("SELECT sum(x) FROM t_adaptive_compat_mixed")
     assert "CANNOT_DECOMPRESS" in error

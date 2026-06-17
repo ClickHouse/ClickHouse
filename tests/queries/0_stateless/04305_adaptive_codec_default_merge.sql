@@ -42,7 +42,7 @@ INSERT INTO t_adaptive_on SELECT number, number, toString(number), number, numbe
 INSERT INTO t_adaptive_on SELECT number, number, toString(number), number, number, [toInt32(number)] FROM numbers(50000, 50000);
 OPTIMIZE TABLE t_adaptive_on FINAL;
 SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
-FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_adaptive_on' AND active ORDER BY column;
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_on) ORDER BY column;
 
 -- Setting OFF: nothing becomes adaptive.
 SELECT 'Adaptive OFF';
@@ -50,20 +50,20 @@ INSERT INTO t_adaptive_off SELECT number, number, toString(number), number, numb
 INSERT INTO t_adaptive_off SELECT number, number, toString(number), number, number, [toInt32(number)] FROM numbers(50000, 50000);
 OPTIMIZE TABLE t_adaptive_off FINAL;
 SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
-FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_adaptive_off' AND active ORDER BY column;
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_off) ORDER BY column;
 
 -- Setting ON but insert only (no merge): adaptive is merge-time only, so still the default.
 SELECT 'Adaptive INSERT';
 INSERT INTO t_adaptive_insert SELECT number, number, toString(number), number, number, [toInt32(number)] FROM numbers(100000);
 SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
-FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_adaptive_insert' AND active ORDER BY column;
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_insert) ORDER BY column;
 
 -- Column-only mutation with the setting ON: ALTER UPDATE rewrites only e (the column-only mutation path), so e becomes T64.
 SELECT 'Adaptive MUTATION';
 INSERT INTO t_adaptive_mutation SELECT number, number, toString(number), number, number, [toInt32(number)] FROM numbers(100000);
 ALTER TABLE t_adaptive_mutation UPDATE e = e + 1 WHERE 1 SETTINGS mutations_sync = 2;
 SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
-FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_adaptive_mutation' AND active ORDER BY column;
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_mutation) ORDER BY column;
 
 -- Compact part with the setting ON: codec_block_counts is empty for Compact, so verify the data round-trips and the part checks out.
 SELECT 'Adaptive COMPACT';

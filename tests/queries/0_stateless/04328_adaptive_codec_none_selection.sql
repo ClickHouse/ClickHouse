@@ -24,7 +24,7 @@ SELECT column,
        mapContains(codec_block_counts, 'NONE') AS has_none,
        mapContains(codec_block_counts, 'T64') AS has_t64,
        mapContains(codec_block_counts, 'LZ4') AS has_lz4
-FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_adaptive_none' AND active ORDER BY column;
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_none) ORDER BY column;
 
 -- A merged part so small that one raw block beats any codec's framing.
 CREATE TABLE t_adaptive_none_tiny (x UInt64)
@@ -36,7 +36,7 @@ INSERT INTO t_adaptive_none_tiny SELECT cityHash64(number) FROM numbers(4, 4);
 OPTIMIZE TABLE t_adaptive_none_tiny FINAL;
 
 SELECT 'tiny', column, codec_block_counts
-FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_adaptive_none_tiny' AND active ORDER BY column;
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_none_tiny) ORDER BY column;
 
 SELECT 'read', count(), countIf(x = cityHash64(y)) FROM t_adaptive_none;
 CHECK TABLE t_adaptive_none SETTINGS check_query_single_value_result = 1;

@@ -17,11 +17,11 @@ INSERT INTO t_alter SELECT number + 100000 FROM numbers(100000);
 
 -- Before merge: distinct codecs per part.
 SELECT
-    name,
+    part_name,
     mapKeys(codec_block_counts) AS codecs
-FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_alter' AND active AND column = 'a'
-ORDER BY name;
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_alter)
+WHERE column = 'a'
+ORDER BY part_name;
 
 SYSTEM START MERGES t_alter;
 OPTIMIZE TABLE t_alter FINAL;
@@ -29,7 +29,7 @@ OPTIMIZE TABLE t_alter FINAL;
 -- After merge: the current codec wins.
 SELECT
     mapKeys(codec_block_counts) AS codecs
-FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_alter' AND active AND column = 'a';
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_alter)
+WHERE column = 'a';
 
 DROP TABLE t_alter;
