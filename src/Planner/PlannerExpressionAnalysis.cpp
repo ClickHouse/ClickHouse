@@ -664,13 +664,21 @@ LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
     auto before_limit_range_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     before_limit_range_actions->dag = ActionsDAG(input_columns);
     auto & before_limit_range_outputs = before_limit_range_actions->dag.getOutputs();
-    before_limit_range_outputs.clear();
 
-    NameSet added_output_names;
+    /// Keep all current stream columns and ensure boundary-predicate columns are also present.
+    /// The step must not project the stream down — it only prevents chain finalization from
+    /// pruning columns that the LimitRangeStep boundary expressions need.
+    NameSet existing_output_names;
+    for (const auto * output_node : before_limit_range_outputs)
+        existing_output_names.insert(output_node->result_name);
+
     for (const auto * input_node : before_limit_range_actions->dag.getInputs())
     {
-        if (required_column_names.contains(input_node->result_name) && added_output_names.insert(input_node->result_name).second)
+        if (required_column_names.contains(input_node->result_name) && !existing_output_names.contains(input_node->result_name))
+        {
             before_limit_range_outputs.push_back(input_node);
+            existing_output_names.insert(input_node->result_name);
+        }
     }
 
     auto actions_step_before_limit_range = std::make_unique<ActionsChainStep>(before_limit_range_actions);
