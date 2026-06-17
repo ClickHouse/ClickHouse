@@ -2157,7 +2157,7 @@ void MutationsInterpreter::Source::read(
         }
 
         SelectQueryInfo query_info;
-        query_info.query = std::move(select);
+        query_info.setQuery(std::move(select));
         query_info.filter_actions_dag = std::move(filter_actions_dag);
 
         size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];

@@ -1221,7 +1221,7 @@ Pipe StorageWindowView::watch(
     const size_t /*num_streams*/)
 {
     throwIfWindowViewIsDisabled(local_context);
-    ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
+    ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.getQuery());
 
     bool has_limit = false;
     UInt64 limit = 0;

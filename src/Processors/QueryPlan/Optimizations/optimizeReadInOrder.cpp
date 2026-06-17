@@ -1814,7 +1814,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     }
 
     const auto & query_info = read_from_merge_tree->getQueryInfo();
-    const auto * select_query = query_info.query->as<ASTSelectQuery>();
+    const auto * select_query = query_info.getQuery()->as<ASTSelectQuery>();
 
     /// TODO: Analyzer syntax analyzer result
     if (!query_info.syntax_analyzer_result)

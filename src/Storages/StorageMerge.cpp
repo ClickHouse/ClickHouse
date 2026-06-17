@@ -391,7 +391,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     /// in MergingAggregatedTransform.
     ///
     /// And for this we need to return FetchColumns.
-    if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && (hasJoin(*select) || hasArrayJoin(*select)))
+    if (const auto * select = query_info.getQuery()->as<ASTSelectQuery>(); select && (hasJoin(*select) || hasArrayJoin(*select)))
         return QueryProcessingStage::FetchColumns;
 
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
@@ -700,7 +700,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             remaining_streams -= current_streams;
             current_streams = std::max(1uz, current_streams);
 
-            bool sampling_requested = query_info.query->as<ASTSelectQuery>()->sampleSize() != nullptr;
+            bool sampling_requested = query_info.getQuery()->as<ASTSelectQuery>()->sampleSize() != nullptr;
             if (query_info.table_expression_modifiers)
                 sampling_requested = query_info.table_expression_modifiers->hasSampleSizeRatio();
 
@@ -793,8 +793,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 /// `needRewriteQueryWithFinal` returns true). Without this clone, one table
                 /// would flip `FINAL` on the shared AST for every subsequent table in this
                 /// cache bucket, making semantics depend on table iteration order.
-                if (modified_query_info.query)
-                    modified_query_info.query = modified_query_info.query->clone();
+                if (modified_query_info.getQuery())
+                    modified_query_info.setQuery(modified_query_info.getQuery()->clone());
 
                 /// Rebind table_expression to the current table so that downstream code
                 /// (e.g. storage->read, getQueryProcessingStage) sees the correct table identity,
@@ -826,8 +826,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     /// cache hits would clone an already-mutated AST and `FINAL` propagation
                     /// would depend on the first table's `needRewriteQueryWithFinal` result.
                     SelectQueryInfo cached_query_info = modified_query_info;
-                    if (cached_query_info.query)
-                        cached_query_info.query = cached_query_info.query->clone();
+                    if (cached_query_info.getQuery())
+                        cached_query_info.setQuery(cached_query_info.getQuery()->clone());
                     query_info_cache[structure_key] = {std::move(cached_query_info), column_names_as_aliases, is_smallest_column_requested, aliases};
                 }
             }
@@ -836,7 +836,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 auto storage_columns = storage_metadata_snapshot->getColumns();
                 auto syntax_result = TreeRewriter(context).analyzeSelect(
-                    modified_query_info.query, TreeRewriterResult({}, storage, nested_storage_snapshot));
+                    modified_query_info.getQuery(), TreeRewriterResult({}, storage, nested_storage_snapshot));
 
                 bool with_aliases = common_processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty();
                 if (with_aliases)
@@ -1176,14 +1176,14 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 column_name_to_node);
         }
 
-        modified_query_info.query = queryNodeToSelectQuery(modified_query_info.query_tree);
+        modified_query_info.setQuery(queryNodeToSelectQuery(modified_query_info.query_tree));
     }
     else
     {
-        modified_query_info.query = query_info.query->clone();
+        modified_query_info.setQuery(query_info.getQuery()->clone());
 
         /// Original query could contain JOIN but we need only the first joined table and its columns.
-        auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
+        auto & modified_select = modified_query_info.getQuery()->as<ASTSelectQuery &>();
         TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
         removeJoin(modified_select, new_analyzer_res, modified_context);
         modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
@@ -1251,7 +1251,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     size_t streams_num) const
 {
     const auto & [database_name, storage, _, table_name] = storage_with_lock;
-    auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
+    auto & modified_select = modified_query_info.getQuery()->as<ASTSelectQuery &>();
 
     if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names_read_from_the_source_table))
     {
@@ -1322,7 +1322,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         {
             modified_select.replaceDatabaseAndTable(database_name, table_name);
             /// TODO: Find a way to support projections for StorageMerge
-            InterpreterSelectQuery interpreter{modified_query_info.query,
+            InterpreterSelectQuery interpreter{modified_query_info.getQuery(),
                 modified_context,
                 SelectQueryOptions(processed_stage)};
 

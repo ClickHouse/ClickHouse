@@ -635,7 +635,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const Settings & settings = query_context->getSettingsRef();
 
     const auto stats_collecting_params = StatsCollectingParams(
-        calculateCacheKey(select_query_info.query),
+        calculateCacheKey(select_query_info.getQuery()),
         settings[Setting::collect_hash_table_stats_during_aggregation],
         query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
@@ -2109,7 +2109,10 @@ void Planner::buildPlanForQueryNode()
 
     QueryResultCachePtr query_result_cache = planner_context->getMutableQueryContext()->getQueryResultCache();
     bool can_use_query_result_cache = query_context->getCanUseQueryResultCache();
-    ASTPtr ast = select_query_info.query;
+    /// The AST is only needed to build the query result cache key (read below and write at the end of
+    /// this function). It is materialized lazily inside the `local_can_use_cache` block, so a query
+    /// that does not use the cache never pays for `queryNodeToSelectQuery`.
+    ASTPtr ast;
 
     /// Determine if the query result cache should be used for this query node (with `is_subquery = true` key).
     /// The Planner-level cache is separate from the `executeQuery`-level cache (`is_subquery = false`).
@@ -2135,7 +2138,10 @@ void Planner::buildPlanForQueryNode()
     /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
     std::optional<Settings> settings_copy;
     if (local_can_use_cache)
+    {
         settings_copy = settings;
+        ast = select_query_info.getQuery();
+    }
 
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
     if (should_cache && settings[Setting::enable_reads_from_query_cache])

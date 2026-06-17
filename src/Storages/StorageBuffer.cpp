@@ -505,14 +505,14 @@ void StorageBuffer::read(
                     storage_snapshot->metadata->virtuals);
 
             auto interpreter
-                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
+                = InterpreterSelectQueryAnalyzer(query_info.getQuery(), local_context, SelectQueryOptions(processed_stage), storage);
             interpreter.addStorageLimits(*query_info.storage_limits);
             buffers_plan = std::move(interpreter).extractQueryPlan();
         }
         else
         {
             auto interpreter = InterpreterSelectQuery(
-                    query_info.query, local_context, std::move(pipe_from_buffers),
+                    query_info.getQuery(), local_context, std::move(pipe_from_buffers),
                     SelectQueryOptions(processed_stage));
             interpreter.addStorageLimits(*query_info.storage_limits);
             interpreter.buildQueryPlan(buffers_plan);

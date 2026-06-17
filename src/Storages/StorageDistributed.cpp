@@ -681,7 +681,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     if (settings[Setting::distributed_push_down_limit])
         default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    const auto & select = query_info.getQuery()->as<ASTSelectQuery &>();
 
     auto expr_contains_sharding_key = [&](const auto & exprs) -> bool
     {
@@ -1081,7 +1081,7 @@ void StorageDistributed::read(
         /// (the unresolved FunctionGrouping throws on execution, even with 0 rows).
         auto query_tree_for_ast = query_tree_distributed->clone();
         removeGroupingFunctionSpecializations(query_tree_for_ast);
-        modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_for_ast);
+        modified_query_info.setQuery(queryNodeToDistributedSelectQuery(query_tree_for_ast));
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
 
@@ -1091,11 +1091,11 @@ void StorageDistributed::read(
     }
     else
     {
-        header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        header = InterpreterSelectQuery(modified_query_info.getQuery(), local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
-        modified_query_info.query = ClusterProxy::rewriteSelectQuery(
-            local_context, modified_query_info.query,
-            remote_database, remote_table, remote_table_function_ptr);
+        modified_query_info.setQuery(ClusterProxy::rewriteSelectQuery(
+            local_context, modified_query_info.getQuery(),
+            remote_database, remote_table, remote_table_function_ptr));
 
         if (modified_query_info.getCluster()->getShardsInfo().empty())
         {
@@ -1902,7 +1902,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         return skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
 
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    const auto & select = query_info.getQuery()->as<ASTSelectQuery &>();
     if (!select.prewhere() && !select.where())
         return nullptr;
 

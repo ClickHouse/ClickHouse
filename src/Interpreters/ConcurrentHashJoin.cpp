@@ -732,7 +732,7 @@ IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_ta
 {
     IQueryTreeNode::HashState hash;
 
-    const auto * select = select_query_info.query->as<DB::ASTSelectQuery>();
+    const auto * select = select_query_info.getQuery()->as<DB::ASTSelectQuery>();
     if (!select)
         return hash;
 

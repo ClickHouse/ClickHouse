@@ -128,7 +128,7 @@ static void checkOld(
     SelectQueryOptions select_options;
     query_info.syntax_analyzer_result
         = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(table_num));
-    query_info.query = ast;
+    query_info.setQuery(ast);
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),

@@ -3113,7 +3113,7 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     if (query_info.table_expression_modifiers)
         return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
 
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    const auto & select = query_info.getQuery()->as<ASTSelectQuery &>();
     return select.sampleSize() != nullptr;
 }
 

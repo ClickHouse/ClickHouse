@@ -233,7 +233,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     }
     else
     {
-        auto & select = select_query_info.query->as<ASTSelectQuery &>();
+        auto & select = select_query_info.getQuery()->as<ASTSelectQuery &>();
 
         auto select_sample_size = select.sampleSize();
         auto select_sample_offset = select.sampleOffset();

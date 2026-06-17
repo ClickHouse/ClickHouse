@@ -124,7 +124,20 @@ struct SelectQueryInfo
 {
     SelectQueryInfo();
 
-    ASTPtr query;
+    /// The query AST. On the analyzer path it is materialized lazily from `query_tree` on first
+    /// access via `getQuery` (see `buildSelectQueryInfo`), because `QueryNode::toAST` is expensive
+    /// and the AST is unused for most reads from storages. Always go through `getQuery`/`setQuery`;
+    /// never touch `query_ast` directly.
+    const ASTPtr & getQuery() const;
+    /// Mutable overload: materializes (if lazy) and returns a non-const reference, so callers that
+    /// rewrite the query AST in place (e.g. the legacy `TreeRewriter::analyzeSelect`, which takes
+    /// `ASTPtr &`) keep working and their mutations persist in this `SelectQueryInfo`.
+    ASTPtr & getQuery();
+    void setQuery(ASTPtr query_);
+    /// Mark the AST as lazily materialized from `query_tree`. `query_tree` must already be set and
+    /// be a `QueryNode` (the invariant required by `queryNodeToSelectQuery`).
+    void setLazyQuery();
+
     ASTPtr view_query; /// Optimized VIEW query
 
     /// Query tree
@@ -223,5 +236,14 @@ struct SelectQueryInfo
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
     std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+
+private:
+    /// Backing storage for `getQuery`/`setQuery`. Mutable because `getQuery` materializes the AST
+    /// lazily on a const `SelectQueryInfo` (see `query_is_lazy`).
+    mutable ASTPtr query_ast;
+    /// When true, `getQuery` materializes `query_ast` from `query_tree` on first access. Set only by
+    /// `setLazyQuery` (used by `buildSelectQueryInfo`). `setQuery` clears it, so an explicitly set
+    /// (or unset/null) AST is never silently rebuilt from `query_tree`.
+    bool query_is_lazy = false;
 };
 }
