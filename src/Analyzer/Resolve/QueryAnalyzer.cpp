@@ -3720,7 +3720,7 @@ bool nodeSupportsConvertToNullable(const QueryTreeNodePtr & node)
   */
 bool convertNestedGroupByKeysToNullable(
     QueryTreeNodePtr & node,
-    const QueryTreeNodePtrWithGlobalHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
+    const QueryTreeNodePtrWithLocalHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
     const ContextPtr & context)
 {
     if (nodeSupportsConvertToNullable(node) && nullable_group_by_keys.contains(node))
