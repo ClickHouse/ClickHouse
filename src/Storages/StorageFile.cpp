@@ -199,7 +199,14 @@ void listFilesWithRegexpMatchingImpl(
             (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
-            add_matched_path(absolute_path.string(), 0);
+            /// This exact-match branch is reached for suffixes without globs, including the
+            /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
+            /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
+            /// for progress reporting. `fs::file_size` errors for non-regular targets (e.g. a
+            /// directory); in that case keep the byte count at zero but still return the path.
+            std::error_code size_ec;
+            const size_t file_size = fs::file_size(absolute_path, size_ec);
+            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
         }
         catch (const std::exception &) // NOLINT
         {
