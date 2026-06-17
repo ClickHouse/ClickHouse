@@ -36,14 +36,14 @@ SELECT CAST(60000::UInt16, 'DateTime64') = CAST(60000::UInt64, 'DateTime64') SET
 SELECT CAST(4294967295::UInt32, 'DateTime64') = CAST(4294967295::UInt64, 'DateTime64') SETTINGS date_time_overflow_behavior='throw';
 
 -- Saturate mode for unsigned types
-SELECT CAST(4294967295::UInt32, 'Time64') = CAST(3599999::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(4294967295::UInt32, 'Time64') = CAST(4294967295.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
 
--- Saturate clamp: out-of-range values must compare equal to the max.
--- Integer sources clamp to the whole-second maximum (they carry no fraction),
--- while float sources clamp to the maximum representable fractional value at the target scale.
-SELECT CAST(9999999::Int64, 'Time64') = CAST(3599999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+-- Saturate clamp: out-of-range values clamp to the maximum representable target value, including its
+-- sub-second fraction, regardless of the source family, so an out-of-range integer cast agrees with the
+-- corresponding out-of-range float cast.
+SELECT CAST(9999999::Int64, 'Time64') = CAST(9999999.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
 SELECT CAST(9999999.0::Float64, 'Time64') = CAST(3599999.999::Float64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
-SELECT CAST(9999999::UInt64, 'Time64') = CAST(3599999::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(9999999::UInt64, 'Time64') = CAST(9999999.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
 
 -- Small types (Int16) must not overflow during clamping
 SELECT toTime64(-3600::Int16, 0);
@@ -62,12 +62,12 @@ SELECT CAST(9999999::UInt256, 'Time64') SETTINGS date_time_overflow_behavior='th
 SELECT CAST(-9999999::Int128, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(-9999999::Int256, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
--- Saturate clamp also works for wide ints, matching the narrow counterpart at the boundary.
-SELECT CAST(9999999::Int128, 'Time64') = CAST(3599999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
-SELECT CAST(9999999::UInt128, 'Time64') = CAST(3599999::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
-SELECT CAST(9999999::Int256, 'Time64') = CAST(3599999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
-SELECT CAST(9999999::UInt256, 'Time64') = CAST(3599999::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
-SELECT CAST(-9999999::Int128, 'Time64') = CAST(-3599999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+-- Saturate clamp also works for wide ints, clamping to the same maximum representable value as the float source.
+SELECT CAST(9999999::Int128, 'Time64') = CAST(9999999.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(9999999::UInt128, 'Time64') = CAST(9999999.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(9999999::Int256, 'Time64') = CAST(9999999.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(9999999::UInt256, 'Time64') = CAST(9999999.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(-9999999::Int128, 'Time64') = CAST(-9999999.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
 
 -- In-range wide-int values agree with the narrow counterpart.
 SELECT CAST(60000::Int128, 'Time64') = CAST(60000::Int64, 'Time64') SETTINGS date_time_overflow_behavior='throw';

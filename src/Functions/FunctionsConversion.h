@@ -562,8 +562,17 @@ struct ToDateTime64TransformUnsigned
             }
 
             /// Compare in FromType domain to avoid truncating wide ints (UInt128, UInt256) before clamping.
-            time_t clamped = from > FromType(max_whole_second) ? max_whole_second : static_cast<time_t>(from);
-            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
+            if (from > FromType(max_whole_second)) [[unlikely]]
+            {
+                /// `saturate` clamps to the maximum representable target value, including its sub-second
+                /// fraction (matching the float transform), so e.g. an out-of-range UInt64 cast to
+                /// DateTime64(9) yields 2262-04-11 23:47:16.854775807, not the whole second. `ignore` keeps
+                /// the legacy whole-second clamp.
+                if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    return maxRepresentableDateTime64Native(scale_multiplier);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(max_whole_second, 0, scale_multiplier);
+            }
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
         }
 
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
@@ -597,14 +606,17 @@ struct ToDateTime64TransformSigned
             }
 
             /// Compare in FromType domain to avoid truncating wide ints (Int128, Int256) before clamping.
-            time_t clamped = 0;
+            /// The calendar minimum has no sub-second part, so its native value is the same for `saturate`
+            /// and `ignore`; only the upper clamp differs (see the unsigned transform).
             if (from < FromType(MIN_DATETIME64_TIMESTAMP))
-                clamped = MIN_DATETIME64_TIMESTAMP;
-            else if (from > FromType(max_whole_second))
-                clamped = max_whole_second;
-            else
-                clamped = static_cast<time_t>(from);
-            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(MIN_DATETIME64_TIMESTAMP, 0, scale_multiplier);
+            if (from > FromType(max_whole_second))
+            {
+                if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    return maxRepresentableDateTime64Native(scale_multiplier);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(max_whole_second, 0, scale_multiplier);
+            }
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
         }
 
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
@@ -752,8 +764,15 @@ struct ToTime64TransformUnsigned
             }
 
             /// Compare in FromType domain to avoid truncating wide ints (UInt128, UInt256) before clamping.
-            time_t clamped = from > FromType(MAX_TIME_TIMESTAMP) ? MAX_TIME_TIMESTAMP : static_cast<time_t>(from);
-            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
+            if (from > FromType(MAX_TIME_TIMESTAMP)) [[unlikely]]
+            {
+                /// `saturate` clamps to the maximum representable target value including its sub-second
+                /// fraction (matching the float transform); `ignore` keeps the legacy whole-second clamp.
+                if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    return maxRepresentableTime64Native(scale_multiplier);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(MAX_TIME_TIMESTAMP, 0, scale_multiplier);
+            }
+            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<time_t>(from), 0, scale_multiplier);
         }
 
         return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<time_t>(from), 0, scale_multiplier);
@@ -785,14 +804,22 @@ struct ToTime64TransformSigned
             }
 
             /// Compare in FromType domain to avoid truncating wide ints (Int128, Int256) before clamping.
-            time_t clamped = 0;
-            if (from < FromType(-1 * MAX_TIME_TIMESTAMP))
-                clamped = -1 * MAX_TIME_TIMESTAMP;
-            else if (from > FromType(MAX_TIME_TIMESTAMP))
-                clamped = MAX_TIME_TIMESTAMP;
-            else
-                clamped = static_cast<time_t>(from);
-            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
+            /// `saturate` clamps to the ±maximum representable target value including its sub-second fraction
+            /// (matching the float transform; the range is symmetric); `ignore` keeps the legacy whole-second
+            /// clamp.
+            if (from < FromType(-1 * MAX_TIME_TIMESTAMP)) [[unlikely]]
+            {
+                if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    return -maxRepresentableTime64Native(scale_multiplier);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(-1 * MAX_TIME_TIMESTAMP, 0, scale_multiplier);
+            }
+            if (from > FromType(MAX_TIME_TIMESTAMP)) [[unlikely]]
+            {
+                if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    return maxRepresentableTime64Native(scale_multiplier);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(MAX_TIME_TIMESTAMP, 0, scale_multiplier);
+            }
+            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<time_t>(from), 0, scale_multiplier);
         }
 
         return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<time_t>(from), 0, scale_multiplier);
