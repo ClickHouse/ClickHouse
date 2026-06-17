@@ -2247,6 +2247,14 @@ void ReaderExecutor::sweepPutMachines(bool wait)
 
 void ReaderExecutor::joinPutMachinesOverlapping(ByteRange window, bool writers_too)
 {
+    if (use_put_lane)
+    {
+        /// Only the writer-borrow callers need the lane drained: a prefetch launch
+        /// (writers_too=false) targets a FUTURE window the write-back lane never holds.
+        if (writers_too)
+            flushPutLaneOverlapping(window);
+        return;
+    }
     if (put_machines.empty())
         return;
     for (auto it = put_machines.begin(); it != put_machines.end();)
@@ -2387,6 +2395,45 @@ void ReaderExecutor::sweepPutLane(bool wait)
         }
         put_lane.stopping = false;
     }
+}
+
+void ReaderExecutor::flushPutLaneOverlapping(ByteRange window)
+{
+    auto overlaps = [&](const FetchMachine & m)
+    {
+        for (const auto & w : m.writers)
+            if (w.range.offset < window.end() && window.offset < w.range.end())
+                return true;
+        return false;
+    };
+
+    /// Queued puts that overlap: run inline on the foreground, in FIFO order. They hold
+    /// writers DISJOINT from the in-flight put (the borrow erased each from `read_plan.bufs`),
+    /// so running them while the in-flight put writes its own writers is race-free.
+    for (auto it = put_lane.pending.begin(); it != put_lane.pending.end();)
+    {
+        if (overlaps(**it))
+        {
+            (*it)->run_step();
+            reapPutMachine(**it);
+            it = put_lane.pending.erase(it);
+        }
+        else
+            ++it;
+    }
+
+    /// The async in-flight put that overlaps: join it (block until its write lands), then reap.
+    if (put_lane.in_flight && overlaps(*put_lane.in_flight))
+    {
+        const auto st = put_lane.in_flight->state.load();
+        if (st == MachineState::Scheduled || st == MachineState::Running)
+            put_runner->waitReleased(*put_lane.in_flight);
+        reapPutMachine(*put_lane.in_flight);
+        put_lane.in_flight.reset();
+    }
+
+    /// Re-arm the head: any remaining pending no longer overlaps `window`.
+    armPutLaneHead();
 }
 
 void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, const ChainedBuffers & bytes, Stats & out_stats)

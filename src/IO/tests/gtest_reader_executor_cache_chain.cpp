@@ -466,11 +466,10 @@ TEST_F(ReaderExecutorCacheChain, PutLanePopulatesCacheLikePutMachines)
     const size_t warm_source = sourceRequestsSoFar() - src_before_warm;
 
     EXPECT_GT(cold_source, 0u) << "cold scan must hit the source";
-    EXPECT_LT(warm_source, cold_source)
-        << "the lane serves correct bytes and populates the chain (warm re-read is cheaper than "
-           "fully cold). It never ABANDONS a fill (backpressure drains synchronously under load); "
-           "FULL population (warm==0) additionally needs same-writer serialization for consecutive "
-           "windows of one segment - that is S3's flushUpTo/early-reap, not wired yet";
+    EXPECT_EQ(warm_source, 0u)
+        << "the lane never abandons a fill (backpressure) AND flushPutLaneOverlapping serializes "
+           "the same-segment writer across consecutive windows, so the chain is fully populated "
+           "and the warm re-read touches the source 0 times";
 }
 
 /// Regression: a cold `readBigAt` of a small range strictly inside a page-cache

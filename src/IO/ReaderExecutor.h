@@ -792,6 +792,16 @@ private:
     /// the whole lane (plan rebuild / destruction); `!wait` returns while one is running.
     void sweepPutLane(bool wait);
 
+    /// S3: the lane's equivalent of `joinPutMachinesOverlapping(window, writers_too=true)`.
+    /// Apply + reap every lane put whose borrowed writers overlap `window` BEFORE the
+    /// foreground reads/borrows that range, so the writers come home (a consecutive
+    /// same-segment window can reclaim them) and `recreditCommittedPrefixes` sees the grown
+    /// committed prefix instead of re-fetching. Each lane put holds DISJOINT writers (the
+    /// borrow erases them from `read_plan.bufs`), so the overlapping puts can be applied in
+    /// any order: the queued (unstarted) ones run inline on the foreground, the async
+    /// in-flight one is joined.
+    void flushPutLaneOverlapping(ByteRange window);
+
     /// The deferred promote: borrow the FASTER-tier writers overlapping
     /// `range` that are currently home into a put-only machine fed by the
     /// served chain slice (refcounted, no copy). STRICTLY optional with no
