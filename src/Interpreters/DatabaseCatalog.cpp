@@ -1443,6 +1443,9 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         chassert(id_it != tables_marked_dropped_ids.end());
         if (id_it != tables_marked_dropped_ids.end())
             tables_marked_dropped_ids.erase(id_it);
+        else
+            LOG_ERROR(log, "Table {} is missing from tables_marked_dropped_ids while being undropped, it's a bug",
+                      dropped_table.table_id.getNameForLogs());
         CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
     }
 
@@ -1578,6 +1581,9 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
                     chassert(id_it != tables_marked_dropped_ids.end());
                     if (id_it != tables_marked_dropped_ids.end())
                         tables_marked_dropped_ids.erase(id_it);
+                    else
+                        LOG_ERROR(log, "Table {} is missing from tables_marked_dropped_ids while being dropped, it's a bug",
+                                  table_iterator->table_id.getNameForLogs());
 
                     table_to_delete_without_lock = std::move(*table_iterator);
 
