@@ -29,8 +29,11 @@ for FMT in ArrowStream Arrow; do
              engine_file_truncate_on_insert = 1
     "
 
-    NATIVE=$(${CLICKHOUSE_LOCAL}  --query "SELECT * FROM file('${DATA_FILE}.${FMT}', '${FMT}') ORDER BY lc, arr_lc SETTINGS input_format_arrow_use_native_reader = 1")
-    LIBRARY=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}.${FMT}', '${FMT}') ORDER BY lc, arr_lc SETTINGS input_format_arrow_use_native_reader = 0")
+    # Compare the row multiset (sort the rows): both readers see the same file, so they must return the
+    # same rows, but the row order within equal `(lc, arr_lc)` groups is not deterministic under the
+    # randomized thread/block settings the test runner injects, so do not depend on it.
+    NATIVE=$(${CLICKHOUSE_LOCAL}  --query "SELECT * FROM file('${DATA_FILE}.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 1" | sort)
+    LIBRARY=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 0" | sort)
     [ "$NATIVE" = "$LIBRARY" ] && echo "OK   ${FMT}: native == library" || echo "MISMATCH   ${FMT}"
 
     rm -f "${DATA_FILE}.${FMT}"
