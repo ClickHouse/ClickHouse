@@ -6,6 +6,7 @@
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/thread_local_rng.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
@@ -39,6 +40,16 @@
 #include <Parsers/ASTDropWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTDropResourceQuery.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
@@ -57,8 +68,10 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
+#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
+#include <Access/ReplicatedAccessStorage.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -1462,13 +1475,14 @@ static BlockIO executeQueryImpl(
                 /// query into one that throws, so skip auto-fill for temporary objects.
                 bool target_is_temporary = false;
 
-                /// User-defined functions, workloads and resources accept `ON CLUSTER` only when their
-                /// storage is *not* replicated. With replicated storage the corresponding interpreters
-                /// reject a non-empty cluster with `ON CLUSTER is not allowed because ... are replicated
-                /// automatically` (these objects then replicate on their own), so filling the cluster
-                /// would turn an ordinary local query into one that throws. With the default,
-                /// non-replicated storage `ON CLUSTER` is valid and distributes the statement, so it is
-                /// eligible for auto-fill. Decide per storage instead of skipping these families outright.
+                /// User-defined functions, workloads and resources, access entities and named collections
+                /// accept `ON CLUSTER` only when their storage is *not* replicated. With replicated storage
+                /// the corresponding interpreters reject a non-empty cluster (these objects then replicate on
+                /// their own), so filling the cluster would turn an ordinary local query into one that throws
+                /// unless the matching `ignore_on_cluster_for_replicated_*` setting strips it back. With the
+                /// default, non-replicated storage `ON CLUSTER` is valid and distributes the statement, so it
+                /// is eligible for auto-fill. Decide per storage instead of skipping these families outright,
+                /// using the same storage predicates as `removeOnClusterClauseIfNeeded`.
                 bool target_forbids_on_cluster = false;
 
                 if (out_ast->as<ASTCreateSQLFunctionQuery>() || out_ast->as<ASTCreateWasmFunctionQuery>()
@@ -1477,6 +1491,15 @@ static BlockIO executeQueryImpl(
                 else if (out_ast->as<ASTCreateWorkloadQuery>() || out_ast->as<ASTDropWorkloadQuery>()
                     || out_ast->as<ASTCreateResourceQuery>() || out_ast->as<ASTDropResourceQuery>())
                     target_forbids_on_cluster = context->getWorkloadEntityStoragePtr()->isReplicated();
+                else if (out_ast->as<ASTCreateUserQuery>() || out_ast->as<ASTCreateQuotaQuery>()
+                    || out_ast->as<ASTCreateRoleQuery>() || out_ast->as<ASTCreateRowPolicyQuery>()
+                    || out_ast->as<ASTCreateSettingsProfileQuery>() || out_ast->as<ASTDropAccessEntityQuery>()
+                    || out_ast->as<ASTGrantQuery>())
+                    target_forbids_on_cluster
+                        = context->getAccessControl().containsStorage(ReplicatedAccessStorage::STORAGE_TYPE);
+                else if (out_ast->as<ASTCreateNamedCollectionQuery>() || out_ast->as<ASTAlterNamedCollectionQuery>()
+                    || out_ast->as<ASTDropNamedCollectionQuery>())
+                    target_forbids_on_cluster = NamedCollectionFactory::instance().usesReplicatedStorage();
 
                 /// Some statements inherit `ASTQueryWithOnCluster` but cannot carry a meaningful
                 /// `ON CLUSTER` clause, so filling the cluster would turn an ordinary local query
