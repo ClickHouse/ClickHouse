@@ -58,6 +58,11 @@ FROM format('GeoJSON', '{
 SELECT count()
 FROM format('GeoJSON', '{"type":"FeatureCollection","features":5}'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 
+-- A second top-level 'features' array is rejected as a duplicate, rather than silently keeping
+-- only the first array and dropping the rest.
+SELECT count()
+FROM format('GeoJSON', '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":{}}],"features":[{"type":"Feature","geometry":null,"properties":{}}]}'); -- { serverError INCORRECT_DATA }
+
 -- A coordinate with a leading zero is not a valid JSON number and is rejected.
 SELECT geometry
 FROM format('GeoJSON', '{

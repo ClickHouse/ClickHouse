@@ -587,13 +587,18 @@ void GeoJSONRowInputFormat::readSuffix()
     /// We are positioned right after the `features` array. Strictly skip any remaining members
     /// of the top-level FeatureCollection object (validating commas between members and rejecting
     /// malformed JSON even under ignored fields, e.g. a trailing `bbox` `{"a":1 "b":2}`) up to and
-    /// including the closing `}`. The `type` member is validated here if it follows `features`.
+    /// including the closing `}`. The `type` member is validated here if it follows `features`, and a
+    /// repeated `features` array is rejected as a duplicate rather than silently dropped.
     while (!JSONUtils::checkAndSkipObjectEnd(buf))
     {
         JSONUtils::skipComma(buf);
         String key = JSONUtils::readFieldName(buf, format_settings.json);
         if (key == "type")
             validateTopLevelTypeMember(buf);
+        else if (key == "features")
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "GeoJSON: duplicate 'features' array in the FeatureCollection");
         else
             skipJSONValueStrict(buf, format_settings.json);
     }
