@@ -285,8 +285,9 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
     /// call to this method returns a slightly different definition, which breaks operations that
     /// read the table metadata several times and expect it to stay consistent - most notably
     /// BACKUP, which kept retrying with "Table ... was created or changed its definition during
-    /// scanning" and never finished. Fetched before acquiring `handler_mutex` to avoid lock ordering issues.
-    UUID table_uuid = UUIDHelpers::Nil;
+    /// scanning" and never finished. Fall back to a generated UUID only if the table does not exist
+    /// yet. Fetched before acquiring `handler_mutex` to avoid lock ordering issues.
+    UUID table_uuid = UUIDHelpers::generateV4();
     if (auto existing_table = DatabaseAtomic::tryGetTable(table_name, getContext()))
         table_uuid = existing_table->getStorageID().uuid;
 
@@ -297,8 +298,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
     {
         auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
         ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
-        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid
-            = table_uuid != UUIDHelpers::Nil ? table_uuid : UUIDHelpers::generateV4();
+        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = table_uuid;
     }
     catch (...)
     {
