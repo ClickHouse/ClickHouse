@@ -91,7 +91,10 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         {
             seekable->seek(block.offset, SEEK_SET);
             ArrowIPC::MessageReader::Message msg;
-            if (!count_reader.readNextMessage(msg) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_RecordBatch)
+            /// Bound the metadata read by the footer block's declared metadata size, so a malformed footer
+            /// cannot drive a large metadata allocation from the length prefix at `block.offset`.
+            if (!count_reader.readNextMessage(msg, block.metadata_length)
+                || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_RecordBatch)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a record batch in the Arrow file");
             const int64_t length = msg.header->header_as_RecordBatch()->length();
             if (length < 0)
