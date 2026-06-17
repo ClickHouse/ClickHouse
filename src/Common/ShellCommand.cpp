@@ -129,7 +129,7 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     bool process_terminated_normally = waitForPid(pid, timeout_in_seconds);
 
     if (process_terminated_normally && config.register_in_udf_process_registry)
-        UDFProcessRegistry::instance().remove(pid);
+        UDFProcessRegistry::instance().removeIfGenerationMatches(pid, udf_registry_generation);
 
     return process_terminated_normally;
 }
@@ -251,7 +251,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         config));
 
     if (config.register_in_udf_process_registry)
-        UDFProcessRegistry::instance().add(pid);
+        res->udf_registry_generation = UDFProcessRegistry::instance().add(pid);
 
     for (size_t i = 0; i < config.read_fds.size(); ++i)
     {
@@ -360,7 +360,7 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
             /// destructor never waits on or signals an unrelated process.
             wait_called = true;
             if (config.register_in_udf_process_registry)
-                UDFProcessRegistry::instance().remove(pid);
+                UDFProcessRegistry::instance().removeIfGenerationMatches(pid, udf_registry_generation);
             if (config.collect_resource_usage)
             {
                 child_user_time_us = static_cast<UInt64>(local_rusage.ru_utime.tv_sec) * 1000000ULL

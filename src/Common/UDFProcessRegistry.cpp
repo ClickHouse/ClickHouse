@@ -15,34 +15,40 @@ UDFProcessRegistry & UDFProcessRegistry::instance()
 }
 
 
-void UDFProcessRegistry::add(pid_t pid)
+UInt64 UDFProcessRegistry::add(pid_t pid)
 {
     if (pid <= 0)
-        return;
+        return 0;
 
     std::lock_guard lock(mutex);
-    pids.insert(pid);
+    UInt64 generation = ++next_generation;
+    pids[pid] = generation;
+    return generation;
 }
 
 
-void UDFProcessRegistry::remove(pid_t pid)
+void UDFProcessRegistry::removeIfGenerationMatches(pid_t pid, UInt64 generation)
 {
     std::lock_guard lock(mutex);
-    pids.erase(pid);
+    auto entry = pids.find(pid);
+    if (entry != pids.end() && entry->second == generation)
+        pids.erase(entry);
 }
 
 
-UDFProcessRegistry::Sample UDFProcessRegistry::sample() const
+UDFProcessRegistry::Sample UDFProcessRegistry::sample()
 {
-    std::vector<pid_t> roots;
+    std::vector<std::pair<pid_t, UInt64>> roots;
     {
         std::lock_guard lock(mutex);
-        roots.assign(pids.begin(), pids.end());
+        roots.reserve(pids.size());
+        for (const auto & [pid, generation] : pids)
+            roots.emplace_back(pid, generation);
     }
 
     Sample result;
 
-    for (pid_t root : roots)
+    for (const auto & [root, generation] : roots)
     {
         bool truncated = false;
         for (pid_t pid : UDFProcfs::walkSubtree(root, truncated))
@@ -54,6 +60,9 @@ UDFProcessRegistry::Sample UDFProcessRegistry::sample() const
                 ++result.process_count;
             }
         }
+
+        if (UDFProcfs::isZombie(root))
+            removeIfGenerationMatches(root, generation);
     }
 
     return result;

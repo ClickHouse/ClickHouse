@@ -257,6 +257,9 @@ namespace UDFProcfs
 
     /// Parse VmRSS from /proc/<pid>/status, converted to bytes.
     bool readCurrentRss(pid_t pid, UInt64 & bytes);
+
+    /// Return true if /proc/<pid>/stat can be read and reports the process as a zombie.
+    bool isZombie(pid_t pid);
 }
 
 }

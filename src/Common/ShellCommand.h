@@ -150,6 +150,12 @@ private:
     UInt64 child_user_time_us = 0;
     UInt64 child_system_time_us = 0;
 
+    /// Identifies which incarnation of the pid this wrapper owns, so reap removes
+    /// only its own entry and never one belonging to a later process that reused
+    /// the pid. Stamped by `UDFProcessRegistry::add` at spawn; 0 for non-UDF
+    /// commands, which never register.
+    UInt64 udf_registry_generation = 0;
+
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);

@@ -4,7 +4,7 @@
 #include <base/types.h>
 
 #include <mutex>
-#include <unordered_set>
+#include <unordered_map>
 
 #include <sys/types.h>
 
@@ -12,24 +12,24 @@
 namespace DB
 {
 
-/** Global registry of executable UDF child pids, powering the point-in-time
-  * asynchronous metrics `ExecutableUserDefinedFunctionMemoryResidentBytes`
-  * and `ExecutableUserDefinedFunctionProcesses`.
+/** Global registry of executable UDF child pids, powering the asynchronous
+  * metrics `ExecutableUserDefinedFunctionMemoryResidentBytes` and
+  * `ExecutableUserDefinedFunctionProcesses`.
   *
-  * `ShellCommand` adds the pid at spawn and removes it when the child is
-  * reaped, so idle pool workers stay registered for as long as they live.
-  * A never-reaped child stays registered: its pid stays pinned. Once it dies
-  * it is a zombie, which has released its address space, so `/proc/<pid>/status`
-  * has no `VmRSS` line and `sample` counts it toward neither metric.
+  * `add` stamps each pid with a generation that `ShellCommand` passes back to
+  * `removeIfGenerationMatches` at reap, so a stale removal cannot erase a
+  * successor that reused the pid. An unreaped child stays counted (its pid is
+  * pinned); once it becomes a zombie it has no `VmRSS`, drops out of both
+  * metrics, and `sample` prunes its entry.
   */
 class UDFProcessRegistry
 {
 public:
     static UDFProcessRegistry & instance();
 
-    void add(pid_t pid);
+    UInt64 add(pid_t pid);
 
-    void remove(pid_t pid);
+    void removeIfGenerationMatches(pid_t pid, UInt64 generation);
 
     struct Sample
     {
@@ -41,13 +41,12 @@ public:
         UInt64 process_count = 0;
     };
 
-    /// Walk the /proc subtree of every registered pid and read the VmRSS
-    /// once per process.
-    Sample sample() const;
+    Sample sample();
 
 private:
-    mutable std::mutex mutex;
-    std::unordered_set<pid_t> pids TSA_GUARDED_BY(mutex);
+    std::mutex mutex;
+    std::unordered_map<pid_t, UInt64> pids TSA_GUARDED_BY(mutex);
+    UInt64 next_generation TSA_GUARDED_BY(mutex) = 0;
 };
 
 }

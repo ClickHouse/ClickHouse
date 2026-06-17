@@ -262,6 +262,30 @@ bool readCurrentRss(pid_t pid, UInt64 & bytes)
 #endif
 }
 
+
+bool isZombie(pid_t pid)
+{
+    if (pid <= 0)
+        return false;
+
+#if defined(OS_LINUX)
+    std::ifstream in("/proc/" + std::to_string(pid) + "/stat");
+    std::string line;
+    if (!std::getline(in, line))
+        return false;
+
+    /// `/proc/<pid>/stat` is `pid (comm) S ...`; `comm` can contain spaces and
+    /// ')', so anchor on the last ") ".
+    const auto pos = line.rfind(") ");
+    if (pos == std::string::npos || pos + 2 >= line.size())
+        return false;
+
+    return line[pos + 2] == 'Z';
+#else
+    return false;
+#endif
+}
+
 }
 
 
