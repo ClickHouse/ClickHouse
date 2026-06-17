@@ -103,6 +103,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsBool materialize_projections_on_insert;
 }
 
 namespace ErrorCodes
@@ -1062,42 +1063,45 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
-    for (const auto & projection : metadata_snapshot->getProjections())
+    if ((*data.getSettings())[MergeTreeSetting::materialize_projections_on_insert])
     {
-        /// Commit-order projections use `_block_number` which is only finalized at commit time.
-        /// Skip during insert; they will be built correctly during the first merge.
-        if (projection.with_block_number)
-            continue;
-
-        Block projection_block;
+        for (const auto & projection : metadata_snapshot->getProjections())
         {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
-            projection_block = projection.calculate(block, 0, context, perm_ptr);
-            LOG_DEBUG(
-                log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
-        }
+            /// Commit-order projections use `_block_number` which is only finalized at commit time.
+            /// Skip during insert; they will be built correctly during the first merge.
+            if (projection.with_block_number)
+                continue;
 
-        if (projection_block.rows())
-        {
-            auto proj_temp_part
-                = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
-            new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
-
-            if (global_settings[Setting::finalize_projection_parts_synchronously])
+            Block projection_block;
             {
-                /// Finish each projection stream's finalizer immediately to release
-                /// output stream memory (writer buffers, S3 write buffers, etc.).
-                /// We cannot call proj_temp_part->finalize() here because the part
-                /// has already been moved to new_data_part above. The projection
-                /// part's precommitTransaction() will be handled later by the main
-                /// temp_part->finalize() which iterates part->getProjectionParts().
-                for (auto & stream : proj_temp_part->streams)
-                    stream.finalizer.finish();
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
+                projection_block = projection.calculate(block, 0, context, perm_ptr);
+                LOG_DEBUG(
+                    log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
             }
-            else
+
+            if (projection_block.rows())
             {
-                for (auto & stream : proj_temp_part->streams)
-                    temp_part->streams.emplace_back(std::move(stream));
+                auto proj_temp_part
+                    = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
+                new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
+
+                if (global_settings[Setting::finalize_projection_parts_synchronously])
+                {
+                    /// Finish each projection stream's finalizer immediately to release
+                    /// output stream memory (writer buffers, S3 write buffers, etc.).
+                    /// We cannot call proj_temp_part->finalize() here because the part
+                    /// has already been moved to new_data_part above. The projection
+                    /// part's precommitTransaction() will be handled later by the main
+                    /// temp_part->finalize() which iterates part->getProjectionParts().
+                    for (auto & stream : proj_temp_part->streams)
+                        stream.finalizer.finish();
+                }
+                else
+                {
+                    for (auto & stream : proj_temp_part->streams)
+                        temp_part->streams.emplace_back(std::move(stream));
+                }
             }
         }
     }
