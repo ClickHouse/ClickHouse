@@ -50,12 +50,15 @@ static DataTypePtr convertSQLiteDataType(String type)
 std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connection, const String & sqlite_table_name)
 {
     auto columns = NamesAndTypesList();
-    auto query = fmt::format("pragma table_info({});", quoteStringSQLite(sqlite_table_name));
+    /// Use `table_xinfo` rather than `table_info` so that generated columns (which `SELECT *` returns) are
+    /// included; `table_info` omits them, which would silently drop visible columns from the table structure.
+    auto query = fmt::format("pragma table_xinfo({});", quoteStringSQLite(sqlite_table_name));
 
     auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** col_names) -> int
     {
         NameAndTypePair name_and_type;
         bool is_nullable = false;
+        bool is_hidden = false;
 
         for (int i = 0; i < col_num; ++i)
         {
@@ -71,7 +74,17 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
             {
                 is_nullable = (data_by_col[i][0] == '0');
             }
+            else if (col_names[i] == "hidden"sv)
+            {
+                /// `table_xinfo` reports hidden = 1 for columns that `SELECT *` does not return (e.g. the
+                /// hidden columns of virtual tables). Generated columns use hidden = 2 (VIRTUAL) or 3 (STORED)
+                /// and are visible, so only hidden = 1 columns are skipped.
+                is_hidden = (data_by_col[i][0] == '1');
+            }
         }
+
+        if (is_hidden)
+            return 0;
 
         if (is_nullable)
             name_and_type.type = std::make_shared<DataTypeNullable>(name_and_type.type);

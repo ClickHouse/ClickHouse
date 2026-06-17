@@ -4,6 +4,7 @@
 
 #    include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #    include <Formats/FormatFactory.h>
+#    include <Formats/SchemaInferenceUtils.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
 #    include <Processors/Formats/IInputFormat.h>
@@ -139,6 +140,22 @@ public:
             throw Exception(
                 ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot fetch table structure for SQLite table {}", table_name);
 
+        /// `fetchSQLiteTableStructure` reports nullability from SQLite metadata (the `NOT NULL` constraint).
+        /// Honor `schema_inference_make_columns_nullable` like other metadata-backed formats (e.g. Parquet, ORC):
+        /// 0 - never `Nullable`, 1 - always `Nullable`, otherwise keep the nullability from metadata.
+        if (settings.schema_inference_make_columns_nullable == 0 || settings.schema_inference_make_columns_nullable == 1)
+        {
+            NamesAndTypesList result;
+            for (const auto & name_and_type : *columns)
+            {
+                auto type = settings.schema_inference_make_columns_nullable == 1
+                    ? makeNullableRecursively(name_and_type.type, settings)
+                    : removeNullableRecursively(name_and_type.type, settings);
+                result.emplace_back(name_and_type.name, type);
+            }
+            return result;
+        }
+
         return *columns;
     }
 
@@ -169,7 +186,10 @@ void registerSQLiteSchemaReader(FormatFactory & factory)
 
     factory.registerAdditionalInfoForSchemaCacheGetter("SQLite", [](const FormatSettings & settings)
     {
-        return "input_table_name=" + settings.sqlite.input_table_name;
+        return fmt::format(
+            "input_table_name={}, schema_inference_make_columns_nullable={}",
+            settings.sqlite.input_table_name,
+            settings.schema_inference_make_columns_nullable);
     });
 }
 

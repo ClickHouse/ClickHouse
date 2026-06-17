@@ -252,23 +252,43 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
             assert_cast<ColumnInt64 &>(column).insertValue(sqlite3_column_int64(statement, idx));
             break;
         case ValueType::vtFloat32:
-            if (sqlite3_column_type(statement, idx) == SQLITE_TEXT)
+        {
+            const int storage_class = sqlite3_column_type(statement, idx);
+            if (storage_class == SQLITE_TEXT)
             {
                 insertTextValue(column, info, statement, idx);
                 break;
             }
+
+            /// `sqlite3_column_double` silently returns 0.0 for a `BLOB`, so reject any storage class
+            /// that is neither a number nor text (the `SQLITE_NULL` case is handled by the caller).
+            if (storage_class != SQLITE_FLOAT && storage_class != SQLITE_INTEGER)
+                throw Exception(
+                    ErrorCodes::SQLITE_ENGINE_ERROR,
+                    "Cannot read a floating-point value for column {} from a SQLite BLOB value",
+                    info.name);
 
             insertNativeValue<ColumnFloat32>(column, static_cast<Float32>(sqlite3_column_double(statement, idx)));
             break;
+        }
         case ValueType::vtFloat64:
-            if (sqlite3_column_type(statement, idx) == SQLITE_TEXT)
+        {
+            const int storage_class = sqlite3_column_type(statement, idx);
+            if (storage_class == SQLITE_TEXT)
             {
                 insertTextValue(column, info, statement, idx);
                 break;
             }
 
+            if (storage_class != SQLITE_FLOAT && storage_class != SQLITE_INTEGER)
+                throw Exception(
+                    ErrorCodes::SQLITE_ENGINE_ERROR,
+                    "Cannot read a floating-point value for column {} from a SQLite BLOB value",
+                    info.name);
+
             insertNativeValue<ColumnFloat64>(column, sqlite3_column_double(statement, idx));
             break;
+        }
         case ValueType::vtEnum8:
         {
             auto value = getTextValue(statement, idx);
