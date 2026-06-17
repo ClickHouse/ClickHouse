@@ -193,6 +193,31 @@ TEST(ColumnStatsDerivation, NullAwareFunctionInChainCarriesOffset)
     EXPECT_EQ(stats["month_is_null"].num_distinct_values, distinct_dates + 1);
 }
 
+/// Two outputs consuming the same internal node both inherit the source bound: resolving one output
+/// must not stop the other from resolving through the shared node, regardless of output order.
+TEST(ColumnStatsDerivation, SharedIntermediateNodeResolvesForAllOutputs)
+{
+    tryRegisterFunctions();
+
+    const UInt64 distinct_dates = 2556;
+
+    auto date_type = std::make_shared<DataTypeDate>();
+    ActionsDAG dag;
+    const auto & date_input = dag.addInput("d", date_type);
+
+    /// Internal node year = toYear(d), consumed by two separate outputs but not an output itself.
+    const auto & year = dag.addFunction(
+        FunctionFactory::instance().get("toYear", getContext().context), {&date_input}, "year");
+    addOutputFunction(dag, "toString", {&year}, "year_string");
+    addOutputFunction(dag, "toUInt32", {&year}, "year_uint");
+
+    auto stats = statsOf("d", distinct_dates);
+    remapColumnStats(stats, dag);
+
+    EXPECT_EQ(stats["year_string"].num_distinct_values, distinct_dates);
+    EXPECT_EQ(stats["year_uint"].num_distinct_values, distinct_dates);
+}
+
 /// The bound propagates through a chain of deterministic single-argument functions: no link can
 /// increase the distinct count, so the final output is still bounded by the source column. A
 /// multi-argument link anywhere in the chain breaks the propagation.

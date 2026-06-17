@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -90,76 +91,72 @@ static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name
     return 0;
 }
 
+/// NDV offset from `node` down to a source input, or nullopt if `node` does not trace back to one.
+/// The offset counts null-collapsing hops (see below); a plain propagating hop adds zero. Results
+/// are memoized in `offset_to_input` so every node, including shared intermediates, is resolved once.
+static std::optional<UInt64> ndvOffsetToInput(
+    const ActionsDAG::Node * node,
+    const std::unordered_set<const ActionsDAG::Node *> & input_nodes,
+    std::unordered_map<const ActionsDAG::Node *, std::optional<UInt64>> & offset_to_input)
+{
+    if (auto it = offset_to_input.find(node); it != offset_to_input.end())
+        return it->second;
+
+    std::optional<UInt64> result;
+    if (input_nodes.contains(node))
+    {
+        result = 0;
+    }
+    else if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
+    {
+        result = ndvOffsetToInput(node->children[0], input_nodes, offset_to_input);
+    }
+    else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+    {
+        auto number_of_args = functionDoesNotChangeNumberOfValues(node->function_base->getName(), node->children.size());
+        UInt64 delta = 0;
+        /// A deterministic single-argument function has at most as many distinct values as its
+        /// argument, so bound the output NDV by the argument's (e.g. `toYear(date)`).
+        if (number_of_args == 0 && node->children.size() == 1 && node->function_base->isDeterministic())
+        {
+            number_of_args = 1;
+            /// NDV counts only non-null values. A function turning a Nullable argument into a
+            /// non-Nullable result (e.g. `isNull`) maps NULL to one extra counted value, so add one.
+            if (isNullableOrLowCardinalityNullable(node->children[0]->result_type)
+                && !isNullableOrLowCardinalityNullable(node->result_type))
+                delta = 1;
+        }
+        for (size_t i = 0; i < number_of_args && i < node->children.size(); ++i)
+        {
+            if (auto child_offset = ndvOffsetToInput(node->children[i], input_nodes, offset_to_input))
+            {
+                result = *child_offset + delta;
+                break;
+            }
+        }
+    }
+
+    offset_to_input[node] = result;
+    return result;
+}
+
 /// For each output column that traces back to `input_name`, return how much to add to the source
-/// NDV to bound the output NDV. The offset counts null-collapsing hops (see below); a plain
-/// propagating hop adds zero.
+/// NDV to bound the output NDV.
 static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
 {
-    std::unordered_map<String, UInt64> output_offsets;
-
-    /// Nodes known to trace back to the source input, mapped to their offset to it. Seeded with the
-    /// source inputs (offset zero); resolved outputs are added so aliases inherit their offset.
-    std::unordered_map<const ActionsDAG::Node *, UInt64> resolved_offsets;
+    std::unordered_set<const ActionsDAG::Node *> input_nodes;
     for (const auto * node : actions.getInputs())
     {
         if (input_name == node->result_name)
-            resolved_offsets[node] = 0;
+            input_nodes.insert(node);
     }
 
-    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+    std::unordered_map<const ActionsDAG::Node *, std::optional<UInt64>> offset_to_input;
+    std::unordered_map<String, UInt64> output_offsets;
     for (const auto * out_node : actions.getOutputs())
     {
-        /// Each stack entry is a node paired with the offset accumulated from `out_node` to it.
-        std::stack<std::pair<const ActionsDAG::Node *, UInt64>> nodes_to_process;
-        nodes_to_process.push({out_node, 0});
-
-        while (!nodes_to_process.empty())
-        {
-            auto [node, offset_to_node] = nodes_to_process.top();
-            nodes_to_process.pop();
-
-            auto resolved_it = resolved_offsets.find(node);
-            if (resolved_it != resolved_offsets.end())
-            {
-                /// Reached the source input (or a node already remapped to it); sum both path segments.
-                UInt64 total_offset = offset_to_node + resolved_it->second;
-                output_offsets[out_node->result_name] = total_offset;
-                resolved_offsets[out_node] = total_offset;
-                break;
-            }
-
-            if (!visited_nodes.insert(node).second)
-                break;
-
-            if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
-            {
-                nodes_to_process.push({node->children[0], offset_to_node});
-            }
-            else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
-            {
-                auto number_of_args = functionDoesNotChangeNumberOfValues(node->function_base->getName(), node->children.size());
-                UInt64 child_offset = offset_to_node;
-                /// A deterministic single-argument function has at most as many distinct values as
-                /// its argument, so bound the output NDV by the argument's (e.g. `toYear(date)`).
-                if (number_of_args == 0 && node->children.size() == 1 && node->function_base->isDeterministic())
-                {
-                    number_of_args = 1;
-                    /// NDV counts only non-null values. A function turning a Nullable argument into a
-                    /// non-Nullable result (e.g. `isNull`) maps NULL to one extra counted value, so
-                    /// add one to the bound.
-                    if (isNullableOrLowCardinalityNullable(node->children[0]->result_type)
-                        && !isNullableOrLowCardinalityNullable(node->result_type))
-                        child_offset += 1;
-                }
-                for (const auto * child : node->children)
-                {
-                    if (number_of_args == 0)
-                        break;
-                    number_of_args -= 1;
-                    nodes_to_process.push({child, child_offset});
-                }
-            }
-        }
+        if (auto offset = ndvOffsetToInput(out_node, input_nodes, offset_to_input))
+            output_offsets[out_node->result_name] = *offset;
     }
     return output_offsets;
 }
