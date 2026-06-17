@@ -5534,3 +5534,67 @@ def test_azure_empty_blob_path(started_cluster, use_delta_kernel):
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
+
+
+def test_delta_kernel_rebuild_on_credentials_rotation(started_cluster):
+    """Cache a DeltaLake snapshot, then change the credentials fingerprint between two
+    reads and assert the second read rebuilds the kernel engine instead of silently
+    reusing the stale one.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_rebuild_on_rotation")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # First read: caches the kernel snapshot state under the current credentials fingerprint.
+    baseline_query_id = f"{TABLE_NAME}_baseline"
+    assert int(instance.query(
+        f"SELECT count() FROM {TABLE_NAME}",
+        query_id=baseline_query_id,
+    )) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+    init_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Initializing snapshot%'"
+    ).strip())
+    assert init_hits >= 1, "First read should initialize the kernel snapshot state"
+
+    rebuild_hits_pre = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state%'"
+    ).strip())
+    assert rebuild_hits_pre == 0, "First read should NOT trigger the credentials-rotation rebuild"
+
+    # Second read: the failpoint perturbs the credentials fingerprint, simulating an STS
+    # rotation between consecutive reads of the same cached snapshot. The fingerprint
+    # mismatch must trigger the rebuild path; the row count must still come back correct.
+    rotated_query_id = f"{TABLE_NAME}_rotated"
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    try:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=rotated_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    rebuild_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{rotated_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state (credentials rotated)%'"
+    ).strip())
+    assert rebuild_hits >= 1, (
+        f"Expected the credentials-rotation rebuild log line to fire for query {rotated_query_id}, "
+        f"found {rebuild_hits} hits — the fingerprint check did not rebuild the kernel state."
+    )

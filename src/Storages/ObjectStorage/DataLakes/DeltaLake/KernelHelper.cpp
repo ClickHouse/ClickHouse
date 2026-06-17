@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
@@ -28,6 +29,11 @@ namespace DB::ErrorCodes
 namespace DB::S3AuthSetting
 {
     extern const S3AuthSettingsBool no_sign_request;
+}
+
+namespace DB::FailPoints
+{
+    extern const char delta_kernel_force_credentials_fingerprint_drift[];
 }
 
 namespace DeltaLake
@@ -110,7 +116,15 @@ public:
         hash.update(credentials.GetAWSAccessKeyId());
         hash.update(credentials.GetAWSSecretKey());
         hash.update(credentials.GetSessionToken());
-        return hash.get128();
+        auto fp = hash.get128();
+        /// Simulates a credentials rotation between consecutive reads of the same cached
+        /// snapshot. Deterministic XOR keeps the perturbed value stable while the failpoint
+        /// is armed, so exactly one rebuild fires before the system re-stabilizes.
+        fiu_do_on(DB::FailPoints::delta_kernel_force_credentials_fingerprint_drift,
+        {
+            fp ^= DB::UInt128(1);
+        });
+        return fp;
     }
 
     ffi::EngineBuilder * createBuilder() const override
