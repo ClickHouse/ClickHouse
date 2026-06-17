@@ -5213,12 +5213,17 @@ void MergeTreeData::changeSettings(
                         {
                             for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
                             {
-                                if (it->name() == DETACHED_DIR_NAME
-                                    && disk->isDirectoryEmpty(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+                                const auto name = it->name();
+                                if (startsWith(name, "tmp")
+                                    || name == MergeTreeData::FORMAT_VERSION_FILE_NAME
+                                    || name == DETACHED_DIR_NAME)
                                     continue;
 
-                                contains_table_data = true;
-                                break;
+                                if (MergeTreePartInfo::tryParsePartName(name, format_version))
+                                {
+                                    contains_table_data = true;
+                                    break;
+                                }
                             }
                         }
 

@@ -1,4 +1,5 @@
 import os
+import shlex
 
 import pytest
 
@@ -46,18 +47,28 @@ def test_alter_storage_policy_with_empty_directory(started_cluster):
     )
     node.query("INSERT INTO test_empty_dir VALUES (1)")
 
+    disk1_path = "/var/lib/clickhouse1/"
     data_path = node.query(
         "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 'test_empty_dir'"
     ).strip()
-    assert data_path.startswith("/var/lib/clickhouse1/")
-    relative_data_path = data_path.removeprefix("/var/lib/clickhouse1/")
+    relative_data_path = data_path.removeprefix(disk1_path)
+
+    disk2_data_path = f"/var/lib/clickhouse2/{relative_data_path}"
+    quoted_disk2_data_path = shlex.quote(disk2_data_path)
 
     node.exec_in_container(
-        ["bash", "-c", f"mkdir -p /var/lib/clickhouse2/{relative_data_path}/detached"]
+        [
+            "bash",
+            "-c",
+            f"mkdir -p {quoted_disk2_data_path}/detached "
+            f"{quoted_disk2_data_path}/tmp_1_1_0 "
+            f"{quoted_disk2_data_path}/tmp-fetch_1_1_0 && "
+            f"echo 1 > {quoted_disk2_data_path}/format_version.txt",
+        ]
     )
 
     node.query("ALTER TABLE test_empty_dir MODIFY SETTING storage_policy = 'test_policy'")
-    node.query(
+    assert node.query(
         "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 'test_empty_dir'"
     ).strip().startswith("/var/lib/clickhouse2")
     assert node.query("SELECT * FROM test_empty_dir") == "1\n"
