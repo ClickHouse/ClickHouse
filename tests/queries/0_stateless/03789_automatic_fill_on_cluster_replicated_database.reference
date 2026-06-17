@@ -20,3 +20,6 @@ Test 7 verification: ALTER DATABASE contains ON CLUSTER
 Test 8: RENAME DATABASE of a Replicated database IS rewritten ON CLUSTER
 Test 8 verification: RENAME DATABASE contains ON CLUSTER
 1
+Test 9: multi-element RENAME mixing a Replicated-DB table with an ordinary table is rejected
+Test 9 verification: the rejected RENAME did not rename the ordinary table locally
+1

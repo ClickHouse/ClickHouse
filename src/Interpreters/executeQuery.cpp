@@ -1612,15 +1612,33 @@ static BlockIO executeQueryImpl(
                     /// stay local, because the engine replicates those on its own.
                     if (!rename_query->database)
                     {
+                        bool has_replicated_target = false;
+                        bool has_on_cluster_target = false;
                         for (const auto & element : rename_query->getElements())
                         {
                             if (is_replicated_database(element.from.getDatabase())
                                 || is_replicated_database(element.to.getDatabase()))
-                            {
-                                target_is_replicated_database = true;
-                                break;
-                            }
+                                has_replicated_target = true;
+                            else
+                                has_on_cluster_target = true;
                         }
+
+                        /// A multi-element `RENAME a.o TO a.o2, repl.r TO repl.r2` carries one `cluster` value
+                        /// for the whole statement, but `InterpreterRenameQuery` processes the descriptions in
+                        /// order. Mixing an element that must stay local (a `Replicated`-database source or
+                        /// destination) with an ordinary element that should be distributed cannot be expressed
+                        /// by a single `cluster`: leaving it empty applies the ordinary rename only on the
+                        /// initiator and then throws on the unsupported multi-table `Replicated` rename, which
+                        /// can leave the ordinary table renamed locally. Mirror the multi-table `DROP` guard and
+                        /// reject such statements so the user issues a separate `RENAME` per group.
+                        if (has_replicated_target && has_on_cluster_target)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot automatically fill ON CLUSTER for a RENAME that mixes targets in "
+                                "Replicated databases with ordinary tables. Issue a separate statement for each "
+                                "group, or specify ON CLUSTER explicitly.");
+
+                        target_is_replicated_database = has_replicated_target;
                     }
                 }
 

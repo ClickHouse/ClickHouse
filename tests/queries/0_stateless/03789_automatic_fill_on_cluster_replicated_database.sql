@@ -133,4 +133,30 @@ SELECT count() > 0 FROM system.query_log WHERE type = 'QueryFinish'
   AND query NOT LIKE '%query_log%';
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
 
+SELECT 'Test 9: multi-element RENAME mixing a Replicated-DB table with an ordinary table is rejected';
+-- A multi-element RENAME carries one cluster value for the whole statement, but InterpreterRenameQuery
+-- applies the elements in order. When it mixes an element that must stay local (a Replicated-database
+-- source or destination) with an ordinary element that should be distributed, no single cluster value is
+-- correct: leaving it empty renames the ordinary table only on the initiator and then throws on the
+-- unsupported multi-table Replicated rename, leaving the ordinary table renamed locally. Auto-fill rejects
+-- such statements (before any rename is applied) so the user issues a separate RENAME per group.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
+
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.test_repl_rename (id UInt32) ENGINE = ReplicatedMergeTree ORDER BY id;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.test_ord_rename (id UInt32) ENGINE = MergeTree ORDER BY id;
+
+-- Operate from an ordinary current database so the guard must inspect the per-target databases.
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.test_ord_rename TO {CLICKHOUSE_DATABASE_1:Identifier}.test_ord_rename2, {CLICKHOUSE_DATABASE:Identifier}.test_repl_rename TO {CLICKHOUSE_DATABASE:Identifier}.test_repl_rename2; -- { serverError BAD_ARGUMENTS }
+
+SELECT 'Test 9 verification: the rejected RENAME did not rename the ordinary table locally';
+SELECT
+    (SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'test_ord_rename') = 1
+    AND (SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'test_ord_rename2') = 0;
+
+USE {CLICKHOUSE_DATABASE:Identifier};
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.test_repl_rename;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
 DROP DATABASE {CLICKHOUSE_DATABASE:Identifier};
