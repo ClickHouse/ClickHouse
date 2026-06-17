@@ -1,4 +1,4 @@
--- Tags: no-sanitizers
+-- Tags: no-sanitizers, long
 -- no-sanitizers: needs enough data and small blocks to collect stats and make parallel replicas
 --                cost-beneficial, which is too slow under sanitizers (as for 03783 / 04034).
 
