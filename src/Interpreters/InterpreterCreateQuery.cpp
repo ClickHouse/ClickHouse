@@ -213,6 +213,19 @@ namespace FailPoints
     /// rolled back. Used by 04163 to prove the disk is not rolled out from under durable metadata
     /// when cleanup fails (issue #63019).
     extern const char create_or_replace_fail_cleanup_drop[];
+
+    /// Test-only: throw inside `createDatabase` AFTER the database metadata file has been made
+    /// durable (`renamed = true`, and any inline metadata custom disk is registered under the
+    /// ambient scope) but BEFORE the scope is committed, to enter the catch cleanup path. Used by
+    /// 04165 (issue #63019).
+    extern const char create_database_fail_after_metadata[];
+
+    /// Test-only: throw inside the catch path of `createDatabase` when it tries to remove the
+    /// durable metadata file. The metadata file (and attached database) still references the inline
+    /// custom disk, so on this path the ambient scope must be committed (disk kept), not rolled
+    /// back. Used by 04165 to prove the disk is not rolled out from under durable metadata when
+    /// cleanup fails (issue #63019).
+    extern const char create_database_fail_cleanup[];
 }
 
 namespace fs = std::filesystem;
@@ -422,16 +435,46 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             /// Only then prioritize, schedule and wait all the startup tasks
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
         }
+
+        /// Test-only: emulate a load/startup failure after the metadata file is durable
+        /// (`renamed = true`) and the database is attached, to enter the catch cleanup path while
+        /// `create_disk_scope` is still uncommitted. See 04165 and issue #63019.
+        fiu_do_on(FailPoints::create_database_fail_after_metadata,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected failure after database metadata commit, before scope commit");
+        });
     }
     catch (...)
     {
-        if (renamed)
+        try
         {
-            chassert(default_db_disk->existsFile(metadata_file_path));
-            default_db_disk->removeFileIfExists(metadata_file_path);
+            if (renamed)
+            {
+                chassert(default_db_disk->existsFile(metadata_file_path));
+                /// Test-only: emulate a cleanup that itself throws while the database metadata file
+                /// is still durable and references the inline custom disk. See 04165, issue #63019.
+                fiu_do_on(FailPoints::create_database_fail_cleanup,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in CREATE DATABASE cleanup");
+                });
+                default_db_disk->removeFileIfExists(metadata_file_path);
+            }
+            if (added)
+                DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
         }
-        if (added)
-            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
+        catch (...)
+        {
+            /// The cleanup failed, so the database metadata file may still be durable and the
+            /// database may still be attached, both referencing the inline custom disk. Rolling the
+            /// disk registration back here (via `~CustomDiskRegistrationScope`) would leave that
+            /// durable metadata / attached database pointing at a disk no longer present in
+            /// `DiskSelector` / `FileCacheFactory`. Commit the scope instead so the disk is kept
+            /// while something still references it; a later DROP DATABASE releases it through the
+            /// normal path. See issue #63019.
+            create_disk_scope.commit();
+            tryLogCurrentException("InterpreterCreateQuery", "Cannot clean up database after failed creation");
+        }
 
         throw;
     }

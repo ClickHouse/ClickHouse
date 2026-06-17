@@ -1,0 +1,2 @@
+create_database_failed_with_injected_fault: yes
+disk_kept_after_failed_cleanup: 1
