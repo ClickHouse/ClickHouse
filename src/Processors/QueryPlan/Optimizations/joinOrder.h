@@ -107,4 +107,16 @@ struct QueryPlanOptimizationSettings;
 
 DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
 
+namespace QueryPlanOptimizations
+{
+
+/// Propagate per-column statistics from the inputs of `actions` to its outputs.
+/// An output column inherits an input's stats when it is the input itself, an alias of it,
+/// or a deterministic single-argument function of it (in which case the input's distinct
+/// count is an upper bound for the output's, since a function cannot increase the number of
+/// distinct values). The stats map is replaced in place with stats keyed by output names.
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
+
+}
+
 }

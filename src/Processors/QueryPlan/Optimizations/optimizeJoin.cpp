@@ -136,6 +136,12 @@ static NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG
             else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
             {
                 auto number_of_args = functionDoesNotChangeNumberOfValues(node->function_base->getName(), node->children.size());
+                /// A deterministic single-argument function cannot produce more distinct values than
+                /// its argument, so the output column's NDV is bounded by the argument column's NDV.
+                /// Propagate the argument stats as that upper bound (e.g. `toYear(date)`) instead of
+                /// leaving the derived column without stats and defaulting to a fraction of rows.
+                if (number_of_args == 0 && node->children.size() == 1 && node->function_base->isDeterministic())
+                    number_of_args = 1;
                 for (const auto * child : node->children)
                 {
                     if (number_of_args == 0)
@@ -150,7 +156,7 @@ static NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG
 }
 
 /// If we have stats for column names for storage we need to find corresponding internal column names
-static void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     std::unordered_map<String, ColumnStats> original = std::move(mapped);
     mapped = {};
