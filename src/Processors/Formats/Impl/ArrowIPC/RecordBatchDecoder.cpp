@@ -45,8 +45,13 @@ namespace DB::ArrowIPC
 void DictionaryRegistry::set(int64_t id, ColumnPtr values, bool is_delta)
 {
     auto it = dictionaries.find(id);
-    if (is_delta && it != dictionaries.end())
+    if (is_delta)
     {
+        /// A delta dictionary batch appends to an existing dictionary; one whose id has no base
+        /// dictionary yet is malformed — decoding indices against only the delta values would return
+        /// wrong LowCardinality values. Reject it instead of treating the delta as a fresh dictionary.
+        if (it == dictionaries.end())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC delta dictionary batch for unknown dictionary id {}", id);
         auto merged = IColumn::mutate(std::move(it->second));
         merged->insertRangeFrom(*values, 0, values->size());
         it->second = std::move(merged);
