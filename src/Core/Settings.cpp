@@ -1770,7 +1770,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, enable_group_by_top_k_optimization, true, R"(
+    DECLARE(Bool, enable_group_by_top_k_optimization, false, R"(
 Enable TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries.
 
 When enabled, the aggregator maintains a bounded heap of the top `N` keys seen so far and skips inserting new rows into the hash table when their grouping key cannot make it into the final result. This reduces the size of the intermediate hash table and avoids aggregating rows that would be discarded by the subsequent `ORDER BY ... LIMIT`.
@@ -1779,7 +1779,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, use_top_k_dynamic_filtering_for_variable_length_types, false, R"(
 Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable-length data type (e.g. `String`, `Array`, `Map`, `Tuple` containing variable-length elements).
 
