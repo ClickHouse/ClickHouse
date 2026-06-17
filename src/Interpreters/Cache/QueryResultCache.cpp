@@ -1439,9 +1439,15 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
         IASTHash ast_hash(std::stoull(low64_str), std::stoull(high64_str));
 
         assertString(FormatTokens::token_user_id, entry_file);
-        UUID user_id;
-        readUUIDText(user_id, entry_file);
-        /// can be UUIDHelpers::Nil
+        UUID user_id_raw;
+        readUUIDText(user_id_raw, entry_file);
+        /// `writeCacheEntry` stores `UUIDHelpers::Nil` as the sentinel for a missing `user_id` (the internal user, see the
+        /// `entry_key.user_id ? *entry_key.user_id : UUIDHelpers::Nil` there). Map it back to `std::nullopt`, otherwise the key would
+        /// be reconstructed as `std::optional<UUID>{UUIDHelpers::Nil}` and the `has_value()` comparison in `getWithKey` would never
+        /// match the original no-user key, making such entries inaccessible after restart.
+        std::optional<UUID> user_id;
+        if (user_id_raw != UUIDHelpers::Nil)
+            user_id = user_id_raw;
 
         assertChar('\n', entry_file);
 
