@@ -521,13 +521,20 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             const auto & entries_tuple = assert_cast<const ColumnTuple &>(*entries);
             if (entries_tuple.tupleSize() != 2)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map entries must be a struct of (key, value)");
-            /// The last absolute offset must stay within the decoded entries (offsets that point past the
-            /// entries array, e.g. [1,1] over zero entries, are corrupt even when per-row spans look empty).
-            if (rows && prev > static_cast<int64_t>(entries_tuple.size()))
+            /// A sliced Arrow map can begin at a non-zero first offset; only entries[base, prev) are
+            /// referenced. Reject offsets past the entries, then slice the key/value columns to that range
+            /// so their size matches the base-relative offsets (matching the Apache Arrow library reader).
+            if (prev > static_cast<int64_t>(entries_tuple.size()))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map offset {} points past the {} entries", prev, entries_tuple.size());
-            if (entries_tuple.size() != (rows ? offs.back() : 0))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map entries size does not match offsets");
-            return ColumnMap::create(entries_tuple.getColumnPtr(0), entries_tuple.getColumnPtr(1), std::move(offsets_col));
+            const size_t referenced = static_cast<size_t>(prev - base);
+            ColumnPtr keys = entries_tuple.getColumnPtr(0);
+            ColumnPtr values = entries_tuple.getColumnPtr(1);
+            if (!(base == 0 && referenced == entries_tuple.size()))
+            {
+                keys = keys->cut(static_cast<size_t>(base), referenced);
+                values = values->cut(static_cast<size_t>(base), referenced);
+            }
+            return ColumnMap::create(keys, values, std::move(offsets_col));
         }
         default:
             throw Exception(
@@ -570,17 +577,17 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(const ArrowField & field, size
     }
 
     ColumnPtr child = decodeField(field.type.children.at(0));
-    /// The last absolute offset must stay within the child values; otherwise the offsets point past the
-    /// values array (e.g. [1,1] over a zero-length child) even when the per-row spans look empty.
-    if (rows && prev > static_cast<int64_t>(child->size()))
+    /// A sliced Arrow list can begin at a non-zero first offset; only child[base, prev) is referenced.
+    /// Reject offsets that point past the child, then slice it to the referenced range so its size matches
+    /// the base-relative offsets — mirroring the Apache Arrow library reader's Flatten/slice of a slice.
+    if (prev > static_cast<int64_t>(child->size()))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Arrow IPC list offset {} points past the {}-element child", prev, child->size());
-    if (child->size() != (rows ? offs.back() : 0))
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow IPC list child has {} rows, expected {}", child->size(), rows ? offs.back() : 0);
-    return ColumnArray::create(child, std::move(offsets_col));
+    const size_t referenced = static_cast<size_t>(prev - base);
+    ColumnPtr child_slice
+        = (base == 0 && referenced == child->size()) ? child : child->cut(static_cast<size_t>(base), referenced);
+    return ColumnArray::create(child_slice, std::move(offsets_col));
 }
 
 ColumnPtr RecordBatchDecoder::decodeDictionary(
