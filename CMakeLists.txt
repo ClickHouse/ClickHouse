@@ -173,6 +173,14 @@ if (OS_LINUX)
 endif ()
 
 if (OS_DARWIN)
+    # Same reasoning as `--no-export-dynamic` on Linux: the main clickhouse binary does not
+    # use dlopen, so it does not need to export any dynamic symbols. By default the Mach-O
+    # linker puts every global symbol into the export trie (hundreds of thousands of them for
+    # clickhouse), which dyld walks for weak-symbol coalescing on every launch, adding ~0.15s
+    # of startup latency. Suppressing the export trie keeps the LC_SYMTAB used for backtraces
+    # intact.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_exported_symbols")
+
     # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 
