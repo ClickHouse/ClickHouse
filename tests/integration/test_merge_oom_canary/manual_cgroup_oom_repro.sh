@@ -23,7 +23,12 @@
 # On a server built with the OOM canary enabled (oom_canary_enable=1), the canary is killed first and the
 # server survives, running its OOM response (cancel all merges); without it the server itself is killed,
 # as the fuzzer's was.
-set -u
+#
+# The script fails closed: it aborts before starting the memory-destructive workload unless every cgroup
+# setup step is proven (the memory controller is enabled, the hard limits read back as written, and the
+# server is actually charged to the cgroup). Otherwise the 12-worker churn could run outside ch_merge_oom
+# and OOM the whole host.
+set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 BIN=${CLICKHOUSE_BINARY:-$REPO/build/programs/clickhouse}
@@ -39,9 +44,9 @@ LIMIT_GB=${LIMIT_GB:-4}
 
 CL(){ sudo -u "$RUN_USER" "$BIN" client --port "$PORT" "$@"; }
 cleanup(){
-    pkill -9 -f "$BASE/cfg" 2>/dev/null
+    pkill -9 -f "$BASE/cfg" 2>/dev/null || true
     sleep 1
-    if [ -d "$CG" ]; then echo 1 > "$CG/cgroup.kill" 2>/dev/null; sleep 1; rmdir "$CG" 2>/dev/null; fi
+    if [ -d "$CG" ]; then echo 1 > "$CG/cgroup.kill" 2>/dev/null || true; sleep 1; rmdir "$CG" 2>/dev/null || true; fi
     rm -rf "$BASE"
 }
 trap cleanup EXIT
@@ -62,16 +67,30 @@ cat > "$BASE/cfg/users.xml" <<EOF
 EOF
 chown -R "$RUN_USER" "$BASE"
 
-# 1) cgroup with a hard limit and no swap
+# 1) cgroup with a hard limit and no swap. Every step is verified; a failure here aborts the script
+#    before any workload runs, so the churn can never escape the cgroup onto the host.
 mkdir -p "$CG"
-echo "+memory" > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null
-echo $((LIMIT_GB*1024*1024*1024)) > "$CG/memory.max"
+# Enabling +memory is a no-op if it is already enabled, so the write itself is tolerated, but the memory
+# controller must then actually be present in the child cgroup (memory.max appears only when it is).
+echo "+memory" > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || true
+[ -e "$CG/memory.max" ] || { echo "memory controller not available in $CG (enabling +memory failed)"; exit 1; }
+
+LIMIT_BYTES=$((LIMIT_GB*1024*1024*1024))
+echo "$LIMIT_BYTES" > "$CG/memory.max"
 echo 0 > "$CG/memory.swap.max"
+# Read the limits back: a stale or unwritten limit would let the workload outgrow the host instead.
+[ "$(cat "$CG/memory.max")" = "$LIMIT_BYTES" ] || { echo "memory.max not set to $LIMIT_BYTES (got $(cat "$CG/memory.max"))"; exit 1; }
+[ "$(cat "$CG/memory.swap.max")" = "0" ] || { echo "memory.swap.max not set to 0 (got $(cat "$CG/memory.swap.max"))"; exit 1; }
 
 # 2) start the server INSIDE the cgroup, as the unprivileged user
 ( echo $BASHPID > "$CG/cgroup.procs"; exec runuser -u "$RUN_USER" -- "$BIN" server --config-file "$BASE/cfg/config.xml" ) &
+SERVER_PID=$!
 for _ in $(seq 1 40); do CL -q "SELECT 1" >/dev/null 2>&1 && break; sleep 1; done
 CL -q "SELECT 1" >/dev/null 2>&1 || { echo "server failed to start"; tail -5 "$BASE/ch.log"; exit 1; }
+# The server must be charged to the cgroup; if the cgroup.procs move silently failed (it runs in a
+# background subshell), refuse to start the OOM workload - it would otherwise be charged to the host.
+grep -qx "$SERVER_PID" "$CG/cgroup.procs" || { echo "server pid $SERVER_PID is not in $CG/cgroup.procs; refusing to run the OOM workload"; exit 1; }
+[ "$(cat "$CG/memory.current")" -gt 0 ] || { echo "cgroup is not charging memory (memory.current = 0); refusing to run the OOM workload"; exit 1; }
 echo "server up in ${LIMIT_GB} GiB cgroup ($(grep -aoE 'Available RAM: [^;]+' "$BASE/ch.log" | head -1))"
 
 CL -q "CREATE TABLE m (id UInt8, s AggregateFunction(groupArray, String)) ENGINE = AggregatingMergeTree ORDER BY id
@@ -84,16 +103,18 @@ oom_before=$(awk '/^oom_kill /{print $2}' "$CG/memory.events")
 #    retention they leave behind, drive resident memory past the cgroup)
 for _ in $(seq 1 12); do
 ( deadline=$((SECONDS + 40)); while [ $SECONDS -lt $deadline ]; do
-    CL -q "INSERT INTO m SELECT 0, arrayReduce('groupArrayState', arrayMap(x -> repeat('x', 400000), range(500))) FROM numbers(1)" >/dev/null 2>&1
-    CL -q "OPTIMIZE TABLE m FINAL" >/dev/null 2>&1
+    # Queries are expected to fail once the cgroup OOM fires; keep churning regardless (|| true so the
+    # worker is not stopped by errexit).
+    CL -q "INSERT INTO m SELECT 0, arrayReduce('groupArrayState', arrayMap(x -> repeat('x', 400000), range(500))) FROM numbers(1)" >/dev/null 2>&1 || true
+    CL -q "OPTIMIZE TABLE m FINAL" >/dev/null 2>&1 || true
   done ) &
 done
 echo "churning 12 workers for ~40s in the ${LIMIT_GB} GiB cgroup ..."
 sleep 44
 
-oom_after=$(awk '/^oom_kill /{print $2}' "$CG/memory.events" 2>/dev/null)
+oom_after=$(awk '/^oom_kill /{print $2}' "$CG/memory.events" 2>/dev/null || true)
 echo "cgroup oom_kill: ${oom_before} -> ${oom_after:-NA}"
-dmesg 2>/dev/null | grep -iE "oom_memcg=/ch_merge_oom" | tail -1
+dmesg 2>/dev/null | grep -iE "oom_memcg=/ch_merge_oom" | tail -1 || true
 if [ "${oom_after:-0}" -gt "${oom_before:-0}" ]; then
     echo "RESULT: kernel OOM killer fired"
     exit 0
