@@ -65,9 +65,9 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
-        if (tid.isNonTransactional())
+        if (tid.isPrehistoric())
         {
-            csn = Tx::NonTransactionalCSN;
+            csn = Tx::PrehistoricCSN;
         }
         else
         {
@@ -139,8 +139,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
 
     if (buf->eof())
     {
-        tid = Tx::NonTransactionalTID;
-        csn = Tx::NonTransactionalCSN;
+        tid = Tx::PrehistoricTID;
+        csn = Tx::PrehistoricCSN;
     }
     else
     {

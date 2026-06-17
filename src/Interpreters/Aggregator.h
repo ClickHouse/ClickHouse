@@ -13,6 +13,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool.h>
+#include <Common/filesystemHelpers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 

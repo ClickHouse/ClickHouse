@@ -64,8 +64,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
             const String database_engine = database ? database->getEngineName() : "";
 
-            bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-            bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+            bool is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+            bool is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal() &&
                 database_engine == "Replicated";
 
             /// Allow implicit {uuid} macros only for keeper_path in ON CLUSTER queries

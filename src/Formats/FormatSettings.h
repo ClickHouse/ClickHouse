@@ -50,9 +50,6 @@ struct FormatSettings
 
     bool allow_special_serialization_kinds = false;
 
-    /// tolerates leading zeros during parsing integers
-    bool allow_number_leading_zeros = false;
-
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
     inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";
@@ -169,7 +166,6 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
-        bool output_unsupported_types_as_binary = true;
     } arrow{};
 
     struct
@@ -352,7 +348,6 @@ struct FormatSettings
         bool allow_geoparquet_parser = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
-        bool output_unsupported_types_as_binary = false;
     } parquet{};
 
     struct Pretty

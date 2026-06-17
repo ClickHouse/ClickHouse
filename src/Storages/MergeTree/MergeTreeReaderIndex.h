@@ -34,6 +34,8 @@ public:
 
     bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
 
+    bool canSkipAnyMark() const override;
+
     size_t getResultColumnCount() const override { return 1; }
 
     bool producesFilterOnly() const override { return true; }

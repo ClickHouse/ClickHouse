@@ -489,33 +489,18 @@ namespace ExplainPlan
 static void buildTreeOffset(
     const std::deque<ExplainPlan::Frame> & frames,
     const ExplainPlan::Frame & current,
-    IQueryPlanStep::FormatSettings & settings_format,
-    const std::string & parent_tree_prefix = "",
-    bool is_last_child_plan = true)
+    IQueryPlanStep::FormatSettings & settings_format)
 {
     if (frames.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Frames stack for building tree offset cannot be empty");
 
-    settings_format.header_prefix = parent_tree_prefix;
-    settings_format.detail_prefix = parent_tree_prefix;
-
-    bool has_children = !current.node->children.empty() || !current.node->step->getChildPlans().empty();
+    settings_format.header_prefix.clear();
+    settings_format.detail_prefix.clear();
 
     if (frames.size() == 1)
     {
-        if (!parent_tree_prefix.empty())
-        {
-            settings_format.header_prefix += is_last_child_plan ? "└──" : "├──";
-            settings_format.detail_prefix += is_last_child_plan ? "   " : "│  ";
-        }
-        settings_format.detail_prefix += has_children ? "│  " : "   ";
+        settings_format.detail_prefix += current.node->children.empty() ? "   " : "│  ";
         return;
-    }
-
-    if (!parent_tree_prefix.empty())
-    {
-        settings_format.header_prefix += is_last_child_plan ? "   " : "│  ";
-        settings_format.detail_prefix += is_last_child_plan ? "   " : "│  ";
     }
 
     for (size_t i = 0; i < frames.size() - 2; ++i)
@@ -527,7 +512,7 @@ static void buildTreeOffset(
 
     settings_format.header_prefix += current.is_last_child ? "└──" : "├──";
     settings_format.detail_prefix += current.is_last_child ? "   " : "│  ";
-    settings_format.detail_prefix += has_children ? "│  " : "   ";
+    settings_format.detail_prefix += current.node->children.empty() ? "   " : "│  ";
 }
 
 static void buildIndentOffset(const std::deque<ExplainPlan::Frame> & frames, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
@@ -537,13 +522,7 @@ static void buildIndentOffset(const std::deque<ExplainPlan::Frame> & frames, IQu
     settings_format.detail_prefix = settings_format.header_prefix;
 }
 
-void QueryPlan::explainPlan(
-    WriteBuffer & buffer,
-    const ExplainPlanOptions & options,
-    size_t offset,
-    size_t max_description_length,
-    const std::string & parent_tree_prefix,
-    bool is_last_child_plan) const
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t offset, size_t max_description_length) const
 {
     checkInitialized();
 
@@ -564,18 +543,10 @@ void QueryPlan::explainPlan(
 
     std::deque<ExplainPlan::Frame> stack;
 
-    if (settings.pretty && parent_tree_prefix.empty())
-    {
-        QueryPlanFormat::formatOutputColumns(settings.out, *root->step, settings.header_prefix);
-        settings.out << '\n';
-    }
-
     /// Skip the expression steps if we are in the compact mode
     auto * first_node = skip_expressions(root);
 
-    stack.push_back(ExplainPlan::Frame{
-        .node = first_node,
-    });
+    stack.push_back(ExplainPlan::Frame{.node = first_node});
 
     while (!stack.empty())
     {
@@ -584,7 +555,7 @@ void QueryPlan::explainPlan(
         if (!frame.is_description_printed)
         {
             if (options.pretty)
-                buildTreeOffset(stack, frame, settings, parent_tree_prefix, is_last_child_plan);
+                buildTreeOffset(stack, frame, settings);
             else
                 buildIndentOffset(stack, settings, offset);
 
@@ -594,16 +565,14 @@ void QueryPlan::explainPlan(
 
         if (frame.next_child < frame.node->children.size())
         {
-            size_t child_idx = frame.next_child;
-
-            bool has_child_plans_below = !frame.node->step->getChildPlans().empty();
-            bool is_last = (frame.next_child + 1) == (frame.node->children.size()) && !has_child_plans_below;
+            bool is_last = (frame.next_child + 1) == (frame.node->children.size());
             /// Skip the expression steps if we are in the compact mode
-            auto * next_node = skip_expressions(frame.node->children[child_idx]);
+            auto * next_node = skip_expressions(frame.node->children[frame.next_child]);
 
-            stack.push_back(ExplainPlan::Frame{
-                .node = next_node,
-                .is_last_child = is_last,
+            stack.push_back(ExplainPlan::Frame{next_node,
+                0,
+                false,
+                is_last
             });
             ++frame.next_child;
         }
@@ -611,32 +580,15 @@ void QueryPlan::explainPlan(
         {
             auto child_plans = frame.node->step->getChildPlans();
 
-            std::string base_prefix;
-            if (options.pretty && !child_plans.empty())
-            {
-                if (!parent_tree_prefix.empty())
-                    base_prefix += is_last_child_plan ? "   " : "│  ";
-                for (size_t i = 0; i < stack.size() - 1; ++i)
-                    base_prefix += stack[i + 1].is_last_child ? "   " : "│  ";
-                base_prefix = parent_tree_prefix + base_prefix;
-            }
-
-            size_t plan_idx = 0;
-
             for (const auto & child_plan : child_plans)
-            {
-                bool is_last_plan = (plan_idx + 1 == child_plans.size());
-                child_plan->explainPlan(buffer, options, offset + stack.size(),
-                                        max_description_length, base_prefix, is_last_plan);
-                ++plan_idx;
-            }
+                child_plan->explainPlan(buffer, options, offset + stack.size());
 
             stack.pop_back();
         }
     }
 }
 
-static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings, bool distributed)
+static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
 {
     settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
 
@@ -644,9 +596,6 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
     step.describePipeline(settings);
     if (current_offset == settings.offset)
         settings.offset += settings.base_indent;
-
-    if (distributed)
-        step.describeDistributedPipeline(settings, distributed);
 }
 
 void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const
@@ -673,7 +622,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
         if (!frame.is_description_printed)
         {
             settings.offset = frame.offset;
-            explainPipelineStep(*frame.node->step, settings, options.distributed);
+            explainPipelineStep(*frame.node->step, settings);
             frame.offset = settings.offset;
             frame.is_description_printed = true;
         }

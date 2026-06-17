@@ -584,17 +584,6 @@ namespace ErrorCodes
     DECLARE(UInt64, min_compressed_bytes_to_fsync_after_fetch, 0, R"(
     Minimal number of compressed bytes to do fsync for part after fetch (0 - disabled)
     )", 0) \
-    DECLARE(UInt64, replicated_fetches_min_part_level, 0, R"(
-    Minimum part level to fetch from other replicas. Parts with level below this threshold are postponed
-    (kept in the replication queue and re-evaluated each scheduling cycle, not permanently skipped).
-    Use 1 to postpone fetching level-0 (unmerged) parts, reducing replication overhead during heavy ingestion.
-    Default: 0 (fetch all parts regardless of level).
-    )", 0) \
-    DECLARE(UInt64, replicated_fetches_min_part_level_timeout_seconds, 300, R"(
-    Timeout in seconds after which a part below replicated_fetches_min_part_level will be fetched anyway.
-    Use 0 to disable the timeout (parts below the minimum level are postponed indefinitely until merged).
-    Default: 300 (force fetch after 5 minutes).
-    )", 0) \
     DECLARE(Bool, fsync_after_insert, false, R"(
     Do fsync for every inserted part. Significantly decreases performance of
     inserts, not recommended to use with wide parts.
@@ -835,13 +824,6 @@ namespace ErrorCodes
     The maximum uncompressed size of data in all patch parts in bytes.
     If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
     0 - unlimited.
-    )", 0) \
-    DECLARE(Bool, compress_per_column_in_compact_parts, true, R"(
-    Controls the physical layout of Compact parts. If true (default), each column in a granule
-    starts a new compressed block, allowing ClickHouse to skip reading unnecessary columns
-    from disk. If false, all columns within a granule are packed into the same compressed block,
-    improving compression ratio but requiring more data to be decompressed during reads.
-    This is beneficial for workloads that always read all columns (e.g. projections).
     )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
@@ -1857,7 +1839,7 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
-    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
+    DECLARE(String, auto_statistics_types, "", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \
@@ -2004,10 +1986,6 @@ namespace ErrorCodes
     By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
 
     **Default Value:** false
-    )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_commit_order_projection, false, R"(
-    Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
-    Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
     )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.

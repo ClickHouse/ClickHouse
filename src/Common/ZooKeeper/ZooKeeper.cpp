@@ -334,6 +334,11 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     new_args.enforce_component_tracking = args.enforce_component_tracking;
     new_args.send_receive_os_threads_nice_value = args.send_receive_os_threads_nice_value;
 
+    /// last_zxid_seen is runtime session state propagated by startNewSession, not configuration,
+    /// so it is always 0 in new_args. Without this, the first config reload after any
+    /// expiry-driven session replacement recreates the session even if the config is unchanged.
+    new_args.last_zxid_seen = args.last_zxid_seen;
+
     return args != new_args;
 }
 
@@ -1181,56 +1186,6 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
     return code;
 }
 
-Strings ZooKeeper::listRecursive(const std::string & path, uint32_t children_nodes_limit)
-{
-    Strings res;
-    check(tryListRecursive(path, res, children_nodes_limit), path);
-    return res;
-}
-
-Coordination::Error ZooKeeper::tryListRecursive(const std::string & path, Strings & res, uint32_t children_nodes_limit)
-{
-    std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
-    if (sampleForOpenTelemetryTracing())
-    {
-        maybe_span.emplace(
-            "zookeeper.get_children_recursive",
-            DB::OpenTelemetry::SpanKind::CLIENT,
-            std::vector<DB::OpenTelemetry::SpanAttribute>{
-                {"zk.path", path},
-            },
-            /*create_trace_if_not_exists=*/ true
-        );
-        DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
-    }
-    if (!isFeatureEnabled(DB::KeeperFeatureFlag::GET_CHILDREN_RECURSIVE))
-        return Coordination::Error::ZBADARGUMENTS;
-
-    auto promise = std::make_shared<std::promise<Coordination::ListRecursiveResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::ListRecursiveResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    impl->listRecursive(path, children_nodes_limit, std::move(callback));
-
-    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
-    {
-        maybeSetSpanStatus(maybe_span, Coordination::Error::ZOPERATIONTIMEOUT);
-        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::ListRecursive, path));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-
-    auto response = future.get();
-    Coordination::Error code = response.error;
-
-    maybeSetSpanStatus(maybe_span, code);
-    res = std::move(response.children);
-    return code;
-}
-
 Coordination::Error ZooKeeper::getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat)
 {
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
@@ -2000,14 +1955,6 @@ Coordination::RequestPtr makeRemoveRecursiveRequest(const Client & client, const
 
 template Coordination::RequestPtr makeRemoveRecursiveRequest<zkutil::ZooKeeper>(const zkutil::ZooKeeper & client, const std::string & path, uint32_t remove_nodes_limit);
 template Coordination::RequestPtr makeRemoveRecursiveRequest<DB::ZooKeeperWithFaultInjection>(const DB::ZooKeeperWithFaultInjection & client, const std::string & path, uint32_t remove_nodes_limit);
-
-Coordination::RequestPtr makeListRecursiveRequest(const std::string & path, uint32_t children_nodes_limit)
-{
-    auto request = std::make_shared<Coordination::ZooKeeperListRecursiveRequest>();
-    request->path = path;
-    request->children_nodes_limit = children_nodes_limit;
-    return request;
-}
 
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version)
 {

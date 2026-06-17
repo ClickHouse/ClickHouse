@@ -8,8 +8,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Interpreters/FileCache/FileCache.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
@@ -52,7 +52,6 @@ namespace ErrorCodes
     extern const int BROKEN_PROJECTION;
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
-    extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
 }
 
 
@@ -111,8 +110,7 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::SOCKET_TIMEOUT
             || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
             || e.code() == ErrorCodes::ABORTED
-            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM
-            || e.code() == ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM;
     }
     catch (const std::filesystem::filesystem_error & e)
     {
@@ -247,24 +245,60 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     }
     else if (part_type == MergeTreeDataPartType::Wide)
     {
-        for (const auto & column : columns_list)
+        const auto & cols_substreams = data_part->getColumnsSubstreams();
+        if (!cols_substreams.empty())
         {
-            get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            /// Use columns_substreams.txt as the source of truth for substream file names.
+            /// This is more reliable than enumerateStreams for types with dynamic structure (JSON, Dynamic)
+            /// because enumerateStreams requires deserialization state to correctly enumerate dynamic substreams.
+            size_t col_idx = 0;
+            for (const auto & column : columns_list)
             {
-                /// Skip ephemeral subcolumns that don't store any real data.
-                if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                    return;
+                const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
+                for (const auto & substream : substreams)
+                {
+                    auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", data_part_storage);
+                    if (!stream_name)
+                        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "There is no file for column '{}' (substream {}) in data part '{}'",
+                            column.name, substream, data_part->name);
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
+                    auto file_name = *stream_name + ".bin";
+                    checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+                }
+                ++col_idx;
+            }
+        }
+        else
+        {
+            /// Fallback for old parts without columns_substreams.txt.
+            /// Don't enumerate dynamic streams because we don't have the proper deserialization state.
+            /// Dynamic stream files will still be verified by the subsequent directory-level check
+            /// against checksums.txt.
+            ISerialization::EnumerateStreamsSettings settings;
+            settings.enumerate_dynamic_streams = false;
+            for (const auto & column : columns_list)
+            {
+                auto serialization = get_serialization(column);
+                auto data = ISerialization::SubstreamData(serialization)
+                    .withType(column.type)
+                    .withColumn(data_part->getColumnSample(column));
+                serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                        return;
 
-                if (!stream_name)
-                    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
-                        "There is no file for column '{}' in data part '{}'",
-                        column.name, data_part->name);
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
 
-                auto file_name = *stream_name + ".bin";
-                checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-            }, column.type, data_part->getColumnSample(column));
+                    if (!stream_name)
+                        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "There is no file for column '{}' in data part '{}'",
+                            column.name, data_part->name);
+
+                    auto file_name = *stream_name + ".bin";
+                    checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+                }, data);
+            }
         }
     }
     else
@@ -300,9 +334,13 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         if (checksum_it == checksums_data.files.end() && !files_without_checksums.contains(file_name))
         {
             auto txt_checksum_it = checksums_txt_files.find(file_name);
-            if ((txt_checksum_it != checksums_txt_files.end() && txt_checksum_it->second.is_compressed))
+            if ((txt_checksum_it != checksums_txt_files.end() && txt_checksum_it->second.is_compressed)
+                || file_name.ends_with(".bin"))
             {
-                /// If we have both compressed and uncompressed in txt or its .cmrk(2/3) or .cidx, then calculate them
+                /// If we know from checksums.txt that the file is compressed, or it has the .bin extension
+                /// (all .bin files in MergeTree are compressed), compute both compressed and uncompressed checksums.
+                /// The .bin check is important for dynamic stream files that may not be visited
+                /// during enumerateStreams when columns_substreams.txt is absent.
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
             }
             else
@@ -369,18 +407,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         projections_on_disk.erase(projection_file);
     }
 
-    /// Handle unknown projections: on disk and in checksums but not in the
-    /// part's projection list (e.g. a projection was dropped while the part
-    /// was detached, then re-attached).  Remove them from checksums_txt so
-    /// that the checkEqual below does not fail, and mark the part as having
-    /// a broken projection so the caller can handle it gracefully.
-    if (!projections_on_disk.empty())
-    {
-        is_broken_projection = true;
-        for (const auto & projection_file : projections_on_disk)
-            checksums_txt.remove(projection_file);
-    }
-
     if (throw_on_broken_projection)
     {
         if (!broken_projections_message.empty())
@@ -388,6 +414,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
         }
 
+        /// This one is actually not broken, just redundant files on disk which
+        /// MergeTree will never use.
         if (require_checksums && !projections_on_disk.empty())
         {
             throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
