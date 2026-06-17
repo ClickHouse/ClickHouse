@@ -245,6 +245,53 @@ TEST(ColumnStatsDerivation, SharedIntermediateNodeResolvesForAllOutputs)
     EXPECT_EQ(stats["year_uint"].num_distinct_values, distinct_dates);
 }
 
+/// `firstNonDefault(a, b)` (the JOIN USING merged key) draws values from both arguments, so its
+/// derived NDV must be an upper bound over both sources and must not depend on the order the source
+/// columns are processed in. The largest source bound is kept.
+TEST(ColumnStatsDerivation, FirstNonDefaultTakesUpperBoundOverSources)
+{
+    tryRegisterFunctions();
+
+    auto int_type = std::make_shared<DataTypeInt64>();
+    ActionsDAG dag;
+    const auto & left = dag.addInput("a", int_type);
+    const auto & right = dag.addInput("b", int_type);
+
+    addOutputFunction(dag, "firstNonDefault", {&left, &right}, "merged");
+
+    std::unordered_map<String, ColumnStats> stats;
+    stats["a"] = ColumnStats{.num_distinct_values = 10};
+    stats["b"] = ColumnStats{.num_distinct_values = 1000};
+    remapColumnStats(stats, dag);
+
+    EXPECT_EQ(stats["merged"].num_distinct_values, 1000u);
+}
+
+/// A very long chain of single-argument functions resolves without hitting a recursion-depth limit,
+/// and the source bound still reaches the final output.
+TEST(ColumnStatsDerivation, DeepChainOfFunctionsResolves)
+{
+    tryRegisterFunctions();
+
+    const UInt64 distinct_values = 1000;
+    const size_t chain_length = 20000;
+
+    auto int_type = std::make_shared<DataTypeInt64>();
+    ActionsDAG dag;
+    const auto & int_input = dag.addInput("n", int_type);
+
+    const ActionsDAG::Node * current = &int_input;
+    for (size_t i = 0; i < chain_length; ++i)
+        current = &dag.addFunction(
+            FunctionFactory::instance().get("negate", getContext().context), {current}, "v" + std::to_string(i));
+    dag.addOrReplaceInOutputs(*current);
+
+    auto stats = statsOf("n", distinct_values);
+    remapColumnStats(stats, dag);
+
+    EXPECT_EQ(stats[current->result_name].num_distinct_values, distinct_values);
+}
+
 /// The bound propagates through a chain of deterministic single-argument functions: no link can
 /// increase the distinct count, so the final output is still bounded by the source column. A
 /// multi-argument link anywhere in the chain breaks the propagation.

@@ -82,6 +82,9 @@ namespace QueryPlanOptimizations
 const size_t MAX_ROWS = std::numeric_limits<size_t>::max();
 static String dumpStatsForLogs(const RelationStats & stats);
 
+/// Returns how many leading arguments of a known deterministic function carry through their source's
+/// distinct values. `firstNonDefault` (used to build JOIN USING keys) takes a value from any of its
+/// arguments, so all of them are sources.
 static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name, size_t num_args)
 {
     if (function_name == "materialize" || function_name == "_CAST" || function_name == "CAST" || function_name == "toNullable")
@@ -91,55 +94,40 @@ static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name
     return 0;
 }
 
-/// NDV offset from `node` down to a source input, or nullopt if `node` does not trace back to one.
-/// The offset counts null-collapsing hops (see below); a plain propagating hop adds zero. Results
-/// are memoized in `offset_to_input` so every node, including shared intermediates, is resolved once.
-static std::optional<UInt64> ndvOffsetToInput(
-    const ActionsDAG::Node * node,
-    const std::unordered_set<const ActionsDAG::Node *> & input_nodes,
-    std::unordered_map<const ActionsDAG::Node *, std::optional<UInt64>> & offset_to_input)
+/// Describes how a node relates the NDV of its output to the NDV of its source argument(s).
+struct ValueHop
 {
-    if (auto it = offset_to_input.find(node); it != offset_to_input.end())
-        return it->second;
+    size_t followed_children = 0;  /// number of leading children whose source the node inherits
+    UInt64 ndv_delta = 0;          /// extra distinct values this hop can introduce over the source
+};
 
-    std::optional<UInt64> result;
-    if (input_nodes.contains(node))
-    {
-        result = 0;
-    }
-    else if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
-    {
-        result = ndvOffsetToInput(node->children[0], input_nodes, offset_to_input);
-    }
-    else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
-    {
-        auto number_of_args = functionDoesNotChangeNumberOfValues(node->function_base->getName(), node->children.size());
-        /// A deterministic single-argument function has at most as many distinct values as its
-        /// argument, so bound the output NDV by the argument's (e.g. `toYear(date)`).
-        if (number_of_args == 0 && node->children.size() == 1 && node->function_base->isDeterministic())
-            number_of_args = 1;
+/// A node propagates a source column's NDV when it just relabels or applies a value-preserving
+/// transform to it. `followed_children` is which leading children carry the source; `ndv_delta` is
+/// how much the output NDV can exceed the source NDV.
+static ValueHop describeValueHop(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
+        return {.followed_children = 1, .ndv_delta = 0};
 
-        UInt64 delta = 0;
-        /// NDV counts only non-null values. A hop following a single source that turns a Nullable
-        /// argument into a non-Nullable result (e.g. `isNull`, or `CAST` dropping nullability) maps
-        /// NULL to one extra counted value, so add one to the bound.
-        if (number_of_args == 1 && !node->children.empty()
-            && isNullableOrLowCardinalityNullable(node->children[0]->result_type)
-            && !isNullableOrLowCardinalityNullable(node->result_type))
-            delta = 1;
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return {};
 
-        for (size_t i = 0; i < number_of_args && i < node->children.size(); ++i)
-        {
-            if (auto child_offset = ndvOffsetToInput(node->children[i], input_nodes, offset_to_input))
-            {
-                result = *child_offset + delta;
-                break;
-            }
-        }
-    }
+    size_t followed_children = functionDoesNotChangeNumberOfValues(node.function_base->getName(), node.children.size());
+    /// A deterministic single-argument function has at most as many distinct values as its
+    /// argument, so bound the output NDV by the argument's (e.g. `toYear(date)`).
+    if (followed_children == 0 && node.children.size() == 1 && node.function_base->isDeterministic())
+        followed_children = 1;
 
-    offset_to_input[node] = result;
-    return result;
+    UInt64 ndv_delta = 0;
+    /// NDV counts only non-null values. A hop following a single source that turns a Nullable
+    /// argument into a non-Nullable result (e.g. `isNull`, or `CAST` dropping nullability) maps
+    /// NULL to one extra counted value, so add one to the bound.
+    if (followed_children == 1 && !node.children.empty()
+        && isNullableOrLowCardinalityNullable(node.children[0]->result_type)
+        && !isNullableOrLowCardinalityNullable(node.result_type))
+        ndv_delta = 1;
+
+    return {.followed_children = followed_children, .ndv_delta = ndv_delta};
 }
 
 /// For each output column that traces back to `input_name`, return how much to add to the source
@@ -153,11 +141,60 @@ static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & i
             input_nodes.insert(node);
     }
 
+    /// Offset from a node down to a source input, or nullopt if it does not trace back to one.
+    /// Memoized so every node, including shared intermediates, is resolved once regardless of order.
     std::unordered_map<const ActionsDAG::Node *, std::optional<UInt64>> offset_to_input;
+
+    /// Iterative post-order DFS (explicit stack to avoid deep recursion on long expression chains).
+    /// Each entry is a node paired with whether its children have already been pushed for processing.
+    for (const auto * out_node : actions.getOutputs())
+    {
+        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
+        nodes_to_process.push({out_node, false});
+        while (!nodes_to_process.empty())
+        {
+            auto [node, children_pushed] = nodes_to_process.top();
+
+            if (offset_to_input.contains(node))
+            {
+                nodes_to_process.pop();
+                continue;
+            }
+            if (input_nodes.contains(node))
+            {
+                offset_to_input[node] = 0;
+                nodes_to_process.pop();
+                continue;
+            }
+
+            ValueHop hop = describeValueHop(*node);
+            if (!children_pushed)
+            {
+                nodes_to_process.top().second = true;
+                for (size_t i = 0; i < hop.followed_children && i < node->children.size(); ++i)
+                    nodes_to_process.push({node->children[i], false});
+                continue;
+            }
+
+            /// Children are resolved; inherit the source from the first followed child that traces back.
+            std::optional<UInt64> result;
+            for (size_t i = 0; i < hop.followed_children && i < node->children.size(); ++i)
+            {
+                if (auto child_offset = offset_to_input[node->children[i]])
+                {
+                    result = *child_offset + hop.ndv_delta;
+                    break;
+                }
+            }
+            offset_to_input[node] = result;
+            nodes_to_process.pop();
+        }
+    }
+
     std::unordered_map<String, UInt64> output_offsets;
     for (const auto * out_node : actions.getOutputs())
     {
-        if (auto offset = ndvOffsetToInput(out_node, input_nodes, offset_to_input))
+        if (auto offset = offset_to_input[out_node])
             output_offsets[out_node->result_name] = *offset;
     }
     return output_offsets;
@@ -176,7 +213,12 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             /// Add the offset, guarding against overflow when the source NDV is near the maximum.
             if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - ndv_offset)
                 stats.num_distinct_values += ndv_offset;
-            mapped[remapped] = stats;
+            /// One output can trace back to several source columns (e.g. a JOIN USING key built with
+            /// `firstNonDefault(left, right)`). Keep the largest derived NDV so the result is an upper
+            /// bound and does not depend on the order source columns are processed in.
+            auto it = mapped.find(remapped);
+            if (it == mapped.end() || it->second.num_distinct_values < stats.num_distinct_values)
+                mapped[remapped] = stats;
         }
     }
 }
