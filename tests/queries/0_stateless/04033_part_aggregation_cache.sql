@@ -4,7 +4,10 @@
 -- part independently) cannot reproduce single-pass semantics and the optimization fails closed when it is
 -- set. The functional-test config (`tests/config/users.d/limits.yaml`) sets `max_rows_to_group_by = 10G`,
 -- which would disable the cache for every query, so pin it to 0 to actually exercise the cache here.
-SET allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0, max_rows_to_group_by = 0;
+-- The same config sets read limits (`max_rows_to_read = 20000000`, `max_bytes_to_read`/`max_bytes_to_read_leaf = 1T`),
+-- which the cache cannot honor (it serves aggregate states, not raw rows) and therefore also fails closed on; pin
+-- them to 0 as well so the positive cases below populate the cache.
+SET allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0, max_rows_to_group_by = 0, max_rows_to_read = 0, max_bytes_to_read = 0, max_rows_to_read_leaf = 0, max_bytes_to_read_leaf = 0;
 
 SYSTEM DROP PART AGGREGATION CACHE;
 
