@@ -197,8 +197,14 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
         std::lock_guard guard(processors_mutex);
 
         /// Record new processors in pipeline
+        const IProcessor & parent = *cur_node.processor();
         for (const auto & new_proc : update.to_add)
+        {
+            if (!new_proc->getQueryPlanStep())
+                new_proc->inheritQueryPlanStepFromParent(parent, parent.getQueryPlanStepGroup());
+
             addNode(new_proc);
+        }
 
         /// Remove deleted processors from pipeline
         for (const auto & removed_proc : update.to_remove)
