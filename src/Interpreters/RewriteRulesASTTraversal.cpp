@@ -65,7 +65,12 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
                 if (hash1 != hash2 || (top2->as<ASTExpressionList>() && top2->children.size() == 1 && top2->children[0]->as<ASTQueryParameter>()))
                 {
                     auto* query_parameter = top2->as<ASTQueryParameter>();
-                    if (hash1 == hash2 && !top2->children.empty())
+                    /// A query parameter can be embedded as the sole child of an
+                    /// `ASTExpressionList` (for example the only projection in
+                    /// `SELECT {x:String}`). In that case both `top1` and `top2` are the
+                    /// wrapper, so unwrap `top2` to reach the parameter.
+                    const bool wrapped_parameter = hash1 == hash2 && !top2->children.empty();
+                    if (wrapped_parameter)
                     {
                         query_parameter = top2->children[0]->as<ASTQueryParameter>();
                     }
@@ -77,6 +82,19 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
                     auto query_parameter_type = query_parameter->type;
                     trimRight(query_parameter_type);
                     trimLeft(query_parameter_type);
+                    /// The query-side node to capture. For a wrapped parameter `top1` is the
+                    /// `ASTExpressionList` wrapper: an `ExpressionList` placeholder captures
+                    /// the whole wrapper, but a scalar (`String`/`Int`), `Expression` or
+                    /// `Subquery` placeholder must capture the single inner node. Otherwise
+                    /// the wrapper is bound, so either the `ASTLiteral` check below fails (and
+                    /// `SELECT {x:String}` would not match `SELECT 'hello'`) or `applyRule`
+                    /// substitutes an extra `ASTExpressionList` layer into the resulting query.
+                    ASTPtr match_node = top1;
+                    if (wrapped_parameter && query_parameter_type != "ExpressionList"
+                        && top1->as<ASTExpressionList>() && top1->children.size() == 1)
+                    {
+                        match_node = top1->children[0];
+                    }
                     auto add_to_matching_map = [&](ASTPtr cloned_ast)
                     {
                         if (matching_map.contains(query_parameter->name))
@@ -89,7 +107,7 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
                         }
                         matching_map.emplace(query_parameter->name, std::move(cloned_ast));
                     };
-                    if (auto* literal = top1->as<ASTLiteral>();
+                    if (auto* literal = match_node->as<ASTLiteral>();
                         literal && ((query_parameter_type == "String" && literal->value.getType() == Field::Types::Which::String)
                         || (query_parameter_type == "Int" && Field::isDecimal(literal->value.getType()))
                         || (query_parameter_type == "Int" && literal->value.getType() == Field::Types::Which::UInt128)
@@ -100,17 +118,23 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
                         || (query_parameter_type == "Int" && literal->value.getType() == Field::Types::Which::Int64)))
                     {
                         add_to_matching_map(literal->clone());
-                    } else
-                        if (auto* expression = top1->as<ASTExpressionList>();
-                            expression && (query_parameter_type == "Expression" || query_parameter_type == "ExpressionList"))
-                        {
-                            add_to_matching_map(expression->clone());
-                    } else
-                        if (auto* subquery = top1->as<ASTSubquery>();
-                            subquery && query_parameter_type == "Subquery")
-                        {
-                            add_to_matching_map(subquery->clone());
-                    } else
+                    }
+                    else if (query_parameter_type == "Expression")
+                    {
+                        /// An `Expression` placeholder captures a single arbitrary expression subtree.
+                        add_to_matching_map(match_node->clone());
+                    }
+                    else if (auto* expression = match_node->as<ASTExpressionList>();
+                        expression && query_parameter_type == "ExpressionList")
+                    {
+                        add_to_matching_map(expression->clone());
+                    }
+                    else if (auto* subquery = match_node->as<ASTSubquery>();
+                        subquery && query_parameter_type == "Subquery")
+                    {
+                        add_to_matching_map(subquery->clone());
+                    }
+                    else
                     {
                         is_template = false;
                         break;
