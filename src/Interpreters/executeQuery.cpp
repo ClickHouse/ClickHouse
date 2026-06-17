@@ -225,7 +225,6 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
-    extern const int OK;
 }
 
 namespace FailPoints

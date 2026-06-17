@@ -356,6 +356,17 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
     condition.notify_one();
 }
 
+void AsyncLogMessageQueue::enqueueMessageBlocking(AsyncLogMessagePtr message)
+{
+    ProfileEvents::incrementNoTrace(event_on_passed_message);
+    std::unique_lock lock(mutex);
+    space_available.wait(lock, [this] { return message_queue.size() < max_size; });
+    message_queue.push_back(std::move(message));
+    if (message_queue.size() > max_size / 2)
+        request_flush = true;
+    condition.notify_one();
+}
+
 AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
 {
     std::unique_lock lock(mutex);
@@ -363,6 +374,7 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
     {
         auto notification = std::move(message_queue.front());
         message_queue.pop_front();
+        space_available.notify_one();
         return notification;
     }
 
@@ -372,6 +384,7 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
 
     auto notification = std::move(message_queue.front());
     message_queue.pop_front();
+    space_available.notify_one();
     return notification;
 }
 
@@ -380,6 +393,7 @@ AsyncLogMessageQueue::Queue AsyncLogMessageQueue::getCurrentQueueAndClear()
     std::unique_lock lock(mutex);
     Queue new_queue;
     std::swap(message_queue, new_queue);
+    space_available.notify_all();
     return new_queue;
 }
 
@@ -387,6 +401,7 @@ void AsyncLogMessageQueue::wakeUp()
 {
     std::unique_lock lock(mutex);
     condition.notify_one();
+    space_available.notify_all();
 }
 
 size_t AsyncLogMessageQueue::getCurrentMessageSize()

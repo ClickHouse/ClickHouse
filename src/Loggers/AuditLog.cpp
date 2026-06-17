@@ -168,7 +168,7 @@ void AuditLog::write(std::string message)
         return;
     }
 
-    queue->enqueueMessage(std::move(async_msg));
+    queue->enqueueMessageBlocking(std::move(async_msg));
 }
 
 size_t AuditLog::getQueueSize() const

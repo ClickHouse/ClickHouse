@@ -124,6 +124,10 @@ public:
     /// Enqueues a single message notification
     void enqueueMessage(AsyncLogMessagePtr message);
 
+    /// Enqueues a message, blocking until space is available.
+    /// Use for audit logging where dropping records is not acceptable.
+    void enqueueMessageBlocking(AsyncLogMessagePtr message);
+
     /// Waits for a message notification to be dequeued and returns it. It might return an empty notification if wakeUp() was called
     /// or a spurious wakeup occurs
     AsyncLogMessagePtr waitDequeueMessage();
@@ -142,6 +146,7 @@ public:
 private:
     Queue message_queue;
     std::condition_variable condition;
+    std::condition_variable space_available;
     const ProfileEvents::Event & event_on_passed_message;
     const ProfileEvents::Event & event_on_drop_message;
     /// Default queue limit, to prevent memory overflow
