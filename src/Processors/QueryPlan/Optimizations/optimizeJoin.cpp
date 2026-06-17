@@ -114,18 +114,20 @@ static std::optional<UInt64> ndvOffsetToInput(
     else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
     {
         auto number_of_args = functionDoesNotChangeNumberOfValues(node->function_base->getName(), node->children.size());
-        UInt64 delta = 0;
         /// A deterministic single-argument function has at most as many distinct values as its
         /// argument, so bound the output NDV by the argument's (e.g. `toYear(date)`).
         if (number_of_args == 0 && node->children.size() == 1 && node->function_base->isDeterministic())
-        {
             number_of_args = 1;
-            /// NDV counts only non-null values. A function turning a Nullable argument into a
-            /// non-Nullable result (e.g. `isNull`) maps NULL to one extra counted value, so add one.
-            if (isNullableOrLowCardinalityNullable(node->children[0]->result_type)
-                && !isNullableOrLowCardinalityNullable(node->result_type))
-                delta = 1;
-        }
+
+        UInt64 delta = 0;
+        /// NDV counts only non-null values. A hop following a single source that turns a Nullable
+        /// argument into a non-Nullable result (e.g. `isNull`, or `CAST` dropping nullability) maps
+        /// NULL to one extra counted value, so add one to the bound.
+        if (number_of_args == 1 && !node->children.empty()
+            && isNullableOrLowCardinalityNullable(node->children[0]->result_type)
+            && !isNullableOrLowCardinalityNullable(node->result_type))
+            delta = 1;
+
         for (size_t i = 0; i < number_of_args && i < node->children.size(); ++i)
         {
             if (auto child_offset = ndvOffsetToInput(node->children[i], input_nodes, offset_to_input))

@@ -193,6 +193,33 @@ TEST(ColumnStatsDerivation, NullAwareFunctionInChainCarriesOffset)
     EXPECT_EQ(stats["month_is_null"].num_distinct_values, distinct_dates + 1);
 }
 
+/// A `CAST` that drops nullability collapses NULL into a counted value, like a null-aware function,
+/// so its bound is the source NDV plus one even though `CAST` is a pass-through hop.
+TEST(ColumnStatsDerivation, CastDroppingNullabilityAddsOneToBound)
+{
+    tryRegisterFunctions();
+
+    const UInt64 distinct_values = 1000;
+
+    auto nullable_int_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+    ActionsDAG dag;
+    const auto & int_input = dag.addInput("n", nullable_int_type);
+
+    /// Nullable(Int32) -> Int32: NULL maps to the default value, gaining one distinct value.
+    const auto & casted = dag.addCast(int_input, std::make_shared<DataTypeInt32>(), "n_int32", getContext().context);
+    dag.addOrReplaceInOutputs(casted);
+
+    /// Casting to Nullable(Int32) preserves nulls, so the exact bound holds.
+    const auto & casted_nullable = dag.addCast(int_input, nullable_int_type, "n_nullable", getContext().context);
+    dag.addOrReplaceInOutputs(casted_nullable);
+
+    auto stats = statsOf("n", distinct_values);
+    remapColumnStats(stats, dag);
+
+    EXPECT_EQ(stats["n_int32"].num_distinct_values, distinct_values + 1);
+    EXPECT_EQ(stats["n_nullable"].num_distinct_values, distinct_values);
+}
+
 /// Two outputs consuming the same internal node both inherit the source bound: resolving one output
 /// must not stop the other from resolving through the shared node, regardless of output order.
 TEST(ColumnStatsDerivation, SharedIntermediateNodeResolvesForAllOutputs)
