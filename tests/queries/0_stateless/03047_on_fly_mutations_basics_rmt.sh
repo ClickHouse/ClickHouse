@@ -24,7 +24,6 @@ SETTINGS
     primary_key_lazy_load = 0,
     merge_selecting_sleep_ms = 200,
     max_merge_selecting_sleep_ms = 200,
-    serialization_info_version = 'basic',
     storage_policy = 's3_cache';
 
 SYSTEM STOP MERGES t_lightweight_mut_1;
@@ -38,28 +37,28 @@ ALTER TABLE t_lightweight_mut_1 DELETE WHERE v = 'e';
 
 SYSTEM SYNC REPLICA t_lightweight_mut_1 PULL;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT id FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT v FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT id, v, s FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT id FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM DROP MARK CACHE;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT query, ProfileEvents['S3GetObject'] FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
+WHERE
     current_database = currentDatabase()
     AND query ILIKE 'SELECT%FROM t_lightweight_mut_1%'
     AND type = 'QueryFinish'

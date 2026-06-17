@@ -12,13 +12,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
 
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
-#include <base/scope_guard.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 
@@ -34,7 +31,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
-    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace DeltaLake
@@ -55,7 +51,8 @@ void exportTable(
 {
     auto batch = table->CombineChunksToBatch();
     if (!batch.ok())
-        DB::throwFromArrowStatus(batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create chunks batch");
+        throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,
+            "Failed to create chunks batch: {}", batch.status().ToString());
 
     arrow::Status status = arrow::ExportRecordBatch(
         **batch,
@@ -63,7 +60,12 @@ void exportTable(
         reinterpret_cast<ArrowSchema *>(&schema));
 
     if (!status.ok())
-        DB::throwFromArrowStatus(status, DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to export record batch");
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::UNKNOWN_EXCEPTION,
+            "Failed to export record batch: {}",
+            status.ToString());
+    }
 }
 
 std::shared_ptr<arrow::Table> getWriteMetadata(
@@ -77,8 +79,7 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
             std::make_shared<DB::DataTypeString>()), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
-        {std::make_shared<DB::DataTypeTuple>(
-                DB::DataTypes{std::make_shared<DB::DataTypeString>()}, DB::Names{"stats_json"}), "stats"}
+        {DB::DataTypeFactory::instance().get("Bool"), "dataChange"},
     };
 
     DB::MutableColumns columns;
@@ -86,22 +87,20 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
     for (const auto & [_, type, name] : names_and_types)
         columns.push_back(type->createColumn());
 
-    for (const auto & [path, size_bytes, size_rows, partition_values] : files)
+    for (const auto & [path, size, partition_values] : files)
     {
         if (path.empty())
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Commit file path cannot be empty");
 
         LOG_TEST(
-            log, "Committing file: {}, bytes: {}, rows: {}, partition values: {}",
-            path, size_bytes, size_rows, partition_values.size());
+            log, "Committing file: {}, size: {}, partition values: {}",
+            path, size, partition_values.size());
 
         columns[0]->insert(path);
         columns[1]->insert(partition_values);
-        columns[2]->insert(size_bytes);
+        columns[2]->insert(size);
         columns[3]->insert(getCurrentTime());
-        std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
-        DB::Tuple stats{stats_json};
-        columns[4]->insert(stats);
+        columns[4]->insert(true);
     }
 
     DB::FormatSettings format_settings;
@@ -213,11 +212,9 @@ void WriteTransaction::validateSchema(const DB::Block & header) const
     auto header_column_names = header.getNamesAndTypesList().getNameSet();
     if (write_column_names != header_column_names)
     {
-        /// Reachable from user input (e.g. Nested subcolumns, explicit column subsets),
-        /// so this is a user error, not an internal invariant violation.
         throw DB::Exception(
-            DB::ErrorCodes::INCOMPATIBLE_COLUMNS,
-            "Inserted columns do not match the DeltaLake table schema. Expected: {}, got: {}",
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Header does not match write schema. Expected: {}, got: {}",
             fmt::join(write_column_names, ", "), fmt::join(header_column_names, ", "));
     }
 }
@@ -229,8 +226,8 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Will commit {} files", files.size());
     auto write_metadata = getWriteMetadata(files, log);
 
-    ffi::FFI_ArrowArray array{};
-    ffi::FFI_ArrowSchema schema{};
+    ffi::FFI_ArrowArray array;
+    ffi::FFI_ArrowSchema schema;
     SCOPE_EXIT({
         if (schema.release)
             schema.release(&schema);
@@ -242,7 +239,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     {
         /// Takes ownership of `array` (but not`schema`) if successfully called.
         engine_data = DeltaLake::KernelUtils::unwrapResult(
-            ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
+            ffi::get_engine_data(array, &schema, engine.get()),
             "get_engine_data");
     }
     catch (...)
