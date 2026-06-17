@@ -170,6 +170,26 @@ list(REMOVE_ITEM SCANN_SOURCES
     "${SCANN_SOURCE_DIR}/scann/distance_measures/many_to_many/many_to_many_sfp8.cc"
 )
 
+# one_to_many_symmetric.h defines DenseAccumulatingDistanceMeasureOneToManyInternalAvx1
+# and Avx2 under #ifdef __SSE3__ (line 231), but the extern template instantiation
+# macro at line 1787 only checks #ifdef __x86_64__.  On SSE2-only x86-64 builds
+# (amd_compat), __SSE3__ is not defined so the function definitions are absent
+# while the extern declarations are emitted, causing "no template named" errors.
+# Tighten the guard to #if defined(__x86_64__) && defined(__SSE3__).  This is
+# correct on all platforms: SSE3+ builds are unaffected; SSE2-only builds skip
+# the Avx1/Avx2 extern declarations that reference non-existent definitions.
+set(_oto_src "${SCANN_SOURCE_DIR}/scann/distance_measures/one_to_many/one_to_many_symmetric.h")
+set(_oto_dst "${CMAKE_CURRENT_BINARY_DIR}/scann/distance_measures/one_to_many/one_to_many_symmetric.h")
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/scann/distance_measures/one_to_many")
+configure_file("${_oto_src}" "${_oto_dst}" COPYONLY)
+file(READ "${_oto_dst}" _oto_content)
+set(_nl "\n")
+string(REPLACE
+    "#ifdef __x86_64__${_nl}#define SCANN_INSTANTIATE_ONE_TO_MANY("
+    "#if defined(__x86_64__) && defined(__SSE3__)${_nl}#define SCANN_INSTANTIATE_ONE_TO_MANY("
+    _oto_content "${_oto_content}")
+file(WRITE "${_oto_dst}" "${_oto_content}")
+
 # On macOS, alignof(__m512i) may be less than 64 due to ABI differences,
 # causing the static_assert(alignof(result) >= 64) in int8_tile.h to fail for
 # all files that transitively include it (via sfp8_transposed.h).  Patch a copy
