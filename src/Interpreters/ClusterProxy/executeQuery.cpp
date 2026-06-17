@@ -5,16 +5,21 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Parsers/ASTInsertQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
@@ -606,32 +611,80 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
     return {new_cluster, shard_num};
 }
 
+/// Returns per-replica liveness for the parallel replicas cluster, aligned with the cluster's replica order
+/// (the same `is_active` signal that is reported in `system.clusters`). Returns an empty vector when the
+/// liveness is unknown - in that case all replicas are considered usable, which preserves the previous behaviour.
+static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
+{
+    const String cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
+
+    ReplicasInfo replicas_info;
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::initialized() && cluster_name == SharedDatabaseCatalog::instance().getClusterName())
+        replicas_info = SharedDatabaseCatalog::instance().tryGetReplicasInfo(cluster);
+#endif
+    if (replicas_info.replicas.empty())
+    {
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(cluster_name))
+            if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(database.get()))
+                replicas_info = replicated->tryGetReplicasInfo(cluster);
+    }
+
+    std::vector<bool> is_active;
+    is_active.reserve(replicas_info.replicas.size());
+    for (const auto & replica : replicas_info.replicas)
+        is_active.push_back(replica.is_active);
+    return is_active;
+}
+
 static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
 
     const auto & shard = cluster->getShardsInfo().at(0);
+
+    /// Exclude replicas that are known to be inactive (e.g. stale registrations left over after autoscaling).
+    /// The reading coordinator distributes mark segments by hashing over the number of replicas, so counting
+    /// replicas that never participate leaves "phantom" segments that only the source replica picks up, which
+    /// produces a severe work-distribution skew. See `is_active` in `system.clusters`.
+    std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, cluster);
+    if (!is_active.empty() && is_active.size() != shard.getAllNodeCount())
+        is_active.clear(); /// Liveness does not match the cluster definition; fall back to using all replicas.
+
+    size_t available_replicas = shard.getAllNodeCount();
+    if (!is_active.empty())
+    {
+        available_replicas = std::count(is_active.begin(), is_active.end(), true);
+        /// Safety net: if liveness reports no active replicas (it should not, since this query is running),
+        /// ignore it rather than ending up with an empty replica set.
+        if (available_replicas == 0)
+        {
+            is_active.clear();
+            available_replicas = shard.getAllNodeCount();
+        }
+    }
+
     size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
-    if (max_replicas_to_use > shard.getAllNodeCount())
+    if (max_replicas_to_use > available_replicas)
     {
         LOG_TRACE(
             logger,
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
             settings[Setting::max_parallel_replicas].value,
-            shard.getAllNodeCount());
-        max_replicas_to_use = shard.getAllNodeCount();
+            available_replicas);
+        max_replicas_to_use = available_replicas;
     }
 
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
-    if (max_replicas_to_use < shard.getAllNodeCount())
+    if (max_replicas_to_use < available_replicas)
     {
         // will be shuffled according to `load_balancing` setting
         shuffled_pool = shard.pool->getShuffledPools(settings);
     }
     else
     {
-        /// If all replicas in cluster are used for query execution,
+        /// If all (active) replicas in cluster are used for query execution,
         /// try to preserve replicas order as in cluster definition.
         /// It's important for data locality during query execution
         /// independently of the query initiator
@@ -642,7 +695,12 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     std::vector<ConnectionPoolPtr> pools_to_use;
     pools_to_use.reserve(shuffled_pool.size());
     for (auto & pool : shuffled_pool)
+    {
+        /// Skip inactive replicas so they do not occupy a slot in the reading coordinator.
+        if (!is_active.empty() && !is_active[pool.index])
+            continue;
         pools_to_use.emplace_back(std::move(pool.pool));
+    }
 
     return {pools_to_use, max_replicas_to_use};
 }
