@@ -283,6 +283,9 @@ struct TextIndexSerialization
     static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
+    /// Reads only the version and posting list codec from the start of the header, without the
+    /// (potentially large) sparse index. The returned header has an empty `sparse_index`.
+    static TextIndexHeader deserializeHeaderPrefix(ReadBuffer & istr);
     /// If postings_serialization is null, embedded postings are skipped.
     static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, PostingsSerialization * postings_serialization);
     static void skipTokenInfo(ReadBuffer & istr);
