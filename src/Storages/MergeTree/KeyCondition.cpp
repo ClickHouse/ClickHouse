@@ -1418,20 +1418,7 @@ static bool applyFunctionChainToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_data_type)
 {
-    /// Strip outer-level wrappers (Const/Replicated/Sparse/LowCardinality) to prepare
-    /// the column for the monotonic function chain. This must be symmetric with
-    /// `removeLowCardinality` on the type — both strip only outer-level LowCardinality,
-    /// preserving `LowCardinality` nested inside container types (`Array`, `Tuple`, `Map`, `Variant`).
-    /// Calling `convertToFullIfNeeded` here would recurse into subcolumns and strip inner
-    /// `LowCardinality`, creating a column/type mismatch when the type still has inner LC
-    /// (e.g. `Variant(LowCardinality(Date), String)` wrapped in `ColumnConst` bypasses
-    /// `ColumnVariant`'s override of `convertToFullIfNeeded`) — leading to `typeid_cast`
-    /// failures in `FunctionCast` wrappers such as `prepareUnpackDictionaries`.
-    auto result_column = in_column
-        ->convertToFullColumnIfConst()
-        ->convertToFullColumnIfReplicated()
-        ->convertToFullColumnIfSparse()
-        ->convertToFullColumnIfLowCardinality();
+    auto result_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     auto result_type = removeLowCardinality(in_data_type);
 
     /// In case function sequence is empty, return full non-LowCardinality column
@@ -1820,7 +1807,7 @@ static bool applyDeterministicDagToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_type)
 {
-    ColumnPtr input_column = in_column->convertToFullIfNeeded();
+    ColumnPtr input_column = recursiveRemoveLowCardinality(in_column->convertToFullIfWrapped());
     DataTypePtr input_type = recursiveRemoveLowCardinality(in_type);
 
     /// This is the final check for the output column after DAG execution:
@@ -1829,7 +1816,7 @@ static bool applyDeterministicDagToColumn(
     /// - strip Nullable/LowCardinality wrappers to get the actual column
     auto finalize_output_column_and_type = [&](ColumnPtr & column, DataTypePtr & type) -> bool
     {
-        column = column->convertToFullIfNeeded();
+        column = recursiveRemoveLowCardinality(column->convertToFullIfWrapped());
         type = recursiveRemoveLowCardinality(type);
 
         if (column->isNullable())

@@ -1,6 +1,6 @@
 -- Regression test: GLOBAL IN with UNION ALL that produces Variant containing LowCardinality
 -- caused LOGICAL_ERROR "Bad cast from type DB::ColumnFixedString to DB::ColumnLowCardinality"
--- because convertToFullIfNeeded recursively stripped LowCardinality from ColumnVariant's
+-- because convertToFullIfWrapped recursively stripped LowCardinality from ColumnVariant's
 -- internal variant columns without updating the corresponding DataTypeVariant, creating
 -- column/type position mismatches in KeyCondition::tryPrepareSetColumnsForIndex.
 -- https://github.com/ClickHouse/ClickHouse/issues/97854
