@@ -132,9 +132,9 @@ namespace
 
         /// Serialize ACL
         if (version >= SnapshotVersion::V7)
-            writeBinary(node.acl_id, out);
+            writeBinary(node.stats.acl_id, out);
         else
-            writeBinary(static_cast<uint64_t>(node.acl_id), out);
+            writeBinary(static_cast<uint64_t>(node.stats.acl_id), out);
         /// Write is_sequential for backwards compatibility
         if (version < SnapshotVersion::V6)
             writeBinary(false, out);
@@ -142,22 +142,22 @@ namespace
         /// Serialize stat
         writeBinary(node.stats.czxid, out);
         writeBinary(node.stats.mzxid, out);
-        writeBinary(node.stats.ctime(), out);
+        writeBinary(node.stats.ctime, out);
         writeBinary(node.stats.mtime, out);
         writeBinary(node.stats.version, out);
         writeBinary(node.stats.cversion, out);
         writeBinary(node.stats.aversion, out);
-        writeBinary(node.stats.ephemeralOwner(), out);
+        writeBinary(node.stats.getEphemeralOwner(), out);
         if (version < SnapshotVersion::V6)
             writeBinary(static_cast<int32_t>(node.stats.data_size), out);
-        writeBinary(node.numChildren(), out);
+        writeBinary(node.stats.getNumChildren(), out);
         writeBinary(node.stats.pzxid, out);
 
         if (version >= SnapshotVersion::V7)
-            writeBinary(node.stats.seqNum(), out);
+            writeBinary(node.stats.getSeqNum(), out);
         else
         {
-            auto seq_num = node.stats.seqNum();
+            auto seq_num = node.stats.getSeqNum();
             if (seq_num < std::numeric_limits<int32_t>::min() || seq_num > std::numeric_limits<int32_t>::max())
                 throw Exception(ErrorCodes::KEEPER_EXCEPTION,
                     "Sequential node counter {} overflows int32, upgrade to snapshot version >= V7", seq_num);
@@ -181,10 +181,10 @@ namespace
         bool add_usage = true;
         if (version >= SnapshotVersion::V7)
         {
-            readBinary(node.acl_id, in);
+            readBinary(node.stats.acl_id, in);
 
             if (cleanup_acl)
-                node.acl_id = 0;
+                node.stats.acl_id = 0;
         }
         else if (version >= SnapshotVersion::V1)
         {
@@ -197,10 +197,10 @@ namespace
                 acl_id_64 = 0;
 
             chassert(acl_id_64 <= std::numeric_limits<ACLId>::max());
-            node.acl_id = static_cast<ACLId>(acl_id_64);
+            node.stats.acl_id = static_cast<ACLId>(acl_id_64);
 
             if (cleanup_acl)
-                node.acl_id = 0;
+                node.stats.acl_id = 0;
         }
         else if (version == SnapshotVersion::V0)
         {
@@ -219,13 +219,13 @@ namespace
 
             if (!cleanup_acl)
             {
-                node.acl_id = acl_map.convertACLs(acls);
+                node.stats.acl_id = acl_map.convertACLs(acls);
                 add_usage = false;
             }
         }
 
         if (add_usage)
-            acl_map.addUsage(node.acl_id);
+            acl_map.addUsage(node.stats.acl_id);
 
         if (version < SnapshotVersion::V6)
         {
@@ -238,15 +238,13 @@ namespace
         readBinary(node.stats.mzxid, in);
         int64_t ctime = 0;
         readBinary(ctime, in);
-        node.stats.setCtime(ctime);
+        node.stats.ctime = ctime;
         readBinary(node.stats.mtime, in);
         readBinary(node.stats.version, in);
         readBinary(node.stats.cversion, in);
         readBinary(node.stats.aversion, in);
         int64_t ephemeral_owner = 0;
         readBinary(ephemeral_owner, in);
-        if (ephemeral_owner != 0)
-            node.stats.setEphemeralOwner(ephemeral_owner);
 
         if (version < SnapshotVersion::V6)
         {
@@ -255,7 +253,11 @@ namespace
         }
         int32_t num_children = 0;
         readBinary(num_children, in);
-        node.setNumChildren(num_children);
+
+        if (ephemeral_owner == 0)
+            node.stats.setNumChildrenAndIsEphemeral(num_children, false);
+        else
+            node.stats.setEphemeralOwner(ephemeral_owner);
 
         readBinary(node.stats.pzxid, in);
 
@@ -560,13 +562,13 @@ void KeeperStorageSnapshot::deserialize(
             }
         }
 
-        auto ephemeral_owner = node.stats.ephemeralOwner();
-        if (!node.stats.isEphemeral() && node.numChildren() > 0)
-            node.getChildren().reserve(node.numChildren());
+        auto ephemeral_owner = node.stats.getEphemeralOwner();
+        if (!node.stats.isEphemeral() && node.stats.getNumChildren() > 0)
+            node.getChildren().reserve(node.stats.getNumChildren());
 
         if (ephemeral_owner != 0)
         {
-            storage.committed_ephemerals[node.stats.ephemeralOwner()].insert(std::string{path});
+            storage.committed_ephemerals[node.stats.getEphemeralOwner()].insert(std::string{path});
             ++storage.committed_ephemeral_nodes;
         }
 
@@ -597,7 +599,7 @@ void KeeperStorageSnapshot::deserialize(
         {
             if (itr.key != "/")
             {
-                if (itr.value.numChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
+                if (itr.value.stats.getNumChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
                 {
 #ifdef NDEBUG
                     /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
@@ -605,7 +607,7 @@ void KeeperStorageSnapshot::deserialize(
                         getLogger("KeeperSnapshotManager"),
                         "Children counter in stat.numChildren {}"
                         " is different from actual children size {} for node {}",
-                        itr.value.numChildren(),
+                        itr.value.stats.getNumChildren(),
                         itr.value.getChildren().size(),
                         itr.key);
 #else
@@ -613,7 +615,7 @@ void KeeperStorageSnapshot::deserialize(
                         ErrorCodes::LOGICAL_ERROR,
                         "Children counter in stat.numChildren {}"
                         " is different from actual children size {} for node {}",
-                        itr.value.numChildren(),
+                        itr.value.stats.getNumChildren(),
                         itr.value.getChildren().size(),
                         itr.key);
 #endif
