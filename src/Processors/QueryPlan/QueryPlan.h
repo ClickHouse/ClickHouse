@@ -77,6 +77,8 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
+    /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
+    bool processors_profile = false;
 
 
     SettingsChanges toSettingsChanges() const;

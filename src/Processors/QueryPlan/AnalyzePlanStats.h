@@ -20,6 +20,11 @@ struct AnalyzeStats
 {
     UInt64 sum_elapsed_ns = 0;
 
+    /// Distribution of per-processor elapsed time within the (step, group).
+    UInt64 min_elapsed_ns = 0;
+    UInt64 median_elapsed_ns = 0;
+    UInt64 max_elapsed_ns = 0;
+
     UInt64 input_rows = 0;
     UInt64 input_bytes = 0;
     UInt64 output_rows = 0;
@@ -43,8 +48,9 @@ class AnalyzeStepsStats
 public:
     explicit AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_);
 
-    /// Print the stats
-    void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix) const;
+    /// Print the stats. When with_distribution is set, also print the per-processor
+    /// elapsed time distribution (min/median/max/sum) for each (step, group).
+    void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
 
 private:
 

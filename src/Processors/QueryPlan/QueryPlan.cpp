@@ -87,6 +87,7 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("column_structure", int(column_structure));
     changes.emplace_back("pretty", int(pretty));
     changes.emplace_back("compact", int(compact));
+    changes.emplace_back("processors", int(processors_profile));
 
     return changes;
 }
@@ -512,7 +513,7 @@ static void explainStep(
         step.describeDistributedPlan(settings, options);
 
     if (steps_to_stats)
-        steps_to_stats->printStepStats(&step, settings.out, prefix);
+        steps_to_stats->printStepStats(&step, settings.out, prefix, options.processors_profile);
 }
 
 std::string debugExplainStep(IQueryPlanStep & step)

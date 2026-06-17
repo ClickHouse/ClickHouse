@@ -1,7 +1,7 @@
 #include <algorithm>
-#include <type_traits>
+#include <iterator>
+#include <set>
 #include <unordered_map>
-#include <unordered_set>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -18,6 +18,13 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
 {
 
     const auto & processors = pipeline.getProcessors();
+
+    /// Per-processor elapsed times collected per (step, group) to compute the distribution below.
+    /// A multiset keeps the values sorted (no explicit sort needed) and, unlike a plain set,
+    /// preserves duplicate timings so that the median stays statistically correct.
+    using ElapsedTimes = std::multiset<UInt64>;
+    using ElapsedTimesPerStep = std::unordered_map<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
+    ElapsedTimesPerStep elapsed_per_step;
 
     for (const auto & proc : processors)
     {
@@ -67,6 +74,7 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
 
         stats.sum_elapsed_ns += proc->getElapsedNs();
         ++stats.total_num_processors;
+        elapsed_per_step[key].insert(proc->getElapsedNs());
 
         if (stats.wall_clock_time_ns == 0)
         {
@@ -74,9 +82,27 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
             stats.wall_clock_time_ns = proc->getStepWallClock()->getStepWallTime();
         }
     }
+
+    /// Compute the per-processor elapsed time distribution for each (step, group).
+    /// The multiset is already sorted, so min/max are its bounds and the median is the middle element.
+    for (const auto & [key, elapsed] : elapsed_per_step)
+    {
+        if (elapsed.empty())
+            continue;
+
+        auto & stats = steps_to_stats[key];
+        stats.min_elapsed_ns = *elapsed.begin();
+        stats.max_elapsed_ns = *elapsed.rbegin();
+
+        const size_t n = elapsed.size();
+        const auto middle = std::next(elapsed.begin(), n / 2);
+        stats.median_elapsed_ns = (n % 2 == 1)
+            ? *middle
+            : (*std::prev(middle) + *middle) / 2;
+    }
 }
 
-void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & prefix) const
+void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & prefix, bool processors_info) const
 {
     if (!step)
         return ;
@@ -127,6 +153,15 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
         UInt64 max_parallelism_per_step = std::min(max_num_threads_per_query, stats.total_num_processors);
         std::string max_parallelism_per_step_string = stats.wall_clock_time_ns ? fmt::format("/{}", max_parallelism_per_step) : "";
         out << " · parallelism " << parallelism_string << max_parallelism_per_step_string << "\n";
+
+        if (processors_info)
+        {
+            out << prefix << "Time per processor (" << stats.total_num_processors << "): "
+                << "min " << formatReadableTime(static_cast<double>(stats.min_elapsed_ns))
+                << " · median " << formatReadableTime(static_cast<double>(stats.median_elapsed_ns))
+                << " · max " << formatReadableTime(static_cast<double>(stats.max_elapsed_ns))
+                << " · sum " << formatReadableTime(static_cast<double>(stats.sum_elapsed_ns)) << "\n";
+        }
     }
 }
 

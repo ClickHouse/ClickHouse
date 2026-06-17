@@ -645,12 +645,13 @@ Settings:
 
 The settings used for `EXPLAIN ANALYZE` are a subset of settings for `EXPLAIN PLAN`. The information about them can be found in {#explain-plan} section.
 
-- `header`
-- `description`
-- `projections`
-- `sorting`
-- `input_headers`
-- `column_structure` 
+- `header` — see {#explain-plan} section.
+- `description` — see {#explain-plan} section.
+- `projections` — see {#explain-plan} section.
+- `sorting` — see {#explain-plan} section.
+- `input_headers` — see {#explain-plan} section.
+- `column_structure` — see {#explain-plan} section.
+- `processors` — For `EXPLAIN ANALYZE`, prints an additional line per step (and group) with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
 
 :::note
 The current version of `EXPLAIN ANALYZE` doesn't support queries executed in distributed mode.
@@ -664,7 +665,7 @@ EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP 
 
 ```text
 Query summary:
-  Time:        10.96 ms (build 6.63 ms · execute 4.33 ms)
+  Time:        10.96 ms (planning 6.63 ms · execute 4.33 ms)
   Read:        1.00 million rows, 8.00 MB (230.86 million rows/s., 1.85 GB/s.)
   Peak memory: 32.64 KiB
 
@@ -691,12 +692,12 @@ Let's examine the output. First let's look at the header.
 
 ```txt
    Query summary:
-     Time:        <total> (build <build> · execute <execute>)
+     Time:        <total> (planning <planning> · execute <execute>)
      Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
      Peak memory: <peak>
 ```
 
-- `Time` — total time split into building (i.e. planning + optimization + pipeline construction) and execution (running the pipeline) phases.
+- `Time` — total time split into planning (i.e. creation of pla + optimization of plan + pipeline construction) and execution (running the pipeline) phases.
 - `Read` — rows and uncompressed bytes read from tables, with throughput - the same numbers the normal query footer reports as "Processed".
 - `Peak memory` — peak memory the query used.
 
@@ -720,6 +721,14 @@ The maximum number in `parallelism` is computed as a minimum between:
 1. total number of tasks within the plan step;
 2. The maximum number of query processing threads set in `max_threads`.
 :::
+
+With `processors = 1`, an extra line is printed under each step, showing the distribution of elapsed time across the step's processors:
+
+```txt
+Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
+```
+
+`<n>` is the number of processors in the step. A large gap between `median` and `max` points to load skew between parallel processors.
 
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
