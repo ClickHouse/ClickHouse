@@ -808,14 +808,14 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
     {
         if (isOneOf(geo_type, unrepresentable_geojson_types))
         {
-            /// Throw by default so that data is not silently lost; the user can opt into inserting NULL instead.
-            if (format_settings.geojson.unsupported_geometry_handling == FormatSettings::UnsupportedGeometryHandling::Null)
+            /// Validate that the object is a well-formed GeoJSON geometry of its declared type, so a
+            /// truncated or malformed document (a missing `coordinates`/`geometries` member, a non-array
+            /// `geometries`, or a `GeometryCollection` with a malformed child) is rejected rather than
+            /// silently accepted. The representation policy applies only when the value is materialized:
+            /// insert NULL when the user opts in, or throw by default so data is not silently lost. When
+            /// the `geometry` column is not requested nothing is materialized, so the policy does not apply.
+            if (!col || format_settings.geojson.unsupported_geometry_handling == FormatSettings::UnsupportedGeometryHandling::Null)
             {
-                /// Even when the value is going to be inserted as NULL, validate that the object is a
-                /// well-formed GeoJSON geometry of its declared type, so truncated/malformed documents
-                /// (e.g. a missing `coordinates`/`geometries` member, a non-array `geometries`, or a
-                /// `GeometryCollection` containing a malformed child) are still rejected rather than
-                /// being silently loaded as NULL.
                 validateGeoJSONGeometryMembers(geo_type, raw_coordinates, raw_geometries, format_settings, 0);
                 insertNullGeometry(col);
                 return;
