@@ -938,7 +938,8 @@ void MergeTreeData::checkProperties(
     bool attach,
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
-    ContextPtr local_context) const
+    ContextPtr local_context,
+    std::optional<bool> allow_minmax_index_for_json_table_setting) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -956,9 +957,15 @@ void MergeTreeData::checkProperties(
     if (local_context)
         allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indices];
 
-    bool allow_minmax_index_for_json = (*getSettings())[MergeTreeSetting::allow_minmax_index_for_json];
+    /// For ALTER, allow_minmax_index_for_json_table_setting is the post-ALTER durable table setting.
+    /// Query setting may suppress the current validation, but cannot leave JSON minmax index metadata
+    /// without a durable table-level allowance.
+    const bool current_table_allows_minmax_index_for_json = (*getSettings())[MergeTreeSetting::allow_minmax_index_for_json];
+    const bool table_allows_minmax_index_for_json = allow_minmax_index_for_json_table_setting.value_or(
+        current_table_allows_minmax_index_for_json);
+    bool allow_minmax_index_for_json = current_table_allows_minmax_index_for_json;
     if (local_context)
-        allow_minmax_index_for_json = local_context->getSettingsRef()[Setting::allow_minmax_index_for_json];
+        allow_minmax_index_for_json |= local_context->getSettingsRef()[Setting::allow_minmax_index_for_json];
 
     if (!allow_suspicious_indices && !attach)
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
@@ -1055,22 +1062,35 @@ void MergeTreeData::checkProperties(
                         checkSuspiciousIndices(index_expression_ptr);
                 }
 
-
-                if (!allow_minmax_index_for_json && !attach && index.type == "minmax")
+                if (!attach && index.type == "minmax")
                 {
                     for (const auto & idx_column : index.sample_block)
                     {
-                        auto check_not_json = [&](const IDataType & type)
+                        auto check_json = [&](const IDataType & type)
                         {
                             if (isObject(type))
-                                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "{} data type of column {} is not allowed in minmax index because the values of that data type can contain values "
-                                    "with different data types. Consider using typed subcolumns or cast column to a specific data type, or use "
-                                    "setting 'allow_minmax_index_for_json = 1' to suppress this check",
-                                    idx_column.type->getName(), idx_column.name);
+                            {
+                                if (!allow_minmax_index_for_json)
+                                {
+                                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "{} data type of column {} is not allowed in minmax index because the values of that data type can contain values "
+                                        "with different data types. Consider using typed subcolumns or cast column to a specific data type, or use "
+                                        "setting 'allow_minmax_index_for_json = 1' to suppress this check",
+                                        idx_column.type->getName(), idx_column.name);
+                                }
+
+                                if (!table_allows_minmax_index_for_json)
+                                {
+                                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "{} data type of column {} is not allowed in minmax index when only query-level setting "
+                                        "'allow_minmax_index_for_json = 1' is enabled. Use MergeTree table setting "
+                                        "'allow_minmax_index_for_json = 1' to make this compatibility escape hatch persistent",
+                                        idx_column.type->getName(), idx_column.name);
+                                }
+                            }
                         };
-                        check_not_json(*idx_column.type);
-                        idx_column.type->forEachChild(check_not_json);
+                        check_json(*idx_column.type);
+                        idx_column.type->forEachChild(check_json);
                     }
                 }
                 MergeTreeIndexFactory::instance().validate(index, attach);
@@ -1133,7 +1153,8 @@ void MergeTreeData::checkProperties(
                 attach,
                 is_aggregate,
                 true /* allow_nullable_key */,
-                local_context);
+                local_context,
+                allow_minmax_index_for_json_table_setting);
 
             if (!canUseAdaptiveGranularity() && projection.has_index_granularity_overrides)
             {
@@ -4898,8 +4919,20 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
+    auto settings_after_alter = getDefaultSettings();
+    if (new_metadata.settings_changes)
+        settings_after_alter->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+    const bool allow_minmax_index_for_json_after_alter = (*settings_after_alter)[MergeTreeSetting::allow_minmax_index_for_json];
+
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        false,
+        false,
+        allow_nullable_key,
+        local_context,
+        allow_minmax_index_for_json_after_alter);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())

@@ -45,6 +45,9 @@ CREATE TABLE t_json_minmax_forbidden (
 ) ENGINE = MergeTree() ORDER BY id
 SETTINGS allow_minmax_index_for_json = 1;
 
+-- Should succeed: table-level setting keeps later unrelated ALTER valid.
+ALTER TABLE t_json_minmax_forbidden ADD COLUMN extra UInt8 DEFAULT 0;
+
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
 -- Should fail: RESET SETTING while JSON minmax index is still present must be rejected,
@@ -61,12 +64,17 @@ ALTER TABLE t_json_minmax_forbidden RESET SETTING allow_minmax_index_for_json; -
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
--- Should fail: MODIFY SETTING is table metadata and does not suppress validation of the current ALTER.
 CREATE TABLE t_json_minmax_forbidden (
     id Int32,
     col1 JSON
 ) ENGINE = MergeTree() ORDER BY id;
 
+-- Should fail: query-level setting alone cannot persist a JSON minmax index.
+ALTER TABLE t_json_minmax_forbidden
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1
+    SETTINGS allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
+
+-- Should fail: MODIFY SETTING alone does not suppress validation of the current ALTER.
 ALTER TABLE t_json_minmax_forbidden
     ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
     MODIFY SETTING allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
@@ -82,19 +90,26 @@ DROP TABLE IF EXISTS t_json_minmax_forbidden;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated SYNC;
 
--- Should fail: MODIFY SETTING is local table metadata and does not suppress validation of the current ALTER.
 CREATE TABLE t_json_minmax_forbidden_replicated (
     id Int32,
     col1 JSON
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array', 'r1') ORDER BY id;
 
+-- Should fail: query-level setting alone cannot persist a JSON minmax index.
+ALTER TABLE t_json_minmax_forbidden_replicated
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1
+    SETTINGS allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
+
+-- Should fail: MODIFY SETTING alone does not suppress validation of the current ALTER.
 ALTER TABLE t_json_minmax_forbidden_replicated
     ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
     MODIFY SETTING allow_minmax_index_for_json = 1; -- { serverError BAD_ARGUMENTS }
 
--- Should succeed: once the table-level setting is effective, replicated metadata can be replayed locally.
-ALTER TABLE t_json_minmax_forbidden_replicated MODIFY SETTING allow_minmax_index_for_json = 1;
-ALTER TABLE t_json_minmax_forbidden_replicated ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1
+-- Should succeed: the query-level setting suppresses validation of the current ALTER,
+-- and MODIFY SETTING makes the escape hatch persistent for the table.
+ALTER TABLE t_json_minmax_forbidden_replicated
+    ADD INDEX col_idx col1 TYPE minmax GRANULARITY 1,
+    MODIFY SETTING allow_minmax_index_for_json = 1
     SETTINGS allow_minmax_index_for_json = 1;
 
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated SYNC;
