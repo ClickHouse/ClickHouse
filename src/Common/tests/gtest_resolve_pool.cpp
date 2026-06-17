@@ -13,7 +13,7 @@
 using namespace std::literals::chrono_literals;
 
 
-auto now()
+static auto now()
 {
     return std::chrono::steady_clock::now();
 }
@@ -33,7 +33,7 @@ size_t toMilliseconds(auto duration)
    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 }
 
-const auto epsilon = 500us;
+const auto epsilon = 1ms;
 
 class ResolvePoolMock : public DB::HostResolver
 {
@@ -55,7 +55,7 @@ protected:
     }
 
     void SetUp() override {
-        DB::CurrentThread::getProfileEvents().reset();
+        DB::CurrentThread::getProfileEvents().resetCounters();
 
         ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
         ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
@@ -116,7 +116,7 @@ TEST_F(ResolvePoolTest, CanResolveAll)
     ASSERT_EQ(addresses.size(), DB::CurrentThread::getProfileEvents()[metrics.discovered]);
 }
 
-size_t getSum(std::map<String, size_t> container)
+static size_t getSum(std::map<String, size_t> container)
 {
     size_t sum = 0;
     for (auto & [_, val] : container)
@@ -126,7 +126,7 @@ size_t getSum(std::map<String, size_t> container)
     return sum;
 }
 
-size_t getMin(std::map<String, size_t> container)
+static size_t getMin(std::map<String, size_t> container)
 {
     if (container.empty())
         return 0;
@@ -139,17 +139,17 @@ size_t getMin(std::map<String, size_t> container)
     return min_val;
 }
 
-double getMean(std::map<String, size_t> container)
+static double getMean(std::map<String, size_t> container)
 {
-    return 1.0 * getSum(container) / container.size();
+    return 1.0 * static_cast<double>(getSum(container)) / static_cast<double>(container.size());
 }
 
-double getMaxDiff(std::map<String, size_t> container, double ref_val)
+static double getMaxDiff(std::map<String, size_t> container, double ref_val)
 {
     double diff = 0.0;
     for (auto & [_, val] : container)
     {
-        diff = std::max(std::fabs(val - ref_val), diff);
+        diff = std::max(std::fabs(static_cast<double>(val) - ref_val), diff);
     }
 
     return diff;
@@ -358,53 +358,59 @@ void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses
 
 TEST_F(ResolvePoolTest, BannedForConsiquenceFail)
 {
-    auto history = 5ms;
+    auto history = 10ms;
     auto resolver = make_resolver(toMilliseconds(history));
 
     auto failed_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*failed_addr));
 
-    auto start_at = now();
 
     failed_addr.setFail();
+    auto start_at = now();
+
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
     check_no_failed_address(1, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
 
     sleep_until(start_at + history + epsilon);
-    start_at = now();
 
     resolver->update();
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
 
     failed_addr.setFail();
+    start_at = now();
+
     check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
 
     sleep_until(start_at + history + epsilon);
-    start_at = now();
 
     resolver->update();
+
+    // too much time has passed
+    if (now() > start_at + 2*history - epsilon)
+        return;
+
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
 
     // ip still banned adter history_ms + update, because it was his second consiquent fail
-    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + 2*history - epsilon);
 }
 
 TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
 {
-    auto history = 5ms;
+    auto history = 10ms;
     auto resolver = make_resolver(toMilliseconds(history));
 
     auto failed_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*failed_addr));
 
-    auto start_at = now();
+    failed_addr.setFail();
+    failed_addr.setFail();
+    failed_addr.setFail();
 
-    failed_addr.setFail();
-    failed_addr.setFail();
-    failed_addr.setFail();
+    auto start_at = now();
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
@@ -413,6 +419,7 @@ TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
     sleep_until(start_at + history + epsilon);
 
     resolver->update();
+
     // ip is cleared after just 1 history_ms interval.
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));

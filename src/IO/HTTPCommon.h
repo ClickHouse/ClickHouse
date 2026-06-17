@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <mutex>
+#include <string_view>
 
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -54,14 +55,15 @@ private:
 
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
-void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout);
+void setResponseDefaultHeaders(HTTPServerResponse & response);
 
 /// Create session object to perform requests and set required parameters.
 HTTPSessionPtr makeHTTPSession(
     HTTPConnectionGroupType group,
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    const ProxyConfiguration & proxy_config = {}
+    const ProxyConfiguration & proxy_config = {},
+    UInt64 * connect_time = nullptr
 );
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);

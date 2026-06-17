@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -137,15 +139,20 @@ struct IdentifierResolveScope
     ContextPtr context;
 
     /// Identifier lookup to result
-    std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_lookup_to_resolve_state;
+    std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_in_lookup_process;
 
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
     ScopeAliases aliases;
 
-    /// Table column name to column node. Valid only during table ALIAS columns resolve.
-    ColumnNameToColumnNodeMap column_name_to_column_node;
+    /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.
+    ScopeAliases global_with_aliases;
+
+    /// Valid only during table ALIAS columns resolve.
+    AnalysisTableExpressionData * table_expression_data_for_alias_resolution = nullptr;
+
+    std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 
     /// CTE name to query node
     std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
@@ -159,34 +166,26 @@ struct IdentifierResolveScope
     /// Table expressions in resolve process
     std::unordered_set<const IQueryTreeNode *> table_expressions_in_resolve_process;
 
-    /// Current scope expression
-    std::unordered_set<IdentifierLookup, IdentifierLookupHash> non_cached_identifier_lookups_during_expression_resolve;
-
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
 
+    /// Table expression nodes that appear in the join tree of the corresponding query
+    std::unordered_set<QueryTreeNodePtr> registered_table_expression_nodes;
+
     QueryTreeNodePtrWithHashIgnoreTypesSet nullable_group_by_keys;
-    /// Here we count the number of nullable GROUP BY keys we met resolving expression.
-    /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
-    /// both `number` and `tuple(number)` would be in nullable_group_by_keys.
-    /// But when we resolve `tuple(tuple(number))` we should figure out that `tuple(number)` is already a key,
-    /// and we should not convert `number` to nullable.
-    size_t found_nullable_group_by_key_in_scope = 0;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
-      * (For example, after join_use_nulls or USING column casted to supertype)
+      * (For example, after join_use_nulls or USING column cast to supertype)
       * However, the column in the projection still refers to the table as its source.
       * This map is used to revert these columns back to their original columns in the source table.
       */
     QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> join_columns_with_changed_types;
 
-    /// Use identifier lookup to result cache
-    bool use_identifier_lookup_to_result_cache = true;
-
     /// Apply nullability to aggregation keys
     bool group_by_use_nulls = false;
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
+    bool allow_resolve_from_using = true;
 
     /// JOINs count
     size_t joins_count = 0;
@@ -202,14 +201,6 @@ struct IdentifierResolveScope
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
-    struct ResolvedFunctionsCache
-    {
-        FunctionOverloadResolverPtr resolver;
-        FunctionBasePtr function_base;
-    };
-
-    std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
-
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
 
     IdentifierResolveScope * getNearestQueryScope();
@@ -222,10 +213,47 @@ struct IdentifierResolveScope
 
     void popExpressionNode();
 
+    /// Identifier resolution cache — prevents AST explosion by sharing resolved alias nodes.
+    /// Policy is encapsulated in `findCachedIdentifier` and `tryCacheIdentifier`.
+    void disableIdentifierCache() { identifier_resolve_cache_enabled = false; }
+    void enableIdentifierCache() { if (!identifier_resolve_cache_force_disabled) identifier_resolve_cache_enabled = true; }
+    void disableIdentifierCachePermanently() { identifier_resolve_cache_force_disabled = true; identifier_resolve_cache_enabled = false; }
+    void clearIdentifierCache() { identifier_resolve_cache.clear(); }
+
+    std::optional<IdentifierResolveResult> findCachedIdentifier(
+        const IdentifierLookup & lookup,
+        const IdentifierResolveContext & resolve_context);
+
+    void tryCacheIdentifier(
+        const IdentifierLookup & lookup,
+        const IdentifierResolveResult & result,
+        const IdentifierResolveContext & resolve_context);
+
     /// Dump identifier resolve scope
     [[maybe_unused]] void dump(WriteBuffer & buffer) const;
 
     [[maybe_unused]] String dump() const;
+
+private:
+    bool canCacheIdentifier(
+        const IdentifierLookup & lookup,
+        const IdentifierResolveContext & resolve_context) const;
+
+    struct IdentifierResolveCacheEntry
+    {
+        IdentifierResolveResult result;
+
+        /// Expressions that contain subqueries cannot be shared between use sites:
+        /// later stages rewrite each subquery instance independently (`GLOBAL IN`
+        /// external tables, `rewrite_in_to_join`, `createUniqueAliasesIfNecessary`),
+        /// so every retrieval must return its own copy of the tree. Computed once at
+        /// insertion to avoid walking the subtree on every hit.
+        bool needs_clone_on_retrieval = false;
+    };
+
+    std::unordered_map<IdentifierLookup, IdentifierResolveCacheEntry, IdentifierLookupHash> identifier_resolve_cache;
+    bool identifier_resolve_cache_enabled = true;
+    bool identifier_resolve_cache_force_disabled = false;
 };
 
 }

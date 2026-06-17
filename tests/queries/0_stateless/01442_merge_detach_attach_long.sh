@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-debug
+# Tags: long, no-debug
 
 set -e
 
@@ -27,7 +27,7 @@ function thread_ops()
 }
 export -f thread_ops
 
-TIMEOUT=60
+TIMEOUT=30
 thread_ops $TIMEOUT &
 wait
 

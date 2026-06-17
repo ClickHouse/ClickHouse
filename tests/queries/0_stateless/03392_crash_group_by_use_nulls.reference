@@ -1,0 +1,44 @@
+1
+1
+QUERY id: 0
+  PROJECTION COLUMNS
+    max(greaterOrEquals(number, _subquery_1)) Nullable(UInt8)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: max, function_type: aggregate, result_type: Nullable(UInt8)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: greaterOrEquals, function_type: ordinary, result_type: Nullable(UInt8)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 8, constant_value: \'1\', constant_value_type: Nullable(String)
+                    EXPRESSION
+                      QUERY id: 9, is_subquery: 1
+                        PROJECTION COLUMNS
+                          min(x) Nullable(String)
+                        PROJECTION
+                          LIST id: 10, nodes: 1
+                            FUNCTION id: 11, function_name: min, function_type: aggregate, result_type: Nullable(String)
+                              ARGUMENTS
+                                LIST id: 12, nodes: 1
+                                  COLUMN id: 13, column_name: x, result_type: Nullable(String), source_id: 14
+                        JOIN TREE
+                          QUERY id: 14, is_subquery: 1, group_by_type: grouping_sets
+                            PROJECTION COLUMNS
+                              x Nullable(String)
+                            PROJECTION
+                              LIST id: 15, nodes: 1
+                                CONSTANT id: 16, alias: x, constant_value: \'1\', constant_value_type: Nullable(String)
+                            JOIN TREE
+                              TABLE id: 17, table_name: system.one
+                            GROUP BY
+                              LIST id: 18, nodes: 1
+                                LIST id: 19, nodes: 1
+                                  CONSTANT id: 20, constant_value: \'1\', constant_value_type: String
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 21, nodes: 1
+          CONSTANT id: 22, constant_value: UInt64_2, constant_value_type: UInt8
+  SETTINGS group_by_use_nulls=1 enable_analyzer=1

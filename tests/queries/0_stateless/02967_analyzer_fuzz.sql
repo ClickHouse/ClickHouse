@@ -7,7 +7,7 @@ GROUP BY
     makeDateTime64(NULL, NULL, pow(NULL, '257') - '-1', '0.2147483647', 257),
     makeDateTime64(pow(pow(NULL, '21474836.46') - '0.0000065535', 1048577), '922337203685477580.6', NULL, NULL, pow(NULL, 1.0001) - 65536, NULL)
 WITH CUBE
-    SETTINGS allow_experimental_analyzer = 1;
+    SETTINGS enable_analyzer = 1;
 
 
 CREATE TABLE data_01223 (`key` Int) ENGINE = Memory;
@@ -17,4 +17,4 @@ SELECT count(round('92233720368547758.07', '-0.01', NULL, nan, '25.7', '-9223372
 FROM dist_01223
 WHERE round(NULL, 1025, 1.1754943508222875e-38, NULL)
 WITH TOTALS
-    SETTINGS allow_experimental_analyzer = 1;
+    SETTINGS enable_analyzer = 1;

@@ -24,7 +24,7 @@ void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_st
 {
     buffer << std::string(indent, ' ') << "INTERPOLATE id: " << format_state.getNodeId(this);
 
-    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION\n";
+    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION " << expression_name << " \n";
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "INTERPOLATE_EXPRESSION\n";
@@ -51,7 +51,7 @@ QueryTreeNodePtr InterpolateNode::cloneImpl() const
 
 ASTPtr InterpolateNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto result = std::make_shared<ASTInterpolateElement>();
+    auto result = make_intrusive<ASTInterpolateElement>();
 
     /// Interpolate parser supports only identifier node.
     /// In case of alias, identifier is replaced to expression, which can't be parsed.

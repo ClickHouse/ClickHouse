@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/DequeWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -9,9 +10,10 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
+#include <IO/StdIStreamFromMemory.h>
 #include <IO/S3Settings.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/BufferAllocationPolicy.h>
 
 #include <memory>
@@ -38,9 +40,9 @@ public:
         const String & bucket_,
         const String & key_,
         size_t buf_size_,
-        const S3::RequestSettings & request_settings_,
+        const S3::S3RequestSettings & request_settings_,
         BlobStorageLogWriterPtr blob_log_,
-        std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
+        std::optional<ObjectAttributes> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
@@ -54,6 +56,8 @@ private:
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
 
+    void cancelImpl() noexcept override;
+
     String getVerboseLogDetails() const;
     String getShortLogDetails() const;
 
@@ -62,36 +66,38 @@ private:
     void reallocateFirstBuffer();
     void detachBuffer();
     void allocateBuffer();
-    void allocateFirstBuffer();
     void setFakeBufferWhenPreFinalized();
 
     S3::UploadPartRequest getUploadRequest(size_t part_number, PartData & data);
     void writePart(PartData && data);
     void writeMultipartUpload();
     void createMultipartUpload();
-    void completeMultipartUpload();
+    bool completeMultipartUpload();
     void abortMultipartUpload();
-    void tryToAbortMultipartUpload();
+    void tryToAbortMultipartUpload() noexcept;
 
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
 
+    /// Returns true if not a single byte was written to the buffer
+    bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
+
     const String bucket;
     const String key;
-    const S3::RequestSettings request_settings;
+    const S3::S3RequestSettings request_settings;
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
-    const std::optional<std::map<String, String>> object_metadata;
+    const std::optional<ObjectAttributes> object_metadata;
     LoggerPtr log = getLogger("WriteBufferFromS3");
-    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
     String multipart_upload_id;
-    std::deque<String> multipart_tags;
-    std::deque<String> multipart_checksums; // if enabled
+    DequeWithMemoryTracking<String> multipart_tags;
+    DequeWithMemoryTracking<String> multipart_checksums; // if enabled
     bool multipart_upload_finished = false;
 
     /// Track that prefinalize() is called only once
@@ -101,7 +107,7 @@ private:
     /// There are two ways after:
     /// First is to call prefinalize/finalize, which leads to single part upload
     /// Second is to write more data, which leads to multi part upload
-    std::deque<PartData> detached_part_data;
+    DequeWithMemoryTracking<PartData> detached_part_data;
     char fake_buffer_when_prefinalized[1] = {};
 
     /// offset() and count() are unstable inside nextImpl

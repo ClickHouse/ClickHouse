@@ -1,6 +1,7 @@
 #include "config.h"
 
-#include "ThreadPoolTaskTracker.h"
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadPoolTaskTracker.h>
 
 namespace ProfileEvents
 {
@@ -10,15 +11,19 @@ namespace ProfileEvents
 namespace DB
 {
 
-TaskTracker::TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_)
+TaskTracker::TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limited_log_)
     : is_async(bool(scheduler_))
     , scheduler(scheduler_ ? std::move(scheduler_) : syncRunner())
     , max_tasks_inflight(max_tasks_inflight_)
-    , limitedLog(limitedLog_)
+    , limited_log(limited_log_)
 {}
 
 TaskTracker::~TaskTracker()
 {
+    /// Tasks should be waited outside of dtor.
+    /// Important for WriteBufferFromS3/AzureBlobStorage, where TaskTracker is currently used.
+    chassert(finished_futures.empty() && futures.empty());
+
     safeWaitAll();
 }
 
@@ -99,6 +104,12 @@ void TaskTracker::waitIfAny()
 
 void TaskTracker::add(Callback && func)
 {
+    {
+        std::lock_guard lock(mutex);
+        chassert(!final_task_added && "add must not be called after addFinal");
+        ++tasks_added;
+    }
+
     /// All this fuzz is about 2 things. This is the most critical place of TaskTracker.
     /// The first is not to fail insertion in the list `futures`.
     /// In order to face it, the element is allocated at the end of the list `futures` in advance.
@@ -113,14 +124,33 @@ void TaskTracker::add(Callback && func)
     /// preallocation for the second issue
     FinishedList pre_allocated_finished {future_placeholder};
 
-    Callback func_with_notification = [&, my_func = std::move(func), my_pre_allocated_finished = std::move(pre_allocated_finished)]() mutable
+    Callback func_with_notification = [this, my_func = std::move(func), my_pre_allocated_finished = std::move(pre_allocated_finished)]() mutable
     {
         SCOPE_EXIT({
-            DENY_ALLOCATIONS_IN_SCOPE;
-
-            std::lock_guard lock(mutex);
-            finished_futures.splice(finished_futures.end(), my_pre_allocated_finished);
-            has_finished.notify_one();
+            std::shared_ptr<std::packaged_task<void()>> maybe_final_task;
+            {
+                DENY_ALLOCATIONS_IN_SCOPE;
+                std::lock_guard lock(mutex);
+                finished_futures.splice(finished_futures.end(), my_pre_allocated_finished);
+                ++tasks_finished;
+                if (final_task && tasks_finished == tasks_added)
+                {
+                    maybe_final_task = std::move(final_task);
+                }
+                has_finished.notify_one();
+            }
+            if (maybe_final_task)
+            {
+                try
+                {
+                    scheduler([pt = std::move(maybe_final_task)]() mutable { (*pt)(); }, Priority{});
+                }
+                catch (...)
+                {
+                    /// SCOPE_EXIT is noexcept; let the final task's future report broken_promise.
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+            }
         });
 
         my_func();
@@ -132,13 +162,40 @@ void TaskTracker::add(Callback && func)
     waitTilInflightShrink();
 }
 
+void TaskTracker::addFinal(Callback && func)
+{
+    auto pt = std::make_shared<std::packaged_task<void()>>(std::move(func));
+    futures.emplace_back(pt->get_future());
+
+    bool run_final_task_now = false;
+    {
+        std::lock_guard lock(mutex);
+        chassert(!final_task_added && "addFinal must be called at most once");
+        final_task_added = true;
+        if (tasks_finished == tasks_added)
+        {
+            /// Every previously added task has already finished.
+            /// There will be no SCOPE_EXIT to trigger the final callback, so run it here.
+            run_final_task_now = true;
+        }
+        else
+        {
+            final_task = pt;
+        }
+    }
+    if (run_final_task_now)
+    {
+        scheduler([p = std::move(pt)]() mutable { (*p)(); }, Priority{});
+    }
+}
+
 void TaskTracker::waitTilInflightShrink()
 {
     if (!max_tasks_inflight)
         return;
 
     if (futures.size() >= max_tasks_inflight)
-        LOG_TEST(limitedLog, "have to wait some tasks finish, in queue {}, limit {}", futures.size(), max_tasks_inflight);
+        LOG_TEST(limited_log, "have to wait some tasks finish, in queue {}, limit {}", futures.size(), max_tasks_inflight);
 
     Stopwatch watch;
 
@@ -170,4 +227,3 @@ bool TaskTracker::isAsync() const
 }
 
 }
-

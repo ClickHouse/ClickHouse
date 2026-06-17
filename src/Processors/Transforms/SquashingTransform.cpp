@@ -1,42 +1,48 @@
+#include <utility>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Interpreters/Squashing.h>
+#include <Processors/Chunk.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 SquashingTransform::SquashingTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes,
+    size_t max_block_size_rows, size_t max_block_size_bytes, bool squash_with_strict_limits)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(header, min_block_size_rows, min_block_size_bytes)
+    , squashing(header, min_block_size_rows, min_block_size_bytes,
+                max_block_size_rows, max_block_size_bytes, squash_with_strict_limits)
 {
 }
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    Chunk planned_chunk = squashing.add(std::move(chunk));
-    if (planned_chunk.hasChunkInfo())
-        cur_chunk = DB::Squashing::squash(std::move(planned_chunk));
+    squashing.add(std::move(chunk));
 }
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 {
+    cur_chunk = Squashing::squash(squashing.generate(), getInputPort().getSharedHeader());
+
     GenerateResult res;
     res.chunk = std::move(cur_chunk);
-    res.is_done = true;
+    res.is_done = !canGenerate();
     return res;
+}
+
+bool SquashingTransform::canGenerate()
+{
+    return squashing.canGenerate();
 }
 
 void SquashingTransform::onFinish()
 {
-    Chunk chunk = squashing.flush();
-    if (chunk.hasChunkInfo())
-        chunk = DB::Squashing::squash(std::move(chunk));
-    finish_chunk.setColumns(chunk.getColumns(), chunk.getNumRows());
+    finish_chunk = Squashing::squash(squashing.flush(), getInputPort().getSharedHeader());
 }
 
 void SquashingTransform::work()
@@ -49,6 +55,7 @@ void SquashingTransform::work()
     }
 
     ExceptionKeepingTransform::work();
+
     if (finish_chunk)
     {
         data.chunk = std::move(finish_chunk);
@@ -56,53 +63,38 @@ void SquashingTransform::work()
     }
 }
 
-SimpleSquashingTransform::SimpleSquashingTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : ISimpleTransform(header, header, false)
+SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    : IInflatingTransform(header, header)
     , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
 }
 
-void SimpleSquashingTransform::transform(Chunk & chunk)
+void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
-    if (!finished)
-    {
-        Chunk planned_chunk = squashing.add(std::move(chunk));
-        if (planned_chunk.hasChunkInfo())
-            chunk = DB::Squashing::squash(std::move(planned_chunk));
-    }
-    else
-    {
-        if (chunk.hasRows())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
-
-        chunk = squashing.flush();
-        if (chunk.hasChunkInfo())
-            chunk = DB::Squashing::squash(std::move(chunk));
-    }
+    squashing.add(std::move(chunk));
 }
 
-IProcessor::Status SimpleSquashingTransform::prepare()
+Chunk SimpleSquashingChunksTransform::generate()
 {
-    if (!finished && input.isFinished())
-    {
-        if (output.isFinished())
-            return Status::Finished;
+    squashed_chunk = Squashing::squash(squashing.generate(), getOutputPort().getSharedHeader());
 
-        if (!output.canPush())
-            return Status::PortFull;
+    if (squashed_chunk.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
 
-        if (has_output)
-        {
-            output.pushData(std::move(output_data));
-            has_output = false;
-            return Status::PortFull;
-        }
-
-        finished = true;
-        /// On the next call to transform() we will return all data buffered in `squashing` (if any)
-        return Status::Ready;
-    }
-    return ISimpleTransform::prepare();
+    Chunk result;
+    result.swap(squashed_chunk);
+    return result;
 }
+
+bool SimpleSquashingChunksTransform::canGenerate()
+{
+    return squashing.canGenerate();
+}
+
+Chunk SimpleSquashingChunksTransform::getRemaining()
+{
+    return Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
+}
+
 }

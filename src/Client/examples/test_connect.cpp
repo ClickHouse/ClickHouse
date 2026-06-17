@@ -11,13 +11,14 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
+#include <Examples/clickhouse_examples.h>
 
 
 /** In a loop it connects to the server and immediately breaks the connection.
   * Using the SO_LINGER option, we ensure that the connection is terminated by sending a RST packet (not FIN).
   * Long time ago this behavior caused a bug in the TCPServer implementation in the Poco library.
   */
-int main(int argc, char ** argv)
+int mainEntryExampleTestConnect(int argc, char ** argv)
 try
 {
     using namespace DB;
@@ -38,8 +39,6 @@ try
 
     if (argc >= 5)
         port = parse<uint16_t>(argv[4]);
-
-    WriteBufferFromFileDescriptor out(STDERR_FILENO);
 
     std::atomic_bool cancel{false};
     std::vector<std::thread> threads(num_threads);
@@ -86,8 +85,10 @@ try
         thread.join();
 
     std::cerr << "\n";
+    return 0;
 }
 catch (const Poco::Exception & e)
 {
     std::cerr << e.displayText() << "\n";
+    return 1;
 }

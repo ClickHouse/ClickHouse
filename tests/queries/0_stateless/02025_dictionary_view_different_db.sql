@@ -1,43 +1,44 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS 2025_test_db;
-CREATE DATABASE 2025_test_db;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-DROP TABLE IF EXISTS 2025_test_db.test_table;
-CREATE TABLE 2025_test_db.test_table
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.test_table;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.test_table
 (
     id UInt64,
     value String
 ) ENGINE=TinyLog;
 
-INSERT INTO 2025_test_db.test_table VALUES (0, 'Value');
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.test_table VALUES (0, 'Value');
 
-CREATE DICTIONARY 2025_test_db.test_dictionary
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.test_dictionary
 (
     id UInt64,
     value String
 )
 PRIMARY KEY id
 LAYOUT(DIRECT())
-SOURCE(CLICKHOUSE(TABLE 'test_table' DB '2025_test_db'));
+SOURCE(CLICKHOUSE(TABLE 'test_table' DB currentDatabase()));
 
-DROP TABLE IF EXISTS 2025_test_db.view_table;
-CREATE TABLE 2025_test_db.view_table
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.view_table;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.view_table
 (
     id UInt64,
     value String
 ) ENGINE=TinyLog;
 
-INSERT INTO 2025_test_db.view_table VALUES (0, 'ViewValue');
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.view_table VALUES (0, 'ViewValue');
 
 DROP VIEW IF EXISTS test_view_different_db;
-CREATE VIEW test_view_different_db AS SELECT id, value, dictGet('2025_test_db.test_dictionary', 'value', id) FROM 2025_test_db.view_table;
+CREATE VIEW test_view_different_db AS SELECT id, value, dictGet('test_dictionary', 'value', id) FROM view_table;
 SELECT * FROM test_view_different_db;
 
-DROP DICTIONARY 2025_test_db.test_dictionary;
-DROP TABLE 2025_test_db.test_table;
-DROP TABLE 2025_test_db.view_table;
+DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.test_dictionary;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.test_table;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.view_table;
 
 DROP VIEW test_view_different_db;
 
-DROP DATABASE 2025_test_db;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

@@ -1,6 +1,6 @@
 -- Tags: no-replicated-database
 -- https://github.com/ClickHouse/ClickHouse/issues/8547
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 SET distributed_foreground_insert=1;
 
 CREATE TABLE a1_replicated ON CLUSTER test_shard_localhost (

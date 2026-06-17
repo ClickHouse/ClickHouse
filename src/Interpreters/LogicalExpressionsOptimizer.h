@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Parsers/IASTHash.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 
 #include <string>
@@ -52,11 +52,11 @@ private:
     */
     struct OrWithExpression
     {
-        OrWithExpression(const ASTFunction * or_function_, const IAST::Hash & expression_, const std::string & alias_);
+        OrWithExpression(const ASTFunction * or_function_, const IASTHash & expression_, const std::string & alias_);
         bool operator<(const OrWithExpression & rhs) const;
 
         const ASTFunction * or_function;
-        const IAST::Hash expression;
+        const IASTHash expression;
         const std::string alias;
     };
 

@@ -1,8 +1,9 @@
-import pytest
 import logging
-from helpers.cluster import ClickHouseCluster
 from datetime import datetime
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 log_dir = "/var/log/clickhouse-server/"
 cluster = ClickHouseCluster(__file__)

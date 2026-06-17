@@ -1,6 +1,6 @@
 <clickhouse>
     <background_schedule_pool_size>1</background_schedule_pool_size>
     <merge_tree>
-        <initialization_retry_period>5</initialization_retry_period>
+        <initialization_retry_period>3</initialization_retry_period>
     </merge_tree>
 </clickhouse>

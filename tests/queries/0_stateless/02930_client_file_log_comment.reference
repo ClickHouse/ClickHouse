@@ -1,6 +1,0 @@
-42
-4242
-424242
-select 42	clickhouse.default-1.sql
-select 4242	clickhouse.default-2.sql
-select 424242\n	foo

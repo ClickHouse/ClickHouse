@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/DateLUTImpl.h>
 #include <IO/ReadBuffer.h>
 
 #include <vector>
@@ -9,6 +10,7 @@ namespace DB
 {
 
 class Block;
+struct FormatSettings;
 class NamesAndTypesList;
 using NamesAndTypesLists = std::vector<NamesAndTypesList>;
 
@@ -18,6 +20,11 @@ struct JSONInferenceInfo
     /// We store numbers that were parsed from strings.
     /// It's used in types transformation to change such numbers back to string if needed.
     std::unordered_set<const IDataType *> numbers_parsed_from_json_strings;
+    /// Store integer types that were inferred from negative numbers.
+    /// It's used to determine common type for Int64 and UInt64
+    /// TODO: check it not only in JSON formats.
+    std::unordered_set<const IDataType *> negative_integers;
+
     /// Indicates if currently we are inferring type for Map/Object key.
     bool is_object_key = false;
     /// When we transform types for the same column from different files
@@ -26,6 +33,12 @@ struct JSONInferenceInfo
     /// we can only merge named tuples from different files together.
     bool allow_merging_named_tuples = false;
 };
+
+/// Check whether a type can be wrapped into Nullable according to schema inference settings.
+/// Currently, only Tuple is setting-dependent:
+/// If `schema_inference_allow_nullable_tuple_type` is disabled, Tuple cannot be wrapped into Nullable.
+/// Otherwise this check is equivalent to type->canBeInsideNullable().
+bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatSettings & settings);
 
 /// Try to determine datatype of the value in buffer/string. If the type cannot be inferred, return nullptr.
 /// In general, it tries to parse a type using the following logic:
@@ -45,9 +58,14 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
 /// Try to parse Date or DateTime value from a string.
 DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings);
 
+bool tryInferDateFromString(std::string_view field, DayNum & date);
+bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
+bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
+
 /// Try to parse a number value from a string. By default, it tries to parse Float64,
 /// but if setting try_infer_integers is enabled, it also tries to parse Int64.
 DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSettings & settings);
+DataTypePtr tryInferJSONNumberFromString(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// It takes two types inferred for the same column and tries to transform them to a common type if possible.
 /// It's also used when we try to infer some not ordinary types from another types.
@@ -77,6 +95,7 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 /// Example 2:
 ///     We merge DataTypeJSONPaths types to a single DataTypeJSONPaths type with union of all JSON paths.
 void transformInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
+void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// Make final transform for types inferred in JSON format. It does 3 types of transformation:
 /// 1) Checks if type is unnamed Tuple(...), tries to transform nested types to find a common type for them and if all nested types
@@ -93,18 +112,28 @@ void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const Forma
 void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings);
 
 /// Make type Nullable recursively:
-/// - Type -> Nullable(type)
-/// - Array(Type) -> Array(Nullable(Type))
-/// - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
-/// - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
-/// - LowCardinality(Type) -> LowCardinality(Nullable(Type))
-DataTypePtr makeNullableRecursively(DataTypePtr type);
+///  - Type -> Nullable(type)
+///  - Array(Type) -> Array(Nullable(Type))
+///  - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
+///    If settings.schema_inference_allow_nullable_tuple_type is enabled, also wraps the whole tuple:
+///      Tuple(...) -> Nullable(Tuple(...))
+///  - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
+///  - LowCardinality(Type) -> LowCardinality(Nullable(Type))
+/// Does not recurse into types with custom name.
+/// E.g. type `Point` (aka `Tuple(Float64, Float64)`) stays unchanged as `Point`, it does not become
+/// `Tuple(Nullable(Float64), Nullable(Float64))`.
+/// But `Bool` becomes `Nullable(Bool)`.
+DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings);
+
+DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & settings);
 
 /// Call makeNullableRecursively for all types
 /// in the block and return names and types.
-NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header);
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings);
 
 /// Check if type contains Nothing, like Array(Tuple(Nullable(Nothing), String))
 bool checkIfTypeIsComplete(const DataTypePtr & type);
+
+bool checkIfTypesAreEqual(const DataTypes & types);
 
 }

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <Columns/IColumn.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/IColumn_fwd.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -95,7 +95,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
-        [[maybe_unused]] char symbol;
+        [[maybe_unused]] char symbol = 0;
         readChar(symbol, buf);
         if (symbol != '\0')
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect state of aggregate function '{}', it should contain exactly one zero byte, while it is {}",

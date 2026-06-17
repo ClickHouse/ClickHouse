@@ -1,5 +1,9 @@
-#include <Common/Macros.h>
+#include <Columns/IColumn.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Storages/System/StorageSystemKeywords.h>
 
 #include <Parsers/CommonParsers.h>

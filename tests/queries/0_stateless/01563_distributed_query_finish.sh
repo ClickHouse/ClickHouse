@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm <<EOL
+$CLICKHOUSE_CLIENT -m <<EOL
 drop table if exists dist_01247;
 drop table if exists data_01247;
 
@@ -19,20 +19,30 @@ create table dist_01247 as data_01247 engine=Distributed(test_cluster_two_shards
 select * from dist_01247 format Null;
 EOL
 
-network_errors_before=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
+# Silence the CI system.*_log_sender background pool so its NETWORK_ERRORs
+# (when the cloud destination is unreachable) don't contaminate system.errors.
+# This only blocks the async insert sender; SELECT from dist_01247 is unaffected.
+$CLICKHOUSE_CLIENT -q "SYSTEM STOP DISTRIBUTED SENDS"
+trap '$CLICKHOUSE_CLIENT -q "SYSTEM START DISTRIBUTED SENDS"' EXIT
 
-opts=(
-    "--max_distributed_connections=1"
-    "--optimize_skip_unused_shards=1"
-    "--optimize_distributed_group_by_sharding_key=1"
-    "--prefer_localhost_replica=0"
-)
-$CLICKHOUSE_CLIENT "${opts[@]}" --format CSV -nm <<EOL
-select count(), * from dist_01247 group by number order by number limit 1;
-EOL
+for ((i = 0; i < 100; ++i)); do
+    network_errors_before=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
 
-# expect zero new network errors
-network_errors_after=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
+    opts=(
+        "--max_distributed_connections=1"
+        "--optimize_skip_unused_shards=1"
+        "--optimize_distributed_group_by_sharding_key=1"
+        "--prefer_localhost_replica=0"
+    )
+    $CLICKHOUSE_CLIENT "${opts[@]}" --format CSV -m -q "select count(), * from dist_01247 group by number order by number limit 1 format Null"
+
+    # expect zero new network errors
+    network_errors_after=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
+
+    if [[ $((network_errors_after-network_errors_before)) -eq 0 ]]; then
+        break
+    fi
+done
 echo NETWORK_ERROR=$(( network_errors_after-network_errors_before ))
 
 $CLICKHOUSE_CLIENT -q "drop table data_01247"

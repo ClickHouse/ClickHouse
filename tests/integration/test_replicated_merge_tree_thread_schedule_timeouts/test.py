@@ -1,8 +1,8 @@
 import concurrent.futures
 
 import pytest
-from helpers.cluster import ClickHouseCluster
 
+from helpers.cluster import ClickHouseCluster
 
 MAX_THREADS = 60
 

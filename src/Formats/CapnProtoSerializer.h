@@ -2,12 +2,17 @@
 
 #if USE_CAPNP
 
-#include <Core/Block.h>
-#include <capnp/dynamic.h>
+#include <Columns/IColumn_fwd.h>
 #include <Formats/FormatSettings.h>
+
+#include <capnp/dynamic.h>
 
 namespace DB
 {
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using DataTypes = std::vector<DataTypePtr>;
 
 class CapnProtoSerializer
 {

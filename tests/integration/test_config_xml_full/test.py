@@ -19,6 +19,7 @@ def test_xml_full_conf():
         "configs/config.d/part_log.xml",
         "configs/config.d/path.xml",
         "configs/config.d/query_masking_rules.xml",
+        "configs/config.d/query_metric_log.xml",
         "configs/config.d/tcp_with_proxy.xml",
         "configs/config.d/text_log.xml",
         "configs/config.d/zookeeper.xml",
@@ -62,6 +63,20 @@ def test_xml_full_conf():
         assert (
             node.query(
                 "select changed from system.server_settings where name = 'max_connections'"
+            )
+            == "1\n"
+        )
+
+        assert (
+            node.query(
+                "select value from system.server_settings where name = 'logger.level'"
+            )
+            == "test\n"
+        )
+
+        assert (
+            node.query(
+                "select changed from system.server_settings where name = 'logger.level'"
             )
             == "1\n"
         )

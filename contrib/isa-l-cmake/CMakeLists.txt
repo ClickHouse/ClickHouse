@@ -12,19 +12,20 @@ endif()
 
 set(ISAL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/isa-l")
 
-# The YASM and NASM assembers are somewhat mutually compatible. ISAL specifically needs NASM. If only YASM is installed, then check_language(ASM_NASM)
-# below happily finds YASM, leading to weird errors at build time. Therefore, do an explicit check for NASM here.
+# ISAL specifically needs NASM (the YASM assembler is partially compatible but produces
+# weird build errors). Use an explicit `find_program` to locate NASM and feed the result
+# directly into `CMAKE_ASM_NASM_COMPILER` instead of probing via `check_language`.
 find_program(NASM_PATH NAMES nasm)
 if (NOT NASM_PATH)
     message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
 endif ()
 
-include(CheckLanguage)
-check_language(ASM_NASM)
-if(NOT CMAKE_ASM_NASM_COMPILER)
-    message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
-endif()
-
+set(CMAKE_ASM_NASM_COMPILER "${NASM_PATH}")
+# Skip CMake's compiler verification step for ASM_NASM. The verification path
+# in `CMakeTestASM_NASMCompiler.cmake` can fall back to `try_compile`, which is
+# blocked project-wide by `cmake/block_build_time_checks.cmake`. NASM was already
+# located by `find_program` above, so the compiler is known to work.
+set(CMAKE_ASM_NASM_COMPILER_WORKS TRUE)
 enable_language(ASM_NASM)
 
 set(ISAL_C_SRC
@@ -34,13 +35,9 @@ set(ISAL_C_SRC
         ${ISAL_SOURCE_DIR}/erasure_code/ec_base.c
         ${ISAL_SOURCE_DIR}/erasure_code/ec_base_aliases.c
         ${ISAL_SOURCE_DIR}/erasure_code/ec_highlevel_func.c
-        ${ISAL_SOURCE_DIR}/erasure_code/gen_rs_matrix_limits.c
-        ${ISAL_SOURCE_DIR}/erasure_code/gf_vect_dot_prod_1tbl.c
         ${ISAL_SOURCE_DIR}/igzip/adler32_base.c
         ${ISAL_SOURCE_DIR}/igzip/encode_df.c
         ${ISAL_SOURCE_DIR}/igzip/flatten_ll.c
-        ${ISAL_SOURCE_DIR}/igzip/generate_custom_hufftables.c
-        ${ISAL_SOURCE_DIR}/igzip/generate_static_inflate.c
         ${ISAL_SOURCE_DIR}/igzip/huff_codes.c
         ${ISAL_SOURCE_DIR}/igzip/hufftables_c.c
         ${ISAL_SOURCE_DIR}/igzip/igzip_base_aliases.c
@@ -51,7 +48,6 @@ set(ISAL_C_SRC
         ${ISAL_SOURCE_DIR}/igzip/igzip.c
         ${ISAL_SOURCE_DIR}/mem/mem_zero_detect_base_aliases.c
         ${ISAL_SOURCE_DIR}/mem/mem_zero_detect_base.c
-        ${ISAL_SOURCE_DIR}/programs/igzip_cli.c
         ${ISAL_SOURCE_DIR}/raid/raid_base_aliases.c
         ${ISAL_SOURCE_DIR}/raid/raid_base.c
 )
@@ -195,7 +191,7 @@ target_include_directories(_isal
 
 # Here must remove "-fno-sanitize=undefined" from COMPILE_OPTIONS.
 # Otherwise nasm compiler would fail to proceed due to unrecognition of "-fno-sanitize=undefined"
-if (SANITIZE STREQUAL "undefined")
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     get_target_property(target_options _isal COMPILE_OPTIONS)
     list(REMOVE_ITEM target_options "-fno-sanitize=undefined")
     set_property(TARGET _isal PROPERTY COMPILE_OPTIONS ${target_options})

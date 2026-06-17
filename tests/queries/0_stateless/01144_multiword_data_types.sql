@@ -23,7 +23,7 @@ CREATE TABLE multiword_types (
 SHOW CREATE TABLE multiword_types;
 
 INSERT INTO multiword_types(a) VALUES (1);
-SELECT toTypeName((*,)) FROM multiword_types;
+SELECT toTypeName((*,)) FROM multiword_types SETTINGS enable_named_columns_in_function_tuple = 0;
 
 CREATE TABLE unsigned_types (
     a TINYINT  SIGNED,
@@ -43,7 +43,7 @@ CREATE TABLE unsigned_types (
 SHOW CREATE TABLE unsigned_types;
 
 INSERT INTO unsigned_types(a) VALUES (1);
-SELECT toTypeName((*,)) FROM unsigned_types;
+SELECT toTypeName((*,)) FROM unsigned_types SETTINGS enable_named_columns_in_function_tuple = 0;
 
 SELECT CAST('42' AS DOUBLE PRECISION), CAST(42, 'NATIONAL CHARACTER VARYING'), CAST(-1 AS tinyint  UnSiGnEd), CAST(65535, ' sMaLlInT  signed ');
 

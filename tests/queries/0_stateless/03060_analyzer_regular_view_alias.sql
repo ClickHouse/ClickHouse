@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/11068
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 create table vt(datetime_value DateTime, value Float64) Engine=Memory;
 
 create view computed_datum_hours as

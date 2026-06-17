@@ -18,7 +18,7 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE table_with_empty_part
 ENGINE = MergeTree()
 ORDER BY id
 PARTITION BY id
-SETTINGS vertical_merge_algorithm_min_rows_to_activate=0, vertical_merge_algorithm_min_columns_to_activate=0, remove_empty_parts = 0
+SETTINGS vertical_merge_algorithm_min_rows_to_activate=0, vertical_merge_algorithm_min_columns_to_activate=0, remove_empty_parts = 0, min_bytes_for_wide_part=0, min_bytes_for_full_part_storage = 0
 "
 
 

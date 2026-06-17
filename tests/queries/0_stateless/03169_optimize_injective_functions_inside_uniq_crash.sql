@@ -7,7 +7,7 @@ FROM
     FROM numbers(4096 * 100)
     GROUP BY k
 )
-SETTINGS allow_experimental_analyzer = 1, optimize_injective_functions_inside_uniq=0;
+SETTINGS enable_analyzer = 1, optimize_injective_functions_inside_uniq=0;
 
 SELECT sum(u)
 FROM
@@ -18,4 +18,4 @@ FROM
     FROM numbers(4096 * 100)
     GROUP BY k
 )
-SETTINGS allow_experimental_analyzer = 1, optimize_injective_functions_inside_uniq=1;
+SETTINGS enable_analyzer = 1, optimize_injective_functions_inside_uniq=1;

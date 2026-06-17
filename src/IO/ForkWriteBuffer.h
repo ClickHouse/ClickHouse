@@ -1,13 +1,12 @@
 #pragma once
+
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteBuffer.h>
 
+#include <vector>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-}
 
 /** ForkWriteBuffer takes a vector of WriteBuffer and writes data to all of them
  * If the vector of WriteBufferPts is empty, then it throws an error
@@ -17,15 +16,14 @@ namespace ErrorCodes
 class ForkWriteBuffer : public WriteBuffer
 {
 public:
-
-    using WriteBufferPtrs = std::vector<WriteBufferPtr>;
-
+    using WriteBufferPtrs = VectorWithMemoryTracking<WriteBufferPtr>;
     explicit ForkWriteBuffer(WriteBufferPtrs && sources_);
-    ~ForkWriteBuffer() override;
 
 protected:
     void nextImpl() override;
+    void preFinalize() override;
     void finalizeImpl() override;
+    void cancelImpl() noexcept override;
 
 private:
     WriteBufferPtrs sources;

@@ -1,9 +1,12 @@
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
 
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
+#include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -38,15 +41,16 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         is_follower = static_cast<size_t>(keeper_info.is_follower);
         is_exceeding_mem_soft_limit = static_cast<size_t>(keeper_info.is_exceeding_mem_soft_limit);
 
-        zxid = keeper_info.last_zxid;
         const auto & state_machine = keeper_dispatcher.getStateMachine();
-        znode_count = state_machine.getNodesCount();
-        watch_count = state_machine.getTotalWatchesCount();
-        ephemerals_count = state_machine.getTotalEphemeralNodesCount();
-        approximate_data_size = state_machine.getApproximateDataSize();
-        key_arena_size = state_machine.getKeyArenaSize();
-        session_with_watches = state_machine.getSessionsWithWatchesCount();
-        paths_watched = state_machine.getWatchedPathsCount();
+        const auto & storage_stats = state_machine.getStorageStats();
+        zxid = storage_stats.last_zxid.load(std::memory_order_relaxed);
+        znode_count = storage_stats.nodes_count.load(std::memory_order_relaxed);
+        watch_count = storage_stats.total_watches_count.load(std::memory_order_relaxed);
+        ephemerals_count = storage_stats.total_emphemeral_nodes_count.load(std::memory_order_relaxed);
+        approximate_data_size = storage_stats.approximate_data_size.load(std::memory_order_relaxed);
+        key_arena_size = 0;
+        session_with_watches = storage_stats.sessions_with_watches_count.load(std::memory_order_relaxed);
+        paths_watched = storage_stats.watched_paths_count.load(std::memory_order_relaxed);
 
 #    if defined(__linux__) || defined(__APPLE__)
         open_file_descriptor_count = getCurrentProcessFDCount();
@@ -114,8 +118,13 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
 }
 
 KeeperAsynchronousMetrics::KeeperAsynchronousMetrics(
-    ContextPtr context_, unsigned update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
-    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_), context(std::move(context_))
+    ContextPtr context_,
+    unsigned update_period_seconds,
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+    bool update_jemalloc_epoch_,
+    bool update_rss_)
+    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, context_)
+    , context(std::move(context_))
 {
 }
 
@@ -134,6 +143,12 @@ void KeeperAsynchronousMetrics::updateImpl(TimePoint /*update_time*/, TimePoint 
             updateKeeperInformation(*keeper_dispatcher, new_values);
     }
 #endif
+}
+
+void KeeperAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
+{
+    if (auto asynchronous_metric_log = context->getAsynchronousMetricLog())
+        asynchronous_metric_log->addValues(new_values);
 }
 
 }

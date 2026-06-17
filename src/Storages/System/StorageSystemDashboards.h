@@ -1,8 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -22,7 +19,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/StreamingHandleErrorMode.h>
 #include <Processors/ISource.h>
 #include <Storages/FileLog/FileLogConsumer.h>
 #include <Storages/FileLog/StorageFileLog.h>
@@ -10,7 +11,7 @@ namespace Poco
 }
 namespace DB
 {
-class FileLogSource : public ISource
+class FileLogSource final : public ISource
 {
 public:
     FileLogSource(
@@ -28,7 +29,7 @@ public:
 
     bool noRecords() { return !consumer || consumer->noRecords(); }
 
-    void onFinish();
+    void close();
 
     ~FileLogSource() override;
 

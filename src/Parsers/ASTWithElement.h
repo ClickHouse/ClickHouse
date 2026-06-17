@@ -12,14 +12,16 @@ class ASTWithElement : public IAST
 public:
     String name;
     ASTPtr subquery;
+    ASTPtr aliases;
+
+    bool is_materialized = false; /// WITH t AS MATERIALIZED (subquery)
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "WithElement"; }
 
     ASTPtr clone() const override;
 
-protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

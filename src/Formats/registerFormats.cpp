@@ -25,6 +25,8 @@ void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
 
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
+void registerInputFormatBuffers(FormatFactory & factory);
+void registerOutputFormatBuffers(FormatFactory & factory);
 
 void registerInputFormatRowBinary(FormatFactory & factory);
 void registerOutputFormatRowBinary(FormatFactory & factory);
@@ -83,10 +85,9 @@ void registerInputFormatForm(FormatFactory & factory);
 /// Output only (presentational) formats.
 
 void registerOutputFormatPretty(FormatFactory & factory);
-void registerOutputFormatPrettyCompact(FormatFactory & factory);
-void registerOutputFormatPrettySpace(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);
+void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
@@ -95,6 +96,8 @@ void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory);
 void registerOutputFormatSQLInsert(FormatFactory & factory);
+void registerOutputFormatPNG(FormatFactory & factory);
+void registerOutputFormatHash(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -154,6 +157,7 @@ void registerFormSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
+void registerFormats();
 void registerFormats()
 {
     auto & factory = FormatFactory::instance();
@@ -174,6 +178,8 @@ void registerFormats()
 
     registerInputFormatNative(factory);
     registerOutputFormatNative(factory);
+    registerInputFormatBuffers(factory);
+    registerOutputFormatBuffers(factory);
 
     registerInputFormatRowBinary(factory);
     registerOutputFormatRowBinary(factory);
@@ -229,10 +235,9 @@ void registerFormats()
     registerOutputFormatNpy(factory);
 
     registerOutputFormatPretty(factory);
-    registerOutputFormatPrettyCompact(factory);
-    registerOutputFormatPrettySpace(factory);
     registerOutputFormatVertical(factory);
     registerOutputFormatJSONEachRowWithProgress(factory);
+    registerOutputFormatJSONCompactEachRowWithProgress(factory);
     registerOutputFormatXML(factory);
     registerOutputFormatODBCDriver2(factory);
     registerOutputFormatNull(factory);
@@ -242,6 +247,8 @@ void registerFormats()
     registerOutputFormatCapnProto(factory);
     registerOutputFormatPrometheus(factory);
     registerOutputFormatSQLInsert(factory);
+    registerOutputFormatPNG(factory);
+    registerOutputFormatHash(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);

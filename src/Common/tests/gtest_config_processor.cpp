@@ -28,16 +28,17 @@ TEST(Common, ConfigProcessorManyElements)
         for (size_t i = 0; i < element_count; ++i)
             writeString("<x><name>" + std::to_string(i) + "</name></x>\n", out);
         writeString("</clickhouse>\n", out);
+        out.finalize();
     }
 
     Poco::Timestamp load_start;
 
     DB::ConfigProcessor processor(config_file->path(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
-    bool has_zk_includes;
+    bool has_zk_includes = {};
     DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
     DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    float load_elapsed_ms = (Poco::Timestamp() - load_start) / 1000.0f;
+    float load_elapsed_ms = static_cast<float>(Poco::Timestamp() - load_start) / 1000.0f;
     std::cerr << "Config loading took " << load_elapsed_ms << " ms" << std::endl;
 
     ASSERT_EQ("0", configuration->getString("x.name"));
@@ -53,7 +54,7 @@ TEST(Common, ConfigProcessorManyElements)
     Poco::Util::AbstractConfiguration::Keys keys;
     configuration->keys("", keys);
 
-    float enumerate_elapsed_ms = (Poco::Timestamp() - enumerate_start) / 1000.0f;
+    float enumerate_elapsed_ms = static_cast<float>(Poco::Timestamp() - enumerate_start) / 1000.0f;
     std::cerr << "Key enumeration took " << enumerate_elapsed_ms << " ms" << std::endl;
 
     ASSERT_EQ(element_count, keys.size());

@@ -11,7 +11,7 @@ namespace DB
 
 ASTPtr ASTStatisticsDeclaration::clone() const
 {
-    auto res = std::make_shared<ASTStatisticsDeclaration>();
+    auto res = make_intrusive<ASTStatisticsDeclaration>();
 
     res->set(res->columns, columns->clone());
     if (types)
@@ -45,16 +45,14 @@ std::vector<String> ASTStatisticsDeclaration::getTypeNames() const
 
 }
 
-void ASTStatisticsDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTStatisticsDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
-    columns->formatImpl(s, state, frame);
-    s.ostr << (s.hilite ? hilite_keyword : "");
+    columns->format(ostr, s, state, frame);
     if (types)
     {
-        s.ostr << " TYPE " << (s.hilite ? hilite_none : "");
-        types->formatImpl(s, state, frame);
+        ostr << " TYPE ";
+        types->format(ostr, s, state, frame);
     }
 }
 
 }
-

@@ -27,5 +27,5 @@ LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10));
 SELECT dictGetOrDefault('cache_dictionary_complex_key_simple_attributes_short_circuit', 'value_first', (number, concat(toString(number))), toString(materialize('default'))) AS value_first FROM system.numbers LIMIT 20 FORMAT Null;
 SELECT dictGetOrDefault('cache_dictionary_complex_key_simple_attributes_short_circuit', 'value_first', (number, concat(toString(number))), toString(materialize('default'))) AS value_first FROM system.numbers LIMIT 20 FORMAT Null;
 
-DROP TABLE IF EXISTS complex_key_simple_attributes_source_short_circuit_table;
 DROP DICTIONARY IF EXISTS cache_dictionary_complex_key_simple_attributes_short_circuit;
+DROP TABLE IF EXISTS complex_key_simple_attributes_source_short_circuit_table;
