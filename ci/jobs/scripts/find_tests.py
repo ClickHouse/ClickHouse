@@ -65,6 +65,31 @@ class Targeting:
     # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
     _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
 
+    _STATELESS_DIR = Path("tests/queries/0_stateless")
+
+    @classmethod
+    def is_stateless_test_path(cls, fpath: str) -> bool:
+        """True if `fpath` is a numbered file under `tests/queries/0_stateless/`."""
+        return bool(re.match(r"tests/queries/0_stateless/\d{5}", fpath))
+
+    @classmethod
+    def read_test_tags(cls, test_base_name: str):
+        """Return the set of tags the stateless test declares (empty set if none),
+        or `None` if no source file is found or it can't be parsed. Tag parsing is
+        reused from `tests/test_tags.py`, shared with `tests/clickhouse-test`.
+        """
+        from tests.test_tags import read_test_tags as read_test_tags_from_file
+
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            src = cls._STATELESS_DIR / f"{test_base_name}{ext}"
+            if not src.is_file():
+                continue
+            try:
+                return read_test_tags_from_file(str(src))
+            except (OSError, UnicodeDecodeError, ValueError):
+                return None
+        return None
+
     @classmethod
     def _derive_test_name(cls, fpath: str):
         """Map a changed file under `tests/queries/0_stateless/` to a test name.
@@ -86,7 +111,7 @@ class Targeting:
         # the same base name. This catches reference updates like
         # `00172_hits_joins.reference.j2` → `00172_hits_joins.sql.j2` while
         # rejecting orphan data files like `02995_settings_26_4_1.tsv`.
-        test_dir = Path("tests/queries/0_stateless")
+        test_dir = cls._STATELESS_DIR
         candidate = fname
         while "." in candidate:
             candidate = candidate.rsplit(".", 1)[0]
@@ -115,7 +140,7 @@ class Targeting:
             return result
 
         for fpath in changed_files:
-            if re.match(r"tests/queries/0_stateless/\d{5}", fpath):
+            if self.is_stateless_test_path(fpath):
                 if not Path(fpath).exists():
                     print(f"File '{fpath}' was removed — skipping")
                     continue

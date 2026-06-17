@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs
@@ -20,6 +21,49 @@ def only_docs(changed_files):
         ):
             continue
         else:
+            return False
+    return True
+
+
+# Cap the change set we treat as "test only". A larger change is a refactor or
+# a batch update where running the full suite is warranted, and the flaky check
+# (45 min budget, each test run many times) cannot meaningfully cover that many
+# tests anyway.
+MAX_TEST_ONLY_CHANGED_FILES = 10
+
+
+def only_changed_stateless_tests(changed_files):
+    """True if the change is a small set of plain stateless tests (or their
+    references) that the flaky checks will run repeatedly across all
+    sanitizer/debug/binary builds. When this holds, the full functional suite
+    would only re-run unchanged, unrelated tests, so it can be skipped in favor
+    of the flaky checks.
+
+    Returns False (keep the full suite) for an empty set, more than
+    `MAX_TEST_ONLY_CHANGED_FILES` files, deletions, any file that is not a
+    recognized `tests/queries/0_stateless` test (helpers, configs, orphan data
+    files, source code, etc.), or any tagged test. A tag such as `no-asan` /
+    `no-tsan` / `no-msan` / `no-debug` excludes the test from build configs the
+    flaky checks use, and `no-flaky-check` excludes it from the flaky check
+    entirely, so a tagged test may not be covered by the limited flaky matrix -
+    only untagged tests are guaranteed to run there.
+    """
+    from ci.jobs.scripts.find_tests import Targeting
+
+    if not changed_files or len(changed_files) > MAX_TEST_ONLY_CHANGED_FILES:
+        return False
+
+    for file in changed_files:
+        f = file.removeprefix(".").removeprefix("/")
+        if not Targeting.is_stateless_test_path(f) or not Path(f).is_file():
+            return False
+        test_base_name = Targeting._derive_test_name(f)
+        if test_base_name is None:
+            return False
+        tags = Targeting.read_test_tags(test_base_name)
+        # `None` means the source couldn't be read; any tag may restrict where
+        # the flaky checks run it. Either way, fall back to the full suite.
+        if tags is None or tags:
             return False
     return True
 
@@ -278,5 +322,25 @@ def should_skip_job(job_name):
                 or "_asan" not in job_name
             ):
                 return True, "Skipped: only CI scripts changed; running amd_asan_ubsan integration batch 1 only"
+
+    # Test-only changes: when every changed file is a stateless test that the
+    # flaky checks already run (across all sanitizer/debug/binary builds), the
+    # full functional suite only re-runs unchanged, unrelated tests. Skip the
+    # non-flaky Stateless/Stateful jobs and rely on the flaky checks. Coverage
+    # jobs are kept so the coverage report stays complete.
+    if (
+        _info_cache.pr_number
+        and (
+            job_name.startswith(JobNames.STATELESS)
+            or job_name.startswith(JobNames.STATEFUL)
+        )
+        and "flaky" not in job_name.lower()
+        and "coverage" not in job_name.lower()
+        and only_changed_stateless_tests(changed_files)
+    ):
+        return (
+            True,
+            "Skipped, only stateless test files changed - covered by the flaky checks",
+        )
 
     return False, ""

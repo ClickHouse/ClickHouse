@@ -49,6 +49,8 @@ from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
 
+from test_tags import find_tag_line, parse_tags_from_line
+
 try:
     import termcolor  # type: ignore
 except ImportError:
@@ -3815,23 +3817,6 @@ class TestSuite:
                 return "#"
             raise TestException(f"Unknown file_extension: {filename}")
 
-        def parse_tags_from_line(line, comment_sign) -> Set[str]:
-            if not line.startswith(comment_sign):
-                return set()
-            tags_str = line[len(comment_sign) :].lstrip()  # noqa: ignore E203
-            tags_prefix = "Tags:"
-            if not tags_str.startswith(tags_prefix):
-                return set()
-            tags_str = tags_str[len(tags_prefix) :]  # noqa: ignore E203
-            tags = tags_str.split(",")
-            tags = {tag.strip() for tag in tags}
-            if "no-stress" in tags:
-                raise ValueError(
-                    "The 'no-stress' tag is not supported: stress tests must be "
-                    "able to run every test. Remove it from the test."
-                )
-            return tags
-
         def parse_memory_limits_from_line(
             line, comment_sign
         ) -> Dict[str, Tuple[int, int]]:
@@ -3864,14 +3849,6 @@ class TestSuite:
                     setting_and_limit[1]
                 )
             return random_settings_limits
-
-        def find_tag_line(lines, comment_sign):
-            for line in lines:
-                if line.startswith(comment_sign) and line[
-                    len(comment_sign) :
-                ].lstrip().startswith("Tags:"):
-                    return line
-            return ""
 
         def find_random_settings_limits_line(lines, comment_sign):
             for line in lines:
