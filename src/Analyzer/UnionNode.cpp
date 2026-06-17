@@ -15,10 +15,13 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+
+#include <Common/SettingsChanges.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -232,7 +235,9 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         && is_materialized == rhs_typed.is_materialized
         && is_recursive_cte == rhs_typed.is_recursive_cte
         && cte_name == rhs_typed.cte_name
-        && union_mode == rhs_typed.union_mode;
+        && union_mode == rhs_typed.union_mode
+        && settings_limit == rhs_typed.settings_limit
+        && settings_offset == rhs_typed.settings_offset;
 }
 
 void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -253,6 +258,9 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(cte_name);
 
     state.update(static_cast<size_t>(union_mode));
+
+    state.update(settings_limit);
+    state.update(settings_offset);
 }
 
 QueryTreeNodePtr UnionNode::cloneImpl() const
@@ -265,6 +273,8 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
     result_union_node->cte_name = cte_name;
+    result_union_node->settings_limit = settings_limit;
+    result_union_node->settings_offset = settings_offset;
 
     return result_union_node;
 }
@@ -276,6 +286,24 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
     select_with_union_query->is_normalized = true;
     select_with_union_query->children.push_back(getQueriesNode()->toAST(options));
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
+
+    /// The global `limit`/`offset` settings cap was moved off the branch QueryNodes onto this union
+    /// (see QueryTreeBuilder), so re-emit it here as a whole-query SETTINGS clause to keep the AST
+    /// equivalent. Without this, an AST roundtrip would silently drop the cap.
+    if (settings_limit || settings_offset)
+    {
+        SettingsChanges settings_changes;
+        if (settings_limit)
+            settings_changes.setSetting("limit", settings_limit);
+        if (settings_offset)
+            settings_changes.setSetting("offset", settings_offset);
+
+        auto settings_query = make_intrusive<ASTSetQuery>();
+        settings_query->changes = std::move(settings_changes);
+        settings_query->is_standalone = false;
+        select_with_union_query->settings_ast = settings_query;
+        select_with_union_query->children.push_back(std::move(settings_query));
+    }
 
     ASTPtr result_query = std::move(select_with_union_query);
     bool set_subquery_cte_name = options.set_subquery_cte_name;

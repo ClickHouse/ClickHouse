@@ -1827,6 +1827,40 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     return true;
 }
 
+bool SelectQueryExpressionAnalyzer::appendLimitRange(ExpressionActionsChain & chain, bool only_types)
+{
+    const auto * select_query = getSelectQuery();
+
+    if (!select_query->limitAfter() && !select_query->limitUntil())
+        return false;
+
+    ExpressionActionsChainSteps::Step & step = chain.lastStep(aggregated_columns);
+
+    auto analyze_boundary = [&](const ASTPtr & expr, const char * description)
+    {
+        if (!expr)
+            return;
+        getRootActionsForHaving(expr, only_types, step.actions()->dag);
+        const auto & column_name = expr->getColumnName();
+        if (!only_types)
+        {
+            const auto * node = step.actions()->dag.tryFindInOutputs(column_name);
+            if (node && !node->result_type->canBeUsedInBooleanContext())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                    "{} expression must be boolean, got {}", description, node->result_type->getName());
+        }
+        step.addRequiredOutput(column_name);
+    };
+
+    analyze_boundary(select_query->limitAfter(), "LIMIT AFTER");
+    analyze_boundary(select_query->limitUntil(), "LIMIT UNTIL");
+
+    for (const auto & column : aggregated_columns)
+        step.addRequiredOutput(column.name);
+
+    return true;
+}
+
 ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
     const auto * select_query = getSelectQuery();
@@ -2350,6 +2384,14 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (query_analyzer.appendLimitBy(chain, only_types || !second_stage))
         {
             before_limit_by = chain.getLastActions();
+            chain.addStep();
+        }
+
+        if (query_analyzer.appendLimitRange(chain, only_types || !second_stage))
+        {
+            before_limit_range = chain.getLastActions();
+            limit_range_start_column_name = query.limitAfter() ? query.limitAfter()->getColumnName() : "";
+            limit_range_end_column_name = query.limitUntil() ? query.limitUntil()->getColumnName() : "";
             chain.addStep();
         }
 

@@ -202,12 +202,14 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         if (typeid_cast<LimitRangeTransform *>(processor))
         {
             has_limit = true;
-            if (!limit_processor)
-            {
-                /// LimitRangeTransform is a single-input simple transform; always use Case 7
-                /// (attach counter to the transform itself rather than searching upstream).
-                processors.emplace_back(processor);
-            }
+            /// LimitRangeTransform is a single-input simple transform that keeps its own counter
+            /// over all rows it reads (i.e. rows before the AFTER/UNTIL range is applied). It must
+            /// own the counter even when a settings LimitStep sits downstream (LIMIT ... AFTER ...
+            /// SETTINGS limit = N); otherwise that outer limit would shadow it and report rows after
+            /// the range instead of the total scanned, diverging from normal LIMIT semantics.
+            processors.emplace_back(processor);
+            if (limit_processor)
+                limit_candidates.erase(limit_processor);
             continue;
         }
 

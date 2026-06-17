@@ -268,6 +268,9 @@ struct ExpressionAnalysisResult
     ActionsAndProjectInputsFlagPtr before_window;
     ActionsAndProjectInputsFlagPtr before_order_by;
     ActionsAndProjectInputsFlagPtr before_limit_by;
+    ActionsAndProjectInputsFlagPtr before_limit_range;
+    String limit_range_start_column_name;
+    String limit_range_end_column_name;
     ActionsAndProjectInputsFlagPtr final_projection;
 
     /// Columns from the SELECT list, before renaming them to aliases. Used to
@@ -434,6 +437,7 @@ private:
     ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
     void validateOrderByKeyType(const DataTypePtr & key_type) const;
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendLimitRange(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };
 

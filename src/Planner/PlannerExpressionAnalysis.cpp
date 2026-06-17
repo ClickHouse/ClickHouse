@@ -847,11 +847,13 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     /** LIMIT AFTER/UNTIL boundary columns may not be in the SELECT list. The LimitRangeStep runs before
       * "Project names" in the plan, so keep its referenced columns alive past the projection by adding a
-      * dedicated step here (only when the range limit is actually applied at this stage, i.e. not when
-      * producing a mergeable aggregation state, where "Project names" is not applied either).
+      * dedicated step here. This must also run when producing a mergeable aggregation state on a shard:
+      * the range step itself is applied later on the initiator, but the shard must still carry the boundary
+      * columns in its output (the Projection would otherwise prune them, leaving the initiator unable to
+      * evaluate the range over a non-selected column in a distributed query).
       */
     std::optional<LimitRangeAnalysisResult> limit_range_analysis_result_optional;
-    if ((query_node.hasLimitAfter() || query_node.hasLimitUntil()) && !planner_query_processing_info.isToAggregationState())
+    if (query_node.hasLimitAfter() || query_node.hasLimitUntil())
     {
         limit_range_analysis_result_optional = analyzeLimitRange(
             query_node,

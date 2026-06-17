@@ -2038,6 +2038,26 @@ void Planner::buildQueryPlanIfNeeded()
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
+/// A range branch with WITH TOTALS configures its LimitRangeTransform to drain its input so totals are
+/// computed over all rows. A union-level settings cap must not close the pipeline before that drain
+/// completes. Returns true if any branch (recursively through nested set operations) needs draining,
+/// mirroring the per-branch drain condition used in addLimitRangeStep.
+static bool setOperationBranchNeedsTotalsDrain(const QueryTreeNodePtr & node)
+{
+    if (const auto * child_query = node->as<QueryNode>())
+        return (child_query->isGroupByWithTotals() && !child_query->hasOrderBy())
+            || (!child_query->isGroupByWithTotals() && queryHasWithTotalsInAnySubqueryInJoinTree(node));
+
+    if (const auto * child_union = node->as<UnionNode>())
+    {
+        for (const auto & sub : child_union->getQueries().getNodes())
+            if (setOperationBranchNeedsTotalsDrain(sub))
+                return true;
+    }
+
+    return false;
+}
+
 void Planner::buildPlanForUnionNode()
 {
     const auto & union_node = query_tree->as<UnionNode &>();
@@ -2131,6 +2151,38 @@ void Planner::buildPlanForUnionNode()
             query_plan.getCurrentHeader()->getNames(),
             false /*pre distinct*/);
         query_plan.addStep(std::move(distinct_step));
+    }
+
+    /// Global `limit`/`offset` settings cap for a union whose branches use LIMIT AFTER/UNTIL. It was
+    /// moved off the branch nodes (see buildSelectWithUnionExpression) so it is applied here exactly
+    /// once over the merged union result, rather than once per branch.
+    const UInt64 union_settings_limit = union_node.getSettingsLimit();
+    const UInt64 union_settings_offset = union_node.getSettingsOffset();
+    if (union_settings_limit > 0)
+    {
+        bool always_read_till_end = settings[Setting::exact_rows_before_limit];
+
+        /// The union cap must not close the pipeline before a range branch that drains for WITH TOTALS
+        /// has produced its totals.
+        for (const auto & child : union_node.getQueries().getNodes())
+        {
+            if (setOperationBranchNeedsTotalsDrain(child))
+            {
+                always_read_till_end = true;
+                break;
+            }
+        }
+
+        auto step = std::make_unique<LimitStep>(
+            query_plan.getCurrentHeader(), union_settings_limit, union_settings_offset, always_read_till_end);
+        step->setStepDescription("LIMIT OFFSET for SETTINGS (UNION)");
+        query_plan.addStep(std::move(step));
+    }
+    else if (union_settings_offset > 0)
+    {
+        auto step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), union_settings_offset);
+        step->setStepDescription("OFFSET for SETTINGS (UNION)");
+        query_plan.addStep(std::move(step));
     }
 
     /// Each child of the UNION/INTERSECT/EXCEPT may independently add a DelayedMaterializingCTEsStep

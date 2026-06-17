@@ -178,10 +178,15 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
         return std::make_pair(std::move(dag), std::move(column_name));
     };
 
+    /// Read in wire order (start before end). Function-argument evaluation order is unspecified,
+    /// so the reads must happen in explicit statements, not inline in the constructor call.
+    auto start_condition = read_condition(flags & 1);
+    auto end_condition = read_condition(flags & 2);
+
     return std::make_unique<LimitRangeStep>(
         ctx.input_headers.front(),
-        read_condition(flags & 1),
-        read_condition(flags & 2),
+        std::move(start_condition),
+        std::move(end_condition),
         flags & 8,
         limit_value,
         bool(flags & 16));

@@ -13,6 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -157,6 +158,7 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 limit;
     extern const SettingsUInt64 max_analyze_depth;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_in_distinct;
@@ -183,6 +185,7 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_uniq_to_count;
+    extern const SettingsUInt64 offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -1692,56 +1695,6 @@ UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, 
 }
 
 
-static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
-{
-    if (query.group_by_with_totals)
-        return true;
-
-    /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
-     * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
-     */
-    if (auto query_table = extractTableExpression(query, 0))
-    {
-        if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
-        {
-            /** NOTE
-            * 1. For ASTSelectWithUnionQuery after normalization for union child node the height of the AST tree is at most 2.
-            * 2. For ASTSelectIntersectExceptQuery after normalization in case there are intersect or except nodes,
-            * the height of the AST tree can have any depth (each intersect/except adds a level), but the
-            * number of children in those nodes is always 2.
-            */
-            std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
-            {
-                if (const auto * select_child = child_ast->as <ASTSelectQuery>())
-                {
-                    if (hasWithTotalsInAnySubqueryInFromClause(select_child->as<ASTSelectQuery &>()))
-                        return true;
-                }
-                else if (const auto * union_child = child_ast->as<ASTSelectWithUnionQuery>())
-                {
-                    for (const auto & subchild : union_child->list_of_selects->children)
-                        if (traverse_recursively(subchild))
-                            return true;
-                }
-                else if (const auto * intersect_child = child_ast->as<ASTSelectIntersectExceptQuery>())
-                {
-                    auto selects = intersect_child->getListOfSelects();
-                    for (const auto & subchild : selects)
-                        if (traverse_recursively(subchild))
-                            return true;
-                }
-                return false;
-            };
-
-            for (const auto & elem : ast_union->list_of_selects->children)
-                if (traverse_recursively(elem))
-                    return true;
-        }
-    }
-
-    return false;
-}
-
 template <size_t size>
 ALWAYS_INLINE void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const char (&description)[size])
 {
@@ -2330,6 +2283,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             /// columns), extremes are computed here, before both, mirroring the analyzer path.
             if (has_limit_range && apply_limit && apply_offset)
                 executeExtremes(query_plan);
+
+            if (has_limit_range && apply_limit && apply_offset && expressions.before_limit_range)
+                executeExpression(query_plan, expressions.before_limit_range, "Before LIMIT range (AFTER/UNTIL)");
 
             /// WITH TIES needs ORDER BY columns removed by projection.
             /// AFTER/UNTIL conditions may reference non-selected columns, so both must run before projection.
@@ -3607,8 +3563,31 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             always_read_till_end = true;
 
         const auto & header = query_plan.getCurrentHeader();
-        auto start_condition = buildLimitConditionDAG(*header, query.limitAfter(), context, prepared_sets, "LIMIT AFTER");
-        auto end_condition = buildLimitConditionDAG(*header, query.limitUntil(), context, prepared_sets, "LIMIT UNTIL");
+
+        std::optional<std::pair<ActionsDAG, String>> start_condition;
+        std::optional<std::pair<ActionsDAG, String>> end_condition;
+
+        auto buildIdentityCondition = [&](const String & column_name) -> std::optional<std::pair<ActionsDAG, String>>
+        {
+            if (column_name.empty())
+                return std::nullopt;
+            const auto & col = header->getByName(column_name);
+            ActionsDAG dag;
+            const auto * input = &dag.addInput(col.name, col.type);
+            dag.getOutputs().push_back(input);
+            return std::make_pair(std::move(dag), column_name);
+        };
+
+        if (analysis_result.before_limit_range)
+        {
+            start_condition = buildIdentityCondition(analysis_result.limit_range_start_column_name);
+            end_condition = buildIdentityCondition(analysis_result.limit_range_end_column_name);
+        }
+        else
+        {
+            start_condition = buildLimitConditionDAG(*header, query.limitAfter(), context, prepared_sets, "LIMIT AFTER");
+            end_condition = buildLimitConditionDAG(*header, query.limitUntil(), context, prepared_sets, "LIMIT UNTIL");
+        }
         auto limit_range_step = std::make_unique<LimitRangeStep>(
             header,
             std::move(start_condition),
@@ -3618,6 +3597,21 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             always_read_till_end);
         limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
         query_plan.addStep(std::move(limit_range_step));
+
+        if (settings_limit_for_range > 0)
+        {
+            auto limit = std::make_unique<LimitStep>(
+                query_plan.getCurrentHeader(), settings_limit_for_range, settings_offset_for_range, always_read_till_end);
+            limit->setStepDescription("LIMIT OFFSET for SETTINGS");
+            query_plan.addStep(std::move(limit));
+        }
+        else if (settings_offset_for_range > 0)
+        {
+            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), settings_offset_for_range);
+            offset->setStepDescription("OFFSET for SETTINGS");
+            query_plan.addStep(std::move(offset));
+        }
+
         return;
     }
 
@@ -3826,7 +3820,27 @@ void InterpreterSelectQuery::initSettings()
 {
     auto & query = getSelectQuery();
     if (query.settings())
+    {
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
+
+        auto & set_query = query.settings()->as<ASTSetQuery &>();
+        if ((query.limitAfter() || query.limitUntil()) && (set_query.changes.tryGet("limit") || set_query.changes.tryGet("offset")))
+        {
+            /// Branch-local `limit`/`offset` settings must cap the range result after LIMIT AFTER/UNTIL.
+            /// Clear them from the context and AST so they are not applied before the range step or sent
+            /// to remote shards as ordinary settings.
+            const auto & settings = context->getSettingsRef();
+            settings_limit_for_range = settings[Setting::limit];
+            settings_offset_for_range = settings[Setting::offset];
+            context->setSetting("limit", Field(UInt64(0)));
+            context->setSetting("offset", Field(UInt64(0)));
+
+            set_query.changes.removeSetting("limit");
+            set_query.changes.removeSetting("offset");
+            if (set_query.changes.empty())
+                query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+        }
+    }
 
     const auto & client_info = context->getClientInfo();
     auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;

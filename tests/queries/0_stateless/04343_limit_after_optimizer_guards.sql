@@ -18,11 +18,19 @@ SELECT * FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT 3 AFTER numb
 -- 3. Trivial GROUP BY + LIMIT n AFTER: the optimization must not set max_rows_to_group_by = n
 --    which would stop aggregation before the boundary key appears.
 SELECT number % 100 AS k FROM numbers(10000) GROUP BY k LIMIT 5 AFTER k >= 50 SETTINGS optimize_trivial_group_by_limit_query = 1;
+SELECT number % 100 AS k FROM numbers(10000) GROUP BY k LIMIT 5 AFTER k >= 50 SETTINGS optimize_trivial_group_by_limit_query = 1, enable_analyzer = 0;
 
 -- 4. WITH TOTALS + SETTINGS limit: the outer settings LimitStep must propagate
 --    always_read_till_end so totals are not lost.
-SELECT number % 3 AS g, count() FROM numbers(12) GROUP BY g WITH TOTALS ORDER BY g LIMIT AFTER g >= 1 SETTINGS limit = 1;
+--    (Wrapped in a subquery so both analyzer paths can resolve the column.)
+SELECT g, c FROM (SELECT number % 3 AS g, count() AS c FROM numbers(12) GROUP BY g WITH TOTALS ORDER BY g) LIMIT AFTER g >= 1 SETTINGS limit = 1;
+SELECT g, c FROM (SELECT number % 3 AS g, count() AS c FROM numbers(12) GROUP BY g WITH TOTALS ORDER BY g) LIMIT AFTER g >= 1 SETTINGS limit = 1, enable_analyzer = 0;
 
 -- 5. Predicate pushdown barrier: outer WHERE must not be pushed into a subquery with
 --    LIMIT AFTER (legacy path). A pushed predicate could remove the boundary row.
 SELECT * FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 3) WHERE number <= 5 SETTINGS enable_analyzer = 0;
+
+-- 6. Duplicate ORDER BY removal: no-count LIMIT AFTER/UNTIL in subquery must preserve
+--    inner ORDER BY even when the outer query has the same ORDER BY.
+SELECT * FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7) ORDER BY number SETTINGS optimize_duplicate_order_by_and_distinct = 1, enable_analyzer = 0;
+SELECT * FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT UNTIL number >= 3) ORDER BY number SETTINGS optimize_duplicate_order_by_and_distinct = 1, enable_analyzer = 0;

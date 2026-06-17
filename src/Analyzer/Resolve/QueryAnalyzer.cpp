@@ -2701,6 +2701,20 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     query_node->getLimitByNode() = limit_by_node;
                 }
 
+                if (query_node->hasLimitAfter())
+                {
+                    auto limit_after_node = query_node->getLimitAfter();
+                    replace_identifiers_in_node(limit_after_node);
+                    query_node->getLimitAfter() = limit_after_node;
+                }
+
+                if (query_node->hasLimitUntil())
+                {
+                    auto limit_until_node = query_node->getLimitUntil();
+                    replace_identifiers_in_node(limit_until_node);
+                    query_node->getLimitUntil() = limit_until_node;
+                }
+
                 if (query_node->hasWindow())
                 {
                     auto window_node = query_node->getWindowNode();

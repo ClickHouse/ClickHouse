@@ -31,9 +31,20 @@ SELECT number % 100 AS k FROM numbers(10000) GROUP BY k LIMIT 5 AFTER k >= 50 SE
 52
 53
 54
+SELECT number % 100 AS k FROM numbers(10000) GROUP BY k LIMIT 5 AFTER k >= 50 SETTINGS optimize_trivial_group_by_limit_query = 1, enable_analyzer = 0;
+50
+51
+52
+53
+54
 -- 4. WITH TOTALS + SETTINGS limit: the outer settings LimitStep must propagate
 --    always_read_till_end so totals are not lost.
-SELECT number % 3 AS g, count() FROM numbers(12) GROUP BY g WITH TOTALS ORDER BY g LIMIT AFTER g >= 1 SETTINGS limit = 1;
+--    (Wrapped in a subquery so both analyzer paths can resolve the column.)
+SELECT g, c FROM (SELECT number % 3 AS g, count() AS c FROM numbers(12) GROUP BY g WITH TOTALS ORDER BY g) LIMIT AFTER g >= 1 SETTINGS limit = 1;
+1	4
+
+0	12
+SELECT g, c FROM (SELECT number % 3 AS g, count() AS c FROM numbers(12) GROUP BY g WITH TOTALS ORDER BY g) LIMIT AFTER g >= 1 SETTINGS limit = 1, enable_analyzer = 0;
 1	4
 
 0	12
@@ -43,3 +54,13 @@ SELECT * FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number
 3
 4
 5
+-- 6. Duplicate ORDER BY removal: no-count LIMIT AFTER/UNTIL in subquery must preserve
+--    inner ORDER BY even when the outer query has the same ORDER BY.
+SELECT * FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7) ORDER BY number SETTINGS optimize_duplicate_order_by_and_distinct = 1, enable_analyzer = 0;
+7
+8
+9
+SELECT * FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT UNTIL number >= 3) ORDER BY number SETTINGS optimize_duplicate_order_by_and_distinct = 1, enable_analyzer = 0;
+0
+1
+2

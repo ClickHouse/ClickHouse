@@ -1,0 +1,102 @@
+-- { echo }
+
+-- LIMIT AFTER alone: counter on the range transform, counts all 10 input rows.
+SELECT number FROM numbers(10) ORDER BY number LIMIT 3 AFTER number >= 5 FORMAT JSONCompact;
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5],
+		[6],
+		[7]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 10
+}
+-- LIMIT AFTER with a settings limit downstream: the settings LimitStep must not shadow the counter.
+SELECT number FROM numbers(10) ORDER BY number LIMIT 3 AFTER number >= 5 FORMAT JSONCompact SETTINGS limit = 1;
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 10
+}
+SELECT number FROM numbers(10) ORDER BY number LIMIT 3 AFTER number >= 5 FORMAT JSONCompact SETTINGS limit = 1, enable_analyzer = 0;
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[5]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 10
+}
+-- LIMIT UNTIL with a settings limit downstream.
+SELECT number FROM numbers(10) ORDER BY number LIMIT UNTIL number >= 7 FORMAT JSONCompact SETTINGS limit = 1;
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[0]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 10
+}
+SELECT number FROM numbers(10) ORDER BY number LIMIT UNTIL number >= 7 FORMAT JSONCompact SETTINGS limit = 1, enable_analyzer = 0;
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[0]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 10
+}
