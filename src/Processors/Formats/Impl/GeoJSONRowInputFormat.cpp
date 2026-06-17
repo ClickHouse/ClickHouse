@@ -180,6 +180,17 @@ void validateRingCoordinates(const Array & ring)
             "GeoJSON: a Polygon ring must be closed (its first and last positions must be equal)");
 }
 
+/// Enforce the GeoJSON shape invariant for a `Polygon` (and each polygon of a `MultiPolygon`): it must
+/// have at least one linear ring (its exterior ring), and every ring must itself be valid. Otherwise a
+/// ringless polygon would be stored as a `Geometry`.
+void validatePolygonRings(const Array & rings)
+{
+    if (rings.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon must have at least one ring");
+    for (const auto & ring : rings)
+        validateRingCoordinates(ring.safeGet<Array>());
+}
+
 /// Guard against unbounded recursion while parsing a nested JSON value. A value nested deeper than the
 /// configured limit raises an exception, and the real stack depth is probed every
 /// `STACK_CHECK_INTERVAL` levels so a pathological document is rejected before it overflows the stack.
@@ -392,21 +403,27 @@ Field parseAndValidateGeometryCoordinates(const String & geo_type, ReadBuffer & 
     else if (geo_type == "MultiLineString")
     {
         coordinates_field = readGeoJSONPolygonCoordinates(coord_buf);
-        for (const auto & line : coordinates_field.safeGet<Array>())
+        const Array & lines = coordinates_field.safeGet<Array>();
+        if (lines.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "GeoJSON: a MultiLineString must have at least one LineString");
+        for (const auto & line : lines)
             validateLineStringCoordinates(line.safeGet<Array>());
     }
     else if (geo_type == "Polygon")
     {
         coordinates_field = readGeoJSONPolygonCoordinates(coord_buf);
-        for (const auto & ring : coordinates_field.safeGet<Array>())
-            validateRingCoordinates(ring.safeGet<Array>());
+        validatePolygonRings(coordinates_field.safeGet<Array>());
     }
     else if (geo_type == "MultiPolygon")
     {
         coordinates_field = readGeoJSONMultiPolygonCoordinates(coord_buf);
-        for (const auto & polygon : coordinates_field.safeGet<Array>())
-            for (const auto & ring : polygon.safeGet<Array>())
-                validateRingCoordinates(ring.safeGet<Array>());
+        const Array & polygons = coordinates_field.safeGet<Array>();
+        if (polygons.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "GeoJSON: a MultiPolygon must have at least one Polygon");
+        for (const auto & polygon : polygons)
+            validatePolygonRings(polygon.safeGet<Array>());
     }
     return coordinates_field;
 }
