@@ -88,7 +88,7 @@ jobs:
             if ! merge_failed_checks=$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" \
               --paginate --jq '
               .check_runs[] |
-              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled" or .conclusion == "action_required") |
+              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled" or .conclusion == "action_required" or .conclusion == "startup_failure" or .conclusion == "stale") |
               select((.name | startswith("Performance Comparison")) | not) |
               select((.name | startswith("libFuzzer")) | not) |
               select((.name | startswith("Nightly")) | not) |
@@ -158,11 +158,13 @@ jobs:
               select((.name | startswith("Nightly")) | not) |
               select((.name | startswith("ClickBench")) | not) |
               select(.name != "CH Inc sync" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "SQLTest" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
-              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled" or .conclusion == "action_required" or .status != "completed") |
+              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled" or .conclusion == "action_required" or .conclusion == "startup_failure" or .conclusion == "stale" or .status != "completed") |
               (if .conclusion == "failure" then .name + " (failed)"
                elif .conclusion == "timed_out" then .name + " (timed_out)"
                elif .conclusion == "cancelled" then .name + " (cancelled)"
                elif .conclusion == "action_required" then .name + " (action_required)"
+               elif .conclusion == "startup_failure" then .name + " (startup_failure)"
+               elif .conclusion == "stale" then .name + " (stale)"
                elif .status != "completed" then .name + " (incomplete)"
                else empty end)
             '); then
@@ -215,10 +217,11 @@ jobs:
             # never completed) on the PR head. A failure on the PR head in an unrelated
             # check does not prove the master failure came from this PR, so without an
             # intersection we treat the master failure as flaky and skip. The PR head names
-            # carry a " (failed)"/" (timed_out)"/" (cancelled)"/" (action_required)"/" (error)"/
-            # " (incomplete)"/" (pending)" suffix that we strip first.
+            # carry a " (failed)"/" (timed_out)"/" (cancelled)"/" (action_required)"/
+            # " (startup_failure)"/" (stale)"/" (error)"/" (incomplete)"/" (pending)" suffix
+            # that we strip first.
             merge_failure_names=$(echo "$merge_failures" | sed '/^$/d' | sort -u)
-            pr_issue_names=$(echo "$pr_issues" | sed -E 's/ \((failed|timed_out|cancelled|action_required|error|incomplete|pending)\)$//' | sed '/^$/d' | sort -u)
+            pr_issue_names=$(echo "$pr_issues" | sed -E 's/ \((failed|timed_out|cancelled|action_required|startup_failure|stale|error|incomplete|pending)\)$//' | sed '/^$/d' | sort -u)
             common_failures=$(comm -12 <(echo "$merge_failure_names") <(echo "$pr_issue_names"))
 
             if [ -z "$common_failures" ]; then
