@@ -57,6 +57,20 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
                     case '\\':
                         res += *pos;
                         break;
+                    /// Escaped excluded metacharacters ^ $ . are literal characters in SIMILAR TO,
+                    /// the same as their unescaped forms. For [I]LIKE the backslash is not special
+                    /// before these characters, so keep the literal backslash (same as the default).
+                    case '^':
+                    case '$':
+                    case '.':
+                        if constexpr (is_similar_to)
+                            res += *pos;
+                        else
+                        {
+                            res += '\\';
+                            res += *pos;
+                        }
+                        break;
 #define CASES(c) case c:
                     SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
 #undef CASES

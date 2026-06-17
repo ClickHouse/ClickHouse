@@ -186,3 +186,22 @@ SELECT 'A' SIMILAR TO '(?i:a)'; -- { serverError BAD_ARGUMENTS }
 SELECT 'a' SIMILAR TO '(?:a)';  -- { serverError BAD_ARGUMENTS }
 SELECT 'a' SIMILAR TO '(a)?';                      -- Returns: 1
 SELECT ''  SIMILAR TO '(a)?';                      -- Returns: 1
+
+SELECT '-- Escaped excluded metacharacters ^ $ . denote the literal character (same as unescaped)';
+SELECT '.'   SIMILAR TO '\.';                      -- Returns: 1
+SELECT '\\.' SIMILAR TO '\.';                      -- Returns: 0
+SELECT 'a.b' SIMILAR TO 'a\.b';                    -- Returns: 1
+SELECT 'axb' SIMILAR TO 'a\.b';                    -- Returns: 0
+SELECT '^'   SIMILAR TO '\^';                      -- Returns: 1
+SELECT 'a'   SIMILAR TO '\^';                      -- Returns: 0
+SELECT '$'   SIMILAR TO '\$';                      -- Returns: 1
+SELECT 'a'   SIMILAR TO '\$';                      -- Returns: 0
+
+SELECT '-- Escaped excluded metacharacters in the substring fast path (%...%)';
+SELECT '.'    SIMILAR TO '%\.%';                   -- Returns: 1
+SELECT 'a.b'  SIMILAR TO '%\.%';                   -- Returns: 1
+SELECT 'ab'   SIMILAR TO '%\.%';                   -- Returns: 0
+SELECT '^x'   SIMILAR TO '%\^%';                   -- Returns: 1
+SELECT 'ab'   SIMILAR TO '%\^%';                   -- Returns: 0
+SELECT 'x$y'  SIMILAR TO '%\$%';                   -- Returns: 1
+SELECT 'ab'   SIMILAR TO '%\$%';                   -- Returns: 0

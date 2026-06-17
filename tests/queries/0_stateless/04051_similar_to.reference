@@ -150,3 +150,20 @@
 -- re2 extension groups like (?...) are not part of SIMILAR TO and are rejected
 1
 1
+-- Escaped excluded metacharacters ^ $ . denote the literal character (same as unescaped)
+1
+0
+1
+0
+1
+0
+1
+0
+-- Escaped excluded metacharacters in the substring fast path (%...%)
+1
+1
+0
+1
+0
+1
+0

@@ -238,6 +238,19 @@ String similarToPatternToRegexp(std::string_view pattern)
                         res += "\\\\";
                         ++pos;
                         break;
+                    /// Escaped excluded metacharacters ^ $ . denote the literal character, the same as
+                    /// their unescaped forms which the translator already quotes for re2. Emit them
+                    /// quoted (e.g. `\.` -> `\.`) and consume the metacharacter. Without this case they
+                    /// would fall into the generic escape branch below, which emits a quoted backslash
+                    /// and re-processes the metacharacter, producing a regexp that matches a literal
+                    /// backslash (`\.` -> `\\\.`) instead of the literal character.
+                    case '^':
+                    case '$':
+                    case '.':
+                        res += '\\';
+                        res += pos[1];
+                        ++pos;
+                        break;
                     default:
                         if (in_bracket || maybe_in_class)
                         {
