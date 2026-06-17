@@ -1,6 +1,4 @@
 -- Correctness of enable_group_by_top_k_optimization for signed integer keys.
--- Regression test: `shouldSkipNumeric` must dispatch on the column's `TypeIndex`, otherwise
--- negative keys are compared as large unsigned numbers (the hash key type is always `UInt64`).
 
 -- Tags: no-parallel-replicas
 
@@ -23,7 +21,6 @@ CREATE TABLE t_gbylimit_signed
     val UInt64
 ) ENGINE = MergeTree ORDER BY k_i64;
 
--- The negative range is essential: without the fix, negative keys break ordering.
 INSERT INTO t_gbylimit_signed
 SELECT
     ((number % 200) - 100)::Int8,
@@ -88,7 +85,6 @@ SELECT k_i32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i32 ORDER BY k_i32 DESC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- Int64 ASC: the original failing case (hash table uses UInt64 for Int64).
 SELECT 'int64_asc';
 SELECT k_i64, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i64 ORDER BY k_i64 ASC LIMIT 10
@@ -107,7 +103,6 @@ SELECT k_i64, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i64 ORDER BY k_i64 DESC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- Date32 ASC: signed 32-bit type stored as Int32.
 SELECT 'date32_asc';
 SELECT k_d32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_d32 ORDER BY k_d32 ASC LIMIT 10
@@ -128,6 +123,5 @@ SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit_signed;
 
--- Guard against the environment silently disabling the optimization.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';

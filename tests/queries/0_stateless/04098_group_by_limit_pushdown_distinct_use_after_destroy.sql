@@ -1,5 +1,4 @@
--- Regression test: enable_group_by_top_k_optimization with Distinct combinator caused
--- use-after-destroy when trimHeapAndPruneHashTable evicted referenced aggregate states.
+-- Regression test: enable_group_by_top_k_optimization with Distinct combinator caused use-after-destroy.
 -- https://github.com/ClickHouse/ClickHouse/pull/96630
 
 SET max_rows_to_group_by = 0;
@@ -20,6 +19,5 @@ SETTINGS enable_group_by_top_k_optimization = 1;
 
 DROP TABLE t_gbylimit_distinct;
 
--- Guard against the environment silently disabling the optimization.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5 SETTINGS enable_group_by_top_k_optimization = 1) WHERE explain LIKE '%Top-K%';

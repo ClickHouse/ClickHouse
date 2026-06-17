@@ -65,7 +65,6 @@ SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a, d ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- Prefix ORDER BY: heap tracks only `a`; all `b` values for a matching `a` are kept.
 SELECT 'prefix_one_of_two';
 SELECT * FROM (
     SELECT a, b, count() AS cnt, sum(val) AS s
@@ -208,6 +207,5 @@ SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit_comp;
 
--- Guard against the environment silently disabling the optimization.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';

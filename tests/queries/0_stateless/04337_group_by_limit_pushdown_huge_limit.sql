@@ -1,6 +1,5 @@
--- A `LIMIT` near the `size_t` range once made the heap reserve `1.5 * limit` rows
--- up front and hit "Too large size passed to allocator". Such a limit keeps every
--- group, so the optimized result must match the unoptimized one.
+-- A `LIMIT` near the `size_t` range must keep every group and match the unoptimized result
+-- (it once hit "Too large size passed to allocator" from reserving `1.5 * limit` rows).
 
 SET max_threads = 1;
 SET max_rows_to_group_by = 0;

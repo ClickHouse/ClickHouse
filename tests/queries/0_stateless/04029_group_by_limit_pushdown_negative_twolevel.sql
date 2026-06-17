@@ -44,7 +44,6 @@ SELECT k_u32, count(), sum(val), min(val), max(val), avg(val)
 FROM t_gbylimit GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- Negative tests: optimization must NOT apply, but results must still match.
 SELECT 'desc_order';
 SELECT k_u64, count()
 FROM t_gbylimit GROUP BY k_u64 ORDER BY k_u64 DESC LIMIT 10
@@ -54,7 +53,6 @@ SELECT k_u64, count()
 FROM t_gbylimit GROUP BY k_u64 ORDER BY k_u64 DESC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- WITH TOTALS: a materializing CTE strips totals rows before comparing.
 SELECT 'negative_with_totals';
 WITH
     a AS (SELECT k_u32, count() AS cnt FROM t_gbylimit GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1),
@@ -88,7 +86,6 @@ SELECT k_u32, k_u64, count()
 FROM t_gbylimit GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
--- The bounded heap must survive the single-to-two-level hash table migration.
 SELECT 'two_level';
 SELECT number, count()
 FROM numbers(2000000) GROUP BY number ORDER BY number ASC LIMIT 10
@@ -109,6 +106,5 @@ SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit;
 
--- Guard against the environment silently disabling the optimization.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';

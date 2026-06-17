@@ -1,6 +1,5 @@
 -- The top-K heap freezes once it has observed many rows while full but never skipped
--- or evicted (distinct-key count == LIMIT). Results must match the non-optimized plan,
--- including when smaller keys arrive after the freeze, and the freeze path must run.
+-- or evicted (distinct-key count == LIMIT). Results must match the non-optimized plan.
 
 SET enable_group_by_top_k_optimization = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
@@ -10,8 +9,6 @@ SET optimize_trivial_group_by_limit_query = 0;
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
 SELECT 'Pattern 1 freeze then smaller keys: result matches non-optimized';
--- First 400K rows fill the heap with exactly LIMIT (3) keys so it freezes; later rows
--- introduce smaller keys that are the true top-3, which a frozen heap must not drop.
 SELECT count() FROM
 (
     SELECT k, count() AS c FROM (SELECT if(number < 400000, 1000 + number % 3, number % 100)::UInt32 AS k FROM numbers(600000)) GROUP BY k ORDER BY k ASC LIMIT 3

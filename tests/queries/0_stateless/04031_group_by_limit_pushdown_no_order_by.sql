@@ -88,7 +88,6 @@ SELECT count() FROM (
 );
 
 SELECT 'nullable_key_aggregates';
--- IS NOT DISTINCT FROM is used in the join because USING/= treats NULL != NULL.
 SELECT count() FROM (
     SELECT d, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY d LIMIT 10
     SETTINGS enable_group_by_top_k_optimization = 1
@@ -122,7 +121,6 @@ SELECT count() FROM (
     SETTINGS enable_group_by_top_k_optimization = 1
 );
 
--- GROUP BY a has 500 groups; LIMIT 1000 should return all 500.
 SELECT 'limit_exceeds_groups';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM t_gbylimit_noob GROUP BY a LIMIT 1000
@@ -164,7 +162,6 @@ LEFT JOIN (
 ) AS full USING (x, y)
 WHERE optimized.cnt != full.cnt;
 
--- Negative case: WITH TOTALS should not trigger the optimization.
 SELECT 'negative_with_totals';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM t_gbylimit_noob GROUP BY a WITH TOTALS LIMIT 10
@@ -173,7 +170,5 @@ SELECT count() FROM (
 
 DROP TABLE t_gbylimit_noob;
 
--- Guard against the environment silently disabling the optimization.
--- The trivial analyzer pass and external aggregation are disabled so Pattern 2 is exercised.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k LIMIT 5 SETTINGS optimize_trivial_group_by_limit_query = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0) WHERE explain LIKE '%Top-K%';

@@ -1,6 +1,5 @@
 -- Keys that are bitwise distinct yet compare equal (-0.0 vs +0.0, NaNs with different
--- payloads) hash to different groups but tie under ORDER BY. The heap must never evict
--- a key that ties with the boundary, or a tied group surfaces an incomplete aggregate.
+-- payloads) tie under ORDER BY: the heap must never evict a key tied with the boundary.
 
 SET enable_group_by_top_k_optimization = 1;
 SET max_threads = 1;

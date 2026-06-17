@@ -17,7 +17,6 @@ CREATE TABLE t_gbylimit_float
     val UInt64
 ) ENGINE = MergeTree ORDER BY val;
 
--- About 1 in 500 rows gets a NaN key so NaN groups participate in heap eviction.
 INSERT INTO t_gbylimit_float
 SELECT
     if(number % 500 = 0, nan, ((number * 7 + 13) % 40000 - 20000)::Float32 / 7.0),
@@ -151,6 +150,5 @@ SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit_datetime;
 
--- Guard against the environment silently disabling the optimization.
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';
