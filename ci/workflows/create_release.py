@@ -27,6 +27,10 @@ workflow = Workflow.Config(
     # auto_releases.yml reuses this workflow via `uses:`, which requires a
     # `workflow_call` trigger in addition to `workflow_dispatch`.
     enable_workflow_call=True,
+    # Route the job's pass/fail to the Slack Praktika app (the praktika-native
+    # replacement for the dropped CIBuddy notifications), as master /
+    # release_branches / pull_request do, so a failed release is not silent.
+    enable_slack_feed=True,
     inputs=[
         Workflow.Config.InputConfig(
             name="ref",
