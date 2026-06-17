@@ -58,6 +58,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -313,12 +314,20 @@ void StorageMaterializedPostgreSQL::backupData(
 
 
 void StorageMaterializedPostgreSQL::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+    RestorerFromBackup &, const String &, const std::optional<ASTs> &)
 {
-    if (auto nested = tryGetNested())
-        nested->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
-    else
-        LOG_WARNING(log, "Nested table does not exist, will not restore any data");
+    /// A MaterializedPostgreSQL table starts replicating from the live PostgreSQL source as soon as it is
+    /// created (the constructor calls `replication_handler->startup`). Restoring the backed-up parts of the
+    /// nested ReplacingMergeTree on top of that freshly replicated data would mix the backup snapshot with the
+    /// current remote state, so an in-place restore cannot faithfully represent the backup. Fail closed and
+    /// direct the user to restore the data as a standalone ReplacingMergeTree instead - the data is still captured
+    /// by `backupData`, so `RESTORE TABLE <src> AS <dst> ... SETTINGS allow_different_table_def = 1` works.
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Restoring a MaterializedPostgreSQL table ({}) in place is not supported, because the table would start "
+        "replicating from the live PostgreSQL source and mix it with the backup snapshot. Restore the data as a "
+        "standalone ReplacingMergeTree instead, e.g. RESTORE TABLE ... AS <new_table> SETTINGS allow_different_table_def = 1",
+        getStorageID().getNameForLogs());
 }
 
 

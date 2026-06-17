@@ -912,6 +912,48 @@ def test_backup_database(started_cluster):
     pg_manager.execute("DROP TABLE IF EXISTS test_backup_tbl")
 
 
+def test_backup_table_engine_restore_rejected(started_cluster):
+    # Restoring a standalone MaterializedPostgreSQL table in place is intentionally rejected: the
+    # storage starts replicating from the live PostgreSQL source the moment it is created, so
+    # restoring the backed-up parts on top would mix the backup snapshot with the current remote
+    # data. The data is still captured by the backup and should be restored as a standalone
+    # ReplacingMergeTree instead (see test_backup_database).
+    table = "test_backup_te"
+    pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    backup_name = "Disk('backups', 'mpg_te_backup')"
+    instance.query(f"BACKUP TABLE {table} TO {backup_name}")
+
+    instance.query(f"DROP TABLE {table} SYNC")
+    error = instance.query_and_get_error(
+        f"RESTORE TABLE {table} FROM {backup_name}",
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    assert "in place is not supported" in error, error
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+
+
 def test_numeric_to_int256(started_cluster):
     # https://github.com/ClickHouse/ClickHouse/issues/59224
     # PostgreSQL numeric with precision wider than Decimal256 can hold (76 digits) and scale 0
