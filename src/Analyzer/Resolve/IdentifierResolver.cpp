@@ -226,6 +226,15 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     /// Case-insensitive resolution for table name (if not double-quoted and under setting)
     if (table_name_case_insensitive)
     {
+        /// Temporary/external tables are resolved later by Context::resolveStorageID via exact match,
+        /// so we rewrite the table name here when it differs only by case
+        if (database_name.empty() && !context->isGlobalContext())
+        {
+            String resolved_temp_table = context->tryResolveExternalTableNameCaseInsensitive(table_name);
+            if (!resolved_temp_table.empty())
+                table_name = std::move(resolved_temp_table);
+        }
+
         String effective_db = database_name.empty() ? context->getCurrentDatabase() : database_name;
         auto database = DatabaseCatalog::instance().tryGetDatabase(effective_db);
         if (database)
@@ -366,18 +375,21 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
   */
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
-    const bool use_case_insensitive = scope.context
-        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.isLastPartDoubleQuoted();
+    const bool standard_mode = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    /// Full-name lookup keys off the last part; prefix lookup keys off part 0 (the bind name)
+    /// so e.g. `arrayMap(item -> ITEM."Name", arr)` still binds `ITEM` to the lambda argument `item`
+    const bool use_case_insensitive_full = standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+    const bool use_case_insensitive_prefix = standard_mode && !identifier_lookup.isPartDoubleQuoted(0);
 
-    auto it = scope.findExpressionArgument(identifier_lookup.identifier.getFullName(), use_case_insensitive);
+    auto it = scope.findExpressionArgument(identifier_lookup.identifier.getFullName(), use_case_insensitive_full);
     bool resolve_full_identifier = it != scope.expression_argument_name_to_node.end();
 
     if (!resolve_full_identifier)
     {
         const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
-        it = scope.findExpressionArgument(identifier_bind_part, use_case_insensitive);
+        it = scope.findExpressionArgument(identifier_bind_part, use_case_insensitive_prefix);
         if (it == scope.expression_argument_name_to_node.end())
             return {};
     }

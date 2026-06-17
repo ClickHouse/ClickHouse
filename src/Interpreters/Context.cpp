@@ -408,6 +408,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
@@ -2524,6 +2525,28 @@ std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & 
         holder = iter->second;
     }
     return holder;
+}
+
+String Context::tryResolveExternalTableNameCaseInsensitive(const String & table_name) const
+{
+    if (isGlobalContext())
+        return {};
+
+    SharedLockGuard lock(mutex);
+    /// External tables are typically session-scoped and few in number, so a linear scan is fine here
+    String resolved;
+    for (const auto & [name, _] : external_tables_mapping)
+    {
+        if (Poco::icompare(name, table_name) == 0)
+        {
+            if (!resolved.empty())
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "Temporary table '{}' is ambiguous: matches multiple temporary tables with different cases: '{}' and '{}'",
+                    table_name, resolved, name);
+            resolved = name;
+        }
+    }
+    return resolved;
 }
 
 std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
