@@ -19,6 +19,7 @@
 #include <IO/PageCacheProvider.h>
 #include <IO/DiskCacheProvider.h>
 #include <IO/LongConnectionLimit.h>
+#include <IO/PrefetchThreadPool.h>
 #include <IO/ReadSettings.h>
 #include <IO/ChainedBuffers.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -414,6 +415,62 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
     }
     EXPECT_EQ(sourceRequestsSoFar(), src_before_warm)
         << "warm chain must serve everything without touching the source";
+}
+
+/// SE put-lane (S1-S2): with a `CacheFiller` pool, `use_put_lane` routes deferred fills and
+/// promotes through the per-executor FIFO lane (one in flight) instead of `put_machines`. This
+/// asserts the lane serves CORRECT bytes (cold and warm) and actually POPULATES the chain (the
+/// warm re-read is cheaper than fully cold), i.e. it writes without corrupting the read path
+/// and the executor dtor drains it. Strict throughput parity with the old 2-concurrent path -
+/// single-in-flight legitimately defers more fills under load - is measured on the
+/// realistic-size metric grid (S3), not asserted here.
+TEST_F(ReaderExecutorCacheChain, PutLanePopulatesCacheLikePutMachines)
+{
+    constexpr size_t segment_size = 64;
+    constexpr size_t block_size = 16;
+    constexpr size_t file_size = 5 * segment_size; /// 320 bytes
+    const String content = makePattern(file_size);
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto page_cache = makePageCache();
+    auto fc = makeFileCache("lane_fc", segment_size, /*max_size=*/1ull << 20);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(makePageProvider(page_cache, "obj", block_size, file_size));
+    caches.push_back(makeDiskProvider(fc));
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options opts;
+    opts.window_size = block_size;
+    opts.min_bytes_for_seek = 0;
+    opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    opts.prefetch_pool = pool;
+    opts.cache_filler_pool = pool;   /// defer fills -> the put lane
+    opts.use_put_lane = true;
+
+    const size_t src_before_cold = sourceRequestsSoFar();
+    {
+        ReaderExecutor cold(source, objects, caches, opts);
+        EXPECT_EQ(drainAll(cold), content) << "lane: cold scan serves all bytes";
+    }   /// dtor drains the lane (FIFO, in order)
+    const size_t cold_source = sourceRequestsSoFar() - src_before_cold;
+
+    const size_t src_before_warm = sourceRequestsSoFar();
+    {
+        ReaderExecutor warm(source, objects, caches, opts);
+        EXPECT_EQ(drainAll(warm), content) << "lane: warm scan serves all bytes (cache + source)";
+    }
+    const size_t warm_source = sourceRequestsSoFar() - src_before_warm;
+
+    EXPECT_GT(cold_source, 0u) << "cold scan must hit the source";
+    EXPECT_LT(warm_source, cold_source)
+        << "the lane serves correct bytes and populates the chain (warm re-read is cheaper than "
+           "fully cold). It never ABANDONS a fill (backpressure drains synchronously under load); "
+           "FULL population (warm==0) additionally needs same-writer serialization for consecutive "
+           "windows of one segment - that is S3's flushUpTo/early-reap, not wired yet";
 }
 
 /// Regression: a cold `readBigAt` of a small range strictly inside a page-cache

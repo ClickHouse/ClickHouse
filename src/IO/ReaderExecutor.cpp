@@ -259,6 +259,7 @@ ReaderExecutor::ReaderExecutor(
     , window_size(options.window_size)
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , block_size(options.block_size)
+    , use_put_lane(options.use_put_lane)
     , max_tail_for_drain(options.max_tail_for_drain)
     , plan_look_ahead_window(std::max(options.plan_look_ahead_window, options.window_size))
     , prefetch_pool(std::move(options.prefetch_pool))
@@ -579,6 +580,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     transient_options.window_size = window_size;
     transient_options.min_bytes_for_seek = min_bytes_for_seek;
     transient_options.block_size = block_size;
+    transient_options.use_put_lane = use_put_lane;
     transient_options.log_file_path = log_file_path;
     transient_options.max_tail_for_drain = max_tail_for_drain;
     transient_options.plan_look_ahead_window = plan_look_ahead_window;
@@ -2044,10 +2046,12 @@ std::optional<ReaderExecutor::LongConnection> ReaderExecutor::takeLong(std::opti
 void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled)
 {
 
-    /// Over the cap: the NEW fill is skipped - droppable by the invariant
-    /// (mandatory work never queues behind it). The writers stay home, the
-    /// segments stay partial; a later window may still fill them.
-    if (put_machines.size() >= MAX_PUT_MACHINES)
+    /// Old path: over the cap the NEW fill is skipped - droppable by the invariant (the
+    /// segments stay partial; a later window may still fill them). The lane NEVER abandons a
+    /// fill: `enqueuePutLane` applies backpressure (drains the in-flight put synchronously)
+    /// when the pool is saturated, so the bytes in hand are always written - asynchronously
+    /// when the pool keeps up, synchronously on the read thread under load.
+    if (!use_put_lane && put_machines.size() >= MAX_PUT_MACHINES)
     {
         stats.add(Stats::PutAbandoned);
         return;
@@ -2121,6 +2125,14 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
         return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
 
+    if (use_put_lane)
+    {
+        /// Lane: append to the FIFO and arm the head if idle. Re-arm after a completion is
+        /// foreground-driven (`sweepPutLane`); the worker never schedules the next step.
+        enqueuePutLane(std::move(m));
+        return;
+    }
+
     if (put_runner->schedule(m))
         stats.add(Stats::PutScheduled);
     else
@@ -2176,6 +2188,11 @@ void ReaderExecutor::reapPutMachine(FetchMachine & m)
 
 void ReaderExecutor::sweepPutMachines(bool wait)
 {
+    if (use_put_lane)
+    {
+        sweepPutLane(wait);
+        return;
+    }
     if (put_machines.empty())
         return;
     for (auto it = put_machines.begin(); it != put_machines.end();)
@@ -2273,6 +2290,105 @@ void ReaderExecutor::joinPutMachinesOverlapping(ByteRange window, bool writers_t
     }
 }
 
+void ReaderExecutor::enqueuePutLane(std::shared_ptr<FetchMachine> m)
+{
+    /// Cache population is necessary, never dropped - background is only an optimization. If
+    /// the lane is at its async budget (one in flight + the pending slot taken), apply
+    /// backpressure: synchronously drain the in-flight put (join it, reap it, re-arm the next)
+    /// to free room, in FIFO order. When the pool keeps up this never fires; under saturation
+    /// the read thread pays the write itself rather than losing the fill. An OPTIONAL promote
+    /// is the one exception - its bytes are already resident in a lower tier, so it is skipped
+    /// (a warm serve must never wait on a tier-upgrade) rather than forcing a sync drain.
+    while (put_lane.in_flight && put_lane.pending.size() + 1 >= MAX_PUT_MACHINES)
+    {
+        if (m->put_optional)
+        {
+            stats.add(Stats::PromoteSkipped);
+            reapPutMachine(*m);   /// return its borrowed writers home; nothing is lost (already cached lower)
+            return;
+        }
+        put_runner->waitReleased(*put_lane.in_flight);
+        reapPutMachine(*put_lane.in_flight);
+        put_lane.in_flight.reset();
+        armPutLaneHead();
+    }
+    put_lane.pending.push_back(std::move(m));
+    armPutLaneHead();
+}
+
+void ReaderExecutor::armPutLaneHead()
+{
+    /// Bring the FIFO head into flight. Foreground-only; at most one in flight, so a single
+    /// executor's fills land in enqueue (offset) order. If the pool rejects the schedule the
+    /// item is provably not started, so run it inline here and try the next - the deferred
+    /// equivalent of the old `ParkedPoolFull` inline write, without the park ladder.
+    while (!put_lane.in_flight && !put_lane.stopping && !put_lane.pending.empty())
+    {
+        auto m = put_lane.pending.front();
+        put_lane.pending.pop_front();
+        if (put_runner->schedule(m))
+        {
+            stats.add(Stats::PutScheduled);
+            put_lane.in_flight = std::move(m);
+            return;
+        }
+        /// Pool rejected the schedule; the item is provably not started. A promote is
+        /// optional - skip it (the warm serve must not pay an inline cache write). A fill
+        /// runs inline on the foreground (the old `ParkedPoolFull` inline-write analog).
+        if (m->put_optional)
+            stats.add(Stats::PromoteSkipped);
+        else
+        {
+            stats.add(Stats::PutPoolFull);
+            m->run_step();
+        }
+        reapPutMachine(*m);
+    }
+}
+
+void ReaderExecutor::sweepPutLane(bool wait)
+{
+    /// `wait=false`: reap the in-flight machine if it has finished, arm the next, and return
+    /// while one is still running. `wait=true` (plan rebuild / destruction): block on the
+    /// running one, then drain the lane. Reaps run on THIS (query, noexcept) thread so the
+    /// write-back / connection-reset accounting stays attributed to the query, never a worker.
+    if (wait)
+        put_lane.stopping = true;
+
+    while (put_lane.in_flight)
+    {
+        const auto st = put_lane.in_flight->state.load();
+        const bool running = st == MachineState::Scheduled || st == MachineState::Running;
+        if (running)
+        {
+            if (!wait)
+                return;
+            put_runner->waitReleased(*put_lane.in_flight);
+        }
+        reapPutMachine(*put_lane.in_flight);
+        put_lane.in_flight.reset();
+        armPutLaneHead();   /// no-op while `stopping`, so a wait-sweep drains rather than re-arms
+        if (!wait && put_lane.in_flight)
+            return;  /// the next item is now running; observe it on a later sweep
+    }
+
+    if (wait)
+    {
+        /// Drain the queued items in FIFO (offset) order, writing the bytes in hand: the old
+        /// teardown sweep waits its Scheduled/Running puts to completion too (only POOL-PARKED
+        /// fills are abandoned, and the lane never parks). They never reached an in-flight slot,
+        /// so run them inline here on the (query) thread, in order.
+        while (!put_lane.pending.empty())
+        {
+            auto m = put_lane.pending.front();
+            put_lane.pending.pop_front();
+            m->run_step();
+            reapPutMachine(*m);
+        }
+        put_lane.stopping = false;
+    }
+}
+
 void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, const ChainedBuffers & bytes, Stats & out_stats)
 {
 
@@ -2285,7 +2401,10 @@ void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, c
 
     /// STRICTLY optional: over the cap means skip, not park - a warm serve must
     /// never wait on promote bookkeeping.
-    if (put_machines.size() >= MAX_PUT_MACHINES)
+    const size_t live_puts = use_put_lane
+        ? put_lane.pending.size() + (put_lane.in_flight ? 1 : 0)
+        : put_machines.size();
+    if (live_puts >= MAX_PUT_MACHINES)
     {
         out_stats.add(Stats::PromoteSkipped);
         return;
@@ -2324,6 +2443,7 @@ void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, c
     pm->fill_chain = bytes;
     pm->put_wait.restart();
     pm->put_bytes_counter = Stats::BytesPromoted;
+    pm->put_optional = true;   /// lane skips (never inline-runs) a promote the pool rejects
     pm->run_step = [this, self = pm.get()]
     {
         self->stats.add(Stats::PutWaitMicroseconds, self->put_wait.elapsedMicroseconds());
@@ -2332,6 +2452,14 @@ void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, c
         self->fill_chain = {};
         return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
+
+    if (use_put_lane)
+    {
+        /// Lane: FIFO with the fills, single in-flight. On a pool reject the lane skips the
+        /// promote (it is `put_optional`), so the warm serve still never waits on it.
+        enqueuePutLane(std::move(pm));
+        return;
+    }
 
     if (put_runner->schedule(pm))
     {
@@ -2692,6 +2820,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     chassert(!machine);
     sweepPutMachines(/*wait=*/true);
     chassert(put_machines.empty());
+    chassert(!put_lane.in_flight && put_lane.pending.empty());
 
     /// Reset the in-flight segment pin BEFORE tearing down the held buffers
     /// (`[CF-plan-rebuild]`): the pin aliases a held write buffer's own bare segment ref,

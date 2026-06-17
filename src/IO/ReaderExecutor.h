@@ -16,8 +16,10 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <base/types.h>
 #include <array>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -84,6 +86,10 @@ public:
         std::shared_ptr<PrefetchThreadPool> cache_filler_pool;
         std::shared_ptr<LongConnectionLimit> long_connection_limit;
         std::shared_ptr<ReaderExecutorLog> reader_executor_log;
+        /// SE: route deferred cache puts through the per-executor `PutLane` (one FIFO,
+        /// one in-flight) instead of the `put_machines` vector. Default off until the
+        /// lane proves out; the old path stays in control meanwhile.
+        bool use_put_lane = false;
     };
 
     ReaderExecutor(
@@ -480,6 +486,10 @@ private:
         VectorWithMemoryTracking<MissEntry> writers;
         VectorWithMemoryTracking<size_t> writer_origins;
         ChainedBuffers fill_chain;
+        /// SE put-lane: a promote is STRICTLY optional - if the pool rejects its schedule,
+        /// the lane skips it (`PromoteSkipped`, writers returned) rather than running it
+        /// inline like a fill, so a warm serve never waits on promote bookkeeping.
+        bool put_optional = false;
         /// One reschedule is granted to a `ParkedPoolFull` put before it is
         /// abandoned.
         bool put_rescheduled = false;
@@ -768,6 +778,20 @@ private:
     /// keeping the fetch/fill overlap).
     void joinPutMachinesOverlapping(ByteRange window, bool writers_too);
 
+    /// SE put-lane (behind `use_put_lane`): enqueue a prepared put machine (writers already
+    /// borrowed, `run_step` set) onto the lane and arm the head if idle. Foreground-only.
+    void enqueuePutLane(std::shared_ptr<FetchMachine> m);
+
+    /// Promote the lane's head pending machine to `in_flight` and schedule it on the put
+    /// runner; if the pool rejects it, run it inline here on the foreground and try the next
+    /// (the item is provably not started). No-op while `stopping` or already in flight.
+    void armPutLaneHead();
+
+    /// Reap the lane's completed in-flight machine (writers home, stats, pin, Done) on the
+    /// QUERY thread, then re-arm the next. `wait` joins a still-running in-flight and drains
+    /// the whole lane (plan rebuild / destruction); `!wait` returns while one is running.
+    void sweepPutLane(bool wait);
+
     /// The deferred promote: borrow the FASTER-tier writers overlapping
     /// `range` that are currently home into a put-only machine fed by the
     /// served chain slice (refcounted, no copy). STRICTLY optional with no
@@ -903,6 +927,9 @@ private:
     size_t window_size;
     size_t min_bytes_for_seek;
     size_t block_size;
+    /// SE: route deferred puts/promotes through `put_lane` instead of `put_machines`
+    /// (copied from `Options::use_put_lane`; default off until the lane proves out).
+    bool use_put_lane;
     size_t max_tail_for_drain;
     /// Look-ahead span for plan-then-stream; raised to at least `window_size`.
     size_t plan_look_ahead_window;
@@ -952,6 +979,23 @@ private:
     /// ranges and unconditionally at plan rebuild / destruction.
     VectorWithMemoryTracking<std::shared_ptr<FetchMachine>> put_machines;
     static constexpr size_t MAX_PUT_MACHINES = 2;
+
+    /// SE: the per-executor deferred-PUT lane (replaces `put_machines` + `MAX_PUT_MACHINES`
+    /// behind `Options::use_put_lane`). A FIFO of pending put `FetchMachine`s with at most
+    /// ONE in flight, so one executor's cache fills apply strictly in enqueue (offset) order
+    /// on the shared `CacheFiller` pool, while the pool still runs DIFFERENT executors' fills
+    /// concurrently. FOREGROUND-ONLY, like `put_machines`: the worker never touches the lane
+    /// (the foreground drives re-arm on its next sweep), so no lock is needed. `applied_items`
+    /// is the one cross-thread field (worker-bumped, foreground-read) - a scheduling watermark,
+    /// NOT a bytes-present authority (that stays `CacheWriter::committed()` / `covers()`).
+    struct PutLane
+    {
+        DequeWithMemoryTracking<std::shared_ptr<FetchMachine>> pending;
+        std::shared_ptr<FetchMachine> in_flight;
+        std::atomic<size_t> applied_items{0};
+        bool stopping = false;
+    };
+    PutLane put_lane;
 
     /// Connection state. The Strategy-A pin holding the partial cache segment
     /// under the live fill frontier non-evictable across windows: re-pointed at
