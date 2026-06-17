@@ -42,17 +42,6 @@ nodes = [node1, node2]
 test_idx = 0
 
 
-def wait_until_view_registered(node, name):
-    # `system sync database replica` doesn't wait for the replicated view's startup() to
-    # register its refresh task, so the SYSTEM *VIEW commands below can race with it.
-    assert_eq_with_retry(
-        node,
-        f"select count() from system.view_refreshes where database = 're' and view = '{name}'",
-        "1\n",
-        retry_count=60,
-    )
-
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -94,7 +83,6 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     )
     node1.query("system sync database replica re")
     for node in nodes:
-        wait_until_view_registered(node, "a")
         node.query("system wait view re.a")
         assert node.query("select * from re.a order by all") == "0\n10\n"
         assert (
@@ -113,10 +101,8 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
         )
         # Stop the clocks.
         for node in nodes:
-            node.query("system sync database replica re")
-            wait_until_view_registered(node, name)
             node.query(
-                f"system test view re.{name} set fake time '2040-01-01 00:00:01'"
+                f"system sync database replica re; system test view re.{name} set fake time '2040-01-01 00:00:01'"
             )
         # Wait for quiescence.
         for node in nodes:
@@ -154,7 +140,6 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
     )
     node2.query("system sync database replica re")
     for node in nodes:
-        wait_until_view_registered(node, "unreplicated_uncoordinated")
         node.query("system wait view re.unreplicated_uncoordinated")
         assert (
             node.query("select distinct x from re.unreplicated_uncoordinated") == "1\n"
@@ -727,53 +712,21 @@ def test_replicated_db_startup_race(started_cluster, cleanup):
 
 
 def test_system_view_refreshes_on_not_running_replica(started_cluster):
-    # Use a unique znode path / database name per invocation so that residual state
-    # from previous test runs (orphaned RefreshTasks, stale Keeper znodes — see
-    # https://github.com/ClickHouse/ClickHouse/issues/76418 ) cannot leak in.
-    global test_idx
-    test_idx += 1
-    db_name = f"test_nrr_{test_idx}"
-    db_path = f"/db/test_nrr_{test_idx}"
-
     try:
         for node in nodes:
-            node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+            node.query("DROP DATABASE IF EXISTS test SYNC")
             node.query(
-                f"CREATE DATABASE {db_name} ENGINE = Replicated('{db_path}', '{{shard}}', '{{replica}}')"
+                r"CREATE DATABASE test ENGINE = Replicated('/db/test', '{shard}', '{replica}')"
             )
 
         node1.query(
-            f"CREATE MATERIALIZED VIEW {db_name}.rmv REFRESH EVERY 1 HOUR (x Int64) "
-            "ENGINE ReplicatedMergeTree ORDER BY x AS SELECT number*10 AS x FROM numbers(2)"
+            "CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 1 HOUR (x Int64) ENGINE ReplicatedMergeTree ORDER BY x AS SELECT number*10 AS x FROM numbers(2)"
         )
-        # Make sure node2 is aware of the MV (so SYSTEM STOP VIEW below has a target).
-        for node in nodes:
-            node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
-
-        # The refresh-runner replica is chosen via Keeper coordination, so calling
-        # SYSTEM REFRESH VIEW on node1 is not enough to guarantee node1 actually
-        # runs the refresh. Pause refreshes on node2 so node1 wins the election.
-        node2.query(f"SYSTEM STOP VIEW {db_name}.rmv")
-        # Trigger an immediate refresh on node1 and wait for it to complete.
-        node1.query(f"SYSTEM REFRESH VIEW {db_name}.rmv")
-        node1.query(f"SYSTEM WAIT VIEW {db_name}.rmv")
-        # Wait for node2 to observe (via its znode cache) that node1 was the
-        # last-attempt replica. Otherwise StorageSystemViewRefreshes::fillData
-        # falls into the `last_attempt_replica.empty()` branch on node2 and
-        # returns local progress (often 0) instead of NULL.
-        assert_eq_with_retry(
-            node2,
-            f"SELECT last_refresh_replica FROM system.view_refreshes WHERE database='{db_name}' AND view='rmv'",
-            "1\n",
-            sleep_time=0.5,
-            retry_count=60,
-        )
+        node1.query("SYSTEM REFRESH VIEW test.rmv")
 
         def get_view_refresh_value(node, column_name: str):
             return node.query(
-                f"SELECT {column_name} FROM system.view_refreshes "
-                f"WHERE database='{db_name}' AND view='rmv' "
-                "SETTINGS format_tsv_null_representation='NULL'"
+                f"SELECT {column_name} FROM system.view_refreshes WHERE view='rmv' SETTINGS format_tsv_null_representation='NULL'"
             ).strip()
 
         assert get_view_refresh_value(node1, "read_rows") != "NULL"
@@ -788,10 +741,5 @@ def test_system_view_refreshes_on_not_running_replica(started_cluster):
         assert get_view_refresh_value(node2, "written_rows") == "NULL"
         assert get_view_refresh_value(node2, "written_bytes") == "NULL"
     finally:
-        # Re-enable refreshes on node2 in case other tests reuse the cluster.
-        try:
-            node2.query(f"SYSTEM START VIEW {db_name}.rmv")
-        except Exception:
-            pass
         for node in nodes:
-            node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+            node.query("DROP DATABASE IF EXISTS test SYNC")
