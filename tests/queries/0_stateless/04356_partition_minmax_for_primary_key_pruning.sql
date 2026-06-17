@@ -77,3 +77,19 @@ SELECT count() FROM t_pk_minmax_nullable WHERE p = 3 SETTINGS use_partition_minm
 SELECT count() FROM t_pk_minmax_nullable WHERE p = 3 SETTINGS use_partition_minmax_for_primary_key_pruning = 0;
 SELECT count() FROM t_pk_minmax_nullable WHERE p = 3 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 DROP TABLE t_pk_minmax_nullable;
+
+-- E) Descending (reverse) sort on a column KEPT in the in-memory index (ratio = 1, so it is not dropped
+--    and is reverse-flagged). The value-ascending partition minmax still tightens it: KeyCondition
+--    analysis is value-ordered regardless of the column's declared direction.
+DROP TABLE IF EXISTS t_pk_minmax_reverse_loaded;
+CREATE TABLE t_pk_minmax_reverse_loaded (event_time UInt32, id UInt32)
+ENGINE = MergeTree PARTITION BY intDiv(event_time, 1000) ORDER BY (id, event_time DESC)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, allow_experimental_reverse_key = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
+INSERT INTO t_pk_minmax_reverse_loaded SELECT number % 100, number % 10 FROM numbers(100);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_pk_minmax_reverse_loaded WHERE (id = 0 AND event_time = 10) OR (id >= 3 AND event_time > 1000)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%' SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_pk_minmax_reverse_loaded WHERE (id = 0 AND event_time = 10) OR (id >= 3 AND event_time > 1000)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%' SETTINGS use_partition_minmax_for_primary_key_pruning = 0;
+SELECT count() FROM t_pk_minmax_reverse_loaded WHERE (id = 0 AND event_time = 10) OR (id >= 3 AND event_time > 1000) SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
+SELECT count() FROM t_pk_minmax_reverse_loaded WHERE (id = 0 AND event_time = 10) OR (id >= 3 AND event_time > 1000) SETTINGS use_partition_minmax_for_primary_key_pruning = 0;
+SELECT count() FROM t_pk_minmax_reverse_loaded WHERE (id = 0 AND event_time = 10) OR (id >= 3 AND event_time > 1000) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+DROP TABLE t_pk_minmax_reverse_loaded;
