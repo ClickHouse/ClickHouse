@@ -65,6 +65,7 @@ def clone_submodules():
         "contrib/StringZilla",
         "contrib/rust_vendor",
         "contrib/clickstack",
+        "contrib/libpng",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
@@ -214,9 +215,19 @@ def main():
 
             stages = [JobStages.CONFIG, JobStages.TEST]
             resolved_clickhouse_bin_path = clickhouse_bin_path.resolve()
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-server")
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-client")
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-local")
+            for tool in (
+                "clickhouse-server",
+                "clickhouse-client",
+                "clickhouse-local",
+                "clickhouse-benchmark",
+                "clickhouse-compressor",
+                "clickhouse-disks",
+                "clickhouse-extract-from-config",
+                "clickhouse-format",
+                "clickhouse-obfuscator",
+                "clickhouse-su",
+            ):
+                Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / tool)
             Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
 
             break
@@ -292,7 +303,7 @@ def main():
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
-                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
+                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 -DENABLE_LIBPNG=1 \
                 -B {build_dir_normalized}",
                 workdir=repo_path_normalized,
             )
