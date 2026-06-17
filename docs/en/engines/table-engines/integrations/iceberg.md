@@ -1,6 +1,6 @@
 ---
-description: 'This engine provides a read-only integration with existing Apache Iceberg
-  tables in Amazon S3, Azure, HDFS and locally stored tables.'
+description: 'This engine provides a read-only data integration with existing Apache Iceberg
+  tables in Amazon S3, Azure, HDFS and locally stored tables, plus experimental metadata-maintenance writes.'
 sidebar_label: 'Iceberg'
 sidebar_position: 90
 slug: /engines/table-engines/integrations/iceberg
@@ -16,7 +16,7 @@ The Iceberg Table Engine is available but may have limitations. ClickHouse wasn'
 For optimal compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
 :::
 
-This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
+This engine provides a read-only *data* integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables: ClickHouse does not insert, update, or delete rows. The one exception is the experimental metadata-maintenance operation [`OPTIMIZE TABLE ... MANIFEST`](#manifest-compaction), which rewrites only the Iceberg metadata (manifest) layer and never changes the underlying data.
 
 ## Create table {#create-table}
 
@@ -133,7 +133,7 @@ Over time, frequent writes to an Iceberg table can accumulate a large number of 
 OPTIMIZE TABLE example_table MANIFEST SETTINGS allow_experimental_iceberg_compaction = 1;
 ```
 
-This produces a new snapshot (a `replace` operation) that references the same data files through a consolidated set of manifest files. No data files are rewritten and no rows are added, deleted, or deduplicated — only the manifest layer is rearranged.
+This produces a new snapshot (a `replace` operation) that references the same data files through a consolidated set of manifest files. No data files are rewritten and no rows are added, deleted, or deduplicated — only the manifest layer is rearranged. This is the only operation through which the `Iceberg` engine writes to a table; data access otherwise remains read-only.
 
 ### Requirements and behavior {#manifest-compaction-behavior}
 
