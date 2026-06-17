@@ -1287,8 +1287,18 @@ ORDER BY key ASC
 void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
 {
     for (const auto & command : commands)
+    {
         if (!command.isCommentAlter() && !command.isSettingsAlter())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+
+        /// Validate setting values before `IStorage::alter` persists the metadata file,
+        /// otherwise an invalid value blocks attach on the next restart. See issue #88443.
+        if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            for (const auto & change : command.settings_changes)
+                RocksDBSettings::checkCanSet(change.name, change.value);
+        }
+    }
 }
 
 }
