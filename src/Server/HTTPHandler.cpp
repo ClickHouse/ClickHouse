@@ -501,8 +501,11 @@ void HTTPHandler::processQuery(
         LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
         copyData(limit, body_query);
         query = body_query.str();
-        boost::trim_right(query);
-        if (!query.empty())
+        /// Treat a body that is only whitespace as "no query in body", but do NOT trim `query`
+        /// itself: for `INSERT ... FORMAT ...` sent in the body, trailing bytes can be part of the
+        /// data and `query` is handed to the executor verbatim. Trimming for parsing happens later
+        /// on a temporary copy (`query_to_parse`).
+        if (std::any_of(query.begin(), query.end(), [](char c) { return !isWhitespaceASCII(c); }))
             query_from_body = true;
     }
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
@@ -609,6 +612,10 @@ void HTTPHandler::processQuery(
     if (want_detach && !settings[Setting::async_insert] && request.getMethod() == HTTPServerRequest::HTTP_POST && !has_external_data)
     {
         String detach_query_id;
+        /// `detach_attempted` flips immediately before the `detachQuery` call, `detach_started`
+        /// only after it returns. The catch below keys the sync fallback off `detach_attempted`
+        /// so that a failure raised by `detachQuery` itself never re-executes the query.
+        bool detach_attempted = false;
         bool detach_started = false;
         PODArray<char> body_data;
         const bool query_was_in_body = query_from_body;
@@ -674,18 +681,21 @@ void HTTPHandler::processQuery(
                     : (body_data.empty() ? query : query + String(body_data.data(), body_data.size()));
 
                 ContextMutablePtr async_context = Context::createCopy(context);
+                detach_attempted = true;
                 detach_query_id = detachQuery(std::move(full_input), async_context).query_id;
                 detach_started = true;
             }
         }
         catch (...)
         {
-            /// Pre-start failures (parse error, quota, permissions, duplicate query_id) re-throw
-            /// out of `detachQuery` and reach the client through the normal HTTP error path.
-            /// `detach_started` only flips after that point, so we rethrow before falling back.
-            if (detach_started)
+            /// A failure raised by `detachQuery` itself (pre-start: duplicate query_id, quota,
+            /// permission) must propagate to the client through the normal HTTP error path. Never
+            /// fall back to sync here: that would re-execute the query and is racy for
+            /// non-idempotent statements (a duplicate query_id could succeed if the first query
+            /// finishes before the fallback). `detach_attempted` is set for exactly those failures.
+            if (detach_attempted)
                 throw;
-            /// Mechanism failure (parse error, empty query): fall back to sync.
+            /// Mechanism failure before the detach attempt (parse error, empty query): fall back to sync.
             tryLogCurrentException(log, "Cannot run HTTP query in detach mode, falling back to sync");
         }
 

@@ -1,4 +1,5 @@
 #include <Client/LocalConnection.h>
+#include <chrono>
 #include <future>
 #include <memory>
 #include <Client/ClientBase.h>
@@ -243,21 +244,17 @@ void LocalConnection::sendQuery(
 
     next_packet_type.reset();
 
-    /// Wait for any previous detached query to finish before starting a new one. The previous
-    /// run already returned a `query_id` to the user; if it failed after start, rethrow now so
-    /// the user sees the failure on the next interaction.
-    if (detached_query_completion && detached_query_completion->valid())
+    /// If a previous detached query has already finished, observe its result now: clear the handle
+    /// and rethrow any stored post-start exception so the user sees the failure on this interaction.
+    /// If it is still running, leave it in the background — blocking here would serialize every
+    /// follow-up command behind the detached query and defeat the point of detaching. The
+    /// destructor waits for any still-running detached query before the process exits.
+    if (detached_query_completion && detached_query_completion->valid()
+        && detached_query_completion->wait_for(std::chrono::seconds(0)) == std::future_status::ready)
     {
-        try
-        {
-            detached_query_completion->get();
-        }
-        catch (...)
-        {
-            detached_query_completion.reset();
-            throw;
-        }
-        detached_query_completion.reset();
+        /// Take ownership so the handle is cleared even if `get()` rethrows.
+        auto completion = std::move(detached_query_completion);
+        completion->get();
     }
 
     /// Detach path (interactive mode only): when `allow_experimental_detach_queries` is on and
@@ -266,6 +263,10 @@ void LocalConnection::sendQuery(
     if (is_interactive)
     {
         String detach_query_id;
+        /// `detach_attempted` flips immediately before the `detachQuery` call, `detach_started`
+        /// only after it returns. The catch below keys the sync fallback off `detach_attempted`
+        /// so that a failure raised by `detachQuery` itself never re-executes the query.
+        bool detach_attempted = false;
         bool detach_started = false;
 
         try
@@ -306,6 +307,7 @@ void LocalConnection::sendQuery(
                     if (!db.empty())
                         async_context->setCurrentDatabase(db);
 
+                    detach_attempted = true;
                     auto handle = detachQuery(state->query, async_context);
                     detach_query_id = std::move(handle.query_id);
                     detached_query_completion = std::move(handle.completion);
@@ -315,9 +317,11 @@ void LocalConnection::sendQuery(
         }
         catch (...)
         {
-            /// Pre-start failures rethrow out of `detachQuery` after `detach_started` flips —
-            /// propagate them. Earlier mechanism failures (parse error, etc.) fall back to sync.
-            if (detach_started)
+            /// A failure raised by `detachQuery` itself (pre-start: duplicate query_id, quota,
+            /// permission) must propagate. Never fall back to sync here: that would re-execute the
+            /// query and is racy for non-idempotent statements. `detach_attempted` is set for
+            /// exactly those failures; earlier mechanism failures (parse error) fall back to sync.
+            if (detach_attempted)
                 throw;
             tryLogCurrentException("LocalConnection", "Cannot run local query in detach mode, falling back to sync");
         }

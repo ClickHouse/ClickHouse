@@ -677,6 +677,10 @@ void TCPHandler::runImpl()
             if (want_detach && !settings_ref[Setting::async_insert])
             {
                 String detach_query_id;
+                /// `detach_attempted` flips immediately before the `detachQuery` call, `detach_started`
+                /// only after it returns. The catch below keys the sync fallback off `detach_attempted`
+                /// so that a failure raised by `detachQuery` itself never re-executes the query.
+                bool detach_attempted = false;
                 bool detach_started = false;
 
                 try
@@ -704,6 +708,7 @@ void TCPHandler::runImpl()
                         if (!insert_needs_client_data)
                         {
                             ContextMutablePtr async_context = Context::createCopy(query_state->query_context);
+                            detach_attempted = true;
                             detach_query_id = detachQuery(query_state->query, async_context).query_id;
                             detach_started = true;
                         }
@@ -711,11 +716,13 @@ void TCPHandler::runImpl()
                 }
                 catch (...)
                 {
-                    /// Pre-start failures (parse error, quota, permissions, duplicate query_id)
-                    /// re-throw out of `detachQuery` after `detach_started` is set — propagate
-                    /// them to the client via `runImpl`'s `sendException`. Mechanism failures
-                    /// before that point fall back to sync execution.
-                    if (detach_started)
+                    /// A failure raised by `detachQuery` itself (pre-start: duplicate query_id,
+                    /// quota, permission) must propagate to the client via `runImpl`'s
+                    /// `sendException`. Never fall back to sync here: that would re-execute the
+                    /// query and is racy for non-idempotent statements. `detach_attempted` is set
+                    /// for exactly those failures; mechanism failures before the detach attempt
+                    /// (parse error) fall back to sync execution.
+                    if (detach_attempted)
                         throw;
                     tryLogCurrentException(log, "Cannot run native query in detach mode, falling back to sync");
                 }
