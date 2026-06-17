@@ -1,3 +1,6 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+
 -- `JoinCommutativity` must not swap ASOF joins: the "closest preceding value"
 -- is resolved per left row, so the result depends on which side is which.
 -- The right side is made much larger so that the (incorrectly) swapped

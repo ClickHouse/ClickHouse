@@ -1,3 +1,6 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+
 -- Shuffle exchanges created by the Cascades `DistributionEnforcer` must align
 -- join key types across both sides (least supertype), as the legacy
 -- `makeDistributed` path does via `hash_cast_types`. Otherwise `UInt32` keys

@@ -1,3 +1,6 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+
 -- `PASTE JOIN` pairs rows by position, so neither side may be partitioned
 -- independently of the other. Broadcasting the right side while the left is
 -- split across nodes pairs each left slice with the full right table.
