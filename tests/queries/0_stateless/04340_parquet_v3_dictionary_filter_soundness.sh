@@ -52,15 +52,20 @@ jrun1 1048576 "select count() from file('${DATA1}', Parquet, 'x Nullable(UInt64)
 echo "2. input_format_parquet_bloom_filter_push_down=0 must disable bloom filtering"
 
 DATA2="${CLICKHOUSE_TEST_UNIQUE_NAME}_bloom.parquet"
-# Two row groups of 1000 rows, with bloom filters written for both:
+# Two row groups of 1000 rows, with bloom filters written for both. A tiny
+# `output_format_parquet_max_dictionary_size` keeps the low-cardinality row group dictionary-encoded
+# while forcing the high-cardinality one to fall back to PLAIN (its dictionary exceeds the limit), so
+# exactly one row group is dictionary-filter eligible. Without this, 1000 short distinct strings still
+# fit under the 1 MiB default dictionary size, so row group 1 would stay dictionary-encoded and be
+# pruned by the dictionary filter too, defeating the bloom-only check below.
 #  - row group 0: low cardinality ('lo_0'..'lo_3'), fully dictionary-encoded (dictionary-filter eligible)
-#  - row group 1: all distinct ('hi_1000'..'hi_1999'), not dictionary-encoded (bloom-filter only)
+#  - row group 1: all distinct ('hi_1000'..'hi_1999'), falls back to PLAIN (bloom-filter only)
 ${CLICKHOUSE_CLIENT} --query="
     insert into function file('${DATA2}', Parquet)
     select (number < 1000 ? 'lo_' || toString(number % 4) : 'hi_' || toString(number)) as s
     from numbers(2000)
     settings output_format_parquet_row_group_size = 1000, engine_file_truncate_on_insert = 1, max_block_size = 1000000,
-             output_format_parquet_write_bloom_filter = 1;
+             output_format_parquet_write_bloom_filter = 1, output_format_parquet_max_dictionary_size = 1024;
 "
 
 CH2="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0"
