@@ -177,9 +177,13 @@ if (OS_DARWIN)
     # use dlopen, so it does not need to export any dynamic symbols. By default the Mach-O
     # linker puts every global symbol into the export trie (hundreds of thousands of them for
     # clickhouse), which dyld walks for weak-symbol coalescing on every launch, adding ~0.15s
-    # of startup latency. Suppressing the export trie keeps the LC_SYMTAB used for backtraces
-    # intact.
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_exported_symbols")
+    # of startup latency. An empty `-exported_symbols_list` suppresses the export trie while
+    # keeping the LC_SYMTAB used for backtraces intact. We use it instead of the simpler
+    # `-no_exported_symbols` because the latter is not understood by the cctools `ld` used for
+    # cross-compilation in CI, while `-exported_symbols_list` is supported by both it and lld.
+    set (EMPTY_EXPORTED_SYMBOLS_LIST "${CMAKE_BINARY_DIR}/empty_exported_symbols.txt")
+    file (WRITE "${EMPTY_EXPORTED_SYMBOLS_LIST}" "")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-exported_symbols_list,${EMPTY_EXPORTED_SYMBOLS_LIST}")
 
     # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
