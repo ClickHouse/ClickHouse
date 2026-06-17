@@ -800,14 +800,24 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
 
     ArrowFileFooter result;
     result.schema = parseSchema(*footer->schema());
+    /// Footer blocks are untrusted: a negative offset/metadata/body length would, after being passed on as
+    /// a seek target, a metadata bound, or a body size, become a huge unsigned value or seek out of range.
+    /// Reject them here so a malformed footer fails cleanly instead of driving an oversized read later.
+    auto add_block = [](std::vector<ArrowFileBlock> & blocks, const flatbuf::Block * block)
+    {
+        if (block->offset() < 0 || block->metaDataLength() < 0 || block->bodyLength() < 0)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow file footer block has a negative offset/metadata/body length ({}, {}, {})",
+                block->offset(), block->metaDataLength(), block->bodyLength());
+        blocks.push_back({.offset = block->offset(), .metadata_length = block->metaDataLength(), .body_length = block->bodyLength()});
+    };
     if (footer->dictionaries())
         for (const auto * block : *footer->dictionaries())
-            result.dictionary_blocks.push_back(
-                {.offset = block->offset(), .metadata_length = block->metaDataLength(), .body_length = block->bodyLength()});
+            add_block(result.dictionary_blocks, block);
     if (footer->recordBatches())
         for (const auto * block : *footer->recordBatches())
-            result.record_batch_blocks.push_back(
-                {.offset = block->offset(), .metadata_length = block->metaDataLength(), .body_length = block->bodyLength()});
+            add_block(result.record_batch_blocks, block);
     return result;
 }
 

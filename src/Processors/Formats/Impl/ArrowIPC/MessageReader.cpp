@@ -39,11 +39,14 @@ int32_t readInt32LE(ReadBuffer & in)
 
 }
 
-bool MessageReader::readNextMessage(Message & out, int64_t max_metadata_length)
+bool MessageReader::readNextMessage(Message & out, int64_t expected_metadata_length)
 {
     if (in.eof())
         return false;
 
+    /// Bytes consumed by the message framing before the metadata flatbuffer: a 4-byte length prefix, plus
+    /// 4 more when the modern continuation token precedes it.
+    int64_t framing = sizeof(int32_t);
     int32_t metadata_length = readInt32LE(in);
     if (metadata_length == IPC_CONTINUATION_TOKEN)
     {
@@ -51,6 +54,7 @@ bool MessageReader::readNextMessage(Message & out, int64_t max_metadata_length)
         /// is the token followed by a zero length. The token alone (EOF right after it) is a truncated
         /// stream, so always read the next int32 and let `readStrict` report `CANNOT_READ_ALL_DATA` if it
         /// is missing, rather than accepting the truncated input as a clean end of stream.
+        framing += sizeof(int32_t);
         metadata_length = readInt32LE(in);
     }
 
@@ -58,14 +62,19 @@ bool MessageReader::readNextMessage(Message & out, int64_t max_metadata_length)
     if (metadata_length == 0)
         return false;
 
-    /// In the file format the footer's `Block.metaDataLength` is the authoritative size of this message's
-    /// metadata section, so cap the metadata read by it (when given): otherwise a malformed footer could
-    /// advertise a tiny block while the length prefix at its offset declares a much larger metadata message,
-    /// driving an allocation of up to `MAX_REASONABLE_METADATA_LENGTH` before the body-length check runs.
-    const int64_t metadata_cap
-        = max_metadata_length < 0 ? MAX_REASONABLE_METADATA_LENGTH : std::min<int64_t>(max_metadata_length, MAX_REASONABLE_METADATA_LENGTH);
-    if (metadata_length < 0 || metadata_length > metadata_cap)
+    if (metadata_length < 0 || metadata_length > MAX_REASONABLE_METADATA_LENGTH)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow IPC stream: implausible message metadata length {}", metadata_length);
+
+    /// In the file format the caller passes the footer's `Block.metaDataLength` — the authoritative size of
+    /// this message's whole metadata section (framing + padded flatbuffer). Enforce it exactly, before
+    /// allocating: a malformed footer advertising a tiny block cannot then drive a large allocation from a
+    /// forged length prefix, and a block whose on-wire metadata is smaller than the footer claims is
+    /// rejected rather than leaving the body to be read from the wrong boundary.
+    if (expected_metadata_length >= 0 && framing + metadata_length != expected_metadata_length)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC message metadata section is {} bytes but its footer block declares {}",
+            framing + metadata_length, expected_metadata_length);
 
     metadata_storage.resize(metadata_length);
     in.readStrict(metadata_storage.data(), metadata_length);
