@@ -54,12 +54,12 @@ FROM VALUES('s String', ('only'))
 GROUP BY s WITH CLUSTER 5;
 
 SELECT '--- With non-cluster key: clusters do not cross categories ---';
-SELECT cat, any(s), count() AS c
+SELECT cat, any(s) AS rep, count() AS c
 FROM VALUES('cat String, s String',
     ('a', 'foo'), ('a', 'foo2'),
     ('b', 'foo'), ('b', 'bar'))
 GROUP BY cat, s WITH CLUSTER 1
-ORDER BY cat, c DESC;
+ORDER BY cat, c DESC, rep;
 
 SELECT '--- Multiple aggregates ---';
 SELECT count() AS groups, sum(c) AS total, sum(s_total) AS sum_v

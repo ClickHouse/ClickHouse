@@ -54,11 +54,12 @@ Int64 safeFloorToInt64(Float64 v)
 
 struct BucketState
 {
+    /// Row that accumulates the bucket's merged aggregate state. It is kept equal to the row
+    /// with the smallest cluster key in the bucket, so the emitted cluster representative (key
+    /// and any order-sensitive aggregate such as `any`) is deterministic regardless of input
+    /// (Aggregator hash-table) order. When a smaller key arrives, the running state is folded
+    /// into the new row and `leader_row_index` is repointed at it.
     size_t leader_row_index;
-    /// Row holding the smallest cluster key in the bucket. The merged aggregate state lives
-    /// in `leader_row_index`, but the emitted key value is taken from this row so the cluster
-    /// representative is deterministic regardless of input (Aggregator hash-table) order.
-    size_t min_key_row_index;
     Int64 bucket_id;
     Float64 min_cluster_key;
     Float64 max_cluster_key;
@@ -426,18 +427,23 @@ Chunk ClusterMergingTransform::generate1D()
         if (found != std::numeric_limits<size_t>::max())
         {
             auto & bucket = buckets[found];
-            mergeAggregateStates(merged_columns, aggregates_mask, bucket.leader_row_index, i);
             if (cluster_val < bucket.min_cluster_key)
             {
+                /// New minimum key: row `i` becomes the accumulator and absorbs the running state.
+                mergeAggregateStates(merged_columns, aggregates_mask, i, bucket.leader_row_index);
+                bucket.leader_row_index = i;
                 bucket.min_cluster_key = cluster_val;
-                bucket.min_key_row_index = i;
+            }
+            else
+            {
+                mergeAggregateStates(merged_columns, aggregates_mask, bucket.leader_row_index, i);
             }
             bucket.max_cluster_key = std::max(bucket.max_cluster_key, cluster_val);
         }
         else
         {
             size_t idx = buckets.size();
-            buckets.push_back({i, i, bucket_id, cluster_val, cluster_val, true});
+            buckets.push_back({i, bucket_id, cluster_val, cluster_val, true});
             candidates.push_back(idx);
         }
     }
@@ -498,13 +504,10 @@ Chunk ClusterMergingTransform::generate1D()
 
             if (prev.max_cluster_key + cluster_distance >= curr.min_cluster_key)
             {
+                /// `bucket_order` is sorted by `bucket_id`, so `prev` holds the smaller keys and
+                /// its accumulator already carries the cluster minimum; fold `curr` into it.
                 mergeAggregateStates(merged_columns, aggregates_mask, prev.leader_row_index, curr.leader_row_index);
                 prev.max_cluster_key = std::max(prev.max_cluster_key, curr.max_cluster_key);
-                if (curr.min_cluster_key < prev.min_cluster_key)
-                {
-                    prev.min_cluster_key = curr.min_cluster_key;
-                    prev.min_key_row_index = curr.min_key_row_index;
-                }
                 curr.alive = false;
             }
         }
@@ -523,13 +526,10 @@ Chunk ClusterMergingTransform::generate1D()
     {
         if (buckets[idx].alive)
         {
-            /// Aggregate state was accumulated into the leader row; key / non-cluster-key columns
-            /// (identical across the bucket except for the cluster key) come from the min-key row.
+            /// The accumulator row holds the merged state and is the cluster's min-key row,
+            /// so the whole representative row is emitted from it.
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
-            {
-                size_t src_row = aggregates_mask[col_idx] ? buckets[idx].leader_row_index : buckets[idx].min_key_row_index;
-                result_columns[col_idx]->insertFrom(*merged_columns[col_idx], src_row);
-            }
+                result_columns[col_idx]->insertFrom(*merged_columns[col_idx], buckets[idx].leader_row_index);
         }
     }
 
@@ -704,7 +704,8 @@ Chunk ClusterMergingTransform::generate2D()
         if (found != std::numeric_limits<size_t>::max())
         {
             auto & cell = cells[found];
-            mergeAggregateStates(merged_columns, aggregates_mask, cell.leader_row_index, i);
+            /// Aggregate states are merged later, into each component's deterministic
+            /// representative row; here we only record cell membership and bounds.
             cell.row_indices.push_back(i);
             cell.min_x = std::min(cell.min_x, xv);
             cell.max_x = std::max(cell.max_x, xv);
@@ -789,25 +790,17 @@ Chunk ClusterMergingTransform::generate2D()
         }
     }
 
-    /// Phase C: collapse each DSU component into its root cell's leader row.
+    /// Phase C: pick a deterministic representative per DSU component — the row with the
+    /// lexicographically smallest `(x, y)` key — then merge every other row of the component
+    /// into it. Choosing the representative before merging (rather than the first-seen cell
+    /// leader) makes both the emitted key and order-sensitive aggregates such as `any`
+    /// independent of input (Aggregator hash-table) order. `component_rep_row` is indexed by
+    /// cell; only entries for root cells are read.
     std::vector<bool> is_root(cells.size(), false);
     for (size_t ci = 0; ci < cells.size(); ++ci)
         if (dsu.find(ci) == ci)
             is_root[ci] = true;
 
-    for (size_t ci = 0; ci < cells.size(); ++ci)
-    {
-        size_t root = dsu.find(ci);
-        if (root == ci)
-            continue;
-        mergeAggregateStates(merged_columns, aggregates_mask, cells[root].leader_row_index, cells[ci].leader_row_index);
-    }
-
-    /// Pick a deterministic representative per component: the row with the lexicographically
-    /// smallest `(x, y)` key. The merged aggregate state lives in the root cell's leader row,
-    /// so the emitted key value is taken from this representative row instead — otherwise the
-    /// representative would depend on input (Aggregator hash-table) order. `component_rep_row`
-    /// is indexed by cell; only entries for root cells are read.
     std::vector<size_t> component_rep_row(cells.size());
     for (size_t ci = 0; ci < cells.size(); ++ci)
         component_rep_row[ci] = cells[ci].leader_row_index;
@@ -822,6 +815,14 @@ Chunk ClusterMergingTransform::generate2D()
             if (cmp_x < 0 || (cmp_x == 0 && y_col.compareAt(r, rep, y_col, 1) < 0))
                 rep = r;
         }
+    }
+
+    for (size_t ci = 0; ci < cells.size(); ++ci)
+    {
+        size_t rep = component_rep_row[dsu.find(ci)];
+        for (size_t r : cells[ci].row_indices)
+            if (r != rep)
+                mergeAggregateStates(merged_columns, aggregates_mask, rep, r);
     }
 
     size_t result_rows = 0;
@@ -839,10 +840,7 @@ Chunk ClusterMergingTransform::generate2D()
             continue;
         size_t rep_row = component_rep_row[ci];
         for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
-        {
-            size_t src_row = aggregates_mask[col_idx] ? cells[ci].leader_row_index : rep_row;
-            result_columns[col_idx]->insertFrom(*merged_columns[col_idx], src_row);
-        }
+            result_columns[col_idx]->insertFrom(*merged_columns[col_idx], rep_row);
     }
 
     Chunk result(std::move(result_columns), result_rows);
@@ -1051,23 +1049,11 @@ Chunk ClusterMergingTransform::generateString()
         }
     }
 
-    std::vector<bool> is_root(total_rows, false);
-    for (size_t i = 0; i < total_rows; ++i)
-        if (dsu.find(i) == i)
-            is_root[i] = true;
-
-    for (size_t i = 0; i < total_rows; ++i)
-    {
-        size_t root = dsu.find(i);
-        if (root == i)
-            continue;
-        mergeAggregateStates(merged_columns, aggregates_mask, root, i);
-    }
-
-    /// Pick a deterministic representative per component: the lexicographically smallest key.
-    /// The merged aggregate state lives in the DSU root row, so the emitted key value is taken
-    /// from this representative row instead — otherwise it would depend on input (Aggregator
-    /// hash-table) order. `component_rep_row` is indexed by row; only roots are read.
+    /// Pick a deterministic representative per DSU component — the lexicographically smallest
+    /// key — then merge every other row of the component into it. Choosing the representative
+    /// before merging (rather than the first-seen DSU root) makes both the emitted key and
+    /// order-sensitive aggregates such as `any` independent of input (Aggregator hash-table)
+    /// order. `component_rep_row` is indexed by row; only roots are read.
     std::vector<size_t> component_rep_row(total_rows);
     std::iota(component_rep_row.begin(), component_rep_row.end(), size_t{0});
 
@@ -1078,8 +1064,19 @@ Chunk ClusterMergingTransform::generateString()
             component_rep_row[root] = i;
     }
 
+    std::vector<bool> is_rep(total_rows, false);
+    for (size_t i = 0; i < total_rows; ++i)
+        is_rep[component_rep_row[dsu.find(i)]] = true;
+
+    for (size_t i = 0; i < total_rows; ++i)
+    {
+        size_t rep = component_rep_row[dsu.find(i)];
+        if (i != rep)
+            mergeAggregateStates(merged_columns, aggregates_mask, rep, i);
+    }
+
     size_t result_rows = 0;
-    for (bool r : is_root)
+    for (bool r : is_rep)
         if (r)
             ++result_rows;
 
@@ -1089,14 +1086,10 @@ Chunk ClusterMergingTransform::generateString()
 
     for (size_t i = 0; i < total_rows; ++i)
     {
-        if (!is_root[i])
+        if (!is_rep[i])
             continue;
-        size_t rep_row = component_rep_row[i];
         for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
-        {
-            size_t src_row = aggregates_mask[col_idx] ? i : rep_row;
-            result_columns[col_idx]->insertFrom(*merged_columns[col_idx], src_row);
-        }
+            result_columns[col_idx]->insertFrom(*merged_columns[col_idx], i);
     }
 
     Chunk result(std::move(result_columns), result_rows);

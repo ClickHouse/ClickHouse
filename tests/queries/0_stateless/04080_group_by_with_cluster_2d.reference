@@ -2,10 +2,10 @@
 (0,0)	3
 (100,100)	2
 --- Same-cell merge (cell side d/sqrt(2) ~= 0.707 for d=1) ---
-(0.3,0.3)	3
+(0.1,0.1)	3
 --- Cross-cell merge: horizontal, vertical, diagonal ---
 (0,0)	2
-(10,11)	2
+(10,10)	2
 (20,20)	2
 --- Chain through 3 cells ---
 (0,0)	3
@@ -19,7 +19,7 @@
 (-5,-5)	2
 (5,5)	1
 --- Integer cluster key ---
-(2,2)	2
+(1,1)	2
 (100,100)	1
 --- With non-cluster key ---
 a	(0,0)	2
