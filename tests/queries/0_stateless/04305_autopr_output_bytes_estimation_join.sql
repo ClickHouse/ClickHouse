@@ -54,7 +54,7 @@ SELECT format('{} {} {}', log_comment, output_bytes, expected[log_comment])
 FROM (
     SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] AS output_bytes
     FROM system.query_log
-    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - toIntervalMinute(15))
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
       AND (current_database = currentDatabase()) AND (log_comment LIKE '04305_join_%') AND (type = 'QueryFinish')
     ORDER BY event_time_microseconds
 )
