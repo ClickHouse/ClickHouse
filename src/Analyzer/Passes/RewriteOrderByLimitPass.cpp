@@ -11,6 +11,7 @@
 #include <Analyzer/MatcherNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
@@ -97,6 +98,13 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
         if (hasWindowFunctionNodes(query_node.getProjectionNode()) || hasWindowFunctionNodes(query_node.getOrderByNode()))
             return {};
         if (query_node.hasHaving())
+            return {};
+        /// `QUALIFY` filters on window-function results that are computed over the full pre-`LIMIT`
+        /// result set (a window function in `QUALIFY` is not covered by the projection/`ORDER BY` scan
+        /// above). The rewrite selects rows by their physical offset first, so the `QUALIFY` predicate
+        /// would be re-evaluated over only the selected rows and change the result. Reject it outright,
+        /// just like `HAVING`.
+        if (query_node.hasQualify())
             return {};
         if (query_node.hasInterpolate())
             return {};
@@ -320,9 +328,15 @@ void RewriteOrderByLimitPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr
             "Rewrite ORDER BY LIMIT successfully, current query: {}",
             query_tree_node->dumpTree());
 
-        auto * query = query_tree_node->as<QueryNode>();
-        auto & mutable_context = query->getMutableContext();
-        mutable_context->setSetting("enable_shared_storage_snapshot_in_query", true);
+        /// `OrderByLimitRewriteVisitor` descends into child `QueryNode`s, so a set query such as
+        /// `(SELECT ... ORDER BY k LIMIT 1) UNION ALL SELECT ...` can have a rewritten child while the
+        /// root stays a `UnionNode`. In that case `query_tree_node->as<QueryNode>()` is null, so set the
+        /// snapshot setting on whichever node actually carries the context (the planner reads it from
+        /// both `QueryNode` and `UnionNode` the same way) to avoid dereferencing a null pointer.
+        if (auto * query = query_tree_node->as<QueryNode>())
+            query->getMutableContext()->setSetting("enable_shared_storage_snapshot_in_query", true);
+        else if (auto * union_node = query_tree_node->as<UnionNode>())
+            union_node->getMutableContext()->setSetting("enable_shared_storage_snapshot_in_query", true);
     }
 }
 
