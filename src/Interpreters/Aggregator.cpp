@@ -349,14 +349,19 @@ Aggregator::Params::Params(
     , overflow_row(overflow_row_)
     , max_rows_to_group_by(max_rows_to_group_by_)
     , group_by_overflow_mode(group_by_overflow_mode_)
-    , group_by_each_block_no_merge(group_by_each_block_no_merge_)
+    /// The streaming per-block flush only makes sense for a real `GROUP BY`: with several groups, flushing a block's
+    /// groups before the next block avoids merging them. Aggregation without keys (`SELECT count() FROM ...`) has a
+    /// single group, so per-block flushing would just split one result into several partial rows and, on empty input,
+    /// would drop the single empty-aggregation row that such queries must always return. Restrict the mode to queries
+    /// that actually have grouping keys; without keys the aggregation behaves exactly as if the setting were off.
+    , group_by_each_block_no_merge(group_by_each_block_no_merge_ && !keys_.empty())
     , group_by_two_level_threshold(group_by_two_level_threshold_)
     , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
     /// In the `group_by_each_block_no_merge` streaming mode the aggregation state is finalized and flushed for
     /// every block separately, so only a single block is ever held in memory and external (on-disk) aggregation
     /// is both pointless and incorrect: spilled data from different blocks would be merged together at the end,
     /// violating the per-block flush contract. Disable it.
-    , max_bytes_before_external_group_by(group_by_each_block_no_merge_ ? 0 : max_bytes_before_external_group_by_)
+    , max_bytes_before_external_group_by(group_by_each_block_no_merge ? 0 : max_bytes_before_external_group_by_)
     , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
     , tmp_data_scope(std::move(tmp_data_scope_))
     , max_threads(max_threads_)

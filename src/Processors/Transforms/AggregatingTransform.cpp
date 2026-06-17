@@ -948,6 +948,8 @@ void AggregatingTransform::work()
         {
             /// Streaming GROUP BY: aggregate, finalize and flush the result for every block separately,
             /// without merging across blocks. The result is intentionally not fully merged (see the setting docs).
+            /// The flag is only set for queries that actually have grouping keys (`Aggregator::Params` disables it
+            /// otherwise), so aggregation without keys never reaches this per-block flush path.
             /// Honor `params->final`: when this transform is the first stage of a two-level (e.g. distributed)
             /// aggregation, it must produce intermediate states instead of finalized values, otherwise the
             /// merging stage would receive plain columns where it expects aggregate function states.
@@ -1026,10 +1028,9 @@ void AggregatingTransform::initGenerate()
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
-    /// In the streaming `group_by_each_block_no_merge` mode the results were already finalized and flushed for every
-    /// block in `work`, so there is nothing to emit here (and no empty-aggregation row for an empty input).
-    if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set
-        && !params->params.group_by_each_block_no_merge)
+    /// `group_by_each_block_no_merge` is disabled for aggregation without keys (see `Aggregator::Params`), so it does not
+    /// affect this path: the single empty-aggregation row is still produced for an empty input.
+    if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
     {
         if (params->params.only_merge)
             params->aggregator.mergeOnBlock(getInputs().front().getHeader().getColumns(), 0, false, variants, no_more_keys, is_cancelled);
