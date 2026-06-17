@@ -122,7 +122,7 @@ public:
             node = it->second->clone();
     }
 
-    bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
+    bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child) const
     {
         /// Do not descend into the wrapped projection items themselves (their argument is the very
         /// node we are replacing elsewhere), nor into nested subqueries/unions with their own scope.
