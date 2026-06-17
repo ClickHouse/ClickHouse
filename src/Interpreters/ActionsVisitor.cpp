@@ -262,11 +262,11 @@ ASTPtr makeArrayForNonConstantInRightOperand(
     const DataTypePtr & right_operand_type,
     bool left_operand_is_tuple)
 {
+    if (right_operand_is_array)
+        return right_operand->clone();
+
     if (const auto * function = right_operand->as<ASTFunction>())
     {
-        if (function->name == "array")
-            return right_operand->clone();
-
         if (function->name == "tuple" && right_operand_tuple_function_is_set)
         {
             auto array_function = makeASTFunction("array");
@@ -277,9 +277,6 @@ ASTPtr makeArrayForNonConstantInRightOperand(
             return array_function;
         }
     }
-
-    if (right_operand_is_array)
-        return right_operand->clone();
 
     const auto * right_operand_tuple_type = right_operand_type
         ? typeid_cast<const DataTypeTuple *>(removeNullable(right_operand_type).get())
