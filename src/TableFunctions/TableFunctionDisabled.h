@@ -32,9 +32,9 @@ public:
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) final { func->parseArguments(ast_function, context); }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const final
+    ColumnsDescription getActualTableStructure(ContextPtr, bool) const final
     {
-        return func->getActualTableStructure(context, is_insert_query);
+        throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function '{}' is disabled in config in table_functions_deny_list", getName());
     }
 
     bool needStructureHint() const final { return func->needStructureHint(); }

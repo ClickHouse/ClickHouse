@@ -13,7 +13,7 @@
     <path>.</path>
     <mark_cache_size>0</mark_cache_size>
 
-    <access_control_path>03742_functions_deny_list/access</access_control_path>
+    <access_control_path>access</access_control_path>
 
     <table_functions_deny_list>
         <name>remote</name>
@@ -27,7 +27,7 @@
         <type>executable</type>
     </udfs_deny_list>
 
-    <user_defined_executable_functions_config>03742_functions_deny_list/test_function_config.xml</user_defined_executable_functions_config>
+    <user_defined_executable_functions_config>test_function_config.xml</user_defined_executable_functions_config>
 
     <profiles>
         <default/>
