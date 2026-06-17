@@ -120,9 +120,9 @@ System boolean setting `query_rules` activates query rewrite rules. By default v
 ## Access grants {#access-grants}
 
 There are three access grants for query rewrite rules, each of these requires separate permission:
-1. `CREATE_RULE`
-2. `ALTER_RULE`
-3. `DROP_RULE`
+1. `CREATE RULE`
+2. `ALTER RULE`
+3. `DROP RULE`
 
 ## Examples {#examples}
 
