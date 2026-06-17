@@ -21,8 +21,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// 0xFFFFFFFF: the Web Mercator projection used by `mvtEncodeGeom` spans the full UInt32 range.
-constexpr double mercator_max = 4294967295.0;
+/// The Web Mercator coordinate space used by `mvtEncodeGeom` spans 2^32 units on each axis.
+constexpr double mercator_max = 4294967296.0; /// 2^32
 /// Latitude bound of the Web Mercator projection (the projection diverges at the poles).
 constexpr double latitude_limit = 85.05112877980659;
 

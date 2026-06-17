@@ -45,8 +45,8 @@ namespace GeoDisc
     constexpr UInt8 Ring = 5;
 }
 
-/// 0xFFFFFFFF: the Web Mercator projection spans the full UInt32 range (matching the materialized mercator_x/y columns).
-constexpr double mercator_max = 4294967295.0;
+/// The Web Mercator projection spans 2^32 units on each axis (the standard XYZ tile scheme).
+constexpr double mercator_max = 4294967296.0; /// 2^32
 /// Latitude bound of the Web Mercator projection (it diverges at the poles).
 constexpr double latitude_limit = 85.05112877980659;
 

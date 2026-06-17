@@ -9,6 +9,12 @@ Geometry
 1
 -- mvtEncodeGeom: a larger extent yields proportionally larger pixel coordinates
 (248,6767)
+-- mvtEncodeGeom: (0,0) projects to pixel (0,0) at the centre tile for every zoom (no Web Mercator drift)
+1	(0,0)	(0,0)
+16	(0,0)	(0,0)
+20	(0,0)	(0,0)
+24	(0,0)	(0,0)
+32	(0,0)	(0,0)
 -- mvtEncodeGeom: a line is projected and returned as a MultiLineString
 [[(473,3767),(1638,1850),(2803,2809)]]
 -- mvtEncodeGeom: a polygon is projected and returned as a MultiPolygon

@@ -7,6 +7,11 @@ SELECT mvtTileBBox(0, 0, 0);
 SELECT '-- mvtTileBBoxMercator: bounding box of a tile in Web Mercator space';
 SELECT mvtTileBBoxMercator(1, 0, 0);
 
+SELECT '-- mvtTileBBoxMercator: the last tile spans exactly 2^(32 - zoom) Mercator units on each axis (no off-by-one)';
+SELECT z, (bb.3 - bb.1) = bitShiftLeft(toUInt64(1), 32 - z) AS width_ok
+FROM (SELECT z, mvtTileBBoxMercator(z, t, t) AS bb FROM (SELECT CAST(arrayJoin([1, 16, 24, 31]), 'UInt8') AS z, CAST(bitShiftLeft(toUInt64(1), z) - 1, 'UInt32') AS t))
+ORDER BY z;
+
 SELECT '-- mvtTileBBox: a positive margin expands the box on every side';
 WITH mvtTileBBox(10, 550, 335) AS bb, mvtTileBBox(10, 550, 335, 0.1) AS bm
 SELECT bm.1 < bb.1, bm.2 < bb.2, bm.3 > bb.3, bm.4 > bb.4;

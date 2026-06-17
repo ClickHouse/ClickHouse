@@ -19,6 +19,14 @@ SELECT mvtEncodeGeom((20.0, 100.0)::Point, 5, 10, 10, 4096, 256, false) = mvtEnc
 SELECT '-- mvtEncodeGeom: a larger extent yields proportionally larger pixel coordinates';
 SELECT mvtEncodeGeom((13.37, 52.52)::Point, 10, 550, 335, 8192);
 
+SELECT '-- mvtEncodeGeom: (0,0) projects to pixel (0,0) at the centre tile for every zoom (no Web Mercator drift)';
+SELECT
+    z,
+    mvtEncodeGeom((0.0, 0.0)::Point, z, t, t, 4096, 0, false) AS px_no_clip,
+    mvtEncodeGeom((0.0, 0.0)::Point, z, t, t) AS px_clipped
+FROM (SELECT CAST(arrayJoin([1, 16, 20, 24, 32]), 'UInt8') AS z, CAST(bitShiftLeft(toUInt64(1), z - 1), 'UInt32') AS t)
+ORDER BY z;
+
 SELECT '-- mvtEncodeGeom: a line is projected and returned as a MultiLineString';
 SELECT mvtEncodeGeom([(13.4, 52.5), (13.5, 52.6), (13.6, 52.55)]::LineString, 10, 550, 335);
 
