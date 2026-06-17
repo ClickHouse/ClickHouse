@@ -56,29 +56,24 @@ private:
             const String current = std::move(stack.top());
             stack.pop();
 
-            /// listAllFilesByPath does not throw on a file: it returns an empty list.
-            /// A non-empty list means a directory; an empty list means a file or an empty directory.
+            // An empty list signifies that current is either a file or an empty directory.
             const auto children = disk.listAllFilesByPath(current);
             if (!children.empty())
             {
                 for (const auto & file_name : children)
                     stack.push(current.ends_with("/") ? current + file_name : current + "/" + file_name);
             }
-            /// An empty list is either a file or an empty directory. Only files have a size; an
-            /// empty directory contributes 0. Check this explicitly so the result does not depend
-            /// on whether the disk's getFileSize raises an exception or reports FILE_DOESNT_EXIST
-            /// for directories.
+            // Skip the case where current is an empty directory.
             else if (!disk.isDirectory(current))
             {
+                // Wrap getFileSize in try/catch, in case file disappears while traversing.
                 try
                 {
                     total += disk.getDisk()->getFileSize(disk.getRelativeFromRoot(current));
                 }
                 catch (const Exception & e)
                 {
-                    /// Be tolerant of files that disappear while we traverse: skip them.
-                    /// Any other failure (object storage, metadata, permissions, ...) must
-                    /// not be swallowed, or `du` would silently report an undercount.
+                    /// Throw for failures related to object storage, metadata, permissions.
                     if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
                         throw;
                     LOG_WARNING(log, "File '{}' disappeared while traversing, skipping", current);
