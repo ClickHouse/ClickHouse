@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
-# The query plan cache is incompatible with parallel replicas.
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-old-analyzer, no-parallel-replicas
+# The query plan cache is a single, server-wide cache that this test inspects via the global
+# `SYSTEM DROP QUERY PLAN CACHE` and exact `QueryPlanCacheHits` counts, so it must run in
+# isolation (no-parallel: concurrent queries would drop or evict the shared entries). The
+# cacheability of a query and whether a second run hits depend on the exact logical plan, which
+# random plan-affecting settings perturb (no-random-settings, no-random-merge-tree-settings).
+# The cache only engages with the analyzer (no-old-analyzer) and is incompatible with parallel
+# replicas (no-parallel-replicas).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
