@@ -5,6 +5,11 @@
 # so a default-on rewrite turned a previously-working query into an exception. Now such chains fall
 # through to the `multiMatchAny`/combined-`match` path, which has no such cap. Verify that the query
 # succeeds and returns the same result as the un-rewritten OR chain, for both analyzers.
+#
+# The needles must be *pure* substrings: no LIKE metacharacters (`_`, `%`) and no regexp
+# metacharacters inside. A stray `_` would make the pattern a wildcard, so it would no longer take
+# the `multiSearchAny` path this test targets, and the rewrite would instead build 300 `.`-wildcard
+# regexps whose Hyperscan compilation is ~70x slower (enough to blow the flaky-check 180s budget).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,16 +18,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_or_like_many;
     CREATE TABLE t_or_like_many (s String) ENGINE = Memory;
-    INSERT INTO t_or_like_many VALUES ('xx_needle_005_xx'), ('nothing matches here'), ('end_needle_299'), ('plain string');
+    INSERT INTO t_or_like_many VALUES ('xxneedle005xx'), ('nothing matches here'), ('endneedle299'), ('plain string');
 "
 
-# Build an OR chain of 300 pure-substring LIKE predicates ('%needle_000%' OR ... OR '%needle_299%').
+# Build an OR chain of 300 pure-substring LIKE predicates ('%needle000%' OR ... OR '%needle299%').
 predicate=""
 for i in $(seq -w 0 299); do
     if [ -n "$predicate" ]; then
         predicate="$predicate OR "
     fi
-    predicate="${predicate}s LIKE '%needle_${i}%'"
+    predicate="${predicate}s LIKE '%needle${i}%'"
 done
 
 query="SELECT count() FROM t_or_like_many WHERE ${predicate}"
