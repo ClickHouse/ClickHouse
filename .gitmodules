@@ -357,6 +357,9 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/libpng"]
+	path = contrib/libpng
+	url = https://github.com/pnggroup/libpng.git
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
@@ -405,3 +408,6 @@
 [submodule "contrib/eigen"]
 	path = contrib/eigen
 	url = https://github.com/lvzhipin03/eigen.git
+[submodule "contrib/xsimd"]
+	path = contrib/xsimd
+	url = https://github.com/xtensor-stack/xsimd
