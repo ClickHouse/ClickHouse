@@ -282,6 +282,8 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
     DB::setThreadName(ThreadName::KEEPER_TTL_GARBAGE_COLLECTOR);
 
     const auto & shutdown_called = keeper_context->isShutdownCalled();
+    Int32 next_gc_xid = 0;
+
     while (true)
     {
         if (shutdown_called)
@@ -299,6 +301,7 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
                     rem.path = path;
                     rem.version = version;
                     rem.try_remove = true;
+                    rem.xid = next_gc_xid++;
 
                     try
                     {
