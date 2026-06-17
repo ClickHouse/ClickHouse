@@ -1639,3 +1639,35 @@ def test_optimize_manifest_parent_summary_missing_totals(
             f"Expected {stripped}='0' on the new manifest-only snapshot, "
             f"got: {summary.get(stripped)!r}"
         )
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_files_experimental_gate(started_cluster_iceberg_with_spark, storage_type):
+    """
+    `OPTIMIZE TABLE ... MANIFEST` is gated behind the experimental
+    `allow_experimental_iceberg_compaction` setting. Running it without the setting must throw
+    rather than silently rewrite Iceberg metadata.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_manifest_gate_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES ('format-version' = '2')
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(0, 10)")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    error_message = instance.query_and_get_error(f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST")
+    assert "allow_experimental_iceberg_compaction" in error_message, (
+        f"Expected the experimental-gate exception, got: {error_message}"
+    )

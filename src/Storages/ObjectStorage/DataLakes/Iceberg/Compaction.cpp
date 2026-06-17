@@ -391,13 +391,6 @@ static bool writeConsolidatedManifestFile(
 {
     auto log = getLogger("IcebergManifestConsolidation");
 
-    /// Validate the format version on the freshly-fetched metadata, since the table may have been upgraded to v3 by another writer.
-    if (metadata_object->getValue<Int32>(Iceberg::f_format_version) >= 3)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "OPTIMIZE TABLE ... MANIFEST is not yet supported for Iceberg format-version 3: "
-            "row-lineage 'first_row_id' round-trip is not implemented");
-
     // Derive current snapshot info directly from the metadata file.
     if (!metadata_object->has(Iceberg::f_current_snapshot_id))
     {
@@ -461,8 +454,6 @@ static bool writeConsolidatedManifestFile(
         Poco::JSON::Object::Ptr spec;
         std::vector<String> partition_columns;
         std::vector<DataTypePtr> partition_types;
-        /// The schema defining every source column the spec references, serialized into the manifest's Avro `schema` header.
-        Poco::JSON::Object::Ptr schema;
     };
     std::unordered_map<Int32, ResolvedPartitionSpec> resolved_specs;
     auto resolve_partition_spec = [&](Int32 spec_id) -> const ResolvedPartitionSpec &
@@ -544,17 +535,19 @@ static bool writeConsolidatedManifestFile(
         resolved.partition_types
             = ChunkPartitioner(spec_fields, schema_for_spec->getArray(Iceberg::f_fields), context, shared_sample_block).getResultTypes();
 
-        /// Keep the raw metadata schema object so the manifest's Avro `schema` header is the verbatim schema JSON.
-        for (UInt32 i = 0; i < schemas->size(); ++i)
-        {
-            if (schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id) == schema_id_for_spec)
-            {
-                resolved.schema = schemas->getObject(i);
-                break;
-            }
-        }
-
         return resolved_specs.emplace(spec_id, std::move(resolved)).first->second;
+    };
+
+    /// Return the raw metadata schema object for a given schema-id, used as the verbatim Avro `schema` header of a rewritten manifest so its data-file bounds resolve under the same schema the files were written with.
+    auto get_schema_object_by_id = [&](Int32 schema_id) -> Poco::JSON::Object::Ptr
+    {
+        for (UInt32 i = 0; i < schemas->size(); ++i)
+            if (schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id) == schema_id)
+                return schemas->getObject(i);
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg metadata does not contain a schema entry matching schema-id {}",
+            schema_id);
     };
 
     // Collect data files grouped by (partition spec-id, partition key)
@@ -562,6 +555,8 @@ static bool writeConsolidatedManifestFile(
     {
         /// The partition spec the source files were written with; the rewritten manifest reuses it.
         Int32 partition_spec_id = 0;
+        /// The schema the source files were written under; files of different schemas are grouped separately so each rewritten manifest's `schema` header matches all its entries.
+        Int32 schema_id = 0;
         Row partition_values;
         std::vector<IcebergPathFromMetadata> file_paths;
         /// Parallel to file_paths: {record_count, file_size_in_bytes} from the source manifest entry.
@@ -602,13 +597,30 @@ static bool writeConsolidatedManifestFile(
         ++num_data_manifests;
         const Int32 source_partition_spec_id = manifest_file.partition_spec_id;
 
+        /// A manifest-only rewrite cannot round-trip per-file `key_metadata` (data-file encryption keys), so reject rather than silently dropping it and making an encrypted table unreadable.
+        {
+            RelativePathWithMetadata key_metadata_object_info(persistent_table_components.path_resolver.resolve(manifest_file.manifest_file_path));
+            auto key_metadata_buf = createReadBuffer(key_metadata_object_info, object_storage, context, log);
+            AvroForIcebergDeserializer key_metadata_deserializer(std::move(key_metadata_buf), manifest_file.manifest_file_path, getFormatSettings(context));
+            if (key_metadata_deserializer.hasPath(c_data_file_key_metadata))
+            {
+                for (size_t row = 0; row < key_metadata_deserializer.rows(); ++row)
+                    if (!key_metadata_deserializer.getValueFromRowByName(row, c_data_file_key_metadata).isNull())
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "OPTIMIZE TABLE ... MANIFEST is not supported for Iceberg tables with per-file key_metadata "
+                            "(encrypted data files): preserving the encryption metadata across a manifest rewrite is not implemented");
+            }
+        }
+
         auto files_handle = getManifestFileEntriesHandle(
             object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
 
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
-            // Partition key includes the source spec-id so files under different specs are not merged; FieldVisitorDump's type tag prevents UInt64/Int64 collisions.
-            String partition_key = std::to_string(source_partition_spec_id) + "|";
+            // Group by source spec-id AND source schema-id so files of different specs or schemas are never merged into one manifest (a manifest carries a single spec and one `schema` header); FieldVisitorDump's type tag prevents UInt64/Int64 collisions.
+            const Int32 source_schema_id = data_file->resolved_schema_id;
+            String partition_key = std::to_string(source_partition_spec_id) + "|" + std::to_string(source_schema_id) + "|";
             FieldVisitorDump dump_visitor;
             for (const auto & val : data_file->parsed_entry->partition_key_value)
                 partition_key += applyVisitor(dump_visitor, val) + "|";
@@ -618,6 +630,7 @@ static bool writeConsolidatedManifestFile(
 
             auto & pd = partitions_map.at(partition_key);
             pd.partition_spec_id = source_partition_spec_id;
+            pd.schema_id = source_schema_id;
             pd.partition_values = data_file->parsed_entry->partition_key_value;
             // A single manifest file should not list the same data file twice
             if (std::find(pd.file_paths.begin(), pd.file_paths.end(), data_file->parsed_entry->file_path_key) == pd.file_paths.end())
@@ -796,7 +809,7 @@ static bool writeConsolidatedManifestFile(
                 /* per_file_statistics */ pd.file_statistics,
                 /* data_file_sort_order_ids */ pd.file_sort_order_ids,
                 /* per_file_entry_lineage */ pd.file_entry_lineage,
-                /* schema_to_serialize */ resolved_spec.schema);
+                /* schema_to_serialize */ get_schema_object_by_id(pd.schema_id));
 
             buffer_manifest->finalize();
             Int64 manifest_size = buffer_manifest->count();
@@ -1152,6 +1165,13 @@ void compactIcebergManifests(
             log,
             persistent_table_components.metadata_compression_method,
             persistent_table_components.table_uuid);
+
+        /// Validate the format version on the freshly-fetched metadata (before the threshold early-return), since the table may have been upgraded to v3 by another writer after this table object was created.
+        if (metadata_object->getValue<Int32>(Iceberg::f_format_version) >= 3)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "OPTIMIZE TABLE ... MANIFEST is not yet supported for Iceberg format-version 3: "
+                "row-lineage 'first_row_id' round-trip is not implemented");
 
         /// Cheap pre-check: read just the current manifest list to decide whether the table is above the configured threshold.
         if (!isCurrentManifestListAboveThreshold(

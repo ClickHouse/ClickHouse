@@ -53,6 +53,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -131,6 +132,22 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::DateTime64:
         case TypeIndex::String:
             return true;
+        default:
+            return false;
+    }
+}
+
+/// Whether a float/double partition value is NaN, which the manifest-list partition summary records via `contains_nan` rather than as ordered lower/upper bounds.
+bool isNaNPartitionValue(const Field & field, DataTypePtr type)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+            return !field.isNull()
+                && isNaNPartitionValue(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+            return !field.isNull() && std::isnan(field.safeGet<Float64>());
         default:
             return false;
     }
@@ -649,13 +666,24 @@ void generateManifestList(
                     summary_record.field(Iceberg::f_contains_null) = avro::GenericDatum(is_null);
                     if (!is_null)
                     {
-                        auto bound = dumpFieldToBytes(partition_value, partition_type);
-                        auto & lower = summary_record.field(Iceberg::f_lower_bound);
-                        lower.selectBranch(1);
-                        lower.value<std::vector<uint8_t>>() = bound;
-                        auto & upper = summary_record.field(Iceberg::f_upper_bound);
-                        upper.selectBranch(1);
-                        upper.value<std::vector<uint8_t>>() = bound;
+                        if (isNaNPartitionValue(partition_value, partition_type))
+                        {
+                            /// NaN float/double partition value: record it via `contains_nan` instead of publishing the NaN bytes as ordered bounds.
+                            auto & contains_nan = summary_record.field(Iceberg::f_contains_nan);
+                            contains_nan.selectBranch(1);
+                            contains_nan.value<bool>() = true;
+                        }
+                        else if (canDumpIcebergStats(partition_value, partition_type))
+                        {
+                            auto bound = dumpFieldToBytes(partition_value, partition_type);
+                            auto & lower = summary_record.field(Iceberg::f_lower_bound);
+                            lower.selectBranch(1);
+                            lower.value<std::vector<uint8_t>>() = bound;
+                            auto & upper = summary_record.field(Iceberg::f_upper_bound);
+                            upper.selectBranch(1);
+                            upper.value<std::vector<uint8_t>>() = bound;
+                        }
+                        /// else: a partition type whose bounds we cannot serialize (e.g. Decimal); leave the bounds null, matching the data-file statistics path.
                     }
                     summaries.value().push_back(summary_datum);
                 }
