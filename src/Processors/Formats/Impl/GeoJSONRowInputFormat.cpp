@@ -319,6 +319,37 @@ bool isOneOf(std::string_view name, std::span<const std::string_view> names)
     return false;
 }
 
+/// The GeoJSON geometry types that ClickHouse's `Geometry` type can represent. `Ring` is part of the
+/// `Geometry` Variant but is not a valid GeoJSON geometry type, so it is intentionally absent.
+constexpr std::array<std::string_view, 5> supported_geojson_geometry_types
+    = {"Point", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
+
+/// Read the `type`, `coordinates`, and `geometries` members of a geometry object into strings (the
+/// opening `{` must already be consumed). `coordinates` and `geometries` are buffered verbatim so
+/// member order does not matter; any other member is skipped.
+void readGeometryMembers(
+    ReadBuffer & buf,
+    const FormatSettings::JSON & json_settings,
+    String & geo_type,
+    String & raw_coordinates,
+    String & raw_geometries)
+{
+    forEachFieldInJSONObject(buf, json_settings, [&](const String & key)
+    {
+        if (key == "type") { readJSONString(geo_type, buf, json_settings); return true; }
+        if (key == "coordinates") { readJSONField(raw_coordinates, buf, json_settings); return true; }
+        if (key == "geometries") { readJSONField(raw_geometries, buf, json_settings); return true; }
+        return false;
+    });
+}
+
+/// Insert a NULL geometry — the default of the `Geometry` Variant — when the column is requested.
+void insertNullGeometry(IColumn * col)
+{
+    if (col)
+        assert_cast<ColumnVariant &>(*col).insertDefault();
+}
+
 /// Parse the `coordinates` of a supported GeoJSON geometry type and enforce the GeoJSON shape
 /// invariants (a `LineString` has at least two positions; every `Polygon`/`MultiPolygon` ring is
 /// closed and has at least four positions). Returns the parsed coordinates so the caller can insert
@@ -381,13 +412,7 @@ void validateGeoJSONGeometry(ReadBuffer & buf, const FormatSettings & format_set
     String geo_type;
     String raw_coordinates;
     String raw_geometries;
-    forEachFieldInJSONObject(buf, format_settings.json, [&](const String & key)
-    {
-        if (key == "type") { readJSONString(geo_type, buf, format_settings.json); return true; }
-        if (key == "coordinates") { readJSONField(raw_coordinates, buf, format_settings.json); return true; }
-        if (key == "geometries") { readJSONField(raw_geometries, buf, format_settings.json); return true; }
-        return false;
-    });
+    readGeometryMembers(buf, format_settings.json, geo_type, raw_coordinates, raw_geometries);
 
     validateGeoJSONGeometryMembers(geo_type, raw_coordinates, raw_geometries, format_settings, current_depth);
 }
@@ -422,11 +447,9 @@ void validateGeoJSONGeometryMembers(
         return;
     }
 
-    /// `MultiPoint` coordinates are an array of positions (validated like a linear ring, without the
-    /// closed/length invariants); all other supported types use the shared coordinate validator.
-    static constexpr std::array<std::string_view, 6> types_with_coordinates
-        = {"Point", "LineString", "MultiLineString", "Polygon", "MultiPolygon", "MultiPoint"};
-    if (!isOneOf(geo_type, types_with_coordinates))
+    /// `MultiPoint` also carries a `coordinates` member (validated like a linear ring, without the
+    /// closed/length invariants); every other type with coordinates is a supported geometry.
+    if (!isOneOf(geo_type, supported_geojson_geometry_types) && geo_type != "MultiPoint")
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: unknown or invalid geometry type '{}'", geo_type);
 
     if (raw_coordinates.empty())
@@ -707,34 +730,19 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
     {
         /// A null geometry is valid at the top level of a Feature.
         assertString("null", buf);
-        if (col)
-            assert_cast<ColumnVariant &>(*col).insertDefault();
+        insertNullGeometry(col);
         return;
     }
 
     String geo_type;
     String raw_coordinates;
     String raw_geometries;
+    readGeometryMembers(buf, format_settings.json, geo_type, raw_coordinates, raw_geometries);
 
-    forEachFieldInJSONObject(buf, format_settings.json, [&](const String & key)
-    {
-        if (key == "type") { readJSONString(geo_type, buf, format_settings.json); return true; }
-        /// Always buffer coordinates as raw string so key order doesn't matter.
-        if (key == "coordinates") { readJSONField(raw_coordinates, buf, format_settings.json); return true; }
-        /// `geometries` is the required member of a `GeometryCollection`; buffer it so we can verify
-        /// the object is well-formed even when it ends up being inserted as NULL.
-        if (key == "geometries") { readJSONField(raw_geometries, buf, format_settings.json); return true; }
-        return false;
-    });
-
-    /// GeoJSON geometry types that ClickHouse's Geometry type can represent. Note that `Ring` is part of the
-    /// Geometry Variant but is NOT a valid GeoJSON geometry type, so it is intentionally excluded here.
-    static constexpr std::array<std::string_view, 5> supported_geojson_types
-        = {"Point", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
     /// Valid GeoJSON geometry types that cannot be represented in ClickHouse's Geometry type.
     static constexpr std::array<std::string_view, 2> unrepresentable_geojson_types = {"GeometryCollection", "MultiPoint"};
 
-    if (!isOneOf(geo_type, supported_geojson_types))
+    if (!isOneOf(geo_type, supported_geojson_geometry_types))
     {
         if (isOneOf(geo_type, unrepresentable_geojson_types))
         {
@@ -747,8 +755,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
                 /// `GeometryCollection` containing a malformed child) are still rejected rather than
                 /// being silently loaded as NULL.
                 validateGeoJSONGeometryMembers(geo_type, raw_coordinates, raw_geometries, format_settings, 0);
-                if (col)
-                    assert_cast<ColumnVariant &>(*col).insertDefault();
+                insertNullGeometry(col);
                 return;
             }
             throw Exception(
