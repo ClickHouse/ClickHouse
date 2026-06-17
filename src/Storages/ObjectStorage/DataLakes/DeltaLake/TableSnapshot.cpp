@@ -716,8 +716,8 @@ void TableSnapshot::initOrUpdateSnapshot() const
     ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
     LOG_TEST(
-        log, "{} kernel snapshot state",
-        kernel_snapshot_state ? "Rebuilding (credentials rotated)" : "Initializing");
+        log, "{}",
+        kernel_snapshot_state ? "Rebuilding kernel snapshot state (credentials rotated)" : "Initializing snapshot");
 
     kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
     kernel_state_credentials_fingerprint = current_credentials_fingerprint;
