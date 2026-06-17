@@ -45,6 +45,46 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
 }
 
+namespace
+{
+/// Structural equality of two parsed Arrow types (kind plus every type attribute, recursing into
+/// children). Used to verify that a reused Arrow dictionary id describes the same value type.
+bool arrowTypesEqual(const ArrowIPC::ArrowType & a, const ArrowIPC::ArrowType & b);
+
+/// Equality of two Arrow fields. `compare_name` is false at the top level (a dictionary's value field is
+/// named after its column, and two columns may share a dictionary id) but true for nested children, whose
+/// names are part of the value type (e.g. Tuple element names).
+bool arrowFieldsEqual(const ArrowIPC::ArrowField & a, const ArrowIPC::ArrowField & b, bool compare_name)
+{
+    if (compare_name && a.name != b.name)
+        return false;
+    if (a.nullable != b.nullable)
+        return false;
+    if (a.dictionary.has_value() != b.dictionary.has_value())
+        return false;
+    if (a.dictionary && (a.dictionary->id != b.dictionary->id || a.dictionary->index_bit_width != b.dictionary->index_bit_width
+                         || a.dictionary->index_is_signed != b.dictionary->index_is_signed))
+        return false;
+    return arrowTypesEqual(a.type, b.type);
+}
+
+bool arrowTypesEqual(const ArrowIPC::ArrowType & a, const ArrowIPC::ArrowType & b)
+{
+    if (a.kind != b.kind || a.bit_width != b.bit_width || a.is_signed != b.is_signed
+        || a.float_precision != b.float_precision || a.precision != b.precision || a.scale != b.scale
+        || a.decimal_bit_width != b.decimal_bit_width || a.unit != b.unit || a.time_bit_width != b.time_bit_width
+        || a.timezone != b.timezone || a.byte_width != b.byte_width || a.list_size != b.list_size
+        || a.union_mode != b.union_mode || a.union_type_ids != b.union_type_ids
+        || a.unsupported_type_name != b.unsupported_type_name || a.skip_layout != b.skip_layout
+        || a.children.size() != b.children.size())
+        return false;
+    for (size_t i = 0; i < a.children.size(); ++i)
+        if (!arrowFieldsEqual(a.children[i], b.children[i], /*compare_name=*/true))
+            return false;
+    return true;
+}
+}
+
 ArrowIPCBlockInputFormat::ArrowIPCBlockInputFormat(
     ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_)
     : IInputFormat(header_, &in_)
@@ -65,7 +105,23 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const std::vector<ArrowIP
             /// The dictionary batch carries the plain value column: same type, but not dictionary-encoded.
             ArrowIPC::ArrowField value_field = field;
             value_field.dictionary.reset();
-            dictionary_value_fields[field.dictionary->id] = std::move(value_field);
+            const int64_t id = field.dictionary->id;
+            auto it = dictionary_value_fields.find(id);
+            if (it == dictionary_value_fields.end())
+            {
+                dictionary_value_fields.emplace(id, std::move(value_field));
+            }
+            /// Arrow dictionary ids are global within the file/stream: reusing one is valid only when every
+            /// field describes the same dictionary value type. Reject a mismatch instead of silently
+            /// overwriting the value schema — otherwise the shared `DictionaryBatch` would be decoded with
+            /// one field's value type and materialized under another's (e.g. `Int32` values surfaced as a
+            /// `LowCardinality(Date32)` column), bypassing validation or tripping type assertions.
+            else if (!arrowFieldsEqual(it->second, value_field, /*compare_name=*/false))
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC dictionary id {} is used by fields with different value types", id);
+            }
         }
         collectDictionaryFields(field.type.children);
     }
