@@ -491,7 +491,6 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
     getContext()->checkAccess(getRequiredAccess());
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
     AlterCommands alter_commands;
 
     for (const auto & child : alter.command_list->children)
@@ -510,10 +509,14 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
+    auto ddl_guard = (!alter.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(alter.getDatabase(), "", nullptr) : nullptr);
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
+
 #if CLICKHOUSE_CLOUD
     bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(database->getEngineName());
     if (managed_by_shared_catalog && !getContext()->getClientInfo().is_shared_catalog_internal)
     {
+        ddl_guard.reset();
         return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
     }
 #endif

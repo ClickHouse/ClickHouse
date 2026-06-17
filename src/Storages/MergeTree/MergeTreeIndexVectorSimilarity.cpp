@@ -625,7 +625,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
 }
 
-MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index)
+MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     UInt64 dimensions = args[2].safeGet<UInt64>();
@@ -651,7 +651,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
     return std::make_shared<MergeTreeIndexVectorSimilarity>(std::move(metadata_snapshot), index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     const bool has_three_args = (args.size() == 3);
