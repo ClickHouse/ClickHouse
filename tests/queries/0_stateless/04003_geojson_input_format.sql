@@ -457,3 +457,56 @@ FROM format('GeoJSON', 'id String', '{
         {"type": "Feature", "id": "1", "geometry": {"type": "Point", "coordinates": [0, 0]}, "properties": {}}
     ]
 }');
+
+-- A Feature's 'properties' member must be a JSON object or null. A scalar or array value is malformed
+-- GeoJSON and is rejected even when 'properties' is not a requested output column (here only 'id' is
+-- selected, so 'properties' goes through the validation-only path).
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "geometry": null, "properties": 1}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "geometry": null, "properties": "x"}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "geometry": null, "properties": true}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "geometry": null, "properties": [1, 2]}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- The same scalar 'properties' is rejected when 'properties' IS a requested output column.
+SELECT properties
+FROM format('GeoJSON', 'id String, properties Nullable(JSON)', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "geometry": null, "properties": 1}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- An explicit JSON null 'properties' is accepted on the validation-only path ('id'-only header).
+SELECT id
+FROM format('GeoJSON', 'id String', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "geometry": null, "properties": null}
+    ]
+}');

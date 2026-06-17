@@ -222,6 +222,26 @@ void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_set
     }
 }
 
+/// A GeoJSON Feature's `properties` member must be a JSON object or `null` (RFC 7946, section 3.2).
+/// Both `skipJSONValueStrict` and the `JSON`-column deserializer would otherwise accept scalar values
+/// (numbers, strings, booleans) and arrays, so a malformed feature such as `{"properties": 1}` would be
+/// ingested. Peek at the first non-whitespace byte and reject anything that is not an object or `null`
+/// before the value is consumed, independently of whether `properties` is a requested output column.
+void assertPropertiesIsObjectOrNull(ReadBuffer & buf)
+{
+    skipWhitespaceIfAny(buf);
+    if (buf.eof())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "GeoJSON: unexpected end of input while reading the 'properties' member");
+
+    /// The only JSON values that start with `{` or `n` are an object and `null` respectively; the
+    /// strict skipper or the column deserializer validates the rest of the token afterwards.
+    const char c = *buf.position();
+    if (c != '{' && c != 'n')
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "GeoJSON: a Feature's 'properties' member must be a JSON object or null");
+}
+
 /// Iterate over every field of a JSON object (opening `{` must already be consumed).
 /// Calls handle_field(key) for each field. If handle_field returns true the value was
 /// consumed by the callback; otherwise the value is skipped automatically.
@@ -575,7 +595,7 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         /// `geometry` and `properties` are required members of every Feature, so they are validated
         /// and required even when they are not requested output columns. An unrequested `geometry` is
         /// still fully validated (without inserting); an unrequested `properties` is validated as a
-        /// well-formed JSON value by the strict skipper.
+        /// well-formed JSON object or `null` by the strict skipper.
         if (key == "geometry")
         {
             if (has_geometry)
@@ -588,6 +608,9 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         {
             if (has_properties)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'properties' field in a feature");
+            /// `properties` must be a JSON object or `null`; reject scalars and arrays regardless of
+            /// whether `properties` is a requested output column.
+            assertPropertiesIsObjectOrNull(buf);
             if (properties_col_idx.has_value())
                 SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
                     *columns[*properties_col_idx], buf, format_settings, serializations[*properties_col_idx]);
