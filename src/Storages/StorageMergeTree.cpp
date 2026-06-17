@@ -480,27 +480,33 @@ void StorageMergeTree::alter(
     {
         /// Caller-owned disk-registration scope: any inline `disk = disk(...)` setting in
         /// `new_metadata.settings_changes` is registered tentatively. The scope is committed
-        /// only after `alterTable` has succeeded; if `alterTable` throws, the scope's
+        /// only after `alterTable` has succeeded; if anything throws first, the scope's
         /// destructor rolls the new disk back. See `MergeTreeData::changeSettings` and
         /// issue #63019.
         DiskFromAST::CustomDiskRegistrationScope disk_scope(local_context);
-        changeSettings(new_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
-
-        if (statistics_changed)
-            setInMemoryMetadata(new_metadata);
 
         try
         {
+            /// `changeSettings` runs INSIDE the `try`: it mutates the live `storage_settings` and
+            /// in-memory metadata and can itself throw AFTER that mutation (its post-transition work
+            /// `startBackgroundMovesIfNeeded` / `startStatisticsCache` schedules pool tasks). The
+            /// catch below must cover that whole window, otherwise a throw from changeSettings would
+            /// skip the revert while `disk_scope`'s destructor still rolls the tentative disk back.
+            changeSettings(new_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
+
+            if (statistics_changed)
+                setInMemoryMetadata(new_metadata);
+
             /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
         }
         catch (...)
         {
-            /// `changeSettings` has already mutated the live `storage_settings` (and the in-memory
-            /// metadata when statistics changed). If the metadata write throws, restore the old
-            /// live state before `disk_scope`'s destructor rolls the freshly-registered inline disk
-            /// back, otherwise the table would keep settings resolving to a disk no longer present
-            /// in `DiskSelector`. Mirrors the full-ALTER branch below. See issue #63019.
+            /// `changeSettings` may have already mutated the live `storage_settings` (and the
+            /// in-memory metadata when statistics changed). Restore the old live state before
+            /// `disk_scope`'s destructor rolls the freshly-registered inline disk back, otherwise
+            /// the table would keep settings resolving to a disk no longer present in
+            /// `DiskSelector`. Mirrors the full-ALTER branch below. See issue #63019.
             LOG_ERROR(log, "Failed to alter table in database, reverting changes");
             if (statistics_changed)
                 setInMemoryMetadata(old_metadata);

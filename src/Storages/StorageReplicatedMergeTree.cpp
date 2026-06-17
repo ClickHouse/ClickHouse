@@ -6808,22 +6808,28 @@ void StorageReplicatedMergeTree::alter(
         /// Snapshot the live metadata before `changeSettings` mutates `storage_settings`, so the
         /// failure path can restore it before `disk_scope` rolls the new inline disk back.
         StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(query_context, false);
-        changeSettings(future_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
-
-        if (statistics_changed)
-            setInMemoryMetadata(future_metadata);
 
         try
         {
+            /// `changeSettings` runs INSIDE the `try`: it mutates the live `storage_settings` and
+            /// in-memory metadata and can itself throw AFTER that mutation (its post-transition work
+            /// `startBackgroundMovesIfNeeded` / `startStatisticsCache` schedules pool tasks). The
+            /// catch below must cover that whole window, otherwise a throw from changeSettings would
+            /// skip the revert while `disk_scope`'s destructor still rolls the tentative disk back.
+            changeSettings(future_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
+
+            if (statistics_changed)
+                setInMemoryMetadata(future_metadata);
+
             /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         }
         catch (...)
         {
-            /// `changeSettings` already installed the new disk in the live settings. If the metadata
-            /// write throws, restore the old settings (and metadata) before `disk_scope`'s destructor
-            /// removes the freshly-registered disk, otherwise the replica would keep settings pointing
-            /// at a disk no longer present in `DiskSelector`. See issue #63019.
+            /// `changeSettings` may have already installed the new disk in the live settings.
+            /// Restore the old settings (and metadata) before `disk_scope`'s destructor removes the
+            /// freshly-registered disk, otherwise the replica would keep settings pointing at a disk
+            /// no longer present in `DiskSelector`. See issue #63019.
             LOG_ERROR(log, "Failed to alter table in database, reverting changes");
             if (statistics_changed)
                 setInMemoryMetadata(old_metadata);
@@ -6860,30 +6866,36 @@ void StorageReplicatedMergeTree::alter(
         /// Snapshot the live metadata before `changeSettings` mutates `storage_settings`, so the
         /// failure path can restore it before `disk_scope` rolls the new inline disk back.
         StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(query_context, false);
-        changeSettings(future_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
-
-        /// changeSettings is the sole writer of the setting-derived escape fields and has
-        /// already mutated the live metadata; carry them into future_metadata so the comment
-        /// commit below does not revert the index filename policy (commands.apply never sets them).
-        auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
-        future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
-        for (auto & index : future_metadata.secondary_indices)
-            index.escape_filenames = committed_metadata->escape_index_filenames;
-
-        setInMemoryMetadata(future_metadata);
 
         try
         {
+            /// `changeSettings` runs INSIDE the `try`: it mutates the live `storage_settings` and
+            /// in-memory metadata and can itself throw AFTER that mutation (its post-transition work
+            /// `startBackgroundMovesIfNeeded` / `startStatisticsCache` schedules pool tasks). The
+            /// catch below must cover that whole window, otherwise a throw from changeSettings would
+            /// skip the revert while `disk_scope`'s destructor still rolls the tentative disk back.
+            changeSettings(future_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
+
+            /// changeSettings is the sole writer of the setting-derived escape fields and has
+            /// already mutated the live metadata; carry them into future_metadata so the comment
+            /// commit below does not revert the index filename policy (commands.apply never sets them).
+            auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
+            future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
+            for (auto & index : future_metadata.secondary_indices)
+                index.escape_filenames = committed_metadata->escape_index_filenames;
+
+            setInMemoryMetadata(future_metadata);
+
             /// It is safe to ignore exceptions here as only settings and comments are changed, neither of which is validated in `alterTable`
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         }
         catch (...)
         {
-            /// `changeSettings` already installed the new settings (and any inline disk) in the
-            /// live state. If the metadata write throws, restore the old settings and metadata
-            /// before `disk_scope`'s destructor removes the freshly-registered disk, otherwise the
-            /// replica would keep settings resolving to a disk no longer present in `DiskSelector`.
-            /// Mirrors the `isSettingsAlter` branch above. See issue #63019.
+            /// `changeSettings` may have already installed the new settings (and any inline disk) in
+            /// the live state. Restore the old settings and metadata before `disk_scope`'s destructor
+            /// removes the freshly-registered disk, otherwise the replica would keep settings
+            /// resolving to a disk no longer present in `DiskSelector`. Mirrors the `isSettingsAlter`
+            /// branch above. See issue #63019.
             LOG_ERROR(log, "Failed to alter table in database, reverting changes");
             setInMemoryMetadata(old_metadata);
             changeSettings(old_metadata.settings_changes, table_lock_holder);
@@ -7043,9 +7055,17 @@ void StorageReplicatedMergeTree::alter(
                 /// any inline disk registration; the scope is committed only after the ZK
                 /// `tryMulti` commit succeeds further down. The `SCOPE_EXIT` declared above
                 /// restores these live settings if a later step in the loop throws.
+                ///
+                /// Arm `live_metadata_mutated` BEFORE `changeSettings`: that call mutates the live
+                /// `storage_settings` and can itself throw AFTER the mutation (its post-transition
+                /// work `startBackgroundMovesIfNeeded` / `startStatisticsCache` schedules pool
+                /// tasks). Arming first makes the `SCOPE_EXIT` revert cover that window too;
+                /// otherwise the throw would skip the revert while `disk_scope` rolls the tentative
+                /// inline disk back. If `changeSettings` throws before mutating anything, the revert
+                /// re-applies the unchanged old settings, which is a harmless no-op.
                 metadata_copy.settings_changes = future_metadata.settings_changes;
-                changeSettings(metadata_copy.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
                 live_metadata_mutated = true;
+                changeSettings(metadata_copy.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
             }
 
             /// The comment is not replicated as of today, but we can implement it later.

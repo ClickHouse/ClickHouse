@@ -105,6 +105,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/Increment.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -332,6 +333,11 @@ namespace ServerSetting
     extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
 }
 
+namespace FailPoints
+{
+    extern const char merge_tree_change_settings_fail_after_set_metadata[];
+}
+
 namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
@@ -372,6 +378,7 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+    extern const int FAULT_INJECTED;
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -5265,6 +5272,17 @@ void MergeTreeData::changeSettings(
         /// responsible for invoking `caller_disk_scope->commit()` at that point.
         if (local_disk_scope)
             local_disk_scope->commit();
+
+        /// Simulate a throw from the post-transition work below (`startBackgroundMovesIfNeeded` /
+        /// `startStatisticsCache`, both of which create and schedule pool tasks and can throw) in
+        /// caller-owned mode. The live `storage_settings` and in-memory metadata are already
+        /// mutated at this point but `caller_disk_scope` has not been committed, so the caller must
+        /// revert the live state before the scope's destructor rolls the tentative inline disk back.
+        fiu_do_on(FailPoints::merge_tree_change_settings_fail_after_set_metadata,
+        {
+            if (caller_disk_scope)
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in changeSettings after setInMemoryMetadata");
+        });
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
