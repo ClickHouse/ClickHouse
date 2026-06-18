@@ -427,6 +427,24 @@ void StorageMergeTree::startup()
                     loadMutations(/* reloading = */ true);
                     loadDeduplicationLog();
 
+                    /// `loadMutations` / `loadDeduplicationLog` above can themselves run long — they
+                    /// list and rewrite shared metadata (mutation entries can gain `csn:` markers or
+                    /// have stale `tmp_mutation_*` entries removed; the dedup log can be rotated) —
+                    /// and the heartbeat task still cannot renew the lease while it executes this
+                    /// callback. Re-check lease freshness once more, after the mutating reloads and
+                    /// immediately before enabling writes / starting background jobs, so a takeover
+                    /// whose reloads outlasted the session timeout fails closed instead of becoming a
+                    /// stale leader. This mirrors the freshness re-check above (after the part refresh).
+                    if (!leader_election_ptr->isLeader())
+                    {
+                        if (refresh_parts_task)
+                            refresh_parts_task->activateAndSchedule();
+                        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                            "The leader lease was not renewed within the session timeout while reloading "
+                            "mutations and the deduplication log on leadership acquisition; refusing to "
+                            "enable writes as a possibly stale leader");
+                    }
+
                     /// Do NOT run `clearEmptyParts` / `clearOldTemporaryDirectories` synchronously
                     /// here: those can be long (they list and delete on shared object storage),
                     /// and the heartbeat task cannot renew the lease while it executes this
