@@ -169,8 +169,8 @@
             position: relative;
             display: grid;
             grid-template-columns: auto 1fr;
-            grid-template-rows: auto auto 1fr;
-            grid-template-areas: "terminal terminal" "menu tabbar" "menu main";
+            grid-template-rows: auto 1fr;
+            grid-template-areas: "terminal terminal" "menu main";
         }
 
         #menu
@@ -216,16 +216,17 @@
             z-index: 0; /* stacking context so children don't overlap #menu */
         }
 
-        /* Tab bar: its own grid row in the main column, so the gray/black strip spans
-           the full width without any negative-margin bleed (which behaved differently
-           across browsers under position: sticky). The left padding aligns the first
-           tab with the editor below while the strip background fills the whole row. */
+        /* Tab bar: the first child of #main, so it scrolls together with the page content
+           (not sticky). It bleeds into #main's 0.5rem padding with a negative margin so the
+           gray/black strip spans the full width. The bleed is reliable here because the
+           element is not position: sticky (which is what made it behave differently across
+           browsers before). */
         #tab-bar
         {
-            grid-area: tabbar;
             display: flex;
             align-items: flex-end;
             gap: 0.25rem;
+            margin: -0.5rem -0.5rem 0.5rem -0.5rem;
             /* Integer top padding (not e.g. 0.15rem = 2.4px): a fractional offset puts
                the tabs and the [+] button on sub-pixel boundaries where the native
                button and the div tabs rasterize their bottom border one device pixel
@@ -1059,11 +1060,11 @@
     <div id="terminal-panel">
         <div id="terminal-resizer"></div>
     </div>
-    <div id="tab-bar" hidden>
-        <div id="tabs"></div>
-        <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
-    </div>
     <div id="main">
+        <div id="tab-bar" hidden>
+            <div id="tabs"></div>
+            <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
+        </div>
         <form id="controls">
             <div id="inputs">
                 <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
