@@ -51,7 +51,11 @@ SELECT (1 IS DISTINCT FROM ALL([2, 3])) = arrayAll(_a -> 1 IS DISTINCT FROM _a, 
 -- `ILLEGAL_COLUMN`. Since `SOME` only acts as a quantifier after a comparison operator,
 -- after `LIKE` it is left as an ordinary function name, and `SOME` is not a registered
 -- function, so `'abc' LIKE SOME([...])` throws `UNKNOWN_FUNCTION` rather than becoming an
--- array quantifier. Write such queries out explicitly with `arrayExists` / `arrayAll`.
+-- array quantifier. These predicates cannot be emulated with `arrayExists` / `arrayAll`
+-- either (the lambda variable would land in `MatchImpl`'s non-constant pattern position,
+-- throwing `ILLEGAL_COLUMN`); to match one string against several patterns, use an explicit
+-- disjunction of constant patterns (`'abc' LIKE 'a%' OR 'abc' LIKE 'b%'`) or a multi-pattern
+-- search function such as `multiMatchAny` (regular expressions) or `multiSearchAny` (substrings).
 SELECT 'abc' LIKE SOME(['a%', 'b%']); -- { serverError UNKNOWN_FUNCTION }
 
 -- The lambda variable for the higher-order form must not collide with an
