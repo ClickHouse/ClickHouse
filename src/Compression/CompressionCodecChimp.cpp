@@ -451,6 +451,16 @@ void CompressionCodecChimp::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecChimp::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
+    /// A codec built without an explicit width or a column type (e.g. `clickhouse-compressor --codec
+    /// Chimp`) has no determined width and can only be used for decompression and metadata, not for
+    /// compression. Reject it here, before any width-dependent arithmetic, with the same error the
+    /// builder would have raised, so it never reaches the modulo-by-zero in `doCompressData` or the
+    /// width assertions in the header-size helpers.
+    if (data_bytes_size != 4 && data_bytes_size != 8)
+        throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+            "Chimp codec requires either a column type or an explicit width argument of 4 or 8 "
+            "(e.g. Chimp(8)); it has no default width because it only supports 4- and 8-byte values");
+
     const auto result = 2 // common header
             + data_bytes_size // max bytes skipped if source is not properly aligned.
             + getCompressedHeaderSize(data_bytes_size) // data-specific header
@@ -460,6 +470,13 @@ UInt32 CompressionCodecChimp::getMaxCompressedDataSize(UInt32 uncompressed_size)
 
 UInt32 CompressionCodecChimp::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
+    /// See `getMaxCompressedDataSize`: a codec with an undetermined width cannot compress. Guard here
+    /// too, before the `% data_bytes_size` below would be a modulo by zero.
+    if (data_bytes_size != 4 && data_bytes_size != 8)
+        throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+            "Chimp codec requires either a column type or an explicit width argument of 4 or 8 "
+            "(e.g. Chimp(8)); it has no default width because it only supports 4- and 8-byte values");
+
     UInt8 bytes_to_skip = source_size % data_bytes_size;
     dest[0] = data_bytes_size;
     dest[1] = bytes_to_skip; /// unused (backward compatibility)
@@ -529,11 +546,13 @@ void registerCodecChimp(CompressionCodecFactory & factory)
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
         /// `Chimp` only supports 4- and 8-byte payloads, so unlike `Gorilla` (which also handles 1
-        /// and 2 bytes) there is no sensible default width. Leave it unset and reject any path that
-        /// cannot determine a supported width, so that a `Chimp` codec which can neither compress nor
-        /// read back its own data can never be constructed. Without this, no-column contexts such as
-        /// `clickhouse-compressor --codec Chimp` or `TTL ... RECOMPRESS CODEC(Chimp)` would build a
-        /// `Chimp(1)` that is accepted up front and then fails later, during compression or a merge.
+        /// and 2 bytes) there is no sensible default width. When neither an explicit argument nor a
+        /// column type determines it, leave `data_bytes_size` as 0 (undetermined). Such an instance
+        /// cannot compress and is rejected at compression time, but it must still be constructible:
+        /// the no-argument, no-column path is required for method-byte decoding
+        /// (`CompressionCodecFactory::get(uint8_t)` builds the codec as `second({}, nullptr)`) and
+        /// for codec metadata (`system.codecs` via `fillCodecDescriptions`). In these contexts the
+        /// width is irrelevant, because decompression reads it back from the data header.
         UInt8 data_bytes_size = 0;
         if (arguments && !arguments->children.empty())
         {
@@ -554,10 +573,6 @@ void registerCodecChimp(CompressionCodecFactory & factory)
         {
             data_bytes_size = getDataBytesSize(column_type);
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
-                "Chimp codec requires either a column type or an explicit width argument of 4 or 8 "
-                "(e.g. Chimp(8)); it has no default width because it only supports 4- and 8-byte values");
 
         return std::make_shared<CompressionCodecChimp>(data_bytes_size);
     };
