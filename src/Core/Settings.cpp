@@ -8650,6 +8650,9 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = SettingsTraits::resolveName(change.name);
 
+            if (getTier(final_name) == SettingsTierType::OBSOLETE)
+                continue;
+
             /// If this setting was changed manually, we don't change it
             if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
                 continue;
