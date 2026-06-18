@@ -1038,6 +1038,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         file_iterator->releaseFinishedBuckets();
         max_files_override = 0;
         total_rows += rows;
+
+        if (stream_control.isBlocked())
+            break;
     }
 
     LOG_TEST(log, "Processed rows: {}", total_rows);

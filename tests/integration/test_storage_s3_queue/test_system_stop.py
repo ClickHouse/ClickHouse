@@ -64,6 +64,58 @@ def assert_dst_count_stable(node, table, expected, seconds=5):
         time.sleep(1)
 
 
+def wait_count_stabilizes(node, table, checks=8, interval=0.5, timeout=60):
+    """Poll `SELECT count()` until it stays unchanged for `checks` consecutive reads, then return it.
+    A still-draining consumer keeps the value moving, so this returns only once processing has
+    actually settled — whether that is after a single batch (fix) or after the whole backlog (bug)."""
+    deadline = time.time() + timeout
+    last = -1
+    stable = 0
+    while time.time() < deadline:
+        cur = int(node.query(f"SELECT count() FROM {table}_dst"))
+        if cur == last:
+            stable += 1
+            if stable >= checks:
+                return cur
+        else:
+            stable = 1
+            last = cur
+        time.sleep(interval)
+    return last
+
+
+def setup_slow_consuming_table(started_cluster, node, table, engine_name="S3Queue"):
+    """One file per commit + a single thread + a materialized view that sleeps per row, so the
+    consumer drains a backlog one durable boundary (one committed file) at a time, and slowly enough
+    that a SYSTEM command can land between two batch commits. The durable boundary for S3Queue is a
+    file being marked Processed in Keeper."""
+    files_path = f"{table}_data"
+    create_table(
+        started_cluster,
+        node,
+        table,
+        "unordered",
+        files_path,
+        engine_name=engine_name,
+        additional_settings={
+            "max_processed_files_before_commit": 1,
+            "processing_threads_num": 1,
+        },
+    )
+    node.query(f"DROP TABLE IF EXISTS {table}_dst")
+    node.query(
+        f"CREATE TABLE {table}_dst (column1 UInt32, column2 UInt32, column3 UInt32) "
+        f"ENGINE = MergeTree ORDER BY column1"
+    )
+    # `sleepEachRow(0.1)` * 10 rows/file = ~1s per committed file (under the per-block sleep limit),
+    # which stretches the drain out in time so a command can land mid-drain.
+    node.query(
+        f"CREATE MATERIALIZED VIEW {table}_mv TO {table}_dst AS "
+        f"SELECT column1, column2, column3 FROM {table} WHERE sleepEachRow(0.1) = 0"
+    )
+    return files_path
+
+
 def test_system_stop_start_consuming(started_cluster):
     node = started_cluster.instances["instance"]
     table = f"s3queue_stop_{generate_random_string()}"
@@ -359,3 +411,95 @@ def test_system_stop_requires_grant(started_cluster):
         node.query(f"SYSTEM {verb} {table}", user=user)
 
     node.query(f"DROP USER {user}")
+
+
+def test_pause_stops_after_current_batch(started_cluster):
+    # A single `streamToViews()` call drains the file iterator one batch at a time, committing each
+    # batch (its durable boundary). PAUSE blocks future cycles but lets the in-flight one finish, so a
+    # PAUSE arriving mid-drain must stop processing at the *next* durable boundary — not let the call
+    # run on through every remaining batch. Before the fix the inner loop only watched the cancel epoch
+    # (which PAUSE does not advance), so a mid-drain PAUSE was ignored and the whole backlog drained.
+    node = started_cluster.instances["instance"]
+    table = f"s3queue_pausebatch_{generate_random_string()}"
+    files_path = setup_slow_consuming_table(started_cluster, node, table)
+
+    n_files = 10
+    # Pre-load the whole backlog while stopped, then START so a single `streamToViews()` call opens
+    # over all the files and drains them slowly, one committed file at a time.
+    node.query(f"SYSTEM STOP {table}")
+    generate_random_files(started_cluster, files_path, count=n_files, start_ind=0)
+    node.query(f"SYSTEM START {table}")
+
+    # Wait until the drain is demonstrably in progress (a couple of files committed), then PAUSE
+    # mid-drain with most of the backlog still pending.
+    wait_dst_count(node, table, 2 * ROWS_PER_FILE)
+    node.query(f"SYSTEM PAUSE {table}")
+
+    # The in-flight batch reaches its durable boundary and consumption stops: the count settles well
+    # below the full backlog instead of draining every remaining file.
+    settled = wait_count_stabilizes(node, table)
+    assert 0 < settled < n_files * ROWS_PER_FILE, (
+        f"PAUSE should stop after the current batch's durable boundary, but "
+        f"{settled // ROWS_PER_FILE}/{n_files} files were processed"
+    )
+
+    # The files left pending are genuinely unprocessed: START drains the rest.
+    node.query(f"SYSTEM START {table}")
+    wait_dst_count(node, table, n_files * ROWS_PER_FILE)
+
+
+def test_refresh_while_stopped_processes_exactly_one_batch(started_cluster):
+    # REFRESH grants exactly one out-of-order cycle even while stopped. For S3Queue a cycle's durable
+    # boundary is one committed batch (`max_processed_files_before_commit` files); here that is one
+    # file. Before the fix a single REFRESH drained the whole backlog, because the inner loop only
+    # watched the cancel epoch and REFRESH does not advance it. With the fix one REFRESH processes
+    # exactly one batch and then re-blocks.
+    node = started_cluster.instances["instance"]
+    table = f"s3queue_refreshonebatch_{generate_random_string()}"
+    files_path = setup_slow_consuming_table(started_cluster, node, table)
+
+    node.query(f"SYSTEM STOP {table}")
+    generate_random_files(started_cluster, files_path, count=5, start_ind=0)
+
+    # One REFRESH -> exactly one file processed; the remaining four stay pending while stopped.
+    node.query(f"SYSTEM REFRESH {table}")
+    wait_dst_count(node, table, 1 * ROWS_PER_FILE)
+    assert_dst_count_stable(node, table, 1 * ROWS_PER_FILE, seconds=6)
+
+    # A second REFRESH -> exactly one more file.
+    node.query(f"SYSTEM REFRESH {table}")
+    wait_dst_count(node, table, 2 * ROWS_PER_FILE)
+    assert_dst_count_stable(node, table, 2 * ROWS_PER_FILE, seconds=6)
+
+    # START resumes continuous polling and drains the rest.
+    node.query(f"SYSTEM START {table}")
+    wait_dst_count(node, table, 5 * ROWS_PER_FILE)
+
+
+def test_azure_queue_pause_stops_after_current_batch(started_cluster):
+    # `AzureQueue` and `S3Queue` share the same `StorageObjectStorageQueue` streaming loop, so the
+    # PAUSE-between-batches fix covers both; this drives the same scenario through `AzureQueue`.
+    node = started_cluster.instances["instance"]
+    table = f"azurequeue_pausebatch_{generate_random_string()}"
+    files_path = setup_slow_consuming_table(
+        started_cluster, node, table, engine_name="AzureQueue"
+    )
+
+    n_files = 10
+    node.query(f"SYSTEM STOP {table}")
+    generate_random_files(
+        started_cluster, files_path, count=n_files, start_ind=0, storage="azure"
+    )
+    node.query(f"SYSTEM START {table}")
+
+    wait_dst_count(node, table, 2 * ROWS_PER_FILE)
+    node.query(f"SYSTEM PAUSE {table}")
+
+    settled = wait_count_stabilizes(node, table)
+    assert 0 < settled < n_files * ROWS_PER_FILE, (
+        f"PAUSE should stop after the current batch's durable boundary, but "
+        f"{settled // ROWS_PER_FILE}/{n_files} files were processed"
+    )
+
+    node.query(f"SYSTEM START {table}")
+    wait_dst_count(node, table, n_files * ROWS_PER_FILE)
