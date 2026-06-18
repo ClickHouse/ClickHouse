@@ -1104,7 +1104,11 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
+void RestCatalog::sendRequest(
+    const String & endpoint,
+    Poco::JSON::Object::Ptr request_body,
+    const String & method,
+    bool ignore_result) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1164,6 +1168,16 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     try
     {
         sendRequest(endpoint, request_body);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_CONFLICT)
+        {
+            LOG_TRACE(log, "Namespace '{}' already exists", namespace_name);
+            return;
+        }
+
+        DB::tryLogCurrentException(log);
     }
     catch (...)
     {
