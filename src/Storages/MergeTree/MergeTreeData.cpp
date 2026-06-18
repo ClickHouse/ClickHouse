@@ -5720,7 +5720,7 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
     chassert(!(!need_rename && rename_in_transaction));
 
     if (need_rename && !rename_in_transaction)
-        part->renameTo(part->name, true);
+        part->renameTo(part->name, true, /*out_directory_was_moved=*/ nullptr);
 
     LOG_TEST(log, "preparePartForCommit: inserting {} into data_parts_indexes", part->getNameWithState());
     data_parts_indexes.insert(part);
@@ -9051,7 +9051,7 @@ void MergeTreeData::Transaction::renameParts()
     for (const auto & part_need_rename : precommitted_parts_need_rename)
     {
         LOG_TEST(data.log, "Renaming part to {}", part_need_rename->name);
-        part_need_rename->renameTo(part_need_rename->name, true);
+        part_need_rename->renameTo(part_need_rename->name, true, /*out_directory_was_moved=*/ nullptr);
     }
     precommitted_parts_need_rename.clear();
 }

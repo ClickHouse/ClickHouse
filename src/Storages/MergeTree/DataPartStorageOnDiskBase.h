@@ -94,7 +94,7 @@ public:
         LoggerPtr log,
         bool remove_new_dir_if_exists,
         bool fsync_part_dir,
-        bool * out_directory_was_moved = nullptr) override;
+        bool * out_directory_was_moved) override;
 
     void remove(
         CanRemoveCallback && can_remove_callback,
@@ -102,7 +102,7 @@ public:
         std::list<ProjectionChecksums> projections,
         bool is_temp,
         LoggerPtr log,
-        bool * out_directory_was_moved = nullptr) override;
+        bool * out_directory_was_moved) override;
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
     void createDirectories() override;

@@ -462,7 +462,7 @@ public:
     /// If out_directory_was_moved is set, it is assigned true once the directory has actually been moved,
     /// so a caller can distinguish a retryable failure from the pre-move checks (original path intact) from
     /// one after the move started (original path gone).
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, bool * out_directory_was_moved = nullptr);
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, bool * out_directory_was_moved);
 
     /// Makes clone of a part in detached/ directory via hard links
     virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,

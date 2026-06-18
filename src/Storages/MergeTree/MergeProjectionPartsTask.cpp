@@ -60,7 +60,7 @@ bool MergeProjectionPartsTask::executeStep()
         if (next_level_parts.empty())
         {
             LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
-            selected_parts[0]->renameTo(projection.name + ".proj", true);
+            selected_parts[0]->renameTo(projection.name + ".proj", true, /*out_directory_was_moved=*/ nullptr);
             selected_parts[0]->setName(projection.name);
             selected_parts[0]->is_temp = false;
             selected_parts[0]->temp_projection_block_number.reset();

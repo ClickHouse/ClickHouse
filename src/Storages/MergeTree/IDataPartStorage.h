@@ -179,7 +179,7 @@ public:
         std::list<ProjectionChecksums> projections,
         bool is_temp,
         LoggerPtr log,
-        bool * out_directory_was_moved = nullptr) = 0;
+        bool * out_directory_was_moved) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
@@ -353,7 +353,7 @@ public:
         LoggerPtr log,
         bool remove_new_dir_if_exists,
         bool fsync_part_dir,
-        bool * out_directory_was_moved = nullptr) = 0;
+        bool * out_directory_was_moved) = 0;
 
     /// Starts a transaction of mutable operations.
     virtual void beginTransaction() = 0;
