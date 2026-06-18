@@ -237,17 +237,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
         ),
     )
-    smoke_tests_macos = Job.Config(
-        name=JobNames.SMOKE_TEST_MACOS,
-        runs_on=RunnerLabels.MACOS_AMD_SMALL,
-        command="python3 ./ci/jobs/smoke_test.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/smoke_test.py",
-            ],
-        ),
-        requires=[ArtifactNames.CH_AMD_DARWIN_BIN],
-    )
     tidy_build_arm_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.ARM_TIDY,
@@ -602,11 +591,15 @@ class JobConfigs:
             for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
-        Job.ParamSet(
-            parameter="amd_asan_ubsan, db disk, distributed plan, sequential",
-            runs_on=RunnerLabels.AMD_SMALL_MEM,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_asan_ubsan, db disk, distributed plan, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_SMALL_MEM,
+                requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
         Job.ParamSet(
             parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
