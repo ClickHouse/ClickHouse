@@ -398,7 +398,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 | `output_format_arrow_string_as_string`                                                                                   | Use Arrow String type instead of Binary for String columns                                         | `1`          |
 | `output_format_arrow_use_64_bit_indexes_for_dictionary`                                                                  | Always use 64 bit integers for dictionary indexes in Arrow format                                  | `0`          |
 | `output_format_arrow_use_signed_indexes_for_dictionary`                                                                  | Use signed integers for dictionary indexes in Arrow format                                         | `1`          |
-| `output_format_arrow_row_group_size`                                                                                     | Target record batch size in rows in Arrow and format                                               | `1000000`    |
+| `output_format_arrow_row_group_size`                                                                                     | Target record batch size in rows for Arrow and ArrowStream formats                                 | `1000000`    |
 )DOCS_MD"});
 
     factory.setDocumentation("ArrowStream", Documentation{
