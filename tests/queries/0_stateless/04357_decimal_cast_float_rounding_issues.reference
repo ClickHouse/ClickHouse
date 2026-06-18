@@ -1,0 +1,18 @@
+16.4
+Row 1:
+──────
+a: 64.32
+b: 64.32
+c: 64.32
+d: 64.32
+e: 64.32
+f: 64.32
+Row 1:
+──────
+json_value:              16.4
+json_extract:            16.4
+dynamic_type:            16.4
+direct_cast_to_dec:      16.4
+direct_to_dec:           16.4
+indirect_via_str_to_dec: 16.4
+json_extract_from_jdt:   16.4
