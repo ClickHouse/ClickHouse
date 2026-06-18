@@ -37,7 +37,7 @@ INSERT INTO t_vert_packed SELECT number,         number * 7,  number * 11 FROM n
 INSERT INTO t_vert_packed SELECT number + 10000, number * 13, number * 17 FROM numbers(10000);
 
 OPTIMIZE TABLE t_vert_packed FINAL;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 -- The merge actually used the vertical algorithm (otherwise the borrowed-writer path is untested).
 SELECT 'merge_algorithm', merge_algorithm FROM system.part_log
