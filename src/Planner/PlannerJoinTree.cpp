@@ -31,6 +31,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -1574,6 +1575,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         planner.buildQueryPlanIfNeeded();
 
         auto expected_header = planner.getQueryPlan().getCurrentHeader();
+
+        if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *expected_header))
+        {
+            /// If the shard deduplicated structurally-identical projection/sort/group expressions (e.g. several ALIAS
+            /// columns expanding to the same expression), its header has fewer columns than the initiator expects.
+            /// Reconstruct the missing columns by fanning out the deduplicated shard columns before the positional
+            /// reconciliation below (which only handles renames, not different column counts).
+            if (auto fan_out_actions_dag = buildShardCollapseFanOut(
+                    select_query_info.query_tree,
+                    select_query_info.planner_context,
+                    *query_plan.getCurrentHeader(),
+                    *expected_header))
+            {
+                auto fan_out_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(*fan_out_actions_dag));
+                fan_out_step->setStepDescription("Reconstruct deduplicated duplicate-ALIAS columns");
+                query_plan.addStep(std::move(fan_out_step));
+            }
+        }
 
         if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *expected_header))
         {
