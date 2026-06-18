@@ -9974,6 +9974,14 @@ bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assigne
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
+    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
+    /// must not waste background CPU and I/O moving parts between volumes/disks, neither because of the
+    /// storage policy `move_factor` nor because of `TTL ... TO DISK/VOLUME` rules. Explicit
+    /// `ALTER TABLE ... MOVE` commands are rejected separately by `assertNotReadonly`; this only suppresses
+    /// the automatic background moves.
+    if ((*getSettings())[MergeTreeSetting::table_readonly])
+        return false;
+
     if (parts_mover.moves_blocker.isCancelled())
         return false;
 
