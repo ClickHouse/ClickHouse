@@ -3,8 +3,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTCreateRewriteRuleQuery.h>
+#include <Parsers/ASTAlterRewriteRuleQuery.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
+#include <functional>
 #include <queue>
 #include <unordered_map>
 #include <Interpreters/Context.h>
@@ -25,6 +28,7 @@ namespace ErrorCodes
     extern const int REWRITE_RULE_REJECTION;
     extern const int REWRITE_RULE_DUPLICATED_QUERY_PARAMETER;
     extern const int REWRITE_RULE_UNKNOWN_QUERY_PARAMETER;
+    extern const int REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE;
 }
 
 bool astTraversal(ASTPtr &ast, ContextPtr context)
@@ -222,7 +226,7 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
 void checkRewriteRuleTemplateLimits(const ASTPtr & source_query, const ASTPtr & resulting_query, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    auto check = [&](const ASTPtr & ast)
+    std::function<void(const ASTPtr &)> check = [&](const ASTPtr & ast)
     {
         if (!ast)
             return;
@@ -230,6 +234,23 @@ void checkRewriteRuleTemplateLimits(const ASTPtr & source_query, const ASTPtr & 
             ast->checkDepth(settings[Setting::max_ast_depth]);
         if (settings[Setting::max_ast_elements])
             ast->checkSize(settings[Setting::max_ast_elements]);
+
+        /// A template can itself be a `CREATE RULE` / `ALTER RULE` whose own source and
+        /// result templates are stored outside `IAST::children`, so the `checkDepth` /
+        /// `checkSize` walk above never reaches them. Descend into nested rule DDL
+        /// templates explicitly, otherwise an oversized or very deep inner template
+        /// (e.g. `CREATE RULE outer AS (CREATE RULE inner AS (SELECT <huge>) REWRITE TO
+        /// (SELECT 1)) REWRITE TO (SELECT 1)`) would bypass the limits and be persisted.
+        if (const auto * create_rule = ast->as<ASTCreateRewriteRuleQuery>())
+        {
+            check(create_rule->source_query);
+            check(create_rule->resulting_query);
+        }
+        else if (const auto * alter_rule = ast->as<ASTAlterRewriteRuleQuery>())
+        {
+            check(alter_rule->source_query);
+            check(alter_rule->resulting_query);
+        }
     };
     check(source_query);
     check(resulting_query);
@@ -248,32 +269,65 @@ void applyRule(ASTPtr &ast, RewriteRuleObjectPtr rule, std::unordered_map<String
         {
             auto top = queue.front();
             queue.pop();
-            for (auto& child : top->children)
+
+            /// Whether substituting an `ExpressionList` capture here means splicing its
+            /// items into this node's child list (projection lists, function-argument
+            /// lists) rather than inserting the captured list as a single child.
+            const bool parent_is_list = top->as<ASTExpressionList>() != nullptr;
+
+            ASTs new_children;
+            new_children.reserve(top->children.size());
+            for (auto & child : top->children)
             {
-                if (auto* query_parameter = child->as<ASTQueryParameter>();
-                    query_parameter)
+                auto * query_parameter = child->as<ASTQueryParameter>();
+                if (!query_parameter)
                 {
-                    if (auto it = matching_map.find(query_parameter->name);
-                        it != matching_map.end())
-                    {
-                        /// Clone instead of moving so the same parameter
-                        /// can be substituted in multiple positions of the
-                        /// resulting query template.
-                        child = it->second->clone();
-                    } else
-                    {
+                    /// Not a placeholder: keep the node and descend into it so that
+                    /// placeholders nested deeper are substituted too.
+                    queue.push(child);
+                    new_children.push_back(child);
+                    continue;
+                }
+
+                auto it = matching_map.find(query_parameter->name);
+                if (it == matching_map.end())
+                {
+                    throw Exception(
+                        ErrorCodes::REWRITE_RULE_UNKNOWN_QUERY_PARAMETER,
+                        "Resulting rewrite rule template contains unknown query parameter: {}\n",
+                        query_parameter->name
+                    );
+                }
+
+                /// Clone instead of moving so the same parameter can be substituted in
+                /// multiple positions of the resulting query template.
+                ASTPtr captured = it->second->clone();
+
+                if (auto * captured_list = captured->as<ASTExpressionList>())
+                {
+                    /// An `ExpressionList` capture holds the matched `ASTExpressionList`.
+                    /// Inside another `ASTExpressionList` its items must be spliced into
+                    /// the parent list, not nested as one child — otherwise the analyzer
+                    /// builds a single projection entry from the whole captured list (so
+                    /// `SELECT {l:ExpressionList}, 3` over `SELECT 1, 2` would yield
+                    /// `[ASTExpressionList(1, 2), 3]` rather than `[1, 2, 3]`).
+                    if (!parent_is_list)
                         throw Exception(
-                            ErrorCodes::REWRITE_RULE_UNKNOWN_QUERY_PARAMETER,
-                            "Resulting rewrite rule template contains unknown query parameter: {}\n",
+                            ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
+                            "Resulting rewrite rule template substitutes the ExpressionList query "
+                            "parameter `{}` where a single expression is expected\n",
                             query_parameter->name
                         );
-                    }
+
+                    for (auto & item : captured_list->children)
+                        new_children.push_back(item);
                 }
                 else
                 {
-                    queue.push(child);
+                    new_children.push_back(std::move(captured));
                 }
             }
+            top->children = std::move(new_children);
         }
         ast = std::move(resulting_query);
     } else if (query_rule.reject())
