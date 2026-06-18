@@ -2495,6 +2495,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 #endif
     }
 
+    /// `client_info` is what the upstream sent us about itself; the parallel-replicas protocol
+    /// version, however, is negotiated at hello time per-connection — not over the wire as part of
+    /// `ClientInfo`. Stamp it locally so downstream code (e.g. `ReadFromMergeTree`) can recognise
+    /// when the upstream is too old to speak features added in newer protocol versions and degrade
+    /// gracefully instead of triggering rolling-upgrade incompatibilities.
+    client_info.connection_parallel_replicas_protocol_version = client_parallel_replicas_protocol_version;
+
     state->query_context = session->makeQueryContext(client_info);
 
     /// Sets the default database if it wasn't set earlier for the session context.

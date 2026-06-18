@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Names.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
@@ -3023,6 +3024,19 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
 {
+    /// Split topology requires both sides to speak the announcement-response protocol so the
+    /// follower can ask the initiator "which parts does this `#split_i` stream own?". An older
+    /// initiator (parallel-replicas protocol < `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE`)
+    /// has no concept of `#split_i` streams — it either errors out on the extra announcements
+    /// (e.g. 25.x raises "more initial requests than there are replicas") or silently registers
+    /// each split as its own full-table stream and the follower amplifies reads `~num_streams`×.
+    /// In either case, fall through to the legacy single-pool branch in
+    /// `spreadMarkRangesAmongStreamsWithOrder`, which speaks the same shape of announcement
+    /// that all parallel-replicas-aware servers understand.
+    const auto upstream_pr_version = context->getClientInfo().connection_parallel_replicas_protocol_version;
+    if (upstream_pr_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+        return false;
+
     return is_parallel_reading_from_replicas
         && ClusterProxy::canUseLocalPlanForParallelReplicas(context)
         && context->canUseParallelReplicasOnFollower();

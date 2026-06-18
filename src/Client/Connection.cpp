@@ -1660,12 +1660,19 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    return ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
+    auto request = ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
+    /// `server_*` here is the FOLLOWER as seen from the initiator (we are the client of that
+    /// connection). Stash it on the request so the coordinator can recognise old followers and
+    /// degrade gracefully (instead of throwing on an unknown stream).
+    request.replica_protocol_version = server_parallel_replicas_protocol_version;
+    return request;
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
-    return InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
+    auto announcement = InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
+    announcement.replica_protocol_version = server_parallel_replicas_protocol_version;
+    return announcement;
 }
 
 
