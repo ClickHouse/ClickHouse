@@ -83,7 +83,7 @@ CLOUD = CloudInfrastructure.Config(
             tenancy="host",
             praktika_resource_tag="mac_m2_pro",
             runner_labels=MACOS_ARM_SMALL_RUNNER_LABELS,
-            quantity=4,
+            quantity=6,
         ),
     ]
 )
