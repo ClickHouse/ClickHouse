@@ -667,6 +667,26 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     if (!is_active.empty() && is_active.size() != shard.getAllNodeCount())
         is_active.clear(); /// Liveness does not match the cluster definition; fall back to using all replicas.
 
+    if (!is_active.empty())
+    {
+        /// The local replica is the initiator - it is running this query, so it is online by definition even
+        /// if its `active` znode is transiently missing. Force it active so liveness never filters it out;
+        /// otherwise `findLocalReplicaIndexAndUpdatePools` below would fail with INCONSISTENT_CLUSTER_DEFINITION
+        /// and a query that used to run would start erroring. Match the same way that function identifies it.
+        const auto & addresses = cluster->getShardsAddresses().at(0);
+        for (size_t i = 0; i < is_active.size() && i < addresses.size(); ++i)
+        {
+            const auto & address = addresses[i];
+            const bool is_local_replica = std::any_of(
+                shard.local_addresses.begin(),
+                shard.local_addresses.end(),
+                [&](const Cluster::Address & local_addr)
+                { return local_addr.host_name == address.host_name && local_addr.port == address.port; });
+            if (is_local_replica)
+                is_active[i] = true;
+        }
+    }
+
     size_t available_replicas = shard.getAllNodeCount();
     if (!is_active.empty())
     {
