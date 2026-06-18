@@ -692,7 +692,7 @@ Let's examine the output. First let's look at the header.
 
 ```txt
    Query summary:
-     Time:        <total> (planning <planning> · execution <execute>)
+     Time:        <total> (planning <planning> · execution <execution>)
      Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
      Peak memory: <peak>
 ```
