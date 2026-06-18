@@ -347,6 +347,7 @@ void HedgedConnectionsFactory::stopChoosingReplicas()
     for (auto & [fd, index] : fd_to_replica_index)
     {
         --replicas_in_process_count;
+        ++cancelled_count;
         epoll.remove(fd);
         replicas[index].connection_establisher->cancel();
     }
