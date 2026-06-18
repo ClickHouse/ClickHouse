@@ -37,6 +37,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
@@ -834,7 +835,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 plan.optimize(optimization_settings);
             }
 
-            PrettyNames precomputed_pretty_names = QueryPlanFormat::buildPrettyNames(plan);
+            PrettyNames precomputed_pretty_names;
+
+            if (settings.query_plan_options.pretty)
+                precomputed_pretty_names = QueryPlanFormat::buildPrettyNames(plan);
 
             if (settings.json)
             {
@@ -1065,7 +1069,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 const auto * proc_ptr = processor.get();
                 if (dynamic_cast<const RemoteSource *>(proc_ptr)
                     || dynamic_cast<const RemoteTotalsSource *>(proc_ptr)
-                    || dynamic_cast<const RemoteExtremesSource *>(proc_ptr))
+                    || dynamic_cast<const RemoteExtremesSource *>(proc_ptr)
+                    || dynamic_cast<const DelayedSource *>(proc_ptr))
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
             }
