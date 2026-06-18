@@ -348,6 +348,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     if (!found)
         return false;
 
+    if (res->type == Type::UNKNOWN || res->type == Type::END)
+        return false;
+
 
     switch (res->type)
     {

@@ -51,6 +51,12 @@ SYSTEM PAUSE ALL BACKGROUND ON CLUSTER c; -- { clientError SYNTAX_ERROR }
 SYSTEM CANCEL ALL BACKGROUND ON CLUSTER c; -- { clientError SYNTAX_ERROR }
 SYSTEM REFRESH ALL BACKGROUND ON CLUSTER c; -- { clientError SYNTAX_ERROR }
 
+SELECT '--- sentinel enum values (UNKNOWN/END) are not commands and must be rejected ---';
+EXPLAIN AST SYSTEM UNKNOWN; -- { clientError SYNTAX_ERROR }
+EXPLAIN AST SYSTEM END; -- { clientError SYNTAX_ERROR }
+EXPLAIN SYNTAX SYSTEM UNKNOWN; -- { clientError SYNTAX_ERROR }
+EXPLAIN SYNTAX SYSTEM END; -- { clientError SYNTAX_ERROR }
+
 SELECT '--- only tables with controllable background activity are accepted ---';
 create table mt (x Int64) engine MergeTree order by x;
 system stop mt;    -- { serverError BAD_ARGUMENTS }

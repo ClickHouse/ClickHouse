@@ -30,4 +30,5 @@ SYSTEM PAUSE VIEWS
 SYSTEM STOP db.background
 SYSTEM STOP `all`
 --- ON CLUSTER is not supported (matches the SYSTEM ... VIEW aliases) ---
+--- sentinel enum values (UNKNOWN/END) are not commands and must be rejected ---
 --- only tables with controllable background activity are accepted ---
