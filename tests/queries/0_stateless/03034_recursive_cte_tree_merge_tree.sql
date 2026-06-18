@@ -159,7 +159,7 @@ SELECT * FROM
         SELECT * FROM x)
       )
   SELECT * FROM q LIMIT 24
-) ORDER BY id, parent_department, name;
+) ORDER BY id, parent_department, name SETTINGS max_threads = 1;
 
 SELECT * FROM
 (
@@ -174,6 +174,6 @@ SELECT * FROM
         SELECT * FROM x)
       )
   SELECT * FROM q LIMIT 32
-) ORDER BY id, parent_department, name;
+) ORDER BY id, parent_department, name SETTINGS max_threads = 1;
 
 -- { echoOff }
