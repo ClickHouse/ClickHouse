@@ -124,6 +124,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
+    extern const ServerSettingsBool interserver_tables_status_require_auth;
     extern const ServerSettingsBool process_query_plan_packet;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
@@ -1561,9 +1562,54 @@ void TCPHandler::processTablesStatusRequest()
     ContextPtr context_to_resolve_table_names;
     if (is_interserver_mode)
     {
+        /// `TablesStatusRequest` is sent during connection establishment, before any
+        /// query authenticates the connection with the cluster secret. Authenticate the
+        /// request itself, otherwise an unauthenticated peer could read table existence,
+        /// readonly and replication-delay status from the interserver port.
+#if USE_SSL
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
+        {
+            std::string received_hash;
+            readStringBinary(received_hash, *in, 32);
+
+            String cluster_secret;
+            try
+            {
+                cluster_secret = server.context()->getCluster(cluster)->getSecret();
+            }
+            catch (const Exception & e)
+            {
+                throw Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
+            }
+
+            if (salt.empty() || cluster_secret.empty())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Interserver authentication failed for TablesStatusRequest (no salt/cluster secret)");
+
+            /// Mirrors the per-query secret hash, reusing the salt/nonce from the Hello.
+            std::string data(salt);
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
+            data += cluster_secret;
+            data += "TablesStatusRequest";
+
+            if (encodeSHA256(data) != received_hash)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Interserver authentication failed for TablesStatusRequest");
+        }
+        else if (server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth]
+                 && !is_interserver_authenticated)
+        {
+            /// Older client that sends no hash: rejected only when the operator has opted
+            /// in (after the whole cluster is upgraded), to avoid breaking rolling upgrades.
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "TablesStatusRequest requires interserver authentication");
+        }
+#else
         if (!is_interserver_authenticated)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                 "TablesStatusRequest requires interserver authentication");
+#endif
 
         /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,

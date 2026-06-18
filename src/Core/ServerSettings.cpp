@@ -1433,6 +1433,14 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path>
     ```
     )", 0) \
+    DECLARE(Bool, interserver_tables_status_require_auth, false, R"(
+    Require interserver `TablesStatusRequest` to be authenticated with the cluster
+    `<secret>`. Clients new enough to send a secret hash (protocol revision
+    `DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS`) are always validated; this
+    setting additionally rejects older clients that send no hash. Default is `false` to
+    keep rolling upgrades working; set to `true` once the whole cluster is upgraded to
+    close the unauthenticated table-status disclosure entirely.
+    )", 0) \
     DECLARE(String, interserver_http_host, "", R"(
     The hostname that can be used by other servers to access this server.
 
