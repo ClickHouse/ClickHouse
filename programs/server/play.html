@@ -233,6 +233,14 @@
             z-index: 1;
         }
 
+        /* The `display: flex` above (id specificity) overrides the user-agent
+           `[hidden] { display: none }` rule, so restore hiding explicitly with a
+           selector that wins on specificity. */
+        #tab-bar[hidden]
+        {
+            display: none;
+        }
+
         [data-theme="dark"] #tab-bar
         {
             background: #000; /* pure black strip */
