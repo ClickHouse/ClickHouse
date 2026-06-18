@@ -44,6 +44,11 @@ class _Environment(MetaClasses.Serializable):
     TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_JOB_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     JOB_KV_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    # Keys present in JOB_KV_DATA when the job started, i.e. inherited from the
+    # initial (config) job. Used in Runner._post_run to emit only the KV data a
+    # job itself added as the job's `data` output, instead of re-emitting the
+    # whole inherited bucket into every job's output (toJson(needs)).
+    JOB_KV_DATA_BASE_KEYS: List[str] = dataclasses.field(default_factory=list)
     COMMIT_AUTHORS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_CONFIG: Optional[Dict[str, Any]] = None
     name = "environment"

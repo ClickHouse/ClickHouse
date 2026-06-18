@@ -296,8 +296,13 @@ StorageEmbeddedRocksDB::~StorageEmbeddedRocksDB() = default;
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     std::lock_guard lock(rocksdb_ptr_mx);
-    rocksdb_ptr->Close();
-    rocksdb_ptr = nullptr;
+    /// rocksdb_ptr may already be null if a previous truncate() emptied the directory and
+    /// the following initDB() threw (e.g. a read_only table whose data was wiped).
+    if (rocksdb_ptr)
+    {
+        rocksdb_ptr->Close();
+        rocksdb_ptr = nullptr;
+    }
 
     (void)fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
@@ -415,8 +420,13 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 void StorageEmbeddedRocksDB::drop()
 {
     std::lock_guard lock(rocksdb_ptr_mx);
-    rocksdb_ptr->Close();
-    rocksdb_ptr = nullptr;
+    /// rocksdb_ptr may be null if the handle was never opened or was released by a failed
+    /// truncate(); dropping such a table must not dereference it.
+    if (rocksdb_ptr)
+    {
+        rocksdb_ptr->Close();
+        rocksdb_ptr = nullptr;
+    }
 }
 
 bool StorageEmbeddedRocksDB::optimize(
@@ -1287,8 +1297,18 @@ ORDER BY key ASC
 void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
 {
     for (const auto & command : commands)
+    {
         if (!command.isCommentAlter() && !command.isSettingsAlter())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+
+        /// Validate setting values before `IStorage::alter` persists the metadata file,
+        /// otherwise an invalid value blocks attach on the next restart. See issue #88443.
+        if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            for (const auto & change : command.settings_changes)
+                RocksDBSettings::checkCanSet(change.name, change.value);
+        }
+    }
 }
 
 }

@@ -7256,6 +7256,12 @@ void Context::setInitialUserName(const String & initial_user_name)
     need_recalculate_access = true;
 }
 
+void Context::setAuthenticatedUserName(const String & authenticated_user_name)
+{
+    client_info.authenticated_user = authenticated_user_name;
+    need_recalculate_access = true;
+}
+
 void Context::setInitialAddress(const Poco::Net::SocketAddress & initial_address)
 {
     client_info.initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address);
