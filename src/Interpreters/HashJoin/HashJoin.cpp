@@ -1923,11 +1923,18 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
-    auto extract_source_blocks = [](ScatteredColumnsList && columns_list, const Block & sample_block)
+    auto extract_source_blocks = [this](ScatteredColumnsList && columns_list, const Block & sample_block)
     {
         BlocksList result;
         for (auto & columns : columns_list)
         {
+            /// Stored columns may be `ColumnCompressed` (when `enable_join_in_memory_compression` triggered).
+            /// The released blocks are handed to another algorithm (grace_hash bucket rehash, switching to
+            /// `GraceHashJoin`, spilling), which reads them as ordinary columns, so decompress here.
+            /// `decompress` is a cheap no-op for columns that were only shrunk (not compressed).
+            if (have_compressed)
+                for (auto & column : columns.columns_info.columns)
+                    column = column->decompress();
             Block block = sample_block.cloneWithColumns(columns.columns_info.columns);
             /// When used with ConcurrentHashJoin, each slot stores full original block columns
             /// with a selector indicating which rows belong to that slot. Apply the selector
@@ -1972,6 +1979,11 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         {
             auto column = data->sample_block.getByPosition(positions[i]);
             column.column = saved_columns.columns_info.columns[positions[i]];
+            /// Decompress stored columns before handing the restructured blocks to another algorithm
+            /// (e.g. `JoinSwitcher` switching to `MergeJoin`), which reads them as ordinary columns.
+            /// `decompress` is a cheap no-op for columns that were only shrunk (not compressed).
+            if (have_compressed)
+                column.column = column.column->decompress();
             correctNullabilityInplace(column, is_nullable[i]);
             restored_block.insert(column);
         }
