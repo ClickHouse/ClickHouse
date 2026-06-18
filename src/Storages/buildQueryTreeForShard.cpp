@@ -30,7 +30,13 @@
 #include <Storages/StorageDummy.h>
 #include <Analyzer/UnionNode.h>
 
+#include <city.h>
+
+#include <algorithm>
 #include <stack>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 
 namespace DB
@@ -60,6 +66,72 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Inline ALIAS columns into their defining expressions (so the expression is evaluated on the
+/// shard/replica reading the real table instead of relying on the ALIAS column being resolved there).
+class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
+{
+    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node || !column_node->hasExpression())
+            return nullptr;
+
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+            return nullptr;
+
+        auto column_expression = column_node->getExpression();
+        column_expression->setAlias(column_node->getColumnName());
+        return column_expression;
+    }
+
+public:
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto column_expression = getColumnNodeAliasExpression(node))
+            node = column_expression;
+    }
+};
+
+/// After a duplicate-ALIAS projection item is wrapped in __actionName(expr, '<unique>'), any
+/// GROUP BY / ORDER BY / HAVING / etc. key that referenced the same alias still points at a sibling
+/// node holding the bare inlined expression. For parallel replicas this matters at the mergeable
+/// state: duplicate GROUP BY keys collapse by name, so the replica emits fewer key columns than the
+/// initiator expects and the position-based match throws NUMBER_OF_COLUMNS_DOESNT_MATCH. Rewrite
+/// those sibling nodes to the same wrapper so a single structurally identical expression carries the
+/// alias throughout the scope. Top-level projection items (alias definitions) are left alone (only
+/// references are rewritten), and nested subqueries/unions, which have their own alias scope, are not
+/// descended into.
+class RewriteDuplicateAliasSiblingsVisitor : public InDepthQueryTreeVisitor<RewriteDuplicateAliasSiblingsVisitor>
+{
+public:
+    /// Map from the original projection node (the exact node that was moved into the wrapper) to the
+    /// wrapper. With analyzer identifier-resolution node reuse a GROUP BY / ORDER BY / HAVING key is
+    /// the same node object as the projection item, so we match by pointer (the alias on that shared
+    /// node has already been cleared by removeAlias()).
+    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> wrapped_node_to_wrapper;
+    std::unordered_set<const IQueryTreeNode *> projection_items;
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto it = wrapped_node_to_wrapper.find(node.get());
+        if (it != wrapped_node_to_wrapper.end())
+            node = it->second->clone();
+    }
+
+    bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child) const
+    {
+        /// Do not descend into the wrapped projection items themselves (their argument is the very
+        /// node we are replacing elsewhere), nor into nested subqueries/unions with their own scope.
+        if (projection_items.contains(child.get()))
+            return false;
+        auto type = child->getNodeType();
+        return type != QueryTreeNodeType::QUERY && type != QueryTreeNodeType::UNION;
+    }
+};
 
 /// Visitor that collect column source to columns mapping from query and all subqueries
 class CollectColumnSourceToColumnsVisitor : public InDepthQueryTreeVisitor<CollectColumnSourceToColumnsVisitor>
@@ -589,6 +661,119 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     return subquery_node;
 }
 
+}
+
+void inlineAndDisambiguateAliasColumns(QueryTreeNodePtr & query_tree_to_modify, const ContextPtr & context)
+{
+    /// Snapshot the projection-item structural hashes BEFORE ReplaseAliasColumnsVisitor
+    /// inlines ALIAS columns.  These "original" hashes identify what the outer planner
+    /// (which sees the un-inlined query tree) will treat as equivalent: items with the
+    /// same original hash collapse to a single DAG output through removeUnusedActions's
+    /// name-based deduplication, so we must keep them collapsed on the shard too.
+    /// Items that only become structurally identical after inlining (e.g. two ALIAS
+    /// columns expanding to the same expression, or one ALIAS column written next to
+    /// the same expression written directly) must, conversely, be disambiguated, or
+    /// the shard/replica returns fewer columns than the outer planner expects and the
+    /// position-based rename throws NUMBER_OF_COLUMNS_DOESNT_MATCH.
+    std::vector<IQueryTreeNode::Hash> original_projection_hashes;
+    if (auto * pre_visitor_query_node = query_tree_to_modify->as<QueryNode>())
+    {
+        const auto & projection_nodes = pre_visitor_query_node->getProjection().getNodes();
+        original_projection_hashes.reserve(projection_nodes.size());
+        for (const auto & node : projection_nodes)
+            original_projection_hashes.push_back(node->getTreeHash({.compare_aliases = false}));
+    }
+
+    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
+    replace_alias_columns_visitor.visit(query_tree_to_modify);
+
+    /// Resolve structural collisions in the post-inlining projection that did not
+    /// exist in the original tree.  Items are bucketed by their post-inlining
+    /// structural hash; within each bucket they are further partitioned by their
+    /// original (pre-inlining) hash.  The first partition in each bucket keeps the
+    /// natural DAG name; every subsequent partition gets a fresh __actionName wrap;
+    /// items in the same partition share that wrap, so the shard ends up with
+    /// exactly as many distinct DAG output names as the outer planner's NameSet
+    /// deduplication produces.
+    if (auto * query_node_ptr = query_tree_to_modify->as<QueryNode>())
+    {
+        auto & projection_nodes = query_node_ptr->getProjection().getNodes();
+        if (projection_nodes.size() == original_projection_hashes.size())
+        {
+            struct TreeHashHash
+            {
+                size_t operator()(const IQueryTreeNode::Hash & h) const { return CityHash_v1_0_2::Hash128to64(h); }
+            };
+            struct OriginEntry { IQueryTreeNode::Hash original_hash; String wrap_name; };
+            std::unordered_map<IQueryTreeNode::Hash, std::vector<OriginEntry>, TreeHashHash> bucket;
+            FunctionOverloadResolverPtr action_name_resolver;
+            size_t wrap_counter = 0;
+            std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> wrapped_node_to_wrapper;
+
+            for (size_t i = 0; i < projection_nodes.size(); ++i)
+            {
+                auto inlined_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
+                auto & entries = bucket[inlined_hash];
+
+                if (entries.empty())
+                {
+                    entries.push_back({original_projection_hashes[i], {}});
+                    continue;
+                }
+
+                String wrap_name;
+                auto it = std::find_if(entries.begin(), entries.end(),
+                    [&](const OriginEntry & e) { return e.original_hash == original_projection_hashes[i]; });
+                if (it != entries.end())
+                {
+                    if (it->wrap_name.empty())
+                        continue;
+                    wrap_name = it->wrap_name;
+                }
+                else
+                {
+                    ++wrap_counter;
+                    wrap_name = "__distributed_alias_dedup_" + std::to_string(wrap_counter);
+                    entries.push_back({original_projection_hashes[i], wrap_name});
+                }
+
+                if (!action_name_resolver)
+                    action_name_resolver = FunctionFactory::instance().get("__actionName", context);
+
+                auto node_alias = projection_nodes[i]->getAlias();
+                projection_nodes[i]->removeAlias();
+                const IQueryTreeNode * wrapped_node = projection_nodes[i].get();
+                auto name_node = std::make_shared<ConstantNode>(wrap_name);
+                auto wrapper = std::make_shared<FunctionNode>("__actionName");
+                wrapper->getArguments().getNodes().push_back(std::move(projection_nodes[i]));
+                wrapper->getArguments().getNodes().push_back(std::move(name_node));
+                wrapper->resolveAsFunction(action_name_resolver);
+                if (!node_alias.empty())
+                    wrapper->setAlias(node_alias);
+                projection_nodes[i] = std::move(wrapper);
+                wrapped_node_to_wrapper[wrapped_node] = projection_nodes[i];
+            }
+
+            /// For parallel replicas the per-replica query is executed up to WithMergeableState, whose
+            /// output cardinality depends on the GROUP BY keys (and, without aggregation, on the
+            /// projection). A GROUP BY / ORDER BY / HAVING key that referenced a wrapped alias is, with
+            /// analyzer node reuse, the very node now sitting inside the wrapper, so the duplicate keys
+            /// collapse by name and the position match throws NUMBER_OF_COLUMNS_DOESNT_MATCH. Rewrite
+            /// those sibling references to the same wrapper so the per-replica header matches what the
+            /// initiator expects. The Distributed/remote() path reconciles columns by name in the final
+            /// stage; rewriting its (shared) keys is harmless there and additionally fixes the case of
+            /// a Distributed table whose shard itself uses parallel replicas.
+            if (!wrapped_node_to_wrapper.empty())
+            {
+                RewriteDuplicateAliasSiblingsVisitor rewrite_visitor;
+                rewrite_visitor.wrapped_node_to_wrapper = std::move(wrapped_node_to_wrapper);
+                rewrite_visitor.projection_items.reserve(projection_nodes.size());
+                for (const auto & projection_node : projection_nodes)
+                    rewrite_visitor.projection_items.insert(projection_node.get());
+                rewrite_visitor.visit(query_tree_to_modify);
+            }
+        }
+    }
 }
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
