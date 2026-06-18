@@ -16,6 +16,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/URI.h>
 
 
 #if USE_AVRO && USE_PARQUET
@@ -46,6 +47,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Storages/ColumnDefault.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
 
@@ -59,6 +63,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
+    extern const DatabaseDataLakeSettingsString default_base_location;
     extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
     extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
@@ -98,6 +103,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
+    extern const SettingsBool data_lake_delete_data_on_drop;
 
 }
 
@@ -120,6 +126,41 @@ namespace FailPoints
 {
     extern const char lightweight_show_tables[];
     extern const char datalake_try_get_table_return_nullptr[];
+}
+
+namespace
+{
+
+String getLocationSchemeForTableCreation(const std::shared_ptr<DataLake::ICatalog> & catalog)
+{
+    if (auto storage_type = catalog->getStorageType(); storage_type.has_value())
+        return DataLake::storageTypeToScheme(*storage_type);
+
+    /// Fall back only for catalogs whose backing storage is fixed.
+    /// REST/Hive/Glue/Paimon/Unity can be backed by anything, so we refuse to guess.
+    switch (catalog->getCatalogType())
+    {
+        case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
+            return "abfss"; /// Azure-only
+        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+            return "s3"; /// GCS via S3 API
+        case DatabaseDataLakeCatalogType::ICEBERG_REST:
+        case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+        case DatabaseDataLakeCatalogType::GLUE:
+        case DatabaseDataLakeCatalogType::PAIMON_REST:
+        case DatabaseDataLakeCatalogType::UNITY:
+        case DatabaseDataLakeCatalogType::NONE:
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot determine storage scheme for CREATE TABLE for catalog type '{}': the catalog does not "
+                "report a backing storage type. Set `default_base_location` on the database or configure "
+                "the catalog to expose `default-base-location`.",
+                catalog->getCatalogType());
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected catalog type in CREATE TABLE location scheme resolution");
+}
+
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -613,9 +654,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         if (!metadata_location.empty())
         {
             metadata_location = table_metadata.getMetadataLocation(metadata_location);
+            (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
         }
-
-        (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
     }
 
     const auto configuration = getConfiguration(storage_type, storage_settings);
@@ -739,16 +779,123 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     return result_storage;
 }
 
+void DatabaseDataLake::createTable(
+    ContextPtr context_,
+    const String & name,
+    const StoragePtr & table,
+    const ASTPtr & query)
+{
+    /// Engine-clause path: the storage's own initialization (IcebergMetadata::createInitial)
+    /// already wrote metadata and registered the table in the catalog.
+    if (table)
+        return;
+
+    auto catalog = getCatalog();
+    const auto & create = query->as<ASTCreateQuery &>();
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+
+    ColumnsDescription columns;
+    if (create.columns_list && create.columns_list->columns)
+    {
+        for (const auto & child : create.columns_list->columns->children)
+        {
+            const auto * col_decl = child->as<ASTColumnDeclaration>();
+            if (!col_decl || !col_decl->getType())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid column declaration in CREATE TABLE");
+
+            if (col_decl->default_specifier != ColumnDefaultSpecifier::Empty)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Column '{}': {} is not yet supported by DataLakeCatalog table creation",
+                    col_decl->name,
+                    toString(col_decl->default_specifier));
+
+            if (col_decl->getComment() || col_decl->getCodec() || col_decl->getTTL()
+                || col_decl->getStatisticsDesc() || col_decl->getSettings()
+                || col_decl->primary_key_specifier)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Column '{}': COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY are not supported by DataLakeCatalog table creation",
+                    col_decl->name);
+
+            columns.add(ColumnDescription(col_decl->name, DataTypeFactory::instance().get(col_decl->getType())));
+        }
+    }
+
+    if (columns.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table without columns");
+
+    if (create.columns_list
+        && ((create.columns_list->indices && !create.columns_list->indices->children.empty())
+            || (create.columns_list->constraints && !create.columns_list->constraints->children.empty())
+            || (create.columns_list->projections && !create.columns_list->projections->children.empty())
+            || create.columns_list->primary_key
+            || create.columns_list->primary_key_from_columns))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "DataLakeCatalog CREATE TABLE does not support PRIMARY KEY, indices, constraints, or projections");
+
+    ASTPtr partition_by;
+    ASTPtr order_by;
+    if (create.storage)
+    {
+        if (create.storage->primary_key || create.storage->sample_by
+            || create.storage->ttl_table || create.storage->unique_key
+            || create.storage->settings)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "DataLakeCatalog CREATE TABLE supports only PARTITION BY and ORDER BY; "
+                "PRIMARY KEY, SAMPLE BY, TTL, UNIQUE KEY, and engine SETTINGS are not supported");
+
+        if (create.storage->partition_by)
+            partition_by = create.storage->partition_by->clone();
+        if (create.storage->order_by)
+            order_by = create.storage->order_by->clone();
+    }
+
+    String base_location = catalog->getDefaultBaseLocation();
+    if (base_location.empty())
+        base_location = settings[DatabaseDataLakeSetting::default_base_location].value;
+
+    String location;
+    if (!base_location.empty())
+    {
+        while (base_location.ends_with('/'))
+            base_location.pop_back();
+        location = fmt::format("{}/{}/{}", base_location, namespace_name, table_name);
+    }
+    else
+    {
+        const auto storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value;
+        if (storage_endpoint.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "CREATE TABLE in DataLakeCatalog requires `default_base_location` or `storage_endpoint`");
+        location = DataLake::constructTableLocation(
+            getLocationSchemeForTableCreation(catalog), storage_endpoint, namespace_name, table_name);
+    }
+
+    auto [metadata_content, metadata_str] = Iceberg::createEmptyMetadataFile(
+        location,
+        columns,
+        partition_by,
+        order_by,
+        context_);
+
+    catalog->createTable(namespace_name, table_name, /* metadata_path */ "", metadata_content);
+
+    LOG_INFO(log, "Created table {}.{}", namespace_name, table_name);
+}
+
 void DatabaseDataLake::dropTable( /// NOLINT
     ContextPtr context_,
     const String & name,
     bool /*sync*/)
 {
-    auto table = tryGetTable(name, context_);
-    if (table)
-        table->drop();
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop table {} because it does not exist", name);
+    auto catalog = getCatalog();
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+
+    bool purge = context_->getSettingsRef()[Setting::data_lake_delete_data_on_drop];
+    catalog->dropTable(namespace_name, table_name, purge);
+
+    LOG_TRACE(log, "Dropped table {}.{} (purge={})", namespace_name, table_name, purge);
 }
 
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(

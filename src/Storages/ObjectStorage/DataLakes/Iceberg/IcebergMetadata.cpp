@@ -133,7 +133,7 @@ extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_experimental_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_experimental_expire_snapshots;
-extern const SettingsBool iceberg_delete_data_on_drop;
+extern const SettingsBool data_lake_delete_data_on_drop;
 }
 
 namespace
@@ -751,7 +751,11 @@ void IcebergMetadata::createInitial(
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
 
-    auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
+    auto table_uuid = metadata_content_object->getValue<String>(Iceberg::f_table_uuid);
+    auto metadata_file_name = (catalog && catalog->isTransactional())
+        ? fmt::format("v1-{}{}.metadata.json", table_uuid, compression_suffix)
+        : fmt::format("v1{}.metadata.json", compression_suffix);
+    auto filename = fmt::format("{}metadata/{}", configuration_ptr->getRawPath().path, metadata_file_name);
 
     try
     {
@@ -760,7 +764,7 @@ void IcebergMetadata::createInitial(
     catch (const Exception & e)
     {
         /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
-        /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
+        /// already exists (e.g. leftover data after `DROP TABLE` with `data_lake_delete_data_on_drop` off,
         /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
         if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
             && e.message().find("PreconditionFailed") != String::npos)
@@ -768,19 +772,40 @@ void IcebergMetadata::createInitial(
         throw;
     }
 
+    bool success = false;
+    String filename_version_hint;
+    SCOPE_EXIT({
+        if (!success)
+        {
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(filename));
+                if (!filename_version_hint.empty())
+                    object_storage->removeObjectIfExists(StoredObject(filename_version_hint));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    });
+
     if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
-        auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+        auto version_hint_path = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
+        writeMessageToFile("1", version_hint_path, object_storage, local_context, "*", "");
+        filename_version_hint = version_hint_path;
     }
 
     if (catalog)
     {
         auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
-            + configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
+            + configuration_ptr->getRawPath().path + "metadata/" + metadata_file_name;
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
+
+    success = true;
 }
 
 Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTableStateSnapshot(
@@ -1302,7 +1327,7 @@ SinkToStoragePtr IcebergMetadata::write(
 
 void IcebergMetadata::drop(ContextPtr context)
 {
-    if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
+    if (context->getSettingsRef()[Setting::data_lake_delete_data_on_drop].value)
     {
         auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
         for (const auto & file : files)

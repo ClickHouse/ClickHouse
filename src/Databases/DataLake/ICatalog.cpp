@@ -81,6 +81,25 @@ StorageType parseStorageTypeFromString(const std::string & type)
     return *storage_type;
 }
 
+std::string storageTypeToScheme(StorageType type)
+{
+    switch (type)
+    {
+        case StorageType::S3:
+            return "s3";
+        case StorageType::Azure:
+            return "abfss";
+        case StorageType::Local:
+            return "file";
+        case StorageType::HDFS:
+            return "hdfs";
+        case StorageType::Other:
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Cannot determine URI scheme for storage type 'Other'");
+    }
+}
+
 void TableMetadata::setLocation(const std::string & location_)
 {
     if (!with_location)
@@ -330,7 +349,7 @@ bool ICatalog::updateSchema(
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
 }
 
-void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
+void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/, bool /*purge*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
 }
