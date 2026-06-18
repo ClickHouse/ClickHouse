@@ -55,11 +55,12 @@ PERF_SERVER_DIR = f"{PERF_WD}/server"
 JOB_START = time.monotonic()
 JOB_TIMEOUT_S = 8 * 3600
 
-PGO_COLLECT_BUDGET_S = 3 * 3600  # PGO-instrumented pass (slowest binary)
-BOLT_COLLECT_BUDGET_S = 1 * 3600  # BOLT-instrumented pass
-# Wall-clock that must remain after the PGO pass for the BOLT build (ThinLTO, slow),
-# both profile merges, and the artifact upload.
-BOLT_BUILD_RESERVE_S = 3 * 3600
+PGO_COLLECT_BUDGET_S = 2 * 3600  # PGO-instrumented pass (slowest binary)
+BOLT_COLLECT_BUDGET_S = 45 * 60  # BOLT-instrumented pass
+# Wall-clock that must remain after the PGO pass for the BOLT build (ThinLTO is slow
+# and this is the largest single phase), both profile merges, and the artifact
+# upload. Kept generous so a slow BOLT build cannot push the job past its timeout.
+BOLT_BUILD_RESERVE_S = 3 * 3600 + 1800
 UPLOAD_RESERVE_S = 20 * 60
 # Hard per-test timeout so a single heavy test (large fill / slow prewarm) cannot
 # stall an entire pass.
@@ -74,6 +75,13 @@ BOLT_PERF_RUNS = 1  # BOLT only needs hot-path coverage
 # generous; for a normal binary readiness is reached within a few seconds.
 SERVER_READINESS_TIMEOUT_S = 600
 SERVER_READINESS_POLL_S = 2
+# Hard timeout for a single `select 1` readiness probe. `--receive_timeout` only
+# bounds the post-query receive phase, so a client that connects to a server stuck
+# in startup (port already open, not yet answering) would block this one call
+# forever — and then the deadline above is never re-checked, turning a stuck
+# startup into a multi-hour job hang. `timeout` bounds every probe so the deadline
+# is honoured and the job fails fast (dumping the server log) instead.
+SERVER_READINESS_PROBE_TIMEOUT_S = 15
 
 LLVM_VERSION = "21"
 
@@ -218,7 +226,9 @@ def wait_for_server_ready(proc, server_dir, port, log_file):
         # window would otherwise produce hundreds of identical `Run command`
         # lines; emit a progress heartbeat every 30s instead.
         res, out, _ = Shell.get_res_stdout_stderr(
-            f'{server_dir}/clickhouse-client --port {port} --receive_timeout=5 --query "select 1"'
+            f"timeout -s KILL {SERVER_READINESS_PROBE_TIMEOUT_S} "
+            f"{server_dir}/clickhouse-client --port {port} "
+            f'--connect_timeout 5 --receive_timeout 5 --query "select 1"'
         )
         if out.strip() == "1":
             elapsed = time.monotonic() - start
