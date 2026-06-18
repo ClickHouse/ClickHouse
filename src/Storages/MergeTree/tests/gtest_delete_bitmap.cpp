@@ -467,3 +467,68 @@ TEST(DeleteBitmapTest, FileNameRoundtrip)
     EXPECT_EQ(DeleteBitmap::parseBlockNumberFromFileName("delete_bitmap_999.rbm"), 999U);
     EXPECT_THROW(DeleteBitmap::parseBlockNumberFromFileName("foo.rbm"), Exception);
 }
+
+/// ---------- tolerant inspect helper (inspectDeleteBitmap) ----------
+///
+/// The `clickhouse-disk read-bitmap` command parses `.rbm` files via this
+/// non-throwing inspector. It shares the byte layout with the writer above, so
+/// it round-trips a real `serialize`d bitmap; corruption cases assert it flags
+/// rather than throws.
+
+namespace
+{
+    String serializeToString(const DeleteBitmap & bm)
+    {
+        String buf;
+        WriteBufferFromString out(buf);
+        bm.serialize(out);
+        out.finalize();
+        return buf;
+    }
+}
+
+TEST(DeleteBitmapInspectTest, ValidRoundtripReportsStats)
+{
+    /// The same `{3, 7, 42, 12345, 1000000}` bitmap drives the
+    /// `clickhouse-disk read-bitmap` functional test fixture; keep them in
+    /// lockstep so a format change fails both here and there.
+    DeleteBitmap in;
+    in.addMany({3, 7, 42, 12345, 1'000'000});
+    String buf = serializeToString(in);
+
+    ReadBufferFromString rb(buf);
+    auto info = inspectDeleteBitmap(rb, /*collect_values=*/true);
+
+    EXPECT_TRUE(info.header_read);
+    EXPECT_TRUE(info.magic_ok);
+    EXPECT_EQ(info.version, DeleteBitmap::VERSION_R32);
+    EXPECT_TRUE(info.body_read);
+    EXPECT_TRUE(info.crc_ok);
+    EXPECT_TRUE(info.decoded);
+    EXPECT_EQ(info.cardinality, 5u);
+    EXPECT_TRUE(info.has_minmax);
+    EXPECT_EQ(info.min_row, 3u);
+    EXPECT_EQ(info.max_row, 1'000'000u);
+    EXPECT_EQ(info.sample, (std::vector<UInt64>{3, 7, 42, 12345, 1'000'000}));
+}
+
+TEST(DeleteBitmapInspectTest, FlippedBodyByteIsCorruptNotThrowing)
+{
+    DeleteBitmap in;
+    in.addMany({3, 7, 42, 12345, 1'000'000});
+    String buf = serializeToString(in);
+
+    /// Flip a byte inside the roaring body (just past the 12-byte header).
+    ASSERT_GT(buf.size(), DeleteBitmap::HEADER_SIZE + 1);
+    buf[DeleteBitmap::HEADER_SIZE + 1] ^= static_cast<char>(0xFF);
+
+    ReadBufferFromString rb(buf);
+    DeleteBitmapInspection info;
+    /// Must not throw on a CRC-failing body — the inspector reports, never aborts.
+    ASSERT_NO_THROW({ info = inspectDeleteBitmap(rb, /*collect_values=*/false); });
+
+    EXPECT_TRUE(info.header_read);
+    EXPECT_TRUE(info.magic_ok);
+    EXPECT_FALSE(info.crc_ok);
+    EXPECT_NE(info.crc_stored, info.crc_computed);
+}

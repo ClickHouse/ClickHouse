@@ -11,6 +11,7 @@
 #include <roaring/roaring64map.hh>
 #include <zlib.h>
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
@@ -420,6 +421,87 @@ std::unique_ptr<DeleteBitmap> DeleteBitmap::deserialize(ReadBuffer & in)
     {
         *std::get<R32Ptr>(result->bitmap) = roaring::Roaring::readSafe(body.get(), body_size_u32);
     }
+    return result;
+}
+
+DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values)
+{
+    DeleteBitmapInspection result;
+
+    char header[DeleteBitmap::HEADER_SIZE];
+    if (in.read(header, DeleteBitmap::HEADER_SIZE) != DeleteBitmap::HEADER_SIZE)
+        return result; /// header_read stays false — too short to be a .rbm at all
+
+    result.header_read = true;
+    const UInt32 magic = unpackUInt32LE(header + 0);
+    result.version = unpackUInt32LE(header + sizeof(UInt32));
+    result.body_size = unpackUInt32LE(header + sizeof(UInt32) * 2);
+    result.magic_ok = (magic == DeleteBitmap::MAGIC);
+
+    /// Clamp what we actually read so a corrupt declared size can't force a
+    /// huge allocation; the declared `body_size` is still reported above.
+    const UInt32 body_to_read = std::min(result.body_size, MAX_SERIALIZED_BODY_SIZE);
+    std::unique_ptr<char[]> body;
+    size_t body_bytes = 0;
+    if (body_to_read)
+    {
+        body = std::make_unique_for_overwrite<char[]>(body_to_read);
+        body_bytes = in.read(body.get(), body_to_read);
+    }
+    result.body_read = (body_bytes == result.body_size);
+
+    char crc_buf[DeleteBitmap::CRC_SIZE] = {};
+    const bool crc_present = (in.read(crc_buf, DeleteBitmap::CRC_SIZE) == DeleteBitmap::CRC_SIZE);
+    if (crc_present)
+        result.crc_stored = unpackUInt32LE(crc_buf);
+
+    /// CRC is only meaningful when both the declared body and the trailing CRC
+    /// field were fully present.
+    if (result.body_read && crc_present)
+    {
+        result.crc_computed = computeCRC32(header, DeleteBitmap::HEADER_SIZE, body.get(), body_bytes);
+        result.crc_ok = (result.crc_stored == result.crc_computed);
+    }
+
+    /// Decode independently of the CRC verdict — a CRC-corrupt file should still
+    /// surface stats when its body happens to parse. `readSafe` throws on a
+    /// malformed body; report it via `decoded=false` instead of propagating.
+    if (result.magic_ok && result.body_read
+        && (result.version == DeleteBitmap::VERSION_R32 || result.version == DeleteBitmap::VERSION_R64))
+    {
+        try
+        {
+            auto collect = [&](const auto & r)
+            {
+                result.cardinality = r.cardinality();
+                if (result.cardinality)
+                {
+                    result.has_minmax = true;
+                    result.min_row = r.minimum();
+                    result.max_row = r.maximum();
+                }
+                if (collect_values)
+                    for (auto it = r.begin(); it != r.end(); ++it)
+                        result.sample.push_back(*it);
+            };
+
+            if (result.version == DeleteBitmap::VERSION_R64)
+                collect(body_bytes ? roaring::Roaring64Map::readSafe(body.get(), body_bytes) : roaring::Roaring64Map());
+            else
+                collect(body_bytes ? roaring::Roaring::readSafe(body.get(), body_bytes) : roaring::Roaring());
+
+            result.decoded = true;
+        }
+        catch (...) // NOLINT
+        {
+            /// Ok: tolerant inspector — a malformed roaring body is reported (decoded=false +
+            /// decode_error), never propagated. Surfacing the message is the "bring it to the
+            /// caller" half of not swallowing the exception silently.
+            result.decoded = false;
+            result.decode_error = getCurrentExceptionMessage(/*with_stacktrace=*/false);
+        }
+    }
+
     return result;
 }
 
