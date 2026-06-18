@@ -403,6 +403,15 @@ bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const Strin
 {
     try
     {
+        /// Anchor local lease freshness to the instant the persisted lease `timestamp` is sampled
+        /// (inside `buildLeaseContent`, before the write starts), NOT to the moment the write
+        /// finishes. Remote observers expire the lease based on that persisted timestamp, so if the
+        /// conditional write / `finalize` stalls, anchoring `last_renewal_time` to the end of the
+        /// write would let this node keep treating its lease as fresh after other nodes have already
+        /// considered the persisted lease expired — opening a dual-writer window. Capturing the
+        /// monotonic anchor here can only make us fail closed slightly sooner, which is the safe
+        /// direction.
+        const auto renewal_anchor = std::chrono::steady_clock::now();
         String content = buildLeaseContent();
 
         auto write_settings = context->getWriteSettings();
@@ -428,7 +437,7 @@ bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const Strin
         /// extra `getObjectMetadata` call here would only add a chance for a
         /// transient remote failure to surface as spurious leadership loss
         /// without providing any value to subsequent renewals.
-        last_renewal_time.store(std::chrono::steady_clock::now(), std::memory_order_release);
+        last_renewal_time.store(renewal_anchor, std::memory_order_release);
 
         return true;
     }
