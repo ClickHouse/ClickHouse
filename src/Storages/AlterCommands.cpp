@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
+    extern const SettingsUInt64 max_static_subcolumns;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
 }
@@ -80,6 +81,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int TOO_MANY_SUBCOLUMNS;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
@@ -1810,6 +1812,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
 
             modified_columns.emplace(column_name);
+
+            /// Update the column type in all_columns to keep subcolumn count accurate
+            /// for the max_static_subcolumns check at the end of validation.
+            if (command.data_type)
+                all_columns.modify(column_name, [&](ColumnDescription & col) { col.type = command.data_type; });
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
@@ -2029,6 +2036,22 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
             }
         }
+    }
+
+    /// Check subcolumns limit. Only reject when this ALTER actually increases the count past the
+    /// limit; unrelated commands (e.g. MODIFY COMMENT/SETTING, TTL/index alters, DROP COLUMN) must
+    /// still work on a table that is already over the limit (for example, because it was created
+    /// earlier with `max_static_subcolumns = 0`).
+    if (table->storesDataOnDisk())
+    {
+        UInt64 max_static_subcolumns = context->getSettingsRef()[Setting::max_static_subcolumns];
+        size_t subcolumns_before = metadata->columns.getNumberOfSubcoumns();
+        size_t subcolumns_after = all_columns.getNumberOfSubcoumns();
+        if (max_static_subcolumns > 0 && subcolumns_after > max_static_subcolumns && subcolumns_after > subcolumns_before)
+            throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
+                "Too many static subcolumns. The limit is set to {}, "
+                "the number of static subcolumns after this ALTER would be {}",
+                max_static_subcolumns, subcolumns_after);
     }
 
     /// Parameterized views do not have 'columns' in their metadata

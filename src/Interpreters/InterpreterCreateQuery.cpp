@@ -148,6 +148,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsUInt64 max_static_subcolumns;
 }
 
 namespace ServerSetting
@@ -187,6 +188,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int TOO_MANY_SUBCOLUMNS;
 }
 
 namespace fs = std::filesystem;
@@ -2163,6 +2165,21 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
+
+    if (res->storesDataOnDisk())
+    {
+        /// Check sub columns limit
+        UInt64 max_static_subcolumns = getContext()->getSettingsRef()[Setting::max_static_subcolumns];
+        /// Use columns from the actual storage metadata, not from properties.columns,
+        /// because properties.columns can be stale/empty for schema-inference engines
+        /// (e.g. File, S3, URL) where columns are inferred during storage creation.
+        size_t subcolumn_count = res->getInMemoryMetadataPtr(getContext(), false)->getColumns().getNumberOfSubcoumns();
+
+        if (max_static_subcolumns > 0 && subcolumn_count > max_static_subcolumns)
+            throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
+                                    "Too many static subcolumns. The limit is set to {}, the number of static subcolumns in the table is {}",
+                                    max_static_subcolumns, subcolumn_count);
+    }
 
     auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
     if (replicated_storage)
