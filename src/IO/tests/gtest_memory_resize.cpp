@@ -51,9 +51,9 @@ public:
         return dummy_address;
     }
 
-    void free([[maybe_unused]] void * buf, size_t /*size*/)
+    void free([[maybe_unused]] void * buf, size_t /*size*/, size_t /*alignment*/ = 0)
     {
-        assert(buf == dummy_address);
+        chassert(buf == dummy_address);
     }
 
     // the same check as in Common/Allocator.h

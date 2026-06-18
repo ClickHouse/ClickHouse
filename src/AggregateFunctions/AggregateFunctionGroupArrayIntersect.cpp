@@ -148,13 +148,13 @@ public:
     {
         auto & set = this->data(place).value;
         auto & version = this->data(place).version;
-        size_t size;
+        size_t size = 0;
         readVarUInt(version, buf);
         readVarUInt(size, buf);
         set.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
-            T key;
+            T key{};
             readIntBinary(key, buf);
             set.insert(key);
         }
@@ -217,8 +217,8 @@ public:
     {
         auto & set = this->data(place).value;
         auto & version = this->data(place).version;
-        bool inserted;
-        State::Set::LookupResult it;
+        bool inserted = false;
+        State::Set::LookupResult it = nullptr;
 
         const auto data_column = assert_cast<const ColumnArray &>(*columns[0]).getDataPtr();
         const auto & offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
@@ -280,8 +280,8 @@ public:
         UInt64 version = this->data(place).version++;
         if (version == 0)
         {
-            bool inserted;
-            State::Set::LookupResult it;
+            bool inserted = false;
+            State::Set::LookupResult it = nullptr;
             for (auto & rhs_elem : rhs_value)
             {
                 set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
@@ -320,7 +320,7 @@ public:
     {
         auto & set = this->data(place).value;
         auto & version = this->data(place).version;
-        size_t size;
+        size_t size = 0;
         readVarUInt(version, buf);
         readVarUInt(size, buf);
         set.reserve(size);
@@ -431,6 +431,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayIntersect(
 
 }
 
+void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

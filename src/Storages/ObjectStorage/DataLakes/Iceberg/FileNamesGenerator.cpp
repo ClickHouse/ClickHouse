@@ -27,6 +27,7 @@ FileNamesGenerator::FileNamesGenerator(const FileNamesGenerator & other)
 {
     initial_version = other.initial_version;
     table_location = other.table_location;
+    data_location = other.data_location;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
     compression_method = other.compression_method;
     format_name = other.format_name;
@@ -39,6 +40,7 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
 
     initial_version = other.initial_version;
     table_location = other.table_location;
+    data_location = other.data_location;
     use_uuid_in_metadata = other.use_uuid_in_metadata;
     compression_method = other.compression_method;
     format_name = other.format_name;
@@ -49,6 +51,8 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
 Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateDataFileName()
 {
     auto uuid_str = uuid_generator.createRandom().toString();
+    if (!data_location.empty())
+        return Iceberg::IcebergPathFromMetadata(fmt::format("{}/data-{}.{}", data_location, uuid_str, format_name));
     return Iceberg::IcebergPathFromMetadata(fmt::format("{}data/data-{}.{}", table_location, uuid_str, format_name));
 }
 
@@ -97,6 +101,8 @@ Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateVersionHint()
 Iceberg::IcebergPathFromMetadata FileNamesGenerator::generatePositionDeleteFile()
 {
     auto uuid_str = uuid_generator.createRandom().toString();
+    if (!data_location.empty())
+        return Iceberg::IcebergPathFromMetadata(fmt::format("{}/{}-deletes.{}", data_location, uuid_str, format_name));
     return Iceberg::IcebergPathFromMetadata(fmt::format("{}data/{}-deletes.{}", table_location, uuid_str, format_name));
 }
 

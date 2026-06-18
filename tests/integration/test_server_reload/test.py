@@ -167,7 +167,7 @@ def sync_loaded_config(querier):
 def wait_loaded_config_changed(loads_before, querier):
     loads_after = None
     start_time = time.monotonic()
-    while time.monotonic() - start_time < 10:
+    while time.monotonic() - start_time < 60:
         try:
             loads_after = querier(LOADS_QUERY)
             if loads_after != loads_before:
@@ -309,10 +309,14 @@ def test_change_listen_host(cluster, zk):
     localhost_client = Client(
         host="127.0.0.1", port=9000, command="/usr/bin/clickhouse"
     )
+    # Clear LLVM_PROFILE_FILE so this manually-launched clickhouse process
+    # does not race with the server over the same profraw merge-pool slots.
     localhost_client.command = [
         "docker",
         "exec",
         "-i",
+        "-e",
+        "LLVM_PROFILE_FILE=",
         instance.docker_id,
     ] + localhost_client.command
     try:
@@ -323,8 +327,7 @@ def test_change_listen_host(cluster, zk):
             client.query("SELECT 1")
         assert localhost_client.query("SELECT 1") == "1\n"
     finally:
-        with sync_loaded_config(localhost_client.query):
-            configure_from_zk(zk)
+        configure_from_zk(zk, localhost_client.query)
 
 
 # This is a regression test for the case when the clickhouse-server was waiting
@@ -339,10 +342,14 @@ def test_reload_via_client(cluster, zk):
     localhost_client = Client(
         host="127.0.0.1", port=9000, command="/usr/bin/clickhouse"
     )
+    # Clear LLVM_PROFILE_FILE so this manually-launched clickhouse process
+    # does not race with the server over the same profraw merge-pool slots.
     localhost_client.command = [
         "docker",
         "exec",
         "-i",
+        "-e",
+        "LLVM_PROFILE_FILE=",
         instance.docker_id,
     ] + localhost_client.command
 

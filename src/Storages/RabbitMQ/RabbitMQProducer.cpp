@@ -153,7 +153,7 @@ void RabbitMQProducer::setupChannel()
 void RabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
     auto record_iter = delivery_record.find(received_delivery_tag);
-    assert(record_iter != delivery_record.end());
+    chassert(record_iter != delivery_record.end());
 
     if (multiple)
     {
@@ -279,12 +279,12 @@ void RabbitMQProducer::startProducingTaskLoop()
     .onSuccess([&]()
     {
         LOG_TRACE(log, "Successfully closed producer channel");
-        connection.getHandler().stopLoop();
+        connection.getHandler().stopBlockingLoop();
     })
     .onError([&](const char * message)
     {
         LOG_ERROR(log, "Failed to close producer channel: {}", message);
-        connection.getHandler().stopLoop();
+        connection.getHandler().stopBlockingLoop();
     });
 
     int active = connection.getHandler().startBlockingLoop();

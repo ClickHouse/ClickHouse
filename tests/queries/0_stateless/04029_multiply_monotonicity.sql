@@ -12,6 +12,8 @@
 -- Part 1: UInt64 — pruning works
 -- ============================================================
 
+SET use_primary_key = 1;
+
 DROP TABLE IF EXISTS t_multiply_mono;
 CREATE TABLE t_multiply_mono (key UInt64) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 1;
 INSERT INTO t_multiply_mono SELECT number FROM numbers(10);

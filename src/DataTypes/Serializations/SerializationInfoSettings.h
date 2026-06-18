@@ -17,6 +17,7 @@ struct SerializationInfoSettings
     MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
     MergeTreeNullableSerializationVersion nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
+    MergeTreeMapSerializationVersion map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
     bool propagate_types_serialization_versions_to_nested_types = false;
 
     SerializationInfoSettings() = default;
@@ -27,6 +28,7 @@ struct SerializationInfoSettings
         MergeTreeSerializationInfoVersion version_,
         MergeTreeStringSerializationVersion string_serialization_version_,
         MergeTreeNullableSerializationVersion nullable_serialization_version_,
+        MergeTreeMapSerializationVersion map_serialization_version_,
         bool propagate_types_serialization_versions_to_nested_types_);
 
     /// Downgrade `version` to BASIC when all type-level serialization versions are still at their defaults.

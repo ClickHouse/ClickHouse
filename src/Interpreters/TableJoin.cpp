@@ -26,6 +26,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
@@ -78,6 +80,11 @@ namespace Setting
     extern const SettingsString temporary_files_codec;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsBool enable_software_prefetch_in_join;
+    extern const SettingsUInt64 max_bytes_before_external_join;
+    extern const SettingsDouble max_bytes_ratio_before_external_join;
+    extern const SettingsBool enable_join_fixed_hash_table_conversion;
+    extern const SettingsBool enable_join_runtime_filter_shared_fixed_hash_table;
 }
 
 namespace ErrorCodes
@@ -124,12 +131,12 @@ bool forAllKeys(OnExpr & expressions, Func callback)
     for (auto & expr : expressions)
     {
         if constexpr (std::is_same_v<SideTag, BothSidesTag>)
-            assert(expr.key_names_left.size() == expr.key_names_right.size());
+            chassert(expr.key_names_left.size() == expr.key_names_right.size());
 
         size_t sz = !std::is_same_v<SideTag, RightSideTag> ? expr.key_names_left.size() : expr.key_names_right.size();
         for (size_t i = 0; i < sz; ++i)
         {
-            bool cont;
+            bool cont = false;
             if constexpr (std::is_same_v<SideTag, BothSidesTag>)
                 cont = callback(expr.key_names_left[i], expr.key_names_right[i]);
             if constexpr (std::is_same_v<SideTag, LeftSideTag>)
@@ -154,6 +161,51 @@ std::string TableJoin::formatClauses(const TableJoin::Clauses & clauses, bool sh
     return fmt::format("{}", fmt::join(res, "; "));
 }
 
+String TableJoin::JoinOnClause::formatPretty(const ExplainFormatSettings & settings) const
+{
+    std::vector<std::string> parts;
+    parts.reserve(key_names_left.size() + 2);
+
+    for (size_t i = 0; i < key_names_left.size(); ++i)
+    {
+        String left = QueryPlanFormat::formatColumnPretty(key_names_left[i], settings.pretty_names);
+        String right = QueryPlanFormat::formatColumnPretty(key_names_right[i], settings.pretty_names);
+        bool null_safe = nullsafe_compare_key_indexes.contains(i);
+        parts.push_back(fmt::format("{} {} {}", left, null_safe ? "<=>" : "=", right));
+    }
+
+    const auto & [left_cond, right_cond] = condColumnNames();
+    if (!left_cond.empty())
+        parts.push_back(QueryPlanFormat::formatColumnPretty(left_cond, settings.pretty_names));
+    if (!right_cond.empty())
+        parts.push_back(QueryPlanFormat::formatColumnPretty(right_cond, settings.pretty_names));
+
+    return fmt::format("{}", fmt::join(parts, " AND "));
+}
+
+std::string TableJoin::formatClausesPretty(const TableJoin::Clauses & clauses, const ExplainFormatSettings & settings)
+{
+    if (clauses.empty())
+        return "";
+
+    if (clauses.size() == 1)
+        return clauses[0].formatPretty(settings);
+
+    std::vector<std::string> res;
+    for (const auto & clause : clauses)
+    {
+        auto formatted = clause.formatPretty(settings);
+        bool needs_parens = clause.keysCount() > 1
+            || !clause.condColumnNames().first.empty()
+            || !clause.condColumnNames().second.empty();
+        if (needs_parens)
+            res.push_back("(" + formatted + ")");
+        else
+            res.push_back(formatted);
+    }
+    return fmt::format("{}", fmt::join(res, " OR "));
+}
+
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
     : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
     , default_max_bytes(settings[Setting::default_max_bytes_in_join])
@@ -173,6 +225,12 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
     , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , enable_lazy_columns_replication(settings[Setting::enable_lazy_columns_replication])
+    , enable_software_prefetch_in_join(settings[Setting::enable_software_prefetch_in_join])
+    , max_bytes_before_external_join(JoinSettings::getMaxBytesBeforeExternalJoin(
+          settings[Setting::max_bytes_before_external_join],
+          settings[Setting::max_bytes_ratio_before_external_join]))
+    , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
+    , enable_join_runtime_filter_shared_fixed_hash_table(settings[Setting::enable_join_runtime_filter_shared_fixed_hash_table])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -202,6 +260,10 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
     , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , enable_lazy_columns_replication(settings.enable_lazy_columns_replication)
+    , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
+    , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
+    , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
+    , enable_join_runtime_filter_shared_fixed_hash_table(settings.enable_join_runtime_filter_shared_fixed_hash_table)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -1163,7 +1225,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    return ::DB::allowParallelHashJoin(join_algorithms, kind(), strictness(), isSpecialStorage(), oneDisjunct());
+    return ::DB::allowParallelHashJoin(join_algorithms, kind(), isSpecialStorage(), oneDisjunct());
 }
 
 ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const
@@ -1230,7 +1292,6 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
 bool allowParallelHashJoin(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
-    JoinStrictness strictness,
     bool is_special_storage,
     bool one_disjunct)
 {
@@ -1238,8 +1299,6 @@ bool allowParallelHashJoin(
         return false;
     if (kind != JoinKind::Left && kind != JoinKind::Inner
         && kind != JoinKind::Right && kind != JoinKind::Full)
-        return false;
-    if (strictness == JoinStrictness::Asof)
         return false;
     if (is_special_storage || !one_disjunct)
         return false;

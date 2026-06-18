@@ -30,6 +30,8 @@
 #include <variant>
 #include <vector>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 
 namespace DB
 {
@@ -176,7 +178,7 @@ public:
     /** Find the file and line number information corresponding to address.
       * The address must be physical - offset in object file without offset in virtual memory where the object is loaded.
       */
-    bool findAddress(uintptr_t address, LocationInfo & info, LocationInfoMode mode, std::vector<SymbolizedFrame> & inline_frames) const;
+    bool findAddress(uintptr_t address, LocationInfo & info, LocationInfoMode mode, VectorWithMemoryTracking<SymbolizedFrame> & inline_frames) const;
 
 private:
     static bool findDebugInfoOffset(uintptr_t address, std::string_view aranges, uint64_t & offset);
@@ -226,12 +228,12 @@ private:
     // provide a description of a corresponding entity in the source program.
     struct Die
     {
-        bool is64Bit; /// NOLINT
+        bool is64Bit{}; /// NOLINT
         // Offset from start to first attribute
-        uint8_t attr_offset;
+        uint8_t attr_offset{};
         // Offset within debug info.
-        uint64_t offset;
-        uint64_t code;
+        uint64_t offset{};
+        uint64_t code{};
         DIEAbbreviation abbr;
     };
 
@@ -284,7 +286,7 @@ private:
 
         // Only the CompilationUnit that contains the caller functions needs this cache.
         // Indexed by (abbr.code - 1) if (abbr.code - 1) < abbrCache.size();
-        std::vector<DIEAbbreviation> abbr_cache;
+        VectorWithMemoryTracking<DIEAbbreviation> abbr_cache;
     };
 
     /** cu must exist during the life cycle of created Die. */
@@ -295,7 +297,7 @@ private:
         LocationInfoMode mode,
         CompilationUnit & cu,
         LocationInfo & info,
-        std::vector<SymbolizedFrame> & inline_frames,
+        VectorWithMemoryTracking<SymbolizedFrame> & inline_frames,
         bool assume_in_cu_range) const;
 
     /**
@@ -340,7 +342,7 @@ private:
             std::string_view relativeName; /// NOLINT
             // 0 = current compilation directory
             // otherwise, 1-based index in the list of include directories
-            uint64_t directoryIndex; /// NOLINT
+            uint64_t directoryIndex{}; /// NOLINT
         };
         // Read one FileName object, remove_prefix program
         static bool readFileName(std::string_view & program, FileName & fn);
@@ -365,48 +367,48 @@ private:
         std::string_view debugLineStr_; // DWARF 5        /// NOLINT
 
         // Header
-        uint16_t version_;   /// NOLINT
-        uint8_t minLength_;  /// NOLINT
-        bool defaultIsStmt_; /// NOLINT
-        int8_t lineBase_;    /// NOLINT
-        uint8_t lineRange_;  /// NOLINT
-        uint8_t opcodeBase_; /// NOLINT
-        const uint8_t * standardOpcodeLengths_; /// NOLINT
+        uint16_t version_{};   /// NOLINT
+        uint8_t minLength_{};  /// NOLINT
+        bool defaultIsStmt_{}; /// NOLINT
+        int8_t lineBase_{};    /// NOLINT
+        uint8_t lineRange_{};  /// NOLINT
+        uint8_t opcodeBase_{}; /// NOLINT
+        const uint8_t * standardOpcodeLengths_{}; /// NOLINT
 
         // 6.2.4 The Line Number Program Header.
         struct
         {
-            size_t includeDirectoryCount;
+            size_t includeDirectoryCount{};
             std::string_view includeDirectories;
-            size_t fileNameCount;
+            size_t fileNameCount{};
             std::string_view fileNames;
         } v4_;
 
         struct
         {
-            uint8_t directoryEntryFormatCount;
+            uint8_t directoryEntryFormatCount{};
             std::string_view directoryEntryFormat;
-            uint64_t directoriesCount;
+            uint64_t directoriesCount{};
             std::string_view directories;
 
-            uint8_t fileNameEntryFormatCount;
+            uint8_t fileNameEntryFormatCount{};
             std::string_view fileNameEntryFormat;
-            uint64_t fileNamesCount;
+            uint64_t fileNamesCount{};
             std::string_view fileNames;
         } v5_;
 
         // State machine registers
-        uint64_t address_; /// NOLINT
-        uint64_t file_; /// NOLINT
-        uint64_t line_; /// NOLINT
-        uint64_t column_; /// NOLINT
-        bool isStmt_; /// NOLINT
-        bool basicBlock_; /// NOLINT
-        bool endSequence_; /// NOLINT
-        bool prologueEnd_; /// NOLINT
-        bool epilogueBegin_; /// NOLINT
-        uint64_t isa_; /// NOLINT
-        uint64_t discriminator_; /// NOLINT
+        uint64_t address_{}; /// NOLINT
+        uint64_t file_{}; /// NOLINT
+        uint64_t line_{}; /// NOLINT
+        uint64_t column_{}; /// NOLINT
+        bool isStmt_{}; /// NOLINT
+        bool basicBlock_{}; /// NOLINT
+        bool endSequence_{}; /// NOLINT
+        bool prologueEnd_{}; /// NOLINT
+        bool epilogueBegin_{}; /// NOLINT
+        uint64_t isa_{}; /// NOLINT
+        uint64_t discriminator_{}; /// NOLINT
     };
 
     /**
@@ -419,7 +421,7 @@ private:
         const LineNumberVM & line_vm,
         uint64_t address,
         std::optional<uint64_t> base_addr_cu,
-        std::vector<CallLocation> & locations,
+        VectorWithMemoryTracking<CallLocation> & locations,
         size_t max_size) const;
 
     // Read an abbreviation from a std::string_view, return true if at end; remove_prefix section

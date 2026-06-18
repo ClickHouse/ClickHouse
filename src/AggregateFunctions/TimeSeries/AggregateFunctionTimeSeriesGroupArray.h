@@ -2,7 +2,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnVector.h>
@@ -380,7 +379,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        UInt16 format_version;
+        UInt16 format_version = 0;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)
@@ -390,7 +389,7 @@ public:
                 FORMAT_VERSION, format_version);
 
         Data & data = this->data(place);
-        size_t size;
+        size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
         data.reserve(size, arena);

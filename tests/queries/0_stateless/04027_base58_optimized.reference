@@ -1,0 +1,69 @@
+btc
+1
+32-byte round-trip
+1
+32-byte all zeros
+1
+1
+32-byte all-FF
+1
+1
+32-byte leading zeros
+1
+1
+1
+64-byte round-trip
+1
+64-byte all zeros
+1
+1
+64-byte all-FF
+1
+64-byte leading zeros
+1
+overflow fallback
+1
+1
+1
+1
+non-32/64 byte decode
+1
+1
+1
+1
+1
+invalid characters
+1
+1
+1
+decode errors
+generic path
+1
+1
+1
+1
+1
+1
+tryBase58Decode
+1
+1
+size hint 32
+1
+1
+size hint 64
+1
+1
+size hint overflow
+tryBase58Decode with size hint
+1
+1
+1
+size hint fallback to generic
+1
+bulk round-trip
+1
+100
+100
+bulk round-trip with size hint
+100
+100

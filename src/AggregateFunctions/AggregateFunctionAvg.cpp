@@ -88,6 +88,7 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
 }
 }
 
+void registerAggregateFunctionAvg(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAvg(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_avg = R"(
