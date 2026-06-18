@@ -40,8 +40,9 @@ private:
     void rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy);
     void rowPolicyRemoved(const UUID & policy_id);
     void mixFiltersIfNeeded();
-    void mixFilters();
-    void mixFiltersFor(EnabledRowPolicies & enabled);
+    /// Takes no lock and reads only `policies` (not `all_policies`) plus thread-safe `access_control`,
+    /// so it can rebuild on a snapshot off the `mutex`. `const` to keep it from mutating cache state off-lock.
+    void mixFiltersFor(EnabledRowPolicies & enabled, const std::unordered_map<UUID, PolicyInfo> & policies, bool users_without_row_policies_can_read_rows) const;
 
     const AccessControl & access_control;
     std::unordered_map<UUID, PolicyInfo> all_policies;
