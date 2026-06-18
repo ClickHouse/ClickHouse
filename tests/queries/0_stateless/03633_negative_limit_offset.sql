@@ -1,3 +1,5 @@
+-- Random settings limits: index_granularity=(8192, None)
+
 SET enable_analyzer=0;
 SELECT 'Old Analyzer:';
 
