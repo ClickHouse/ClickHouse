@@ -353,6 +353,26 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
     MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
     {
         auto lock = storage.lockParts();
+
+        /// Under `leader_election`, enforce the leader/epoch check BEFORE anything in this critical
+        /// section touches shared object storage. The first shared write is `deduplication_log->addPart`
+        /// below: a stale leader that persisted a block id and then failed the later commit check
+        /// would make a never-published `INSERT` look like a duplicate to the new leader (the block
+        /// id exists, but the part was never renamed in), so the retry on the new leader would be
+        /// silently dropped. The part rename that follows is the second shared write. `transaction.commit`
+        /// re-checks leadership, but by then both writes have already happened, so the fence must be
+        /// here. Checking here also rejects an `INSERT` admitted under a previous lease epoch (stale
+        /// block numbers).
+        UInt64 admission_epoch = commit_epoch;
+        /// Test hook: deterministically simulate a leadership loss+reacquire between this INSERT's
+        /// admission and its commit by presenting an older admission epoch than the current one, so
+        /// the real `assertWritableLeaderAtEpoch` comparison rejects the write before any shared write.
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_epoch_before_commit,
+        {
+            admission_epoch = commit_epoch >= 1 ? commit_epoch - 1 : commit_epoch + 1;
+        });
+        storage.assertWritableLeaderAtEpoch(admission_epoch);
+
         auto block_holder = storage.fillNewPartName(part, lock);
 
         if (!deduplication_hashes.empty())
@@ -383,21 +403,6 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         /// - T2: merge finished, covered parts removed, and it will include all_2_2_0!
         ///
         /// Hence, for now rename_in_transaction is false.
-        ///
-        /// Under `leader_election`, enforce the leader/epoch check BEFORE this rename, which
-        /// publishes the part on shared storage. `transaction.commit` re-checks leadership, but by
-        /// then the rename has already happened, so a node that lost (or lost and reacquired)
-        /// leadership could leave a part a new leader then activates. Checking here also rejects an
-        /// `INSERT` admitted under a previous lease epoch (stale block numbers).
-        UInt64 admission_epoch = commit_epoch;
-        /// Test hook: deterministically simulate a leadership loss+reacquire between this INSERT's
-        /// admission and its commit by presenting an older admission epoch than the current one, so
-        /// the real `assertWritableLeaderAtEpoch` comparison rejects the write before the rename.
-        fiu_do_on(FailPoints::merge_tree_leader_election_stale_epoch_before_commit,
-        {
-            admission_epoch = commit_epoch >= 1 ? commit_epoch - 1 : commit_epoch + 1;
-        });
-        storage.assertWritableLeaderAtEpoch(admission_epoch);
         storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
         transaction.commit(lock);
     }
