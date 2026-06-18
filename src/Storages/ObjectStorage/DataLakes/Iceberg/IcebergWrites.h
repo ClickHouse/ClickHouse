@@ -45,6 +45,11 @@ namespace DB
 
 String removeEscapedSlashes(const String & json_str);
 
+/// Serializes a Poco JSON value to text, undoing the `\/` escaping that Poco unconditionally applies
+/// to forward slashes (see `removeEscapedSlashes`). Use this instead of hand-rolling the
+/// `std::ostringstream` + `Stringifier::stringify` + `removeEscapedSlashes` sequence.
+String stringifyJson(const Poco::Dynamic::Var & json, unsigned indent = 0);
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
