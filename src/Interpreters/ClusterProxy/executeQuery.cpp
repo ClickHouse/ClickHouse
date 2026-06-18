@@ -620,12 +620,28 @@ static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr &
 
     ReplicasInfo replicas_info;
 #if CLICKHOUSE_CLOUD
-    if (SharedDatabaseCatalog::initialized() && cluster_name == SharedDatabaseCatalog::instance().getClusterName())
-        replicas_info = SharedDatabaseCatalog::instance().tryGetReplicasInfo(cluster);
+    /// The shared catalog cluster is exposed in `system.clusters` both under its plain name and under the
+    /// `all_groups.` prefix, and both report the same `is_active` data - accept either spelling here.
+    if (SharedDatabaseCatalog::initialized())
+    {
+        const String & catalog_cluster_name = SharedDatabaseCatalog::instance().getClusterName();
+        if (cluster_name == catalog_cluster_name
+            || cluster_name == SharedDatabaseCatalog::ALL_GROUPS_CLUSTER_PREFIX + catalog_cluster_name)
+            replicas_info = SharedDatabaseCatalog::instance().tryGetReplicasInfo(cluster);
+    }
 #endif
     if (replicas_info.replicas.empty())
     {
-        if (auto database = DatabaseCatalog::instance().tryGetDatabase(cluster_name))
+        /// A `Replicated` database is exposed in `system.clusters` both as `<db>` and as `all_groups.<db>`;
+        /// the latter resolves to the same database after stripping the prefix (see `tryGetReplicatedDatabaseCluster`).
+        /// Strip it here too, otherwise an `all_groups.<db>` cluster gets no liveness data and we fall back to
+        /// counting inactive replicas again.
+        String database_name = cluster_name;
+        static constexpr std::string_view all_groups_prefix = DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX;
+        if (database_name.starts_with(all_groups_prefix))
+            database_name = database_name.substr(all_groups_prefix.size());
+
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
             if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(database.get()))
                 replicas_info = replicated->tryGetReplicasInfo(cluster);
     }
