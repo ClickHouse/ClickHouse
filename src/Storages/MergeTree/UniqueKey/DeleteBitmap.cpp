@@ -438,14 +438,11 @@ DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values)
     result.body_size = unpackUInt32LE(header + sizeof(UInt32) * 2);
     result.magic_ok = (magic == DeleteBitmap::MAGIC);
 
-    /// Validate the header *before* allocating: a non-`.rbm` file (bad magic) or
-    /// a corrupt/oversized declared `body_size` must not drive a multi-hundred-MB
-    /// allocation only to then be reported as bad. The declared `body_size` is
-    /// already recorded above, so a caller still sees the absurd value. Version
-    /// doesn't bound the allocation, so an unknown-version but intact file still
-    /// gets its CRC checked below; only `magic`/`body_size` gate the buffer.
-    /// Mirrors `deserialize`, which bounds `body_size` before allocating.
-    if (!result.magic_ok || result.body_size > MAX_SERIALIZED_BODY_SIZE)
+    /// Validate magic / version / body_size before allocating, like `deserialize`,
+    /// so a bad header can't drive a multi-hundred-MB allocation just to be rejected.
+    const bool version_supported
+        = result.version == DeleteBitmap::VERSION_R32 || result.version == DeleteBitmap::VERSION_R64;
+    if (!result.magic_ok || !version_supported || result.body_size > MAX_SERIALIZED_BODY_SIZE)
         return result;
 
     std::unique_ptr<char[]> body;
@@ -470,17 +467,13 @@ DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values)
         result.crc_ok = (result.crc_stored == result.crc_computed);
     }
 
-    /// Deliberately tolerant of bytes past the CRC: `deserialize` rejects them
-    /// ("unexpected trailing bytes after CRC"), but an inspector's job is to
-    /// surface what the frame *does* contain, not to re-impose the reader's
-    /// strictness. The header/CRC/stats we report are still accurate for the
-    /// declared frame; we don't read `in.eof()` here.
+    /// Tolerant of bytes past the CRC by design: `deserialize` rejects them, but an
+    /// inspector reports the declared frame rather than re-imposing reader strictness.
 
-    /// Decode independently of the CRC verdict — a CRC-corrupt file should still
-    /// surface stats when its body happens to parse. `readSafe` throws on a
-    /// malformed body; report it via `decoded=false` instead of propagating.
-    if (result.magic_ok && result.body_read
-        && (result.version == DeleteBitmap::VERSION_R32 || result.version == DeleteBitmap::VERSION_R64))
+    /// Decode independently of the CRC verdict (magic/version are guaranteed by the
+    /// guard above). `readSafe` throws on a malformed body — reported via
+    /// `decoded=false` rather than propagated.
+    if (result.body_read)
     {
         try
         {
@@ -507,9 +500,7 @@ DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values)
         }
         catch (...) // NOLINT
         {
-            /// Ok: tolerant inspector — a malformed roaring body is reported (decoded=false +
-            /// decode_error), never propagated. Surfacing the message is the "bring it to the
-            /// caller" half of not swallowing the exception silently.
+            /// Ok: a malformed body is reported (decoded=false + decode_error), never propagated.
             result.decoded = false;
             result.decode_error = getCurrentExceptionMessage(/*with_stacktrace=*/false);
         }

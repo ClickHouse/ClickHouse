@@ -134,11 +134,9 @@ private:
 
 using DeleteBitmapPtr = std::shared_ptr<DeleteBitmap>;
 
-/// Result of a tolerant, non-throwing parse of a `.rbm` byte stream, for
-/// inspection tooling (e.g. `clickhouse-disk read-bitmap`). Unlike
-/// `DeleteBitmap::deserialize`, a malformed magic / version / CRC / body is
-/// *reported* via the flags below rather than thrown, so a corrupt sidecar can
-/// still be examined. Each field is best-effort: a failed stage leaves later
+/// Result of a tolerant, non-throwing `.rbm` parse for inspection tooling
+/// (`clickhouse-disk read-bitmap`): a malformed magic / version / CRC / body is
+/// reported via the flags below rather than thrown. A failed stage leaves later
 /// fields at their defaults with the matching `*_ok` / `decoded` flag clear.
 struct DeleteBitmapInspection
 {
@@ -159,12 +157,9 @@ struct DeleteBitmapInspection
     std::vector<UInt64> sample; /// all set bits (ascending) when collect_values; else empty
 };
 
-/// Tolerantly parse a `.rbm` stream for inspection: never throws on a malformed
-/// magic / version / CRC / body — returns what could be parsed with the
-/// relevant flags cleared. `header_read == false` means the stream was too
-/// short to even hold the 12-byte header ("not a bitmap file at all").
-/// When `collect_values` is set, every set bit is collected into `sample`
-/// (ascending); otherwise `sample` is left empty (stats only).
+/// Tolerantly parse a `.rbm` stream for inspection — never throws; returns what
+/// parsed with the rest of the flags clear. `header_read == false` means too short
+/// for even the 12-byte header. `collect_values` fills `sample` with every set bit.
 DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values);
 
 }

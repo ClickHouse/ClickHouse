@@ -469,10 +469,7 @@ TEST(DeleteBitmapTest, FileNameRoundtrip)
 }
 
 /// ---------- tolerant inspect helper (inspectDeleteBitmap) ----------
-///
-/// The `clickhouse-disk read-bitmap` command parses `.rbm` files via this
-/// non-throwing inspector. It shares the byte layout with the writer above, so
-/// it round-trips a real `serialize`d bitmap; corruption cases assert it flags
+/// Round-trips a real `serialize`d bitmap; corruption cases assert it flags
 /// rather than throws.
 
 namespace
@@ -489,9 +486,7 @@ namespace
 
 TEST(DeleteBitmapInspectTest, ValidRoundtripReportsStats)
 {
-    /// The same `{3, 7, 42, 12345, 1000000}` bitmap drives the
-    /// `clickhouse-disk read-bitmap` functional test fixture; keep them in
-    /// lockstep so a format change fails both here and there.
+    /// Same bitmap as the read-bitmap functional fixture — kept in lockstep.
     DeleteBitmap in;
     in.addMany({3, 7, 42, 12345, 1'000'000});
     String buf = serializeToString(in);

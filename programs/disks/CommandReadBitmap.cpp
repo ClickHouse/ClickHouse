@@ -13,14 +13,11 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
-/// Inspect a per-part Roaring delete-bitmap (`.rbm`) sidecar: print its header
-/// + stats summary. Tolerant of corruption — reports it rather than aborting.
-/// Parses via `DeleteBitmap.h`'s non-throwing `inspectDeleteBitmap` (the
-/// throwing `DeleteBitmap::deserialize` is unfit for an inspector). The
-/// implementation lives in `DeleteBitmap.cpp` (dbms), which the unified
-/// `clickhouse` binary — what `clickhouse-disks` is a symlink to — already links.
+/// Inspect a delete-bitmap (`.rbm`) sidecar: print header + stats via the
+/// non-throwing `inspectDeleteBitmap` (tolerant of corruption, unlike `deserialize`).
 class CommandReadBitmap final : public ICommand
 {
 public:
@@ -75,7 +72,15 @@ public:
         else if (info.version == DeleteBitmap::VERSION_R64)
             out << " (Roaring64; body is host-endian, not cross-arch portable)\n";
         else
-            out << " (UNKNOWN)\n";
+        {
+            /// Unsupported version: the inspector stops before reading the body
+            /// (mirrors deserialize), so there are no stats to print.
+            out << " (UNSUPPORTED)\nbody_size: " << info.body_size << " bytes\n";
+            out.flush();
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
+                "unsupported delete-bitmap version {} (supported: {} or {})",
+                info.version, DeleteBitmap::VERSION_R32, DeleteBitmap::VERSION_R64);
+        }
 
         out << "body_size: " << info.body_size << " bytes";
         if (!info.body_read)
