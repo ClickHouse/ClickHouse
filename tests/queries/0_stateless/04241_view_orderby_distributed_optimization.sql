@@ -326,6 +326,54 @@ SELECT 'view SETTINGS prefer_column_name_to_alias disables pushdown:',
 
 DROP VIEW test_view_settings_alias_04241;
 
+-- `SQL SECURITY DEFINER` view whose definer settings profile sets `limit`,
+-- `offset`, or `prefer_column_name_to_alias`: pushdown must be disabled even
+-- though the view's own `SETTINGS` clause is empty. The injected inner
+-- `ORDER BY`/`LIMIT` is analyzed and executed under the definer's effective
+-- context (`getSQLSecurityOverriddenContext`), so a definer `limit`/`offset`
+-- constrains which rows the view exposes (like an inner `LIMIT`/`OFFSET`), and a
+-- definer `prefer_column_name_to_alias` rebinds the injected `ORDER BY`
+-- identifiers. The AST `SETTINGS` guard above does not see these inherited
+-- settings, so they must be rejected via the effective view context.
+DROP USER IF EXISTS definer_limit_04241;
+DROP USER IF EXISTS definer_offset_04241;
+DROP USER IF EXISTS definer_alias_04241;
+CREATE USER definer_limit_04241 IDENTIFIED WITH no_password SETTINGS limit = 5;
+CREATE USER definer_offset_04241 IDENTIFIED WITH no_password SETTINGS offset = 5;
+CREATE USER definer_alias_04241 IDENTIFIED WITH no_password SETTINGS prefer_column_name_to_alias = 1;
+GRANT SELECT ON *.* TO definer_limit_04241, definer_offset_04241, definer_alias_04241;
+
+DROP VIEW IF EXISTS test_view_definer_limit_04241;
+CREATE VIEW test_view_definer_limit_04241
+    DEFINER = definer_limit_04241 SQL SECURITY DEFINER
+    AS SELECT id, val, ts FROM test_distributed_04241;
+SELECT 'definer profile limit disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_definer_limit_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+DROP VIEW test_view_definer_limit_04241;
+
+DROP VIEW IF EXISTS test_view_definer_offset_04241;
+CREATE VIEW test_view_definer_offset_04241
+    DEFINER = definer_offset_04241 SQL SECURITY DEFINER
+    AS SELECT id, val, ts FROM test_distributed_04241;
+SELECT 'definer profile offset disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_definer_offset_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+DROP VIEW test_view_definer_offset_04241;
+
+DROP VIEW IF EXISTS test_view_definer_alias_04241;
+CREATE VIEW test_view_definer_alias_04241
+    DEFINER = definer_alias_04241 SQL SECURITY DEFINER
+    AS SELECT id, val, ts FROM test_distributed_04241;
+SELECT 'definer profile prefer_column_name_to_alias disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_definer_alias_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+DROP VIEW test_view_definer_alias_04241;
+
+DROP USER definer_limit_04241;
+DROP USER definer_offset_04241;
+DROP USER definer_alias_04241;
+
 DROP TABLE test_join_04241;
 DROP VIEW test_view_04241;
 DROP TABLE test_distributed_04241;

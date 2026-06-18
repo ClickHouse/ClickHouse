@@ -118,6 +118,8 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
+    extern const SettingsUInt64 limit;
+    extern const SettingsUInt64 offset;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -1047,6 +1049,21 @@ void pushOrderByIntoView(
     try
     {
         auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+
+        /// The injected inner `ORDER BY`/`LIMIT` is analyzed and executed under the
+        /// view's effective context (`getSQLSecurityOverriddenContext`), not the outer
+        /// query context. The AST `SETTINGS` guard above only rejects `limit`/`offset`/
+        /// `prefer_column_name_to_alias` written in the view definition; it does not see
+        /// settings inherited through a `SQL SECURITY DEFINER` view's definer profile.
+        /// A definer profile `limit`/`offset` constrains which rows the view exposes
+        /// (just like an inner `LIMIT`/`OFFSET`), so re-sorting and truncating around it
+        /// changes the result; a definer profile `prefer_column_name_to_alias` reintroduces
+        /// the alias-vs-source-column ambiguity that the outer-context guard already excludes.
+        /// Check the effective context here and skip the pushdown when any of these is set.
+        const auto & view_settings = view_context->getSettingsRef();
+        if (view_settings[Setting::limit] || view_settings[Setting::offset] || view_settings[Setting::prefer_column_name_to_alias])
+            return;
+
         inner_header = InterpreterSelectQueryAnalyzer::getSampleBlock(inner, view_context, SelectQueryOptions().analyze());
     }
     catch (const Exception &)
