@@ -132,6 +132,25 @@ def run_shell(name, command, **kwargs):
     print(f"\n<<<< {name}\n")
 
 
+def log_resources(stage):
+    """Log free disk and memory at a stage boundary.
+
+    The heavy phases (the instrumented build, profile collection against large
+    datasets, and especially the second full ThinLTO build that coexists with the
+    first build tree) can exhaust the runner's disk or RAM, which shows up only as
+    an abrupt mid-operation kill. Emitting `df`/`free`/`du` here makes the resource
+    that ran out unambiguous in the job log.
+    """
+    print(f"--- resources at [{stage}] ---")
+    Shell.check(f"df -h {temp_dir} 2>/dev/null || df -h", verbose=True)
+    Shell.check("free -h 2>/dev/null || head -3 /proc/meminfo", verbose=True)
+    Shell.check(
+        f"du -sh {PGO_BUILD_DIR} {BOLT_BUILD_DIR} {PERF_DB_PATH} {PGO_RAW_PROFILES_DIR} 2>/dev/null || :",
+        verbose=True,
+    )
+    print("--- end resources ---")
+
+
 def install_clickhouse(binary_path, server_dir):
     """Install ClickHouse binary and configs for running performance tests."""
     config_dir = f"{server_dir}/config"
@@ -175,9 +194,13 @@ def download_datasets():
         print("Datasets already downloaded")
         return True
     Shell.check(f"mkdir -p {PERF_DB_PATH}/data/default/")
+    # Deliberately omit the 100M-row hits dataset (`hits_100m_single`). For profile
+    # *collection* the 10M-row set exercises the same code paths, while querying 100M
+    # rows on the instrumented binary is the heaviest disk+memory consumer and the
+    # most likely cause of a mid-collection out-of-resource kill. Perf tests that need
+    # `hits_100m_single` simply fail their precondition and are skipped.
     dataset_paths = {
         "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
-        "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
         "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
         "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
         "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
@@ -370,6 +393,11 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
             # cap, or `timeout` killing a long test); the profiles gathered so far are
             # still valid, so log it and move on.
             print(f"  WARNING: test {test_name} did not complete cleanly (exit {res}); continuing: {err[:200]}")
+        # Periodic resource snapshot: collection against large datasets accumulates
+        # disk (profraw files) and server memory, and an abrupt kill mid-collection
+        # otherwise gives no clue which ran out.
+        if ran % 20 == 0:
+            log_resources(f"after {ran} perf tests")
     print(f"Ran {ran} performance test file(s) for profile collection")
 
 
@@ -526,6 +554,8 @@ def main():
                 )
             )
             res = results[-1].is_ok()
+            if res:
+                log_resources("after PGO instrumented build")
 
     # --- Stage: Collect PGO profiles ---
     if res and JobStages.COLLECT_PGO_PROFILES in stages:
@@ -595,6 +625,13 @@ def main():
 
     # --- Stage: Build ClickHouse for BOLT ---
     if res and JobStages.BUILD_FOR_BOLT in stages:
+        # The instrumented build and its raw profraw files are no longer needed once
+        # the profile is merged (the BOLT build only reads PGO_PROFDATA_PATH). Remove
+        # them before the second full build so two complete build trees plus the
+        # datasets don't exhaust the runner's disk.
+        log_resources("before freeing PGO build dir")
+        Shell.check(f"rm -rf {PGO_BUILD_DIR} {PGO_RAW_PROFILES_DIR}")
+        log_resources("before BOLT build")
         os.makedirs(BOLT_BUILD_DIR, exist_ok=True)
 
         cmake_cmd = (
