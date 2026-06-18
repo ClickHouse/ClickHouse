@@ -305,14 +305,36 @@ void StorageAlias::setMutationCSN(const String & mutation_id, UInt64 csn)
     getTargetTable()->setMutationCSN(mutation_id, csn);
 }
 
+namespace
+{
+
+/// Holds the resolved target StoragePtr alongside its task list
+struct AliasCheckTasks : IStorage::DataValidationTasksBase
+{
+    StoragePtr target;
+    IStorage::DataValidationTasksPtr inner;
+
+    AliasCheckTasks(StoragePtr target_, IStorage::DataValidationTasksPtr inner_)
+        : target(std::move(target_)), inner(std::move(inner_))
+    {
+    }
+
+    size_t size() const override { return inner->size(); }
+};
+
+}
+
 IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context)
 {
-    return getTargetTable(TargetAccess{query_context, AccessType::CHECK})->getCheckTaskList(filter, query_context);
+    auto target = getTargetTable(TargetAccess{query_context, AccessType::CHECK});
+    auto inner = target->getCheckTaskList(filter, query_context);
+    return std::make_shared<AliasCheckTasks>(std::move(target), std::move(inner));
 }
 
 std::optional<CheckResult> StorageAlias::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
-    return getTargetTable()->checkDataNext(check_task_list);
+    auto & tasks = dynamic_cast<AliasCheckTasks &>(*check_task_list);
+    return tasks.target->checkDataNext(tasks.inner);
 }
 
 CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
