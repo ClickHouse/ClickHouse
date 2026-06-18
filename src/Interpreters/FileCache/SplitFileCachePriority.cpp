@@ -312,7 +312,12 @@ bool SplitFileCachePriority::tryIncreasePriority(
     CachePriorityGuard & queue_guard,
     CacheStateGuard & state_guard)
 {
-    const auto type = getPriorityType(iterator.getEntry()->key_metadata->origin.segment_type);
+    /// Held weakly: the key may be concurrently removed (the entry then awaits lazy removal
+    /// from the queue). If so, there is nothing to prioritize - skip without dereferencing.
+    auto key_metadata = iterator.getEntry()->key_metadata.lock();
+    if (!key_metadata)
+        return false;
+    const auto type = getPriorityType(key_metadata->origin.segment_type);
     return getPriority(type).tryIncreasePriority(iterator, is_space_reservation_complete, queue_guard, state_guard);
 }
 

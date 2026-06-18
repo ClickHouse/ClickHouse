@@ -396,11 +396,13 @@ LRUFileCachePriority::iterateImpl(
             continue;
         }
 
-        auto locked_key = entry.key_metadata->tryLock();
+        auto key_metadata = entry.key_metadata.lock();
+        auto locked_key = key_metadata ? key_metadata->tryLock() : nullptr;
         if (!locked_key)
         {
             /// locked_key == nullptr means that the cache key of
-            /// the file segment of this queue entry no longer exists.
+            /// the file segment of this queue entry no longer exists
+            /// (the KeyMetadata is held only weakly here, so it may already be gone).
             /// This is normal if the key was removed from metadata,
             /// while queue entries can be removed lazily (with delay).
             stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
@@ -716,7 +718,6 @@ bool LRUFileCachePriority::tryIncreasePriority(
     auto lock = queue_guard.writeLock();
     const auto & entry = iterator.getEntry();
     chassert(entry->getState() == Entry::State::Active);
-    entry->hits += 1;
 
     auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
     moveEvictionPosIfEqual(it, lock);

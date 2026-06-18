@@ -58,10 +58,14 @@ public:
     {
         const Key key;
         const size_t offset;
-        const KeyMetadataPtr key_metadata;
+        /// Weak by design: the entry must not keep `KeyMetadata` (and, transitively, the key's
+        /// metadata) alive. While the entry is `Active` its `KeyMetadata` is owned by the metadata
+        /// bucket anyway; once the entry is invalidated and lazily awaits removal from the queue,
+        /// a strong reference here would pin `KeyMetadata` for the whole (potentially long) lifetime
+        /// of the zombie entry. Read sites `lock()` it and treat expiry as "key no longer exists".
+        const KeyMetadataWeakPtr key_metadata;
 
         std::atomic<size_t> size;
-        std::atomic<size_t> hits = 0;
 
         std::string toString(const std::string & prefix = "") const;
 

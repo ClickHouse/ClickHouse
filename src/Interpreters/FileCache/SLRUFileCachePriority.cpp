@@ -564,7 +564,9 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                 /// and reset size for the old entry,
                 /// thus size will be transferred from one entry to another.
                 /// PreActive: iterateImpl skips this entry until setIterator atomically transitions it to Active.
-                auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry->key_metadata, Entry::State::PreActive);
+                auto entry_key_metadata = entry->key_metadata.lock();
+                chassert(entry_key_metadata);
+                auto empty_entry = std::make_shared<Entry>(entry->key, entry->offset, /* size */0, entry_key_metadata, Entry::State::PreActive);
                 auto new_iterator = probationary_queue.add(std::move(empty_entry), lk, /* state_lock */nullptr);
                 downgraded_entries->add(DowngradedEntryInfo{
                     .slru_iterator = iterator,
@@ -660,7 +662,10 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     EntryPtr prev_entry = iterator.getEntry();
 
     {
-        auto locked_key = prev_entry->key_metadata->lock();
+        auto prev_key_metadata = prev_entry->key_metadata.lock();
+        if (!prev_key_metadata)
+            return false;
+        auto locked_key = prev_key_metadata->lock();
         const auto entry_state = prev_entry->getState();
         chassert(entry_state == Entry::State::Active || entry_state == Entry::State::Evicting);
         if (entry_state != Entry::State::Active)
@@ -737,11 +742,14 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         removeEntries(invalidated_entries, lock);
 
         /// PreActive: iterateImpl skips this entry until setIterator atomically transitions it to Active.
+        /// `prev_entry` is held in `Moving` state here, so its `KeyMetadata` is still alive.
+        auto prev_key_metadata = prev_entry->key_metadata.lock();
+        chassert(prev_key_metadata);
         auto empty_entry = std::make_shared<Entry>(
             prev_entry->key,
             prev_entry->offset,
             /* size */0,
-            prev_entry->key_metadata,
+            prev_key_metadata,
             Entry::State::PreActive);
 
         return protected_queue.add(
@@ -790,7 +798,8 @@ LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
             /// there is no corresponding entry in priority queue for it,
             /// because it will mean that cache became inconsistent.
             /// So let's try to fix the situation.
-            auto metadata = entry->key_metadata->tryLock();
+            auto entry_key_metadata = entry->key_metadata.lock();
+            auto metadata = entry_key_metadata ? entry_key_metadata->tryLock() : nullptr;
             chassert(metadata);
             if (metadata)
             {
