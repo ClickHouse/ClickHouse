@@ -5256,7 +5256,12 @@ void MergeTreeData::changeSettings(
                                 continue;
 
                             if (name == DETACHED_DIR_NAME)
-                                return has_parseable_detached_parts(disk);
+                            {
+                                if (has_parseable_detached_parts(disk))
+                                    return true;
+
+                                continue;
+                            }
 
                             if (MergeTreePartInfo::tryParsePartName(name, format_version))
                                 return true;
