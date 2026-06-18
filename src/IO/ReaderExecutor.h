@@ -905,11 +905,11 @@ private:
     /// known) and the read extent - the per-read analogue of `boundedPlanSpan`.
     size_t boundedReadSize(size_t want) const;
 
-    /// EOF: size known -> `position >= totalSize()`; size unknown -> the
-    /// source's short return latched `reached_eof` (cleared by backward seek).
     bool atEnd() const
     {
-        return reached_eof || (!offset_map.hasUnknownSize() && position >= totalSize());
+        if (offset_map.hasUnknownSize())
+            return reached_eof;
+        return reached_eof || position >= totalSize();
     }
 
     // ─── Members ─────────────────────────────────────────────────────────
