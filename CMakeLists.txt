@@ -181,9 +181,17 @@ if (OS_DARWIN)
     # keeping the LC_SYMTAB used for backtraces intact. We use it instead of the simpler
     # `-no_exported_symbols` because the latter is not understood by the cctools `ld` used for
     # cross-compilation in CI, while `-exported_symbols_list` is supported by both it and lld.
-    set (EMPTY_EXPORTED_SYMBOLS_LIST "${CMAKE_BINARY_DIR}/empty_exported_symbols.txt")
-    file (WRITE "${EMPTY_EXPORTED_SYMBOLS_LIST}" "")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-exported_symbols_list,${EMPTY_EXPORTED_SYMBOLS_LIST}")
+    #
+    # Skip this for sanitizer builds: on Darwin we rely on Apple's bundled sanitizer runtime,
+    # which resolves hooks such as `__asan_default_options` / `__lsan_default_suppressions`
+    # (see base/base/sanitizer_options.h) by symbol name via dyld weak-symbol coalescing.
+    # Hiding the executable's exports would silently drop those options. Sanitizer builds are
+    # for testing and do not need the startup optimization anyway.
+    if (NOT SANITIZE)
+        set (EMPTY_EXPORTED_SYMBOLS_LIST "${CMAKE_BINARY_DIR}/empty_exported_symbols.txt")
+        file (WRITE "${EMPTY_EXPORTED_SYMBOLS_LIST}" "")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-exported_symbols_list,${EMPTY_EXPORTED_SYMBOLS_LIST}")
+    endif ()
 
     # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
