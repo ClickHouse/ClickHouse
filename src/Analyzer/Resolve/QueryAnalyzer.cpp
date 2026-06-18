@@ -4227,9 +4227,22 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     /// `ensureColumnMembershipSetsArePopulated()`; they're only consulted when a
     /// query references columns from this table (skipped for `SELECT count() FROM t`).
 
-    /// Enable (SQL-)standard mode (case-insensitive) if the setting is enabled
+    /// Enable (SQL-)standard mode (case-insensitive) if the setting is enabled.
+    /// Quoted projection-override aliases (`AS t("MyCol")`) stay case-sensitive — collect them
+    /// so `enableStandardMode` keeps them out of the lowercase index.
     if (scope.isStandardMode())
-        table_expression_data.enableStandardMode();
+    {
+        std::unordered_set<std::string> case_sensitive_columns;
+        if (query_node)
+        {
+            const auto & override_aliases = query_node->getProjectionAliasesToOverride();
+            const auto & override_is_quoted = query_node->getProjectionAliasesToOverrideIsDoubleQuoted();
+            for (size_t i = 0; i < override_aliases.size() && i < override_is_quoted.size(); ++i)
+                if (override_is_quoted[i])
+                    case_sensitive_columns.insert(override_aliases[i]);
+        }
+        table_expression_data.enableStandardMode(case_sensitive_columns);
+    }
 
     if (auto * scope_query_node = scope.scope_node->as<QueryNode>())
     {

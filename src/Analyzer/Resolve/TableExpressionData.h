@@ -234,13 +234,18 @@ struct AnalysisTableExpressionData
     /// Build lowercase-to-original mappings for case-insensitive identifier resolution from the
     /// column-name source-of-truth `column_names_and_types`, so the lazy column-node map does not
     /// have to be materialised here.
-    void enableStandardMode()
+    /// `case_sensitive_column_names` lists column names that must stay case-sensitive — they are
+    /// skipped from the lowercase index. Used for projection-override aliases that were defined
+    /// as double-quoted (e.g. `FROM (...) AS t("MyCol")`).
+    void enableStandardMode(const std::unordered_set<std::string> & case_sensitive_column_names = {})
     {
         standard_mode = true;
         lowercase_column_name_to_original_names.clear();
 
         for (const auto & [column_name, _] : column_names_and_types)
         {
+            if (case_sensitive_column_names.contains(column_name))
+                continue;
             String lower_name = Poco::toLower(column_name);
             lowercase_column_name_to_original_names[lower_name].push_back(column_name);
         }
@@ -250,6 +255,8 @@ struct AnalysisTableExpressionData
         std::vector<std::string> first_parts_to_add;
         for (const auto & first_part : column_identifier_first_parts)
         {
+            if (case_sensitive_column_names.contains(first_part))
+                continue;
             String lower_part = Poco::toLower(first_part);
             if (lower_part != first_part)
                 first_parts_to_add.push_back(lower_part);

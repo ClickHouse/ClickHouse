@@ -194,13 +194,19 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
     const Identifier & identifier,
     const AnalysisTableExpressionData & table_expression_data,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool case_insensitive_prefix)
 {
     QueryTreeNodes nested_column_nodes;
     DataTypes nested_types;
     Array nested_names_array;
 
     bool allow_compound = context->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested];
+
+    auto parts_equal = [case_insensitive_prefix](std::string_view a, std::string_view b)
+    {
+        return case_insensitive_prefix ? Poco::icompare(a, b) == 0 : a == b;
+    };
 
     for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
     {
@@ -213,7 +219,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 
         for (const auto & part : identifier.getParts())
         {
-            if (suffix.empty() || part != suffix.front())
+            if (suffix.empty() || !parts_equal(part, suffix.front()))
                 break;
 
             suffix.popFirst();
@@ -858,9 +864,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     {
         /// Here we try to create Nested from Array columns with the `identifier` prefix.
         /// For the identifier `x` and columns `x.a Array(String)` and `x.b Array(String)`
-        /// we resolve `x` into Nested(a String, b String).
+        /// we resolve `x` into Nested(a String, b String). The prefix-part comparison must
+        /// honour the base-column case sensitivity so e.g. `items` against `Items Nested(...)`
+        /// matches in standard mode.
         if (auto nested_function_node = tryResolveIdentifierAsNestedPrefix(
-                identifier_without_column_qualifier, table_expression_data, scope.context))
+                identifier_without_column_qualifier, table_expression_data, scope.context, subcolumn_base_case_insensitive))
         {
             clone_is_needed = false;
             result_expression = std::move(nested_function_node);

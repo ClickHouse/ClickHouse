@@ -1045,21 +1045,32 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 {
                     const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
                     Names column_alias_names;
+                    std::vector<bool> column_alias_is_double_quoted;
                     column_alias_names.reserve(column_aliases_list.children.size());
+                    column_alias_is_double_quoted.reserve(column_aliases_list.children.size());
 
                     std::unordered_set<std::string> seen_aliases;
                     for (const auto & column_alias : column_aliases_list.children)
                     {
-                        const auto & alias_name = column_alias->as<ASTIdentifier &>().name();
+                        const auto & alias_identifier = column_alias->as<ASTIdentifier &>();
+                        const auto & alias_name = alias_identifier.name();
                         if (!seen_aliases.insert(alias_name).second)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Duplicate column alias '{}' in table expression column list", alias_name);
                         column_alias_names.push_back(alias_name);
+                        column_alias_is_double_quoted.push_back(
+                            alias_identifier.getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote);
                     }
+
+                    auto apply_overrides = [&](QueryNode & qn)
+                    {
+                        qn.setProjectionAliasesToOverride(std::move(column_alias_names));
+                        qn.setProjectionAliasesToOverrideIsDoubleQuoted(std::move(column_alias_is_double_quoted));
+                    };
 
                     if (auto * query_node = node->as<QueryNode>())
                     {
-                        query_node->setProjectionAliasesToOverride(std::move(column_alias_names));
+                        apply_overrides(*query_node);
                     }
                     else if (auto * union_node = node->as<UnionNode>())
                     {
@@ -1071,7 +1082,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                         {
                             if (auto * inner_query = current->as<QueryNode>())
                             {
-                                inner_query->setProjectionAliasesToOverride(std::move(column_alias_names));
+                                apply_overrides(*inner_query);
                                 break;
                             }
                             else if (auto * inner_union = current->as<UnionNode>())

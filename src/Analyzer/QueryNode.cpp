@@ -444,6 +444,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
+    result_query_node->projection_aliases_to_override_is_double_quoted = projection_aliases_to_override_is_double_quoted;
 
     return result_query_node;
 }

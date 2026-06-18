@@ -515,7 +515,12 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             /// Check if we have Array of JSON subcolumn additioon after identifier
             /// and replace it with corresponding type subcolumn.
             if (!is_first && array_of_json_identifier_addition.check(pos, expected))
+            {
                 parts.push_back(array_of_json_identifier_addition.getLastArrayOfJSONSubcolumnIdentifier());
+                /// The synthetic `Array(JSON)` part is not user-typed, so it has no quoting.
+                /// Append a matching entry so `quote_styles` stays aligned with `parts`.
+                quote_styles.push_back(IdentifierQuoteStyle::None);
+            }
         }
 
         if (parts.back().empty())

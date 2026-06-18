@@ -687,6 +687,24 @@ public:
         projection_aliases_to_override = std::move(pr_aliases);
     }
 
+    const Names & getProjectionAliasesToOverride() const
+    {
+        return projection_aliases_to_override;
+    }
+
+    /// Parallel vector marking which override aliases were defined as double-quoted in source
+    /// (e.g. `AS t("MyCol")`). Used to keep those aliases case-sensitive in standard mode
+    /// (they are NOT added to the lowercase column index in `enableStandardMode`).
+    void setProjectionAliasesToOverrideIsDoubleQuoted(std::vector<bool> flags)
+    {
+        projection_aliases_to_override_is_double_quoted = std::move(flags);
+    }
+
+    const std::vector<bool> & getProjectionAliasesToOverrideIsDoubleQuoted() const
+    {
+        return projection_aliases_to_override_is_double_quoted;
+    }
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
@@ -715,6 +733,7 @@ private:
     bool cte_name_is_double_quoted = false;
     NamesAndTypes projection_columns;
     Names projection_aliases_to_override;
+    std::vector<bool> projection_aliases_to_override_is_double_quoted;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
 
