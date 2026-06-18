@@ -1,0 +1,30 @@
+1. L2Distance
+Name: idx
+Description: vector_spann GRANULARITY 100000000
+0
+0
+2. L2Distance, bf16 quantization
+0
+0
+3. cosineDistance
+0
+0
+4. dotProduct
+3
+0
+1
+5. NaN rejected at insert
+6. Inf rejected at insert
+7. b1 quantization rejected
+8. invalid centroid_ratio
+9. dimension mismatch at query time
+10. merge per-granule candidates across full part
+0
+0
+11. centroid search count at least LIMIT
+Name: idx
+Description: vector_spann GRANULARITY 100000000
+3	3
+12. multi-granule without _distance projection
+4	4
+0

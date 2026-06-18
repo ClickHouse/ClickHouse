@@ -7982,6 +7982,9 @@ Maximum size (in bytes) of the order-preserving binary encoding of a single `UNI
     DECLARE(Bool, allow_experimental_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_vector_spann_index, false, R"(
+Allows creation of MergeTree secondary indexes with type `vector_spann`.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \

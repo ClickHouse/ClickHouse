@@ -61,6 +61,8 @@ Select all 20 neighbours with the rescoring optimization, distances got from vec
 14	114	1400
 10	110	1000
 2	102	200
+Ensure vector-search read hints do not duplicate or drop LIMIT rows
+20	20
 Ensure that optimization was effective for above query, _distance should be seen
 _distance Float32
 Just a test with 2 predicates

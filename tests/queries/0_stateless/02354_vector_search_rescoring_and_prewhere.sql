@@ -109,6 +109,16 @@ FROM tab
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 20;
 
+SELECT 'Ensure vector-search read hints do not duplicate or drop LIMIT rows';
+SELECT count(*), uniqExact(id)
+FROM
+(
+    SELECT id
+    FROM tab
+    ORDER BY L2Distance(vec, [0.2, 0.3])
+    LIMIT 20
+);
+
 SELECT 'Ensure that optimization was effective for above query, _distance should be seen';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1

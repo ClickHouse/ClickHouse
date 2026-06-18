@@ -22,6 +22,7 @@ struct MergeTreeIndexSubstream
         Regular,
         TextIndexDictionary,
         TextIndexPostings,
+        SpannPostingLists,
     };
 
     Type type;

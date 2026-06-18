@@ -150,6 +150,61 @@ Further restrictions apply:
 - Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as early as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
 - Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
 
+#### Creating a Vector SPANN Index (Experimental) {#creating-a-vector-spann-index}
+
+`vector_spann` is an additional approximate vector index implementation.
+
+:::note
+`vector_spann` is experimental and requires setting `allow_experimental_vector_spann_index = 1`.
+:::
+
+Use one of the following index definitions:
+
+```sql
+INDEX index_name vectors TYPE vector_spann('spann', <distance_function>, <dimensions>) [GRANULARITY <N>]
+```
+
+```sql
+INDEX index_name vectors TYPE vector_spann(
+    'spann',
+    <distance_function>,
+    <dimensions>,
+    <quantization>,
+    <hnsw_max_connections_per_layer>,
+    <hnsw_candidate_list_size_for_construction>,
+    <centroid_ratio>
+) [GRANULARITY <N>]
+```
+
+`<distance_function>` must be one of:
+- `L2Distance`
+- `cosineDistance`
+- `dotProduct`
+
+`<quantization>` uses the same names as `vector_similarity`, but `b1` is not supported for `vector_spann`.
+
+`<centroid_ratio>` must be in `(0, 1]`.
+
+Current limitations:
+- `vector_spann` can only be built on a single `Array(Float32)` column.
+- All vectors in the indexed column must have exactly `<dimensions>` elements.
+- As with `vector_similarity`, default index granularity is `100000000` when `GRANULARITY` is omitted.
+- The same query shape requirements apply as for `vector_similarity` (`ORDER BY <DistanceFunction>(..., reference_vector) LIMIT N`, and direction compatibility for `dotProduct` vs other distances).
+
+##### How `vector_spann` works (high level) {#vector-spann-how-it-works}
+
+`vector_spann` is an experimental initial implementation: it validates MergeTree plumbing for a SPANN-style memory/disk layout (centroid HNSW + on-disk posting lists + query-time rerank). It uses `USearch` for centroid indexing and keeps per-centroid posting lists.
+
+- On disk, the index stores centroid metadata and posting-list offsets in the regular skip-index stream, and posting-list payload in a `.pl` stream.
+- During build, ClickHouse selects `ceil(n * centroid_ratio)` centroids with evenly spaced row indices (deterministic for replication), builds an HNSW index over those centroids, then assigns each row vector to its nearest centroid.
+- During query, ClickHouse first searches centroids (using `hnsw_candidate_list_size_for_search`), then scans candidate posting lists and reranks by exact distance before returning top-k candidates.
+
+Current implementation notes:
+- Posting lists store full `Float32` vectors to allow reranking without reading the source vector column.
+- Posting lists for an index granule are **eager-loaded** on deserialize (all lists in that granule), not read selectively per queried centroid.
+- **Not yet implemented** (vs. the SPANN paper): HBC centroid selection, closure expansion, query-aware dynamic pruning, selective posting-list IO.
+- Default `centroid_ratio = 0.16` is inspired by SPANN paper ablation settings; recall and performance are **not** equivalent to full SPANN.
+
 **Estimating storage and memory consumption**
 
 A vector generated for use with a typical AI model (e.g. a Large Language Model, [LLMs](https://en.wikipedia.org/wiki/Large_language_model)) consists of hundreds or thousands of floating-point values.
