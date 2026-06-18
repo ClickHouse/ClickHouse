@@ -329,7 +329,23 @@
             background: linear-gradient(var(--active-tab-top-color), var(--background-color));
             color: var(--text-color-active);
             font-weight: bold;
-            box-shadow: 0 2px 0 0 var(--background-color);
+            position: relative; /* for the ::after that opens the bottom border */
+        }
+
+        /* Erase the top-of-main border only in the active tab's interior (between its side
+           borders), so the bottom looks open and merges with the main area while the side
+           borders still connect to the line at the bottom corners. left/right: 0 are inset
+           by the 1px side borders (relative to the padding box); the 2px height robustly
+           covers the 1px line even with sticky-layer rounding. */
+        .tab.active::after
+        {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -2px;
+            height: 2px;
+            background: var(--background-color);
         }
 
         .tab-title
