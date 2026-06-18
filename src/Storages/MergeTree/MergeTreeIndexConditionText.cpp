@@ -199,6 +199,8 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
         || function_name == "hasPhrase"
+        || function_name == "hasAnyPhrases"
+        || function_name == "hasAllPhrases"
         || function_name == "equals"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsKeyLike"
@@ -257,6 +259,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 
     if (function_name == "like"
         || function_name == "hasPhrase"
+        || function_name == "hasAllPhrases"
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "mapContainsKeyLike"
@@ -952,6 +955,69 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        return true;
+    }
+    if (function_name == "hasAnyPhrases" || function_name == "hasAllPhrases")
+    {
+        /// Same tokenizer whitelist as `hasPhrase`: each phrase is matched exactly as in `hasPhrase`.
+        static const std::unordered_set<std::string_view> supported_tokenizers = {
+            SplitByNonAlphaTokenizer::getExternalName(),
+            SplitByStringTokenizer::getExternalName(),
+            AsciiCJKTokenizer::getExternalName(),
+            NgramsTokenizer::getExternalName(),
+        };
+        if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
+            return false;
+
+        if (!value_data_type.isArray())
+            return false;
+
+        const auto & phrases = value_field.safeGet<Array>();
+
+        if (function_name == "hasAllPhrases")
+        {
+            /// AND of phrases: a granule may match only if all tokens of all phrases are present.
+            /// Fold every phrase's tokens into a single HAS_ALL_TOKENS query - a superset filter, just like
+            /// `hasPhrase` does for one phrase; the exact consecutive-order match is verified at row level.
+            VectorWithMemoryTracking<String> tokens;
+            for (const auto & phrase : phrases)
+            {
+                if (phrase.getType() != Field::Types::String)
+                    return false;
+
+                auto phrase_tokens = stringToTokens(phrase);
+                std::move(phrase_tokens.begin(), phrase_tokens.end(), std::back_inserter(tokens));
+            }
+
+            out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            return true;
+        }
+
+        /// hasAnyPhrases: OR of phrases. A granule may match if any single phrase's tokens are all present.
+        /// Emit one HAS_ALL_TOKENS query per phrase, combined as HAS_ANY_ELEMENTS (mirrors `hasAny`).
+        for (const auto & phrase : phrases)
+        {
+            if (phrase.getType() != Field::Types::String)
+            {
+                out.text_search_queries.clear();
+                return false;
+            }
+
+            auto phrase_tokens = stringToTokens(phrase);
+
+            /// A phrase that tokenizes to nothing can never match, so it cannot make the OR true: skip it.
+            if (phrase_tokens.empty())
+                continue;
+
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(phrase_tokens)));
+        }
+
+        /// If no phrase yields tokens, the index cannot prove anything: keep the original predicate.
+        if (out.text_search_queries.empty())
+            return false;
+
+        out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
         return true;
     }
     if (function_name == "startsWith" && tokenizer->supportsStringLike())

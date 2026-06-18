@@ -4645,6 +4645,14 @@ Possible values: true, false
     DECLARE(Bool, optimize_or_like_chain, false, R"(
 Optimize multiple OR LIKE into multiMatchAny. This optimization should not be enabled by default, because it defies index analysis in some cases.
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_has_phrase_or_chain, true, R"(
+Coalesce a chain of `hasPhrase` calls on the same column joined by `OR` into a single `hasAnyPhrases` call, so the column is tokenized once instead of once per phrase. For example, `hasPhrase(c, 'p0') OR hasPhrase(c, 'p1')` becomes `hasAnyPhrases(c, ['p0', 'p1'])`. The rewrite preserves results and text-index usage.
+)", 0) \
+    DECLARE(Bool, optimize_rewrite_has_phrase_and_chain, false, R"(
+Coalesce a chain of `hasPhrase` calls on the same column joined by `AND` into a single `hasAllPhrases` call. For example, `hasPhrase(c, 'p0') AND hasPhrase(c, 'p1')` becomes `hasAllPhrases(c, ['p0', 'p1'])`.
+
+Disabled by default: because `AND` short-circuits, the original chain stops at the first phrase that is absent in a row, whereas `hasAllPhrases` always scans the column once and tests every phrase. For a selective `AND` filter (most rows are missing some phrase) this does more per-row work than the short-circuited chain and can be slower on the brute-force (no text index) path. Enable it when the phrases are expected to occur together, or when a text index makes the row-level cost negligible.
+)", 0) \
     DECLARE(Bool, optimize_arithmetic_operations_in_aggregate_functions, true, R"(
 Move arithmetic operations out of aggregation functions
 )", 0) \

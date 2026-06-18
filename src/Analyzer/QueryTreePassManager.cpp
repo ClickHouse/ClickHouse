@@ -37,6 +37,7 @@
 #include <Analyzer/Passes/DictGetTupleElementPass.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
+#include <Analyzer/Passes/CoalesceHasPhrasePass.h>
 #include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
@@ -338,6 +339,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<FuseFunctionsPass>());
 
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
+
+    manager.addPass(std::make_unique<CoalesceHasPhrasePass>());
 
     manager.addPass(std::make_unique<LikePerfectAffixRewritePass>());
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());

@@ -1,0 +1,44 @@
+-- Functional correctness with a text index (default tokenizer)
+---- hasAnyPhrases
+[1,2,4]
+[2,5]
+[]
+[]
+---- hasAllPhrases
+[1]
+[4]
+[]
+---- empty / degenerate phrases
+[]
+[]
+[1,2]
+[]
+---- result is identical to the OR/AND of hasPhrase (expect no rows)
+-- Text index granule pruning
+hasAnyPhrases: 2 parts and 2048 granules (one all-tokens query per phrase, OR-combined)
+Description: text GRANULARITY 100000000
+Parts: 2/4
+Granules: 2048/4096
+hasAllPhrases: prunes to the part with all tokens of both phrases (1 part, 1024 granules)
+Description: text GRANULARITY 100000000
+Parts: 1/4
+Granules: 1024/4096
+hasAnyPhrases with a non-existent token in one phrase still keeps the other (1 part, 1024 granules)
+Description: text GRANULARITY 100000000
+Parts: 1/4
+Granules: 1024/4096
+hasAllPhrases with a non-existent token prunes everything (0 parts)
+Description: text GRANULARITY 100000000
+Parts: 0/4
+Granules: 0/4096
+hasAnyPhrases/hasAllPhrases with a 3rd tokenizer argument bypasses the index (4 parts)
+-- Other tokenizers, functional
+---- ngrams
+[1,2,4]
+[1]
+---- splitByString
+[1,2,4,5]
+[1,4]
+---- asciiCJK
+[1,3,4]
+[1]

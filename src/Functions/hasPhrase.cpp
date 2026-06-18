@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/PhraseSearch.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -50,28 +51,6 @@ VectorWithMemoryTracking<String> initializePhraseTokens(const ColumnsWithTypeAnd
     VectorWithMemoryTracking<String> tokens;
     tokenizer.stringToTokens(phrase_str.data(), phrase_str.size(), tokens);
     return tokens;
-}
-
-/// KMP style failure array.
-/// For example, phrase "a a b" in input "a a a b" correctly matches at positions 1-3.
-VectorWithMemoryTracking<size_t> buildFailureFunction(const VectorWithMemoryTracking<String> & phrase_tokens)
-{
-    const size_t size = phrase_tokens.size();
-    VectorWithMemoryTracking<size_t> failure(size, 0);
-
-    size_t k = 0;
-    for (size_t i = 1; i < size; ++i)
-    {
-        while (k > 0 && phrase_tokens[k] != phrase_tokens[i])
-            k = failure[k - 1];
-
-        if (phrase_tokens[k] == phrase_tokens[i])
-            ++k;
-
-        failure[i] = k;
-    }
-
-    return failure;
 }
 
 /// Matcher that checks if all phrase tokens appear consecutively in the input's token stream.
@@ -200,7 +179,7 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
 
 ExecutableFunctionPtr FunctionBaseHasPhrase::prepare(const ColumnsWithTypeAndName &) const
 {
-    auto failure_table = buildFailureFunction(phrase_tokens);
+    auto failure_table = buildPhraseFailureFunction(phrase_tokens);
     return std::make_unique<ExecutableFunctionHasPhrase>(tokenizer, phrase_tokens, std::move(failure_table));
 }
 
