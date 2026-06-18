@@ -240,6 +240,7 @@ void ConcurrencyControlRoundRobinScheduler::schedule(std::unique_lock<std::mutex
 // MUST NOT be called while holding state.mutex -- we take it here internally.
 void ConcurrencyControlRoundRobinScheduler::Allocation::setMax(SlotCount new_max)
 {
+    chassert(new_max > 0);
     std::unique_lock lock{parent.state.mutex};
     bool need_schedule = false;
     {
@@ -470,6 +471,7 @@ void ConcurrencyControlFairRoundRobinScheduler::schedule(std::unique_lock<std::m
 // See ConcurrencyControlRoundRobinScheduler::Allocation::setMax for contract.
 void ConcurrencyControlFairRoundRobinScheduler::Allocation::setMax(SlotCount new_max)
 {
+    chassert(new_max > 0);
     // new_max in ISlotAllocation space (total = min + competing). FRR tracks only competing
     // slots in `limit`, so translate.
     SlotCount new_competing_limit = (new_max > min) ? (new_max - min) : 0;
@@ -695,6 +697,7 @@ void ConcurrencyControlMaxMinFairScheduler::schedule(std::unique_lock<std::mutex
 // See ConcurrencyControlRoundRobinScheduler::Allocation::setMax for contract.
 void ConcurrencyControlMaxMinFairScheduler::Allocation::setMax(SlotCount new_max)
 {
+    chassert(new_max > 0);
     SlotCount new_competing_limit = (new_max > min) ? (new_max - min) : 0;
 
     std::unique_lock lock{parent.state.mutex};

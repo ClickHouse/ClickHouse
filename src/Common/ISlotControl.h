@@ -96,6 +96,8 @@ public:
     /// consumer can raise or lower it to express "I want up to N slots" at runtime.
     ///
     /// Contract for implementations:
+    ///  - `new_max` MUST be > 0. Implementations may chassert this. A request for zero slots
+    ///    has no sensible behavior here (use allocation destruction to release the work).
     ///  - Growing `max`: if the allocation was previously saturated (had received its full
     ///    max and was no longer a waiter), it MUST be re-added to the scheduler's waiter
     ///    list so it may receive further grants.

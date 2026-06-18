@@ -449,6 +449,7 @@ void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
 
 void CPULeaseAllocation::setMax(SlotCount new_max)
 {
+    chassert(new_max > 0);
     std::unique_lock lock{mutex};
 
     // Clamp to the hard cap that all internal vectors (`requests` chain, `threads` bitsets)

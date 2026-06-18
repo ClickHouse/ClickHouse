@@ -857,13 +857,11 @@ namespace
     )", 0) \
     DECLARE(UInt64, concurrent_threads_soft_limit_ratio_to_cores, 2, "Same as [`concurrent_threads_soft_limit_num`](#concurrent_threads_soft_limit_num), but with ratio to cores.", 0) \
     DECLARE(Bool, concurrent_threads_lazy_allocation, true, R"(
-Rollback lever for the lazy query-thread allocation strategy.
+Controls how CPU slots are allocated to queries.
 
-When true (default), a query pipeline starts with `allocate(1, 1)` and raises the ceiling via `setMax` as it actually pushes parallelizable work. This prevents queries from reserving CPU slots they never use.
+When `true` (default), a query starts with one CPU slot and requests additional slots from the scheduler only when its pipeline actually pushes more parallelizable work. This avoids the situation where a query reserves up to `max_threads` slots but only ever uses a fraction of them, starving other concurrent queries. Applies both to concurrency control and to the preemptive CPU scheduler for workloads.
 
-When false, the server bypasses the lazy path: pipelines use `allocate(1, num_threads)` and the scheduler grants up to `num_threads` slots eagerly. Intended as an emergency rollback lever only -- use it if a specific workload regresses on the lazy strategy.
-
-Takes effect for new allocations only; existing queries are unaffected.
+When `false`, the query requests all `max_threads` slots up front at start.
     )", 0) \
     DECLARE(String, concurrent_threads_scheduler, "max_min_fair", R"(
 The policy on how to perform a scheduling of CPU slots specified by `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`. Algorithm used to govern how limited number of CPU slots are distributed among concurrent queries. Scheduler may be changed at runtime without server restart.
