@@ -8437,6 +8437,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     std::vector<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
+    void setDefaultValue(std::string_view name);
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
@@ -8444,7 +8445,34 @@ private:
 
     std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
     std::unordered_set<std::string_view> settings_changed_by_sql_compatibility_mode;
+    std::unordered_set<std::string_view> settings_explicitly_defaulted_for_sql_compatibility_mode;
 };
+
+SettingsChanges getSQLCompatibilityModeSettingChanges(SQLCompatibilityMode mode)
+{
+    auto set_op_mode = [](SetOperationMode value) -> Field
+    {
+        return SettingFieldSetOperationMode(value).toString();
+    };
+
+    if (mode == SQLCompatibilityMode::standard)
+    {
+        return {
+            {"data_type_default_nullable",         true},
+            {"group_by_use_nulls",                 true},
+            {"intersect_default_mode",             set_op_mode(SetOperationMode::DISTINCT)},
+            {"except_default_mode",                set_op_mode(SetOperationMode::DISTINCT)},
+            {"joined_subquery_requires_alias",     true},
+            {"join_use_nulls",                     true},
+            {"union_default_mode",                 set_op_mode(SetOperationMode::DISTINCT)},
+            {"aggregate_functions_null_for_empty", true},
+            {"cast_keep_nullable",                 true},
+            {"prefer_column_name_to_alias",        true},
+        };
+    }
+
+    return {};
+}
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
     * The profile can also be set using the `set` functions, like the `profile` setting.
@@ -8584,9 +8612,27 @@ void SettingsImpl::set(std::string_view name, const Field & value)
         auto final_name = SettingsTraits::resolveName(name);
         settings_changed_by_compatibility_setting.erase(final_name);
         settings_changed_by_sql_compatibility_mode.erase(final_name);
+        settings_explicitly_defaulted_for_sql_compatibility_mode.erase(final_name);
     }
 
     BaseSettings::set(name, value);
+}
+
+void SettingsImpl::setDefaultValue(std::string_view name)
+{
+    if (name == "compatibility")
+        applyCompatibilitySetting("");
+    else if (name == "sql_compatibility_mode")
+        applySQLCompatibilityMode(SQLCompatibilityMode::default_);
+    else
+    {
+        auto final_name = SettingsTraits::resolveName(name);
+        settings_changed_by_compatibility_setting.erase(final_name);
+        settings_changed_by_sql_compatibility_mode.erase(final_name);
+        settings_explicitly_defaulted_for_sql_compatibility_mode.insert(final_name);
+    }
+
+    resetToDefault(name);
 }
 
 void SettingsImpl::applySQLCompatibilityMode(SQLCompatibilityMode mode)
@@ -8600,36 +8646,22 @@ void SettingsImpl::applySQLCompatibilityMode(SQLCompatibilityMode mode)
     if (mode == SQLCompatibilityMode::default_)
         return;
 
-    /// Convert typed enum values to the String Field expected by enum-backed settings.
-    auto setOpMode = [](SetOperationMode value) -> Field
-    {
-        return SettingFieldSetOperationMode(value).toString();
-    };
+    SettingsChanges overrides = getSQLCompatibilityModeSettingChanges(mode);
 
-    /// Curated overrides for each non-default mode. Adding a new mode = adding a branch here.
-    std::vector<std::pair<std::string_view, Field>> overrides;
-    if (mode == SQLCompatibilityMode::standard)
+    for (const auto & change : overrides)
     {
-        overrides = {
-            {"data_type_default_nullable",         true},
-            {"group_by_use_nulls",                 true},
-            {"intersect_default_mode",             setOpMode(SetOperationMode::DISTINCT)},
-            {"except_default_mode",                setOpMode(SetOperationMode::DISTINCT)},
-            {"joined_subquery_requires_alias",     true},
-            {"join_use_nulls",                     true},
-            {"union_default_mode",                 setOpMode(SetOperationMode::DISTINCT)},
-            {"aggregate_functions_null_for_empty", true},
-            {"cast_keep_nullable",                 true},
-            {"prefer_column_name_to_alias",        true},
-        };
-    }
-
-    for (const auto & [name, value] : overrides)
-    {
+        auto name = change.name;
+        const auto & value = change.value;
         auto final_name = SettingsTraits::resolveName(name);
 
         /// If the user already changed this setting manually, leave it alone.
         if (isChanged(final_name) && !settings_changed_by_sql_compatibility_mode.contains(final_name))
+            continue;
+
+        /// `SET <bundled_setting> = DEFAULT` should remain a manual override even if it's equal to the
+        /// default value and therefore not marked as changed.
+        if (settings_explicitly_defaulted_for_sql_compatibility_mode.contains(final_name)
+            && !settings_changed_by_sql_compatibility_mode.contains(final_name))
             continue;
 
         /// Don't mark as changed if the value wouldn't actually change.
@@ -8638,6 +8670,7 @@ void SettingsImpl::applySQLCompatibilityMode(SQLCompatibilityMode mode)
 
         BaseSettings::set(final_name, value);
         settings_changed_by_sql_compatibility_mode.insert(final_name);
+        settings_explicitly_defaulted_for_sql_compatibility_mode.erase(final_name);
     }
 }
 
@@ -8742,7 +8775,7 @@ void Settings::set(std::string_view name, const Field & value)
 
 void Settings::setDefaultValue(std::string_view name)
 {
-    impl->resetToDefault(name);
+    impl->setDefaultValue(name);
 }
 
 std::vector<String> Settings::getHints(const String & name) const

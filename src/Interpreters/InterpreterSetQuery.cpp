@@ -17,6 +17,9 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 
+#include <optional>
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -25,10 +28,53 @@ namespace Setting
     extern const SettingsDefaultTableEngine default_table_engine;
 }
 
+namespace
+{
+
+SettingsChanges expandSQLCompatibilityModeForConstraintCheck(const SettingsChanges & changes)
+{
+    SettingsChanges effective_changes = changes;
+    std::unordered_set<String> explicitly_set_names;
+    std::optional<SQLCompatibilityMode> mode;
+
+    for (const auto & change : changes)
+    {
+        auto resolved_name = Settings::resolveName(change.name);
+        if (resolved_name == "sql_compatibility_mode")
+        {
+            if (change.value.getType() != Field::Types::Which::String)
+                continue;
+
+            SettingFieldSQLCompatibilityMode parsed;
+            parsed.parseFromString(change.value.safeGet<String>());
+            mode = parsed.value;
+            continue;
+        }
+
+        explicitly_set_names.emplace(resolved_name);
+    }
+
+    if (!mode.has_value())
+        return effective_changes;
+
+    for (const auto & bundled_change : getSQLCompatibilityModeSettingChanges(*mode))
+    {
+        auto bundled_name = Settings::resolveName(bundled_change.name);
+        if (explicitly_set_names.contains(String(bundled_name)))
+            continue;
+        effective_changes.push_back(bundled_change);
+    }
+
+    return effective_changes;
+}
+
+}
+
 BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
-    getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+    auto effective_changes = expandSQLCompatibilityModeForConstraintCheck(ast.changes);
+    getContext()->checkSettingsConstraints(effective_changes, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(ast.changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
@@ -41,7 +87,10 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
     if (!ignore_setting_constraints)
-        getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+    {
+        auto effective_changes = expandSQLCompatibilityModeForConstraintCheck(ast.changes);
+        getContext()->checkSettingsConstraints(effective_changes, SettingSource::QUERY);
+    }
     getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }

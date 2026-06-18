@@ -29,7 +29,13 @@ Unspecified
 --- manual change after mode switch is preserved on revert ---
 0
 0
+--- DEFAULT keyword on wrapper reverts bundled settings ---
+0
+0
 --- explicit default-valued override survives mode in same batch ---
+0
+--- bundled setting DEFAULT becomes manual override while mode active ---
+0
 0
 --- normal SQL still works under standard mode ---
 2

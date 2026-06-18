@@ -45,11 +45,25 @@ SET sql_compatibility_mode = 'default';
 SELECT getSetting('cast_keep_nullable');     -- 0, user value wins
 SELECT getSetting('group_by_use_nulls');     -- 0, reverted to default
 
+SELECT '--- DEFAULT keyword on wrapper reverts bundled settings ---';
+SET sql_compatibility_mode = 'standard';
+SET sql_compatibility_mode = DEFAULT;
+SELECT getSetting('group_by_use_nulls');     -- 0
+SELECT getSetting('join_use_nulls');         -- 0
+
 SELECT '--- explicit default-valued override survives mode in same batch ---';
 SET sql_compatibility_mode = 'default';
 SET join_use_nulls = DEFAULT;
 -- Must stay 0: explicit override in the same batch should not be dropped as "unchanged".
 SELECT getSetting('join_use_nulls') SETTINGS sql_compatibility_mode = 'standard', join_use_nulls = 0;
+
+SELECT '--- bundled setting DEFAULT becomes manual override while mode active ---';
+SET sql_compatibility_mode = 'default';
+SET sql_compatibility_mode = 'standard';
+SET join_use_nulls = DEFAULT;
+SELECT getSetting('join_use_nulls');         -- 0
+SET sql_compatibility_mode = 'standard';
+SELECT getSetting('join_use_nulls');         -- still 0
 
 SELECT '--- normal SQL still works under standard mode ---';
 SET sql_compatibility_mode = 'default';

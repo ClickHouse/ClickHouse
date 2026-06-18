@@ -183,4 +183,8 @@ struct Settings
 private:
     std::unique_ptr<SettingsImpl> impl;
 };
+
+/// Expands the effective settings bundle for `sql_compatibility_mode`.
+/// The returned changes do not include the wrapper setting itself.
+SettingsChanges getSQLCompatibilityModeSettingChanges(SQLCompatibilityMode mode);
 }
