@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -100,6 +101,7 @@ namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
+    extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
 }
 
 namespace ErrorCodes
@@ -863,8 +865,12 @@ getColumnsForNewDataPart(
                 else
                 {
 
-                    if (was_removed)
-                    { /// DROP COLUMN xxx, RENAME COLUMN yyy TO xxx
+                    if (renamed_columns_to_from.contains(it->name))
+                    {
+                        /// Another column is renamed into this name; take its type from the
+                        /// renamed-from column, not from the same-named source column that is
+                        /// being renamed away (DROP xxx + RENAME yyy TO xxx, or the swap
+                        /// RENAME xxx TO zzz + RENAME yyy TO xxx).
                         auto renamed_from = renamed_columns_to_from.at(it->name);
                         auto maybe_name_and_type = source_columns.tryGetByName(renamed_from);
                         if (!maybe_name_and_type)
@@ -1349,6 +1355,7 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out_comp));
     }
 
+    if (!new_data_part->storage.storesMetadataVersionInPartAttributes())
     {
         auto out_metadata = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
@@ -2058,7 +2065,7 @@ private:
 
             if (need_recalculate)
             {
-                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
+                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx, *ctx->data->getSettings()));
             }
             else
             {
@@ -2552,6 +2559,20 @@ private:
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
+            /// Add checksums of projection parts that were rebuilt during this mutation.
+            /// `MergedColumnOnlyOutputStream::fillChecksums` no longer adds them because that addition
+            /// is redundant during vertical merge (`MergedBlockOutputStream::finalizePartAsync` adds
+            /// them later). For mutations there is no such later step, so add them here.
+            for (const auto & [projection_name, projection_part] : ctx->new_data_part->getProjectionParts())
+            {
+                if (projection_part->checksums.empty())
+                    continue;
+                ctx->new_data_part->checksums.addFile(
+                    projection_name + ".proj",
+                    projection_part->checksums.getTotalSizeOnDisk(),
+                    projection_part->checksums.getTotalChecksumUInt128());
+            }
+
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
@@ -2801,8 +2822,12 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
         return false;
 
     /// We need to rewrite statistics because they have different serialization with nullable type.
+    /// `column_desc` can be `nullptr` if the column was concurrently dropped from the metadata
+    /// snapshot used here (mutation commands and metadata can drift apart under concurrent ALTERs).
+    /// Skip this optimization in that case; the normal mutation path will surface the error.
     const auto * column_desc = metadata_snapshot->getColumns().tryGet(command.column_name);
-    if (!column_desc->statistics.empty())
+    fiu_do_on(FailPoints::mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc, { column_desc = nullptr; });
+    if (!column_desc || !column_desc->statistics.empty())
         return false;
 
     return true;
@@ -2867,7 +2892,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     {
         if (ctx->indices_to_drop_names.contains(index.name))
         {
-            ctx->indices_to_drop.insert(index_factory.get(index));
+            ctx->indices_to_drop.insert(index_factory.get(index, *ctx->data->getSettings()));
             continue;
         }
 
@@ -2877,7 +2902,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         if (need_recalculate)
         {
             bool inserted = false;
-            auto index_ptr = index_factory.get(index);
+            auto index_ptr = index_factory.get(index, *ctx->data->getSettings());
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;

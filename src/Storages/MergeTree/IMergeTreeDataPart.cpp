@@ -817,7 +817,7 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
 
     for (const auto & index_description : secondary_indices)
     {
-        auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
+        auto skip_index = MergeTreeIndexFactory::instance().get(index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
         auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
 
@@ -863,7 +863,7 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
 
     for (const auto & index_description : secondary_indices)
     {
-        auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
+        auto skip_index = MergeTreeIndexFactory::instance().get(index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
         auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
 
@@ -1117,8 +1117,14 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
     String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
 
-    if (!required_columns.empty() && !required_columns.contains(column_name))
+    /// `<col>.null` subcolumn may appear in required_columns when
+    /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
+    if (!required_columns.empty()
+        && !required_columns.contains(column_name)
+        && !required_columns.contains(column_name + ".null"))
+    {
         return nullptr;
+    }
 
     return all_columns.tryGet(column_name);
 }
@@ -1144,7 +1150,8 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         try
         {
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-            result.emplace(column_desc->name, std::move(column_stat));
+            if (column_stat)
+                result.emplace(column_desc->name, std::move(column_stat));
         }
         catch (...)
         {
@@ -1175,7 +1182,8 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         try
         {
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-            result.emplace(column_desc->name, std::move(column_stat));
+            if (column_stat)
+                result.emplace(column_desc->name, std::move(column_stat));
         }
         catch (...)
         {
@@ -2648,7 +2656,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 
     for (auto & index_description : secondary_indices_descriptions)
     {
-        auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
+        auto index_ptr = MergeTreeIndexFactory::instance().get(index_description, *storage.getSettings());
         auto index_name = index_ptr->getFileName();
         auto index_substreams = index_ptr->getSubstreams();
 
