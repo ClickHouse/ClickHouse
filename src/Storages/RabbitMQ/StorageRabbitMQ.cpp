@@ -1112,6 +1112,8 @@ void StorageRabbitMQ::threadFunc()
                     milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                 }
             }
+            else if (num_views == 0)
+                LOG_DEBUG(log, "No attached views");
         }
         else
         {

@@ -1243,6 +1243,8 @@ void StorageKafka2::threadFunc(size_t idx)
         }
         else if (num_views)
             LOG_DEBUG(log, "Consumption is stopped");
+        else
+            LOG_DEBUG(log, "No attached views");
     }
     catch (...)
     {
