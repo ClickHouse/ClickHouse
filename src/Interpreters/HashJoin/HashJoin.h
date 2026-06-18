@@ -519,6 +519,12 @@ public:
     /// or by CROSS JOIN block compression), so they must be decompressed before reading at probe time.
     bool haveCompressed() const { return have_compressed; }
 
+    /// Used when stored columns from one `HashJoin` are moved into another (e.g. `ConcurrentHashJoin`'s
+    /// two-level slot merge into slot 0): if any source join had compressed blocks, the destination must
+    /// treat its stored blocks as possibly compressed too, otherwise the probe reads `ColumnCompressed`
+    /// as an ordinary column.
+    void setHaveCompressed(bool value) { have_compressed = value; }
+
     /// Returns a decompressed view of the given stored (compressed) `ColumnsInfo`, using an internal
     /// per-join cache so that the same block is not decompressed repeatedly during the probe phase.
     /// Must only be called when `haveCompressed()` is true.
