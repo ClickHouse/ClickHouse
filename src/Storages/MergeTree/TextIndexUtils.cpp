@@ -508,7 +508,7 @@ bool MergeTextIndexesTask::executeStep()
                 auto * pos_data_buffer = pos_stream->getDataBuffer();
                 pos_stream->seekToMark({token_info.position_offset, 0});
 
-                std::vector<RoaringishEntry> position_entries;
+                PODArray<RoaringishEntry> position_entries;
                 TextIndexPositionCodec::decode(*pos_data_buffer, position_entries);
 
                 /// Adjust doc_ids if merging parts with offset remapping.

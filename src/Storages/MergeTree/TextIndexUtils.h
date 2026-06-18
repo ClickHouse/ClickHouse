@@ -133,7 +133,7 @@ private:
     /// Postings accumulated for the current token.
     PostingList output_postings;
     /// Positions accumulated for the current token (phrase query support).
-    std::vector<RoaringishEntry> output_positions;
+    PODArray<RoaringishEntry> output_positions;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;

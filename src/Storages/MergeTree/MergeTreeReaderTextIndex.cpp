@@ -321,7 +321,7 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
             size_t num_rows_in_part = data_part_info_for_read->getRowCount();
 
             double log_cardinality = 0.0;
-            bool all_tokens_present = num_rows_in_part > 0;
+            bool all_tokens_present = (num_rows_in_part > 0);
             for (const auto & token : search_query->tokens)
             {
                 auto it = all_token_infos.find(token);

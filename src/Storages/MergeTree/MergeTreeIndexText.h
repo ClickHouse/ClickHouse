@@ -146,8 +146,14 @@ private:
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
-using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
-using SortedTokensAndPositions = std::vector<std::pair<std::string_view, PositionListBuilder *>>;
+/// A token paired with its posting/position builder views.
+struct SortedToken
+{
+    std::string_view token;
+    PostingListBuilder * postings = nullptr;
+    PositionListBuilder * positions = nullptr; /// nullptr unless text index has `positions` enabled
+};
+using SortedTokens = std::vector<SortedToken>;
 struct TokenPostingsInfo;
 
 struct PostingsSerialization
@@ -397,12 +403,11 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     MergeTreeIndexGranuleTextWritable(
         MergeTreeIndexTextParams params_,
         IPostingListCodec::Type posting_list_codec_type_,
-        SortedTokensAndPostings && tokens_and_postings_,
         TokenToPostingsBuilderMap && tokens_map_,
         std::list<PostingList> && posting_lists_,
         std::unique_ptr<Arena> && arena_,
-        SortedTokensAndPositions && tokens_and_positions_,
-        std::unique_ptr<TokenToPositionListMap> && position_map_);
+        std::unique_ptr<TokenToPositionListMap> && position_map_,
+        SortedTokens && sorted_tokens_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
@@ -410,21 +415,19 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return tokens_and_postings.empty(); }
+    bool empty() const override { return sorted_tokens.empty(); }
     size_t memoryUsageBytes() const override;
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     IPostingListCodec::Type posting_list_codec_type = IPostingListCodec::Type::None;
-    /// Pointers to tokens and posting lists in the granule.
-    SortedTokensAndPostings tokens_and_postings;
-    /// tokens_and_postings has references to data held in the fields below.
     TokenToPostingsBuilderMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
-    /// Position data for phrase query support. Parallel to tokens_and_postings.
-    SortedTokensAndPositions tokens_and_positions;
+    /// Owns the PositionListBuilders referenced by sorted_tokens (phrase query support).
     std::unique_ptr<TokenToPositionListMap> position_map;
+    /// Sorted view of tokens with their posting/position builders (non-owning; references the fields above).
+    SortedTokens sorted_tokens;
     LoggerPtr logger;
 };
 

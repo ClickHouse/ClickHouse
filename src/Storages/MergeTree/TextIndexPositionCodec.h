@@ -4,7 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
-#include <vector>
+#include <span>
 
 namespace DB
 {
@@ -21,11 +21,10 @@ class TextIndexPositionCodec
 {
 public:
     /// Writes a sorted array of RoaringishEntry values.
-    /// Returns the number of bytes written.
-    static void encode(const std::vector<RoaringishEntry> & entries, WriteBuffer & out);
+    static void encode(std::span<const RoaringishEntry> entries, WriteBuffer & out);
 
-    /// Reads into a vector of RoaringishEntry values (the build/merge path).
-    static void decode(ReadBuffer & in, std::vector<RoaringishEntry> & entries);
+    /// Reads into a memory-tracked array of RoaringishEntry values (the merge path).
+    static void decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries);
 
     /// Reads into struct-of-arrays form (the query/phrase-search path): de-interleaves the
     /// on-disk AoS entries into pl.doc/group/bitmap.

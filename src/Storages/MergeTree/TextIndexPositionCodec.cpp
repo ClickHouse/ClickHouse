@@ -19,7 +19,7 @@ namespace
 }
 }
 
-void TextIndexPositionCodec::encode(const std::vector<RoaringishEntry> & entries, WriteBuffer & out)
+void TextIndexPositionCodec::encode(std::span<const RoaringishEntry> entries, WriteBuffer & out)
 {
     static_assert(sizeof(RoaringishEntry) == 12);
 
@@ -38,7 +38,7 @@ void TextIndexPositionCodec::encode(const std::vector<RoaringishEntry> & entries
         }
 }
 
-void TextIndexPositionCodec::decode(ReadBuffer & in, std::vector<RoaringishEntry> & entries)
+void TextIndexPositionCodec::decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries)
 {
     static_assert(sizeof(RoaringishEntry) == 12);
 
@@ -48,7 +48,8 @@ void TextIndexPositionCodec::decode(ReadBuffer & in, std::vector<RoaringishEntry
         return;
 
     entries.resize(count);
-    in.readStrict(reinterpret_cast<char *>(entries.data()), count * sizeof(RoaringishEntry));
+    /// readBigStrict reads the bulk payload straight into the destination, skipping the buffer copy.
+    in.readBigStrict(reinterpret_cast<char *>(entries.data()), count * sizeof(RoaringishEntry));
     if constexpr (std::endian::native != std::endian::little)
         for (auto & e : entries)
             transformEntryEndianness(e);

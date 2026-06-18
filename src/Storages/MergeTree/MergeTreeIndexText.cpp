@@ -814,21 +814,18 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
     IPostingListCodec::Type posting_list_codec_type_,
-    SortedTokensAndPostings && tokens_and_postings_,
     TokenToPostingsBuilderMap && tokens_map_,
     std::list<PostingList> && posting_lists_,
     std::unique_ptr<Arena> && arena_,
-    /// TODO(ahmadov): clean up - re-order params or separate code paths
-    SortedTokensAndPositions && tokens_and_positions_,
-    std::unique_ptr<TokenToPositionListMap> && position_map_)
+    std::unique_ptr<TokenToPositionListMap> && position_map_,
+    SortedTokens && sorted_tokens_)
     : params(std::move(params_))
     , posting_list_codec_type(posting_list_codec_type_)
-    , tokens_and_postings(std::move(tokens_and_postings_))
     , tokens_map(std::move(tokens_map_))
     , posting_lists(std::move(posting_lists_))
     , arena(std::move(arena_))
-    , tokens_and_positions(std::move(tokens_and_positions_))
     , position_map(std::move(position_map_))
+    , sorted_tokens(std::move(sorted_tokens_))
     , logger(getLogger("TextIndexGranuleWriter"))
 {
 }
@@ -1315,15 +1312,14 @@ DictionaryBlock TextIndexSerialization::deserializeDictionaryBlock(ReadBuffer & 
 
 template <typename Stream>
 DictionarySparseIndex serializeTokensAndPostings(
-    const SortedTokensAndPostings & tokens_and_postings,
+    const SortedTokens & sorted_tokens,
     Stream & dictionary_stream,
     Stream & postings_stream,
     const MergeTreeIndexTextParams & params,
     PostingsSerialization & postings_serialization,
-    const SortedTokensAndPositions & tokens_and_positions = {},
     MergeTreeIndexWriterStream * positions_stream = nullptr)
 {
-    size_t num_tokens = tokens_and_postings.size();
+    size_t num_tokens = sorted_tokens.size();
     size_t num_blocks = (num_tokens + params.dictionary_block_size - 1) / params.dictionary_block_size;
 
     auto sparse_index_tokens = ColumnString::create();
@@ -1350,12 +1346,12 @@ DictionarySparseIndex serializeTokensAndPostings(
         auto dictionary_mark = dictionary_stream.getCurrentMark();
         chassert(dictionary_mark.offset_in_decompressed_block == 0);
 
-        const auto & first_token = tokens_and_postings[block_begin].first;
+        const auto & first_token = sorted_tokens[block_begin].token;
         sparse_index_offsets_data.emplace_back(dictionary_mark.offset_in_compressed_file);
         sparse_index_str.insertData(first_token.data(), first_token.size());
 
         serializeTokensImpl(
-            [&](size_t i) { return tokens_and_postings[i].first; },
+            [&](size_t i) { return sorted_tokens[i].token; },
             dictionary_stream.compressed_hashing,
             tokens_format,
             block_begin,
@@ -1363,14 +1359,15 @@ DictionarySparseIndex serializeTokensAndPostings(
 
         for (size_t i = block_begin; i < block_end; ++i)
         {
-            auto & postings = *tokens_and_postings[i].second;
+            const auto & entry = sorted_tokens[i];
+            auto & postings = *entry.postings;
             auto token_info = TextIndexSerialization::serializePostings(postings, postings_stream, params, postings_serialization);
 
             /// Serialize position data if phrase query support is enabled.
-            if (positions_stream && i < tokens_and_positions.size())
+            if (positions_stream)
             {
-                auto & position_builder = *tokens_and_positions[i].second;
-                const auto & position_entries = position_builder.getEntries();
+                chassert(entry.positions);
+                const auto & position_entries = entry.positions->getEntries();
 
                 token_info.header |= PostingsSerialization::Flags::HasPositions;
                 token_info.position_offset = positions_stream->plain_hashing.count();
@@ -1421,12 +1418,11 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
     PostingsSerialization postings_serialization(std::move(postings_codec), serialization_version);
 
     auto sparse_index_block = serializeTokensAndPostings(
-        tokens_and_postings,
+        sorted_tokens,
         *dictionary_stream,
         *postings_stream,
         params,
         postings_serialization,
-        tokens_and_positions,
         positions_stream);
 
     TextIndexSerialization::serializeHeader(sparse_index_block, posting_list_codec_type, serialization_version, index_stream->compressed_hashing);
@@ -1445,7 +1441,7 @@ size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
 
     return sizeof(*this)
         /// can ignore the sizeof(PostingListBuilder) here since it is just references to tokens_map
-        + tokens_and_postings.capacity() * sizeof(SortedTokensAndPostings::value_type)
+        + sorted_tokens.capacity() * sizeof(SortedToken)
         + tokens_map.getBufferSizeInBytes()
         + posting_lists_size
         + arena->allocatedBytes();
@@ -1541,36 +1537,37 @@ void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
 {
-    SortedTokensAndPostings sorted_values;
-    sorted_values.reserve(tokens_map.size());
+    SortedTokens sorted_tokens;
+    sorted_tokens.reserve(tokens_map.size());
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_values.emplace_back(key, &mapped);
+        sorted_tokens.push_back(SortedToken{key, &mapped, nullptr});
     });
 
-    std::ranges::sort(sorted_values, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
 
-    SortedTokensAndPositions sorted_positions;
+    /// Join each token's position builder so one entry carries both; no parallel arrays to keep aligned.
     if (position_map)
     {
-        sorted_positions.reserve(position_map->size());
-        position_map->forEachValue([&](const auto & key, auto & mapped)
+        for (auto & entry : sorted_tokens)
         {
-            sorted_positions.emplace_back(key, &mapped);
-        });
-        std::ranges::sort(sorted_positions, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+            auto positions = position_map->find(entry.token);
+            if (!positions)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Text index: token '{}' has postings but no positions slot", entry.token);
+            entry.positions = &positions->getMapped();
+        }
     }
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params,
         posting_list_codec ? posting_list_codec->getType() : IPostingListCodec::Type::None,
-        std::move(sorted_values),
         std::move(tokens_map),
         std::move(posting_lists),
         std::move(arena),
-        std::move(sorted_positions),
-        std::move(position_map));
+        std::move(position_map),
+        std::move(sorted_tokens));
 }
 
 void MergeTreeIndexTextGranuleBuilder::reset()
