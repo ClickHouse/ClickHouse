@@ -277,7 +277,6 @@ void StorageSystemProjectionParts::processNextStorage(
 
             if (part->is_broken)
             {
-                std::lock_guard lock(part->broken_reason_mutex);
                 if (columns_mask[src_index++])
                     columns[res_index++]->insert(part->exception_code);
                 if (columns_mask[src_index++])

@@ -2992,12 +2992,12 @@ bool IMergeTreeDataPart::hasBrokenProjection(const String & projection_name) con
 
 void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const
 {
-    std::lock_guard lock(broken_reason_mutex);
     if (is_broken)
         return;
-    is_broken = true;
+
     exception = message;
     exception_code = code;
+    is_broken = true;
 }
 
 ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) const

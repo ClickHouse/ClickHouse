@@ -300,7 +300,6 @@ public:
     mutable std::atomic<bool> is_broken {false};
     mutable std::string exception;
     mutable int exception_code = 0;
-    mutable std::mutex broken_reason_mutex;
 
     /// Indicates that the part was marked Outdated by PartCheckThread because the part was not committed to ZooKeeper
     mutable bool is_unexpected_local_part = false;
