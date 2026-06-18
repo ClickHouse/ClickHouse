@@ -307,10 +307,7 @@ void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
     size_t nested_begin = offsetAt(begin);
     size_t nested_end = offsetAt(end);
     getData().updateHashWithValueRange(nested_begin, nested_end, hash);
-    /// Hash the array boundaries relative to the start of the range — see the comment in
-    /// ColumnString::updateHashWithValueRange. Absolute offsets would make the hash position-dependent
-    /// and break deduplication of equal rows located at different offsets. The raw bytes are fed (not
-    /// SipHash::update(UInt64)) to keep the byte stream identical on big-endian targets.
+    /// Relative offsets as raw bytes, see ColumnString::updateHashWithValueRange.
     for (size_t i = begin; i < end; ++i)
     {
         UInt64 relative_offset = getOffsets()[i] - nested_begin;
