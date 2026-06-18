@@ -2279,7 +2279,7 @@ TEST(KeeperChunkedSnapshotWrite, InspectBytes)
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(
         &storage, /*up_to_log_idx=*/10, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
 
     ASSERT_NE(buf, nullptr);
@@ -2344,7 +2344,7 @@ TEST(KeeperChunkedSnapshotWrite, DiskInspectBytes)
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(
         &storage, /*up_to_log_idx=*/5, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, /*compress_zstd=*/false);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> manager(3, keeper_context, /*compress_snapshots_zstd_=*/false);
 
     // Capture the global KeeperSnapshotWrittenBytes counter before writing.
     const auto written_before = ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotWrittenBytes].load();
@@ -2443,7 +2443,7 @@ TEST(KeeperChunkedSnapshotRead, RoundTripBasic)
     // Serialize as chunked format.
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/7, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -2514,7 +2514,7 @@ TEST(KeeperChunkedSnapshotRead, MetadataOnlyExtraction)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/42, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -2542,7 +2542,7 @@ TEST(KeeperChunkedSnapshotRead, PathsOnlyMode)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/5, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -2576,7 +2576,7 @@ TEST(KeeperChunkedSnapshotRead, LegacyV7SnapshotStillLoads)
     // Write as V7 (legacy ZSTD).
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/3, /*cluster_config=*/nullptr, DB::SnapshotVersion::V7);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -2617,13 +2617,14 @@ TEST(KeeperChunkedSnapshotValidation, ChunkedEqualsV7)
     ++storage.committed_ephemeral_nodes;
     storage.addSessionID(77, 60000);
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
 
     // Serialize V7 and V8 in separate scopes: KeeperStorageSnapshot enables snapshot mode in its
     // constructor and disables it in its destructor (chassert(!snapshot_mode) on entry).
     // Both snapshots use the same `storage`, so one must be fully destroyed before the next is
     // constructed — otherwise the second constructor trips the chassert in Debug/ASan builds.
-    nuraft::ptr<nuraft::buffer> buf7, buf8;
+    nuraft::ptr<nuraft::buffer> buf7;
+    nuraft::ptr<nuraft::buffer> buf8;
     {
         DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap7(
             &storage, /*up_to_log_idx=*/15, /*cluster_config=*/nullptr, DB::SnapshotVersion::V7);
@@ -2700,7 +2701,7 @@ TEST(KeeperChunkedSnapshotValidation, MetadataOnlyFastPath)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/99, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -2757,7 +2758,7 @@ TEST(KeeperChunkedSnapshotValidation, WrongHeaderVersionRejected)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/1, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
     ASSERT_GE(buf->size(), 5u);
@@ -2795,7 +2796,7 @@ TEST(KeeperChunkedSnapshotValidation, CorruptNodeFrameRejected)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/5, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -2846,7 +2847,7 @@ TEST(KeeperChunkedSnapshotValidation, PathsOnlyDoesNotFinalize)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/3, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -3078,7 +3079,7 @@ TEST(KeeperChunkedSnapshotValidation, EmptyNodesFrameNoRoot)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/1, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -3112,7 +3113,7 @@ TEST(KeeperChunkedSnapshotValidation, MissingParentInNodesFrame)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/2, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -3147,7 +3148,7 @@ TEST(KeeperChunkedSnapshotValidation, NumChildrenOvercount)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/1, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -3188,7 +3189,7 @@ TEST(KeeperChunkedSnapshotValidation, NumChildrenUndercount)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/1, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -3229,7 +3230,7 @@ TEST(KeeperChunkedSnapshotValidation, NegativeNumChildrenRejected)
 
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/1, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_ctx, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -3279,7 +3280,7 @@ TEST(KeeperChunkedSnapshotValidation, SessionsTrailingBytesRejected)
     auto cluster_cfg = std::make_shared<nuraft::cluster_config>();
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/7, cluster_cfg, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
@@ -3355,7 +3356,7 @@ TEST(KeeperChunkedSnapshotValidation, F1ZstdFrameTrailerDropped)
     {
         DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
             &storage_src, /*up_to_log_idx=*/10, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_src(3, ctx_src, /*compress_zstd=*/true);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_src(3, ctx_src, /*compress_snapshots_zstd_=*/true);
         good_buf = mgr_src.serializeSnapshotToBuffer(snap);
     }
     ASSERT_NE(good_buf, nullptr);
@@ -3407,7 +3408,7 @@ TEST(KeeperChunkedSnapshotValidation, F1ZstdFrameTrailerDropped)
         ctx->setLocalLogsPreprocessed();
         ctx->setRocksDBOptions();
         ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskF1T1", snap_dir.path));
-        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_zstd=*/true);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_snapshots_zstd_=*/true);
         EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, /*load_full_storage=*/true), DB::Exception)
             << "NODES chunk: dropped ZSTD trailer must throw (serial, deser_threads=1)";
     }
@@ -3421,7 +3422,7 @@ TEST(KeeperChunkedSnapshotValidation, F1ZstdFrameTrailerDropped)
         ctx->setLocalLogsPreprocessed();
         ctx->setRocksDBOptions();
         ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskF1T8", snap_dir.path));
-        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_zstd=*/true);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_snapshots_zstd_=*/true);
         EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, /*load_full_storage=*/true), DB::Exception)
             << "NODES chunk: dropped ZSTD trailer must throw (parallel, deser_threads=8)";
     }
@@ -3435,7 +3436,7 @@ TEST(KeeperChunkedSnapshotValidation, F1ZstdFrameTrailerDropped)
         ctx->setLocalLogsPreprocessed();
         ctx->setRocksDBOptions();
         ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskF1Meta", snap_dir.path));
-        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_zstd=*/true);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_snapshots_zstd_=*/true);
         EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, /*load_full_storage=*/true), DB::Exception)
             << "METADATA chunk: dropped ZSTD trailer must throw";
     }
@@ -3469,7 +3470,7 @@ TEST(KeeperChunkedSnapshotParallel, DigestRecalculationOnLoad)
     {
         DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
             &storage_src, /*up_to_log_idx=*/42, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_nd(3, src_ctx, /*compress_zstd=*/true);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_nd(3, src_ctx, /*compress_snapshots_zstd_=*/true);
         buf_no_digest = mgr_nd.serializeSnapshotToBuffer(snap);
     }
     ASSERT_NE(buf_no_digest, nullptr);
@@ -3482,7 +3483,7 @@ TEST(KeeperChunkedSnapshotParallel, DigestRecalculationOnLoad)
     load_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskD", snap_dir.path));
     load_ctx->setDigestEnabled(true);
 
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_load(3, load_ctx, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_load(3, load_ctx, /*compress_snapshots_zstd_=*/true);
     auto res = mgr_load.deserializeSnapshotFromBuffer(buf_no_digest, /*load_full_storage=*/true);
     ASSERT_NE(res.storage, nullptr);
 
@@ -3535,7 +3536,7 @@ TEST(KeeperChunkedSnapshotParallel, ParallelVsSequential)
     {
         DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
             &storage_src, /*up_to_log_idx=*/50, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_src(3, src_ctx, /*compress_zstd=*/true);
+        DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr_src(3, src_ctx, /*compress_snapshots_zstd_=*/true);
         source_buf = mgr_src.serializeSnapshotToBuffer(snap);
     }
     ASSERT_NE(source_buf, nullptr);
@@ -3559,7 +3560,7 @@ TEST(KeeperChunkedSnapshotParallel, ParallelVsSequential)
     ctx1->setRocksDBOptions();
     ctx1->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk1", snap_dir.path));
     ctx1->setDigestEnabled(true); // recalculate_digest=true since snapshot has NO_DIGEST
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr1(3, ctx1, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr1(3, ctx1, /*compress_snapshots_zstd_=*/true);
     auto res1 = mgr1.deserializeSnapshotFromBuffer(source_buf, /*load_full_storage=*/true);
     ASSERT_NE(res1.storage, nullptr);
 
@@ -3571,7 +3572,7 @@ TEST(KeeperChunkedSnapshotParallel, ParallelVsSequential)
     ctx8->setRocksDBOptions();
     ctx8->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk8", snap_dir.path));
     ctx8->setDigestEnabled(true); // recalculate_digest=true since snapshot has NO_DIGEST
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr8(3, ctx8, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr8(3, ctx8, /*compress_snapshots_zstd_=*/true);
     auto res8 = mgr8.deserializeSnapshotFromBuffer(source_buf, /*load_full_storage=*/true);
     ASSERT_NE(res8.storage, nullptr);
 
@@ -3606,7 +3607,8 @@ TEST(KeeperChunkedSnapshotParallel, ParallelVsSequential)
     }
 
     // Re-serialize both and verify byte-identical output (deterministic chunk-order splice).
-    nuraft::ptr<nuraft::buffer> rebuf1, rebuf8;
+    nuraft::ptr<nuraft::buffer> rebuf1;
+    nuraft::ptr<nuraft::buffer> rebuf8;
     {
         DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
             res1.storage.get(), /*up_to_log_idx=*/50, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
@@ -3693,7 +3695,7 @@ TEST(KeeperMemorySnapshotApplyTest, ApplyChunkedSnapshotReplacesCommittedState)
     snap_storage.addSessionID(42, 30000);
 
     // Serialize as chunked format using a KeeperSnapshotManager backed by the source context.
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> src_mgr(3, src_ctx, /*compress_zstd=*/true);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> src_mgr(3, src_ctx, /*compress_snapshots_zstd_=*/true);
     nuraft::ptr<nuraft::buffer> chunked_buf;
     {
         DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
