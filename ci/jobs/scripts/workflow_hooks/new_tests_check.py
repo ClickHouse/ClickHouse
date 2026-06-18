@@ -52,6 +52,24 @@ def has_new_unit_tests(changed_files):
     return False
 
 
+def has_new_integration_test_docker_images(changed_files):
+    for file in changed_files:
+        file = file.removeprefix(".").removeprefix("/")
+        # Docker images under `ci/docker/integration/` define the client/server
+        # environments that integration tests spin up (e.g. the MySQL and
+        # PostgreSQL client images). Changing one - for example bumping a client
+        # library version to exercise a fixed bug - is effectively a test change
+        # even when no `test_*.py` file is touched, so count it for this gate.
+        #
+        # Unlike `has_new_integration_tests`, this is intentionally NOT consulted by
+        # `filter_job.py` to enable the integration flaky/bugfix-validate jobs: those
+        # derive the test modules to run from changed `test_*.py` files and would
+        # have nothing to run for a Docker-image-only change.
+        if file.startswith("ci/docker/integration/") and Path(file).is_file():
+            return True
+    return False
+
+
 def has_ci_report_link(pr_body):
     return "s3.amazonaws.com/clickhouse-test-reports" in pr_body
 
@@ -135,6 +153,7 @@ def check():
     has_unit = has_new_unit_tests(changed_files)
     has_ft = has_new_functional_tests(changed_files)
     has_it = has_new_integration_tests(changed_files)
+    has_docker = has_new_integration_test_docker_images(changed_files)
 
     # Branching by what kinds of new tests the PR adds. The structure
     # below is deliberately mutually exclusive on the FT/IT-vs-rest axis
@@ -171,6 +190,20 @@ def check():
     # new unit tests is accepted as proof on its own.
     if has_unit:
         print("New unit tests added (no functional/integration tests) - pass")
+        return True
+
+    # Integration-test Docker image change only (no new FT/IT/unit
+    # tests), e.g. bumping a client library version under
+    # ci/docker/integration/ to exercise a fixed bug through an existing
+    # test. There is no new test_*.py module to run, so filter_job.py has
+    # nothing to feed the per-arch Bugfix Validation jobs and the machinery
+    # cannot validate it; accept it on its own, like unit tests. (master
+    # 760cfcfb65a)
+    if has_docker:
+        print(
+            "Integration test Docker image changed (no new functional/"
+            "integration/unit tests) - pass"
+        )
         return True
 
     # No new tests at all. Allow a link to a CI report in the PR body as

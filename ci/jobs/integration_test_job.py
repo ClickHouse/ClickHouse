@@ -25,12 +25,27 @@ temp_path = f"{repo_dir}/ci/tmp"
 
 
 MAX_FAILS_BEFORE_DROP = 5
+# Flaky-check best-effort scope cap: the maximum number of changed test modules a single
+# flaky-check run will execute. A PR can mechanically touch a large number of integration
+# test modules (e.g. a repo-wide lint/format change), and running every one of them
+# repeatedly under `--dist=each` cannot fit the flaky-check time budget - the job would be
+# hard-killed by the external CI timeout before producing any report. When the cap is
+# exceeded the extra modules are skipped (best effort) and the selected ones get full
+# flakiness coverage instead of a truncated run. See FLAKY_CHECK_TIME_LIMIT for the hard
+# time guarantee that backstops this.
+MAX_FLAKY_CHECK_MODULES = 10
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
 
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
+# Flaky/targeted checks run with --dist=each, so every worker runs the full set
+# of changed modules concurrently (each with its own Docker cluster) instead of
+# splitting modules across workers. A worker's peak footprint is therefore much
+# larger, so it needs a bigger memory budget to avoid exhausting the container
+# cgroup and tripping the kernel OOM killer (see OOM_IN_DMESG_TEST_NAME).
+MAX_MEM_PER_WORKER_DIST_EACH = 20
 
 INFRASTRUCTURE_ERROR_PATTERNS = [
     "timed out after",
@@ -521,10 +536,23 @@ def tail(filepath: str, buff_len: int = 1024) -> List[str]:
 
 def run_pytest_and_collect_results(
     command: str, env: str, report_name: str, timeout: int = None
-) -> Result:
+) -> Tuple[Result, bool]:
     """
-    Does xdist timeout check.
+    Runs a pytest command and reports whether the run was cut short by a timeout.
+
+    Returns `(test_result, timed_out)`. `timed_out` is True when the run did not finish
+    on its own but was stopped by either:
+      - the graceful xdist `--session-timeout` (pytest interrupts itself and writes the
+        `xdist.dsession.Interrupted: session-timeout:` marker to the log), or
+      - the hard subprocess backstop (`Shell.run` `SIGTERM`s/`SIGKILL`s pytest after
+        `timeout` seconds, e.g. when a test hangs past the session-timeout).
+
+    Callers use `timed_out` to tell an empty result set caused by expected time-budget
+    exhaustion (best effort, may be downgraded to `SKIPPED`) apart from one caused by a
+    real pytest/harness failure (no timeout - must stay `ERROR`).
     """
+
+    run_sw = Utils.Stopwatch()
 
     test_result = Result.from_pytest_run(
         command=command,
@@ -536,9 +564,11 @@ def run_pytest_and_collect_results(
         timeout=timeout,
     )
 
+    timed_out = False
     if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
         f"{temp_path}/{report_name}.log"
     ):
+        timed_out = True
         test_result.info = "ERROR: session-timeout occurred during test execution"
         assert test_result.status == Result.Status.ERROR
         test_result.results.append(
@@ -548,7 +578,36 @@ def run_pytest_and_collect_results(
                 info=test_result.info,
             )
         )
-    return test_result
+    elif timeout is not None and run_sw.duration >= timeout:
+        # The graceful session-timeout marker is absent but the run still reached the
+        # hard subprocess `timeout`: `Shell.run` killed pytest before it could finish
+        # (a normal run returns well under `timeout`). Treat this as a timeout so an
+        # empty result is reported as best-effort rather than as a harness failure.
+        timed_out = True
+
+    return test_result, timed_out
+
+
+def is_empty_best_effort_skip(
+    is_flaky_check: bool,
+    is_targeted_check: bool,
+    has_results: bool,
+    timed_out: bool,
+) -> bool:
+    """
+    Decide whether a flaky/targeted check that produced no test results should be
+    reported as `SKIPPED` (best effort) instead of falling through to `create_from`'s
+    default `ERROR`.
+
+    Only the expected timeout path is downgraded: a flaky/targeted run whose time budget
+    was exhausted (graceful xdist session-timeout or the hard subprocess backstop) before
+    any test produced a result is best-effort `SKIPPED`. When no timeout was observed, an
+    empty result means pytest failed to produce any output for some other reason (it
+    crashed before writing the jsonl report, or exited with a plugin/internal error and no
+    test rows). That is a real harness failure and must stay `ERROR`, so this returns
+    False.
+    """
+    return (is_flaky_check or is_targeted_check) and not has_results and timed_out
 
 
 def main():
@@ -640,9 +699,16 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if args.workers:
         workers = args.workers
     else:
+        # --dist=each (flaky/targeted checks) makes every worker run all modules,
+        # so budget more memory per worker than the module-splitting loadfile runs.
+        mem_per_worker = (
+            MAX_MEM_PER_WORKER_DIST_EACH
+            if is_flaky_check or is_targeted_check
+            else MAX_MEM_PER_WORKER
+        )
         print("ncpu:", ncpu)
         print("mem_gb:", mem_gb)
-        workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
+        workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // mem_per_worker) or 1
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
     clickhouse_server_config_dir = f"{Utils.cwd()}/programs/server"
@@ -705,6 +771,24 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         f"NOTE: No changed test modules found, but '{Labels.CI_FORCE_ALL}' label forces run - using sanity test"
                     )
                     changed_test_modules = ["test_accept_invalid_certificate/test.py"]
+
+    # Best-effort scope cap for the flaky check (see MAX_FLAKY_CHECK_MODULES). When a PR
+    # touches more changed test modules than can be repeatedly run within the time budget,
+    # run a deterministic subset (sorted for reproducibility) and skip the rest rather than
+    # truncating the whole run. The remaining ones are reported below as skipped so the
+    # reduced coverage is explicit, not silent.
+    skipped_flaky_modules = []
+    if is_flaky_check and len(changed_test_modules) > MAX_FLAKY_CHECK_MODULES:
+        changed_test_modules = sorted(changed_test_modules)
+        skipped_flaky_modules = changed_test_modules[MAX_FLAKY_CHECK_MODULES:]
+        changed_test_modules = changed_test_modules[:MAX_FLAKY_CHECK_MODULES]
+        print(
+            f"Flaky check: best-effort scope cap - running {len(changed_test_modules)} of "
+            f"{len(changed_test_modules) + len(skipped_flaky_modules)} changed modules "
+            f"to fit the time budget.\n"
+            f"  Running: {changed_test_modules}\n"
+            f"  Skipped (best effort): {skipped_flaky_modules}"
+        )
 
     if is_bugfix_validation:
         # Download the master-HEAD binaries matching this job's runner arch:
@@ -876,6 +960,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
+    # Set when a pytest run was cut short by a timeout (graceful session-timeout or the
+    # hard subprocess backstop). Used below to keep an empty flaky/targeted result a
+    # best-effort SKIPPED only when a timeout actually exhausted the budget.
+    timed_out = False
     session_timeout_parallel = 3600 * 2
     session_timeout_sequential = 3600
 
@@ -889,11 +977,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     # Flaky-check soft timeout. Mirrors the pattern in `ci/jobs/functional_tests.py`:
     # bound the total time spent inside pytest so the job has headroom for cleanup,
-    # log collection and reporting before the workflow global timeout fires. Without
-    # this, a flaky-check run over many modified test modules can be hard-killed by
-    # the global timeout, producing `Unknown error (exit status: None)` instead of
-    # a proper report.
-    FLAKY_CHECK_TIME_LIMIT = 90 * 60  # 90 min, integration tests are slower than functional
+    # log collection and reporting before the job is cancelled. Without this, a
+    # flaky-check run over many modified test modules can be hard-killed, producing no
+    # report at all instead of a best-effort partial one.
+    #
+    # The budget must stay well below the external ceiling at which a lone integration
+    # job is cancelled (observed at ~80-90 min from job start in CI). The previous 90 min
+    # was above that ceiling: the graceful xdist `--session-timeout` and the subprocess
+    # hard-kill backstop never fired before the external cancellation, so the whole
+    # process was killed and 0 results were reported (the job showed a red failure rather
+    # than a best-effort report). 45 min matches the functional flaky check and leaves
+    # ample room for the hard-kill backstop (+600s below), cleanup and reporting.
+    FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min - kept below the external job-cancellation ceiling
     if is_flaky_check:
         elapsed_for_flaky = int(sw.duration)
         flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 60)
@@ -933,12 +1028,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     if parallel_test_modules:
         log_file = f"{temp_path}/pytest_parallel.log"
-        test_result_parallel = run_pytest_and_collect_results(
+        test_result_parallel, parallel_timed_out = run_pytest_and_collect_results(
             command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
             env=test_env,
             report_name="parallel",
             timeout=session_timeout_parallel + 600,
         )
+        timed_out = timed_out or parallel_timed_out
         test_results.extend(test_result_parallel.results)
         _mark_infrastructure_errors(test_result_parallel.results)
         failed_test_cases.extend(
@@ -974,12 +1070,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 iter_session_timeout_sequential = min(
                     session_timeout_sequential, flaky_check_remaining_s
                 )
-            test_result_sequential = run_pytest_and_collect_results(
+            test_result_sequential, sequential_timed_out = run_pytest_and_collect_results(
                 command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=iter_session_timeout_sequential + 600,
             )
+            timed_out = timed_out or sequential_timed_out
             test_results.extend(test_result_sequential.results)
             _mark_infrastructure_errors(test_result_sequential.results)
             failed_test_cases.extend(
@@ -1024,7 +1121,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 bt_test_results = []
 
                 if parallel_test_modules:
-                    bt_result_parallel = run_pytest_and_collect_results(
+                    bt_result_parallel, _ = run_pytest_and_collect_results(
                         command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                         env=test_env,
                         report_name=f"parallel_{bugfix_bt}",
@@ -1040,7 +1137,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
                 bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
                 if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
-                    bt_result_sequential = run_pytest_and_collect_results(
+                    bt_result_sequential, _ = run_pytest_and_collect_results(
                         command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                         env=test_env,
                         report_name=f"sequential_{bugfix_bt}",
@@ -1097,7 +1194,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
-        test_result_retries = run_pytest_and_collect_results(
+        test_result_retries, _ = run_pytest_and_collect_results(
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
@@ -1157,7 +1254,65 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_targeted_check or is_flaky_check or is_bugfix_validation:
         test_results = [r for r in test_results if r.name != "Timeout"]
 
-    R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
+    # Whether pytest produced any real test results, captured *before* the synthetic
+    # `skipped_flaky_modules` entries are appended below. The empty-result status decision
+    # must look only at real pytest output: in a scope-capped flaky run the synthetic
+    # `SKIPPED` entries would otherwise make `test_results` non-empty even when the selected
+    # modules produced nothing, masking a timeout-empty run (should be `SKIPPED`) or an empty
+    # harness failure (should be `ERROR`) as a green top-level result.
+    pytest_has_results = bool(test_results)
+
+    # Make the best-effort scope cap explicit in the report: list the modules that were
+    # skipped to fit the time budget as SKIPPED entries rather than dropping them silently.
+    for skipped_module in skipped_flaky_modules:
+        test_results.append(
+            Result(
+                name=skipped_module,
+                status=Result.Status.SKIPPED,
+                info="Skipped by flaky-check best-effort scope cap (MAX_FLAKY_CHECK_MODULES)",
+            )
+        )
+
+    # If a timeout exhausted the time budget before any test produced a result (e.g. a
+    # single very slow or hanging module consumed the whole budget), report SKIPPED rather
+    # than letting `create_from` default an empty result set to ERROR, which would block
+    # the PR. Crucially, this best-effort downgrade applies *only* when a timeout was
+    # actually observed: an empty result without a timeout means pytest failed to produce
+    # any output for some other reason (crashed before writing the jsonl report, plugin or
+    # internal error, ...), which is a real harness failure and must stay ERROR.
+    #
+    # Both decisions use `pytest_has_results` (real pytest output) rather than the current
+    # `test_results`, which may carry only the synthetic `skipped_flaky_modules` entries
+    # appended above. With a scope cap in effect those synthetic `SKIPPED` rows make
+    # `test_results` non-empty, so the empty-result status must be forced here: `create_from`
+    # only defaults an empty result set to `ERROR`, and a list of `SKIPPED` rows would
+    # otherwise collapse to a green top-level status.
+    empty_best_effort = is_empty_best_effort_skip(
+        is_flaky_check, is_targeted_check, pytest_has_results, timed_out
+    )
+    empty_harness_failure = (
+        (is_flaky_check or is_targeted_check) and not pytest_has_results and not timed_out
+    )
+    R = Result.create_from(
+        results=test_results,
+        status=(
+            Result.Status.SKIPPED
+            if empty_best_effort
+            else Result.Status.ERROR if empty_harness_failure else ""
+        ),
+        info=(
+            "No test results collected within the flaky-check time budget (best effort)"
+            if empty_best_effort
+            else (
+                "No test results collected and no timeout was observed - reporting the "
+                "empty pytest run as a harness ERROR"
+                if empty_harness_failure
+                else ""
+            )
+        ),
+        stopwatch=sw,
+        files=attached_files,
+    )
 
     if is_llvm_coverage:
         assert (
