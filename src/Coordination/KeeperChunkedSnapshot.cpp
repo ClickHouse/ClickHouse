@@ -29,7 +29,7 @@ void packChunkedSnapshotHeader(std::span<const SnapshotChunkDescriptor> chunks, 
     memcpy(buf, &count, 8);
     buf += 8;
 
-    // Chunk descriptors: each is 17 bytes (1 + 8 + 8)
+    // Chunk descriptors: each is 25 bytes (1 + 8 + 8 + 8)
     for (const auto & cd : chunks)
     {
         *reinterpret_cast<uint8_t *>(buf) = static_cast<uint8_t>(cd.type);
@@ -37,6 +37,8 @@ void packChunkedSnapshotHeader(std::span<const SnapshotChunkDescriptor> chunks, 
         memcpy(buf, &cd.compressed_offset, 8);
         buf += 8;
         memcpy(buf, &cd.compressed_size, 8);
+        buf += 8;
+        memcpy(buf, &cd.node_count, 8);
         buf += 8;
     }
 }
@@ -70,9 +72,9 @@ std::vector<SnapshotChunkDescriptor> parseAndValidateChunkedSnapshotHeader(const
     uint64_t chunk_count = 0;
     memcpy(&chunk_count, buf + 5, 8);
 
-    // Bounds check: chunk_count * 17 descriptors must fit in the remaining bytes.
-    // Use division form to avoid overflow: chunk_count <= (buf_size - 13) / 17.
-    if (chunk_count > (buf_size - 13) / 17)
+    // Bounds check: chunk_count * 25 descriptors must fit in the remaining bytes.
+    // Use division form to avoid overflow: chunk_count <= (buf_size - 13) / 25.
+    if (chunk_count > (buf_size - 13) / 25)
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
             "Chunked snapshot chunk_count {} implies header size {} that exceeds buffer size {}",
@@ -107,6 +109,8 @@ std::vector<SnapshotChunkDescriptor> parseAndValidateChunkedSnapshotHeader(const
         memcpy(&descriptor.compressed_offset, cursor, 8);
         cursor += 8;
         memcpy(&descriptor.compressed_size, cursor, 8);
+        cursor += 8;
+        memcpy(&descriptor.node_count, cursor, 8);
         cursor += 8;
 
         // Validate chunk type.

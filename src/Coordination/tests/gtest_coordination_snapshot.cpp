@@ -2249,7 +2249,7 @@ TEST(KeeperChunkedSnapshotHeader, ChunkCountExceedsBufferCapacity)
     std::vector<char> buf(16, '\0');
     memcpy(buf.data(), KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4);
     buf[4] = KEEPER_CHUNKED_SNAPSHOT_VERSION;
-    uint64_t big = 100; // chunkedSnapshotHeaderSize(100) = 1713, but buf is only 16 bytes
+    uint64_t big = 100; // chunkedSnapshotHeaderSize(100) = 2513, but buf is only 16 bytes
     memcpy(buf.data() + 5, &big, 8);
     EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
 }
@@ -2310,21 +2310,13 @@ TEST(KeeperChunkedSnapshotWrite, InspectBytes)
             << "Frame " << i << " does not start with ZSTD magic";
     }
 
-    // Decompress the first NODES frame and verify the node_count prefix.
+    // Verify that the first NODES frame descriptor carries a non-zero node_count.
+    // node_count now lives in the header descriptor (not the frame body).
+    // Storage has 4 non-system nodes: /, /alpha, /beta, /gamma (system nodes excluded).
+    // With the default chunk_size_limit (100000), all 4 fit in one NODES frame.
     {
         const auto & nf = frames[1]; // first NODES frame
-        const size_t max_out = nf.compressed_size * 20 + 1024; // generous upper bound
-        std::string decompressed(max_out, '\0');
-        const size_t actual = ZSTD_decompress(
-            decompressed.data(), max_out,
-            data + nf.compressed_offset, nf.compressed_size);
-        ASSERT_FALSE(ZSTD_isError(actual)) << ZSTD_getErrorName(actual);
-        ASSERT_GE(actual, sizeof(uint64_t)) << "Decompressed NODES frame shorter than node_count field";
-        uint64_t node_count = 0;
-        memcpy(&node_count, decompressed.data(), sizeof(node_count));
-        // Storage has 4 non-system nodes: /, /alpha, /beta, /gamma (system nodes excluded).
-        // With the default chunk_size_limit (100000), all 4 fit in one NODES frame.
-        EXPECT_GE(node_count, 1u) << "NODES frame must have at least the root node";
+        EXPECT_GE(nf.node_count, 1u) << "NODES frame descriptor must carry at least the root node count";
     }
 }
 
@@ -2399,11 +2391,11 @@ TEST(KeeperChunkedSnapshotWrite, DiskInspectBytes)
 
 TEST(KeeperChunkedSnapshotHeader, HeaderSizeComputation)
 {
-    // Verify the constexpr formula: 13 + 17 * chunk_count.
+    // Verify the constexpr formula: 13 + 25 * chunk_count.
     EXPECT_EQ(chunkedSnapshotHeaderSize(0),   13u);
-    EXPECT_EQ(chunkedSnapshotHeaderSize(1),   30u);
-    EXPECT_EQ(chunkedSnapshotHeaderSize(3),   64u);
-    EXPECT_EQ(chunkedSnapshotHeaderSize(100), 1713u);
+    EXPECT_EQ(chunkedSnapshotHeaderSize(1),   38u);
+    EXPECT_EQ(chunkedSnapshotHeaderSize(3),   88u);
+    EXPECT_EQ(chunkedSnapshotHeaderSize(100), 2513u);
 }
 
 // ─── Chunked snapshot read-path tests (sequential deserialization + validating load API) ──────────
@@ -2900,15 +2892,12 @@ struct FakeNodeEntry
     int64_t  seq_num      = 0;
 };
 
-/// Build uncompressed bytes for a chunked NODES chunk.
-/// Layout: uint64_t node_count | node_count × [path_binary | V7-node-fields]
+/// Build uncompressed bytes for a chunked NODES chunk body.
+/// Layout: node_count × [path_binary | V7-node-fields]   (NO in-body node_count prefix — it lives in the header descriptor).
 /// Field order matches writeNode(V7) + readChunkedSnapshotNode exactly.
 static std::string buildNodesChunkBytes(const std::vector<FakeNodeEntry> & entries)
 {
     WriteBufferFromOwnString w;
-
-    const uint64_t node_count = static_cast<uint64_t>(entries.size());
-    writeBinary(node_count, w);   // 8 raw bytes, native byte order
 
     for (const auto & e : entries)
     {
@@ -2959,10 +2948,12 @@ static std::string decompressSnapshotChunk(nuraft::ptr<nuraft::buffer> buf, size
 
 /// Replace the first chunk of target_type in a chunked snapshot buffer with new uncompressed
 /// content.  All other chunks are kept verbatim.  Returns a freshly-allocated nuraft::buffer.
+/// node_count_for_replaced is written into the descriptor for the replaced chunk (0 for non-NODES chunks).
 static nuraft::ptr<nuraft::buffer> replaceFirstChunkOfType(
     nuraft::ptr<nuraft::buffer> orig_buf,
     SnapshotChunkType target_type,
-    const std::string & new_frame_bytes)
+    const std::string & new_frame_bytes,
+    uint64_t node_count_for_replaced = 0)
 {
     const char * raw = reinterpret_cast<const char *>(orig_buf->data_begin());
     const size_t raw_size = orig_buf->size();
@@ -3008,10 +2999,12 @@ static nuraft::ptr<nuraft::buffer> replaceFirstChunkOfType(
     for (size_t i = 0; i < frames.size(); ++i)
     {
         const size_t payload_sz = (i == target_idx) ? new_cs : frames[i].compressed_size;
+        const uint64_t nc = (i == target_idx) ? node_count_for_replaced : frames[i].node_count;
         new_descs.push_back(SnapshotChunkDescriptor{
             frames[i].type,
             static_cast<uint64_t>(total_sz),
-            static_cast<uint64_t>(payload_sz)});
+            static_cast<uint64_t>(payload_sz),
+            nc});
         total_sz += payload_sz;
     }
 
@@ -3039,11 +3032,15 @@ static nuraft::ptr<nuraft::buffer> replaceFirstChunkOfType(
 }
 
 /// Convenience wrapper — replace the first NODES chunk (most common test operation).
+/// entries is passed to carry the node_count for the descriptor; new_nodes_bytes is the uncompressed body.
 static nuraft::ptr<nuraft::buffer> replaceFirstNodesChunk(
     nuraft::ptr<nuraft::buffer> orig_buf,
-    const std::string & new_nodes_bytes)
+    const std::string & new_nodes_bytes,
+    const std::vector<FakeNodeEntry> & entries)
 {
-    return replaceFirstChunkOfType(orig_buf, SnapshotChunkType::NODES, new_nodes_bytes);
+    return replaceFirstChunkOfType(
+        orig_buf, SnapshotChunkType::NODES, new_nodes_bytes,
+        static_cast<uint64_t>(entries.size()));
 }
 
 // ── Rejection tests ──────────────────────────────────────────────────────────
@@ -3072,7 +3069,8 @@ TEST(KeeperChunkedSnapshotValidation, EmptyNodesFrameNoRoot)
 
     // Replace NODES with an empty frame (node_count=0, no nodes at all).
     // Deserialization must reject: no '/' root in container.
-    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes({}));
+    const std::vector<FakeNodeEntry> empty_entries;
+    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes(empty_entries), empty_entries);
 
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
@@ -3108,7 +3106,7 @@ TEST(KeeperChunkedSnapshotValidation, MissingParentInNodesFrame)
     std::vector<FakeNodeEntry> nodes;
     nodes.push_back(FakeNodeEntry{.path = "/"});     // root present
     nodes.push_back(FakeNodeEntry{.path = "/a/b"});  // child present but parent '/a' absent
-    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes(nodes));
+    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes(nodes), nodes);
 
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
@@ -3148,7 +3146,8 @@ TEST(KeeperChunkedSnapshotValidation, NumChildrenOvercount)
     child_a.path         = "/a";
     child_a.num_children = 0;
 
-    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes({root, child_a}));
+    const std::vector<FakeNodeEntry> entries_over{root, child_a};
+    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes(entries_over), entries_over);
 
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
@@ -3188,7 +3187,8 @@ TEST(KeeperChunkedSnapshotValidation, NumChildrenUndercount)
     child_a.path         = "/a";
     child_a.num_children = 0;
 
-    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes({root, child_a}));
+    const std::vector<FakeNodeEntry> entries_under{root, child_a};
+    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes(entries_under), entries_under);
 
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
@@ -3224,7 +3224,8 @@ TEST(KeeperChunkedSnapshotValidation, NegativeNumChildrenRejected)
     root.path         = "/";
     root.num_children = -1;  // invalid — must be rejected by readChunkedSnapshotNode
 
-    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes({root}));
+    const std::vector<FakeNodeEntry> entries_neg{root};
+    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes(entries_neg), entries_neg);
 
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
@@ -3406,16 +3407,18 @@ TEST(KeeperChunkedSnapshotValidation, F1ZstdFrameTrailerDropped)
     // The 4 bytes are the ZSTD content-checksum epilogue (ZSTD_c_checksumFlag=1).
     // They become an inter-chunk gap — legal under the non-overlap-only header check —
     // so parseAndValidateChunkedSnapshotHeader still passes on the tampered buffer.
-    // Chunked snapshot header layout: compressed_size of chunk i is at byte offset 22 + 17*i.
+    // Chunked snapshot header layout: compressed_size of chunk i is at byte offset 22 + 25*i.
+    // (magic=4 + version=1 + chunk_count=8 = 13; then per descriptor: type=1 + offset=8 = 9 more; 13+9=22)
+    // Each descriptor is 25 bytes (type=1 + compressed_offset=8 + compressed_size=8 + node_count=8).
     auto makeTrailerDropped = [&](size_t frame_idx) -> nuraft::ptr<nuraft::buffer>
     {
         nuraft::ptr<nuraft::buffer> bad = nuraft::buffer::alloc(good_buf->size());
         std::memcpy(bad->data_begin(), good_buf->data_begin(), good_buf->size());
         char * hdr = reinterpret_cast<char *>(bad->data_begin());
         uint64_t cs = 0;
-        std::memcpy(&cs, hdr + 22 + 17 * frame_idx, 8);
+        std::memcpy(&cs, hdr + 22 + 25 * frame_idx, 8);
         cs -= 4; // drop the 4-byte ZSTD checksum trailer
-        std::memcpy(hdr + 22 + 17 * frame_idx, &cs, 8);
+        std::memcpy(hdr + 22 + 25 * frame_idx, &cs, 8);
         return bad;
     };
 

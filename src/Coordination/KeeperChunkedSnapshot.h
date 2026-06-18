@@ -20,12 +20,13 @@ namespace DB
 ///       uint8_t  chunk_type                            // METADATA=0, NODES=1, SESSIONS=2
 ///       uint64_t compressed_offset                     // absolute byte offset from buffer start
 ///       uint64_t compressed_size                       // byte length of this ZSTD frame
+///       uint64_t node_count                            // number of nodes (NODES chunks only; 0 for others)
 ///
 ///   [Chunk 0  METADATA]  version, snapshot_meta, zxid+digest (V5+), session_id_counter, ACL map
-///   [Chunk 1..K NODES ]  each: uint64_t node_count, then node_count × V7-encoded (path + node)
+///   [Chunk 1..K NODES ]  each: node_count × V7-encoded (path + node)   [NO in-body node_count prefix]
 ///   [Chunk K+1 SESSIONS] sessions (sorted) + optional cluster config (same as legacy tail)
 ///
-/// header_size = 4 + 1 + 8 + chunk_count * (1 + 8 + 8) = 13 + 17 * chunk_count
+/// header_size = 4 + 1 + 8 + chunk_count * (1 + 8 + 8 + 8) = 13 + 25 * chunk_count
 
 /// Magic bytes that identify chunked snapshots ("CKFS").
 static constexpr std::string_view KEEPER_CHUNKED_SNAPSHOT_MAGIC{"CKFS", 4};
@@ -41,7 +42,7 @@ static constexpr uint64_t KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT = 3;
 enum class SnapshotChunkType : uint8_t
 {
     METADATA = 0, ///< snapshot_meta, zxid+digest, session_id_counter, ACL map
-    NODES    = 1, ///< uint64_t node_count + node_count V7-encoded nodes
+    NODES    = 1, ///< node_count V7-encoded nodes (node_count is in the header descriptor, not the body)
     SESSIONS = 2, ///< sessions (sorted) + optional cluster config
 };
 
@@ -51,13 +52,14 @@ struct SnapshotChunkDescriptor
     SnapshotChunkType type = SnapshotChunkType::METADATA;
     uint64_t    compressed_offset = 0; ///< absolute byte offset from the start of the buffer/file
     uint64_t    compressed_size = 0;   ///< byte length of this independently-compressed ZSTD frame
+    uint64_t    node_count = 0;        ///< number of nodes in this chunk (NODES chunks only; 0 for others)
 };
 
 /// Compute the header byte size for a given number of chunks.
-///   header_size = 13 + 17 * chunk_count
+///   header_size = 13 + 25 * chunk_count
 constexpr size_t chunkedSnapshotHeaderSize(uint64_t chunk_count) noexcept
 {
-    return 13 + 17 * static_cast<size_t>(chunk_count);
+    return 13 + 25 * static_cast<size_t>(chunk_count);
 }
 
 /// Write a chunked snapshot header into `buf`.

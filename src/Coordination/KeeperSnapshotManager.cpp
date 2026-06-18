@@ -16,6 +16,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ZstdDeflatingWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -469,7 +470,7 @@ namespace
                     "Chunked snapshot ZSTD compression failed: {}", ZSTD_getErrorName(compressed_size));
             const uint64_t offset = static_cast<uint64_t>(raw_out.count());
             raw_out.write(compressed.data(), compressed_size);
-            chunks.push_back(SnapshotChunkDescriptor{type, offset, static_cast<uint64_t>(compressed_size)});
+            chunks.push_back(SnapshotChunkDescriptor{type, offset, static_cast<uint64_t>(compressed_size), /*node_count=*/0});
         };
 
         // ── METADATA chunk ────────────────────────────────────────────────────────
@@ -510,8 +511,9 @@ namespace
         }
 
         // ── NODES chunks ──────────────────────────────────────────────────────────
-        // Each chunk: uint64_t node_count | node_count × (path binary + V7-encoded node).
-        // The node_count is written as a zero placeholder and backpatched after the loop.
+        // Each chunk body contains node_count × (path binary + V7-encoded node).
+        // node_count is stored in the header descriptor (not the chunk body); streaming
+        // ZstdDeflatingWriteBuffer avoids materialising the full uncompressed chunk.
         {
             size_t remaining_nodes = total_nodes;
             auto it = snapshot.begin;
@@ -521,54 +523,62 @@ namespace
             {
                 const size_t nodes_for_this_chunk = std::min(remaining_nodes, chunk_size_limit);
 
-                WriteBufferFromOwnString scratch;
-                // Reserve 8 bytes for node_count (backpatched after iteration).
-                static const char kZero8[8] = {};
-                scratch.write(kZero8, sizeof(kZero8));
-
+                const uint64_t offset = static_cast<uint64_t>(raw_out.count());
                 uint64_t actual_node_count = 0;
 
-                while (actual_node_count < nodes_for_this_chunk
-                    && container_pos < snapshot.snapshot_container_size)
+                // chunk_buf is declared before zstd so it outlives the deflating buffer.
+                // ZstdDeflatingWriteBuffer holds a non-owning pointer to chunk_buf.
+                WriteBufferFromOwnString chunk_buf;
                 {
-                    const auto & path = it->key;
+                    ZstdDeflatingWriteBuffer zstd(&chunk_buf, /*compression_level=*/3);
 
-                    // Skip system node children of /keeper (they are not persisted).
-                    if (Coordination::matchPath(path, keeper_system_path)
-                        == Coordination::PathMatchResult::IS_CHILD)
+                    while (actual_node_count < nodes_for_this_chunk
+                        && container_pos < snapshot.snapshot_container_size)
                     {
+                        const auto & path = it->key;
+
+                        // Skip system node children of /keeper (they are not persisted).
+                        if (Coordination::matchPath(path, keeper_system_path)
+                            == Coordination::PathMatchResult::IS_CHILD)
+                        {
+                            const bool last = (container_pos + 1 >= snapshot.snapshot_container_size);
+                            if (!last)
+                                ++it;
+                            ++container_pos;
+                            continue;
+                        }
+
+                        const auto & node = it->value;
+                        if (node.stats.mzxid > snapshot.zxid)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Chunked snapshot serialize: node mzxid {} > snapshot zxid {}",
+                                node.stats.mzxid, snapshot.zxid);
+
+                        writeBinary(path, zstd);
+                        // The chunked format reuses V7 per-node encoding (METADATA version byte = 8 is a
+                        // chunk tag, not a node-encoding selector). The reader must decode
+                        // each node with readNode(…, SnapshotVersion::V7, …).
+                        writeNode(node, SnapshotVersion::V7, zstd);
+                        ++actual_node_count;
+
                         const bool last = (container_pos + 1 >= snapshot.snapshot_container_size);
                         if (!last)
                             ++it;
                         ++container_pos;
-                        continue;
                     }
 
-                    const auto & node = it->value;
-                    if (node.stats.mzxid > snapshot.zxid)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Chunked snapshot serialize: node mzxid {} > snapshot zxid {}",
-                            node.stats.mzxid, snapshot.zxid);
+                    zstd.finalize();
+                } // zstd finalised and destroyed; chunk_buf now holds the complete ZSTD frame
 
-                    writeBinary(path, scratch);
-                    // The chunked format reuses V7 per-node encoding (METADATA version byte = 8 is a
-                    // chunk tag, not a node-encoding selector). The reader must decode
-                    // each node with readNode(…, SnapshotVersion::V7, …).
-                    writeNode(node, SnapshotVersion::V7, scratch);
-                    ++actual_node_count;
-
-                    const bool last = (container_pos + 1 >= snapshot.snapshot_container_size);
-                    if (!last)
-                        ++it;
-                    ++container_pos;
-                }
+                const std::string & compressed = chunk_buf.str();
+                raw_out.write(compressed.data(), compressed.size());
+                chunks.push_back(SnapshotChunkDescriptor{
+                    SnapshotChunkType::NODES,
+                    offset,
+                    static_cast<uint64_t>(compressed.size()),
+                    actual_node_count});
 
                 remaining_nodes -= actual_node_count;
-
-                // Backpatch node_count into the first 8 bytes of the scratch buffer.
-                std::string & s = scratch.str(); // finalises
-                memcpy(s.data(), &actual_node_count, sizeof(actual_node_count));
-                compress_and_record(SnapshotChunkType::NODES, scratch);
             }
         }
 
@@ -1532,8 +1542,8 @@ KeeperSnapshotManager<Storage>::deserializeChunkedSnapshotFromBuffer(
             static_cast<size_t>(cd.compressed_size));
         ReadBuffer & rbuf = *zbuf;
 
-        uint64_t node_count = 0;
-        readBinary(node_count, rbuf);
+        // node_count is stored in the header descriptor, not the chunk body.
+        const uint64_t node_count = cd.node_count;
 
         if (!load_full_storage)
         {
