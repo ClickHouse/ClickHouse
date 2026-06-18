@@ -161,10 +161,9 @@ static QueryTreeNodePtr createNotWrapper(QueryTreeNodePtr node)
 }
 
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
-std::pair<QueryTreeNodePtr, ProjectionNames> QueryAnalyzer::makeNullSafeHas(
+QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     QueryTreeNodePtr array_arg,    // [1,2,number]
     QueryTreeNodePtr element_arg,  // x (e.g. NULL)
-    const ProjectionNames & args_proj,
     IdentifierResolveScope & scope)
 {
     auto is_null_fn = std::make_shared<FunctionNode>("isNull");
@@ -182,12 +181,9 @@ std::pair<QueryTreeNodePtr, ProjectionNames> QueryAnalyzer::makeNullSafeHas(
     raw_if->getArguments().getNodes() = {is_null_fn, null_const, has_fn};
 
     QueryTreeNodePtr if_node = raw_if;
-    auto single_name = calculateFunctionProjectionName(if_node, {}, args_proj);
-    ProjectionNames proj = {single_name};
-
     resolveFunction(if_node, scope);
 
-    return std::make_pair(if_node, proj);
+    return if_node;
 }
 
 /// Builds has() expression with proper null handling and NOT wrapping for IN rewrites
@@ -205,14 +201,14 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
 
     if (!transform_null_in)
     {
-        auto [result_node, proj_names] = makeNullSafeHas(array_arg, element_arg, arguments_projection_names, scope);
+        QueryTreeNodePtr result_node = makeNullSafeHas(array_arg, element_arg, scope);
         if (is_not_in)
         {
             result_node = createNotWrapper(result_node);
             resolveFunction(result_node, scope);
         }
         node = result_node;
-        return proj_names;
+        return ProjectionNames{proj};
     }
 
     auto has_fn = std::make_shared<FunctionNode>("has");

@@ -180,7 +180,7 @@ private:
 
     /// IN - related functions
 
-    std::pair<QueryTreeNodePtr, ProjectionNames> makeNullSafeHas(QueryTreeNodePtr array_arg, QueryTreeNodePtr element_arg, const ProjectionNames & args_proj, IdentifierResolveScope & scope);
+    QueryTreeNodePtr makeNullSafeHas(QueryTreeNodePtr array_arg, QueryTreeNodePtr element_arg, IdentifierResolveScope & scope);
 
     ProjectionNames buildHasExpression(
         QueryTreeNodePtr & node,

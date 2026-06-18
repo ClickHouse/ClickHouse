@@ -26,6 +26,7 @@ SETTINGS transform_null_in = 1;
 SELECT NULL IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))), NULL NOT IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))) FROM numbers(2) SETTINGS transform_null_in = 1;
 SELECT number, NULL IN (if(number = 0, NULL, 1)), NULL NOT IN (if(number = 0, NULL, 1)) FROM numbers(2) SETTINGS transform_null_in = 1;
 SELECT number, NULL IN (if(number = 0, NULL, 1)), NULL NOT IN (if(number = 0, NULL, 1)) FROM numbers(2) SETTINGS transform_null_in = 0;
+SELECT number IN (number, number + 1) FROM numbers(1) FORMAT TabSeparatedWithNames;
 
 SET enable_analyzer = 0;
 
@@ -33,6 +34,7 @@ SELECT number FROM numbers(10) WHERE number % 2 IN (number % 3, number % 5) ORDE
 SELECT number FROM numbers(10) WHERE number % 2 IN [number % 3, number % 5] ORDER BY number;
 SELECT number FROM numbers(3) WHERE number IN (number + 1) ORDER BY number;
 SELECT number, number % 3 IN (number % 2, 1), number % 3 NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
+SELECT (1, 1) IN (if(number = 0, (1, 1), (2, 2)), (3, 3)) FROM numbers(2);
 SELECT toFloat64(-0.0) IN (toFloat64(0.0)), toFloat64(-0.0) NOT IN (toFloat64(0.0)), toFloat64(-0.0) IN (toFloat64(number * 0)), toFloat64(-0.0) NOT IN (toFloat64(number * 0)), toFloat64(-0.0) IN [toFloat64(number * 0)], toFloat64(-0.0) NOT IN [toFloat64(number * 0)] FROM numbers(1);
 SELECT number, number % 3 IN arrayMap(x -> x + number % 2, [0, 1]), number % 3 NOT IN arrayMap(x -> x + number % 2, [0, 1]) FROM numbers(6) ORDER BY number;
 SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
@@ -50,3 +52,9 @@ FROM (SELECT materialize(NULL) AS x, materialize(NULL) AS y)
 SETTINGS transform_null_in = 1;
 
 SELECT NULL IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))), NULL NOT IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))) FROM numbers(2) SETTINGS transform_null_in = 1;
+
+DROP TABLE IF EXISTS test_04234_non_constant_rhs_in;
+CREATE TABLE test_04234_non_constant_rhs_in (number UInt64) ENGINE = MergeTree ORDER BY number;
+INSERT INTO test_04234_non_constant_rhs_in SELECT number FROM numbers(10);
+SELECT * FROM test_04234_non_constant_rhs_in PREWHERE (number % 2) IN (number % 3, number % 5) ORDER BY number;
+DROP TABLE test_04234_non_constant_rhs_in;

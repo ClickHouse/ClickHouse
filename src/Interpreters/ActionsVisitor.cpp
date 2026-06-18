@@ -943,7 +943,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 {
                     right_argument_is_array = true;
                 }
-                else if (!right_argument_function || right_argument_function->name != "array")
+                else
                 {
                     visit(right_argument, data);
                     if (auto name_and_type = getNameAndTypeFromAST(right_argument, data))
