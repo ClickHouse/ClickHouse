@@ -92,7 +92,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
-    extern const FileCacheSettingsBool prometheus_cache_usage_metrics_per_user;
+    extern const FileCacheSettingsBool expose_prometheus_cache_usage_metrics_per_user;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
 }
 
@@ -2769,7 +2769,7 @@ TEST_F(FileCacheTest, UsageMetricsByUser)
         settings[FileCacheSetting::max_file_segment_size] = 10;
         settings[FileCacheSetting::boundary_alignment] = 1;
         settings[FileCacheSetting::load_metadata_asynchronously] = false;
-        settings[FileCacheSetting::prometheus_cache_usage_metrics_per_user] = expose_usage_metrics;
+        settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user] = expose_usage_metrics;
         return settings;
     };
 

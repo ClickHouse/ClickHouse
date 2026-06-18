@@ -9,7 +9,7 @@
                 <type>cache</type>
                 <disk>local_blob</disk>
                 <path>cache_usage_metrics/</path>
-                <prometheus_cache_usage_metrics_per_user>1</prometheus_cache_usage_metrics_per_user>
+                <expose_prometheus_cache_usage_metrics_per_user>1</expose_prometheus_cache_usage_metrics_per_user>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <max_size>2Mi</max_size>
                 <max_elements>256</max_elements>
