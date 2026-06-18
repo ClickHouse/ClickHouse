@@ -101,7 +101,10 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (index_type->parameters && !index_type->parameters->children.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
 
-    if (index_definition->granularity == 0)
+    /// Lookup indexes are table-wide in-memory structures and carry no GRANULARITY
+    /// (it is meaningless for them and the parser rejects the clause), so their zero
+    /// granularity is expected. The check below guards only granule-based skip indexes.
+    if (!index_definition->is_lookup_index && index_definition->granularity == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
 
     IndexDescription result;

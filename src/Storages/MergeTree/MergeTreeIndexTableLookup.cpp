@@ -68,8 +68,20 @@ IndicesDescription buildLookupIndices(const ASTs & lookup_index_asts, const Colu
 
     for (const auto & lookup_index_ast : lookup_index_asts)
     {
+        /// Mark the declaration as a lookup index before interpretation. Lookup indexes
+        /// have no GRANULARITY (it is meaningless for a table-wide structure), so the flag
+        /// must already be set when `getIndexFromAST` runs, otherwise its granularity check
+        /// would reject the expected zero granularity. The metadata re-parse path
+        /// (`parseLookupIndices`) does not set the flag in the parser, so we set it here.
+        auto definition_ast = lookup_index_ast->clone();
+        if (auto * index_ast = typeid_cast<ASTIndexDeclaration *>(definition_ast.get()))
+        {
+            index_ast->granularity = 0;
+            index_ast->is_lookup_index = true;
+        }
+
         IndexDescription index = IndexDescription::getIndexFromAST(
-            lookup_index_ast->clone(),
+            definition_ast,
             columns,
             /* is_implicitly_created */ false,
             /* escape_filenames */ true,
@@ -79,12 +91,6 @@ IndicesDescription buildLookupIndices(const ASTs & lookup_index_asts, const Colu
             throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated lookup index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index.name));
 
         validateLookupIndex(index);
-
-        if (auto * index_ast = typeid_cast<ASTIndexDeclaration *>(index.definition_ast.get()))
-        {
-            index_ast->granularity = 0;
-            index_ast->is_lookup_index = true;
-        }
 
         result.push_back(std::move(index));
     }
