@@ -169,8 +169,8 @@
             position: relative;
             display: grid;
             grid-template-columns: auto 1fr;
-            grid-template-rows: auto 1fr;
-            grid-template-areas: "terminal terminal" "menu main";
+            grid-template-rows: auto auto 1fr;
+            grid-template-areas: "terminal terminal" "menu tabbar" "menu main";
         }
 
         #menu
@@ -216,21 +216,18 @@
             z-index: 0; /* stacking context so children don't overlap #menu */
         }
 
-        /* Tab bar: sits at the top of #main, bleeding into its padding so the
-           gray/black strip spans the full width. Sticky on the horizontal axis
-           only (like #controls), so it stays at the left edge while a wide table
-           is scrolled horizontally, but scrolls away vertically. */
+        /* Tab bar: its own grid row in the main column, so the gray/black strip spans
+           the full width without any negative-margin bleed (which behaved differently
+           across browsers under position: sticky). The left padding aligns the first
+           tab with the editor below while the strip background fills the whole row. */
         #tab-bar
         {
+            grid-area: tabbar;
             display: flex;
             align-items: flex-end;
             gap: 0.25rem;
-            margin: -0.5rem -0.5rem 0.5rem -0.5rem;
             padding: 0.35rem 0.5rem 0 0.5rem;
             background: var(--table-header-color); /* light gray strip */
-            position: sticky;
-            left: 0;
-            z-index: 1;
         }
 
         /* The `display: flex` above (id specificity) overrides the user-agent
@@ -1036,11 +1033,11 @@
     <div id="terminal-panel">
         <div id="terminal-resizer"></div>
     </div>
+    <div id="tab-bar" hidden>
+        <div id="tabs"></div>
+        <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
+    </div>
     <div id="main">
-        <div id="tab-bar" hidden>
-            <div id="tabs"></div>
-            <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
-        </div>
         <form id="controls">
             <div id="inputs">
                 <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
