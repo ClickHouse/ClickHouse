@@ -663,14 +663,18 @@
         const statusLower = (status || '').toLowerCase();
         if (statusLower.includes('error')) return 0;
         if (statusLower.includes('fail') && statusLower !== 'xfail') return 1;
-        if (statusLower === 'xpass') return 2;
-        if (statusLower.includes('running')) return 3;
-        if (statusLower.includes('dropped')) return 4;
-        if (statusLower.includes('pending')) return 5;
-        if (statusLower === 'ok' || statusLower.includes('success')) return 6;
-        if (statusLower === 'xfail') return 7;
-        if (statusLower.includes('skipped')) return 8;
-        return 9;
+        // Keep UNKNOWN right under the errors/failures: these are tests whose real
+        // result was lost (e.g. demoted when the run aborted), so they are the rows
+        // worth looking at first, not buried below all the OK rows.
+        if (statusLower.includes('unknown')) return 2;
+        if (statusLower === 'xpass') return 3;
+        if (statusLower.includes('running')) return 4;
+        if (statusLower.includes('dropped')) return 5;
+        if (statusLower.includes('pending')) return 6;
+        if (statusLower === 'ok' || statusLower.includes('success')) return 7;
+        if (statusLower === 'xfail') return 8;
+        if (statusLower.includes('skipped')) return 9;
+        return 10;
     }
 
     function formatTimestamp(timestamp, showDate = true) {
