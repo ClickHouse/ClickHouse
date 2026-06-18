@@ -90,7 +90,7 @@ std::vector<SnapshotChunkDescriptor> parseAndValidateChunkedSnapshotHeader(const
             KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT);
 
     const size_t header_size = chunkedSnapshotHeaderSize(chunk_count);
-    const char * p = buf + 13; // points to the first chunk descriptor
+    const char * cursor = buf + 13; // points to the first chunk descriptor
 
     std::vector<SnapshotChunkDescriptor> chunks;
     chunks.reserve(static_cast<size_t>(chunk_count));
@@ -99,15 +99,15 @@ std::vector<SnapshotChunkDescriptor> parseAndValidateChunkedSnapshotHeader(const
 
     for (uint64_t i = 0; i < chunk_count; ++i)
     {
-        SnapshotChunkDescriptor cd;
+        SnapshotChunkDescriptor descriptor;
 
         uint8_t type_raw = 0;
-        memcpy(&type_raw, p, 1);
-        p += 1;
-        memcpy(&cd.compressed_offset, p, 8);
-        p += 8;
-        memcpy(&cd.compressed_size, p, 8);
-        p += 8;
+        memcpy(&type_raw, cursor, 1);
+        cursor += 1;
+        memcpy(&descriptor.compressed_offset, cursor, 8);
+        cursor += 8;
+        memcpy(&descriptor.compressed_size, cursor, 8);
+        cursor += 8;
 
         // Validate chunk type.
         if (type_raw > static_cast<uint8_t>(SnapshotChunkType::SESSIONS))
@@ -115,48 +115,48 @@ std::vector<SnapshotChunkDescriptor> parseAndValidateChunkedSnapshotHeader(const
                 ErrorCodes::CORRUPTED_DATA,
                 "Chunked snapshot chunk {} has unknown chunk_type {}",
                 i, static_cast<unsigned>(type_raw));
-        cd.type = static_cast<SnapshotChunkType>(type_raw);
+        descriptor.type = static_cast<SnapshotChunkType>(type_raw);
 
         // Validate chunk ordering (must be exactly METADATA first, SESSIONS last, NODES in between).
-        if (i == 0 && cd.type != SnapshotChunkType::METADATA)
+        if (i == 0 && descriptor.type != SnapshotChunkType::METADATA)
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Chunked snapshot first chunk must be METADATA, got {}",
                 static_cast<unsigned>(type_raw));
-        if (i == chunk_count - 1 && cd.type != SnapshotChunkType::SESSIONS)
+        if (i == chunk_count - 1 && descriptor.type != SnapshotChunkType::SESSIONS)
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Chunked snapshot last chunk must be SESSIONS, got {}",
                 static_cast<unsigned>(type_raw));
-        if (i > 0 && i < chunk_count - 1 && cd.type != SnapshotChunkType::NODES)
+        if (i > 0 && i < chunk_count - 1 && descriptor.type != SnapshotChunkType::NODES)
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Chunked snapshot middle chunk {} must be NODES, got {}",
                 i, static_cast<unsigned>(type_raw));
 
         // Validate chunk offset: must be at or after the header.
-        if (cd.compressed_offset < header_size)
+        if (descriptor.compressed_offset < header_size)
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Chunked snapshot chunk {} has offset {} that overlaps the header (size {})",
-                i, cd.compressed_offset, header_size);
+                i, descriptor.compressed_offset, header_size);
 
         // Validate chunk bounds: [offset, offset+size) must lie within [0, buf_size).
-        if (cd.compressed_offset > buf_size || cd.compressed_size > buf_size - cd.compressed_offset)
+        if (descriptor.compressed_offset > buf_size || descriptor.compressed_size > buf_size - descriptor.compressed_offset)
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Chunked snapshot chunk {} [{}, {}+{}) extends beyond buffer size {}",
-                i, cd.compressed_offset, cd.compressed_offset, cd.compressed_size, buf_size);
+                i, descriptor.compressed_offset, descriptor.compressed_offset, descriptor.compressed_size, buf_size);
 
         // Non-overlap: each chunk must start at or after the end of the previous one.
-        if (i > 0 && cd.compressed_offset < prev_end)
+        if (i > 0 && descriptor.compressed_offset < prev_end)
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Chunked snapshot chunk {} at offset {} overlaps previous chunk ending at {}",
-                i, cd.compressed_offset, prev_end);
+                i, descriptor.compressed_offset, prev_end);
 
-        prev_end = cd.compressed_offset + cd.compressed_size;
-        chunks.push_back(cd);
+        prev_end = descriptor.compressed_offset + descriptor.compressed_size;
+        chunks.push_back(descriptor);
     }
 
     return chunks;
