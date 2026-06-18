@@ -53,6 +53,7 @@ BlockIO InterpreterBackupQuery::execute()
     return res_io;
 }
 
+void registerInterpreterBackupQuery(InterpreterFactory & factory);
 void registerInterpreterBackupQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

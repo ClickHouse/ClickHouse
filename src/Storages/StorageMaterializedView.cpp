@@ -378,6 +378,17 @@ void StorageMaterializedView::readImpl(
     const size_t num_streams)
 {
     auto context = getInMemoryMetadataPtr(local_context, false)->getSQLSecurityOverriddenContext(local_context);
+
+    /// When this view is being read by the old interpreter, query_info has no query tree and the
+    /// analyzer-only code paths in the target storage would dereference it. The old interpreter
+    /// keeps allow_experimental_analyzer off on local_context, but for DEFINER/NONE views the
+    /// SQL security override rebuilds the context from the global one (and clamps the caller's
+    /// settings against the definer's constraints), which can silently turn the analyzer back on.
+    /// Preserve the interpreter mode so the target storage takes the same (old) code path; reading
+    /// a materialized view over a Distributed table otherwise crashes on a null planner context.
+    if (!local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        context->setSetting("allow_experimental_analyzer", false);
+
     StoragePtr storage;
     TableLockHolder lock;
 
@@ -1025,6 +1036,7 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
     return supported_columns;
 }
 
+void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory)
 {
     factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)
@@ -1033,7 +1045,14 @@ void registerStorageMaterializedView(StorageFactory & factory)
         return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
             args.columns, args.mode, args.comment, args.is_restore_from_backup);
-    });
+    },
+    {},
+    Documentation{
+        .description = "Stores the result of a `SELECT` query and keeps it up to date. "
+            "When data is inserted into the source table referenced in the query, the materialized view applies the query to the new rows "
+            "and stores the result in its target table. A MaterializedView is normally created with the `CREATE MATERIALIZED VIEW` statement.",
+        .syntax = "CREATE MATERIALIZED VIEW name [TO target] AS SELECT ...",
+        .related = {"View"}});
 }
 
 }

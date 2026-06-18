@@ -389,14 +389,14 @@ ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
     /// second division only if quotient still exceeds uint64 max.
     uint8_t two_values[18] = {0};
 
-    uint64_t r1;
+    uint64_t r1 = 0;
     x = divmod_1e18(x, r1);
     extractDigitPairs(r1, two_values);
 
     constexpr T largest_uint64 = std::numeric_limits<uint64_t>::max();
     if (unlikely(x > largest_uint64))
     {
-        uint64_t r2;
+        uint64_t r2 = 0;
         x = divmod_1e18(x, r2);
         extractDigitPairs(r2, two_values + max_multiple_of_hundred_blocks);
 

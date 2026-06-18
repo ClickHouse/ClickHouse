@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 
+#include <Columns/ColumnConst.h>
+#include <Common/assert_cast.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -112,7 +114,7 @@ void QueryDAG::appendExpression(const ActionsDAG & expression)
         dag = std::move(cloned);
 }
 
-const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
+static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
 {
     auto & outputs = dag.getOutputs();
     for (auto it = outputs.begin(); it != outputs.end(); ++it)
@@ -135,15 +137,10 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
             {
                 outputs.erase(it);
             }
-            else
-            {
-                ColumnWithTypeAndName col;
-                col.name = node->result_name;
-                col.type = node->result_type;
-                col.column = col.type->createColumnConst(1, 1);
-                *it = &dag.addColumn(std::move(col));
-            }
-
+            /// When the filter column survives (`remove == false`), it must be left alone:
+            /// its `result_name` may also denote a downstream-used data column (e.g.
+            /// `WHERE c GROUP BY c`), and replacing the output with a const-1 placeholder
+            /// would corrupt that column for every consumer of `query.dag`.
             return node;
         }
     }

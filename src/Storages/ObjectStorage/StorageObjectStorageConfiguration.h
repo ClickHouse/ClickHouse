@@ -149,6 +149,7 @@ public:
     virtual bool isStaticConfiguration() const { return true; }
 
     virtual bool isDataLakeConfiguration() const { return false; }
+    virtual bool isIcebergConfiguration() const { return false; }
 
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
@@ -259,7 +260,12 @@ public:
         }
     }
 
-    virtual void alter(ObjectStoragePtr /*object_storage*/, const AlterCommands & /*params*/, ContextPtr /*context*/) {}
+    virtual void alter(
+        ObjectStoragePtr /*object_storage*/,
+        const AlterCommands & /*params*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {

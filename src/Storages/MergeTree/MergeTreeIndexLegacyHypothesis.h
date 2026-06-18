@@ -20,7 +20,7 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 };
 
-MergeTreeIndexPtr legacyHypothesisIndexCreator(const IndexDescription & index);
-void legacyHypothesisIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr legacyHypothesisIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
+void legacyHypothesisIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 }

@@ -650,7 +650,7 @@ public:
 template <typename T>
 bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, SQLType * tp)
 {
-    LowCardinality * lc;
+    LowCardinality * lc = nullptr;
 
     if (dynamic_cast<const T *>(tp))
     {
@@ -658,7 +658,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_nullable)
     {
-        Nullable * nl;
+        Nullable * nl = nullptr;
 
         if ((nl = dynamic_cast<Nullable *>(tp)))
         {
@@ -671,7 +671,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_array)
     {
-        ArrayType * at;
+        ArrayType * at = nullptr;
 
         if ((at = dynamic_cast<ArrayType *>(tp)))
         {
@@ -680,8 +680,8 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_nested)
     {
-        TupleType * ttp;
-        NestedType * ntp;
+        TupleType * ttp = nullptr;
+        NestedType * ntp = nullptr;
 
         if ((ttp = dynamic_cast<TupleType *>(tp)))
         {

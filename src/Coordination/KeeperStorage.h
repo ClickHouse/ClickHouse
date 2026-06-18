@@ -468,7 +468,7 @@ protected:
 
     struct TransactionInfo
     {
-        int64_t zxid;
+        int64_t zxid{};
         KeeperDigest nodes_digest;
         /// index in storage of the log containing the transaction
         int64_t log_idx = 0;
@@ -608,7 +608,7 @@ public:
 
         struct Transaction
         {
-            int64_t zxid;
+            int64_t zxid = 0;
             KeeperDigest nodes_digest;
             int64_t log_idx = 0;
         };

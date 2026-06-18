@@ -104,7 +104,7 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     auto reference_value = unalignedLoad<ValueType>(
         reference_value_data.data());
 
-    bool is_overflow;
+    bool is_overflow = false;
     if (offset_is_preceding)
         is_overflow = common::subOverflow(reference_value, offset, reference_value);
     else
@@ -817,7 +817,7 @@ void WindowTransform::advanceFrameEndCurrentRow()
     // We advance until the partition end. It's either in the current block or
     // in the next one, which is also the past-the-end block. Figure out how
     // many rows we have to process.
-    UInt64 rows_end;
+    UInt64 rows_end = 0;
     if (partition_end.row == 0)
     {
         chassert(partition_end == blocksEnd());
@@ -2755,7 +2755,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
 
         Float64 curr_metric = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_METRIC, transform->current_row);
         Float64 metric_diff = curr_metric - state.previous_metric;
-        Float64 result;
+        Float64 result = 0;
 
         if (ts_scale_multiplier)
         {
@@ -2783,6 +2783,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
 };
 
 
+void registerWindowFunctions(AggregateFunctionFactory & factory);
 void registerWindowFunctions(AggregateFunctionFactory & factory)
 {
     // Why didn't I implement lag/lead yet? Because they are a mess. I imagine

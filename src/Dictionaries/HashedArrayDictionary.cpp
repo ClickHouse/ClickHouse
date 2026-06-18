@@ -957,7 +957,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
-        ssize_t element_index;
+        ssize_t element_index = 0;
         if constexpr (sharded)
         {
             element_index = key_index_to_element_index[key_index].first;
@@ -1004,7 +1004,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
-        ssize_t element_index;
+        ssize_t element_index = 0;
         if constexpr (sharded)
         {
             element_index = key_index_to_element_index[key_index].first;
@@ -1225,6 +1225,7 @@ template class HashedArrayDictionary<DictionaryKeyType::Simple, /* sharded */ tr
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ false>;
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ true>;
 
+void registerDictionaryArrayHashed(DictionaryFactory & factory);
 void registerDictionaryArrayHashed(DictionaryFactory & factory)
 {
     auto create_layout = [](const std::string & full_name,
@@ -1293,12 +1294,18 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
         {
             return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Simple);
-        }, false);
+        }, false, true, Documentation{
+        .description = "Stores the dictionary in memory using hashed arrays. This is more memory-efficient than `hashed` for dictionaries that have many attributes.",
+        .syntax = "LAYOUT(HASHED_ARRAY())",
+        .related = {"hashed"}});
     factory.registerLayout("complex_key_hashed_array",
         [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
         {
             return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Complex);
-        }, true);
+        }, true, true, Documentation{
+        .description = "Like `hashed_array`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_HASHED_ARRAY())",
+        .related = {"hashed_array"}});
 }
 
 }

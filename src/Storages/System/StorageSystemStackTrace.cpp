@@ -48,6 +48,12 @@
 #include <pthread.h>
 #endif
 
+/// `errno` from glibc expands as `#define errno (*__errno_location())` and
+/// triggers `-Wdisabled-macro-expansion`. The macro is referenced in many
+/// places below (signal handler, errno checks after libc calls), so we keep
+/// the suppression file-wide rather than wrapping every single use.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -307,7 +313,7 @@ bool isSignalBlocked(UInt64 tid, int signal)
         line = line.substr(strlen("SigBlk:"));
         line = line.substr(0, line.rend() - std::find_if_not(line.rbegin(), line.rend(), ::isspace));
 
-        UInt64 sig_blk;
+        UInt64 sig_blk = 0;
         if (parseHexNumber(line, sig_blk))
             return sig_blk & (1ULL << (signal - 1));
     }
@@ -781,5 +787,7 @@ void StorageSystemStackTrace::readImpl(
 }
 
 }
+
+#pragma clang diagnostic pop
 
 #endif

@@ -93,6 +93,13 @@ static nuraft::ptr<nuraft::snapshot> cloneSnapshotMeta(nuraft::snapshot & s)
     return nuraft::snapshot::deserialize(*buf);
 }
 
+/// Snapshot identity is (last_log_idx, last_log_term); Raft log matching guarantees one per committed prefix.
+static bool sameSnapshotIdentity(const nuraft::snapshot & lhs, const nuraft::snapshot & rhs)
+{
+    return lhs.get_last_log_idx() == rhs.get_last_log_idx()
+        && lhs.get_last_log_term() == rhs.get_last_log_term();
+}
+
 IKeeperStateMachine::IKeeperStateMachine(
     KeeperResponseCallback response_callback_,
     SnapshotsQueue & snapshots_queue_,
@@ -170,7 +177,7 @@ void KeeperStateMachine<Storage>::init()
             }
 
             storage = std::move(snapshot_deserialization_result.storage);
-            latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+            advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
             cluster_config = snapshot_deserialization_result.cluster_config;
             keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
         }
@@ -360,7 +367,7 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     auto request_for_session = std::make_shared<KeeperRequestForSession>();
     readIntBinary(request_for_session->session_id, buffer);
 
-    int32_t length;
+    int32_t length = 0;
     Coordination::read(length, buffer);
     /// Request should not exceed max_request_size (this is verified in KeeperTCPHandler)
     if (length < 0)
@@ -370,7 +377,7 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     /// for that reason we serialize XID in 2 parts:
     /// - lower: 32 least significant bits of 64bit XID OR 32bit XID
     /// - upper: 32 most significant bits of 64bit XID
-    XidHelper xid_helper;
+    XidHelper xid_helper{};
     Coordination::read(xid_helper.parts.lower, buffer);
 
     /// go to end of the buffer and read extra information including second part of XID
@@ -465,7 +472,7 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
         }
     }
 
-    Coordination::OpNum opnum;
+    Coordination::OpNum opnum = {};
     Coordination::read(opnum, buffer);
 
     request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
@@ -651,7 +658,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
         {
             const Coordination::ZooKeeperSessionIDRequest & session_id_request
                 = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
-            int64_t session_id;
+            int64_t session_id = 0;
             std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
             KeeperResponseForSession response_for_session;
             response_for_session.session_id = -1;
@@ -730,31 +737,90 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
             ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
     });
 
-    const auto validate_snapshot_to_apply = [&](const SnapshotMetadataPtr & current_snapshot_meta)
+    /// Consume the pending install context for THIS snapshot (matched by identity) on every
+    /// exit; a different identity belongs to another install. Runs after inner lock_guards unwind.
+    SCOPE_EXIT({
+        std::lock_guard lock(snapshots_lock);
+        if (pending_snapshot_to_apply && sameSnapshotIdentity(*pending_snapshot_to_apply, s))
+        {
+            pending_snapshot_to_apply.reset();
+            /// Release the pending-install retention protection; on a successful apply the
+            /// mark already advanced to this index and protects it as the mark instead.
+            snapshot_manager.setProtectedPendingSnapshotIndex(0);
+        }
+    });
+
+    const auto validate_pending_snapshot_to_apply = [&]() TSA_REQUIRES(snapshots_lock)
     {
-        if (!current_snapshot_meta)
+        if (!pending_snapshot_to_apply)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but no latest snapshot metadata is available",
+                "Required to apply snapshot with last log index {}, but there is no pending snapshot "
+                "saved by a preceding save_logical_snp_obj",
                 s.get_last_log_idx());
         }
-        if (s.get_last_log_idx() > current_snapshot_meta->get_last_log_idx())
+        if (s.get_last_log_idx() > pending_snapshot_to_apply->get_last_log_idx())
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but last created snapshot was for smaller log index {}",
+                "Required to apply snapshot with last log index {}, but the pending snapshot saved by "
+                "save_logical_snp_obj is for smaller log index {}",
                 s.get_last_log_idx(),
-                current_snapshot_meta->get_last_log_idx());
+                pending_snapshot_to_apply->get_last_log_idx());
         }
-        if (s.get_last_log_idx() < current_snapshot_meta->get_last_log_idx())
+        if (s.get_last_log_idx() < pending_snapshot_to_apply->get_last_log_idx())
         {
-            LOG_INFO(
-                log,
-                "A snapshot with a larger last log index ({}) was created, skipping applying snapshot with last log index {}",
-                current_snapshot_meta->get_last_log_idx(),
-                s.get_last_log_idx());
-            return false;
+            /// A newer install's save displaced this pending context (NuRaft drops its lock
+            /// between save and apply). Skip-as-success is sound only when local commits
+            /// already cover the snapshot; otherwise fail closed — NuRaft exits the process
+            /// and `init` recovers from the displacing install, which is fully saved on disk.
+            const auto last_committed = keeper_context->lastCommittedIndex();
+            if (last_committed >= s.get_last_log_idx())
+            {
+                LOG_INFO(
+                    log,
+                    "A pending snapshot with a larger last log index ({}) was saved after this one and "
+                    "local commits (last committed index {}) already cover snapshot {}; skipping its apply",
+                    pending_snapshot_to_apply->get_last_log_idx(),
+                    last_committed,
+                    s.get_last_log_idx());
+                return false;
+            }
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Snapshot with last log index {} was displaced by a newer pending snapshot ({}) before it "
+                "could be applied, and local commits (last committed index {}) do not cover it",
+                s.get_last_log_idx(),
+                pending_snapshot_to_apply->get_last_log_idx(),
+                last_committed);
+        }
+
+        /// Equal index — require full identity; a term mismatch means the pairing broke.
+        if (s.get_last_log_term() != pending_snapshot_to_apply->get_last_log_term())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Required to apply snapshot with last log index {} and term {}, but the pending snapshot "
+                "saved by save_logical_snp_obj for the same index has term {}",
+                s.get_last_log_idx(),
+                s.get_last_log_term(),
+                pending_snapshot_to_apply->get_last_log_term());
+        }
+
+        /// Defensive: an apply at the mark's own index must carry the mark's term, otherwise
+        /// storage would silently diverge from what `last_snapshot` advertises.
+        if (latest_snapshot_meta
+            && s.get_last_log_idx() == latest_snapshot_meta->get_last_log_idx()
+            && s.get_last_log_term() != latest_snapshot_meta->get_last_log_term())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Required to apply snapshot with last log index {} and term {}, but the latest snapshot "
+                "metadata for the same index has term {}",
+                s.get_last_log_idx(),
+                s.get_last_log_term(),
+                latest_snapshot_meta->get_last_log_term());
         }
 
         return true;
@@ -772,7 +838,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
         SnapshotFileInfoPtr snapshot_file_info;
         {
             std::lock_guard lock(snapshots_lock);
-            if (!validate_snapshot_to_apply(latest_snapshot_meta))
+            if (!validate_pending_snapshot_to_apply())
             {
                 snapshot_apply_finished = true;
                 return true;
@@ -790,18 +856,19 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 
         auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(*snapshot_file_info);
         auto snapshot_meta_from_buffer = snapshot_manager.deserializeSnapshotMetadataFromBuffer(snapshot_buf);
-        if (snapshot_meta_from_buffer->get_last_log_idx() != s.get_last_log_idx())
+        if (!sameSnapshotIdentity(*snapshot_meta_from_buffer, s))
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but snapshot buffer metadata has last log index {}",
-                s.get_last_log_idx(),
-                snapshot_meta_from_buffer->get_last_log_idx());
+                "Required to apply snapshot with last log index {} and term {}, but snapshot buffer "
+                "metadata has last log index {} and term {}",
+                s.get_last_log_idx(), s.get_last_log_term(),
+                snapshot_meta_from_buffer->get_last_log_idx(), snapshot_meta_from_buffer->get_last_log_term());
         }
 
         {
             std::lock_guard lock(snapshots_lock);
-            if (!validate_snapshot_to_apply(latest_snapshot_meta))
+            if (!validate_pending_snapshot_to_apply())
             {
                 snapshot_apply_finished = true;
                 return true;
@@ -824,17 +891,20 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                     /// catches future divergence between
                     /// `deserializeSnapshotMetadataFromBuffer` and
                     /// `deserializeSnapshotFromBuffer`.
-                    if (snapshot_deserialization_result.snapshot_meta->get_last_log_idx() != s.get_last_log_idx())
+                    if (!sameSnapshotIdentity(*snapshot_deserialization_result.snapshot_meta, s))
                         throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
-                            "Required to apply snapshot with last log index {}, but fully deserialized snapshot metadata has last log index {}",
-                            s.get_last_log_idx(),
-                            snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
+                            "Required to apply snapshot with last log index {} and term {}, but fully "
+                            "deserialized snapshot metadata has last log index {} and term {}",
+                            s.get_last_log_idx(), s.get_last_log_term(),
+                            snapshot_deserialization_result.snapshot_meta->get_last_log_idx(),
+                            snapshot_deserialization_result.snapshot_meta->get_last_log_term());
 
                     snapshot_buf = nullptr;
                     snapshot_deserialization_result.storage->applyUncommittedState(std::move(uncommitted_tail));
                     storage = std::move(snapshot_deserialization_result.storage);
-                    latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+                    /// An apply may legitimately target an index at or below the mark — never regress.
+                    advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
 
                     {
                         std::lock_guard cluster_config_guard(cluster_config_lock);
@@ -862,7 +932,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
     else
     {
         std::lock_guard lock(snapshots_lock);
-        if (!validate_snapshot_to_apply(latest_snapshot_meta))
+        if (!validate_pending_snapshot_to_apply())
         {
             snapshot_apply_finished = true;
             return true;
@@ -870,6 +940,16 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 
         SnapshotDeserializationResult<Storage> snapshot_deserialization_result
             = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
+
+        /// Identity-strict check on the file's own metadata before the storage swap.
+        if (!sameSnapshotIdentity(*snapshot_deserialization_result.snapshot_meta, s))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Required to apply snapshot with last log index {} and term {}, but deserialized "
+                "snapshot metadata has last log index {} and term {}",
+                s.get_last_log_idx(), s.get_last_log_term(),
+                snapshot_deserialization_result.snapshot_meta->get_last_log_idx(),
+                snapshot_deserialization_result.snapshot_meta->get_last_log_term());
 
         {
             KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
@@ -879,7 +959,8 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                 *snapshot_deserialization_result.storage,
                 snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
             storage = std::move(snapshot_deserialization_result.storage);
-            latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+            /// An apply may legitimately target an index at or below the mark — never regress.
+            advanceLatestSnapshotMeta(snapshot_deserialization_result.snapshot_meta);
 
             {
                 std::lock_guard cluster_config_guard(cluster_config_lock);
@@ -969,7 +1050,28 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
 
                     if (latest_snapshot_meta && snapshot->snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
                     {
-                        snapshot_file_info = snapshot_manager.getLatestSnapshotInfo();
+                        /// Return the file backing `latest_snapshot_meta`. The newest registered snapshot
+                        /// may be newer than that: an install can be saved to disk without being applied,
+                        /// and such a snapshot is not reported via `last_snapshot`.
+                        /// Probe existence to keep the old `getLatestSnapshotInfo` contract.
+                        snapshot_file_info = getSnapshotPinUnlocked(latest_snapshot_meta->get_last_log_idx());
+                        /// Do not hand out a file that is currently being re-received (truncated in place).
+                        if (snapshot_file_info && snapshot_receive_ctx
+                            && snapshot_receive_ctx->log_idx == latest_snapshot_meta->get_last_log_idx())
+                            snapshot_file_info = nullptr;
+                        if (snapshot_file_info)
+                        {
+                            try
+                            {
+                                if (!snapshot_file_info->disk->existsFile(snapshot_file_info->path))
+                                    snapshot_file_info = nullptr;
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(log);
+                                snapshot_file_info = nullptr;
+                            }
+                        }
                         LOG_INFO(
                             log,
                             "Will not create a snapshot with last log idx {} because a snapshot with bigger last log idx ({}) is already "
@@ -979,42 +1081,96 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                     }
                     else
                     {
-                        /// Drop the cached loader before retiring snapshots; transfer
-                        /// contexts keep their own loaders alive.
-                        snapshot_loader_info.reset();
-                        snapshot_loader_info_log_idx = 0;
-
-                        /// Write new snapshots to the configured latest snapshot disk.
-                        if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
+                        const auto requested_log_idx = snapshot->snapshot_meta->get_last_log_idx();
+                        auto registered_same_index = getSnapshotPinUnlocked(requested_log_idx);
+                        if (registered_same_index)
                         {
-                            snapshot_file_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
+                            if (snapshot_receive_ctx && snapshot_receive_ctx->log_idx == requested_log_idx)
+                                throw Exception(
+                                    ErrorCodes::CORRUPTED_DATA,
+                                    "Snapshot with last log idx {} is currently being received; "
+                                    "refusing to adopt the in-progress file",
+                                    requested_log_idx);
+
+                            bool file_exists = false;
+                            try
+                            {
+                                file_exists = registered_same_index->disk->existsFile(registered_same_index->path);
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(log);
+                            }
+
+                            if (!file_exists)
+                            {
+                                /// Fail closed: never rewrite registered bytes in place (transfers stream
+                                /// them outside the lock). NuRaft retries at a later snapshot boundary.
+                                throw Exception(
+                                    ErrorCodes::CORRUPTED_DATA,
+                                    "Snapshot with last log idx {} is already registered (file {}) but the file "
+                                    "cannot be confirmed present; refusing to adopt or rewrite it",
+                                    requested_log_idx,
+                                    registered_same_index->path);
+                            }
+
+                            /// Defensive adopt: a queued create can drain after a stale duplicate install
+                            /// at the same index was saved without being applied. The registered file is
+                            /// state-equivalent by Raft log matching (deliberately not re-read — a genuine
+                            /// mismatch fails closed in `apply_snapshot`); adopt it and re-sync the mark.
+                            LOG_WARNING(
+                                log,
+                                "Snapshot with last log idx {} is already registered (file {}) while the latest "
+                                "snapshot metadata is at {}; adopting the registered snapshot instead of rewriting it",
+                                requested_log_idx,
+                                registered_same_index->path,
+                                latest_snapshot_meta ? std::to_string(latest_snapshot_meta->get_last_log_idx()) : "(none)");
+                            snapshot_file_info = std::move(registered_same_index);
+                            advanceLatestSnapshotMeta(snapshot->snapshot_meta);
+                            /// `latest_snapshot_size` deliberately left as-is: it self-corrects on the next snapshot.
                         }
                         else
                         {
-                            auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                            snapshot_file_info = snapshot_manager.serializeSnapshotBufferToDisk(
-                                *snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
-                        }
+                            /// Drop the cached loader before retiring snapshots; transfer
+                            /// contexts keep their own loaders alive.
+                            snapshot_loader_info.reset();
+                            snapshot_loader_info_log_idx = 0;
 
-                        latest_snapshot_meta = snapshot->snapshot_meta;
-                        cancelIfHasUnfinishedSnapshotReceive();
+                            /// Write new snapshots to the configured latest snapshot disk.
+                            if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
+                            {
+                                snapshot_file_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
+                            }
+                            else
+                            {
+                                auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
+                                snapshot_file_info = snapshot_manager.serializeSnapshotBufferToDisk(
+                                    *snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
+                            }
 
-                        ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
-                        LOG_DEBUG(
-                            log,
-                            "Created persistent snapshot {} with path {}",
-                            latest_snapshot_meta->get_last_log_idx(),
-                            snapshot_file_info->path);
+                            advanceLatestSnapshotMeta(snapshot->snapshot_meta);
+                            cancelIfHasUnfinishedSnapshotReceive();
 
-                        try
-                        {
-                            latest_snapshot_size.store(
-                                snapshot_file_info->disk->getFileSize(snapshot_file_info->path),
-                                std::memory_order_relaxed);
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(log, "Failed to get snapshot size after creation");
+                            ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
+                            LOG_DEBUG(
+                                log,
+                                "Created persistent snapshot {} with path {}",
+                                latest_snapshot_meta->get_last_log_idx(),
+                                snapshot_file_info->path);
+
+                            try
+                            {
+                                /// A create below saved-but-not-applied installs must not clobber the size cache.
+                                if (snapshot_manager.getLatestSnapshotIndex() == snapshot->snapshot_meta->get_last_log_idx())
+                                {
+                                    const auto snp_size = snapshot_file_info->disk->getFileSize(snapshot_file_info->path);
+                                    latest_snapshot_size.store(snp_size, std::memory_order_relaxed);
+                                }
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(log, "Failed to get snapshot size after creation");
+                            }
                         }
                     }
                 }
@@ -1157,7 +1313,12 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshotObject);
         if (is_last_obj)
         {
-            latest_snapshot_meta = cloneSnapshotMeta(s);
+            /// NOT `latest_snapshot_meta`: an install may target an index below it
+            pending_snapshot_to_apply = cloneSnapshotMeta(s);
+            /// Protect its file from retention until the matching apply consumes it: the
+            /// pending index is not the mark, and a concurrent local create can otherwise
+            /// advance the mark and prune this file before apply reads it.
+            snapshot_manager.setProtectedPendingSnapshotIndex(s.get_last_log_idx());
             snapshot_receive_ctx.reset();
 
             uint64_t snp_size = 0;
@@ -1166,7 +1327,9 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
                 if (snapshot_file_info)
                 {
                     snp_size = snapshot_file_info->disk->getFileSize(snapshot_file_info->path);
-                    latest_snapshot_size.store(snp_size, std::memory_order_relaxed);
+                    /// A stale lower-index install must not clobber the size cache.
+                    if (snapshot_manager.getLatestSnapshotIndex() == s.get_last_log_idx())
+                        latest_snapshot_size.store(snp_size, std::memory_order_relaxed);
                 }
             }
             catch (...)
@@ -1800,6 +1963,33 @@ SnapshotFileInfoPtr KeeperStateMachine<Storage>::getSnapshotPinUnlocked(uint64_t
 }
 
 template<typename Storage>
+void KeeperStateMachine<Storage>::advanceLatestSnapshotMeta(const SnapshotMetadataPtr & candidate)
+{
+    chassert(candidate);
+    if (latest_snapshot_meta)
+    {
+        if (candidate->get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
+            return;
+        if (candidate->get_last_log_idx() == latest_snapshot_meta->get_last_log_idx())
+        {
+            /// Unreachable invariant backstop — see the declaration comment.
+            if (candidate->get_last_log_term() != latest_snapshot_meta->get_last_log_term())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Refusing to advance latest snapshot metadata: candidate for index {} has term {} "
+                    "while the current metadata for the same index has term {}",
+                    candidate->get_last_log_idx(),
+                    candidate->get_last_log_term(),
+                    latest_snapshot_meta->get_last_log_term());
+            return;
+        }
+    }
+    latest_snapshot_meta = candidate;
+    /// NuRaft retries snapshot sends against this exact index until the mark advances.
+    snapshot_manager.setProtectedSnapshotIndex(candidate->get_last_log_idx());
+}
+
+template<typename Storage>
 void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
 {
     if (!snapshot_receive_ctx)
@@ -1813,14 +2003,51 @@ void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
     try
     {
         const auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
-        LOG_INFO(log, "Canceling unfinished snapshot receive, removing partial files {} and {}", snapshot_file_name, tmp_snapshot_file_name);
+        /// NOTE: this is the FINAL `snapshot_<idx>` name, so for a same-index re-receive
+        /// this can delete an already-registered snapshot.
+        LOG_INFO(log, "Canceling unfinished snapshot receive, removing the in-progress receive file {} and marker {}", snapshot_file_name, tmp_snapshot_file_name);
         disk->removeFileIfExists(snapshot_file_name);
         disk->removeFileIfExists(tmp_snapshot_file_name);
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Failed to remove partial snapshot files");
+        tryLogCurrentException(log, "Failed to remove snapshot receive files");
     }
+}
+
+template<typename Storage>
+std::vector<KeeperSnapshotStatus> KeeperStateMachine<Storage>::getSnapshotsStatus() const
+{
+    std::lock_guard lock(snapshots_lock);
+
+    auto existing = snapshot_manager.getExistingSnapshots(lock);
+
+    std::vector<KeeperSnapshotStatus> result;
+    result.reserve(existing.size() + (snapshot_receive_ctx ? 1 : 0));
+
+    for (auto & [log_idx, file_info] : existing)
+    {
+        result.push_back(KeeperSnapshotStatus{
+            log_idx,
+            file_info->path,
+            file_info->disk,
+            std::move(file_info),
+            /*is_received=*/ false,
+        });
+    }
+
+    if (snapshot_receive_ctx)
+    {
+        result.push_back(KeeperSnapshotStatus{
+            snapshot_receive_ctx->log_idx,
+            snapshot_receive_ctx->snapshot_file_name,
+            snapshot_receive_ctx->disk,
+            /*pin=*/ nullptr,
+            /*is_received=*/ true,
+        });
+    }
+
+    return result;
 }
 
 template class KeeperStateMachine<KeeperMemoryStorage>;

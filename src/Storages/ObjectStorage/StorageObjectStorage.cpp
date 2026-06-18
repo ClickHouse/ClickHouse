@@ -468,7 +468,8 @@ void StorageObjectStorage::read(
     size_t num_streams)
 {
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+        num_streams = clampClusterFunctionNumStreams(
+            local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     /// For data lake we did update in getExternalDynamicMetadata.
     if (!is_table_function && !configuration->isDataLakeConfiguration())
@@ -835,7 +836,10 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
-    configuration->alter(object_storage, params, context);
+    configuration->alter(object_storage, params, context, getStorageID(), catalog);
+
+    if (catalog)
+        return;
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
