@@ -70,7 +70,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
-    extern const MergeTreeSettingsBool text_index_positions;
 }
 
 namespace Setting
@@ -84,6 +83,9 @@ static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
 
 static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+
+/// Move to MergeTreeSettings once `__experimental_positions` is finalized.
+static constexpr bool DEFAULT_POSITIONS = false;
 
 bool DictionaryBlockBase::empty() const
 {
@@ -1862,7 +1864,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index, const MergeTr
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
-    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(settings[MergeTreeSetting::text_index_positions]);
+    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
@@ -1907,7 +1909,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
-    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(settings[MergeTreeSetting::text_index_positions]);
+    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
     if (positions > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
 
