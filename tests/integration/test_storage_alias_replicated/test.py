@@ -101,6 +101,7 @@ def test_alias_with_parallel_replicas(started_cluster):
             "max_parallel_replicas": 2,
             "cluster_for_parallel_replicas": "test_cluster",
             "prefer_localhost_replica": 0,
+            "parallel_replicas_prefer_local_replica": 0,
             "parallel_replicas_mark_segment_size": 128,
             "log_comment": "test_alias_parallel_replicas",
         },
