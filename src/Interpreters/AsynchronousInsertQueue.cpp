@@ -123,12 +123,18 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const ASTPtr & query_,
     const std::optional<UUID> & user_id_,
     const std::vector<UUID> & current_roles_,
+    const String & current_user_,
+    const String & initial_user_,
+    const String & authenticated_user_,
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
     , query_str(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
+    , current_user(current_user_)
+    , initial_user(initial_user_)
+    , authenticated_user(authenticated_user_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -146,6 +152,13 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         }
     }
 
+    /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
+    /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
+    for (const String & identity_field : {current_user, initial_user, authenticated_user})
+    {
+        siphash.update(identity_field.size());
+        siphash.update(identity_field);
+    }
 
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
@@ -171,6 +184,9 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     query_str = other.query_str;
     user_id = other.user_id;
     current_roles = other.current_roles;
+    current_user = other.current_user;
+    initial_user = other.initial_user;
+    authenticated_user = other.authenticated_user;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -186,6 +202,9 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         query_str = other.query_str;
         user_id = other.user_id;
         current_roles = other.current_roles;
+        current_user = other.current_user;
+        initial_user = other.initial_user;
+        authenticated_user = other.authenticated_user;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -532,7 +551,16 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     if (insert_query.format == "Values")
         entry->query_parameters = query_context->getQueryParameters();
 
-    InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, data_kind};
+    const auto & client_info = query_context->getClientInfo();
+    InsertQuery key{
+        query,
+        query_context->getUserID(),
+        query_context->getCurrentRoles(),
+        client_info.current_user,
+        client_info.initial_user,
+        client_info.authenticated_user,
+        settings,
+        data_kind};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
 
@@ -976,6 +1004,14 @@ try
         insert_context->setUser(*key.user_id);
         insert_context->setCurrentRoles(key.current_roles);
     }
+
+    /// Context::setUser only restores the access-control identity, not the ClientInfo user
+    /// names. Restore them from the originating query so currentUser()/user()/
+    /// authenticatedUser() and the materialized views triggered by the flush observe the
+    /// inserting user instead of an empty string.
+    insert_context->setCurrentUserName(key.current_user);
+    insert_context->setInitialUserName(key.initial_user);
+    insert_context->setAuthenticatedUserName(key.authenticated_user);
 
     insert_context->setSettings(*key.settings);
 
