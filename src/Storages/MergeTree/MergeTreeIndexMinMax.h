@@ -62,12 +62,16 @@ public:
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
+    bool alwaysTrueOnHyperrectangle(const std::vector<Range> & hyperrectangle) const override;
+
     std::string getDescription() const override;
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
     DataTypes index_data_types;
     KeyCondition condition;
+    /// Cached at construction so `alwaysTrueOnHyperrectangle` doesn't scan the RPN per part.
+    bool condition_has_function_not;
 };
 
 

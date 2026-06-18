@@ -202,6 +202,7 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
+    , condition_has_function_not(condition.hasFunctionNot())
 {
 }
 
@@ -224,6 +225,17 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
 {
     const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
     return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
+}
+
+bool MergeTreeIndexConditionMinMax::alwaysTrueOnHyperrectangle(const std::vector<Range> & hyperrectangle) const
+{
+    if (hyperrectangle.size() != index_data_types.size())
+        return false;
+    /// Opt into the optimistic `UNKNOWN` walker when the RPN has no `FUNCTION_NOT`, so that
+    /// an `UNKNOWN` leaf on a non-index column does not pollute `can_be_false = true` through
+    /// an enclosing `AND`. See `checkInHyperrectangle` for the soundness argument.
+    const auto mask = condition.checkInHyperrectangle(hyperrectangle, index_data_types, {}, {}, !condition_has_function_not);
+    return mask.can_be_true && !mask.can_be_false;
 }
 
 std::string MergeTreeIndexConditionMinMax::getDescription() const

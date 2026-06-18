@@ -112,7 +112,14 @@ public:
         const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types,
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
-        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
+        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr,
+        bool optimistic_unknowns = false) const;
+
+    /// Returns true iff the RPN contains at least one `FUNCTION_NOT` element. Provided so
+    /// callers that rely on the monotone-under-UNKNOWN behavior of
+    /// `checkInHyperrectangle(..., optimistic_unknowns=true)` can guard against `NOT`,
+    /// which breaks that assumption.
+    bool hasFunctionNot() const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
