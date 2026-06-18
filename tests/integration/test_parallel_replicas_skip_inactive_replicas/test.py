@@ -72,16 +72,18 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         assert node1.query(f"SELECT count() FROM system.clusters WHERE cluster = '{db}'") == "3\n"
 
         # Run a query with parallel replicas over the database cluster, requesting more replicas than are
-        # online so that the coordinator is sized by what is actually available.
+        # online so that the coordinator is sized by what is actually available. Use a data-reading query
+        # (not a trivial `count()`, which `optimize_trivial_count_query` answers from metadata and thus never
+        # engages parallel replicas, so the coordinator would not be created at all).
         result = node1.query(
-            f"SELECT count() FROM {db}.tt",
+            f"SELECT sum(key) FROM {db}.tt",
             settings={
                 "enable_parallel_replicas": 1,
                 "max_parallel_replicas": 3,
                 "cluster_for_parallel_replicas": db,
             },
         )
-        assert result == "100000\n"
+        assert result == "4999950000\n"
 
         # The coordinator must be created for the 2 active replicas, not the 3 registered ones.
         assert node1.contains_in_log(
