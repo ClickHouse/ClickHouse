@@ -121,13 +121,13 @@ namespace
 {
     DimensionalMetrics::MetricFamily & filesystem_cache_size_bytes = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_size_bytes",
-        "Filesystem cache size in bytes, labelled by user id.",
-        {"user_id"});
+        "Filesystem cache size in bytes, labelled by cache name and user id.",
+        {"cache_name", "user_id"});
 
     DimensionalMetrics::MetricFamily & filesystem_cache_elements = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_elements",
-        "Filesystem cache elements (file segments), labelled by user id.",
-        {"user_id"});
+        "Filesystem cache elements (file segments), labelled by cache name and user id.",
+        {"cache_name", "user_id"});
 
     std::string getCommonUserID()
     {
@@ -136,17 +136,17 @@ namespace
         return user;
     }
 
-    void updateFilesystemCacheUsageMetrics(const String & user_id, Int64 size_delta, Int64 elements_delta)
+    void updateFilesystemCacheUsageMetrics(const String & cache_name, const String & user_id, Int64 size_delta, Int64 elements_delta)
     {
         if (size_delta > 0)
-            filesystem_cache_size_bytes.withLabels({user_id}).increment(static_cast<DimensionalMetrics::Value>(size_delta));
+            filesystem_cache_size_bytes.withLabels({cache_name, user_id}).increment(static_cast<DimensionalMetrics::Value>(size_delta));
         else if (size_delta < 0)
-            filesystem_cache_size_bytes.withLabels({user_id}).decrement(static_cast<DimensionalMetrics::Value>(-size_delta));
+            filesystem_cache_size_bytes.withLabels({cache_name, user_id}).decrement(static_cast<DimensionalMetrics::Value>(-size_delta));
 
         if (elements_delta > 0)
-            filesystem_cache_elements.withLabels({user_id}).increment(static_cast<DimensionalMetrics::Value>(elements_delta));
+            filesystem_cache_elements.withLabels({cache_name, user_id}).increment(static_cast<DimensionalMetrics::Value>(elements_delta));
         else if (elements_delta < 0)
-            filesystem_cache_elements.withLabels({user_id}).decrement(static_cast<DimensionalMetrics::Value>(-elements_delta));
+            filesystem_cache_elements.withLabels({cache_name, user_id}).decrement(static_cast<DimensionalMetrics::Value>(-elements_delta));
     }
 }
 
@@ -369,7 +369,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         {
             try
             {
-                updateFilesystemCacheUsageMetrics(user_id, size_delta, elements_delta);
+                updateFilesystemCacheUsageMetrics(name, user_id, size_delta, elements_delta);
             }
             catch (...)
             {

@@ -2724,17 +2724,21 @@ TEST_F(FileCacheTest, UsageMetricsByUser)
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
 
-    auto get_size = [](const String & user_id)
+    auto get_size = [](const String & cache_name, const String & user_id)
     {
-        return getDimensionalMetricValue("filesystem_cache_size_bytes", {user_id});
+        return getDimensionalMetricValue("filesystem_cache_size_bytes", {cache_name, user_id});
     };
-    auto get_elements = [](const String & user_id)
+    auto get_elements = [](const String & cache_name, const String & user_id)
     {
-        return getDimensionalMetricValue("filesystem_cache_elements", {user_id});
+        return getDimensionalMetricValue("filesystem_cache_elements", {cache_name, user_id});
     };
 
-    const double setting_size_before = get_size(user_setting.user_id);
-    const double setting_elements_before = get_elements(user_setting.user_id);
+    const String disabled_cache_name = "usage_metrics_setting_disabled";
+    const String enabled_cache_name = "usage_metrics_setting_enabled";
+    const double disabled_setting_size_before = get_size(disabled_cache_name, user_setting.user_id);
+    const double disabled_setting_elements_before = get_elements(disabled_cache_name, user_setting.user_id);
+    const double enabled_setting_size_before = get_size(enabled_cache_name, user_setting.user_id);
+    const double enabled_setting_elements_before = get_elements(enabled_cache_name, user_setting.user_id);
 
     struct UsageDelta
     {
@@ -2770,25 +2774,25 @@ TEST_F(FileCacheTest, UsageMetricsByUser)
     };
 
     {
-        FileCache cache("usage_metrics_setting_disabled", make_settings(cache_base_path, false));
+        FileCache cache(disabled_cache_name, make_settings(cache_base_path, false));
         cache.initialize();
         download(cache.getOrSet(FileCacheKey::fromPath("usage_metrics_setting_disabled_key"), 0, 10, 10, {}, 0, user_setting));
-        ASSERT_DOUBLE_EQ(get_size(user_setting.user_id), setting_size_before);
-        ASSERT_DOUBLE_EQ(get_elements(user_setting.user_id), setting_elements_before);
+        ASSERT_DOUBLE_EQ(get_size(disabled_cache_name, user_setting.user_id), disabled_setting_size_before);
+        ASSERT_DOUBLE_EQ(get_elements(disabled_cache_name, user_setting.user_id), disabled_setting_elements_before);
     }
 
     {
-        FileCache cache("usage_metrics_setting_enabled", make_settings(cache_base_path2, true));
+        FileCache cache(enabled_cache_name, make_settings(cache_base_path2, true));
         cache.initialize();
         {
             auto holder = cache.getOrSet(FileCacheKey::fromPath("usage_metrics_setting_enabled_key"), 0, 10, 10, {}, 0, user_setting);
             download(holder);
         }
-        ASSERT_DOUBLE_EQ(get_size(user_setting.user_id), setting_size_before + 10);
-        ASSERT_DOUBLE_EQ(get_elements(user_setting.user_id), setting_elements_before + 1);
+        ASSERT_DOUBLE_EQ(get_size(enabled_cache_name, user_setting.user_id), enabled_setting_size_before + 10);
+        ASSERT_DOUBLE_EQ(get_elements(enabled_cache_name, user_setting.user_id), enabled_setting_elements_before + 1);
         cache.removeAllReleasable(user_setting.user_id);
-        ASSERT_DOUBLE_EQ(get_size(user_setting.user_id), setting_size_before);
-        ASSERT_DOUBLE_EQ(get_elements(user_setting.user_id), setting_elements_before);
+        ASSERT_DOUBLE_EQ(get_size(enabled_cache_name, user_setting.user_id), enabled_setting_size_before);
+        ASSERT_DOUBLE_EQ(get_elements(enabled_cache_name, user_setting.user_id), enabled_setting_elements_before);
     }
 
     {
