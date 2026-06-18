@@ -36,7 +36,6 @@
 
 #include <limits>
 #include <set>
-#include <sstream>
 #include <memory>
 
 namespace DB
@@ -676,9 +675,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
 bool AlterDropPartitionExecutor::commitMetadataJSON(
     SnapshotState & state, FileNamesGenerator & filename_generator, const GeneratedMetadataFileWithInfo & metadata_info)
 {
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(state.metadata_object, oss, 4);
-    std::string json_representation = removeEscapedSlashes(oss.str());
+    std::string json_representation = stringifyJson(state.metadata_object, 4);
 
     fiu_do_on(FailPoints::iceberg_writes_cleanup, { throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled"); });
 

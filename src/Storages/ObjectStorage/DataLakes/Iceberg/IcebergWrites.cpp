@@ -46,6 +46,7 @@
 #include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <sys/stat.h>
+#include <Schema.hh>
 #include <Types.hh>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
@@ -332,7 +333,7 @@ String removeEscapedSlashes(const String & json_str)
     return result;
 }
 
-String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent)
+String stringifyJson(const Poco::Dynamic::Var & json, unsigned indent)
 {
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(json, oss, indent);
@@ -354,7 +355,7 @@ static void extendSchemaForPartitions(
         partition_fields->add(field);
     }
 
-    std::string json_representation = stringifyJSON(partition_fields);
+    std::string json_representation = stringifyJson(partition_fields);
 
     std::string from = "#";
     size_t start_pos = schema.find(from);
@@ -454,14 +455,14 @@ void generateManifestFile(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
     Poco::JSON::Object::Ptr schema_object_to_write = schema_to_serialize ? schema_to_serialize : getCurrentSchema(metadata);
-    std::string json_representation = stringifyJSON(schema_object_to_write, 4);
+    std::string json_representation = stringifyJson(schema_object_to_write, 4);
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata(Iceberg::f_schema, json_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
-    writer.setMetadata(Iceberg::f_partition_spec, stringifyJSON(partition_spec->getArray(Iceberg::f_fields)));
+    writer.setMetadata(Iceberg::f_partition_spec, stringifyJson(partition_spec->getArray(Iceberg::f_fields)));
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
     for (size_t file_idx = 0; file_idx < data_file_names.size(); ++file_idx)
@@ -855,18 +856,13 @@ void generateExistingManifestFile(
     if (schema.root()->type() != avro::AVRO_RECORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    int current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
-    Poco::JSON::Stringifier::stringify(metadata->getArray(Iceberg::f_schemas)->getObject(current_schema_id), oss, 4);
-    std::string json_representation = removeEscapedSlashes(oss.str());
+    std::string json_representation = stringifyJson(getCurrentSchema(metadata), 4);
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata(Iceberg::f_schema, json_representation);
 
-    std::ostringstream oss_partition_spec; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec);
-    writer.setMetadata(Iceberg::f_partition_spec, oss_partition_spec.str());
+    writer.setMetadata(Iceberg::f_partition_spec, stringifyJson(partition_spec->getArray(Iceberg::f_fields)));
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
 
     for (const auto & entry : entries)
@@ -878,45 +874,18 @@ void generateExistingManifestFile(
 
         manifest.field(Iceberg::f_status) = avro::GenericDatum(static_cast<Int32>(Iceberg::ManifestEntryStatus::EXISTING));
 
-        auto set_versioned_field = [&](const auto & value, const String & field_name)
-        {
-            if (version > 1)
-            {
-                size_t field_index = 0;
-                if (!schema.root()->nameIndex(field_name, field_index))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
-
-                const avro::NodePtr & union_schema = schema.root()->leafAt(static_cast<UInt32>(field_index));
-                avro::GenericUnion field(union_schema);
-                field.selectBranch(1);
-                field.datum() = avro::GenericDatum(value);
-                manifest.field(field_name) = avro::GenericDatum(union_schema, field);
-            }
-            else
-            {
-                manifest.field(field_name) = avro::GenericDatum(value);
-            }
-        };
-
-        /// Preserve the snapshot_id from the original entry (Iceberg v2 spec: EXISTING entries
-        /// keep the snapshot_id that first ADDED the file, otherwise time-travel queries break).
-        /// The reader resolves inherited snapshot_id at read time but discards it
-        /// (`ManifestFileIterator.cpp` keeps only the resolved sequence_number on the wrapping
-        /// struct), so by the time we get here the only source of truth is `parsed_snapshot_id`.
-        /// An empty value means an ADDED entry with implicit snapshot_id reached us without
-        /// inheritance resolution — re-emitting it as EXISTING with `snapshot_id=0` would
-        /// corrupt the manifest, so refuse instead.
         if (!parsed.parsed_snapshot_id.has_value())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot re-emit Iceberg manifest entry as EXISTING: snapshot_id is missing");
-        set_versioned_field(*parsed.parsed_snapshot_id, Iceberg::f_snapshot_id);
+
+        setVersionedField(manifest, *parsed.parsed_snapshot_id, Iceberg::f_snapshot_id);
 
         if (version > 1)
         {
             Int64 seq = parsed.parsed_sequence_number.value_or(entry->sequence_number);
-            set_versioned_field(seq, Iceberg::f_sequence_number);
-            set_versioned_field(seq, Iceberg::f_file_sequence_number);
+            setVersionedField(manifest, seq, Iceberg::f_sequence_number);
+            setVersionedField(manifest, seq, Iceberg::f_file_sequence_number);
         }
 
         avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
@@ -930,9 +899,6 @@ void generateExistingManifestFile(
         avro::GenericRecord & partition_record = data_file.field(Iceberg::f_partition).value<avro::GenericRecord>();
         writePartitionRecord(partition_record, partition_columns, parsed.partition_key_value, partition_types);
 
-        /// Optional file-level statistics (column_sizes, value_counts, lower/upper bounds, etc.)
-        /// are left as null. Readers tolerate this; we trade some pruning precision for
-        /// implementation simplicity until the parsed-entry model exposes raw byte stats.
         writer.write(manifest_datum);
     }
     writer.close();
@@ -1363,7 +1329,7 @@ bool IcebergStorageSink::initializeMetadata()
         }
 
         {
-            std::string json_representation = stringifyJSON(metadata, 4);
+            std::string json_representation = stringifyJson(metadata, 4);
 
             fiu_do_on(FailPoints::iceberg_writes_cleanup,
             {
