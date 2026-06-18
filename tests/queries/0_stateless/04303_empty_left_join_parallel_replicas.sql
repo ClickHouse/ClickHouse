@@ -28,6 +28,11 @@ SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET automatic_parallel_replicas_mode = 0;
 
+-- Keep the empty table as the left (probe) side so the empty-leftmost-leaf
+-- scenario from issue #89166 is exercised deterministically. `false` = never
+-- swap (the right table is the build table), so left-in-SQL stays left.
+SET query_plan_join_swap_table = false;
+
 -- Empty left with the greedy join-order algo (the original repro from issue #89166).
 -- Pin `greedy` explicitly: stateless tests randomize
 -- `query_plan_optimize_join_order_algorithm`, so the default is not reliably greedy.
@@ -37,12 +42,33 @@ FROM t_left_empty AS l INNER JOIN t_right AS r ON l.id = r.id
 ORDER BY r.id
 SETTINGS query_plan_optimize_join_order_algorithm = 'greedy';
 
+-- The plan must fold to a single `JoinLogical` step. Before the fix it had two
+-- nested ones (`keep_logical_steps = 1` keeps them visible; the default plan
+-- folds `JoinLogical` into a physical `Join` step).
+SELECT 'greedy JoinLogical steps', countSubstrings(arrayStringConcat(groupArray(explain), char(10)), 'JoinLogical')
+FROM (
+    EXPLAIN keep_logical_steps = 1
+    SELECT r.id, r.val
+    FROM t_left_empty AS l INNER JOIN t_right AS r ON l.id = r.id
+    ORDER BY r.id
+    SETTINGS query_plan_optimize_join_order_algorithm = 'greedy'
+);
+
 -- Same query forcing the dpsize join-order algorithm.
 SELECT '--- empty left, dpsize algo ---';
 SELECT r.id, r.val
 FROM t_left_empty AS l INNER JOIN t_right AS r ON l.id = r.id
 ORDER BY r.id
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize';
+
+SELECT 'dpsize JoinLogical steps', countSubstrings(arrayStringConcat(groupArray(explain), char(10)), 'JoinLogical')
+FROM (
+    EXPLAIN keep_logical_steps = 1
+    SELECT r.id, r.val
+    FROM t_left_empty AS l INNER JOIN t_right AS r ON l.id = r.id
+    ORDER BY r.id
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize'
+);
 
 -- Same query against the legacy (pre-new-logical-join) planner.
 SELECT '--- empty left, new logical join step off ---';
