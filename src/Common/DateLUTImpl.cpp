@@ -222,6 +222,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     /// Time points outside of [lut_start_time, lut_end_time) take the cctz escape path.
     lut_start_time = lut[0].date;
     lut_end_time = std::chrono::system_clock::to_time_t(lookupTz(tz, cctz::civil_day{DATE_LUT_MAX_YEAR + 1, 1, 1}));
+    lut_time_span = lut_end_time - lut_start_time;
 }
 
 DateLUTImpl::~DateLUTImpl() = default;

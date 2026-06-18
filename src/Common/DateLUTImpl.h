@@ -248,6 +248,8 @@ private:
     /// A time point is representable by the LUT iff lut_start_time <= t < lut_end_time.
     Time lut_start_time;
     Time lut_end_time;
+    /// lut_end_time - lut_start_time, precomputed so the in-range check is a single unsigned comparison.
+    Time lut_time_span;
 
     /// The widest range DateLUTImpl can represent and format: a 4-digit year, i.e. [0000-01-01, 9999-12-31].
     /// The cctz escape paths clamp to this window so that formatting can never overflow the 4-digit year
@@ -265,13 +267,15 @@ private:
 
     bool isOutOfLUTRange(Time t) const
     {
-        return t < lut_start_time || t >= lut_end_time;
+        /// Single unsigned comparison, equivalent to (t < lut_start_time || t >= lut_end_time).
+        /// Operands are cast before subtracting to avoid signed overflow for extreme time points.
+        return static_cast<UInt64>(t) - static_cast<UInt64>(lut_start_time) >= static_cast<UInt64>(lut_time_span);
     }
 
     static bool isOutOfLUTRange(ExtendedDayNum d)
     {
-        const Int64 index = static_cast<Int64>(d.toUnderType()) + daynum_offset_epoch;
-        return index < 0 || index >= DATE_LUT_SIZE;
+        /// Single unsigned comparison, equivalent to (index < 0 || index >= DATE_LUT_SIZE).
+        return static_cast<UInt32>(static_cast<Int64>(d.toUnderType()) + daynum_offset_epoch) >= DATE_LUT_SIZE;
     }
 
     /// The day index (number of days since DATE_LUT_MIN_YEAR-01-01, i.e. a non-normalized LUTIndex value)
