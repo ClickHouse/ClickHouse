@@ -916,6 +916,225 @@ std::optional<Resolved> resolveConstThroughMaterialize(const ActionsDAG::Node * 
     return std::nullopt;
 }
 
+/// dummy columns (ColumnSet for IN, ColumnFunction for lambdas) don't have a Field-representable value
+bool hasDummyInside(const ColumnConstPtr & col)
+{
+    return col && col->getDataColumn().isDummy();
+}
+
+/// same scalar can show up as different ColumnConst objects after merge
+bool constColumnsEqual(const ColumnConstPtr & a, const ColumnConstPtr & b)
+{
+    if (a.get() == b.get())
+        return true;
+    if (!a || !b)
+        return false;
+    if (hasDummyInside(a) || hasDummyInside(b))
+        return false;
+    const IColumn & a_inner = a->getDataColumn();
+    const IColumn & b_inner = b->getDataColumn();
+    if (typeid(a_inner) != typeid(b_inner))
+        return false;
+    return a_inner.compareAt(0, 0, b_inner, /* nan_direction_hint */ 1) == 0;
+}
+
+bool isConstant(const ActionsDAG::Node & n)
+{
+    return n.column && !hasDummyInside(n.column);
+}
+
+class EquivalenceClasses
+{
+public:
+    const ActionsDAG::Node * find(const ActionsDAG::Node * n) const
+    {
+        auto it = classes.find(n);
+        if (it == classes.end())
+            return n;
+        if (it->second.representative == n)
+            return n;
+        const auto * root = find(it->second.representative);
+        it->second.representative = root; /// path compression
+        return root;
+    }
+
+    void unite(const ActionsDAG::Node * a, const ActionsDAG::Node * b)
+    {
+        const auto * ra = find(a);
+        const auto * rb = find(b);
+        if (ra == rb)
+            return;
+
+        auto & ca = ensure(ra);
+        auto & cb = ensure(rb);
+
+        /// alias should not be representative, rewriting alias.children through find would self-cycle
+        const bool ra_alias = ra->type == ActionsDAG::ActionType::ALIAS;
+        const bool rb_alias = rb->type == ActionsDAG::ActionType::ALIAS;
+
+        const bool a_wins = (ra_alias != rb_alias) ? !ra_alias : ca.size >= cb.size;
+
+        if (a_wins)
+        {
+            cb.representative = ra;
+            ca.size += cb.size;
+        }
+        else
+        {
+            ca.representative = rb;
+            cb.size += ca.size;
+        }
+    }
+
+private:
+    struct Class
+    {
+        const ActionsDAG::Node * representative;
+        size_t size;
+    };
+
+    Class & ensure(const ActionsDAG::Node * n)
+    {
+        auto it = classes.find(n);
+        if (it == classes.end())
+            it = classes.emplace(n, Class{.representative = n, .size = 1}).first;
+        return it->second;
+    }
+
+    mutable std::unordered_map<const ActionsDAG::Node *, Class> classes;
+};
+
+struct ConstantKey
+{
+    const ActionsDAG::Node * sample;
+};
+
+struct ConstantKeyHash
+{
+    size_t operator()(const ConstantKey & k) const
+    {
+        SipHash h;
+        k.sample->result_type->updateHash(h);
+        k.sample->column->updateHashWithValue(0, h);
+        return h.get64();
+    }
+};
+
+struct ConstantKeyEqual
+{
+    bool operator()(const ConstantKey & a, const ConstantKey & b) const
+    {
+        return a.sample->result_type->equals(*b.sample->result_type)
+            && constColumnsEqual(a.sample->column, b.sample->column);
+    }
+};
+
+struct FunctionCandidate
+{
+    const ActionsDAG::Node * representative;
+    std::vector<const ActionsDAG::Node *> arg_classes;
+};
+
+EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
+{
+    using ActionType = ActionsDAG::ActionType;
+    using Node = ActionsDAG::Node;
+
+    EquivalenceClasses ec;
+    std::unordered_map<ConstantKey, const Node *, ConstantKeyHash, ConstantKeyEqual> constants;
+    std::unordered_map<const FunctionCreator *, std::vector<FunctionCandidate>> functions_by_creator;
+
+    for (const auto & node : dag.getNodes())
+    {
+        /// INPUT / PLACEHOLDER are positional, ARRAY_JOIN changes row count
+        if (node.type == ActionType::INPUT
+            || node.type == ActionType::PLACEHOLDER
+            || node.type == ActionType::ARRAY_JOIN)
+            continue;
+
+        if (node.type == ActionType::ALIAS)
+        {
+            if (!node.children.empty())
+                ec.unite(&node, node.children.front());
+            continue;
+        }
+
+        /// `rand()` / `randConstant` and similar give different values per call
+        if (!node.isDeterministic())
+            continue;
+        /// TODO (yariks5s): compare inner DAGs
+        /// Lambda-typed values (like results of FunctionCapture) carry inner DAG we don't see
+        if (node.result_type && WhichDataType(node.result_type).isFunction())
+            continue;
+
+        if (isConstant(node))
+        {
+            auto [it, inserted] = constants.try_emplace(ConstantKey{&node}, &node);
+            if (!inserted)
+                ec.unite(it->second, &node);
+            continue;
+        }
+
+        if (node.type != ActionType::FUNCTION || !node.function_base)
+            continue;
+
+        const auto * factory_handle = node.function_base->getFactoryHandle();
+        if (!factory_handle)
+            continue;
+
+        /// for name-sensitive functions keep raw children so siblings already merged by ec
+        /// do not drag the parent into the same class
+        const bool look_through_aliases = node.function_base->isNameInsensitive();
+        std::vector<const Node *> arg_classes;
+        arg_classes.reserve(node.children.size());
+        for (const auto * c : node.children)
+        {
+            if (look_through_aliases)
+                arg_classes.push_back(ec.find(c));
+            else
+                arg_classes.push_back(c);
+        }
+
+        auto & candidates = functions_by_creator[factory_handle];
+
+        /// don't rely on traversal order because some classes can be stale
+        auto same_arg_classes = [&](const std::vector<const Node *> & lhs)
+        {
+            if (lhs.size() != arg_classes.size())
+                return false;
+            if (look_through_aliases)
+            {
+                for (size_t i = 0; i < lhs.size(); ++i)
+                    if (ec.find(lhs[i]) != ec.find(arg_classes[i]))
+                        return false;
+            }
+            else
+            {
+                for (size_t i = 0; i < lhs.size(); ++i)
+                    if (lhs[i] != arg_classes[i])
+                        return false;
+            }
+            return true;
+        };
+
+        bool merged = false;
+        for (const auto & cand : candidates)
+        {
+            if (!cand.representative->result_type->equals(*node.result_type))
+                continue;
+            if (!same_arg_classes(cand.arg_classes))
+                continue;
+            ec.unite(cand.representative, &node);
+            merged = true;
+            break;
+        }
+        if (!merged)
+            candidates.push_back({&node, std::move(arg_classes)});
+    }
+
+    return ec;
+}
+
 }
 
 void ActionsDAG::unwrapMaterializeWrapAtOutput(const std::string & name)
@@ -941,11 +1160,10 @@ void ActionsDAG::unwrapMaterializeWrapAtOutput(const std::string & name)
 
 void ActionsDAG::pushMaterializeOutwardForConstants()
 {
-    /// Build order is bottom-up, so when we rewrite a node, its parents - visited later -
-    /// see the new materialize(Const) child and fold through it the same way
-    for (auto it = nodes.begin(); it != nodes.end(); ++it)
+    /// bottom-up: marking a node constant via `node.column` lets parents visited later
+    /// see it as const through `resolveConstThroughMaterialize` and fold the same way
+    for (auto & node : nodes)
     {
-        auto & node = *it;
         if (node.type != ActionType::FUNCTION || !node.function_base || !node.function)
             continue;
         if (node.function_base->getName() == "materialize")
@@ -997,31 +1215,68 @@ void ActionsDAG::pushMaterializeOutwardForConstants()
             continue;
 
         auto result = node.function->execute(args, node.result_type, 1, true);
-        if (!result || !isColumnConst(*result))
+        const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr;
+        if (!column_const)
             continue;
 
-        /// Insert the folded const before the rewritten node, serialize asserts child id < parent id
-        Node new_const{};
-        new_const.type = ActionType::COLUMN;
-        new_const.result_type = node.result_type;
-        new_const.result_name = node.result_name + ".folded_const";
-        new_const.column = result;
-        new_const.is_deterministic_constant = all_deterministic;
-        const Node & const_node = *nodes.insert(it, std::move(new_const));
-
-        /// wrap in materialize so the runtime column type stays non-Const (UnionStep schema match, retained filter columns)
-        auto materialize_func = std::make_shared<FunctionMaterialize<false>>();
-        FunctionOverloadResolverPtr resolver
-            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(materialize_func));
-        ColumnsWithTypeAndName mat_args = {{const_node.column, const_node.result_type, const_node.result_name}};
-        auto materialize_base = resolver->build(mat_args);
-
-        node.function_base = materialize_base;
-        node.function = materialize_base->prepare(mat_args);
-        node.children = {&const_node};
-        node.column = nullptr;
+        /// store the folded const directly on this FUNCTION node, matching `addFunctionImpl`:
+        /// downstream readers treat `node.column` set to a ColumnConst as the canonical constant,
+        /// the original children become orphans removed by the next `removeUnusedActions` pass
+        if (!column_const->empty())
+            node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
+        else
+            node.column = column_const->getPtr();
         node.is_deterministic_constant = all_deterministic;
     }
+}
+
+void ActionsDAG::deduplicateSubtrees()
+{
+    auto ec = buildStructuralEquivalenceClasses(*this);
+
+    for (auto & node : nodes)
+    {
+        /// name-sensitive functions read child names, so any rewrite has to keep the original name visible
+        const bool preserve_arg_names =
+            node.type == ActionType::FUNCTION
+            && node.function_base
+            && !node.function_base->isNameInsensitive();
+
+        for (auto & child : node.children)
+        {
+            if (!preserve_arg_names)
+            {
+                child = ec.find(child);
+                continue;
+            }
+            /// alias children already carry their own name, leave them as is
+            if (child->type == ActionType::ALIAS)
+                continue;
+            const Node * canon = ec.find(child);
+            if (canon == child)
+                continue;
+            /// when the canonical has a different name, wrap it so the function still sees the original
+            if (canon->result_name == child->result_name)
+                child = canon;
+            else
+                child = &addAlias(*canon, child->result_name);
+        }
+    }
+
+    /// preserve output names with alias when canonical representative has a different name
+    for (auto & out : outputs)
+    {
+        const Node * canon = ec.find(out);
+        if (canon == out)
+            continue;
+        if (canon->result_name == out->result_name)
+            out = canon;
+        else
+            out = &addAlias(*canon, out->result_name);
+    }
+
+    /// drop non-representative nodes and any orphans they leave behind
+    removeUnusedActions(/*allow_remove_inputs=*/false);
 }
 
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)

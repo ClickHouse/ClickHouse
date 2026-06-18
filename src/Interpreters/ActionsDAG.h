@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -252,6 +253,10 @@ public:
     /// a bare Const COLUMN. Used at filter root when the filter column is removed: it
     /// lets `FilterTransform` recognize a constant filter and close the source
     void unwrapMaterializeWrapAtOutput(const std::string & name);
+
+    /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
+    /// outputs preserve their names via aliases when needed, dead nodes are pruned
+    void deduplicateSubtrees();
 
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs
