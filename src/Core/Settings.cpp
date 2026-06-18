@@ -2461,6 +2461,9 @@ Possible values:
 - `legacy` — pre-26.6 output.
 
 Specifying the `actions`, `compact`, or `pretty` options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides this setting.
+
+`EXPLAIN PLAN` with `json = 1` or `distributed = 1` keeps the legacy (pre-26.6) defaults regardless of this setting, unless `actions`, `compact`, or `pretty` are set explicitly. The pretty output cannot represent JSON results or per-shard distributed plans, so those modes are only rendered correctly in legacy form.
+
 Set this setting to `legacy` (or set `compatibility` to any version older than `26.6`) to restore the pre-26.6 verbose output.
 )", 0) \
     \
