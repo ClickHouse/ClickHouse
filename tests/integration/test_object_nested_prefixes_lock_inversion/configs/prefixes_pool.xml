@@ -1,0 +1,16 @@
+<clickhouse>
+    <!--
+        Keep the prefixes deserialization thread pool small and, crucially, warm
+        (free_size > 0). With the default free_size = 0 the pool stays cold: idle
+        workers exit immediately, so the scheduling thread work-steals every nested
+        task onto its own stack and the per-level `callbacks_mutex` objects always sit
+        at strictly decreasing stack addresses (deep -> shallow), which can never form
+        a lock-order cycle. With warm idle workers the nested Object levels land on
+        different pool threads at the same stack frame offset, and reused stack
+        addresses let TSan see both lock orders - the false `lock-order-inversion`
+        this test guards against. A small pool concentrates the addresses so the
+        report shows up quickly.
+    -->
+    <max_prefixes_deserialization_thread_pool_size>8</max_prefixes_deserialization_thread_pool_size>
+    <max_prefixes_deserialization_thread_pool_free_size>8</max_prefixes_deserialization_thread_pool_free_size>
+</clickhouse>

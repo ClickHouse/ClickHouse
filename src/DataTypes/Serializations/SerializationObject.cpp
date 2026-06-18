@@ -18,6 +18,8 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -526,41 +528,51 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         for (const auto & path : *structure_state_concrete->sorted_dynamic_paths)
             object_state->dynamic_path_states[path] = nullptr;
 
-        /// All threads will use the same callbacks that are not thread safe.
-        std::mutex callbacks_mutex;
+        /// The callbacks are not thread safe, so parallel tasks must funnel through a single mutex.
+        /// Only the outermost parallel Object installs the locking wrappers; a nested Object inherits
+        /// the already-thread-safe callbacks (via settings.prefix_callbacks_mutex) and must not wrap
+        /// again, otherwise the whole subtree would hold one callbacks_mutex per level. Those per-level
+        /// stack mutexes are what let TSan's deadlock detector report a (false) lock-order inversion
+        /// across nesting levels. With a single mutex per subtree there is nothing to invert, while
+        /// nested fan-out still runs in parallel.
+        const bool install_wrappers = !settings.prefix_callbacks_mutex;
+        std::optional<std::mutex> own_callbacks_mutex;
+        if (install_wrappers)
+            own_callbacks_mutex.emplace();
+        std::mutex * callbacks_mutex = install_wrappers ? &*own_callbacks_mutex : settings.prefix_callbacks_mutex;
         auto safe_getter = [&](const SubstreamPath & path)
         {
-            std::unique_lock lock(callbacks_mutex);
+            std::unique_lock lock(*callbacks_mutex);
             return settings.getter(path);
         };
 
         auto safe_dynamic_subcolumns_callback = [&](const SubstreamPath & path)
         {
-            std::unique_lock lock(callbacks_mutex);
+            std::unique_lock lock(*callbacks_mutex);
             settings.dynamic_subcolumns_callback(path);
         };
 
         auto safe_prefixes_prefetch_callback = [&](const SubstreamPath & path)
         {
-            std::unique_lock lock(callbacks_mutex);
+            std::unique_lock lock(*callbacks_mutex);
             settings.prefixes_prefetch_callback(path);
         };
 
         auto safe_release_stream_callback = [&](const SubstreamPath & path)
         {
-            std::unique_lock lock(callbacks_mutex);
+            std::unique_lock lock(*callbacks_mutex);
             settings.release_stream_callback(path);
         };
 
         auto safe_seek_to_start_callback = [&](const SubstreamPath & path)
         {
-            std::unique_lock lock(callbacks_mutex);
+            std::unique_lock lock(*callbacks_mutex);
             settings.seek_to_start_callback(path);
         };
 
         auto safe_has_uniform_marks_callback = [&](const SubstreamPath & path, size_t max_transitions)
         {
-            std::unique_lock lock(callbacks_mutex);
+            std::unique_lock lock(*callbacks_mutex);
             return settings.has_uniform_marks_callback(path, max_transitions);
         };
 
@@ -583,14 +595,21 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             auto deserialize = [&, batch_start, batch_end, cache_ptr = cache_copy.get()]()
             {
                 auto settings_copy = settings;
-                settings_copy.getter = safe_getter;
-                settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
-                settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
-                settings_copy.release_stream_callback = settings.release_stream_callback ? safe_release_stream_callback : StreamCallback{};
-                settings_copy.seek_to_start_callback = settings.seek_to_start_callback ? safe_seek_to_start_callback : StreamCallback{};
-                settings_copy.has_uniform_marks_callback = settings.has_uniform_marks_callback
-                    ? safe_has_uniform_marks_callback
-                    : decltype(settings.has_uniform_marks_callback){};
+                /// Install the locking wrappers only at the outermost level; nested Objects inherit them
+                /// (and the flag) and keep the thread pool, so nested prefixes are still read in parallel
+                /// but through this single callbacks_mutex.
+                if (install_wrappers)
+                {
+                    settings_copy.getter = safe_getter;
+                    settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
+                    settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
+                    settings_copy.release_stream_callback = settings.release_stream_callback ? safe_release_stream_callback : StreamCallback{};
+                    settings_copy.seek_to_start_callback = settings.seek_to_start_callback ? safe_seek_to_start_callback : StreamCallback{};
+                    settings_copy.has_uniform_marks_callback = settings.has_uniform_marks_callback
+                        ? safe_has_uniform_marks_callback
+                        : decltype(settings.has_uniform_marks_callback){};
+                    settings_copy.prefix_callbacks_mutex = callbacks_mutex;
+                }
                 for (size_t j = batch_start; j != batch_end; ++j)
                 {
                     settings_copy.path.push_back(Substream::ObjectDynamicPath);

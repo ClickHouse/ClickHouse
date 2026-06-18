@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <set>
 
 namespace DB
@@ -457,6 +458,11 @@ public:
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
+        /// Mutex serializing the (non-thread-safe) prefix callbacks during parallel deserialization.
+        /// Set by the outermost Object; when non-null a nested Object reuses the already-installed
+        /// thread-safe callbacks and must not wrap again, so the whole subtree shares one mutex
+        /// (a second per-level mutex is what makes TSan's deadlock detector report a false cycle).
+        std::mutex * prefix_callbacks_mutex = nullptr;
 
         /// If set to true, all prefixes and suffixes should be read from separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be read from a separate
