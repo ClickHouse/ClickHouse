@@ -57,7 +57,7 @@ public:
 
     /// Batch-add usage counts from a per-worker accumulator map (id -> count).
     /// Acquires map_mutex exactly once regardless of batch size.
-    /// Used by the V8 parallel snapshot deserializer to merge per-frame ACL counters.
+    /// Used by the chunked snapshot parallel deserializer to merge per-chunk ACL counters.
     void addUsageBatch(const std::unordered_map<ACLId, uint64_t> & batch);
 };
 

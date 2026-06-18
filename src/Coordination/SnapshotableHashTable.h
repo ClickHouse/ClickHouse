@@ -388,7 +388,7 @@ public:
             mit->getMapped() = it;
             updateDataSize(INSERT_OR_REPLACE, it->key.size(), it->value.sizeInBytes(), 0);
             // numChildren() returns 0 for ephemeral nodes; the raw num_children field was
-            // validated >= 0 at parse time (readNodeV8), so the cast is safe.
+            // validated >= 0 at parse time (readChunkedSnapshotNode), so the cast is safe.
             out_total_children += static_cast<uint64_t>(it->value.numChildren());
             out_non_root += (it->key != "/");
         }

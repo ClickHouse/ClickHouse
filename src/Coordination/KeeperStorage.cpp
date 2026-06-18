@@ -5090,10 +5090,10 @@ void finalizeMemorySnapshotLoad(
         out_total_children, out_non_root);
 
     // Step 2: root invariant check — must run BEFORE the children walk which dereferences parents.
-    // The V8 path constructs storage with insert_initial_root=false so the snapshot's own "/"
-    // is the only source of the root.
+    // The chunked snapshot path constructs storage with insert_initial_root=false so the snapshot's
+    // own "/" is the only source of the root.
     if (storage.container.find("/") == storage.container.end())
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "V8 snapshot has no root '/' node");
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot has no root '/' node");
 
     // Step 3: children walk — one traversal. updateValueForLoad throws CORRUPTED_DATA on
     // a missing parent (unlike updateValue which throws LOGICAL_ERROR).

@@ -1031,7 +1031,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
         KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
         auto write_version = keeper_context->getWriteSnapshotVersion();
-        /// RocksDB storage does not support V8 chunked format; clamp to V7.
+        /// RocksDB storage does not support the chunked snapshot format; clamp to V7.
         if constexpr (KeeperStorageSnapshot<Storage>::use_rocksdb)
             write_version = std::min(write_version, SnapshotVersion::V7);
         snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot<Storage>>(

@@ -40,7 +40,7 @@ enum SnapshotVersion : uint8_t
     V5 = 5, /// add ZXID and digest to snapshots
     V6 = 6, /// remove is_sequential, per node size, data length
     V7 = 7, /// acl_id narrowed from uint64_t to uint32_t, seq_num widened from int32_t to int64_t
-    V8 = 8, /// chunked independently-compressed ZSTD frames, parallel-read capable (active from C3; C4 adds parallel per-frame deserialization)
+    V8 = 8, /// chunked independently-compressed ZSTD chunks, parallel-read capable (active from C3; C4 adds parallel per-chunk deserialization)
 };
 
 static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V8;
@@ -266,10 +266,10 @@ public:
     void setProtectedPendingSnapshotIndex(uint64_t log_idx);
 
 private:
-    /// Deserialize a V8 (chunked independently-compressed ZSTD) snapshot from `buffer`.
+    /// Deserialize a chunked (independently-compressed ZSTD) snapshot from `buffer`.
     /// Called from deserializeSnapshotFromBuffer after "CKFS" magic is detected.
     /// Throws UNKNOWN_FORMAT_VERSION if called for a RocksDB storage instantiation.
-    SnapshotDeserializationResult<Storage> deserializeV8FromBuffer(
+    SnapshotDeserializationResult<Storage> deserializeChunkedSnapshotFromBuffer(
         nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage = true) const;
 
     /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
@@ -309,10 +309,10 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    /// Thread pool for parallel V8 snapshot frame deserialization (C4).
+    /// Thread pool for parallel chunked snapshot deserialization (C4).
     /// Pre-created in the constructor (never under snapshots_lock).
     /// Empty when deser_threads == 1 (serial path used instead).
-    /// mutable: deserializeV8FromBuffer is called from const methods.
+    /// mutable: deserializeChunkedSnapshotFromBuffer is called from const methods.
     mutable std::optional<ThreadPool> deser_pool;
     /// Effective thread count (1 = serial fallback, >1 = parallel).
     size_t deser_threads = 1;

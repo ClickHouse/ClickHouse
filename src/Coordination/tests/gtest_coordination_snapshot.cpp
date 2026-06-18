@@ -4,7 +4,7 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperSnapshotManager.h>
-#include <Coordination/KeeperSnapshotV8.h>
+#include <Coordination/KeeperChunkedSnapshot.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperStorage.h>
@@ -2017,249 +2017,249 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateSnapshotKeepsPreviousMetadataAndAll
 }
 
 // ---------------------------------------------------------------------------
-// V8 header pack/unpack + bounds validation tests (C1 — inert scaffolding)
-// These tests exercise KeeperSnapshotV8.h / .cpp independently of the actual
+// Chunked snapshot header pack/unpack + bounds validation tests (C1 — inert scaffolding)
+// These tests exercise KeeperChunkedSnapshot.h / .cpp independently of the actual
 // snapshot write or read paths, which are added in later commits.
 // ---------------------------------------------------------------------------
 
 namespace DB
 {
 
-/// Build a minimal valid 3-frame header (METADATA, NODES, SESSIONS) and round-trip through
-/// packV8Header + parseAndValidateV8Header.
-TEST(KeeperV8Header, RoundTripMinimal)
+/// Build a minimal valid 3-chunk header (METADATA, NODES, SESSIONS) and round-trip through
+/// packChunkedSnapshotHeader + parseAndValidateChunkedSnapshotHeader.
+TEST(KeeperChunkedSnapshotHeader, RoundTripMinimal)
 {
-    const size_t hdr_size = v8HeaderSize(3);
+    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
     // Frames start right after the header; no gaps.
-    std::vector<V8FrameDescriptor> frames = {
-        {V8ChunkType::METADATA, hdr_size,         100},
-        {V8ChunkType::NODES,    hdr_size + 100,   200},
-        {V8ChunkType::SESSIONS, hdr_size + 300,    50},
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::METADATA, hdr_size,         100},
+        {SnapshotChunkType::NODES,    hdr_size + 100,   200},
+        {SnapshotChunkType::SESSIONS, hdr_size + 300,    50},
     };
     const size_t total_size = hdr_size + 350;
 
     std::vector<char> buf(total_size, '\0');
-    packV8Header(frames, buf.data());
+    packChunkedSnapshotHeader(frames, buf.data());
 
-    auto parsed = parseAndValidateV8Header(buf.data(), total_size);
+    auto parsed = parseAndValidateChunkedSnapshotHeader(buf.data(), total_size);
 
     ASSERT_EQ(parsed.size(), 3u);
-    EXPECT_EQ(parsed[0].type, V8ChunkType::METADATA);
+    EXPECT_EQ(parsed[0].type, SnapshotChunkType::METADATA);
     EXPECT_EQ(parsed[0].compressed_offset, hdr_size);
     EXPECT_EQ(parsed[0].compressed_size, 100u);
-    EXPECT_EQ(parsed[1].type, V8ChunkType::NODES);
+    EXPECT_EQ(parsed[1].type, SnapshotChunkType::NODES);
     EXPECT_EQ(parsed[1].compressed_offset, hdr_size + 100);
     EXPECT_EQ(parsed[1].compressed_size, 200u);
-    EXPECT_EQ(parsed[2].type, V8ChunkType::SESSIONS);
+    EXPECT_EQ(parsed[2].type, SnapshotChunkType::SESSIONS);
     EXPECT_EQ(parsed[2].compressed_offset, hdr_size + 300);
     EXPECT_EQ(parsed[2].compressed_size, 50u);
 }
 
 /// Multiple NODES frames round-trip correctly (K > 1 per the write path).
-TEST(KeeperV8Header, RoundTripMultipleNodesFrames)
+TEST(KeeperChunkedSnapshotHeader, RoundTripMultipleNodesFrames)
 {
     const uint64_t chunk_count = 5; // METADATA + 3 NODES + SESSIONS
-    const size_t hdr_size = v8HeaderSize(chunk_count);
+    const size_t hdr_size = chunkedSnapshotHeaderSize(chunk_count);
 
-    std::vector<V8FrameDescriptor> frames;
-    frames.push_back({V8ChunkType::METADATA, hdr_size, 80});
-    frames.push_back({V8ChunkType::NODES, hdr_size + 80, 300});
-    frames.push_back({V8ChunkType::NODES, hdr_size + 380, 250});
-    frames.push_back({V8ChunkType::NODES, hdr_size + 630, 150});
-    frames.push_back({V8ChunkType::SESSIONS, hdr_size + 780, 40});
+    std::vector<SnapshotChunkDescriptor> frames;
+    frames.push_back({SnapshotChunkType::METADATA, hdr_size, 80});
+    frames.push_back({SnapshotChunkType::NODES, hdr_size + 80, 300});
+    frames.push_back({SnapshotChunkType::NODES, hdr_size + 380, 250});
+    frames.push_back({SnapshotChunkType::NODES, hdr_size + 630, 150});
+    frames.push_back({SnapshotChunkType::SESSIONS, hdr_size + 780, 40});
     const size_t total_size = hdr_size + 820;
 
     std::vector<char> buf(total_size, '\0');
-    packV8Header(frames, buf.data());
+    packChunkedSnapshotHeader(frames, buf.data());
 
-    auto parsed = parseAndValidateV8Header(buf.data(), total_size);
+    auto parsed = parseAndValidateChunkedSnapshotHeader(buf.data(), total_size);
 
     ASSERT_EQ(parsed.size(), 5u);
-    EXPECT_EQ(parsed[0].type, V8ChunkType::METADATA);
-    EXPECT_EQ(parsed[1].type, V8ChunkType::NODES);
-    EXPECT_EQ(parsed[2].type, V8ChunkType::NODES);
-    EXPECT_EQ(parsed[3].type, V8ChunkType::NODES);
-    EXPECT_EQ(parsed[4].type, V8ChunkType::SESSIONS);
+    EXPECT_EQ(parsed[0].type, SnapshotChunkType::METADATA);
+    EXPECT_EQ(parsed[1].type, SnapshotChunkType::NODES);
+    EXPECT_EQ(parsed[2].type, SnapshotChunkType::NODES);
+    EXPECT_EQ(parsed[3].type, SnapshotChunkType::NODES);
+    EXPECT_EQ(parsed[4].type, SnapshotChunkType::SESSIONS);
     EXPECT_EQ(parsed[4].compressed_size, 40u);
 }
 
 /// Frames with gaps between them (non-contiguous) are still valid.
-TEST(KeeperV8Header, RoundTripWithGapsBetweenFrames)
+TEST(KeeperChunkedSnapshotHeader, RoundTripWithGapsBetweenFrames)
 {
-    const size_t hdr_size = v8HeaderSize(3);
+    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
     const size_t gap = 128;
-    std::vector<V8FrameDescriptor> frames = {
-        {V8ChunkType::METADATA, hdr_size,                        100},
-        {V8ChunkType::NODES,    hdr_size + 100 + gap,            200},
-        {V8ChunkType::SESSIONS, hdr_size + 100 + gap + 200 + gap, 50},
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::METADATA, hdr_size,                        100},
+        {SnapshotChunkType::NODES,    hdr_size + 100 + gap,            200},
+        {SnapshotChunkType::SESSIONS, hdr_size + 100 + gap + 200 + gap, 50},
     };
     const size_t total_size = frames.back().compressed_offset + frames.back().compressed_size;
 
     std::vector<char> buf(total_size, '\0');
-    packV8Header(frames, buf.data());
+    packChunkedSnapshotHeader(frames, buf.data());
 
-    auto parsed = parseAndValidateV8Header(buf.data(), total_size);
+    auto parsed = parseAndValidateChunkedSnapshotHeader(buf.data(), total_size);
     ASSERT_EQ(parsed.size(), 3u);
     EXPECT_EQ(parsed[1].compressed_offset, hdr_size + 100 + gap);
 }
 
 // --- Rejection tests ---------------------------------------------------------
 
-TEST(KeeperV8Header, RejectsBufTooSmall)
+TEST(KeeperChunkedSnapshotHeader, RejectsBufTooSmall)
 {
     // A buffer of 12 bytes (< 13) must be rejected immediately.
     std::vector<char> buf(12, '\0');
-    EXPECT_THROW(parseAndValidateV8Header(buf.data(), 12), DB::Exception);
+    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), 12), DB::Exception);
 }
 
-TEST(KeeperV8Header, RejectsWrongMagic)
+TEST(KeeperChunkedSnapshotHeader, RejectsWrongMagic)
 {
-    const size_t hdr_size = v8HeaderSize(3);
-    std::vector<V8FrameDescriptor> frames = {
-        {V8ChunkType::METADATA, hdr_size, 10},
-        {V8ChunkType::NODES,    hdr_size + 10, 20},
-        {V8ChunkType::SESSIONS, hdr_size + 30, 10},
+    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::METADATA, hdr_size, 10},
+        {SnapshotChunkType::NODES,    hdr_size + 10, 20},
+        {SnapshotChunkType::SESSIONS, hdr_size + 30, 10},
     };
     std::vector<char> buf(hdr_size + 40, '\0');
-    packV8Header(frames, buf.data());
+    packChunkedSnapshotHeader(frames, buf.data());
 
     // Overwrite first magic byte with garbage.
     buf[0] = 'X';
-    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
 }
 
-TEST(KeeperV8Header, RejectsChunkCountTwo)
+TEST(KeeperChunkedSnapshotHeader, RejectsChunkCountTwo)
 {
     // chunk_count == 2 is always invalid (need at least METADATA+NODES+SESSIONS=3).
-    const size_t hdr_size = v8HeaderSize(2);
+    const size_t hdr_size = chunkedSnapshotHeaderSize(2);
     std::vector<char> buf(hdr_size + 100, '\0');
 
     // Write a syntactically-valid 2-chunk header.
-    std::vector<V8FrameDescriptor> frames_2 = {
-        {V8ChunkType::METADATA, hdr_size, 50},
-        {V8ChunkType::SESSIONS, hdr_size + 50, 50},
+    std::vector<SnapshotChunkDescriptor> frames_2 = {
+        {SnapshotChunkType::METADATA, hdr_size, 50},
+        {SnapshotChunkType::SESSIONS, hdr_size + 50, 50},
     };
-    packV8Header(frames_2, buf.data());
+    packChunkedSnapshotHeader(frames_2, buf.data());
 
     // Should throw CORRUPTED_DATA (chunk_count < 3).
-    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
 }
 
-TEST(KeeperV8Header, RejectsChunkCountZeroAndOne)
+TEST(KeeperChunkedSnapshotHeader, RejectsChunkCountZeroAndOne)
 {
     for (uint64_t cc : {uint64_t{0}, uint64_t{1}})
     {
-        const size_t hdr_size = v8HeaderSize(cc);
+        const size_t hdr_size = chunkedSnapshotHeaderSize(cc);
         std::vector<char> buf(hdr_size + 10, '\0');
         // Write magic + version + chunk_count manually.
-        memcpy(buf.data(), KEEPER_V8_MAGIC.data(), 4);
-        buf[4] = KEEPER_V8_VERSION;
+        memcpy(buf.data(), KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4);
+        buf[4] = KEEPER_CHUNKED_SNAPSHOT_VERSION;
         memcpy(buf.data() + 5, &cc, 8);
-        EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+        EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
     }
 }
 
-TEST(KeeperV8Header, RejectsOffsetOverlappingHeader)
+TEST(KeeperChunkedSnapshotHeader, RejectsOffsetOverlappingHeader)
 {
     // A frame that starts before the header ends.
-    const size_t hdr_size = v8HeaderSize(3);
-    std::vector<V8FrameDescriptor> frames = {
-        {V8ChunkType::METADATA, hdr_size - 1, 100}, // overlaps header
-        {V8ChunkType::NODES,    hdr_size + 100, 200},
-        {V8ChunkType::SESSIONS, hdr_size + 300, 50},
+    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::METADATA, hdr_size - 1, 100}, // overlaps header
+        {SnapshotChunkType::NODES,    hdr_size + 100, 200},
+        {SnapshotChunkType::SESSIONS, hdr_size + 300, 50},
     };
     std::vector<char> buf(hdr_size + 350, '\0');
-    packV8Header(frames, buf.data());
-    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+    packChunkedSnapshotHeader(frames, buf.data());
+    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
 }
 
-TEST(KeeperV8Header, RejectsOverlappingFrames)
+TEST(KeeperChunkedSnapshotHeader, RejectsOverlappingFrames)
 {
     // Frame 1 starts before frame 0 ends (overlapping by 1 byte).
-    const size_t hdr_size = v8HeaderSize(3);
-    std::vector<V8FrameDescriptor> frames = {
-        {V8ChunkType::METADATA, hdr_size, 100},
-        {V8ChunkType::NODES,    hdr_size + 99, 200}, // starts 1 byte before frame 0 ends
-        {V8ChunkType::SESSIONS, hdr_size + 299, 50},
+    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::METADATA, hdr_size, 100},
+        {SnapshotChunkType::NODES,    hdr_size + 99, 200}, // starts 1 byte before frame 0 ends
+        {SnapshotChunkType::SESSIONS, hdr_size + 299, 50},
     };
     std::vector<char> buf(hdr_size + 349, '\0');
-    packV8Header(frames, buf.data());
-    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+    packChunkedSnapshotHeader(frames, buf.data());
+    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
 }
 
-TEST(KeeperV8Header, RejectsFrameExceedingBufferSize)
+TEST(KeeperChunkedSnapshotHeader, RejectsFrameExceedingBufferSize)
 {
     // A frame whose end extends beyond the buffer.
-    const size_t hdr_size = v8HeaderSize(3);
-    std::vector<V8FrameDescriptor> frames = {
-        {V8ChunkType::METADATA, hdr_size, 100},
-        {V8ChunkType::NODES,    hdr_size + 100, 200},
-        {V8ChunkType::SESSIONS, hdr_size + 300, 9999}, // way too large
+    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::METADATA, hdr_size, 100},
+        {SnapshotChunkType::NODES,    hdr_size + 100, 200},
+        {SnapshotChunkType::SESSIONS, hdr_size + 300, 9999}, // way too large
     };
     std::vector<char> buf(hdr_size + 350, '\0'); // total_size only covers first two frames
-    packV8Header(frames, buf.data());
-    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+    packChunkedSnapshotHeader(frames, buf.data());
+    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
 }
 
-TEST(KeeperV8Header, RejectsWrongFirstChunkType)
+TEST(KeeperChunkedSnapshotHeader, RejectsWrongFirstChunkType)
 {
     // First chunk must be METADATA, not NODES.
-    const size_t hdr_size = v8HeaderSize(3);
-    std::vector<V8FrameDescriptor> frames = {
-        {V8ChunkType::NODES,    hdr_size, 100},     // wrong: should be METADATA
-        {V8ChunkType::NODES,    hdr_size + 100, 200},
-        {V8ChunkType::SESSIONS, hdr_size + 300, 50},
+    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::NODES,    hdr_size, 100},     // wrong: should be METADATA
+        {SnapshotChunkType::NODES,    hdr_size + 100, 200},
+        {SnapshotChunkType::SESSIONS, hdr_size + 300, 50},
     };
     std::vector<char> buf(hdr_size + 350, '\0');
-    packV8Header(frames, buf.data());
-    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+    packChunkedSnapshotHeader(frames, buf.data());
+    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
 }
 
-TEST(KeeperV8Header, RejectsWrongLastChunkType)
+TEST(KeeperChunkedSnapshotHeader, RejectsWrongLastChunkType)
 {
     // Last chunk must be SESSIONS, not NODES.
-    const size_t hdr_size = v8HeaderSize(3);
-    std::vector<V8FrameDescriptor> frames = {
-        {V8ChunkType::METADATA, hdr_size, 100},
-        {V8ChunkType::NODES,    hdr_size + 100, 200},
-        {V8ChunkType::NODES,    hdr_size + 300, 50}, // wrong: should be SESSIONS
+    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::METADATA, hdr_size, 100},
+        {SnapshotChunkType::NODES,    hdr_size + 100, 200},
+        {SnapshotChunkType::NODES,    hdr_size + 300, 50}, // wrong: should be SESSIONS
     };
     std::vector<char> buf(hdr_size + 350, '\0');
-    packV8Header(frames, buf.data());
-    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+    packChunkedSnapshotHeader(frames, buf.data());
+    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
 }
 
-TEST(KeeperV8Header, RejectsNonMonotonicOffsets)
+TEST(KeeperChunkedSnapshotHeader, RejectsNonMonotonicOffsets)
 {
     // First frame at a higher offset than the second — non-monotonic.
-    const size_t hdr_size = v8HeaderSize(3);
-    std::vector<V8FrameDescriptor> frames = {
-        {V8ChunkType::METADATA, hdr_size + 300, 10},
-        {V8ChunkType::NODES,    hdr_size + 100, 200}, // starts before frame 0 ends
-        {V8ChunkType::SESSIONS, hdr_size + 300, 50},
+    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::METADATA, hdr_size + 300, 10},
+        {SnapshotChunkType::NODES,    hdr_size + 100, 200}, // starts before frame 0 ends
+        {SnapshotChunkType::SESSIONS, hdr_size + 300, 50},
     };
     std::vector<char> buf(hdr_size + 400, '\0');
-    packV8Header(frames, buf.data());
-    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+    packChunkedSnapshotHeader(frames, buf.data());
+    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
 }
 
-TEST(KeeperV8Header, ChunkCountExceedsBufferCapacity)
+TEST(KeeperChunkedSnapshotHeader, ChunkCountExceedsBufferCapacity)
 {
-    // chunk_count so large that v8HeaderSize(chunk_count) > buf_size.
+    // chunk_count so large that chunkedSnapshotHeaderSize(chunk_count) > buf_size.
     std::vector<char> buf(16, '\0');
-    memcpy(buf.data(), KEEPER_V8_MAGIC.data(), 4);
-    buf[4] = KEEPER_V8_VERSION;
-    uint64_t big = 100; // v8HeaderSize(100) = 1713, but buf is only 16 bytes
+    memcpy(buf.data(), KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4);
+    buf[4] = KEEPER_CHUNKED_SNAPSHOT_VERSION;
+    uint64_t big = 100; // chunkedSnapshotHeaderSize(100) = 1713, but buf is only 16 bytes
     memcpy(buf.data() + 5, &big, 8);
-    EXPECT_THROW(parseAndValidateV8Header(buf.data(), buf.size()), DB::Exception);
+    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
 }
 
-/// Verify that the V8 write path produces a structurally valid snapshot buffer.
-/// Serializes a small in-memory storage to V8 format via serializeSnapshotToBuffer
+/// Verify that the chunked snapshot write path produces a structurally valid snapshot buffer.
+/// Serializes a small in-memory storage to chunked format via serializeSnapshotToBuffer
 /// (`MAX_SUPPORTED_SNAPSHOT_VERSION` is V8; `SnapshotVersion::V8` is passed directly for clarity).
-TEST(KeeperSnapshotV8Write, InspectBytes)
+TEST(KeeperChunkedSnapshotWrite, InspectBytes)
 {
-    ChangelogDirTest snap_dir("./v8write_test_snap");
+    ChangelogDirTest snap_dir("./chunked_write_test_snap");
 
     // Set up a minimal KeeperContext with default settings.
     auto settings = std::make_shared<DB::CoordinationSettings>();
@@ -2275,7 +2275,7 @@ TEST(KeeperSnapshotV8Write, InspectBytes)
     addNode(storage, "/gamma",   "data");
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 10;
 
-    // Build a V8 snapshot (explicit version bypass — gate not opened until C3).
+    // Build a chunked snapshot (explicit version bypass — gate not opened until C3).
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(
         &storage, /*up_to_log_idx=*/10, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
 
@@ -2288,17 +2288,17 @@ TEST(KeeperSnapshotV8Write, InspectBytes)
     const char * data = reinterpret_cast<const char *>(buf->data_begin());
     const size_t data_size = buf->size();
 
-    // Parse and validate the V8 header; throws on any structural violation.
-    auto frames = parseAndValidateV8Header(data, data_size);
+    // Parse and validate the chunked snapshot header; throws on any structural violation.
+    auto frames = parseAndValidateChunkedSnapshotHeader(data, data_size);
 
     // Must have METADATA + at least 1 NODES + SESSIONS.
-    ASSERT_GE(frames.size(), DB::KEEPER_V8_MIN_CHUNK_COUNT);
+    ASSERT_GE(frames.size(), DB::KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT);
 
-    // Frame ordering: METADATA first, SESSIONS last, all middle frames are NODES.
-    EXPECT_EQ(frames.front().type, V8ChunkType::METADATA);
-    EXPECT_EQ(frames.back().type,  V8ChunkType::SESSIONS);
+    // Chunk ordering: METADATA first, SESSIONS last, all middle chunks are NODES.
+    EXPECT_EQ(frames.front().type, SnapshotChunkType::METADATA);
+    EXPECT_EQ(frames.back().type,  SnapshotChunkType::SESSIONS);
     for (size_t i = 1; i + 1 < frames.size(); ++i)
-        EXPECT_EQ(frames[i].type, V8ChunkType::NODES) << "Frame " << i << " should be NODES";
+        EXPECT_EQ(frames[i].type, SnapshotChunkType::NODES) << "Chunk " << i << " should be NODES";
 
     // Every frame must begin with the ZSTD magic bytes (0x28 0xB5 0x2F 0xFD).
     static constexpr unsigned char kZstdMagic[4] = {0x28, 0xB5, 0x2F, 0xFD};
@@ -2328,13 +2328,13 @@ TEST(KeeperSnapshotV8Write, InspectBytes)
     }
 }
 
-/// Verify the V8 disk write path (serializeSnapshotToDisk):
-///  - frame structure/ordering on raw file bytes
-///  - ZSTD magic at each frame offset
+/// Verify the chunked snapshot disk write path (serializeSnapshotToDisk):
+///  - chunk structure/ordering on raw file bytes
+///  - ZSTD magic at each chunk offset
 ///  - KeeperSnapshotWrittenBytes equals actual file size (U3 fix: captured before seek-back)
-TEST(KeeperSnapshotV8Write, DiskInspectBytes)
+TEST(KeeperChunkedSnapshotWrite, DiskInspectBytes)
 {
-    ChangelogDirTest snap_dir("./v8disk_test_snap");
+    ChangelogDirTest snap_dir("./chunked_disk_test_snap");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -2366,7 +2366,7 @@ TEST(KeeperSnapshotV8Write, DiskInspectBytes)
     // Read the snapshot file as raw bytes.
     const std::string abs_path = snap_dir.path + "/" + file_info->path;
     std::ifstream raw_file(abs_path, std::ios::binary | std::ios::ate);
-    ASSERT_TRUE(raw_file.is_open()) << "Cannot open V8 disk snapshot: " << abs_path;
+    ASSERT_TRUE(raw_file.is_open()) << "Cannot open chunked snapshot on disk: " << abs_path;
     const size_t file_size = static_cast<size_t>(raw_file.tellg());
     raw_file.seekg(0, std::ios::beg);
     std::string raw(file_size, '\0');
@@ -2379,45 +2379,45 @@ TEST(KeeperSnapshotV8Write, DiskInspectBytes)
 
     ASSERT_GT(file_size, 0u);
 
-    // Parse and validate the V8 header.
-    auto frames = parseAndValidateV8Header(raw.data(), file_size);
+    // Parse and validate the chunked snapshot header.
+    auto frames = parseAndValidateChunkedSnapshotHeader(raw.data(), file_size);
 
-    ASSERT_GE(frames.size(), DB::KEEPER_V8_MIN_CHUNK_COUNT);
-    EXPECT_EQ(frames.front().type, V8ChunkType::METADATA);
-    EXPECT_EQ(frames.back().type,  V8ChunkType::SESSIONS);
+    ASSERT_GE(frames.size(), DB::KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT);
+    EXPECT_EQ(frames.front().type, SnapshotChunkType::METADATA);
+    EXPECT_EQ(frames.back().type,  SnapshotChunkType::SESSIONS);
     for (size_t i = 1; i + 1 < frames.size(); ++i)
-        EXPECT_EQ(frames[i].type, V8ChunkType::NODES) << "Frame " << i << " should be NODES";
+        EXPECT_EQ(frames[i].type, SnapshotChunkType::NODES) << "Chunk " << i << " should be NODES";
 
     static constexpr unsigned char kZstdMagic[4] = {0x28, 0xB5, 0x2F, 0xFD};
     for (size_t i = 0; i < frames.size(); ++i)
     {
-        ASSERT_GE(file_size, frames[i].compressed_offset + 4u) << "Frame " << i << " too short";
+        ASSERT_GE(file_size, frames[i].compressed_offset + 4u) << "Chunk " << i << " too short";
         EXPECT_EQ(memcmp(raw.data() + frames[i].compressed_offset, kZstdMagic, 4), 0)
-            << "Frame " << i << " does not start with ZSTD magic";
+            << "Chunk " << i << " does not start with ZSTD magic";
     }
 }
 
-TEST(KeeperV8Header, v8HeaderSizeComputation)
+TEST(KeeperChunkedSnapshotHeader, HeaderSizeComputation)
 {
     // Verify the constexpr formula: 13 + 17 * chunk_count.
-    EXPECT_EQ(v8HeaderSize(0),   13u);
-    EXPECT_EQ(v8HeaderSize(1),   30u);
-    EXPECT_EQ(v8HeaderSize(3),   64u);
-    EXPECT_EQ(v8HeaderSize(100), 1713u);
+    EXPECT_EQ(chunkedSnapshotHeaderSize(0),   13u);
+    EXPECT_EQ(chunkedSnapshotHeaderSize(1),   30u);
+    EXPECT_EQ(chunkedSnapshotHeaderSize(3),   64u);
+    EXPECT_EQ(chunkedSnapshotHeaderSize(100), 1713u);
 }
 
-// ─── V8 read-path tests (C3: sequential V8 deserialization + validating load API) ─────────────────
+// ─── Chunked snapshot read-path tests (C3: sequential deserialization + validating load API) ────────
 
-/// Serialize a small V8 snapshot and deserialize it back via `deserializeSnapshotFromBuffer`.
+/// Serialize a small chunked snapshot and deserialize it back via `deserializeSnapshotFromBuffer`.
 /// Verifies:
-///  - 3-way detection routes V8 snapshots to `deserializeV8FromBuffer` (not the legacy paths)
+///  - 3-way detection routes chunked snapshots to `deserializeChunkedSnapshotFromBuffer` (not the legacy paths)
 ///  - Nodes (data, acl_id, ephemerals) are faithfully restored
 ///  - Session and auth state is restored
 ///  - ACL map is restored
 ///  - ACL usage counts are correct
-TEST(KeeperSnapshotV8Read, RoundTripBasic)
+TEST(KeeperChunkedSnapshotRead, RoundTripBasic)
 {
-    ChangelogDirTest snap_dir("./v8read_roundtrip");
+    ChangelogDirTest snap_dir("./chunked_read_roundtrip");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -2448,7 +2448,7 @@ TEST(KeeperSnapshotV8Read, RoundTripBasic)
     storage.addSessionID(42, 30000);
     storage.committed_session_and_auth[42] = {{"digest", "user:pass"}};
 
-    // Serialize as V8.
+    // Serialize as chunked format.
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
         &storage, /*up_to_log_idx=*/7, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
     DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
@@ -2457,9 +2457,9 @@ TEST(KeeperSnapshotV8Read, RoundTripBasic)
 
     // Verify 3-way detection: buffer starts with "CKFS" magic.
     ASSERT_GE(buf->size(), 4u);
-    EXPECT_EQ(memcmp(buf->data_begin(), "CKFS", 4), 0) << "V8 snapshot must start with CKFS magic";
+    EXPECT_EQ(memcmp(buf->data_begin(), "CKFS", 4), 0) << "Chunked snapshot must start with CKFS magic";
 
-    // Deserialize via the public API — must route to deserializeV8FromBuffer.
+    // Deserialize via the public API — must route to deserializeChunkedSnapshotFromBuffer.
     auto result = mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true);
     ASSERT_NE(result.storage, nullptr);
     ASSERT_NE(result.snapshot_meta, nullptr);
@@ -2505,10 +2505,10 @@ TEST(KeeperSnapshotV8Read, RoundTripBasic)
 }
 
 /// Verify that `deserializeSnapshotMetadataFromBuffer` correctly extracts the log index
-/// from a V8 snapshot without loading the full storage.
-TEST(KeeperSnapshotV8Read, MetadataOnlyExtraction)
+/// from a chunked snapshot without loading the full storage.
+TEST(KeeperChunkedSnapshotRead, MetadataOnlyExtraction)
 {
-    ChangelogDirTest snap_dir("./v8read_meta");
+    ChangelogDirTest snap_dir("./chunked_read_meta");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -2533,9 +2533,9 @@ TEST(KeeperSnapshotV8Read, MetadataOnlyExtraction)
 }
 
 /// Verify paths-only mode: `load_full_storage=false` collects paths without building the storage.
-TEST(KeeperSnapshotV8Read, PathsOnlyMode)
+TEST(KeeperChunkedSnapshotRead, PathsOnlyMode)
 {
-    ChangelogDirTest snap_dir("./v8read_paths");
+    ChangelogDirTest snap_dir("./chunked_read_paths");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -2565,11 +2565,11 @@ TEST(KeeperSnapshotV8Read, PathsOnlyMode)
     EXPECT_NE(std::find(paths.begin(), paths.end(), "/y"), paths.end())  << "/y missing";
 }
 
-/// Verify that a legacy ZSTD (V7) snapshot still deserializes correctly after the V8 gate is opened
-/// and `MAX_SUPPORTED_SNAPSHOT_VERSION` is now V8.
-TEST(KeeperSnapshotV8Read, LegacyV7SnapshotStillLoads)
+/// Verify that a legacy ZSTD (V7) snapshot still deserializes correctly after the chunked snapshot
+/// gate is opened and `MAX_SUPPORTED_SNAPSHOT_VERSION` is now V8.
+TEST(KeeperChunkedSnapshotRead, LegacyV7SnapshotStillLoads)
 {
-    ChangelogDirTest snap_dir("./v8read_legacy");
+    ChangelogDirTest snap_dir("./chunked_read_legacy");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -2598,14 +2598,14 @@ TEST(KeeperSnapshotV8Read, LegacyV7SnapshotStillLoads)
     ASSERT_NE(result.storage->container.find("/legacy"), result.storage->container.end());
 }
 
-// ─── V8 validation / corruption tests (C3 gate-opening correctness surface) ──────────────────────
+// ─── Chunked snapshot validation / corruption tests (C3 gate-opening correctness surface) ─────────
 
-/// V8 round-trip produces semantically identical storage to V7 (same format for individual
-/// nodes; only the framing differs). Verifies that the C3 sequential reader is not simply
+/// Chunked snapshot round-trip produces semantically identical storage to V7 (same format for individual
+/// nodes; only the chunked framing differs). Verifies that the C3 sequential reader is not simply
 /// consistent with the C2 writer by accident — both formats yield identical results.
-TEST(KeeperSnapshotV8Validation, V8EqualsV7)
+TEST(KeeperChunkedSnapshotValidation, ChunkedEqualsV7)
 {
-    ChangelogDirTest snap_dir("./v8val_eq_v7");
+    ChangelogDirTest snap_dir("./chunked_val_eq_v7");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -2653,7 +2653,7 @@ TEST(KeeperSnapshotV8Validation, V8EqualsV7)
 
     // Both must have the same node count.
     EXPECT_EQ(res7.storage->container.size(), res8.storage->container.size())
-        << "V7 and V8 round-trips must produce the same number of nodes";
+        << "V7 and chunked round-trips must produce the same number of nodes";
 
     // Spot-check key nodes.
     for (const char * path : {"/", "/a", "/b", "/a/c", "/eph"})
@@ -2661,7 +2661,7 @@ TEST(KeeperSnapshotV8Validation, V8EqualsV7)
         auto it7 = res7.storage->container.find(path);
         auto it8 = res8.storage->container.find(path);
         ASSERT_NE(it7, res7.storage->container.end()) << "V7 missing " << path;
-        ASSERT_NE(it8, res8.storage->container.end()) << "V8 missing " << path;
+        ASSERT_NE(it8, res8.storage->container.end()) << "Chunked missing " << path;
         EXPECT_EQ(it7->value.getData(), it8->value.getData())
             << "Data mismatch for " << path;
         EXPECT_EQ(it7->value.acl_id, it8->value.acl_id)
@@ -2681,19 +2681,19 @@ TEST(KeeperSnapshotV8Validation, V8EqualsV7)
     // Session counter.
     EXPECT_EQ(res7.storage->session_id_counter, res8.storage->session_id_counter);
 
-    // Both V7 and V8 preserve the same embedded nodes_digest.
+    // Both V7 and chunked format preserve the same embedded nodes_digest.
     // (The source storage has nodes_digest=0 since addNode bypasses commits; the serializer
     //  embeds that value and both loaders read it back consistently.)
     EXPECT_EQ(res7.storage->nodes_digest, res8.storage->nodes_digest)
-        << "V7 and V8 round-trips must preserve the same nodes_digest";
+        << "V7 and chunked round-trips must preserve the same nodes_digest";
 }
 
-/// After the F1 fix, deserializeSnapshotMetadataFromBuffer on a V8 snapshot must decompress
-/// ONLY the METADATA frame. Verify: (a) it returns correct metadata even when NODES frames
+/// After the F1 fix, deserializeSnapshotMetadataFromBuffer on a chunked snapshot must decompress
+/// ONLY the METADATA chunk. Verify: (a) it returns correct metadata even when NODES chunks
 /// are deliberately corrupt; (b) the full deserializer correctly detects the same corruption.
-TEST(KeeperSnapshotV8Validation, MetadataOnlyFastPath)
+TEST(KeeperChunkedSnapshotValidation, MetadataOnlyFastPath)
 {
-    ChangelogDirTest snap_dir("./v8val_metafast");
+    ChangelogDirTest snap_dir("./chunked_val_metafast");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -2712,46 +2712,46 @@ TEST(KeeperSnapshotV8Validation, MetadataOnlyFastPath)
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
-    // Locate the first NODES frame and corrupt its middle bytes.
+    // Locate the first NODES chunk and corrupt its middle bytes.
     const char * raw_const = reinterpret_cast<const char *>(buf->data_begin());
     const size_t buf_size = buf->size();
-    auto frames = parseAndValidateV8Header(raw_const, buf_size);
-    ASSERT_GE(frames.size(), DB::KEEPER_V8_MIN_CHUNK_COUNT);
+    auto frames = parseAndValidateChunkedSnapshotHeader(raw_const, buf_size);
+    ASSERT_GE(frames.size(), DB::KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT);
 
-    // Find the first NODES frame.
-    const V8FrameDescriptor * nodes_fd = nullptr;
+    // Find the first NODES chunk.
+    const SnapshotChunkDescriptor * nodes_fd = nullptr;
     for (const auto & f : frames)
     {
-        if (f.type == V8ChunkType::NODES)
+        if (f.type == SnapshotChunkType::NODES)
         {
             nodes_fd = &f;
             break;
         }
     }
-    ASSERT_NE(nodes_fd, nullptr) << "No NODES frame found";
+    ASSERT_NE(nodes_fd, nullptr) << "No NODES chunk found";
 
-    // Corrupt the middle of the NODES frame (ZSTD checksum will catch this).
+    // Corrupt the middle of the NODES chunk (ZSTD checksum will catch this).
     auto * raw_mut = reinterpret_cast<char *>(buf->data_begin());
     const size_t corrupt_pos = nodes_fd->compressed_offset + nodes_fd->compressed_size / 2;
     raw_mut[corrupt_pos] ^= static_cast<char>(0xFF);
 
-    // Metadata-only path MUST succeed — it never touches the corrupt NODES frame.
+    // Metadata-only path MUST succeed — it never touches the corrupt NODES chunk.
     auto meta = mgr.deserializeSnapshotMetadataFromBuffer(buf);
     ASSERT_NE(meta, nullptr);
     EXPECT_EQ(meta->get_last_log_idx(), 99u)
-        << "Metadata-only path must return correct log index despite corrupt NODES frame";
+        << "Metadata-only path must return correct log index despite corrupt NODES chunk";
 
     // Full deserializer MUST detect the corruption.
     EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true), DB::Exception)
-        << "Full deserializer must throw on NODES frame corruption";
+        << "Full deserializer must throw on NODES chunk corruption";
 }
 
-/// Corrupt the V8 header version byte (position 4 in the buffer) to a value != 8.
+/// Corrupt the chunked snapshot header version byte (position 4 in the buffer) to a value != 8.
 /// deserializeSnapshotFromBuffer must throw (UNKNOWN_FORMAT_VERSION from
-/// parseAndValidateV8Header) before touching any frame data.
-TEST(KeeperSnapshotV8Validation, WrongHeaderVersionRejected)
+/// parseAndValidateChunkedSnapshotHeader) before touching any chunk data.
+TEST(KeeperChunkedSnapshotValidation, WrongHeaderVersionRejected)
 {
-    ChangelogDirTest snap_dir("./v8val_hdrver");
+    ChangelogDirTest snap_dir("./chunked_val_hdrver");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -2770,7 +2770,7 @@ TEST(KeeperSnapshotV8Validation, WrongHeaderVersionRejected)
     ASSERT_NE(buf, nullptr);
     ASSERT_GE(buf->size(), 5u);
 
-    // Position 4 is the version byte in the V8 header (after 4 magic bytes).
+    // Position 4 is the version byte in the chunked snapshot header (after 4 magic bytes).
     // Change it from 8 to 9 to simulate an unknown future version.
     auto * raw_mut = reinterpret_cast<char *>(buf->data_begin());
     ASSERT_EQ(static_cast<uint8_t>(raw_mut[4]), 8u) << "Expected version byte 8 at position 4";
@@ -2778,16 +2778,16 @@ TEST(KeeperSnapshotV8Validation, WrongHeaderVersionRejected)
 
     // Both public entry points must reject this.
     EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(buf, true), DB::Exception)
-        << "deserializeSnapshotFromBuffer must throw on unknown V8 header version";
+        << "deserializeSnapshotFromBuffer must throw on unknown chunked snapshot header version";
     EXPECT_THROW(mgr.deserializeSnapshotMetadataFromBuffer(buf), DB::Exception)
-        << "deserializeSnapshotMetadataFromBuffer must throw on unknown V8 header version";
+        << "deserializeSnapshotMetadataFromBuffer must throw on unknown chunked snapshot header version";
 }
 
-/// Corrupt the middle of a NODES frame compressed data. The ZSTD checksum embedded by
-/// serializeV8 must detect the corruption during decompression and throw CORRUPTED_DATA.
-TEST(KeeperSnapshotV8Validation, CorruptNodeFrameRejected)
+/// Corrupt the middle of a NODES chunk compressed data. The ZSTD checksum embedded by
+/// serializeChunkedSnapshot must detect the corruption during decompression and throw CORRUPTED_DATA.
+TEST(KeeperChunkedSnapshotValidation, CorruptNodeFrameRejected)
 {
-    ChangelogDirTest snap_dir("./v8val_corrupt");
+    ChangelogDirTest snap_dir("./chunked_val_corrupt");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -2809,13 +2809,13 @@ TEST(KeeperSnapshotV8Validation, CorruptNodeFrameRejected)
 
     const char * raw_const = reinterpret_cast<const char *>(buf->data_begin());
     const size_t buf_size = buf->size();
-    auto frames = parseAndValidateV8Header(raw_const, buf_size);
+    auto frames = parseAndValidateChunkedSnapshotHeader(raw_const, buf_size);
 
-    // Find the first NODES frame.
-    const V8FrameDescriptor * nodes_fd = nullptr;
+    // Find the first NODES chunk.
+    const SnapshotChunkDescriptor * nodes_fd = nullptr;
     for (const auto & f : frames)
     {
-        if (f.type == V8ChunkType::NODES)
+        if (f.type == SnapshotChunkType::NODES)
         {
             nodes_fd = &f;
             break;
@@ -2823,22 +2823,22 @@ TEST(KeeperSnapshotV8Validation, CorruptNodeFrameRejected)
     }
     ASSERT_NE(nodes_fd, nullptr);
 
-    // Flip 8 bits in the middle of the compressed NODES frame payload
+    // Flip 8 bits in the middle of the compressed NODES chunk payload
     // (well past the ZSTD frame header, so it hits payload bytes).
     auto * raw_mut = reinterpret_cast<char *>(buf->data_begin());
     const size_t corrupt_offset = nodes_fd->compressed_offset + nodes_fd->compressed_size / 2;
     raw_mut[corrupt_offset] ^= static_cast<char>(0xFF);
 
     EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true), DB::Exception)
-        << "Corrupt NODES frame must throw during full deserialization";
+        << "Corrupt NODES chunk must throw during full deserialization";
 }
 
-/// V8 path-only mode (load_full_storage=false) must not attempt to finalize storage.
+/// Chunked snapshot path-only mode (load_full_storage=false) must not attempt to finalize storage.
 /// After the F1 metadata-fast-path fix, the paths-only call should also be cheap.
 /// This test verifies paths collected in analyzer mode don't accidentally load nodes.
-TEST(KeeperSnapshotV8Validation, PathsOnlyDoesNotFinalize)
+TEST(KeeperChunkedSnapshotValidation, PathsOnlyDoesNotFinalize)
 {
-    ChangelogDirTest snap_dir("./v8val_pathsonly");
+    ChangelogDirTest snap_dir("./chunked_val_pathsonly");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -2872,17 +2872,17 @@ TEST(KeeperSnapshotV8Validation, PathsOnlyDoesNotFinalize)
     EXPECT_NE(std::find(paths.begin(), paths.end(), "/dir/child2"), paths.end()) << "/dir/child2 missing";
 }
 
-// ── V8 reader-level rejection tests ─────────────────────────────────────────
+// ── Chunked snapshot reader-level rejection tests ────────────────────────────
 //
-// These helpers let tests construct semantically invalid V8 NODES frames and
-// splice them into otherwise-valid V8 buffers (valid METADATA + SESSIONS from
+// These helpers let tests construct semantically invalid chunked NODES chunks and
+// splice them into otherwise-valid chunked buffers (valid METADATA + SESSIONS from
 // the real serialiser, replaced NODES).  Each test verifies that the reader
 // rejects the tampered buffer with CORRUPTED_DATA.
 
-/// One synthetic ZooKeeper node entry in the V7/V8 on-disk encoding.
+/// One synthetic ZooKeeper node entry in the V7/chunked on-disk encoding.
 /// num_children is int32_t so callers can pass -1 to exercise the parse-time
-/// rejection in readNodeV8.
-struct FakeNodeEntryV8
+/// rejection in readChunkedSnapshotNode.
+struct FakeNodeEntry
 {
     std::string path      = {};
     std::string data      = {};
@@ -2900,10 +2900,10 @@ struct FakeNodeEntryV8
     int64_t  seq_num      = 0;
 };
 
-/// Build uncompressed bytes for a V8 NODES frame.
+/// Build uncompressed bytes for a chunked NODES chunk.
 /// Layout: uint64_t node_count | node_count × [path_binary | V7-node-fields]
-/// Field order matches writeNode(V7) + readNodeV8 exactly.
-static std::string buildNodesFrameBytesV8(const std::vector<FakeNodeEntryV8> & entries)
+/// Field order matches writeNode(V7) + readChunkedSnapshotNode exactly.
+static std::string buildNodesChunkBytes(const std::vector<FakeNodeEntry> & entries)
 {
     WriteBufferFromOwnString w;
 
@@ -2914,7 +2914,7 @@ static std::string buildNodesFrameBytesV8(const std::vector<FakeNodeEntryV8> & e
     {
         writeBinary(e.path, w);                     // VarUInt(len) + bytes
 
-        // V7/V8 node encoding (matches writeNode(V7) and readNodeV8):
+        // V7/chunked node encoding (matches writeNode(V7) and readChunkedSnapshotNode):
         writeVarUInt(e.data.size(), w);             // VarUInt data_size
         if (!e.data.empty())
             w.write(e.data.data(), e.data.size());
@@ -2936,40 +2936,40 @@ static std::string buildNodesFrameBytesV8(const std::vector<FakeNodeEntryV8> & e
     return w.str();
 }
 
-/// Decompress and return the uncompressed content of frames[frame_idx] in a V8 buffer.
-static std::string decompressV8Frame(nuraft::ptr<nuraft::buffer> buf, size_t frame_idx)
+/// Decompress and return the uncompressed content of chunks[chunk_idx] in a chunked snapshot buffer.
+static std::string decompressSnapshotChunk(nuraft::ptr<nuraft::buffer> buf, size_t chunk_idx)
 {
     const char * raw = reinterpret_cast<const char *>(buf->data_begin());
-    auto frames = parseAndValidateV8Header(raw, buf->size());
-    if (frame_idx >= frames.size())
-        throw std::runtime_error("decompressV8Frame: frame_idx out of range");
-    const V8FrameDescriptor & fd = frames[frame_idx];
+    auto frames = parseAndValidateChunkedSnapshotHeader(raw, buf->size());
+    if (chunk_idx >= frames.size())
+        throw std::runtime_error("decompressSnapshotChunk: chunk_idx out of range");
+    const SnapshotChunkDescriptor & fd = frames[chunk_idx];
     const char * src = raw + fd.compressed_offset;
     const size_t src_size = static_cast<size_t>(fd.compressed_size);
     const unsigned long long dsize = ZSTD_getFrameContentSize(src, src_size);
     if (dsize == ZSTD_CONTENTSIZE_ERROR || dsize == ZSTD_CONTENTSIZE_UNKNOWN)
-        throw std::runtime_error("decompressV8Frame: cannot determine content size");
+        throw std::runtime_error("decompressSnapshotChunk: cannot determine content size");
     std::string out(static_cast<size_t>(dsize), '\0');
     const size_t actual = ZSTD_decompress(out.data(), dsize, src, src_size);
     if (ZSTD_isError(actual))
         throw std::runtime_error(
-            std::string("decompressV8Frame: decompress failed: ") + ZSTD_getErrorName(actual));
+            std::string("decompressSnapshotChunk: decompress failed: ") + ZSTD_getErrorName(actual));
     return out;
 }
 
-/// Replace the first frame of target_type in a V8 snapshot buffer with new uncompressed
-/// content.  All other frames are kept verbatim.  Returns a freshly-allocated nuraft::buffer.
-static nuraft::ptr<nuraft::buffer> replaceFirstFrameOfType(
+/// Replace the first chunk of target_type in a chunked snapshot buffer with new uncompressed
+/// content.  All other chunks are kept verbatim.  Returns a freshly-allocated nuraft::buffer.
+static nuraft::ptr<nuraft::buffer> replaceFirstChunkOfType(
     nuraft::ptr<nuraft::buffer> orig_buf,
-    V8ChunkType target_type,
+    SnapshotChunkType target_type,
     const std::string & new_frame_bytes)
 {
     const char * raw = reinterpret_cast<const char *>(orig_buf->data_begin());
     const size_t raw_size = orig_buf->size();
 
-    auto frames = parseAndValidateV8Header(raw, raw_size);
+    auto frames = parseAndValidateChunkedSnapshotHeader(raw, raw_size);
 
-    // Find the first frame of the requested type.
+    // Find the first chunk of the requested type.
     size_t target_idx = frames.size();
     for (size_t i = 0; i < frames.size(); ++i)
     {
@@ -2980,11 +2980,11 @@ static nuraft::ptr<nuraft::buffer> replaceFirstFrameOfType(
         }
     }
     if (target_idx == frames.size())
-        throw std::runtime_error("replaceFirstFrameOfType: target frame type not found");
+        throw std::runtime_error("replaceFirstChunkOfType: target chunk type not found");
 
     // Compress the replacement using the same ZSTD parameters as the writer.
     ZSTD_CCtx * cctx = ZSTD_createCCtx();
-    if (!cctx) throw std::runtime_error("replaceFirstFrameOfType: ZSTD_createCCtx failed");
+    if (!cctx) throw std::runtime_error("replaceFirstChunkOfType: ZSTD_createCCtx failed");
     SCOPE_EXIT({ ZSTD_freeCCtx(cctx); });
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, 3);
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
@@ -2997,18 +2997,18 @@ static nuraft::ptr<nuraft::buffer> replaceFirstFrameOfType(
         new_frame_bytes.data(), new_frame_bytes.size());
     if (ZSTD_isError(new_cs))
         throw std::runtime_error(
-            std::string("replaceFirstFrameOfType: ZSTD compress failed: ")
+            std::string("replaceFirstChunkOfType: ZSTD compress failed: ")
             + ZSTD_getErrorName(new_cs));
 
     // Compute new frame descriptors with updated offsets.
-    const size_t header_sz = v8HeaderSize(static_cast<uint64_t>(frames.size()));
-    std::vector<V8FrameDescriptor> new_descs;
+    const size_t header_sz = chunkedSnapshotHeaderSize(static_cast<uint64_t>(frames.size()));
+    std::vector<SnapshotChunkDescriptor> new_descs;
     new_descs.reserve(frames.size());
     size_t total_sz = header_sz;
     for (size_t i = 0; i < frames.size(); ++i)
     {
         const size_t payload_sz = (i == target_idx) ? new_cs : frames[i].compressed_size;
-        new_descs.push_back(V8FrameDescriptor{
+        new_descs.push_back(SnapshotChunkDescriptor{
             frames[i].type,
             static_cast<uint64_t>(total_sz),
             static_cast<uint64_t>(payload_sz)});
@@ -3019,7 +3019,7 @@ static nuraft::ptr<nuraft::buffer> replaceFirstFrameOfType(
     auto new_buf = nuraft::buffer::alloc(total_sz);
     char * dst = reinterpret_cast<char *>(new_buf->data_begin());
 
-    packV8Header(std::span<const V8FrameDescriptor>(new_descs), dst);
+    packChunkedSnapshotHeader(std::span<const SnapshotChunkDescriptor>(new_descs), dst);
 
     size_t pos = header_sz;
     for (size_t i = 0; i < frames.size(); ++i)
@@ -3038,21 +3038,21 @@ static nuraft::ptr<nuraft::buffer> replaceFirstFrameOfType(
     return new_buf;
 }
 
-/// Convenience wrapper — replace the first NODES frame (most common test operation).
-static nuraft::ptr<nuraft::buffer> replaceFirstNodesFrame(
+/// Convenience wrapper — replace the first NODES chunk (most common test operation).
+static nuraft::ptr<nuraft::buffer> replaceFirstNodesChunk(
     nuraft::ptr<nuraft::buffer> orig_buf,
     const std::string & new_nodes_bytes)
 {
-    return replaceFirstFrameOfType(orig_buf, V8ChunkType::NODES, new_nodes_bytes);
+    return replaceFirstChunkOfType(orig_buf, SnapshotChunkType::NODES, new_nodes_bytes);
 }
 
 // ── Rejection tests ──────────────────────────────────────────────────────────
 
-/// (4b) NODES frame with node_count == 0 → no root → CORRUPTED_DATA at step 2
-/// of finalizeMemorySnapshotLoad ("V8 snapshot has no root '/' node").
-TEST(KeeperSnapshotV8Validation, EmptyNodesFrameNoRoot)
+/// (4b) NODES chunk with node_count == 0 → no root → CORRUPTED_DATA at step 2
+/// of finalizeMemorySnapshotLoad ("Chunked snapshot has no root '/' node").
+TEST(KeeperChunkedSnapshotValidation, EmptyNodesFrameNoRoot)
 {
-    ChangelogDirTest snap_dir("./v8val_emptyroot");
+    ChangelogDirTest snap_dir("./chunked_val_emptyroot");
 
     auto settings     = std::make_shared<DB::CoordinationSettings>();
     auto keeper_ctx   = std::make_shared<DB::KeeperContext>(true, settings);
@@ -3072,7 +3072,7 @@ TEST(KeeperSnapshotV8Validation, EmptyNodesFrameNoRoot)
 
     // Replace NODES with an empty frame (node_count=0, no nodes at all).
     // finalizeMemorySnapshotLoad step 2 must reject: no '/' root in container.
-    auto tampered = replaceFirstNodesFrame(buf, buildNodesFrameBytesV8({}));
+    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes({}));
 
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
@@ -3083,9 +3083,9 @@ TEST(KeeperSnapshotV8Validation, EmptyNodesFrameNoRoot)
 /// (7a) NODES frame has '/' and '/a/b' but is missing '/a'.
 /// updateValueForLoad in finalizeMemorySnapshotLoad step 3 throws CORRUPTED_DATA
 /// because the parent '/a' is absent from the container.
-TEST(KeeperSnapshotV8Validation, MissingParentInNodesFrame)
+TEST(KeeperChunkedSnapshotValidation, MissingParentInNodesFrame)
 {
-    ChangelogDirTest snap_dir("./v8val_missingparent");
+    ChangelogDirTest snap_dir("./chunked_val_missingparent");
 
     auto settings   = std::make_shared<DB::CoordinationSettings>();
     auto keeper_ctx = std::make_shared<DB::KeeperContext>(true, settings);
@@ -3106,10 +3106,10 @@ TEST(KeeperSnapshotV8Validation, MissingParentInNodesFrame)
 
     // Replace NODES with '/' + '/a/b', deliberately omitting '/a'.
     // When step 3 processes '/a/b', it looks up parent '/a' → not found → CORRUPTED_DATA.
-    std::vector<FakeNodeEntryV8> nodes;
-    nodes.push_back(FakeNodeEntryV8{.path = "/"});     // root present
-    nodes.push_back(FakeNodeEntryV8{.path = "/a/b"});  // child present but parent '/a' absent
-    auto tampered = replaceFirstNodesFrame(buf, buildNodesFrameBytesV8(nodes));
+    std::vector<FakeNodeEntry> nodes;
+    nodes.push_back(FakeNodeEntry{.path = "/"});     // root present
+    nodes.push_back(FakeNodeEntry{.path = "/a/b"});  // child present but parent '/a' absent
+    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes(nodes));
 
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
@@ -3120,9 +3120,9 @@ TEST(KeeperSnapshotV8Validation, MissingParentInNodesFrame)
 /// (7b-over) A node whose declared numChildren is 0 but that has one actual
 /// child.  The inline check in step 3 of finalizeMemorySnapshotLoad must
 /// reject: children.size() > numChildren().
-TEST(KeeperSnapshotV8Validation, NumChildrenOvercount)
+TEST(KeeperChunkedSnapshotValidation, NumChildrenOvercount)
 {
-    ChangelogDirTest snap_dir("./v8val_overcount");
+    ChangelogDirTest snap_dir("./chunked_val_overcount");
 
     auto settings   = std::make_shared<DB::CoordinationSettings>();
     auto keeper_ctx = std::make_shared<DB::KeeperContext>(true, settings);
@@ -3142,15 +3142,15 @@ TEST(KeeperSnapshotV8Validation, NumChildrenOvercount)
 
     // '/' declares numChildren=0 but '/a' is a real child.
     // Step 3: addChild("a") → children.size()==1 > numChildren()==0 → CORRUPTED_DATA.
-    FakeNodeEntryV8 root;
+    FakeNodeEntry root;
     root.path         = "/";
     root.num_children = 0;   // under-declares: actual child '/a' will exceed this
 
-    FakeNodeEntryV8 child_a;
+    FakeNodeEntry child_a;
     child_a.path         = "/a";
     child_a.num_children = 0;
 
-    auto tampered = replaceFirstNodesFrame(buf, buildNodesFrameBytesV8({root, child_a}));
+    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes({root, child_a}));
 
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
@@ -3161,9 +3161,9 @@ TEST(KeeperSnapshotV8Validation, NumChildrenOvercount)
 /// (7b-under) A node whose declared numChildren is 5 but that has only one
 /// actual child.  The step-4 folded equality check must reject:
 /// out_non_root (1) != out_total_children (5).
-TEST(KeeperSnapshotV8Validation, NumChildrenUndercount)
+TEST(KeeperChunkedSnapshotValidation, NumChildrenUndercount)
 {
-    ChangelogDirTest snap_dir("./v8val_undercount");
+    ChangelogDirTest snap_dir("./chunked_val_undercount");
 
     auto settings   = std::make_shared<DB::CoordinationSettings>();
     auto keeper_ctx = std::make_shared<DB::KeeperContext>(true, settings);
@@ -3183,15 +3183,15 @@ TEST(KeeperSnapshotV8Validation, NumChildrenUndercount)
 
     // '/' over-declares numChildren=5 but only '/a' exists (1 non-root node).
     // Step 3 passes (1 ≤ 5); step 4 rejects: out_non_root(1) != out_total_children(5).
-    FakeNodeEntryV8 root;
+    FakeNodeEntry root;
     root.path         = "/";
     root.num_children = 5;   // over-declares: only one actual child
 
-    FakeNodeEntryV8 child_a;
+    FakeNodeEntry child_a;
     child_a.path         = "/a";
     child_a.num_children = 0;
 
-    auto tampered = replaceFirstNodesFrame(buf, buildNodesFrameBytesV8({root, child_a}));
+    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes({root, child_a}));
 
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
@@ -3200,10 +3200,10 @@ TEST(KeeperSnapshotV8Validation, NumChildrenUndercount)
 }
 
 /// (7c) A node whose raw num_children field is -1.
-/// readNodeV8 must reject before finalizeMemorySnapshotLoad is ever reached.
-TEST(KeeperSnapshotV8Validation, NegativeNumChildrenRejected)
+/// readChunkedSnapshotNode must reject before finalizeMemorySnapshotLoad is ever reached.
+TEST(KeeperChunkedSnapshotValidation, NegativeNumChildrenRejected)
 {
-    ChangelogDirTest snap_dir("./v8val_negchildren");
+    ChangelogDirTest snap_dir("./chunked_val_negchildren");
 
     auto settings   = std::make_shared<DB::CoordinationSettings>();
     auto keeper_ctx = std::make_shared<DB::KeeperContext>(true, settings);
@@ -3222,25 +3222,25 @@ TEST(KeeperSnapshotV8Validation, NegativeNumChildrenRejected)
     ASSERT_NE(buf, nullptr);
 
     // Root node has num_children = -1.
-    // readNodeV8 must throw CORRUPTED_DATA before finalize is reached.
-    FakeNodeEntryV8 root;
+    // readChunkedSnapshotNode must throw CORRUPTED_DATA before finalize is reached.
+    FakeNodeEntry root;
     root.path         = "/";
-    root.num_children = -1;  // invalid — must be rejected by readNodeV8
+    root.num_children = -1;  // invalid — must be rejected by readChunkedSnapshotNode
 
-    auto tampered = replaceFirstNodesFrame(buf, buildNodesFrameBytesV8({root}));
+    auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes({root}));
 
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
         DB::Exception)
-        << "Negative num_children must be rejected by readNodeV8";
+        << "Negative num_children must be rejected by readChunkedSnapshotNode";
 }
 
-/// Append a junk byte after the ACL map in the METADATA frame.  The metadata-only
+/// Append a junk byte after the ACL map in the METADATA chunk.  The metadata-only
 /// fast path (deserializeSnapshotMetadataFromBuffer) must throw CORRUPTED_DATA —
-/// verifying the F1-metadata-only-frame-tail-unvalidated fix.
-TEST(KeeperSnapshotV8Validation, MetadataTailTamperedRejected)
+/// verifying the F1-metadata-only-chunk-tail-unvalidated fix.
+TEST(KeeperChunkedSnapshotValidation, MetadataTailTamperedRejected)
 {
-    ChangelogDirTest snap_dir("./v8val_metatail");
+    ChangelogDirTest snap_dir("./chunked_val_metatail");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -3258,36 +3258,36 @@ TEST(KeeperSnapshotV8Validation, MetadataTailTamperedRejected)
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
-    // Decompress METADATA frame (always frames[0]) and append a junk byte after the ACL map.
-    std::string meta_bytes = decompressV8Frame(buf, 0);
+    // Decompress METADATA chunk (always chunks[0]) and append a junk byte after the ACL map.
+    std::string meta_bytes = decompressSnapshotChunk(buf, 0);
     meta_bytes += '\xFF'; // trailing garbage
 
-    // Replace the METADATA frame with the tampered version.
-    auto tampered = replaceFirstFrameOfType(buf, V8ChunkType::METADATA, meta_bytes);
+    // Replace the METADATA chunk with the tampered version.
+    auto tampered = replaceFirstChunkOfType(buf, SnapshotChunkType::METADATA, meta_bytes);
 
     // The metadata-only fast path must detect the trailing byte (F1 fix).
     EXPECT_THROW(mgr.deserializeSnapshotMetadataFromBuffer(tampered), DB::Exception)
-        << "deserializeSnapshotMetadataFromBuffer must throw on trailing bytes in METADATA frame";
+        << "deserializeSnapshotMetadataFromBuffer must throw on trailing bytes in METADATA chunk";
 
     // The full deserialiser must also detect it.
     EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true), DB::Exception)
-        << "deserializeSnapshotFromBuffer must throw on trailing bytes in METADATA frame";
+        << "deserializeSnapshotFromBuffer must throw on trailing bytes in METADATA chunk";
 }
 
-/// Append a junk byte after the cluster config in the SESSIONS frame.  The full
-/// deserialiser must throw CORRUPTED_DATA — verifying the F2-sessions-frame-no-eof-drain fix.
-/// Verifies the SESSIONS-frame EOF drain (the second `if (!rbuf.eof())` check, after the
+/// Append a junk byte after the cluster config in the SESSIONS chunk.  The full
+/// deserialiser must throw CORRUPTED_DATA — verifying the F2-sessions-chunk-no-eof-drain fix.
+/// Verifies the SESSIONS-chunk EOF drain (the second `if (!rbuf.eof())` check, after the
 /// optional cluster-config section is fully consumed).
 ///
-/// The snapshot is serialized WITH a cluster config so the SESSIONS frame contains:
+/// The snapshot is serialized WITH a cluster config so the SESSIONS chunk contains:
 ///   active_sessions_size (8 bytes)  +  VarUInt(cluster_config_size)  +  cluster_config_bytes
 /// A single trailing garbage byte is then appended AFTER the complete cluster-config bytes,
 /// so readVarUInt and readStrict both succeed and the corruption is only detected by the drain
 /// check.  This ensures the test exercises that specific code path rather than a readVarUInt
 /// EOF error from an incomplete VarUInt sequence.
-TEST(KeeperSnapshotV8Validation, SessionsTrailingBytesRejected)
+TEST(KeeperChunkedSnapshotValidation, SessionsTrailingBytesRejected)
 {
-    ChangelogDirTest snap_dir("./v8val_sesseof");
+    ChangelogDirTest snap_dir("./chunked_val_sesseof");
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
     auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
@@ -3309,62 +3309,63 @@ TEST(KeeperSnapshotV8Validation, SessionsTrailingBytesRejected)
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
-    // Find the SESSIONS frame index.
+    // Find the SESSIONS chunk index.
     const char * raw_const = reinterpret_cast<const char *>(buf->data_begin());
-    auto frames = parseAndValidateV8Header(raw_const, buf->size());
+    auto frames = parseAndValidateChunkedSnapshotHeader(raw_const, buf->size());
     size_t sess_idx = frames.size();
     for (size_t i = 0; i < frames.size(); ++i)
     {
-        if (frames[i].type == V8ChunkType::SESSIONS)
+        if (frames[i].type == SnapshotChunkType::SESSIONS)
         {
             sess_idx = i;
             break;
         }
     }
-    ASSERT_LT(sess_idx, frames.size()) << "No SESSIONS frame found";
+    ASSERT_LT(sess_idx, frames.size()) << "No SESSIONS chunk found";
 
-    // Decompress the SESSIONS frame (already contains the complete cluster-config block)
+    // Decompress the SESSIONS chunk (already contains the complete cluster-config block)
     // and append a single trailing garbage byte AFTER it.
-    std::string sess_bytes = decompressV8Frame(buf, sess_idx);
+    std::string sess_bytes = decompressSnapshotChunk(buf, sess_idx);
     sess_bytes += '\xAB'; // one byte past the last valid byte of the cluster-config block
 
-    // Replace the SESSIONS frame with the tampered version.
-    auto tampered = replaceFirstFrameOfType(buf, V8ChunkType::SESSIONS, sess_bytes);
+    // Replace the SESSIONS chunk with the tampered version.
+    auto tampered = replaceFirstChunkOfType(buf, SnapshotChunkType::SESSIONS, sess_bytes);
 
     // Must throw CORRUPTED_DATA from the drain check (not a generic read error).
     try
     {
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true);
-        FAIL() << "deserializeSnapshotFromBuffer must throw on trailing bytes in SESSIONS frame";
+        FAIL() << "deserializeSnapshotFromBuffer must throw on trailing bytes in SESSIONS chunk";
     }
     catch (const DB::Exception & e)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA)
-            << "Expected CORRUPTED_DATA from SESSIONS-frame drain, got: " << e.message();
+            << "Expected CORRUPTED_DATA from SESSIONS-chunk drain, got: " << e.message();
     }
 }
 
-/// Regression for F1-zstd-frame-completion-not-verified: when a V8 frame's compressed_size
-/// is shrunk to exclude the 4-byte ZSTD content-checksum trailer, deserialization must throw.
+/// Regression for F1-zstd-frame-completion-not-verified: when a chunked snapshot chunk's
+/// compressed_size is shrunk to exclude the 4-byte ZSTD content-checksum trailer, deserialization
+/// must throw.
 ///
 /// Context: the C4 streaming decompression rework (F3) replaced the one-shot ZSTD_decompress
-/// path (which required the full frame including the checksum) with ZstdInflatingReadBuffer.
-/// The old path rejected a truncated frame with ZSTD_error_srcSize_wrong; the new path
+/// path (which required the full ZSTD frame including the checksum) with ZstdInflatingReadBuffer.
+/// The old path rejected a truncated ZSTD frame with ZSTD_error_srcSize_wrong; the new path
 /// silently accepted inner-buffer EOF without checking ZSTD_decompressStream returned 0.
-/// The V8 header only enforces non-overlap between frames (not contiguity), so the 4 dropped
-/// checksum bytes become a legal inter-frame gap — parseAndValidateV8Header passes, the ZSTD
-/// reader decompresses the payload, and the corruption is invisible.
+/// The chunked snapshot header only enforces non-overlap between chunks (not contiguity), so the
+/// 4 dropped checksum bytes become a legal inter-chunk gap — parseAndValidateChunkedSnapshotHeader
+/// passes, the ZSTD reader decompresses the payload, and the corruption is invisible.
 ///
-/// The fix adds require_frame_complete=true to ZstdInflatingReadBuffer for V8 frame reads:
+/// The fix adds require_frame_complete=true to ZstdInflatingReadBuffer for chunked snapshot reads:
 /// when the inner buffer reaches EOF with ZSTD_decompressStream returning non-zero, we throw.
-/// This test verifies that a tampered NODES frame (serial and parallel paths) and a tampered
-/// METADATA frame are both rejected after the fix.
-TEST(KeeperSnapshotV8Validation, F1ZstdFrameTrailerDropped)
+/// This test verifies that a tampered NODES chunk (serial and parallel paths) and a tampered
+/// METADATA chunk are both rejected after the fix.
+TEST(KeeperChunkedSnapshotValidation, F1ZstdFrameTrailerDropped)
 {
-    ChangelogDirTest snap_dir("./v8val_f1_trailer");
+    ChangelogDirTest snap_dir("./chunked_val_f1_trailer");
 
-    // chunk_size=1: each node gets its own NODES frame.
-    // With nodes /, /a, /b that gives K=3 NODES frames → parallel path (K > 1) is reachable.
+    // chunk_size=1: each node gets its own NODES chunk.
+    // With nodes /, /a, /b that gives K=3 NODES chunks → parallel path (K > 1) is reachable.
     auto settings_src = std::make_shared<DB::CoordinationSettings>();
     (*settings_src)[DB::CoordinationSetting::snapshot_chunk_size] = 1;
     auto ctx_src = std::make_shared<DB::KeeperContext>(true, settings_src);
@@ -3388,30 +3389,30 @@ TEST(KeeperSnapshotV8Validation, F1ZstdFrameTrailerDropped)
     }
     ASSERT_NE(good_buf, nullptr);
 
-    // Parse header and verify K ≥ 2 NODES frames (needed for the parallel path test).
-    std::vector<DB::V8FrameDescriptor> frames;
+    // Parse header and verify K ≥ 2 NODES chunks (needed for the parallel path test).
+    std::vector<DB::SnapshotChunkDescriptor> frames;
     {
         const char * raw = reinterpret_cast<const char *>(good_buf->data_begin());
-        frames = DB::parseAndValidateV8Header(raw, good_buf->size());
+        frames = DB::parseAndValidateChunkedSnapshotHeader(raw, good_buf->size());
     }
     size_t nodes_count = 0;
-    size_t first_nodes_frame_idx = 0; // index in `frames[]` of the first NODES frame
+    size_t first_nodes_frame_idx = 0; // index in `frames[]` of the first NODES chunk
     for (size_t i = 0; i < frames.size(); ++i)
     {
-        if (frames[i].type == DB::V8ChunkType::NODES)
+        if (frames[i].type == DB::SnapshotChunkType::NODES)
         {
             if (nodes_count == 0)
                 first_nodes_frame_idx = i;
             ++nodes_count;
         }
     }
-    ASSERT_GE(nodes_count, 2u) << "Need ≥2 NODES frames (chunk=1 with 3 nodes) for parallel path";
+    ASSERT_GE(nodes_count, 2u) << "Need ≥2 NODES chunks (chunk=1 with 3 nodes) for parallel path";
 
-    // Return a copy of good_buf with frame[frame_idx].compressed_size shrunk by 4.
+    // Return a copy of good_buf with chunks[chunk_idx].compressed_size shrunk by 4.
     // The 4 bytes are the ZSTD content-checksum epilogue (ZSTD_c_checksumFlag=1).
-    // They become an inter-frame gap — legal under the non-overlap-only header check —
-    // so parseAndValidateV8Header still passes on the tampered buffer.
-    // V8 header layout: compressed_size of frame i is at byte offset 22 + 17*i.
+    // They become an inter-chunk gap — legal under the non-overlap-only header check —
+    // so parseAndValidateChunkedSnapshotHeader still passes on the tampered buffer.
+    // Chunked snapshot header layout: compressed_size of chunk i is at byte offset 22 + 17*i.
     auto makeTrailerDropped = [&](size_t frame_idx) -> nuraft::ptr<nuraft::buffer>
     {
         nuraft::ptr<nuraft::buffer> bad = nuraft::buffer::alloc(good_buf->size());
@@ -3424,7 +3425,7 @@ TEST(KeeperSnapshotV8Validation, F1ZstdFrameTrailerDropped)
         return bad;
     };
 
-    // ── NODES frame, serial path (deser_threads=1) ──────────────────────────────────────────
+    // ── NODES chunk, serial path (deser_threads=1) ──────────────────────────────────────────
     {
         auto bad = makeTrailerDropped(first_nodes_frame_idx);
         auto s = std::make_shared<DB::CoordinationSettings>();
@@ -3435,10 +3436,10 @@ TEST(KeeperSnapshotV8Validation, F1ZstdFrameTrailerDropped)
         ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskF1T1", snap_dir.path));
         DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_zstd=*/true);
         EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, /*load_full_storage=*/true), DB::Exception)
-            << "NODES frame: dropped ZSTD trailer must throw (serial, deser_threads=1)";
+            << "NODES chunk: dropped ZSTD trailer must throw (serial, deser_threads=1)";
     }
 
-    // ── NODES frame, parallel path (deser_threads=8, K=3 → pool dispatch) ──────────────────
+    // ── NODES chunk, parallel path (deser_threads=8, K=3 → pool dispatch) ──────────────────
     {
         auto bad = makeTrailerDropped(first_nodes_frame_idx);
         auto s = std::make_shared<DB::CoordinationSettings>();
@@ -3449,12 +3450,12 @@ TEST(KeeperSnapshotV8Validation, F1ZstdFrameTrailerDropped)
         ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskF1T8", snap_dir.path));
         DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_zstd=*/true);
         EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, /*load_full_storage=*/true), DB::Exception)
-            << "NODES frame: dropped ZSTD trailer must throw (parallel, deser_threads=8)";
+            << "NODES chunk: dropped ZSTD trailer must throw (parallel, deser_threads=8)";
     }
 
-    // ── METADATA frame (always read serially regardless of deser_threads) ───────────────────
+    // ── METADATA chunk (always read serially regardless of deser_threads) ───────────────────
     {
-        auto bad = makeTrailerDropped(0); // frames[0] is always METADATA
+        auto bad = makeTrailerDropped(0); // chunks[0] is always METADATA
         auto s = std::make_shared<DB::CoordinationSettings>();
         (*s)[DB::CoordinationSetting::snapshot_deser_threads] = 1;
         auto ctx = std::make_shared<DB::KeeperContext>(true, s);
@@ -3463,20 +3464,20 @@ TEST(KeeperSnapshotV8Validation, F1ZstdFrameTrailerDropped)
         ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskF1Meta", snap_dir.path));
         DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, ctx, /*compress_zstd=*/true);
         EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, /*load_full_storage=*/true), DB::Exception)
-            << "METADATA frame: dropped ZSTD trailer must throw";
+            << "METADATA chunk: dropped ZSTD trailer must throw";
     }
 }
 
 /// ── C4 tests: digest recalculation and parallel load determinism ──────────────────────────────
 
-/// Verify that loading a V8 snapshot that has NO_DIGEST in its METADATA frame
+/// Verify that loading a chunked snapshot that has NO_DIGEST in its METADATA chunk
 /// (serialized with digestEnabled=false) under a digest-enabled KeeperContext
 /// correctly recalculates nodes_digest from the node data (the recalculate_digest path).
-TEST(KeeperSnapshotV8Parallel, DigestRecalculationOnLoad)
+TEST(KeeperChunkedSnapshotParallel, DigestRecalculationOnLoad)
 {
-    ChangelogDirTest snap_dir("./v8_digest_recalc");
+    ChangelogDirTest snap_dir("./chunked_digest_recalc");
 
-    // 1. Serialize with digest DISABLED → NO_DIGEST in METADATA frame.
+    // 1. Serialize with digest DISABLED → NO_DIGEST in METADATA chunk.
     auto src_settings = std::make_shared<DB::CoordinationSettings>();
     auto src_ctx = std::make_shared<DB::KeeperContext>(true, src_settings);
     src_ctx->setLocalLogsPreprocessed();
@@ -3517,20 +3518,20 @@ TEST(KeeperSnapshotV8Parallel, DigestRecalculationOnLoad)
     ASSERT_NE(res2.storage, nullptr);
 
     EXPECT_NE(res.storage->nodes_digest, 0u)
-        << "Recalculated nodes_digest must be non-zero for a non-empty V8 snapshot";
+        << "Recalculated nodes_digest must be non-zero for a non-empty chunked snapshot";
     EXPECT_EQ(res.storage->nodes_digest, res2.storage->nodes_digest)
         << "Recalculated nodes_digest must be the same across two loads of the same snapshot";
     EXPECT_EQ(res.storage->container.size(), res2.storage->container.size());
 }
 
-/// Load the same multi-frame V8 snapshot with snapshot_deser_threads=1 (serial) and =8
+/// Load the same multi-chunk chunked snapshot with snapshot_deser_threads=1 (serial) and =8
 /// (parallel) and verify: identical node counts, identical data per path, identical digest,
 /// identical ephemeral ownership, and byte-identical re-serialization.
-TEST(KeeperSnapshotV8Parallel, ParallelVsSequential)
+TEST(KeeperChunkedSnapshotParallel, ParallelVsSequential)
 {
-    ChangelogDirTest snap_dir("./v8_parallel_det");
+    ChangelogDirTest snap_dir("./chunked_parallel_det");
 
-    // Source context: small chunk size → multiple NODES frames; digest disabled → NO_DIGEST
+    // Source context: small chunk size → multiple NODES chunks; digest disabled → NO_DIGEST
     // so that the recalculate_digest path exercises the parallel path as well.
     auto src_settings = std::make_shared<DB::CoordinationSettings>();
     (*src_settings)[DB::CoordinationSetting::snapshot_chunk_size] = 4;
@@ -3540,7 +3541,7 @@ TEST(KeeperSnapshotV8Parallel, ParallelVsSequential)
     src_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDiskSrc", snap_dir.path));
     src_ctx->setDigestEnabled(false);
 
-    // Build a storage with enough nodes to span ≥ 2 NODES frames (chunk=4 → ceil(N/4) frames).
+    // Build a storage with enough nodes to span ≥ 2 NODES chunks (chunk=4 → ceil(N/4) chunks).
     DB::KeeperMemoryStorage storage_src(500, "", src_ctx);
     addNode(storage_src, "/n1", "data1");
     addNode(storage_src, "/n2", "data2");
@@ -3566,15 +3567,15 @@ TEST(KeeperSnapshotV8Parallel, ParallelVsSequential)
     }
     ASSERT_NE(source_buf, nullptr);
 
-    // Verify we actually got multiple NODES frames (otherwise the parallel path is not tested).
+    // Verify we actually got multiple NODES chunks (otherwise the parallel path is not tested).
     {
         const char * raw = reinterpret_cast<const char *>(source_buf->data_begin());
-        auto frames = parseAndValidateV8Header(raw, source_buf->size());
+        auto frames = parseAndValidateChunkedSnapshotHeader(raw, source_buf->size());
         size_t nodes_frame_count = 0;
         for (const auto & fd : frames)
-            if (fd.type == V8ChunkType::NODES)
+            if (fd.type == SnapshotChunkType::NODES)
                 ++nodes_frame_count;
-        ASSERT_GT(nodes_frame_count, 1u) << "Test requires multiple NODES frames for parallelism";
+        ASSERT_GT(nodes_frame_count, 1u) << "Test requires multiple NODES chunks for parallelism";
     }
 
     // Load with serial path (threads=1).
@@ -3631,7 +3632,7 @@ TEST(KeeperSnapshotV8Parallel, ParallelVsSequential)
         EXPECT_EQ(eph1->second, eph8->second) << "Ephemeral path sets must match";
     }
 
-    // Re-serialize both and verify byte-identical output (deterministic frame-order splice).
+    // Re-serialize both and verify byte-identical output (deterministic chunk-order splice).
     nuraft::ptr<nuraft::buffer> rebuf1, rebuf8;
     {
         DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
@@ -3649,20 +3650,20 @@ TEST(KeeperSnapshotV8Parallel, ParallelVsSequential)
     ASSERT_EQ(rebuf1->size(), rebuf8->size())
         << "Re-serialized buffers must have identical size";
     EXPECT_EQ(std::memcmp(rebuf1->data_begin(), rebuf8->data_begin(), rebuf1->size()), 0)
-        << "Re-serialized buffers must be byte-identical (deterministic splice order)";
+        << "Re-serialized buffers must be byte-identical (deterministic chunk order)";
 }
 
-/// Plan test #9: follower `apply_snapshot` of a V8 buffer replaces committed state and
+/// Plan test #9: follower `apply_snapshot` of a chunked snapshot buffer replaces committed state and
 /// correctly restores ephemerals, ACL usage, and nodes_digest.
 ///
-/// Uses `snapshot_chunk_size=2` to force multiple NODES frames so the parallel
+/// Uses `snapshot_chunk_size=2` to force multiple NODES chunks so the parallel
 /// decompression+parse path (C4) is exercised inside the storage lock.
 /// `snapshot_deser_threads=2` is set explicitly on the receiving state machine so
 /// the parallel path runs deterministically regardless of host CPU count.
-TEST(KeeperMemorySnapshotApplyTest, ApplyV8SnapshotReplacesCommittedState)
+TEST(KeeperMemorySnapshotApplyTest, ApplyChunkedSnapshotReplacesCommittedState)
 {
-    ChangelogDirTest snapshots("./v8apply_snapshots");
-    ChangelogDirTest rocks("./v8apply_rocksdb");
+    ChangelogDirTest snapshots("./chunked_apply_snapshots");
+    ChangelogDirTest rocks("./chunked_apply_rocksdb");
 
     // State machine uses snapshot_deser_threads=2 to force the parallel deserialization
     // path regardless of the CI host's CPU count (default 0=auto may resolve to 1
@@ -3673,8 +3674,8 @@ TEST(KeeperMemorySnapshotApplyTest, ApplyV8SnapshotReplacesCommittedState)
     auto sm_ctx = std::make_shared<DB::KeeperContext>(true, sm_settings);
     sm_ctx->setLocalLogsPreprocessed();
     sm_ctx->setDigestEnabled(true);
-    sm_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("V8ApplySmDisk", "./v8apply_snapshots"));
-    sm_ctx->setRocksDBDisk(std::make_shared<DB::DiskLocal>("V8ApplySmRocksDisk", "./v8apply_rocksdb"));
+    sm_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("ChunkedApplySmDisk", "./chunked_apply_snapshots"));
+    sm_ctx->setRocksDBDisk(std::make_shared<DB::DiskLocal>("ChunkedApplySmRocksDisk", "./chunked_apply_rocksdb"));
     sm_ctx->setRocksDBOptions();
 
     DB::SnapshotsQueue snapshots_queue{1};
@@ -3682,26 +3683,26 @@ TEST(KeeperMemorySnapshotApplyTest, ApplyV8SnapshotReplacesCommittedState)
         nullptr, snapshots_queue, sm_ctx, nullptr);
     state_machine->init();
 
-    // Commit a node that the V8 snapshot must overwrite.
-    auto old_entry = makeCreateEntry(*state_machine, "/old_before_v8", "stale_data");
+    // Commit a node that the chunked snapshot must overwrite.
+    auto old_entry = makeCreateEntry(*state_machine, "/old_before_chunked", "stale_data");
     state_machine->pre_commit(1, old_entry->get_buf());
     state_machine->commit(1, old_entry->get_buf());
-    ASSERT_TRUE(state_machine->getStorageUnsafe().container.contains("/old_before_v8"));
+    ASSERT_TRUE(state_machine->getStorageUnsafe().container.contains("/old_before_chunked"));
 
     // Build source storage: 5 user nodes + 1 ephemeral, spanning multiple chunks.
-    // chunk_size=2 → 6 user nodes (root + /a + /b + /a/c + /eph + /b_acl) → 3 NODES frames (2+2+2).
+    // chunk_size=2 → 6 user nodes (root + /a + /b + /a/c + /eph + /b_acl) → 3 NODES chunks (2+2+2).
     // /b_acl carries a non-zero acl_id to exercise the ACL restoration path.
     auto src_settings = std::make_shared<DB::CoordinationSettings>();
     (*src_settings)[DB::CoordinationSetting::snapshot_chunk_size] = 2;
     auto src_ctx = std::make_shared<DB::KeeperContext>(true, src_settings);
     src_ctx->setLocalLogsPreprocessed();
     src_ctx->setRocksDBOptions();
-    src_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("V8ApplySrcDisk", "./v8apply_snapshots"));
+    src_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("ChunkedApplySrcDisk", "./chunked_apply_snapshots"));
     src_ctx->setDigestEnabled(true);
 
     DB::KeeperMemoryStorage snap_storage(500, "", src_ctx);
 
-    // Register an ACL in the source storage so it is serialized in the V8 METADATA frame.
+    // Register an ACL in the source storage so it is serialized in the METADATA chunk.
     // acl_id is deterministically 1 (first registration).
     const DB::ACLId test_acl_id = snap_storage.acl_map.convertACLs({{31, "world", "anyone"}});
     snap_storage.acl_map.addUsage(test_acl_id);
@@ -3718,31 +3719,31 @@ TEST(KeeperMemorySnapshotApplyTest, ApplyV8SnapshotReplacesCommittedState)
     ++snap_storage.committed_ephemeral_nodes;
     snap_storage.addSessionID(42, 30000);
 
-    // Serialize as V8 using a KeeperSnapshotManager backed by the source context.
+    // Serialize as chunked format using a KeeperSnapshotManager backed by the source context.
     DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> src_mgr(3, src_ctx, /*compress_zstd=*/true);
-    nuraft::ptr<nuraft::buffer> v8_buf;
+    nuraft::ptr<nuraft::buffer> chunked_buf;
     {
         DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
             &snap_storage, /*up_to_log_idx=*/10, /*cluster_config=*/nullptr,
             DB::SnapshotVersion::V8);
-        v8_buf = src_mgr.serializeSnapshotToBuffer(snap);
+        chunked_buf = src_mgr.serializeSnapshotToBuffer(snap);
     }
-    ASSERT_NE(v8_buf, nullptr);
-    // Verify the buffer is actually a V8 snapshot (starts with "CKFS" magic).
-    ASSERT_GE(v8_buf->size(), 4u);
-    EXPECT_EQ(std::memcmp(v8_buf->data_begin(), "CKFS", 4), 0)
-        << "Serialized buffer must start with V8 magic 'CKFS'";
+    ASSERT_NE(chunked_buf, nullptr);
+    // Verify the buffer is actually a chunked snapshot (starts with "CKFS" magic).
+    ASSERT_GE(chunked_buf->size(), 4u);
+    EXPECT_EQ(std::memcmp(chunked_buf->data_begin(), "CKFS", 4), 0)
+        << "Serialized buffer must start with chunked snapshot magic 'CKFS'";
 
-    // Install the V8 snapshot into the state machine via the follower path.
+    // Install the chunked snapshot into the state machine via the follower path.
     nuraft::snapshot snapshot_meta(10, 0, std::make_shared<nuraft::cluster_config>());
-    saveSingleObjectSnapshot(*state_machine, snapshot_meta, v8_buf);
+    saveSingleObjectSnapshot(*state_machine, snapshot_meta, chunked_buf);
     EXPECT_TRUE(state_machine->apply_snapshot(snapshot_meta));
 
     // ── Post-apply assertions ────────────────────────────────────────────────────────────────
     const auto & storage = state_machine->getStorageUnsafe();
 
     // Committed state replaced: old node gone, new nodes present.
-    EXPECT_FALSE(storage.container.contains("/old_before_v8"))
+    EXPECT_FALSE(storage.container.contains("/old_before_chunked"))
         << "Pre-snapshot node must be removed after apply_snapshot";
     ASSERT_TRUE(storage.container.contains("/a"));
     ASSERT_TRUE(storage.container.contains("/b"));
@@ -3757,11 +3758,11 @@ TEST(KeeperMemorySnapshotApplyTest, ApplyV8SnapshotReplacesCommittedState)
 
     // Children rebuilt: /a has exactly one child (/a/c).
     EXPECT_EQ(storage.container.getValue("/a").getChildren().size(), 1u)
-        << "/a must have exactly one child after V8 apply_snapshot";
+        << "/a must have exactly one child after chunked apply_snapshot";
 
     // Ephemeral bookkeeping correct.
     EXPECT_EQ(storage.committed_ephemeral_nodes, 1u)
-        << "committed_ephemeral_nodes must be 1 after V8 apply";
+        << "committed_ephemeral_nodes must be 1 after chunked apply";
     {
         auto eit = storage.committed_ephemerals.find(42);
         ASSERT_NE(eit, storage.committed_ephemerals.end())
@@ -3771,21 +3772,21 @@ TEST(KeeperMemorySnapshotApplyTest, ApplyV8SnapshotReplacesCommittedState)
     }
 
     // ACL usage correctly restored: the ACL mapping for test_acl_id must be present
-    // in the loaded storage's acl_map (serialized in the V8 METADATA frame, deserialized
-    // by the parallel NODES-frame path that batches acl_usage into acl_map.addUsageBatch).
+    // in the loaded storage's acl_map (serialized in the METADATA chunk, deserialized
+    // by the parallel NODES-chunk path that batches acl_usage into acl_map.addUsageBatch).
     {
         const auto & mapping = storage.acl_map.getMapping();
         ASSERT_EQ(mapping.count(test_acl_id), 1u)
-            << "ACL id " << test_acl_id << " must be present in acl_map after V8 apply_snapshot";
+            << "ACL id " << test_acl_id << " must be present in acl_map after chunked apply_snapshot";
         EXPECT_EQ(mapping.at(test_acl_id), expected_acl)
-            << "ACL for id " << test_acl_id << " must match the original ACL after V8 apply_snapshot";
+            << "ACL for id " << test_acl_id << " must match the original ACL after chunked apply_snapshot";
         EXPECT_EQ(storage.container.getValue("/b_acl").acl_id, test_acl_id)
-            << "/b_acl must retain its acl_id after V8 apply_snapshot";
+            << "/b_acl must retain its acl_id after chunked apply_snapshot";
     }
 
     // Digest must be non-zero (recalculated from node data since digestEnabled=true on load).
     EXPECT_NE(storage.nodes_digest, 0u)
-        << "nodes_digest must be non-zero after V8 apply_snapshot with digest enabled";
+        << "nodes_digest must be non-zero after chunked apply_snapshot with digest enabled";
 
     // last_commit_index must reflect the snapshot index.
     EXPECT_EQ(state_machine->last_commit_index(), 10u);

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Integration test for V8 snapshot format in a 3-node Keeper cluster.
+"""Integration test for the chunked snapshot format in a 3-node Keeper cluster.
 
 Scenario:
   1. Start a 3-node cluster with `write_snapshot_version=8` and `snapshot_distance=10`.
   2. Stop one follower so it will miss the initial writes.
-  3. Write 12 nodes via the leader — this triggers a V8 snapshot.
+  3. Write 12 nodes via the leader — this triggers a chunked snapshot.
   4. Restart the stopped follower.
-  5. The leader sends the V8 snapshot to the follower (NuRaft snapshot transfer).
+  5. The leader sends the chunked snapshot to the follower (NuRaft snapshot transfer).
   6. Poll `lgif` 4LW on the follower until `last_snapshot_idx` advances.
   7. Verify that all written nodes are readable on the rejoined follower.
 """
@@ -21,32 +21,32 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-# Use distinct node names (v8node*) to avoid docker network conflicts when
+# Use distinct node names (chunked_node*) to avoid docker network conflicts when
 # both test files in this directory run in parallel.
-v8node1 = cluster.add_instance(
-    "v8node1",
-    main_configs=["configs/enable_keeper1_v8.xml"],
+chunked_node1 = cluster.add_instance(
+    "chunked_node1",
+    main_configs=["configs/enable_keeper1_chunked.xml"],
     stay_alive=True,
     with_remote_database_disk=False,
 )
-v8node2 = cluster.add_instance(
-    "v8node2",
-    main_configs=["configs/enable_keeper2_v8.xml"],
+chunked_node2 = cluster.add_instance(
+    "chunked_node2",
+    main_configs=["configs/enable_keeper2_chunked.xml"],
     stay_alive=True,
     with_remote_database_disk=False,
 )
-v8node3 = cluster.add_instance(
-    "v8node3",
-    main_configs=["configs/enable_keeper3_v8.xml"],
+chunked_node3 = cluster.add_instance(
+    "chunked_node3",
+    main_configs=["configs/enable_keeper3_chunked.xml"],
     stay_alive=True,
     with_remote_database_disk=False,
 )
 
-ALL_V8_NODES = [v8node1, v8node2, v8node3]
+ALL_CHUNKED_NODES = [chunked_node1, chunked_node2, chunked_node3]
 
 
-def wait_v8_nodes():
-    keeper_utils.wait_nodes(cluster, ALL_V8_NODES)
+def wait_chunked_nodes():
+    keeper_utils.wait_nodes(cluster, ALL_CHUNKED_NODES)
 
 
 @pytest.fixture(scope="module")
@@ -100,18 +100,18 @@ def _get_last_snapshot_idx(node, timeout=30):
     )
 
 
-def test_v8_snapshot_follower_recovery(started_cluster):
-    """A follower that misses writes receives a V8 snapshot and converges."""
-    wait_v8_nodes()
+def test_chunked_snapshot_follower_recovery(started_cluster):
+    """A follower that misses writes receives a chunked snapshot and converges."""
+    wait_chunked_nodes()
 
     # Identify the leader (highest priority = node1 via priority=3 in config).
-    leader = keeper_utils.get_leader(started_cluster, ALL_V8_NODES)
+    leader = keeper_utils.get_leader(started_cluster, ALL_CHUNKED_NODES)
     # Pick any follower to lag behind.
-    follower = next(n for n in ALL_V8_NODES if n is not leader)
+    follower = next(n for n in ALL_CHUNKED_NODES if n is not leader)
 
     leader_zk = get_fake_zk(leader.name)
     try:
-        prefix = "/test_v8_multinode"
+        prefix = "/test_chunked_multinode"
         leader_zk.ensure_path(prefix)
         # Write one node so the follower is in sync before we stop it.
         leader_zk.create(f"{prefix}/sync_anchor", b"anchor")
@@ -128,20 +128,20 @@ def test_v8_snapshot_follower_recovery(started_cluster):
     follower.stop_clickhouse(kill=True)
 
     try:
-        # Write 12 more nodes (>snapshot_distance=10) → V8 snapshot is triggered.
+        # Write 12 more nodes (>snapshot_distance=10) → chunked snapshot is triggered.
         for i in range(12):
             leader_zk.create(f"{prefix}/node{i}", f"data{i}".encode())
     finally:
         stop_zk(leader_zk)
 
-    # Restart the follower — the leader sends it the V8 snapshot.
+    # Restart the follower — the leader sends it the chunked snapshot.
     follower.start_clickhouse(20)
     keeper_utils.wait_until_connected(started_cluster, follower, timeout=60)
 
     # Poll lgif until last_snapshot_idx advances (the snapshot was applied).
     snap_idx = _get_last_snapshot_idx(follower, timeout=60)
     assert snap_idx > 0, (
-        f"last_snapshot_idx must be non-zero after V8 snapshot apply; got {snap_idx}"
+        f"last_snapshot_idx must be non-zero after chunked snapshot apply; got {snap_idx}"
     )
 
     # Verify all written nodes are readable on the follower.
@@ -150,7 +150,7 @@ def test_v8_snapshot_follower_recovery(started_cluster):
         for i in range(12):
             data, _ = recovered_zk.get(f"{prefix}/node{i}")
             assert data == f"data{i}".encode(), (
-                f"Node {i} has unexpected data on follower after V8 snapshot restore: {data!r}"
+                f"Node {i} has unexpected data on follower after chunked snapshot restore: {data!r}"
             )
     finally:
         stop_zk(recovered_zk)

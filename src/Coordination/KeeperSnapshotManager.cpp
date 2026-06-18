@@ -7,7 +7,7 @@
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
-#include <Coordination/KeeperSnapshotV8.h>
+#include <Coordination/KeeperChunkedSnapshot.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
@@ -72,12 +72,12 @@ namespace CoordinationSetting
 
 namespace
 {
-    /// Create a ZSTD streaming reader for a single V8 snapshot frame.
+    /// Create a ZSTD streaming reader for a single chunked snapshot ZSTD frame.
     /// Sets require_frame_complete=true to verify that ZSTD_decompressStream reaches ret==0
     /// (i.e. the full frame including the 4-byte content-checksum epilogue is consumed).
     /// This restores the integrity guarantee that the superseded one-shot ZSTD_decompress
     /// path (C3) provided: a corrupt or truncated frame is detected rather than accepted.
-    static std::unique_ptr<ReadBuffer> makeV8FrameReader(const char * data, size_t size)
+    static std::unique_ptr<ReadBuffer> makeChunkReader(const char * data, size_t size)
     {
         auto raw = std::make_unique<ReadBufferFromMemory>(data, size);
         return std::make_unique<ZstdInflatingReadBuffer>(
@@ -320,11 +320,11 @@ namespace
         }
     }
 
-    /// V8-specific per-node deserializer. V8 always uses the V7 wire encoding for individual nodes.
-    /// Does NOT call acl_map.addUsage — V8 load path batches ACL usage in MemorySnapshotLoadHandle.
+    /// Per-node deserializer for the chunked snapshot format. Always uses the V7 wire encoding for individual nodes.
+    /// Does NOT call acl_map.addUsage — chunked snapshot load path batches ACL usage in MemorySnapshotLoadHandle.
     /// Validates num_children >= 0 (untrusted snapshot input; throws CORRUPTED_DATA on failure).
     template<typename Node>
-    void readNodeV8(Node & node, ReadBuffer & in, bool cleanup_acl)
+    void readChunkedSnapshotNode(Node & node, ReadBuffer & in, bool cleanup_acl)
     {
         readVarUInt(node.stats.data_size, in);
         if (node.stats.data_size != 0)
@@ -362,7 +362,7 @@ namespace
         if (num_children < 0)
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
-                "V8 snapshot: negative num_children {} in node", num_children);
+                "Chunked snapshot: negative num_children {} in node", num_children);
         node.setNumChildren(num_children);
 
         readBinary(node.stats.pzxid, in);
@@ -393,21 +393,21 @@ namespace
         return SnapshotMetadata::deserialize(*buffer);
     }
 
-    /// Serialize a V8 (chunked independently-compressed ZSTD) snapshot into `raw_out`.
+    /// Serialize a chunked (independently-compressed ZSTD) snapshot into `raw_out`.
     ///
-    /// The caller must NOT wrap `raw_out` with a compression layer — V8 manages its own
-    /// per-frame ZSTD compression. A placeholder header of v8HeaderSize(chunk_count) zeroed
-    /// bytes is written first; the caller backpatches it after this function returns the
-    /// frame descriptor table.
+    /// The caller must NOT wrap `raw_out` with a compression layer — the chunked format
+    /// manages its own per-chunk ZSTD compression. A placeholder header of
+    /// chunkedSnapshotHeaderSize(chunk_count) zeroed bytes is written first; the caller
+    /// backpatches it after this function returns the chunk descriptor table.
     ///
-    /// Frame layout written:
+    /// Chunk layout written:
     ///   1 × METADATA  — version byte, snapshot_meta, zxid+digest, session_id, ACL map
     ///   K × NODES     — each: uint64_t node_count, then node_count V7-encoded path+node pairs
     ///   1 × SESSIONS  — sorted sessions + optional cluster config
     ///
     /// K = ceil(total_non_system_nodes / chunk_size_limit), minimum 1.
     template <typename Storage>
-    std::vector<V8FrameDescriptor> serializeV8(
+    std::vector<SnapshotChunkDescriptor> serializeChunkedSnapshot(
         const KeeperStorageSnapshot<Storage> & snapshot,
         WriteBuffer & raw_out,
         KeeperContextPtr keeper_context)
@@ -421,15 +421,15 @@ namespace
             static_cast<size_t>(1),
             static_cast<size_t>(keeper_context->getCoordinationSettings()[CoordinationSetting::snapshot_chunk_size]));
 
-        // At least 1 NODES frame even for empty storage (root "/" always present in practice,
+        // At least 1 NODES chunk even for empty storage (root "/" always present in practice,
         // but guard against edge cases with min-1).
         const size_t nodes_chunk_count = total_nodes == 0
             ? 1
             : (total_nodes + chunk_size_limit - 1) / chunk_size_limit;
         const uint64_t total_chunk_count = 1 + nodes_chunk_count + 1; // METADATA + N*NODES + SESSIONS
 
-        // Write zeroed header placeholder; backpatched by the caller after frames are written.
-        const size_t header_size = v8HeaderSize(total_chunk_count);
+        // Write zeroed header placeholder; backpatched by the caller after chunks are written.
+        const size_t header_size = chunkedSnapshotHeaderSize(total_chunk_count);
         {
             static const char kZeros[64] = {};
             size_t remaining = header_size;
@@ -445,17 +445,17 @@ namespace
         ZSTD_CCtx * cctx = ZSTD_createCCtx();
         if (!cctx)
             throw Exception(ErrorCodes::CANNOT_COMPRESS,
-                "V8 snapshot: failed to create ZSTD compression context");
+                "Chunked snapshot: failed to create ZSTD compression context");
         SCOPE_EXIT({ ZSTD_freeCCtx(cctx); });
         ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, 3);
         ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
 
-        std::vector<V8FrameDescriptor> frames;
-        frames.reserve(total_chunk_count);
+        std::vector<SnapshotChunkDescriptor> chunks;
+        chunks.reserve(total_chunk_count);
 
         // Compress the finalised `scratch` buffer and write one ZSTD frame to `raw_out`.
-        // Records the frame descriptor (type, absolute offset, compressed size).
-        auto compress_and_record = [&](V8ChunkType type, WriteBufferFromOwnString & scratch) -> void
+        // Records the chunk descriptor (type, absolute offset, compressed size).
+        auto compress_and_record = [&](SnapshotChunkType type, WriteBufferFromOwnString & scratch) -> void
         {
             const std::string & uncompressed = scratch.str(); // finalises if not already
             const size_t max_compressed = ZSTD_compressBound(uncompressed.size());
@@ -466,18 +466,18 @@ namespace
                 uncompressed.data(), uncompressed.size());
             if (ZSTD_isError(compressed_size))
                 throw Exception(ErrorCodes::CANNOT_COMPRESS,
-                    "V8 snapshot ZSTD compression failed: {}", ZSTD_getErrorName(compressed_size));
+                    "Chunked snapshot ZSTD compression failed: {}", ZSTD_getErrorName(compressed_size));
             const uint64_t offset = static_cast<uint64_t>(raw_out.count());
             raw_out.write(compressed.data(), compressed_size);
-            frames.push_back(V8FrameDescriptor{type, offset, static_cast<uint64_t>(compressed_size)});
+            chunks.push_back(SnapshotChunkDescriptor{type, offset, static_cast<uint64_t>(compressed_size)});
         };
 
-        // ── METADATA frame ────────────────────────────────────────────────────────
+        // ── METADATA chunk ────────────────────────────────────────────────────────
         {
             WriteBufferFromOwnString scratch;
             writeBinary(static_cast<uint8_t>(SnapshotVersion::V8), scratch);
             serializeSnapshotMetadata(snapshot.snapshot_meta, scratch);
-            // V8 >= V5: always write zxid + digest
+            // Chunked snapshot >= V5: always write zxid + digest
             writeBinary(snapshot.zxid, scratch);
             if (keeper_context->digestEnabled())
             {
@@ -497,7 +497,7 @@ namespace
             writeBinary(sorted_acl_map.size(), scratch);
             for (const auto & [acl_id, acls] : sorted_acl_map)
             {
-                writeBinary(acl_id, scratch); // V8 always uses V7+ uint32_t ACLId
+                writeBinary(acl_id, scratch); // Chunked snapshot always uses V7+ uint32_t ACLId
                 writeBinary(acls.size(), scratch);
                 for (const auto & acl : acls)
                 {
@@ -506,11 +506,11 @@ namespace
                     writeBinary(acl.id, scratch);
                 }
             }
-            compress_and_record(V8ChunkType::METADATA, scratch);
+            compress_and_record(SnapshotChunkType::METADATA, scratch);
         }
 
-        // ── NODES frames ──────────────────────────────────────────────────────────
-        // Each frame: uint64_t node_count | node_count × (path binary + V7-encoded node).
+        // ── NODES chunks ──────────────────────────────────────────────────────────
+        // Each chunk: uint64_t node_count | node_count × (path binary + V7-encoded node).
         // The node_count is written as a zero placeholder and backpatched after the loop.
         {
             size_t remaining_nodes = total_nodes;
@@ -547,12 +547,12 @@ namespace
                     const auto & node = it->value;
                     if (node.stats.mzxid > snapshot.zxid)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "V8 serialize: node mzxid {} > snapshot zxid {}",
+                            "Chunked snapshot serialize: node mzxid {} > snapshot zxid {}",
                             node.stats.mzxid, snapshot.zxid);
 
                     writeBinary(path, scratch);
-                    // V8 reuses V7 per-node encoding (METADATA version byte = 8 is a
-                    // frame tag, not a node-encoding selector). The C3 reader must decode
+                    // The chunked format reuses V7 per-node encoding (METADATA version byte = 8 is a
+                    // chunk tag, not a node-encoding selector). The reader must decode
                     // each node with readNode(…, SnapshotVersion::V7, …).
                     writeNode(node, SnapshotVersion::V7, scratch);
                     ++actual_node_count;
@@ -568,11 +568,11 @@ namespace
                 // Backpatch node_count into the first 8 bytes of the scratch buffer.
                 std::string & s = scratch.str(); // finalises
                 memcpy(s.data(), &actual_node_count, sizeof(actual_node_count));
-                compress_and_record(V8ChunkType::NODES, scratch);
+                compress_and_record(SnapshotChunkType::NODES, scratch);
             }
         }
 
-        // ── SESSIONS frame ────────────────────────────────────────────────────────
+        // ── SESSIONS chunk ────────────────────────────────────────────────────────
         {
             WriteBufferFromOwnString scratch;
 
@@ -597,7 +597,7 @@ namespace
             }
 
             // Optional cluster config: absent config is represented by EOF, exactly as in
-            // the legacy serialiser (V1-V7). The C3 SESSIONS reader must use
+            // the legacy serialiser (V1-V7). The SESSIONS chunk reader must use
             // `if (!in.eof())` here — never substitute a length-prefix reader for this
             // field, as alloc(0) would feed an empty buffer to ClusterConfig::deserialize.
             if (snapshot.cluster_config)
@@ -607,10 +607,10 @@ namespace
                 scratch.write(reinterpret_cast<const char *>(cluster_buf->data_begin()), cluster_buf->size());
             }
 
-            compress_and_record(V8ChunkType::SESSIONS, scratch);
+            compress_and_record(SnapshotChunkType::SESSIONS, scratch);
         }
 
-        return frames;
+        return chunks;
     }
 }
 
@@ -619,7 +619,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
 {
     if (snapshot.version >= SnapshotVersion::V8)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "V8 snapshots must be written via serializeV8 (which manages per-frame compression "
+            "Chunked snapshots must be written via serializeChunkedSnapshot (which manages per-chunk compression "
             "and header backpatch), not via the legacy streaming serialiser");
 
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
@@ -1092,7 +1092,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     // ── Deserialisation thread pool (C4) ──────────────────────────────────────────────────────
     // Compute effective thread count.  0 → auto (clamp(cores/2, 1, 4)); explicit values clamped to [1, 8].
     // Never created under snapshots_lock — pool construction is safe here.
-    // RocksDB managers never read V8 snapshots, so the pool is memory-storage-only.
+    // RocksDB managers never read chunked snapshots, so the pool is memory-storage-only.
     if constexpr (!use_rocksdb)
     {
         const auto & cs = keeper_context->getCoordinationSettings();
@@ -1364,18 +1364,18 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::serializeSnapshotToB
 {
     if (snapshot.version >= SnapshotVersion::V8)
     {
-        // V8: write directly to the nuraft buffer without a compression wrapper.
-        // serializeV8 writes a zero-filled header placeholder followed by independently-
-        // compressed ZSTD frames, and returns the frame descriptor table.
+        // Chunked format: write directly to the nuraft buffer without a compression wrapper.
+        // serializeChunkedSnapshot writes a zero-filled header placeholder followed by
+        // independently-compressed ZSTD chunks, and returns the chunk descriptor table.
         // We backpatch the real header via memcpy into the contiguous nuraft::buffer.
         auto writer = std::make_unique<WriteBufferFromNuraftBuffer>();
         auto * raw_ptr = writer.get();
-        auto frames = serializeV8(snapshot, *writer, keeper_context);
+        auto chunks = serializeChunkedSnapshot(snapshot, *writer, keeper_context);
         writer->finalize();
         auto buf = raw_ptr->getBuffer();
-        const size_t hdr_size = v8HeaderSize(frames.size());
+        const size_t hdr_size = chunkedSnapshotHeaderSize(chunks.size());
         std::vector<char> header_buf(hdr_size);
-        packV8Header(frames, header_buf.data());
+        packChunkedSnapshotHeader(chunks, header_buf.data());
         std::memcpy(buf->data_begin(), header_buf.data(), hdr_size);
         return buf;
     }
@@ -1395,14 +1395,14 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::serializeSnapshotToB
 
 template<typename Storage>
 SnapshotDeserializationResult<Storage>
-KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
+KeeperSnapshotManager<Storage>::deserializeChunkedSnapshotFromBuffer(
     nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage) const
 {
     if constexpr (use_rocksdb)
     {
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT_VERSION,
-            "V8 snapshot format is not supported with RocksDB storage");
+            "Chunked snapshot format is not supported with RocksDB storage");
     }
     else
     {
@@ -1410,9 +1410,9 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
     const char * buf_data = reinterpret_cast<const char *>(buffer->data_begin());
     const size_t buf_size = buffer->size();
 
-    auto frames = parseAndValidateV8Header(buf_data, buf_size);
+    auto chunks = parseAndValidateChunkedSnapshotHeader(buf_data, buf_size);
 
-    // V8 storage: root "/" must come from the snapshot, not the constructor.
+    // Chunked snapshot storage: root "/" must come from the snapshot, not the constructor.
     SnapshotDeserializationResult<Storage> result;
     result.storage = std::make_unique<Storage>(
         storage_tick_time, superdigest, keeper_context,
@@ -1422,13 +1422,13 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
 
     bool recalculate_digest = keeper_context->digestEnabled();
 
-    // ── METADATA frame (always frames[0], validated by parseAndValidateV8Header) ──────────────
-    // Streaming decompression (F3): each frame gets its own ZSTD_DCtx via makeV8FrameReader,
+    // ── METADATA chunk (always chunks[0], validated by parseAndValidateChunkedSnapshotHeader) ──────────────
+    // Streaming decompression (F3): each chunk gets its own ZSTD_DCtx via makeChunkReader,
     // which also verifies the full frame (including the 4-byte content-checksum epilogue) is
     // consumed — matching the integrity guarantee of the superseded one-shot ZSTD_decompress.
     {
-        const V8FrameDescriptor & mfd = frames[0];
-        auto zbuf_meta = makeV8FrameReader(
+        const SnapshotChunkDescriptor & mfd = chunks[0];
+        auto zbuf_meta = makeChunkReader(
             buf_data + mfd.compressed_offset,
             static_cast<size_t>(mfd.compressed_size));
         ReadBuffer & rbuf = *zbuf_meta;
@@ -1438,11 +1438,11 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
         if (version_byte != static_cast<uint8_t>(SnapshotVersion::V8))
             throw Exception(
                 ErrorCodes::UNKNOWN_FORMAT_VERSION,
-                "V8 snapshot: unexpected version byte {} in METADATA frame (expected 8)", version_byte);
+                "Chunked snapshot: unexpected version byte {} in METADATA chunk (expected 8)", version_byte);
 
         result.snapshot_meta = deserializeSnapshotMetadata(rbuf);
 
-        // zxid (always present in V8; V8 inherits V5+ semantics)
+        // zxid (always present in chunked snapshot; inherits V5+ semantics)
         {
             int64_t zxid = 0;
             readBinary(zxid, rbuf);
@@ -1470,7 +1470,7 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
         readBinary(session_id, rbuf);
         storage.session_id_counter = session_id;
 
-        // ACL map (V8 always uses V7+ uint32_t ACLId)
+        // ACL map (chunked snapshot always uses V7+ uint32_t ACLId)
         size_t acl_map_size = 0;
         readBinary(acl_map_size, rbuf);
         for (size_t i = 0; i < acl_map_size; ++i)
@@ -1491,11 +1491,11 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
             if (!keeper_context->shouldBlockACL())
                 storage.acl_map.addMapping(acl_id, acls);
         }
-        // Drain: the METADATA frame must be fully consumed; trailing bytes indicate format drift.
+        // Drain: the METADATA chunk must be fully consumed; trailing bytes indicate format drift.
         if (!rbuf.eof())
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
-                "V8 snapshot: trailing bytes after METADATA frame content");
+                "Chunked snapshot: trailing bytes after METADATA chunk content");
     }
 
     if (recalculate_digest)
@@ -1503,14 +1503,14 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
 
     const bool cleanup_acl_global = keeper_context->shouldBlockACL();
 
-    // ── NODES frames ─────────────────────────────────────────────────────────────────────────────
-    // Collect frame descriptors in header order (preserves deterministic splice order).
-    std::vector<const V8FrameDescriptor *> nodes_fds;
-    for (const auto & fd : frames)
-        if (fd.type == V8ChunkType::NODES)
-            nodes_fds.push_back(&fd);
+    // ── NODES chunks ─────────────────────────────────────────────────────────────────────────────
+    // Collect chunk descriptors in header order (preserves deterministic splice order).
+    std::vector<const SnapshotChunkDescriptor *> nodes_chunks;
+    for (const auto & cd : chunks)
+        if (cd.type == SnapshotChunkType::NODES)
+            nodes_chunks.push_back(&cd);
 
-    const size_t K = nodes_fds.size();
+    const size_t K = nodes_chunks.size();
 
     // Pre-initialise handles SERIALLY before scheduling any tasks (U1 lifecycle):
     // beginMemorySnapshotLoad touches storage; workers must never touch storage directly.
@@ -1522,14 +1522,14 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
             handles.push_back(beginMemorySnapshotLoad(storage));
     }
 
-    // Per-frame parser — shared by serial and parallel paths.
+    // Per-chunk parser — shared by serial and parallel paths.
     // In the parallel path, each worker writes exclusively to handles[f] (different index per task).
     // !load_full_storage is never true in the parallel path (guaranteed by dispatch condition below).
-    auto process_nodes_frame = [&](size_t f, const V8FrameDescriptor & fd)
+    auto process_nodes_chunk = [&](size_t f, const SnapshotChunkDescriptor & cd)
     {
-        auto zbuf = makeV8FrameReader(
-            buf_data + fd.compressed_offset,
-            static_cast<size_t>(fd.compressed_size));
+        auto zbuf = makeChunkReader(
+            buf_data + cd.compressed_offset,
+            static_cast<size_t>(cd.compressed_size));
         ReadBuffer & rbuf = *zbuf;
 
         uint64_t node_count = 0;
@@ -1544,12 +1544,12 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
                 readBinary(path, rbuf);
                 result.paths.push_back(path);
                 typename Storage::Node node{};
-                readNodeV8(node, rbuf, /*cleanup_acl=*/true);
+                readChunkedSnapshotNode(node, rbuf, /*cleanup_acl=*/true);
             }
             if (!rbuf.eof())
                 throw Exception(
                     ErrorCodes::CORRUPTED_DATA,
-                    "V8 snapshot: trailing bytes after NODES frame content (analyzer mode)");
+                    "Chunked snapshot: trailing bytes after NODES chunk content (analyzer mode)");
             return;
         }
 
@@ -1564,22 +1564,22 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
             const auto match = Coordination::matchPath(path_str, keeper_system_path);
 
             typename Storage::Node node{};
-            readNodeV8(node, rbuf, cleanup_acl_global);
+            readChunkedSnapshotNode(node, rbuf, cleanup_acl_global);
 
             if (match == IS_CHILD)
             {
-                // V8 serializer skips system children; presence here means corrupt snapshot.
+                // Chunked snapshot serializer skips system children; presence here means corrupt snapshot.
                 if (keeper_context->ignoreSystemPathOnStartup()
                     || keeper_context->getServerState() != KeeperContext::Phase::INIT)
                 {
                     LOG_ERROR(
                         getLogger("KeeperSnapshotManager"),
-                        "System-path child {} found in V8 snapshot — skipping", path_str);
+                        "System-path child {} found in chunked snapshot — skipping", path_str);
                     continue;
                 }
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "System-path child {} found in V8 snapshot. "
+                    "System-path child {} found in chunked snapshot. "
                     "Set keeper_server.ignore_system_path_on_startup=true to ignore.", path_str);
             }
             if (match == EXACT && !node.empty())
@@ -1589,13 +1589,13 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
                 {
                     LOG_ERROR(
                         getLogger("KeeperSnapshotManager"),
-                        "Non-empty keeper system node {} found in V8 snapshot — clearing data", path_str);
+                        "Non-empty keeper system node {} found in chunked snapshot — clearing data", path_str);
                     node = typename Storage::Node{};
                 }
                 else
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Non-empty keeper system node {} found in V8 snapshot. "
+                        "Non-empty keeper system node {} found in chunked snapshot. "
                         "Set keeper_server.ignore_system_path_on_startup=true to ignore.", path_str);
             }
 
@@ -1627,10 +1627,10 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
         if (!rbuf.eof())
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
-                "V8 snapshot: trailing bytes after NODES frame content");
+                "Chunked snapshot: trailing bytes after NODES chunk content");
     };
 
-    // Dispatch: parallel for full-load with ≥2 threads and ≥2 frames; serial otherwise.
+    // Dispatch: parallel for full-load with >=2 threads and >=2 chunks; serial otherwise.
     if (load_full_storage && deser_pool.has_value() && K > 1)
     {
         // Capture the calling thread's group so workers can inherit it for metrics and naming.
@@ -1639,20 +1639,20 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
         {
             for (size_t f = 0; f < K; ++f)
             {
-                // Copy the frame descriptor for lambda safety (lives on the calling stack).
-                const V8FrameDescriptor fd_copy = *nodes_fds[f];
+                // Copy the chunk descriptor for lambda safety (lives on the calling stack).
+                const SnapshotChunkDescriptor cd_copy = *nodes_chunks[f];
                 deser_pool->scheduleOrThrowOnError(
-                    [f, fd_copy, &process_nodes_frame, tg]()
+                    [f, cd_copy, &process_nodes_chunk, tg]()
                     {
                         ThreadGroupSwitcher switcher(tg, ThreadName::KEEPER_SNAPSHOT_LOAD);
-                        process_nodes_frame(f, fd_copy);
+                        process_nodes_chunk(f, cd_copy);
                     });
             }
             deser_pool->wait();
         }
         catch (...)
         {
-            // Drain pool before handles / process_nodes_frame lambda go out of scope.
+            // Drain pool before handles / process_nodes_chunk lambda go out of scope.
             deser_pool->wait();
             throw;
         }
@@ -1661,7 +1661,7 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
     {
         // Serial path — also handles !load_full_storage (analyzer mode, not performance-critical).
         for (size_t f = 0; f < K; ++f)
-            process_nodes_frame(f, *nodes_fds[f]);
+            process_nodes_chunk(f, *nodes_chunks[f]);
     }
 
     if (load_full_storage)
@@ -1670,15 +1670,15 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
         storage.initializeSystemNodes();
     }
 
-    // ── SESSIONS frame ───────────────────────────────────────────────────────────────────────────
-    for (const auto & fd : frames)
+    // ── SESSIONS chunk ───────────────────────────────────────────────────────────────────────────
+    for (const auto & cd : chunks)
     {
-        if (fd.type != V8ChunkType::SESSIONS)
+        if (cd.type != SnapshotChunkType::SESSIONS)
             continue;
 
-        auto zbuf_sess = makeV8FrameReader(
-            buf_data + fd.compressed_offset,
-            static_cast<size_t>(fd.compressed_size));
+        auto zbuf_sess = makeChunkReader(
+            buf_data + cd.compressed_offset,
+            static_cast<size_t>(cd.compressed_size));
         ReadBuffer & rbuf = *zbuf_sess;
 
         size_t active_sessions_size = 0;
@@ -1691,7 +1691,7 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
             readBinary(timeout, rbuf);
             storage.addSessionID(active_session_id, timeout);
 
-            // V8 always includes session auth (V8 >= V1).
+            // Chunked snapshot always includes session auth (inherits V1+ semantics).
             size_t session_auths_size = 0;
             readBinary(session_auths_size, rbuf);
             typename Storage::AuthIDs ids;
@@ -1721,8 +1721,8 @@ KeeperSnapshotManager<Storage>::deserializeV8FromBuffer(
         if (!rbuf.eof())
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
-                "V8 snapshot: trailing bytes after SESSIONS frame content");
-        break; // Exactly one SESSIONS frame.
+                "Chunked snapshot: trailing bytes after SESSIONS chunk content");
+        break; // Exactly one SESSIONS chunk.
     }
 
     if (load_full_storage)
@@ -1745,13 +1745,13 @@ bool KeeperSnapshotManager<Storage>::isZstdCompressed(nuraft::ptr<nuraft::buffer
     return memcmp(magic_from_buffer, ZSTD_COMPRESSED_MAGIC, 4) == 0;
 }
 
-/// Returns true iff `buffer` starts with "CKFS" (V8 magic).
-static bool isV8Snapshot(nuraft::ptr<nuraft::buffer> buffer)
+/// Returns true iff `buffer` starts with "CKFS" (chunked snapshot magic).
+static bool isChunkedSnapshot(nuraft::ptr<nuraft::buffer> buffer)
 {
     if (buffer->size() < 4)
         return false;
     const char * p = reinterpret_cast<const char *>(buffer->data_begin());
-    return std::memcmp(p, KEEPER_V8_MAGIC.data(), 4) == 0;
+    return std::memcmp(p, KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4) == 0;
 }
 
 template<typename Storage>
@@ -1760,11 +1760,11 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
     buffer->pos(0);
 
     // 3-way detection:
-    //   "CKFS" → V8 chunked-ZSTD (C3)
+    //   "CKFS" → chunked ZSTD format (version 8)
     //   ZSTD magic → legacy ZSTD (V3-V7)
     //   else    → legacy LZ4 (V0-V2)
-    if (isV8Snapshot(buffer))
-        return deserializeV8FromBuffer(buffer, load_full_storage);
+    if (isChunkedSnapshot(buffer))
+        return deserializeChunkedSnapshotFromBuffer(buffer, load_full_storage);
 
     bool is_zstd_compressed = isZstdCompressed(buffer);
 
@@ -1784,13 +1784,13 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
     return result;
 }
 
-/// Read and discard the METADATA tail that follows SnapshotMetadata in a V8 METADATA frame:
+/// Read and discard the METADATA tail that follows SnapshotMetadata in a chunked snapshot METADATA chunk:
 /// zxid, digest fields, session_id_counter, and the ACL map.  Called from the metadata-only
-/// fast path to validate full frame layout without populating storage.
+/// fast path to validate full chunk layout without populating storage.
 ///
 /// IMPORTANT: field order here must stay in sync with the METADATA parsing block inside
-/// deserializeV8FromBuffer (search for "// zxid (always present in V8").
-static void drainV8MetadataFrameTail(ReadBuffer & rbuf)
+/// deserializeChunkedSnapshotFromBuffer (search for "// zxid (always present in chunked snapshot").
+static void drainChunkedSnapshotMetadataChunkTail(ReadBuffer & rbuf)
 {
     // zxid
     {
@@ -1841,34 +1841,34 @@ static void drainV8MetadataFrameTail(ReadBuffer & rbuf)
     if (!rbuf.eof())
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
-            "V8 snapshot: trailing bytes after METADATA frame content");
+            "Chunked snapshot: trailing bytes after METADATA chunk content");
 }
 
-/// Decompress ONLY the METADATA frame (frames[0]) of a V8 snapshot and return the snapshot
-/// metadata. Never touches NODES or SESSIONS frames — O(1) in node count.
+/// Decompress ONLY the METADATA chunk (chunks[0]) of a chunked snapshot and return the snapshot
+/// metadata. Never touches NODES or SESSIONS chunks — O(1) in node count.
 /// Called from deserializeSnapshotMetadataFromBuffer after "CKFS" magic is detected.
-static SnapshotMetadataPtr deserializeV8MetadataOnlyFromBuffer(nuraft::ptr<nuraft::buffer> buffer)
+static SnapshotMetadataPtr deserializeChunkedSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer)
 {
     const char * buf_data = reinterpret_cast<const char *>(buffer->data_begin());
     const size_t buf_size = buffer->size();
 
-    auto frames = parseAndValidateV8Header(buf_data, buf_size);
+    auto chunks = parseAndValidateChunkedSnapshotHeader(buf_data, buf_size);
 
-    // Decompress ONLY frame[0] (METADATA) — intentionally never touch NODES or SESSIONS.
-    const V8FrameDescriptor & meta_fd = frames[0];
-    auto zbuf_meta = makeV8FrameReader(
-        buf_data + meta_fd.compressed_offset,
-        static_cast<size_t>(meta_fd.compressed_size));
+    // Decompress ONLY chunks[0] (METADATA) — intentionally never touch NODES or SESSIONS.
+    const SnapshotChunkDescriptor & meta_cd = chunks[0];
+    auto zbuf_meta = makeChunkReader(
+        buf_data + meta_cd.compressed_offset,
+        static_cast<size_t>(meta_cd.compressed_size));
     ReadBuffer & rbuf = *zbuf_meta;
     uint8_t version_byte = 0;
     readBinary(version_byte, rbuf);
     if (version_byte != static_cast<uint8_t>(SnapshotVersion::V8))
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT_VERSION,
-            "V8 snapshot: unexpected version byte {} in METADATA frame (expected 8)", version_byte);
+            "Chunked snapshot: unexpected version byte {} in METADATA chunk (expected 8)", version_byte);
 
     auto snapshot_meta = deserializeSnapshotMetadata(rbuf);
-    drainV8MetadataFrameTail(rbuf); // Validate full frame layout; values discarded.
+    drainChunkedSnapshotMetadataChunkTail(rbuf); // Validate full chunk layout; values discarded.
     return snapshot_meta;
 }
 
@@ -1879,13 +1879,13 @@ SnapshotMetadataPtr KeeperSnapshotManager<Storage>::deserializeSnapshotMetadataF
     /// buffer at offset `0` on success and on throw.
     SCOPE_EXIT({ buffer->pos(0); });
 
-    // V8: snapshot_meta lives in the METADATA frame only.
-    // Use the dedicated fast path that decompresses only frame[0] — O(1) in node count.
-    // The full deserializer (deserializeV8FromBuffer) would process all NODES and SESSIONS
-    // frames, which at 56M-node scale allocates gigabytes of temporary data while the
+    // Chunked snapshot: snapshot_meta lives in the METADATA chunk only.
+    // Use the dedicated fast path that decompresses only chunks[0] — O(1) in node count.
+    // The full deserializer (deserializeChunkedSnapshotFromBuffer) would process all NODES and SESSIONS
+    // chunks, which at 56M-node scale allocates gigabytes of temporary data while the
     // old storage is still live — violating the three-phase peak-memory design.
-    if (isV8Snapshot(buffer))
-        return deserializeV8MetadataOnlyFromBuffer(buffer);
+    if (isChunkedSnapshot(buffer))
+        return deserializeChunkedSnapshotMetadataFromBuffer(buffer);
 
     bool is_zstd_compressed = isZstdCompressed(buffer);
 
@@ -2053,13 +2053,13 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
 
         if (snapshot.version >= SnapshotVersion::V8)
         {
-            // V8: write directly without a compression wrapper; serializeV8 manages
-            // its own per-frame ZSTD compression. After all frames are written we
+            // Chunked format: write directly without a compression wrapper; serializeChunkedSnapshot
+            // manages its own per-chunk ZSTD compression. After all chunks are written we
             // capture the total byte count (U3: before seeking back so the metric
             // reflects the real file size, not the post-seek position), then seek to
             // position 0 and overwrite the placeholder header.
             auto * raw_writer = writer.get();
-            auto frames = serializeV8(snapshot, *raw_writer, keeper_context);
+            auto chunks = serializeChunkedSnapshot(snapshot, *raw_writer, keeper_context);
 
             // U3: capture total bytes BEFORE seeking back to avoid recording the
             // seek-back position (0 + header_size) instead of the real file size.
@@ -2071,12 +2071,12 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
             auto * seekable = dynamic_cast<WriteBufferFromFileDescriptor *>(raw_writer);
             if (!seekable)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "V8 snapshot disk writer does not support seek — cannot backpatch header");
+                    "Chunked snapshot disk writer does not support seek — cannot backpatch header");
             seekable->seek(0, SEEK_SET);
 
-            const size_t hdr_size = v8HeaderSize(frames.size());
+            const size_t hdr_size = chunkedSnapshotHeaderSize(chunks.size());
             std::vector<char> header_buf(hdr_size);
-            packV8Header(frames, header_buf.data());
+            packChunkedSnapshotHeader(chunks, header_buf.data());
             raw_writer->write(header_buf.data(), hdr_size);
             raw_writer->finalize();
 
