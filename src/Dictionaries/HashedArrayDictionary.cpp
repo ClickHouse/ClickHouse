@@ -88,7 +88,7 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumns(
     DefaultsOrFilter defaults_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -641,7 +641,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
     KeysProvider && keys_object) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     ColumnPtr result;
 
@@ -957,7 +957,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
-        ssize_t element_index = 0;
+        ssize_t element_index;
         if constexpr (sharded)
         {
             element_index = key_index_to_element_index[key_index].first;
@@ -1004,7 +1004,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
-        ssize_t element_index = 0;
+        ssize_t element_index;
         if constexpr (sharded)
         {
             element_index = key_index_to_element_index[key_index].first;
@@ -1225,7 +1225,6 @@ template class HashedArrayDictionary<DictionaryKeyType::Simple, /* sharded */ tr
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ false>;
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ true>;
 
-void registerDictionaryArrayHashed(DictionaryFactory & factory);
 void registerDictionaryArrayHashed(DictionaryFactory & factory)
 {
     auto create_layout = [](const std::string & full_name,

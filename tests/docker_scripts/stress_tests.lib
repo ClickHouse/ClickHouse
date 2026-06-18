@@ -276,32 +276,17 @@ function wait_server_port_free()
     fi
 }
 
-function wait_server_ports_free()
-{
-    # Wait for all ClickHouse listen ports to become available.
-    # In debug+ThreadFuzzer builds, shutdown is slow and the kernel
-    # may still hold sockets from the previous server instance.
-    #   8123  HTTP               9010  TCP with proxy protocol
-    #   8443  HTTPS              9022  SSH
-    #   9000  Native TCP         9100  gRPC
-    #   9004  MySQL compat       9181  Keeper
-    #   9005  PostgreSQL compat  9234  Keeper Raft
-    #   9009  Interserver HTTP   9440  Native TCP TLS
-    #                            9988  Prometheus
-    for port in 8123 8443 9000 9004 9005 9009 9010 9022 9100 9181 9234 9440 9988; do
-        wait_server_port_free "$port"
-    done
-}
-
 function start_server()
 {
     # After safeExit (forceful shutdown), the kernel may still be cleaning up sockets,
     # especially under sanitizer builds. Wait for the server ports to become available.
-    wait_server_ports_free
+    wait_server_port_free 9000
+    wait_server_port_free 9009
+    wait_server_port_free 9181
 
     counter=0
     max_attempt=${1:-6}
-    until clickhouse-client --receive_timeout 30 --query "SELECT 1"
+    until clickhouse-client --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]
         then
@@ -313,21 +298,16 @@ function start_server()
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
             return 1
         fi
-        # Only wait for ports and restart if the previous daemon actually exited.
-        # If the process is still alive, the ports are bound by a healthy but
-        # slow-starting server — just retry the readiness check.
-        if [ "$counter" -eq 0 ] || ! pgrep -x clickhouse-serv > /dev/null 2>&1; then
-            [ "$counter" -gt 0 ] && wait_server_ports_free
-            clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
-        fi
-        sleep 10
+        # use root to match with current uid
+        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
+        sleep 20
         counter=$((counter + 1))
     done
 }
 
 function check_server_start()
 {
-    clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+    clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
         || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
         && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
         >> /test_output/test_results.tsv)
