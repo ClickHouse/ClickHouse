@@ -1,8 +1,12 @@
 -- Tags: no-fasttest
--- Reads a Wide-part JSON column that has a top-level dynamic path of type Array(JSON),
--- i.e. a genuine nested SerializationObject. Reading the array-of-objects subcolumns drives
--- a prefix-deserialization pool task to recurse into the nested object's prefix - exactly the
--- re-entrant path that must take the sequential branch (no nested callbacks_mutex).
+-- Regression test for a TSAN lock-order-inversion in nested JSON prefix deserialization.
+-- The 'arr' path is an array of objects, so JSON stores it as a dynamic path of type
+-- Array(JSON), i.e. a genuine nested SerializationObject. A full-column read of 'data'
+-- makes the outer object's prefix-deserialization pool task recurse into the nested
+-- object's prefix - the re-entrant path that must take the sequential branch.
+-- A subcolumn read (data.arr) goes through SerializationObjectDynamicPath and reaches the
+-- nested object as a standalone pool owner, so it does not exercise the re-entry; only a
+-- full-column read does.
 
 SET enable_json_type = 1;
 
@@ -29,12 +33,13 @@ SET merge_tree_use_prefixes_deserialization_thread_pool = 1;
 -- Keep the read local so it goes through the prefix-deserialization pool on this node.
 SET enable_parallel_replicas = 0;
 
--- The 'arr' path is a nested Array(JSON), not a flattened scalar path.
+-- 'arr' is a nested Array(JSON), not a flattened scalar path.
 SELECT startsWith(dynamicType(data.arr), 'Array(JSON') FROM t_json_nested_pool WHERE id = 5;
 
--- Reading subcolumns of the array elements deserializes the nested object's prefixes through the pool.
-SELECT arraySort(groupUniqArray(p)) FROM (SELECT arrayJoin(JSONDynamicPaths(arrayJoin(data.arr[]))) AS p FROM t_json_nested_pool);
-SELECT sum(arraySum(arrayMap(e -> e.x::Int64, data.arr[]))) FROM t_json_nested_pool;
-SELECT sum(arraySum(arrayMap(e -> e.`y.deep`::Int64, data.arr[]))) FROM t_json_nested_pool;
+-- Full-column read: the outer object's pool task recurses into the nested 'arr' object's prefix.
+SELECT data FROM t_json_nested_pool WHERE id = 5;
+
+-- Read the whole 'data' value for every row so the recursion runs across all granules.
+SELECT sum(length(toString(data))) FROM t_json_nested_pool;
 
 DROP TABLE t_json_nested_pool;
