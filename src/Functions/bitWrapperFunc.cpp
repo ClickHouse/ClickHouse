@@ -24,10 +24,14 @@ struct BitWrapperFuncImpl
 
     static ResultType NO_SANITIZE_UNDEFINED apply(A a [[maybe_unused]])
     {
-        // Should be a logical error, but this function is callable from SQL.
-        // Need to investigate this.
-        if constexpr (!is_integer<A>)
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "It's a bug! Only integer types are supported by __bitWrapperFunc.");
+        /// `__bitWrapperFunc` maps a value to a `BoolMask` purely by truthiness (zero -> "can be false",
+        /// non-zero -> "can be true"), which is well-defined for every number. `FunctionUnaryArithmetic`
+        /// only resolves this function for native integers and `Float32`/`Float64` (`BFloat16` and
+        /// `Decimal` are not in its `castType` list), which is exactly the set the set skip index gates on
+        /// via `canBeUsedInBooleanContext`. Accept integers and floating-point here so float atoms wrap
+        /// (and the index prunes) instead of throwing; non-numeric types cannot reach this code.
+        if constexpr (!is_integer<A> && !is_floating_point<A>)
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "It's a bug! Only numeric types are supported by __bitWrapperFunc.");
         return a == 0 ? static_cast<ResultType>(0b10) : static_cast<ResultType>(0b01);
     }
 
