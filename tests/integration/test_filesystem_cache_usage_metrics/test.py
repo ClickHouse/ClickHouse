@@ -41,7 +41,7 @@ def cache_setting(setting):
 def test_filesystem_cache_usage_metrics(start_cluster):
     """
     Verify that `filesystem_cache_*` usage metrics are populated when
-    `expose_prometheus_usage_metrics` is set in the disk config.
+    `prometheus_cache_usage_metrics_per_user` is set in the disk config.
     """
     node.query(f"SYSTEM DROP FILESYSTEM CACHE '{CACHE_NAME}'")
     node.query("DROP TABLE IF EXISTS usage_metrics_test")

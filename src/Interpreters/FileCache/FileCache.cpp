@@ -114,7 +114,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
-    extern const FileCacheSettingsBool expose_prometheus_usage_metrics;
+    extern const FileCacheSettingsBool prometheus_cache_usage_metrics_per_user;
 }
 
 namespace
@@ -363,7 +363,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             cache_name
         );
     }
-    if (settings[FileCacheSetting::expose_prometheus_usage_metrics])
+    if (settings[FileCacheSetting::prometheus_cache_usage_metrics_per_user])
     {
         main_priority->setOnUsageChangeCallback([this](const String & user_id, Int64 size_delta, Int64 elements_delta)
         {
