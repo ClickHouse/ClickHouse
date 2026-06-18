@@ -477,6 +477,16 @@ inline DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const D
     return DataTypeDecimalTrait<U>(DecimalUtils::max_precision<U>, ty.getScale());
 }
 
+template <typename NativeType>
+inline void normalizeDecimalTrailingZeros(NativeType & value, UInt32 & scale)
+{
+    while (scale > 0 && value % 10 == 0)
+    {
+        value /= 10;
+        --scale;
+    }
+}
+
 /// Returns the current time.
 DateTime64 getCurrentDateTime64(UInt32 scale);
 

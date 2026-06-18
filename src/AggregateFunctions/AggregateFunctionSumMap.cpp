@@ -2,7 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionSumMapTyped.h>
 #include <Functions/FunctionHelpers.h>
 
-
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -37,6 +37,28 @@ namespace ErrorCodes
 
 namespace
 {
+
+template <typename T>
+static void normalizeDecimalFieldImpl(Field & key)
+{
+    auto df = key.safeGet<DecimalField<T>>();
+    auto v = df.getValue().value;
+    UInt32 s = df.getScale();
+    DecimalUtils::normalizeDecimalTrailingZeros(v, s);
+    key = DecimalField<T>(T(v), s);
+}
+
+static void normalizeFieldDecimal(Field & key)
+{
+    switch (key.getType())
+    {
+        case Field::Types::Decimal32:  normalizeDecimalFieldImpl<Decimal32>(key);  break;
+        case Field::Types::Decimal64:  normalizeDecimalFieldImpl<Decimal64>(key);  break;
+        case Field::Types::Decimal128: normalizeDecimalFieldImpl<Decimal128>(key); break;
+        case Field::Types::Decimal256: normalizeDecimalFieldImpl<Decimal256>(key); break;
+        default: break;
+    }
+}
 
 struct FieldHash
 {
@@ -130,6 +152,7 @@ private:
     DataTypes values_types;
     Serializations values_serializations;
     Serializations promoted_values_serializations;
+    bool normalize_decimal_keys = false;
 
 public:
     using Base = IAggregateFunctionDataHelper<AggregateFunctionMapData, Derived>;
@@ -140,6 +163,7 @@ public:
         , keys_type(keys_type_)
         , keys_serialization(keys_type->getDefaultSerialization())
         , values_types(values_types_)
+        , normalize_decimal_keys(keys_type_->getTypeId() == TypeIndex::Dynamic)
     {
         values_serializations.reserve(values_types.size());
         promoted_values_serializations.reserve(values_types.size());
@@ -243,6 +267,8 @@ public:
         for (size_t i = 0; i < keys_vec_size; ++i)
         {
             Field key = key_column[keys_vec_offset + i];
+            if (normalize_decimal_keys)
+                normalizeFieldDecimal(key);
 
             if (!keepKey(key))
                 continue;
@@ -442,6 +468,8 @@ public:
         {
             Field key;
             keys_serialization->deserializeBinary(key, buf, format_settings);
+            if (normalize_decimal_keys)
+                normalizeFieldDecimal(key);
 
             Array values;
             values.resize(values_types.size());
@@ -732,7 +760,7 @@ public:
         return false;
     }
 
-    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum AggregateFunctionStates"); }
+    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compare AggregateFunctionStates"); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
     bool operator() (Tuple & x) const { return compareImpl<Tuple>(x); }

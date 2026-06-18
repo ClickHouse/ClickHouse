@@ -5,7 +5,6 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
@@ -21,9 +20,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
-#include <IO/WriteHelpers.h>
 
 #include <algorithm>
 #include <cstring>
@@ -150,30 +147,6 @@ struct SumMapKeyTraits<K>
         return emplace(map, key, nullptr);
     }
 
-    static void serializeKey(K key, WriteBuffer & buf)
-    {
-        if constexpr (is_decimal<K>)
-            writeBinaryLittleEndian(key.value, buf);
-        else
-            writeBinaryLittleEndian(key, buf);
-    }
-
-    static K deserializeKey(ReadBuffer & buf, Arena & /* arena */)
-    {
-        if constexpr (is_decimal<K>)
-        {
-            typename K::NativeType native;
-            readBinaryLittleEndian(native, buf);
-            return normalizeKey(K(native));
-        }
-        else
-        {
-            K key;
-            readBinaryLittleEndian(key, buf);
-            return normalizeKey(key);
-        }
-    }
-
     static void insertKeyIntoColumn(IColumn & col, K key)
     {
         if constexpr (is_decimal<K>)
@@ -229,21 +202,6 @@ struct SumMapKeyTraits<std::string_view>
     static auto emplaceForMerge(MapType & map, std::string_view key, Arena * arena)
     {
         return emplace(map, key, arena);
-    }
-
-    static void serializeKey(std::string_view key, WriteBuffer & buf)
-    {
-        writeVarUInt(key.size(), buf);
-        buf.write(key.data(), key.size());
-    }
-
-    static std::string_view deserializeKey(ReadBuffer & buf, Arena & arena)
-    {
-        size_t size = 0;
-        readVarUInt(size, buf);
-        char * data = arena.alloc(size);
-        buf.readStrict(data, size);
-        return std::string_view(data, size);
     }
 
     static void insertKeyIntoColumn(IColumn & col, std::string_view key)
@@ -386,7 +344,11 @@ public:
                 /// then insert views into the filter set.
                 owned_filter_strings.reserve(keys_filter.size());
                 for (const auto & f : keys_filter)
+                {
+                    if (f.getType() != Field::Types::String)
+                        continue;
                     owned_filter_strings.emplace_back(keyFromField(f, nullptr));
+                }
                 for (const auto & s : owned_filter_strings)
                     keys_to_keep.insert(std::string_view(s.data(), s.size()));
             }
@@ -891,7 +853,7 @@ private:
     static SizeAlign nativeSizeAlignForTypeIndex(TypeIndex idx)
     {
         SizeAlign result{};
-        bool found = callOnBasicType<void, true, true, true, true>(idx, [&](auto tag)
+        bool found = callOnBasicType<void, true, true, true, false>(idx, [&](auto tag)
         {
             using V = typename decltype(tag)::RightType;
             result = {sizeof(V), alignof(V)};
@@ -906,7 +868,7 @@ private:
     template <typename F>
     void dispatchOnTypeIndex(TypeIndex idx, F && func) const
     {
-        bool found = callOnBasicType<void, true, true, true, true>(idx, [&](auto tag)
+        bool found = callOnBasicType<void, true, true, true, false>(idx, [&](auto tag)
         {
             using V = typename decltype(tag)::RightType;
             func(V{});

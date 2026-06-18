@@ -2,6 +2,7 @@
 
 #include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
+#include <Core/DecimalFunctions.h>
 
 
 namespace DB
@@ -137,19 +138,13 @@ void FieldVisitorHash::operator() (const Object & x) const
     }
 }
 
-/// Normalize a decimal by stripping trailing zeros so that values comparing
-/// equal via DecimalField::operator== (which rescales) always hash identically.
 template <typename T>
 static void hashDecimalNormalized(SipHash & hash, UInt8 type, const DecimalField<T> & x)
 {
     hash.update(type);
     auto v = x.getValue().value;
     UInt32 s = x.getScale();
-    while (s > 0 && v % 10 == 0)
-    {
-        v /= 10;
-        --s;
-    }
+    DecimalUtils::normalizeDecimalTrailingZeros(v, s);
     hash.update(v);
     hash.update(s);
 }

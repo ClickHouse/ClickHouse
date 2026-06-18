@@ -516,3 +516,12 @@ INSERT INTO test_summap_amt_nullable SELECT 1, sumMapState([toUInt32(1), toUInt3
 OPTIMIZE TABLE test_summap_amt_nullable FINAL;
 SELECT sumMapMerge(state) FROM test_summap_amt_nullable;
 DROP TABLE test_summap_amt_nullable;
+
+-- Mixed-scale decimal keys in Dynamic columns
+SELECT 'Dynamic decimal mixed scale';
+SELECT sumMap(k, v) FROM
+(
+    SELECT [toDecimal64(11, 1)]::Array(Dynamic) AS k, [toInt64(1)] AS v
+    UNION ALL
+    SELECT [toDecimal64(110, 2)]::Array(Dynamic) AS k, [toInt64(2)] AS v
+);
