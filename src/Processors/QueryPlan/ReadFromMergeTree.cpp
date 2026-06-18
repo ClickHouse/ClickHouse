@@ -2091,7 +2091,7 @@ void ReadFromMergeTree::buildIndexes(
         if (ignored_index_names.contains(index.name))
             continue;
 
-        auto index_helper = MergeTreeIndexFactory::instance().get(index);
+        auto index_helper = MergeTreeIndexFactory::instance().get(index, *data.getSettings());
 
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
@@ -2170,15 +2170,30 @@ void ReadFromMergeTree::buildIndexes(
             for (const auto & idx : skip_indexes.useful_indices)
             {
                 size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName());
+                auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName(), &part.data_part->getDataPartStorage());
 
                 for (const auto & substream : format.substreams)
                 {
                     String stream_name = idx.index->getFileName() + substream.suffix;
-                    /// Check for both original and hashed filenames
+                    /// Check for both original and hashed filenames in checksums.txt
                     auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, part.data_part->checksums);
                     if (actual_stream_name)
+                    {
                         index_size += part.data_part->getFileSizeOrZero(*actual_stream_name + substream.extension);
+                    }
+                    else
+                    {
+                        /// Packed substreams have no individual checksum entry (only
+                        /// skp_idx.packed does), so the checksums-only lookup above returns
+                        /// nullopt. Ask the storage overlay - DataPartStorageOnDiskFull serves
+                        /// packed virtual-file sizes from the archive index. Without this
+                        /// fallback the cost-based skip-index reordering treats packed indices
+                        /// as free and may evaluate expensive ones before cheap ones.
+                        const String data_file = stream_name + substream.extension;
+                        const auto & storage = part.data_part->getDataPartStorage();
+                        if (storage.existsFile(data_file))
+                            index_size += storage.getFileSize(data_file);
+                    }
                 }
 
                 index_sizes.emplace_back(index_size);
