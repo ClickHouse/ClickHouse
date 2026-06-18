@@ -665,7 +665,7 @@ EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP 
 
 ```text
 Query summary:
-  Time:        10.96 ms (planning 6.63 ms · execute 4.33 ms)
+  Time:        10.96 ms (planning 6.63 ms · execution 4.33 ms)
   Read:        1.00 million rows, 8.00 MB (230.86 million rows/s., 1.85 GB/s.)
   Peak memory: 32.64 KiB
 
