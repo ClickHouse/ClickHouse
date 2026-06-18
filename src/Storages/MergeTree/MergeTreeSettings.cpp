@@ -669,6 +669,22 @@ namespace ErrorCodes
     ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
     ```
     )", 0) \
+    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 512, R"(
+    Default dictionary block size for text indexes.
+    Can be overridden by explicit `dictionary_block_size` index argument.
+    )", 0) \
+    DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
+    Default front-coding compression for text index dictionary blocks.
+    Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
+    )", 0) \
+    DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
+    Default posting list block size for text indexes (rows).
+    Can be overridden by explicit `posting_list_block_size` index argument.
+    )", 0) \
+    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
+    Default posting list codec for text indexes.
+    Can be overridden by explicit `posting_list_codec` index argument.
+    )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
@@ -1625,6 +1641,13 @@ namespace ErrorCodes
     DECLARE(Bool, allow_suspicious_indices, false, R"(
     Reject primary/secondary indexes and sorting keys with identical expressions
     )", 0) \
+    DECLARE(Bool, allow_tuple_element_aggregation, false, R"(
+    When enabled, individual elements within Tuple columns participate in
+    aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
+    CoalescingMergeTree. Nested Tuples are expanded recursively so that all
+    leaf elements are aggregated independently. This setting is immutable
+    and must be specified at table creation time.
+    )", 0) \
     DECLARE(Bool, compatibility_allow_sampling_expression_not_in_primary_key, false, R"(
     Allow to create a table with sampling expression not in primary key. This is
     needed only to temporarily allow to run the server with wrong tables for
@@ -2169,6 +2192,19 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, table_readonly, false, R"(
     If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
+    )", 0) \
+    DECLARE(Bool, materialize_projections_on_insert, true, R"(
+    When enabled, INSERTs create new parts with projections.
+    Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
+    or during merges with [materialize_projections_on_merge](/operations/settings/merge-tree-settings.md/#materialize_projections_on_merge).
+    )", 0) \
+    DECLARE(Bool, materialize_projections_on_merge, false, R"(
+    When enabled, a merge rebuilds a projection that is missing from all of its source parts (for example because they were
+    inserted with `materialize_projections_on_insert = 0`), so the merged part has the projection.
+
+    Merges still only combine parts that share the same set of projections. To backfill a projection to all existing parts,
+    use an explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection). Projections
+    are also created during INSERTs with [materialize_projections_on_insert](/operations/settings/merge-tree-settings.md/#materialize_projections_on_insert).
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
@@ -2820,6 +2856,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_block_number_column"
         || name == "add_minmax_index_for_block_offset_column"
         || name == "table_disk"
+        || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
     ;
 }
