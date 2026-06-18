@@ -1,11 +1,12 @@
 -- Tags: no-ordinary-database, no-async-insert, no-fasttest, no-object-storage, no-s3-storage
 -- UNIQUE KEY: mutation-guard coverage.
 --
--- `MergeTreeData::checkMutationIsPossible` must reject every mutation-class
--- operation that rewrites stored column bytes for a UNIQUE KEY column,
--- because those operations bypass `MergeTreeSinkUniqueKeyCommit::run` and
--- would create duplicate live keys. Covers ALTER DELETE / ALTER UPDATE /
--- MATERIALIZE COLUMN / CLEAR COLUMN.
+-- `MergeTreeData::checkMutationIsPossible` (and the alter-derived-mutation
+-- guard in `checkAlterIsPossible`) must reject every part-rewriting mutation
+-- on a UNIQUE KEY table -- for UK and non-UK columns alike -- because the
+-- rewrite bypasses `MergeTreeSinkUniqueKeyCommit::run` and drops the part's
+-- dense index. Covers ALTER DELETE / ALTER UPDATE / MATERIALIZE COLUMN /
+-- CLEAR COLUMN on both UK and non-UK columns.
 
 SET allow_experimental_unique_key = 1;
 SET async_insert = 0;
@@ -62,18 +63,18 @@ ALTER TABLE uk_mut_guard CLEAR COLUMN a IN PARTITION ID 'all'; -- { serverError 
 SELECT 'clear_uk_b' AS step;
 ALTER TABLE uk_mut_guard CLEAR COLUMN b IN PARTITION ID 'all'; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
--- Non-UK columns must still allow MATERIALIZE / CLEAR (c is in ORDER BY so
--- materialize on c is meaningless in practice but not forbidden by the UK
--- guard; d is a plain column with a DEFAULT, no restrictions apply).
+-- Non-UK columns are also rejected: any mutation rewrites the part without
+-- rebuilding the dense index, leaving the part without a usable
+-- unique_key_index.sst. TODO(unique-key): rebuild the index during mutation,
+-- then relax this for non-UK columns.
 SET mutations_sync = 2;
 SELECT 'materialize_non_uk_d' AS step;
-ALTER TABLE uk_mut_guard MATERIALIZE COLUMN d;
+ALTER TABLE uk_mut_guard MATERIALIZE COLUMN d; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT 'clear_non_uk_d' AS step;
-ALTER TABLE uk_mut_guard CLEAR COLUMN d IN PARTITION ID 'all';
+ALTER TABLE uk_mut_guard CLEAR COLUMN d IN PARTITION ID 'all'; -- { serverError SUPPORT_IS_DISABLED }
 
--- State: cleared `d` means its values are now reset to the default;
--- count is preserved.
+-- State: both mutations were rejected, so the row count is unchanged.
 SELECT count() FROM uk_mut_guard;  -- 2
 
 DROP TABLE uk_mut_guard;
