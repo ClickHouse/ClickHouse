@@ -118,6 +118,11 @@ private:
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
 
+    /// Sticky partition-to-shard mode. Empty string = broker-managed (default).
+    const String partition_assignment_mode;
+    /// Partitions owned by this shard in sticky mode. Empty = broker-managed.
+    const std::vector<int32_t> shard_owned_partitions;
+
     std::atomic<bool> mv_attached = false;
 
     std::vector<KafkaConsumerPtr> consumers;
@@ -152,6 +157,16 @@ private:
     /// Returns full producer related configuration, also the configuration
     /// contains global kafka properties.
     cppkafka::Configuration getProducerConfiguration();
+
+    /// Sticky partition-to-shard ingestion support.
+    /// Parses kafka_shard_partitions setting into a sorted vector of partition IDs.
+    static std::vector<int32_t> parseStickyPartitionList(const String & csv);
+    /// Splits owned_partitions across num_consumers round-robin (cooperative_split mode).
+    /// Consumer i gets partitions at indices i, i+num_consumers, i+2*num_consumers, ...
+    static std::vector<int32_t> splitPartitionsForConsumer(
+        const std::vector<int32_t> & owned_partitions,
+        size_t consumer_index,
+        size_t total_consumers);
 
     /// If named_collection is specified.
     String collection_name;

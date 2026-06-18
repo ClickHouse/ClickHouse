@@ -1,5 +1,7 @@
 #include <Storages/Kafka/StorageKafka.h>
 
+#include <algorithm>
+#include <sstream>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -96,6 +98,10 @@ namespace KafkaSetting
     extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
+    /// Sticky partition-to-shard ingestion
+    extern const KafkaSettingsString kafka_partition_assignment;
+    extern const KafkaSettingsString kafka_shard_partitions;
+    extern const KafkaSettingsString kafka_replica_consume_mode;
 }
 
 namespace ErrorCodes
@@ -194,6 +200,11 @@ StorageKafka::StorageKafka(
     , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
     , collection_name(collection_name_)
+    , partition_assignment_mode((*kafka_settings)[KafkaSetting::kafka_partition_assignment].value)
+    , shard_owned_partitions(
+          partition_assignment_mode == "shard_sticky"
+              ? StorageKafka::parseStickyPartitionList((*kafka_settings)[KafkaSetting::kafka_shard_partitions].value)
+              : std::vector<int32_t>{})
 {
     kafka_settings->sanityCheck(getContext());
 
@@ -220,7 +231,35 @@ StorageKafka::StorageKafka(
 
     consumers.resize(num_consumers);
     for (size_t i = 0; i < num_consumers; ++i)
+    {
         consumers[i] = createKafkaConsumer(i);
+
+        /// Sticky mode: pin this consumer to its slice of the shard's owned partitions.
+        if (!shard_owned_partitions.empty())
+        {
+            const auto & mode = (*kafka_settings)[KafkaSetting::kafka_replica_consume_mode].value;
+            std::vector<int32_t> consumer_partitions;
+
+            if (mode == "redundant")
+            {
+                /// Every consumer reads all shard partitions — higher fault tolerance,
+                /// but each partition is written num_consumers times within the shard.
+                consumer_partitions = shard_owned_partitions;
+            }
+            else
+            {
+                /// cooperative_split (default): round-robin slice so each partition is
+                /// consumed by exactly one consumer within the shard.
+                consumer_partitions = splitPartitionsForConsumer(shard_owned_partitions, i, num_consumers);
+            }
+
+            if (!consumer_partitions.empty())
+                consumers[i]->setStickyPartitions(std::move(consumer_partitions));
+            else
+                LOG_WARNING(log, "Consumer #{} has no partitions in shard_sticky mode "
+                    "(more consumers than owned partitions?). It will be idle.", i);
+        }
+    }
 
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]()
     {
@@ -594,6 +633,65 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
 size_t StorageKafka::getSchemaRegistrySkipBytes() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value;
+}
+
+std::vector<int32_t> StorageKafka::parseStickyPartitionList(const String & csv)
+{
+    /// Parses a comma-separated string like "0,1,2,3" into a sorted, deduplicated
+    /// vector of non-negative int32_t partition IDs.
+    std::vector<int32_t> result;
+    std::stringstream ss(csv);
+    std::string token;
+
+    while (std::getline(ss, token, ','))
+    {
+        /// Trim whitespace.
+        const auto begin = token.find_first_not_of(" \t");
+        const auto end   = token.find_last_not_of(" \t");
+        if (begin == std::string::npos)
+            continue;
+        token = token.substr(begin, end - begin + 1);
+
+        int32_t pid = -1;
+        try
+        {
+            pid = std::stoi(token);
+        }
+        catch (const std::exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "kafka_shard_partitions: invalid partition id '{}'. "
+                "Expected a comma-separated list of non-negative integers, e.g. '0,1,2,3'.",
+                token);
+        }
+
+        if (pid < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "kafka_shard_partitions: partition id must be non-negative, got '{}'.", pid);
+
+        result.push_back(pid);
+    }
+
+    if (result.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "kafka_shard_partitions is set but contains no valid partition IDs.");
+
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+}
+
+std::vector<int32_t> StorageKafka::splitPartitionsForConsumer(
+    const std::vector<int32_t> & owned_partitions,
+    size_t consumer_index,
+    size_t total_consumers)
+{
+    /// Round-robin split: consumer i owns owned_partitions[i], owned_partitions[i + total_consumers], ...
+    /// This ensures an even distribution with no partition assigned to more than one consumer.
+    std::vector<int32_t> result;
+    for (size_t idx = consumer_index; idx < owned_partitions.size(); idx += total_consumers)
+        result.push_back(owned_partitions[idx]);
+    return result;
 }
 
 void StorageKafka::threadFunc(size_t idx)

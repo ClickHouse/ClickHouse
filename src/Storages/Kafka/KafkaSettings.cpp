@@ -55,6 +55,17 @@ namespace ErrorCodes
     DECLARE(UInt64, kafka_schema_registry_skip_bytes, 0, "Number of bytes to skip from the beginning of each Kafka message (e.g., 5 for Confluent Schema Registry, 19 for AWS Glue Schema Registry envelope header). Maximum: 255 bytes.", 0) \
     DECLARE(Milliseconds, kafka_consumer_acquire_timeout_ms, 30000, "Timeout in milliseconds for acquiring a Kafka consumer during direct SELECT queries. When multiple concurrent direct SELECTs run on the same Kafka2 table, each query must wait for consumers to become available. A timeout is needed to break potential deadlocks when queries hold different subsets of consumers.", 0) \
     DECLARE(Bool, kafka_map_virtual_columns_on_write, false, "If enabled, columns with special names (`_key`, `_timestamp`, `_headers.name`, `_headers.value`) in the Kafka table are mapped to the corresponding Kafka message metadata on INSERT and are excluded from the message payload.", 0) \
+    /* Sticky partition-to-shard ingestion */ \
+    DECLARE(String, kafka_partition_assignment, "", "Partition assignment strategy. Empty (default): broker-managed consumer group rebalancing. " \
+        "'shard_sticky': partitions are pinned to this shard via explicit assign(), bypassing broker rebalancing entirely. " \
+        "Requires kafka_shard_partitions to be set with the list of partitions owned by this shard.", 0) \
+    DECLARE(String, kafka_shard_partitions, "", "Comma-separated Kafka partition IDs owned exclusively by this shard when " \
+        "kafka_partition_assignment='shard_sticky'. Example: '0,1,2,3'. Each shard in the cluster must list a disjoint " \
+        "set of partition IDs that together cover all partitions of the topic.", 0) \
+    DECLARE(String, kafka_replica_consume_mode, "cooperative_split", "How replicas within a shard share their assigned partition range " \
+        "when kafka_partition_assignment='shard_sticky'. " \
+        "'cooperative_split' (default): consumers divide the shard's partitions round-robin for maximum parallelism. " \
+        "'redundant': every consumer reads all shard partitions for higher fault tolerance at the cost of 2× intra-shard writes.", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \
@@ -140,6 +151,29 @@ void KafkaSettings::sanityCheck(ContextPtr global_context) const
         && !global_context->getDeadLetterQueue())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "The table system.dead_letter_queue is not configured on the server. You cannot create a table with this `kafka_handle_error_mode`.");
+
+    if (impl->kafka_partition_assignment.value == "shard_sticky")
+    {
+        if (impl->kafka_shard_partitions.value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "kafka_partition_assignment='shard_sticky' requires kafka_shard_partitions to be set. "
+                "Example: kafka_shard_partitions = '0,1,2,3'. Each shard in the cluster must declare "
+                "a disjoint set of partition IDs that together cover all topic partitions.");
+
+        const auto & mode = impl->kafka_replica_consume_mode.value;
+        if (mode != "cooperative_split" && mode != "redundant")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "kafka_replica_consume_mode must be 'cooperative_split' or 'redundant', got '{}'", mode);
+    }
+    else if (!impl->kafka_partition_assignment.value.empty())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unknown kafka_partition_assignment value '{}'. Supported values: '' (default, broker-managed) or 'shard_sticky'.",
+            impl->kafka_partition_assignment.value);
+    }
 }
 
 SettingsChanges KafkaSettings::getFormatSettings() const

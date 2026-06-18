@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <Core/Names.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
@@ -47,7 +48,16 @@ public:
     ConsumerPtr && moveConsumer();
 
     void commit(); // Commit all processed messages.
-    void subscribe(); // Subscribe internal consumer to topics.
+    void subscribe(); // Subscribe internal consumer to topics (broker-managed group rebalancing).
+
+    /// Pin this consumer to a specific set of partition IDs via librdkafka assign() instead of
+    /// subscribe(). Bypasses broker-managed consumer group rebalancing entirely — no stop-the-world
+    /// pause, no 15 s assignment wait on peer restarts. Must be called before the first consume().
+    /// Partition IDs must be a disjoint subset of the topic's total partitions; the caller
+    /// (StorageKafka) is responsible for ensuring no two shards list overlapping IDs.
+    void setStickyPartitions(std::vector<int32_t> partition_ids);
+
+    bool isStickyAssigned() const { return !sticky_partitions.empty(); }
 
     // used during exception processing to restart the consumption from last committed offset
     // Notes: duplicates can appear if the some data were already flushed
@@ -146,6 +156,10 @@ private:
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
 
+    /// When non-empty, consume() uses assign() instead of subscribe() — sticky shard mode.
+    /// Set once by StorageKafka before the first consume(); never mutated afterwards.
+    std::vector<int32_t> sticky_partitions;
+
     /// system.kafka_consumers data is retrieved asynchronously
     ///  so we have to protect exceptions_buffer
     mutable std::mutex exception_mutex;
@@ -168,6 +182,10 @@ private:
     void cleanAssignment();
     void resetIfStopped();
     ReadBufferPtr getNextMessage();
+
+    /// Called by subscribe() when sticky_partitions is non-empty.
+    /// Calls consumer->assign() (client-side, no broker coordination) instead of subscribe().
+    void assignViaSticky();
 };
 
 }
