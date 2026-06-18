@@ -145,3 +145,44 @@ TEST(FieldAccurateComparisonTest, DecimalSameTypeScales)
     EXPECT_FALSE(accurateEquals(w1, w2));
     EXPECT_TRUE(accurateLessOrEqual(w1, w1));
 }
+
+/// Pin the actual target carrier of the optimization: a `Field` built from
+/// `DecimalField<DateTime64>` (which shares the `Field::Types::Decimal64` tag and
+/// layout, so it is read back as `DecimalField<Decimal64>` by the fast paths).
+/// Mirrors a `DateTime64(3)` range predicate: millisecond timestamps and half-open
+/// bounds against the `+Inf` / `-Inf` sentinels.
+TEST(FieldAccurateComparisonTest, DateTime64Carrier)
+{
+    /// 1780329306.294 and 1780329606.294 as DateTime64(3).
+    Field dt1 = DecimalField<DateTime64>(DateTime64(1780329306294LL), 3);
+    Field dt2 = DecimalField<DateTime64>(DateTime64(1780329606294LL), 3);
+    Field dt1_again = DecimalField<DateTime64>(DateTime64(1780329306294LL), 3);
+
+    /// Null / +Inf / -Inf shortcut against the DateTime64 carrier.
+    EXPECT_FALSE(accurateEquals(dt1, POSITIVE_INFINITY));
+    EXPECT_FALSE(accurateEquals(POSITIVE_INFINITY, dt1));
+    EXPECT_FALSE(accurateEquals(dt1, NEGATIVE_INFINITY));
+    EXPECT_FALSE(accurateEquals(dt1, Field(Null())));
+    EXPECT_TRUE(accurateLess(dt1, POSITIVE_INFINITY));
+    EXPECT_FALSE(accurateLess(POSITIVE_INFINITY, dt1));
+    EXPECT_TRUE(accurateLess(NEGATIVE_INFINITY, dt1));
+    EXPECT_FALSE(accurateLess(dt1, NEGATIVE_INFINITY));
+    EXPECT_TRUE(accurateLessOrEqual(dt1, POSITIVE_INFINITY));
+    EXPECT_FALSE(accurateLessOrEqual(POSITIVE_INFINITY, dt1));
+
+    /// Same-scale fast path between two DateTime64 carriers.
+    EXPECT_TRUE(accurateEquals(dt1, dt1_again));
+    EXPECT_FALSE(accurateEquals(dt1, dt2));
+    EXPECT_TRUE(accurateLess(dt1, dt2));
+    EXPECT_FALSE(accurateLess(dt2, dt1));
+    EXPECT_TRUE(accurateLessOrEqual(dt1, dt1_again));
+    EXPECT_FALSE(accurateLessOrEqual(dt2, dt1));
+
+    /// Cross-carrier: a DateTime64-built Field compared against a Decimal64-built
+    /// Field of the same scale and value must compare equal -- this is exactly the
+    /// reinterpretation the hot path relies on (granule value vs analyzed literal).
+    Field dec_same = DecimalField<Decimal64>(1780329306294LL, 3);
+    EXPECT_TRUE(accurateEquals(dt1, dec_same));
+    EXPECT_FALSE(accurateLess(dt1, dec_same));
+    EXPECT_TRUE(accurateLessOrEqual(dt1, dec_same));
+}
