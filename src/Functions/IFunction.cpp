@@ -1,6 +1,7 @@
 #include <Functions/FunctionDynamicAdaptor.h>
 #include <Functions/FunctionVariantAdaptor.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
@@ -17,6 +18,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/array/NullableArrayOffsets.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -87,6 +89,33 @@ DataTypePtr makeNullableResultForDefaultNulls(const DataTypePtr & return_type, c
         return makeNullableAllowingArray(return_type);
 
     return makeNullableSafe(return_type);
+}
+
+void emptyArrayArgumentsOnNullRows(ColumnsWithTypeAndName & args, const ColumnUInt8 & row_null_map, size_t input_rows_count)
+{
+    if (!NullableArrayOffsets::rowNullMapHasAnyNull(row_null_map))
+        return;
+
+    for (auto & arg : args)
+    {
+        if (!isArray(arg.type))
+            continue;
+
+        ColumnPtr full_array_holder;
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(arg.column.get());
+        if (!array)
+        {
+            const auto * const_array = checkAndGetColumnConst<ColumnArray>(arg.column.get());
+            if (!const_array)
+                continue;
+
+            full_array_holder = const_array->convertToFullColumn();
+            array = assert_cast<const ColumnArray *>(full_array_holder.get());
+        }
+
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*array, &row_null_map, input_rows_count))
+            arg.column = std::move(null_rows_empty_array);
+    }
 }
 
 ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
@@ -374,6 +403,12 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         if (!should_short_circuit)
         {
             /// Each row should be evaluated if there are no nulls or short circuiting is disabled.
+            if (hasNullableArrayArgument(args))
+                emptyArrayArgumentsOnNullRows(
+                    temporary_columns,
+                    assert_cast<const ColumnUInt8 &>(*result_null_map),
+                    input_rows_count);
+
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
             auto new_res = wrapInNullable(res, std::move(result_null_map));
             return new_res;
