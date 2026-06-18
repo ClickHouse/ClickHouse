@@ -243,13 +243,14 @@ private:
     /// outside of this range we fall back to cctz directly instead of clamping to the boundary.
     std::unique_ptr<cctz::time_zone> cctz_time_zone;
 
-    /// Unix time of the beginning of the first day in the LUT (DATE_LUT_MIN_YEAR-01-01 in local time),
-    /// and of the day right after the last one (DATE_LUT_MAX_YEAR+1-01-01 in local time).
-    /// A time point is representable by the LUT iff lut_start_time <= t < lut_end_time.
-    Time lut_start_time;
-    Time lut_end_time;
-    /// lut_end_time - lut_start_time, precomputed so the in-range check is a single unsigned comparison.
-    Time lut_time_span;
+    /// The lookup table covers the local days [DATE_LUT_MIN_YEAR-01-01, DATE_LUT_MAX_YEAR-12-31]. The exact
+    /// Unix-time boundary of that range is time-zone dependent, but it cannot shift by more than the largest
+    /// possible UTC offset (well under a day). So a window shrunk by two days on each side from the UTC bounds
+    /// is guaranteed to be in range for *every* time zone, and uses only compile-time constants — no per-instance
+    /// members and no loads on the hot path. The few near-boundary time points that fall outside this window take
+    /// the (always-correct) cctz escape path. Day numbers are time-zone independent, so they need no margin.
+    static constexpr Time lut_in_range_min = -2208988800 + 2 * 86400; /// after 1900-01-01 00:00:00 UTC, for any time zone
+    static constexpr Time lut_in_range_max = 10413792000 - 2 * 86400; /// before 2300-01-01 00:00:00 UTC, for any time zone
 
     /// The widest range DateLUTImpl can represent and format: a 4-digit year, i.e. [0000-01-01, 9999-12-31].
     /// The cctz escape paths clamp to this window so that formatting can never overflow the 4-digit year
@@ -265,11 +266,11 @@ private:
     template <typename T>
     static constexpr bool may_be_out_of_lut_range = std::is_same_v<T, Time> || std::is_same_v<T, ExtendedDayNum>;
 
-    bool isOutOfLUTRange(Time t) const
+    static bool isOutOfLUTRange(Time t)
     {
-        /// Single unsigned comparison, equivalent to (t < lut_start_time || t >= lut_end_time).
-        /// Operands are cast before subtracting to avoid signed overflow for extreme time points.
-        return static_cast<UInt64>(t) - static_cast<UInt64>(lut_start_time) >= static_cast<UInt64>(lut_time_span);
+        /// Single unsigned comparison against compile-time constants, equivalent to
+        /// (t < lut_in_range_min || t >= lut_in_range_max). Cast before subtracting to avoid signed overflow.
+        return static_cast<UInt64>(t) - static_cast<UInt64>(lut_in_range_min) >= static_cast<UInt64>(lut_in_range_max - lut_in_range_min);
     }
 
     static bool isOutOfLUTRange(ExtendedDayNum d)
@@ -342,6 +343,24 @@ private:
         }
 
         return LUTIndex(guess ? static_cast<unsigned>(guess) - 1 : 0);
+    }
+
+    /// Same as findIndex, but for a Time that the caller has already established to be in range (i.e. that passed
+    /// the `!isOutOfLUTRange(t)` gate). The gate's two-day margin guarantees the guess is in [1, DATE_LUT_SIZE - 2],
+    /// so the bound clamps that findIndex repeats are unnecessary and lut[guess - 1 .. guess + 1] are all valid.
+    LUTIndex findIndexInRange(Time t) const
+    {
+        Time guess = (t / 86400) + daynum_offset_epoch;
+        if (unlikely(t < 0))
+            --guess;
+
+        if (t >= lut[guess].date)
+        {
+            if (t < lut[guess + 1].date)
+                return LUTIndex(static_cast<unsigned>(guess));
+            return LUTIndex(static_cast<unsigned>(guess) + 1);
+        }
+        return LUTIndex(static_cast<unsigned>(guess) - 1);
     }
 
     static LUTIndex toLUTIndex(DayNum d)
@@ -626,7 +645,7 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return makeDateOutOfRange(outOfRangeValues(t).year, 1, 1);
 
-        return lut[years_lut[lut[findIndex(t)].year - DATE_LUT_MIN_YEAR]].date;
+        return lut[years_lut[lut[findIndexInRange(t)].year - DATE_LUT_MIN_YEAR]].date;
     }
 
     template <typename DateOrTime>
@@ -656,7 +675,7 @@ public:
             return makeDateOutOfRange(values.year, values.month + 1, 1);
         }
 
-        LUTIndex index = findIndex(t);
+        LUTIndex index = findIndexInRange(t);
         index += 32 - lut[index].day_of_month;
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
@@ -669,7 +688,7 @@ public:
             return makeDateOutOfRange(values.year, values.month - 1, 1);
         }
 
-        LUTIndex index = findIndex(t);
+        LUTIndex index = findIndexInRange(t);
         index -= lut[index].day_of_month;
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
@@ -702,7 +721,7 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return dateOfDayIndex(findDayIndexOutOfRange(t) + days);
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
         const Int64 shifted = static_cast<Int64>(index.toUnderType()) + days;
         if (unlikely(shifted < 0 || shifted >= DATE_LUT_SIZE))
             return dateOfDayIndex(shifted);
@@ -715,7 +734,7 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return toTimeOutOfRange(t);
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
 
         Time res = t - lut[index].date;
 
@@ -730,7 +749,7 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.hour);
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
 
         Time time = t - lut[index].date;
 
@@ -753,7 +772,7 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return timezoneOffsetOutOfRange(t);
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
 
         /// Calculate daylight saving offset first.
         /// Because the "amount_of_offset_change" in LUT entry only exists in the change day, it's costly to scan it from the very begin.
@@ -788,7 +807,7 @@ public:
             return static_cast<unsigned>(res) + 60;
         }
 
-        LUTIndex index = findIndex(t);
+        LUTIndex index = findIndexInRange(t);
         Time time = t - lut[index].date;
 
         if (time >= lut[index].time_at_offset_change())
@@ -815,7 +834,7 @@ public:
         /// To consider the DST changing situation within this day
         /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account.
 
-        LUTIndex index = findIndex(t);
+        LUTIndex index = findIndexInRange(t);
         UInt32 time = static_cast<UInt32>(t - lut[index].date);
 
         if (time >= lut[index].time_at_offset_change())
@@ -1408,7 +1427,7 @@ public:
                 return static_cast<DateOrTime>(values.date + time);
             }
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
         const Values & values = lut[index];
 
         Time time = t - values.date;
@@ -1591,8 +1610,13 @@ public:
     Values getValues(DateOrTime v) const
     {
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
+        {
             if (unlikely(isOutOfLUTRange(v)))
                 return outOfRangeValues(v);
+            /// Already gated: skip the redundant bound clamp that findIndex would repeat.
+            if constexpr (std::is_same_v<DateOrTime, Time>)
+                return lut[findIndexInRange(v)];
+        }
         return lut[toLUTIndex(v)];
     }
 
@@ -1671,7 +1695,7 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return toDateTimeComponentsOutOfRange(t);
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
         const Values & values = lut[index];
 
         DateTimeComponents res;
@@ -1767,7 +1791,7 @@ public:
         if (unlikely(isOutOfLUTRange(t)))
             return addDaysOutOfRange(t, delta);
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
 
         /// If the destination day falls outside of the lookup table, recompute everything with cctz.
         const Int64 new_day_index = static_cast<Int64>(index.toUnderType()) + delta;
@@ -1837,7 +1861,7 @@ public:
             if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
                 return addMonthsOutOfRange(t, delta);
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
         const Values & values = lut[index];
 
         if constexpr (!std::is_same_v<DateTime, UInt32>)
@@ -1921,7 +1945,7 @@ public:
             if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
                 return addYearsOutOfRange(t, delta);
 
-        const LUTIndex index = findIndex(t);
+        const LUTIndex index = findIndexInRange(t);
         const Values & values = lut[index];
 
         if constexpr (!std::is_same_v<DateTime, UInt32>)
