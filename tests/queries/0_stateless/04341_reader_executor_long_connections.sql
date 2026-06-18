@@ -35,10 +35,14 @@ SETTINGS reader_executor_use_long_connections = 0, log_comment = '04341_long_con
 
 SYSTEM FLUSH LOGS query_log;
 
--- ON: a long connection was opened and reused (a held connection serves more than one window).
+-- ON: a long connection was opened and reused (a held connection serves more than one window), the
+-- held path served real bytes, and over-read is expected -- gap-bridging reads past the requested
+-- window, so source bytes are at least the requested bytes (the inverse of 04327's strict equality).
 SELECT
     ProfileEvents['LongConnectionOpened'] > 0,
-    ProfileEvents['LongConnectionHits'] > 0
+    ProfileEvents['LongConnectionHits'] > 0,
+    ProfileEvents['LongConnectionBytes'] > 0,
+    ProfileEvents['ReaderExecutorBytesFromSource'] >= ProfileEvents['ReaderExecutorRequestedBytes']
 FROM system.query_log
 WHERE log_comment = '04341_long_conn_on' AND type = 'QueryFinish' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds DESC LIMIT 1;

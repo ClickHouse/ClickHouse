@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-distributed-cache, no-encrypted-storage
+-- Tags: no-fasttest, no-distributed-cache, no-encrypted-storage, no-parallel-replicas
 -- The experimental ReaderExecutor's long-connection reuse on a DIRECT object-storage read (the
 -- s3() table function / StorageObjectStorage), not via a MergeTree disk. The held source connection
 -- is opened here only because the limit is wired into the direct read path
@@ -6,6 +6,7 @@
 --   no-fasttest: needs minio (object storage).
 --   no-distributed-cache / no-encrypted-storage: the executor falls back on those stages, so its
 --   metrics would not be emitted there.
+--   no-parallel-replicas: distributed reading doesn't open a held connection on the observed path.
 
 INSERT INTO FUNCTION s3(s3_conn, filename = '04342_reader_executor_long_conn', format = Parquet)
 SELECT number AS id, number * 2 AS v, repeat('x', 64) AS s FROM numbers(500000)
