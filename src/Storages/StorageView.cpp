@@ -220,11 +220,18 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     /// body are intentionally not checked here: the body is read through StorageDistributed::read
     /// in both the pushdown and non-pushdown paths, so those expressions run on the shards either
     /// way. Only the outer query needs that gate, applied in PlannerJoinTree.cpp.
+    ///
+    /// A SETTINGS clause in the view body is rejected outright (fail close). Some query-level
+    /// settings (notably `limit` and `offset`) are turned into QueryNode limit/offset by
+    /// QueryTreeBuilder, so a body such as `SELECT id FROM dist SETTINGS limit = 1` would be limited
+    /// once globally on the normal path but once per shard on the pushdown path, changing the
+    /// result. Rather than enumerate every result-changing setting, disqualify any SETTINGS clause.
     if (select->with() || select->prewhere()
         || (select->where() && hasSubquery(select->where()))
         || select->groupBy() || select->having() || select->qualify()
         || select->orderBy() || select->limitLength() || select->limitOffset() || select->limitBy()
-        || select->distinct || select->arrayJoinExpressionList().first)
+        || select->distinct || select->arrayJoinExpressionList().first
+        || select->settings())
     {
         return nullptr;
     }
