@@ -244,7 +244,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, text_index_posting_list_block_size = 1048576;
 
 INSERT INTO tab
 SELECT
