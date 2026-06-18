@@ -226,8 +226,12 @@
             display: flex;
             align-items: flex-end;
             gap: 0.25rem;
-            padding: 0.35rem 0.5rem 0 0.5rem;
+            padding: 0.15rem 0.5rem 0 0.5rem;
             background: var(--table-header-color); /* light gray strip */
+            /* The border runs along the top of the main area. The active tab covers its
+               own 1px segment of it (see .tab.active), so the active title looks like
+               part of the main area below. */
+            border-bottom: 1px solid var(--border-color);
         }
 
         /* The `display: flex` above (id specificity) overrides the user-agent
@@ -248,11 +252,12 @@
             display: flex;
             align-items: flex-end;
             gap: 0.25rem;
-            flex: 1 1 auto;
+            /* Take only the width of the tabs (do not grow), so the [+] button sits
+               directly after the last tab. No overflow clipping here: it would force
+               overflow-y to clip and cut off the 1px the active tab uses to merge with
+               the main area. When there are many tabs they compress (see .tab). */
+            flex: 0 1 auto;
             min-width: 0;
-            overflow-x: auto;
-            scrollbar-width: thin;
-            scrollbar-color: var(--border-color) transparent;
         }
 
         .tab
@@ -260,16 +265,20 @@
             display: flex;
             align-items: center;
             gap: 0.35rem;
-            flex-shrink: 0;
+            /* Stay at natural width when there is room; compress (title ellipsizes) when
+               there are many tabs, instead of overflowing. */
+            flex: 0 1 auto;
+            min-width: 0;
             max-width: 16rem;
             padding: 0.25rem 0.5rem;
-            margin-bottom: 0.25rem; /* lifted off the strip bottom, so the strip shows beneath */
+            /* All tabs (active and inactive) sit at the same position; the bottom 1px
+               overlaps the strip's border so each tab owns that segment of the line. */
+            margin-bottom: -1px;
             cursor: pointer;
             user-select: none;
             white-space: nowrap;
             color: var(--text-color);
             border: 1px solid var(--border-color);
-            border-bottom: none;
             /* Inactive tabs are tinted by the hash of their own query text, mirroring
                the page background formula, so different queries get distinct colors. */
             background: oklch(96% 0.0296 var(--tab-hue, var(--background-color-rotate)));
@@ -280,20 +289,21 @@
             background: oklch(15% 0.0296 var(--tab-hue, var(--background-color-rotate)));
         }
 
-        /* The active tab uses the page background and drops to the bottom of the
-           strip, so it visually merges with the rest of the page below. */
+        /* The active tab uses the page background and erases its own segment of the
+           top-of-main border, so its title reads as part of the main area below. */
         .tab.active
         {
             background: var(--background-color);
             color: var(--text-color-active);
             font-weight: bold;
-            margin-bottom: -1px;
+            border-bottom-color: var(--background-color);
         }
 
         .tab-title
         {
             overflow: hidden;
             text-overflow: ellipsis;
+            min-width: 0; /* allow the title to ellipsize when the tab is compressed */
         }
 
         /* Over the active tab's title the cursor indicates inline text editing. */
@@ -319,6 +329,7 @@
             font-size: 1.1em;
             padding: 0 0.15rem;
             color: var(--misc-text-color);
+            flex-shrink: 0; /* never shrink the close icon */
         }
 
         .tab-close:hover
@@ -327,11 +338,13 @@
             background: var(--border-color);
         }
 
+        /* Styled like a tab (same border, height and bottom-line alignment) and placed
+           directly after the last tab. */
         #tab-add
         {
             flex-shrink: 0;
             align-self: flex-end;
-            margin-bottom: 0.25rem;
+            margin-bottom: -1px;
             padding: 0.25rem 0.6rem;
             cursor: pointer;
             font-weight: bold;
