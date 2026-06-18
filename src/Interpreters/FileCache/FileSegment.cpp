@@ -645,13 +645,12 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
     remote_file_reader.reset();
 
     /// The file is now fully written and closed; encode its size into the file name so that
-    /// startup metadata loading can avoid a `stat` per file.
-    /// This must happen before publishing the `DOWNLOADED` state. Both callers
-    /// (`completePartAndResetDownloader` and `complete`) reset the downloader only after this
-    /// method returns, so if `rename` threw with the state already set to `DOWNLOADED`, the segment
-    /// would be left `DOWNLOADED` with a stale downloader, violating `assertCorrectness`. Renaming
-    /// first leaves the segment `DOWNLOADING` (with its downloader still set, which is a valid state)
-    /// on failure, so the completion stays consistent and retryable.
+    /// startup metadata loading can avoid a `stat` per file. This is best-effort: the segment is
+    /// already fully downloaded and valid under its legacy `<offset>` name, so a rename failure must
+    /// not abort completion. `renameToIncludeSizeInNameUnlocked` therefore never throws — on failure
+    /// it keeps the legacy name (the loader falls back to a `stat`). Doing it here, before publishing
+    /// the `DOWNLOADED` state, also keeps `getPath` (which depends on `size_in_filename`) consistent
+    /// with the file's actual on-disk name for the assertions below.
     renameToIncludeSizeInNameUnlocked(lock);
 
     download_state = State::DOWNLOADED;
@@ -675,12 +674,32 @@ void FileSegment::renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock
     const auto old_path = key_metadata_ptr->getFileSegmentPath(offset(), segment_kind, /* size */std::nullopt);
     const auto new_path = key_metadata_ptr->getFileSegmentPath(offset(), segment_kind, range().size());
 
+    if (old_path == new_path)
+    {
+        size_in_filename = true;
+        return;
+    }
+
+    /// Encoding the size in the name is only a startup optimization, so the rename is best-effort.
+    /// The segment is already fully downloaded and valid under its legacy `<offset>` name; if the
+    /// rename fails we keep that name (`size_in_filename` stays false and the loader falls back to a
+    /// `stat`) and do not propagate the error. Letting it escape would be unsafe: this runs from
+    /// `setDownloadedUnlocked` while the segment is still `DOWNLOADING` with its downloader set, so a
+    /// throw would leave the segment owned by the unwinding query (no other reader could acquire it
+    /// to retry), and `FileSegmentsHolder::reset` would hit its `chassert(false)` on the way out.
     /// `rename` is atomic, so a crash leaves either the old (`<offset>`) or the new
     /// (`<offset>_<size>`) name, both of which the loader handles correctly.
-    if (old_path != new_path)
+    try
+    {
         fs::rename(old_path, new_path);
-
-    size_in_filename = true;
+        size_in_filename = true;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            log,
+            fmt::format("Failed to rename cache file '{}' to encode its size in the name; keeping the legacy name", old_path));
+    }
 }
 
 void FileSegment::setDownloadFailed()
