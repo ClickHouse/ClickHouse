@@ -643,14 +643,14 @@ ExpressionTransform
 
 Settings:
 
-The settings used for `EXPLAIN ANALYZE` are a subset of settings for `EXPLAIN PLAN`. The information about them can be found in {#explain-plan} section.
+The settings used for `EXPLAIN ANALYZE` are a subset of settings for `EXPLAIN PLAN`. The information about them can be found in [EXPLAIN PLAN](#explain-plan) section.
 
-- `header` — see {#explain-plan} section.
-- `description` — see {#explain-plan} section.
-- `projections` — see {#explain-plan} section.
-- `sorting` — see {#explain-plan} section.
-- `input_headers` — see {#explain-plan} section.
-- `column_structure` — see {#explain-plan} section.
+- `header` — see [EXPLAIN PLAN](#explain-plan) section.
+- `description` — see [EXPLAIN PLAN](#explain-plan) section.
+- `projections` — see [EXPLAIN PLAN](#explain-plan) section.
+- `sorting` — see [EXPLAIN PLAN](#explain-plan) section.
+- `input_headers` — see [EXPLAIN PLAN](#explain-plan) section.
+- `column_structure` — see [EXPLAIN PLAN](#explain-plan) section.
 - `processors` — For `EXPLAIN ANALYZE`, prints an additional line per step (and group) with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
 
 :::note
