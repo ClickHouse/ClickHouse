@@ -14,26 +14,30 @@ namespace DB
 struct JSONSubcolumnIndexInfo
 {
     String json_column_name;       /// e.g., "json"
-    String json_all_paths_column;  /// e.g., "JSONAllPaths(json)"
     String path;                   /// e.g., "a.b"
     size_t header_position;        /// position of JSONAllPaths column in the index header
 };
 
-/// Try to match a column name from the filter DAG to a JSONAllPaths index column in the header.
+/// Try to match a column name from the filter DAG to a JSON index column in the header.
 /// Iterates all dot positions in `column_name` to handle JSON columns whose names contain dots
 /// (e.g., `my.json` JSON or `t Tuple(json JSON)` with index on `JSONAllPaths(t.json)`).
 ///
+/// The `json_function_name` parameter specifies which index function to look for (e.g. "JSONAllPaths",
+/// "JSONAllValues").
+///
 /// Returns nullopt if:
-///   - No matching JSONAllPaths column is found in the header
+///   - No matching index column is found in the header
 ///   - The subcolumn is a sub-object access (^ prefix)
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
-    const Block & header);
+    const Block & header,
+    const String & json_function_name);
 
 /// Overload that works with a list of index column names instead of a Block.
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
-    const Names & index_columns);
+    const Names & index_columns,
+    const String & json_function_name);
 
 class RPNBuilderTreeNode; /// forward declaration to avoid heavy include
 
@@ -42,12 +46,14 @@ class RPNBuilderTreeNode; /// forward declaration to avoid heavy include
 /// `CAST(json.path, 'Type')` / `_CAST(json.path, 'Type')` and retries.
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
-    const Block & header);
+    const Block & header,
+    const String & json_function_name);
 
 /// Overload that works with a list of index column names instead of a Block.
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
-    const Names & index_columns);
+    const Names & index_columns,
+    const String & json_function_name);
 
 /// Check if a JSON path filter is safe to use for index skipping.
 /// When a JSON path is absent in a granule, the expression evaluates to:

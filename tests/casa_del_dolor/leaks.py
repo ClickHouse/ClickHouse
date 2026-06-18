@@ -11,7 +11,6 @@ import time
 from datetime import datetime
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-from typing import Optional
 from integration.helpers.client import Client, CommandRequest
 from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
@@ -43,13 +42,11 @@ class ElOracloDeLeaks:
             client = Client(
                 host=next_node.ip_address, port=9000, command=cluster.client_bin_path
             )
-            metrics_str = client.query(
-                """
+            metrics_str = client.query("""
                 SELECT metric, value
                 FROM system.asynchronous_metrics
                 WHERE metric = 'MemoryResident';
-                """
-            )
+                """)
             if not isinstance(metrics_str, str) or metrics_str == "":
                 self.logger.warning(
                     f"No tables found to fetch on node {next_node.name}"

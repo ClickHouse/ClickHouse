@@ -5,5 +5,6 @@ test_rocksdb_virtuals
 key	UInt64	0
 value	String	0
 _table	LowCardinality(String)	1
+_database	LowCardinality(String)	1
 test_rocksdb_virtuals
 test_rocksdb_virtuals

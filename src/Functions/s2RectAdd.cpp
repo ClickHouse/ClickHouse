@@ -23,7 +23,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionS2RectAdd : public IFunction
+class FunctionS2RectAdd final : public IFunction
 {
 public:
     static constexpr auto name = "s2RectAdd";
