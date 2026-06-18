@@ -41,8 +41,11 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     , connection_params(connection_params_)
     , blob_path(blob_path_)
 {
-    auto client_ptr = AzureBlobStorage::getContainerClient(connection_params, /*readonly=*/ false);
     auto settings_ptr = AzureBlobStorage::getRequestSettingsForBackup(context_, connection_params.endpoint.storage_account_url, allow_azure_native_copy);
+    auto client_ptr = AzureBlobStorage::getContainerClient(
+        connection_params, false,
+        settings_ptr->rbac_warmup_interval_sec,
+        settings_ptr->rbac_warmup_retry_multiplier);
 
     object_storage = std::make_unique<AzureObjectStorage>(
         "BackupReaderAzureBlobStorage",
@@ -140,8 +143,11 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     if (!attempt_to_create_container)
         connection_params.endpoint.container_already_exists = true;
 
-    auto client_ptr = AzureBlobStorage::getContainerClient(connection_params, /*readonly=*/ false);
     auto settings_ptr = AzureBlobStorage::getRequestSettingsForBackup(context_, connection_params.endpoint.storage_account_url, allow_azure_native_copy);
+    auto client_ptr = AzureBlobStorage::getContainerClient(
+        connection_params, false,
+        settings_ptr->rbac_warmup_interval_sec,
+        settings_ptr->rbac_warmup_retry_multiplier);
 
     object_storage = std::make_unique<AzureObjectStorage>(
         "BackupWriterAzureBlobStorage",

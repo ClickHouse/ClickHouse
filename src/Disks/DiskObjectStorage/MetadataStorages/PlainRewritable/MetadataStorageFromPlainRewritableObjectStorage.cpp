@@ -217,7 +217,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 }
 #endif
 #if USE_AZURE_BLOB_STORAGE
-                catch (const Azure::Storage::StorageException & e)
+                catch (const Azure::Core::RequestFailedException & e)
                 {
                     if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
                         return;

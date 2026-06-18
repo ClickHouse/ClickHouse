@@ -401,9 +401,12 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 move_container,
                 contextPtr);
             const bool is_readonly = true;
+            auto azure_settings = AzureBlobStorage::getRequestSettings(contextPtr->getSettingsRef());
             std::shared_ptr<AzureBlobStorage::ContainerClient> dst_client = AzureBlobStorage::getContainerClient(
                 connection_params,
-                is_readonly);
+                is_readonly,
+                azure_settings->rbac_warmup_interval_sec,
+                azure_settings->rbac_warmup_retry_multiplier);
 
             size_t moved_objects = 0;
             for (const auto & object_from : objects)
@@ -411,8 +414,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 try
                 {
                     doWithRetries([&]{
-                        Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
-                        auto properties = blobClient.GetProperties().Value;
+                        auto properties = src_client->GetBlobProperties(object_from.remote_path).Value;
                         auto blob_size = properties.BlobSize;
                         auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
                         auto request_settings = azure_storage->getSettings();
