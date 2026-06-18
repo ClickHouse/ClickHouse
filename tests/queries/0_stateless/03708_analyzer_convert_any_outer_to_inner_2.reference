@@ -96,7 +96,7 @@ Positions: 5 0 1 2 3
   Positions: 5 0 1 2 3 4
     JoinLogical
     Join: u1[3] ⟕ u2
-    ResultRows: unknown
+    ResultRows: 3
     Type: LEFT
     Strictness: ANY
     Locality: UNSPECIFIED
@@ -173,7 +173,7 @@ Positions: 5 0 1 2 3
   Positions: 5 0 1 2 3 4
     JoinLogical
     Join: u1[3] ⟕ u2
-    ResultRows: unknown
+    ResultRows: 3
     Type: LEFT
     Strictness: ANY
     Locality: UNSPECIFIED
