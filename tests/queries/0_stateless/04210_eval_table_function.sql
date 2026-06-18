@@ -19,7 +19,8 @@ SELECT * FROM eval(SELECT toLowCardinality(CAST('SELECT 7 AS lcn', 'Nullable(Str
 SELECT count() > 0 FROM (EXPLAIN PLAN SELECT * FROM eval('SELECT 8 AS explain_value'));
 WITH 'SELECT 9 AS with_alias_value' AS q SELECT * FROM eval(q);
 WITH 'SEL' AS a, 'ECT 10 AS with_concat_value' AS b SELECT * FROM eval(a || b);
-SELECT count() FROM eval('SELECT number FROM numbers(3) SETTINGS limit = 1');
+-- The `limit` setting embedded in the generated query is only scoped to the inner query under the new analyzer.
+SELECT count() FROM eval('SELECT number FROM numbers(3) SETTINGS limit = 1') SETTINGS enable_analyzer = 1;
 
 SET enable_analyzer = 0;
 WITH 'SELECT 1' AS x SELECT * FROM eval(arrayElement(arrayMap(x -> x, ['SELECT 11 AS lambda_value']), 1));
@@ -51,3 +52,6 @@ SELECT * FROM eval('SELECT * FROM eval(''SELECT 1'')'); -- { serverError BAD_ARG
 SELECT * FROM eval('SELECT * FROM remote(''remote'', eval(''SELECT 1''))'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT * FROM loop(eval(''SELECT 1'')) LIMIT 1'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT * FROM viewIfPermitted(SELECT 1 AS x ELSE eval(''SELECT 1 AS x''))'); -- { serverError BAD_ARGUMENTS }
+-- A nested `eval(SELECT ...)` used as a scalar sub-expression puts a bare `SELECT` query node inside the
+-- argument expression; it must be rejected cleanly instead of raising a `LOGICAL_ERROR`.
+SELECT * FROM eval(eval(SELECT 1 WHERE x)); -- { serverError BAD_ARGUMENTS }

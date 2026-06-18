@@ -5,6 +5,10 @@ DROP FUNCTION IF EXISTS eval;
 
 CREATE FUNCTION eval AS x -> x + 1;
 
+-- The reference covers the new-analyzer behaviour (column name `eval(1)`, and the SQL UDF usable as a
+-- table-function argument); the old-analyzer column name `plus(1, 1)` is checked explicitly below.
+SET enable_analyzer = 1;
+
 SELECT eval(1) FORMAT TSVWithNames;
 
 SET allow_experimental_eval_table_function = 1;
