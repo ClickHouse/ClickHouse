@@ -240,11 +240,11 @@
             margin: -0.5rem 0 0.5rem 0; /* negative top bleeds into #main's top padding */
             /* No left padding: the bar's content edge already sits at #main's content
                edge, so the first tab lines up with the query editor and result tables.
-               Integer top padding (not e.g. 0.15rem = 2.4px): a fractional offset puts
-               the tabs and the [+] button on sub-pixel boundaries where the native
-               button and the div tabs rasterize their bottom border one device pixel
-               apart. */
-            padding: 2px 0.5rem 0 0;
+               Top padding equals the inter-tab gap (0.25rem), so the space above the tabs
+               matches the space between them. It resolves to a whole pixel at the default
+               root size, avoiding the sub-pixel border rasterization a fractional value
+               (e.g. 0.15rem = 2.4px) would cause between the native button and the divs. */
+            padding: 0.25rem 0.5rem 0 0;
         }
 
         #tab-bar::before
