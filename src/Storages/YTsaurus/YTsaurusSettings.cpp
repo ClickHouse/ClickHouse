@@ -8,13 +8,22 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
+#include <array>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
+    extern const int BAD_ARGUMENTS;
 }
+
+/// These settings control the dictionary-source lookup path only. The `YTsaurus` table engine and the `ytsaurus`
+/// table function perform full-table reads and never issue lookups, so accepting these settings there would be a
+/// silent no-op. They are loaded for the dictionary source via the config / named collection, not via a SQL query,
+/// so they are rejected only when they appear in a query `SETTINGS` clause (`loadFromQuery`).
+static constexpr std::array dictionary_only_setting_names{"lookup_throttler_max_requests_per_second", "lookup_max_rows_per_query"};
 
 #define LIST_OF_YTSAURUS_SETTINGS(DECLARE, ALIAS) \
     DECLARE(Bool, check_table_schema, true, "Check the ClickHouse and YTsaurus table schema for compatibility", 0) \
@@ -49,6 +58,16 @@ YTSAURUS_SETTINGS_SUPPORTED_TYPES(YTsaurusSettings, IMPLEMENT_SETTING_SUBSCRIPT_
 void YTsaurusSettings::loadFromQuery(const ASTSetQuery & settings_def)
 {
     impl->applyChanges(settings_def.changes);
+
+    for (const auto & name : dictionary_only_setting_names)
+    {
+        if (impl->isChanged(name))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `{}` is only applicable to YTsaurus dictionary sources; "
+                "it has no effect on the YTsaurus table engine or the `ytsaurus` table function",
+                name);
+    }
 }
 
 YTsaurusSettings YTsaurusSettings::createFromQuery(const ASTSetQuery & settings_def) {
