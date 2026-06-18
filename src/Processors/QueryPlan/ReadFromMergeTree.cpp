@@ -1562,11 +1562,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else /* local reading case */
     {
-        const PoolSettings per_split_pool_settings = make_per_split_pool_settings(split_parts_and_ranges.size());
-        for (auto & split_parts_and_range : split_parts_and_ranges)
+        /// Preserve master behaviour: every split gets the unmodified `pool_settings` (with
+        /// `.threads = num_streams`). The per-split divider only exists to keep the new
+        /// parallel-replicas split topology from inflating `min_marks_per_request` across the
+        /// per-split pools — local reads have no such concern.
+        for (auto && item : split_parts_and_ranges)
         {
             pipes.emplace_back(readInOrder(
-                std::move(split_parts_and_range), index_build_context, column_names, per_split_pool_settings, read_type, input_order_info->limit));
+                std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
         }
     }
 
