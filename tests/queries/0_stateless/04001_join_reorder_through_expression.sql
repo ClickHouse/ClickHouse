@@ -22,6 +22,7 @@ INSERT INTO t3 VALUES (11, 'A'), (21, 'B'), (31, 'C');
 
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET query_plan_merge_expression_into_join = 1;
 
 EXPLAIN PLAN keep_logical_steps = 1, description = 0
 SELECT * FROM (
@@ -38,7 +39,6 @@ INNER JOIN (
 ) as r
 ON l.key = r.key
 ORDER BY l.id
-SETTINGS query_plan_merge_expression_into_join = 1
 ;
 
 SELECT * FROM (
@@ -59,5 +59,4 @@ ORDER BY l.id
 
 SELECT * FROM view(SELECT t0.id as a, t1.id as b FROM t0 INNER JOIN t1 ON t0.id = t1.id) AS v
 INNER JOIN t2 ON v.a = t2.id and v.b = t2.id
-SETTINGS query_plan_merge_expression_into_join = 1
 ;

@@ -554,7 +554,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
     }
 
-    std::vector<JoinActionRef *> applied_edge;
+    std::vector<JoinActionRef *> applied_edges;
     /// Iteratively join components until we have a single plan
     while (components.size() > 1)
     {
@@ -574,13 +574,13 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 if (!join_kind)
                     continue;
 
-                auto edge = getApplicableExpressions(left->relations, right->relations);
-                bool connected = !edge.empty()
+                auto edges = getApplicableExpressions(left->relations, right->relations);
+                bool connected = !edges.empty()
                     || query_graph.areTransitivelyConnected(left->relations, right->relations);
                 if (!connected && best_plan)
                     continue;
 
-                auto selectivity = computeSelectivity(edge, left->relations, right->relations);
+                auto selectivity = computeSelectivity(edges, left->relations, right->relations);
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
@@ -589,7 +589,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified);
                     bool is_inner_step = isInner(join_kind.value()) || isCrossOrComma(join_kind.value());
-                    for (const auto * e : edge)
+                    for (const auto * e : edges)
                     {
                         /// A filter predicate applied at an outer join step must not go to the
                         /// ON clause, where it would affect matching instead of filtering and
@@ -600,7 +600,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                         else
                             join_operator.residual_filter.push_back(*e);
                     }
-                    applied_edge = std::move(edge);
+                    applied_edges = std::move(edges);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
                     best_i = i;
                     best_j = j;
@@ -630,11 +630,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         components.push_front(best_plan);
         dp_table[best_plan->relations] = best_plan;
 
-        for (auto * edge : applied_edge)
+        for (auto * edge : applied_edges)
             *edge = nullptr;
     }
 
-    for (auto * edge : applied_edge)
+    for (auto * edge : applied_edges)
         *edge = nullptr;
 
     auto non_applied_edges = std::views::filter(query_graph.edges, [](auto & edge) { return bool(edge); });

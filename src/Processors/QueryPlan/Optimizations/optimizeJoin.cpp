@@ -594,16 +594,16 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
     lhs.join_edges.append_range(rhs_edges_raw | std::views::transform([&](auto p) { return JoinActionRef(p, lhs.expression_actions); }));
 
-    for (auto && [id, restriction] : rhs.join_kinds)
+    for (auto & [id, restriction] : rhs.join_kinds)
     {
         restriction.first.shift(shift);
-        lhs.join_kinds[id + shift] = restriction;
+        lhs.join_kinds[id + shift] = std::move(restriction);
     }
 
-    for (auto && [sources, nodes] : rhs.type_changes)
+    for (auto & [sources, nodes] : rhs.type_changes)
         lhs.type_changes[sources + shift] = std::move(nodes);
 
-    for (auto && [action, null_rel] : rhs_outer_conditions_raw)
+    for (const auto & [action, null_rel] : rhs_outer_conditions_raw)
         lhs.outer_join_conditions[JoinActionRef(action, lhs.expression_actions)] = null_rel + shift;
 }
 
