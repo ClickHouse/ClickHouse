@@ -186,9 +186,19 @@ def main():
 
             stages = [JobStages.CONFIG, JobStages.TEST]
             resolved_clickhouse_bin_path = clickhouse_bin_path.resolve()
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-server")
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-client")
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-local")
+            for tool in (
+                "clickhouse-server",
+                "clickhouse-client",
+                "clickhouse-local",
+                "clickhouse-benchmark",
+                "clickhouse-compressor",
+                "clickhouse-disks",
+                "clickhouse-extract-from-config",
+                "clickhouse-format",
+                "clickhouse-obfuscator",
+                "clickhouse-su",
+            ):
+                Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / tool)
             Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
 
             break

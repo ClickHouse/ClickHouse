@@ -713,6 +713,12 @@ try
             config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
             pager_cmd = ShellCommand::execute(config);
             underlying_buf = &pager_cmd->in;
+
+            /// With `--pager` the result set is written through the pager's stdin pipe rather than
+            /// through `std_out`, so install the cancellation hook here too. Otherwise a stuck or
+            /// slow pager could fill its stdin pipe and the first Ctrl+C would appear to have no
+            /// effect. `pager_cmd` is recreated per query, so the hook does not need to be removed.
+            pager_cmd->in.setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
         }
         else
         {
@@ -795,8 +801,17 @@ try
                 if (query_with_output->isIntoOutfileWithStdout())
                 {
                     select_into_file_and_stdout = true;
-                    out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
-                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
+
+                    /// In `INTO OUTFILE ... AND STDOUT` mode the result is written to this separate
+                    /// stdout buffer rather than through `std_out`, so install the same cancellation
+                    /// hook here. Otherwise Ctrl+C would not promptly abort the output when the
+                    /// stdout sink (e.g. a slow terminal) is blocked. This buffer is recreated per
+                    /// query, so the hook does not need to be removed afterwards.
+                    auto stdout_buf = std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd);
+                    stdout_buf->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
+
+                    out_file_buf = std::make_unique<ForkWriteBuffer>(
+                        ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf), std::move(stdout_buf)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
@@ -1418,6 +1433,13 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
         {
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
+
+            /// Abort writing the result set to the output promptly when the query is cancelled.
+            /// Without this, a write to a slow or stuck sink (e.g. a slow terminal) blocks the
+            /// client, so the first Ctrl+C appears to have no effect until the whole block is
+            /// written. The hook lets the output buffer stop waiting and discard the rest.
+            std_out->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
+            SCOPE_EXIT({ std_out->setCancellationHook({}); });
 
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
@@ -2662,6 +2684,25 @@ void ClientBase::processParsedSingleQuery(
     {
         output_stream << "Processed rows: " << processed_rows << "\n";
     }
+
+    /// Optional ASCII `BEL` chime when a query finishes after running for at least
+    /// `chime-threshold-seconds`. Emitted on both success and error paths so that a
+    /// user attending to other work is alerted when a long-running query completes.
+    /// The terminal decides whether to make a sound or a visual flash, based on the
+    /// user's terminal preferences.
+    ///
+    /// Only emit `BEL` when stderr is attached to a terminal. When stderr is
+    /// redirected to a file or a pipe (for example when running under
+    /// `clickhouse-test` or any other automation), there is no terminal to chime
+    /// at, and emitting `BEL` would just contaminate the captured stderr stream.
+    UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 0);
+    if (chime_threshold_seconds > 0
+        && stderr_is_a_tty
+        && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
+    {
+        error_stream << '\x07';
+        error_stream.flush();
+    }
 }
 
 
@@ -3567,6 +3608,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 
         ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")
         ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "Print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
+        ("chime", po::value<UInt64>()->implicit_value(5)->default_value(5), "Emit the ASCII `BEL` control character (`\\x07`) to stderr when a query finishes (on success and on error) after running for at least this many seconds. Useful to alert when a long-running query completes. Default: 5 seconds (also used when `--chime` is passed without a value). Pass `--chime 0` to disable. Only emitted when stderr is attached to a terminal; redirected stderr (file, pipe) is left untouched. Whether the terminal makes a sound or visual flash depends on the terminal's user preferences.")
 
         ("echo", po::value<bool>()->implicit_value(true), "Print queries before execution. Enabled by default in interactive mode, disabled in batch mode.")
         ("echo-formatted", po::value<bool>()->implicit_value(true), "Format the echoed queries. Enabled by default in interactive mode, disabled in batch mode.")
@@ -3659,6 +3701,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("print-profile-events", true);
     if (options.contains("profile-events-delay-ms"))
         getClientConfiguration().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
+    if (options.contains("chime"))
+        getClientConfiguration().setUInt64("chime-threshold-seconds", options["chime"].as<UInt64>());
     /// Whether to print the number of processed rows at
     if (options.contains("processed-rows"))
         getClientConfiguration().setBool("print-num-processed-rows", true);
