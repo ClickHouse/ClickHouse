@@ -68,13 +68,13 @@ void TextIndexPositionCodec::decode(ReadBuffer & in, PositionList & pl)
     /// On-disk layout is AoS (doc, group, bitmap per entry); de-interleave into the lanes.
     for (size_t i = 0; i < count; ++i)
     {
-        RoaringishEntry e;
-        in.readStrict(reinterpret_cast<char *>(&e), sizeof(e));
+        RoaringishEntry entry{};
+        in.readStrict(reinterpret_cast<char *>(&entry), sizeof(entry));
         if constexpr (std::endian::native != std::endian::little)
-            transformEntryEndianness(e);
-        pl.doc[i] = e.doc_id;
-        pl.group[i] = e.group;
-        pl.bitmap[i] = e.bitmap;
+            transformEntryEndianness(entry);
+        pl.doc[i] = entry.doc_id;
+        pl.group[i] = entry.group;
+        pl.bitmap[i] = entry.bitmap;
     }
 }
 
