@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -590,6 +591,17 @@ struct AnalysisOfVarianceMoments
         readVectorBinary(xs1, buf);
         readVectorBinary(xs2, buf);
         readVectorBinary(ns, buf);
+
+        /// The three vectors hold one entry per group and must stay equal in length.
+        /// The finalize path iterates up to xs1.size() and indexes xs2 and ns with the
+        /// same position, so a state with mismatched lengths reads out of bounds.
+        if (xs1.size() != xs2.size() || xs1.size() != ns.size())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Sizes of nested arrays in analysisOfVariance state do not match: {}, {}, {}",
+                xs1.size(),
+                xs2.size(),
+                ns.size());
     }
 
     Float64 getMeanAll() const
