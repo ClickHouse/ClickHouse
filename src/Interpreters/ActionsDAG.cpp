@@ -1158,12 +1158,41 @@ void ActionsDAG::unwrapMaterializeWrapAtOutput(const std::string & name)
     root->is_deterministic_constant = inner->is_deterministic_constant;
 }
 
-void ActionsDAG::pushMaterializeOutwardForConstants()
+void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_output_name)
 {
+    /// Without a dropped output every output survives, so folding to Const would
+    /// change observable runtime types - bail out early
+    if (dropped_output_name.empty())
+        return;
+    const Node * dropped_output = tryFindInOutputs(dropped_output_name);
+    if (!dropped_output)
+        return;
+
+    /// Nodes reachable from any output other than the dropped one are observed downstream
+    /// (their runtime column type matters), so they are not safe to fold in place
+    std::unordered_set<const Node *> surviving;
+    {
+        std::vector<const Node *> stack;
+        for (const auto * out : outputs)
+            if (out != dropped_output)
+                stack.push_back(out);
+        while (!stack.empty())
+        {
+            const Node * n = stack.back();
+            stack.pop_back();
+            if (!surviving.insert(n).second)
+                continue;
+            for (const auto * c : n->children)
+                stack.push_back(c);
+        }
+    }
+
     /// bottom-up: marking a node constant via `node.column` lets parents visited later
     /// see it as const through `resolveConstThroughMaterialize` and fold the same way
     for (auto & node : nodes)
     {
+        if (surviving.contains(&node))
+            continue;
         if (node.type != ActionType::FUNCTION || !node.function_base || !node.function)
             continue;
         if (node.function_base->getName() == "materialize")
