@@ -176,6 +176,37 @@ SYSTEM SYNC REPLICA t_json_minmax_forbidden_replicated_r2;
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_r1 SYNC;
 DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_r2 SYNC;
 
+DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_reset_r1 SYNC;
+DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_reset_r2 SYNC;
+
+-- Should fail: RESET SETTING on replicated table with JSON minmax index must be rejected.
+CREATE TABLE t_json_minmax_forbidden_replicated_reset_r1 (
+    id Int32,
+    col1 JSON,
+    INDEX col_idx col1 TYPE minmax GRANULARITY 1
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array_reset', 'r1') ORDER BY id
+SETTINGS allow_minmax_index_for_json = 1;
+
+CREATE TABLE t_json_minmax_forbidden_replicated_reset_r2 (
+    id Int32,
+    col1 JSON,
+    INDEX col_idx col1 TYPE minmax GRANULARITY 1
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04278_json_minmax_index_mixed_type_array_reset', 'r2') ORDER BY id
+SETTINGS allow_minmax_index_for_json = 1;
+
+ALTER TABLE t_json_minmax_forbidden_replicated_reset_r1 RESET SETTING allow_minmax_index_for_json; -- { serverError BAD_ARGUMENTS }
+
+ALTER TABLE t_json_minmax_forbidden_replicated_reset_r1 MODIFY SETTING allow_minmax_index_for_json = 0; -- { serverError BAD_ARGUMENTS }
+
+-- Should fail: mixed comment+settings ALTER that disables the escape hatch (areNonReplicatedAlterCommands path).
+ALTER TABLE t_json_minmax_forbidden_replicated_reset_r1 COMMENT COLUMN col1 'test', RESET SETTING allow_minmax_index_for_json; -- { serverError BAD_ARGUMENTS }
+
+-- Should succeed: table remains usable after rejected RESET/MODIFY.
+ALTER TABLE t_json_minmax_forbidden_replicated_reset_r1 ADD COLUMN extra UInt8 DEFAULT 0;
+
+DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_reset_r1 SYNC;
+DROP TABLE IF EXISTS t_json_minmax_forbidden_replicated_reset_r2 SYNC;
+
 -- Should succeed: dropping the JSON minmax index and resetting the escape hatch in one ALTER
 -- leaves a valid final metadata state.
 CREATE TABLE t_json_minmax_forbidden (
