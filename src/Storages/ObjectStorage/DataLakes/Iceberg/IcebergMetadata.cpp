@@ -1343,7 +1343,6 @@ void IcebergMetadata::truncate(ContextPtr local_context, std::shared_ptr<DataLak
     /// listing key as `path / prefix`, so passing the table path as the prefix as well would either
     /// duplicate it (relative paths, e.g. S3) or be silently ignored (absolute paths, e.g. local disk).
     auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
-
     /// Reset the metadata object to represent an empty table while preserving its schema.
     if (metadata_object->getArray(f_snapshots))
         metadata_object->getArray(f_snapshots)->clear();
@@ -1351,7 +1350,30 @@ void IcebergMetadata::truncate(ContextPtr local_context, std::shared_ptr<DataLak
         metadata_object->getArray(f_snapshot_log)->clear();
     if (metadata_object->getArray(f_metadata_log))
         metadata_object->getArray(f_metadata_log)->clear();
+    if (metadata_object->getArray(f_statistics))
+        metadata_object->getArray(f_statistics)->clear();
+    if (metadata_object->getArray(f_partition_statistics))
+        metadata_object->getArray(f_partition_statistics)->clear();
+    // resetting refs like we do in createEmptyMetadataFile
+    if (metadata_object->getObject(f_refs))
+    {
+        Poco::JSON::Object::Ptr refs = new Poco::JSON::Object;
+        Poco::JSON::Object::Ptr main_branch = new Poco::JSON::Object;
+        main_branch->set(f_metadata_snapshot_id, -1);
+        main_branch->set(f_type, f_branch);
+        refs->set(f_main, main_branch);
+        metadata_object->set(f_refs, refs);
+    }
     metadata_object->set(f_current_snapshot_id, -1);
+    // reset commit counter and timestamps
+    auto format_version = metadata_object->getValue<Int64>(f_format_version);
+    auto now = std::chrono::system_clock::now();
+    auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    metadata_object->set(f_last_updated_ms, ms.count());
+    if (format_version > 1)
+        metadata_object->set(f_last_sequence_number, 0);
+    if (format_version >= 3)
+        metadata_object->set(f_next_row_id, 0);
 
     auto compression_suffix = toContentEncodingName(persistent_components.metadata_compression_method);
     if (!compression_suffix.empty())
