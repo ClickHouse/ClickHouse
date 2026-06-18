@@ -1,0 +1,10 @@
+--- file names ---
+count.txt
+data.bin
+data.cmrk4
+primary.cidx
+serialization.json
+--- count.txt: name file_size file_hash ---
+count.txt 1 db7b13ffcb46ab2bbdf9b8450495b777
+--- unsupported format version 1 ---
+is not a valid checksums file or uses an unsupported (too old) format

@@ -1923,6 +1923,38 @@ namespace ErrorCodes
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: basic, tdigest, countmin, minmax, uniq.
     )", 0) \
+    DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
+    Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
+    chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
+    archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
+    file. Substreams larger than this stay in the legacy per-file layout. The decision is
+    made independently per substream at write time, so a single part can have small indices
+    (e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
+    to disable packing entirely (default).
+
+    Each skip-index substream actually consists of a data file and a marks file; both buffer
+    in memory up to the threshold before the spill decision is made. So peak memory while
+    writing scales with `2 * packed_skip_index_max_bytes * (number of substreams that stay
+    below the threshold)`.
+
+    Full-text indices are not supported by this setting and are never packed.
+
+    Packing reduces inode pressure when many skip indices are defined on a table (for example
+    with `add_minmax_index_for_numeric_columns`).
+
+    The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
+    substreams from inside it transparently. Changing this setting affects newly written parts
+    only; existing parts retain whatever layout they had at write time.
+
+    Known limitation: `system.data_skipping_indices.data_uncompressed_bytes` and
+    `system.parts.secondary_indices_uncompressed_bytes` report the compressed size for packed
+    substreams (the archive index doesn't store uncompressed sizes). This is cosmetic in
+    monitoring with one functional consequence:
+    `distributed_index_analysis_min_indexes_bytes_to_activate` compares against
+    `data_uncompressed`, so a packed index that compresses well (`set` or `bloom_filter` over
+    strings) may not cross the activation threshold even if the real uncompressed size would.
+    The fallback is the normal query plan, not a wrong result.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.

@@ -1132,6 +1132,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 result.set_status(Result.Status.OK)
             else:
                 result.set_status(Result.Status.FAIL)
+            # These are server-log / runner health checks, not test cases.
+            # The bugfix-validation inverter uses this label so a clean check
+            # (OK) is left as-is instead of being flipped into a spurious
+            # failure. A failing check still flips like a test (a fatal on the
+            # validated binary is the bug reproducing).
+            result.set_label(Result.Label.LOG_CHECK)
         return results
 
     def dump_system_tables(self):

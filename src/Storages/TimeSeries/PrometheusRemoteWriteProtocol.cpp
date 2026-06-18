@@ -118,7 +118,11 @@ namespace
         {
             if (!block_from_executor.empty())
             {
-                MutableColumnPtr id_column_part = block_from_executor.getByName(id_name).column->assumeMutable();
+                /// The column comes from a pipeline block and may be shared. Use COW-safe
+                /// `IColumn::mutate` (which clones only when the column is shared) instead of
+                /// `assumeMutable`, so that growing the accumulator in place via `insertRangeFrom`
+                /// below never reallocates a buffer still referenced elsewhere.
+                MutableColumnPtr id_column_part = IColumn::mutate(std::move(block_from_executor.getByName(id_name).column));
                 if (id_column)
                     id_column->insertRangeFrom(*id_column_part, 0, id_column_part->size());
                 else

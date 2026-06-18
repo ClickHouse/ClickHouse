@@ -185,6 +185,15 @@ def invert_bugfix_validation_status(test_result: Result) -> None:
     masking the `ERROR` and flipping the job to green. Treat any per-row
     `ERROR` the same as an aggregate `ERROR`. Mirrors the `has_error`
     dominant guard in `integration_test_job.py`.
+
+    Rows produced by `check_fatal_messages_in_logs` (labelled `LOG_CHECK`:
+    "Lost s3 keys", "OOM in dmesg", "Exception in test runner", etc.) are
+    server-log / runner health checks, not test cases. A LOG_CHECK *failure*
+    on the validated binary is itself evidence the bug reproduced (a crash /
+    sanitizer assert / lost key triggered by the regression test), so it is
+    flipped like a test failure. But a *clean* LOG_CHECK must stay `OK`: the
+    absence of a fatal is not "failed to reproduce", and flipping it to
+    `FAIL` is what produced the spurious xfail rows.
     """
     if test_result.status == Result.Status.ERROR or any(
         r.status == Result.Status.ERROR for r in test_result.results
@@ -200,8 +209,14 @@ def invert_bugfix_validation_status(test_result: Result) -> None:
 
     has_failure = False
     for r in test_result.results:
+        if r.status == Result.Status.OK and r.has_label(Result.Label.LOG_CHECK):
+            # A clean health check is not a test that "failed to reproduce";
+            # leave it untouched so it does not become a spurious failure.
+            continue
         r.set_label(Result.Label.XFAIL)
         if r.status == Result.Status.FAIL:
+            # A failing test, or a fatal / sanitizer assert / lost key on the
+            # validated binary, both mean the bug was reproduced.
             r.status = Result.Status.OK
             has_failure = True
         elif r.status == Result.Status.OK:

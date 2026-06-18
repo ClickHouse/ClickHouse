@@ -985,7 +985,23 @@ void MemoryWorker::updateResidentMemoryThread()
                             new_hard_limit = std::min(new_hard_limit, ceiling);
 
                         Int64 current_hard_limit = total_memory_tracker.getHardLimit();
-                        if (new_hard_limit != current_hard_limit)
+
+                        /// Only adjust when the change is large enough to matter. `resident` and
+                        /// `available` jitter by a few MiB on every tick (every ~50ms), so testing
+                        /// for exact inequality would recompute and re-apply a hard limit that differs
+                        /// by a negligible amount on almost every tick — flooding the log with
+                        /// "Adjusting ... from 89.98 GiB to 89.98 GiB" lines and calling `setHardLimit`
+                        /// dozens of times per second to no practical effect. Require the change to
+                        /// exceed a small fraction of the current limit before acting; a genuine
+                        /// memory-pressure shift moves the limit by far more than this, so the dynamic
+                        /// adjustment still reacts promptly when it actually needs to.
+                        static constexpr double min_change_ratio = 0.01; /// 1%
+                        const Int64 change_threshold = static_cast<Int64>(
+                            static_cast<double>(std::max<Int64>(0, current_hard_limit)) * min_change_ratio);
+                        const Int64 limit_change = new_hard_limit > current_hard_limit
+                            ? new_hard_limit - current_hard_limit
+                            : current_hard_limit - new_hard_limit;
+                        if (limit_change > change_threshold)
                         {
                             /// Defeat the reload race: take the apply mutex and re-check the
                             /// generation under it. If a concurrent `setDynamicHardLimitSettings`

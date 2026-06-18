@@ -1713,6 +1713,9 @@ class MergeTreeSettingsRandomizer:
         "map_buckets_coefficient": lambda: round(random.uniform(0.5, 2.0), 2),
         "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
+        "packed_skip_index_max_bytes": lambda: random.choice(
+            [0, 100, 1024, 1024 * 1024, 10 * 1024 * 1024]
+        ),
     }
 
     @staticmethod

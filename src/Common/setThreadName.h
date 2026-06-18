@@ -188,7 +188,9 @@ enum class ThreadName : uint8_t
   *  On Linux 5.17+ also names the current thread's stack VMA via
   *  `prctl(PR_SET_VMA_ANON_NAME, ..., THREAD_STACK_VMA_NAME)`, so
   *  `AsynchronousMetrics` can attribute the matching `/proc/self/smaps`
-  *  entry to thread stacks (`MemoryThreadStacks*`).
+  *  entry to thread stacks (`MemoryThreadStacks*`). On Darwin the same
+  *  metrics are derived directly from the Mach VM map (regions tagged
+  *  `VM_MEMORY_STACK`), so no naming step is needed here.
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
@@ -205,7 +207,9 @@ inline constexpr const char * THREAD_STACK_VMA_NAME = "clickhouse_stack";
 /// True if any thread observed EINVAL from `prctl(PR_SET_VMA_ANON_NAME)`,
 /// i.e. running on a Linux kernel older than 5.17. Used by
 /// `ServerAsynchronousMetrics` to surface the limitation via
-/// `system.warnings`. Always `false` on non-Linux (the metric does not
-/// exist there, so there is nothing to warn about).
+/// `system.warnings`. Always `false` on non-Linux: on Darwin the
+/// `MemoryThreadStacks*` metrics are populated from the Mach VM map and
+/// have no such kernel-version dependency, and on other platforms the
+/// metrics are simply absent, so there is nothing to warn about.
 bool isThreadStackVMANamingUnsupported() noexcept;
 }

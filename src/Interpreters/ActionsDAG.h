@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -243,6 +244,10 @@ public:
     size_t removeNodes(const std::unordered_set<const Node *> & to_remove);
 
     void removeAliasesForFilter(const std::string & filter_name);
+
+    /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
+    /// outputs preserve their names via aliases when needed, dead nodes are pruned
+    void deduplicateSubtrees();
 
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs

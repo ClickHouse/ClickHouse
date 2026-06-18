@@ -1,0 +1,41 @@
+<test>
+    <settings>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+    </settings>
+
+    <!--
+        Joins on small composite fixed keys. A key that packs into <= 4 / <= 8
+        bytes now uses the keys32 / keys64 hash map (UInt32 / UInt64 cells, single
+        HashCRC32) instead of keys128 (UInt128 cells, double CRC). With swap pinned
+        off the right table is the build side, so each query does a 10M-row build
+        and a 50M-row probe dominated by the composite-key hash map.
+    -->
+
+    <create_query>CREATE TABLE keys64_build (a UInt32, b UInt32) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE keys64_probe (a UInt32, b UInt32) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE keys32_build (a UInt16, b UInt16) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE keys32_probe (a UInt16, b UInt16) ENGINE = Memory</create_query>
+
+    <!-- (number, number) gives 10M distinct (UInt32, UInt32) keys; probe hits them all. -->
+    <fill_query>INSERT INTO keys64_build SELECT number, number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO keys64_probe SELECT number % 10000000 AS k, k FROM numbers_mt(50000000)</fill_query>
+
+    <!-- (number &amp; 0xFFFF, number &gt;&gt; 16) gives 10M distinct (UInt16, UInt16) keys. -->
+    <fill_query>INSERT INTO keys32_build SELECT bitAnd(number, 65535), bitShiftRight(number, 16) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO keys32_probe SELECT bitAnd(number % 10000000, 65535), bitShiftRight(number % 10000000, 16) FROM numbers_mt(50000000)</fill_query>
+
+    <!-- keys64: (UInt32, UInt32) = 8 bytes (was keys128) -->
+    <query>SELECT l.a FROM keys64_probe AS l INNER JOIN keys64_build AS r ON l.a = r.a AND l.b = r.b SETTINGS join_algorithm = 'hash' FORMAT Null</query>
+    <!-- keys64 under parallel_hash: two_level_keys64 (was two_level_keys128) -->
+    <query>SELECT l.a FROM keys64_probe AS l INNER JOIN keys64_build AS r ON l.a = r.a AND l.b = r.b SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
+    <!-- keys32: (UInt16, UInt16) = 4 bytes (was keys128) -->
+    <query>SELECT l.a FROM keys32_probe AS l INNER JOIN keys32_build AS r ON l.a = r.a AND l.b = r.b SETTINGS join_algorithm = 'hash' FORMAT Null</query>
+    <!-- keys32 under parallel_hash -->
+    <query>SELECT l.a FROM keys32_probe AS l INNER JOIN keys32_build AS r ON l.a = r.a AND l.b = r.b SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS keys64_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS keys64_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS keys32_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS keys32_probe</drop_query>
+</test>

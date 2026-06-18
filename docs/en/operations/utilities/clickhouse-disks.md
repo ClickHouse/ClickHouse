@@ -61,6 +61,8 @@ In these documentation file all mandatory positional arguments are referred as `
   Create a directory. Non-recursive by default.
 * `read (r) <path-from> [--path-to path]`
   Read a file from `path-from` to `path` (`stdout` if not supplied).
+* `read-checksums <path>`
+  Read a `checksums.txt` file of a `MergeTree` data part on a current disk and print it to `stdout` as a tab-separated, human-readable table with the columns `name`, `file_size`, `file_hash`, `uncompressed_size`, and `uncompressed_hash`. The last two columns are present only for compressed files.
 * `switch-disk [--path path] <disk>`
   Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`).
 * `write (w) [--path-from path] <path-to>`.
