@@ -169,7 +169,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::waitForReadyConnection
 int HedgedConnectionsFactory::getNextIndex()
 {
     /// Check if there is no free replica.
-    if (entries_count + replicas_in_process_count + failed_pools_count >= shuffled_pools.size())
+    if (entries_count + replicas_in_process_count + failed_pools_count + cancelled_count >= shuffled_pools.size())
         return -1;
 
     /// Check if it's the first time.
@@ -187,6 +187,7 @@ int HedgedConnectionsFactory::getNextIndex()
 
         /// Check if we can try this replica.
         if (replicas[next_index].connection_establisher->getResult().entry.isNull()
+            && !replicas[next_index].connection_establisher->isCancelled()
             && (max_tries == 0 || shuffled_pools[next_index].error_count < max_tries))
             finish = true;
 

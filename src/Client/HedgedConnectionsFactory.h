@@ -150,6 +150,10 @@ private:
     size_t up_to_date_count = 0;
     /// The number of failed connections (replica is considered failed after max_tries attempts to connect).
     size_t failed_pools_count = 0;
+    /// The number of cancelled connection establishers (cancelled by stopChoosingReplicas).
+    /// Like the other counters above, this is never reset: the factory is single-use, so
+    /// cancelled establishers stay cancelled for the rest of its lifetime.
+    size_t cancelled_count = 0;
 
     /// The number of replicas that are in process of connection.
     size_t replicas_in_process_count = 0;
