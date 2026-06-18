@@ -631,17 +631,12 @@ void ConfigProcessor::doIncludesRecursive(
             if (env_val == nullptr)
                 return nullptr;
 
-            /// First try parsing as-is to support XML sub-elements in env vars.
-            /// If parsing fails (e.g. the value contains unescaped XML special characters),
-            /// escape the value and retry as plain text.
-            try
-            {
-                env_document = dom_parser.parseString("<from_env>" + std::string{env_val} + "</from_env>");
-            }
-            catch (Poco::Exception &)
-            {
-                env_document = dom_parser.parseString("<from_env>" + escapeForXMLText(std::string{env_val}) + "</from_env>");
-            }
+            /// An environment variable is always a plain text value, never an XML fragment
+            /// (unlike `from_zk`, which may hold an XML subtree). So we always escape its
+            /// XML special characters and embed it as text content. Escaping unconditionally
+            /// keeps the substitution unambiguous: the value is interpreted as literal text
+            /// regardless of whether it happens to be parseable as XML.
+            env_document = dom_parser.parseString("<from_env>" + escapeForXMLText(std::string{env_val}) + "</from_env>");
 
             return getRootNode(env_document.get());
         };

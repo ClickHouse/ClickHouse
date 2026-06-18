@@ -67,11 +67,11 @@ node9 = cluster.add_instance(
     user_configs=["configs/config_env_xml_chars.xml"],
     env_variables={"LOG_COMMENT_VALUE": "a&b<c>d"},
 )
-# env var with a valid XML fragment (backward compat: should be parsed as XML, not escaped)
+# env var that looks like an XML fragment: it must be taken as literal text, not parsed as XML
 node10 = cluster.add_instance(
     "node10",
     user_configs=["configs/config_env_xml_chars.xml"],
-    env_variables={"LOG_COMMENT_VALUE": "hello world"},
+    env_variables={"LOG_COMMENT_VALUE": "<a>1</a>"},
 )
 
 
@@ -373,7 +373,6 @@ def test_config_multiple_zk_substitutions(start_cluster):
         zk.delete(path="/background_pool_size")
 
 
-
 def test_config_env_xml_special_chars(start_cluster):
     """Env var values with XML special characters (&, <, >) should be auto-escaped."""
     assert (
@@ -384,11 +383,11 @@ def test_config_env_xml_special_chars(start_cluster):
     )
 
 
-def test_config_env_valid_xml_fragment(start_cluster):
-    """Env var values that are valid XML should be parsed as-is (backward compat)."""
+def test_config_env_xml_fragment_is_literal_text(start_cluster):
+    """Env var values are always plain text: an XML-looking value must not be parsed as XML."""
     assert (
         node10.query(
             "SELECT value FROM system.settings WHERE name = 'log_comment'"
         )
-        == "hello world\n"
+        == "<a>1</a>\n"
     )
