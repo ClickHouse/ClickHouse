@@ -111,8 +111,9 @@ const String & ASTIdentifier::name() const
 
 void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    /// Preserve per-part quote style so format/reparse round-trips do not silently change
-    /// case-sensitivity semantics in `standard` mode.
+    /// Preserve double quotes only — they are semantically meaningful for case-sensitivity in
+    /// `standard` mode, while backticks behave like unquoted and can use the formatter's default
+    /// quoting policy (which avoids spurious backticks in the output for plain identifiers).
     auto format_element = [&](const String & elem_name, IdentifierQuoteStyle quote)
     {
         std::string_view to_write = elem_name;
@@ -124,8 +125,6 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
 
         if (quote == IdentifierQuoteStyle::DoubleQuote)
             writeDoubleQuotedString(to_write, ostr);
-        else if (quote == IdentifierQuoteStyle::Backtick)
-            writeBackQuotedString(to_write, ostr);
         else
             settings.writeIdentifier(ostr, String(to_write), /*ambiguous=*/false);
     };
