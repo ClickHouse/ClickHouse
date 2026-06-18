@@ -803,10 +803,11 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     /// Footer blocks are untrusted: a negative offset/metadata/body length would, after being passed on as
     /// a seek target, a metadata bound, or a body size, become a huge unsigned value or seek out of range.
     /// And the block's metadata+body must lie within the data region (before the footer): otherwise a
-    /// corrupt footer could set a huge `bodyLength` (with a matching `Message.bodyLength` at `offset`) and
-    /// make `readBody` resize the body buffer to that footer-controlled length before EOF is hit. Reject
-    /// both here so a malformed footer fails cleanly instead of driving an oversized read later. The bound
-    /// is checked incrementally against `footer_offset` so the sum cannot overflow.
+    /// corrupt footer could declare a block that overlaps the footer or extends past the file, so the
+    /// message body would be read from the wrong boundary. (`readBody` independently caps the materialized
+    /// body by the buffers the batch actually references, so a forged `bodyLength` cannot itself drive an
+    /// oversized allocation.) Reject both here so a malformed footer fails cleanly. The bound is checked
+    /// incrementally against `footer_offset` so the sum cannot overflow.
     const int64_t data_region_end = footer_offset;
     auto add_block = [data_region_end](std::vector<ArrowFileBlock> & blocks, const flatbuf::Block * block)
     {

@@ -443,7 +443,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             if (field_it == dictionary_value_fields.end())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file dictionary batch for unknown id {}", id);
 
-            message_reader->readBody(msg.body_length, body_buffer);
+            message_reader->readBody(*dict_batch->data(), msg.body_length, body_buffer);
             auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
             checkDictionaryUnique(decoded.at(0).column);
             dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
@@ -772,7 +772,7 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                     return getChunkForCount(num_rows);
                 }
 
-                message_reader->readBody(msg.body_length, body_buffer);
+                message_reader->readBody(*batch, msg.body_length, body_buffer);
                 auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields, &requested_field_target_types);
                 Chunk chunk = buildChunk(decoded, num_rows);
 
@@ -808,7 +808,7 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                     throw Exception(
                         ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch for unknown dictionary id {}", id);
 
-                message_reader->readBody(msg.body_length, body_buffer);
+                message_reader->readBody(*dict_batch->data(), msg.body_length, body_buffer);
                 auto decoded = decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
                 checkDictionaryUnique(decoded.at(0).column);
                 dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
@@ -853,7 +853,7 @@ Chunk ArrowIPCBlockInputFormat::readFile()
     if (need_only_count)
         return getChunkForCount(num_rows);
 
-    message_reader->readBody(msg.body_length, body_buffer);
+    message_reader->readBody(*batch, msg.body_length, body_buffer);
     auto decoded = decoder->decodeBatch(*batch, body_buffer, &requested_top_level_fields, &requested_field_target_types);
     return buildChunk(decoded, num_rows);
 }

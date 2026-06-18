@@ -41,8 +41,14 @@ public:
     /// boundary. The stream format leaves it at the default (only the absolute `MAX_REASONABLE` ceiling).
     bool readNextMessage(Message & out, int64_t expected_metadata_length = -1);
 
-    /// Reads the message body (`body_length` bytes) into `body`, leaving the buffer positioned right after it.
-    void readBody(int64_t body_length, PODArray<char> & body);
+    /// Reads the message body of a record/dictionary batch into `body`, leaving the buffer positioned right
+    /// after the whole `body_length`-byte body (so the next message follows). Only the prefix actually
+    /// referenced by `batch.buffers()` is materialized: the maximum `buffer.offset + buffer.length` is
+    /// validated against the untrusted `body_length` and used as the allocation size, and any trailing
+    /// padding or over-long declared tail is skipped rather than allocated. This stops a forged-huge
+    /// `Message.bodyLength` paired with tiny buffers from driving a large allocation before the buffer
+    /// ranges are validated.
+    void readBody(const flatbuf::RecordBatch & batch, int64_t body_length, PODArray<char> & body);
 
     /// Skips the message body without materializing it.
     void skipBody(int64_t body_length);
