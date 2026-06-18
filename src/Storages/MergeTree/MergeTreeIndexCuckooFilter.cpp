@@ -1029,7 +1029,7 @@ static void assertIndexColumnsType(const Block & header)
 }
 
 MergeTreeIndexPtr cuckooFilterIndexCreator(
-    const IndexDescription & index)
+    const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     double false_positive_rate = 0.025;
 
@@ -1047,7 +1047,7 @@ MergeTreeIndexPtr cuckooFilterIndexCreator(
     return std::make_shared<MergeTreeIndexCuckooFilter>(index, false_positive_rate, f_bits);
 }
 
-void cuckooFilterIndexValidator(const IndexDescription & index, bool attach)
+void cuckooFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     assertIndexColumnsType(index.sample_block);
 
