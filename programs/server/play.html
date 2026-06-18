@@ -3713,26 +3713,11 @@ function buildHistoryParams(params, tabName) {
     return out;
 }
 
-/// Record the active tab's state in browser history and the URL, and stash the
-/// result snapshot on the tab. `stateData` has the history-state shape
-/// {query, format, ok, data, elapsed_ns, params}. `titleForDoc` overrides the
-/// document title text (used by multi-query to show the first query).
-function saveHistory(stateData, titleForDoc) {
-    const tab = getActiveTab();
-    if (!tab) return;
-
-    /// Stash the result snapshot and query on the tab regardless of de-duplication,
-    /// so a later persist() or tab switch carries the freshest data.
-    tab.query = stateData.query;
-    tab.result = {
-        format: stateData.format,
-        ok: stateData.ok,
-        data: stateData.data,
-        elapsed_ns: stateData.elapsed_ns,
-        params: stateData.params,
-    };
-
-    /// Skip writing a new history entry if neither the active tab nor its query changed.
+/// Write a browser-history entry + URL for the given tab and `stateData` (the
+/// history-state shape {query, format, ok, data, elapsed_ns, params}). Does NOT
+/// modify the tab's stored result. `titleForDoc` overrides the document title text.
+function writeHistoryEntry(tab, stateData, titleForDoc) {
+    /// Skip a fresh entry if neither the active tab nor its query changed.
     const cur = history.state;
     const unchanged = cur && cur.tabId === tab.id && cur.query === stateData.query;
 
@@ -3743,27 +3728,41 @@ function saveHistory(stateData, titleForDoc) {
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
     history_url += '#' + toBase64(stateData.query);
 
-    if (!cur) {
-        history.replaceState(state, title, history_url);
-    } else if (unchanged) {
+    if (!cur || unchanged) {
         history.replaceState(state, title, history_url);
     } else {
         history.pushState(state, title, history_url);
     }
     document.title = title;
     tab.lastSavedQuery = stateData.query;
-    /// A result now exists, so the tab bar becomes visible (per the visibility rule).
     renderTabBar();
     scheduleSave();
 }
 
-/// Record a history entry for the active tab without a fresh result (used on tab
-/// switch / rename), reusing the tab's last result snapshot.
+/// Called after an actual run: stash the result snapshot on the active tab (this is
+/// what makes the tab "have a result", hence visible in the bar) and record history.
+function saveHistory(stateData, titleForDoc) {
+    const tab = getActiveTab();
+    if (!tab) return;
+    tab.query = stateData.query;
+    tab.result = {
+        format: stateData.format,
+        ok: stateData.ok,
+        data: stateData.data,
+        elapsed_ns: stateData.elapsed_ns,
+        params: stateData.params,
+    };
+    writeHistoryEntry(tab, stateData, titleForDoc);
+}
+
+/// Record a history entry for the active tab on tab switch / rename, reusing the
+/// tab's existing result (or none). Crucially this does NOT fabricate a result, so a
+/// never-run single tab stays result-less and the tab bar stays hidden.
 function syncHistory() {
     const tab = getActiveTab();
     if (!tab) return;
     const r = tab.result || {};
-    saveHistory({
+    writeHistoryEntry(tab, {
         query: tab.query,
         format: r.format ?? null,
         ok: r.ok ?? true,
