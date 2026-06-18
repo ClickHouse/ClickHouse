@@ -18,7 +18,7 @@ namespace ErrorCodes
 /// matches the regular expression `regex` against the value of the tag `src_tag`.
 /// If it matches, the value of the tag `dest_tag` in the returned group will be the expansion of `replacement`,
 /// together with the original tags in the input.
-class FunctionTimeSeriesReplaceTag final : public IFunction
+class FunctionTimeSeriesReplaceTag : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesReplaceTag";
