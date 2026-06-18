@@ -1026,10 +1026,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             plan.optimize(optimization_settings);
             planning_ns += watch.elapsed();
 
-            /// Build the pretty-names map now: buildQueryPipeline below moves the ActionsDAGs out of the
-            /// plan steps, so the names must be snapshotted before the pipeline consumes the plan. EXPLAIN
-            /// ANALYZE rejects distributed plans above, so this map covers the whole plan.
-            PrettyNames precomputed_pretty_names = QueryPlanFormat::buildPrettyNames(plan);
+            /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
+            /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.
+            /// EXPLAIN ANALYZE rejects distributed plans above, so this covers the whole plan tree.
+            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan);
 
             watch.restart();
             auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context), false);

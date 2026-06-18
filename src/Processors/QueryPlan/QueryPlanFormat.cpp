@@ -586,18 +586,31 @@ namespace QueryPlanFormat
         return {};
     }
 
+    using PerPlanColumnMaps = std::unordered_map<const QueryPlan *, PrettyColumnNameMap>;
+
     static void buildPrettyNamesForNode(
         const QueryPlan::Node * node,
-        std::unordered_map<String, PrettyColumnName> & pretty_names,
-        std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+        PrettyColumnNameMap & pretty_names,
+        PrettyRuntimeFilterNameMap & runtime_filter_names,
+        PrettySetNameMap & subquery_set_names,
+        PerPlanColumnMaps & per_plan_columns)
     {
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names);
+            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns);
 
         for (auto * child_plan : node->step->getChildPlans())
+        {
             if (child_plan && child_plan->getRootNode())
-                buildPrettyNamesForNode(child_plan->getRootNode(), pretty_names, runtime_filter_names, subquery_set_names);
+            {
+                /// A child plan is a separate naming scope. Build its column names into their own map so
+                /// the parent sees the child's output columns as leaves (trimmed identifiers) rather than
+                /// the child's internal expressions; otherwise nested plans compound the rendering, e.g.
+                /// `materialize(materialize(...))`. Runtime-filter and subquery-set names are global ids,
+                /// so they stay shared across the whole tree.
+                auto & child_columns = per_plan_columns[child_plan];
+                buildPrettyNamesForNode(child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
+            }
+        }
 
         const auto & step = node->step;
         const auto & step_name = step->getName();
@@ -702,19 +715,28 @@ namespace QueryPlanFormat
         }
     }
 
-    PrettyNames buildPrettyNames(const QueryPlan & plan)
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan)
     {
-        std::unordered_map<String, PrettyColumnName> pretty_names;
-        std::unordered_map<String, RuntimeFilterInfo> runtime_filter_names;
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> subquery_set_names;
+        /// Runtime-filter and subquery-set names are global ids; keep them shared across the whole tree
+        /// so their numbering stays consistent regardless of plan boundaries. Only column names are scoped.
+        PrettyRuntimeFilterNameMap runtime_filter_names;
+        PrettySetNameMap subquery_set_names;
+        PerPlanColumnMaps per_plan_columns;
 
+        /// Reserve the top plan's slot first so it is keyed even if it has no expression columns.
+        auto & top_columns = per_plan_columns[&plan];
         if (plan.getRootNode())
-            buildPrettyNamesForNode(plan.getRootNode(), pretty_names, runtime_filter_names, subquery_set_names);
+            buildPrettyNamesForNode(plan.getRootNode(), top_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
 
-        for (const auto & [hash, name] : subquery_set_names)
-            pretty_names[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
-
-        return {pretty_names, runtime_filter_names};
+        PrettyNamesPerPlan result;
+        for (auto & [plan_ptr, columns] : per_plan_columns)
+        {
+            /// Subquery-set names are global; expose them in every plan's map so set references resolve.
+            for (const auto & [hash, name] : subquery_set_names)
+                columns[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
+            result.names.emplace(plan_ptr, PrettyNames{std::move(columns), runtime_filter_names});
+        }
+        return result;
     }
 
 }

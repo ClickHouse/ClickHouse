@@ -21,6 +21,7 @@ namespace DB
 class AnalyzeStepsStats;
 
 struct PrettyNames;
+struct PrettyNamesPerPlan;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -146,7 +147,7 @@ public:
         const ExplainPlanOptions & options,
         size_t offset = 0,
         size_t max_description_length = 0,
-        const PrettyNames * precomputed_pretty_names = nullptr,
+        const PrettyNamesPerPlan * precomputed_pretty_names = nullptr,
         const std::string & parent_tree_prefix = "",
         bool is_last_child_plan = true,
         AnalyzeStepsStats * steps_to_stats = nullptr) const;

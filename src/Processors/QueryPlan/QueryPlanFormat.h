@@ -46,6 +46,14 @@ struct PrettyNames
     PrettyRuntimeFilterNameMap runtime_filter_names;
 };
 
+/// Pretty column names are scoped per query plan: a child plan (e.g. a Merge sub-plan) is a separate
+/// naming scope, so each plan in the tree gets its own column-name map keyed by the plan pointer.
+/// Runtime-filter names are global ids and are shared across the tree (copied into every entry).
+struct PrettyNamesPerPlan
+{
+    std::unordered_map<const QueryPlan *, PrettyNames> names;
+};
+
 struct ExplainFormatSettings
 {
     WriteBuffer & out;
@@ -77,7 +85,7 @@ namespace QueryPlanFormat
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names);
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 
-    PrettyNames buildPrettyNames(const QueryPlan & plan);
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan);
 }
 
 }

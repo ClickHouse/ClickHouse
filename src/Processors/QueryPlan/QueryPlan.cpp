@@ -599,7 +599,7 @@ void QueryPlan::explainPlan(
     const ExplainPlanOptions & options,
     size_t offset,
     size_t max_description_length,
-    const PrettyNames * precomputed_pretty_names,
+    const PrettyNamesPerPlan * precomputed_pretty_names,
     const std::string & parent_tree_prefix,
     bool is_last_child_plan,
     AnalyzeStepsStats * steps_to_stats) const
@@ -608,15 +608,23 @@ void QueryPlan::explainPlan(
 
     PrettyNames empty_pretty_names;
 
-    /// Pretty rendering needs a names map scoped to this exact plan. Callers that already hold one
-    /// (e.g. EXPLAIN ANALYZE, which must snapshot names before the pipeline consumes the plan) pass it in.
-    /// Otherwise build it here, so self-contained renders such as distributed child plans
+    /// Pretty rendering uses per-plan scoped name maps (see PrettyNamesPerPlan). Callers that must build
+    /// names before the plan is consumed (EXPLAIN ANALYZE) pass a prebuilt registry; otherwise build it
+    /// here for this plan's whole subtree, so self-contained renders such as distributed child plans
     /// (ReadFromRemote::describeDistributedPlan) don't fall back to empty names.
-    PrettyNames local_pretty_names;
+    PrettyNamesPerPlan local_pretty_names;
     if (options.pretty && !precomputed_pretty_names)
     {
-        local_pretty_names = QueryPlanFormat::buildPrettyNames(*this);
+        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
         precomputed_pretty_names = &local_pretty_names;
+    }
+
+    /// Pick the map scoped to this exact plan; child and distributed plans look up their own entry.
+    const PrettyNames * plan_pretty_names = nullptr;
+    if (precomputed_pretty_names)
+    {
+        if (auto it = precomputed_pretty_names->names.find(this); it != precomputed_pretty_names->names.end())
+            plan_pretty_names = &it->second;
     }
 
     IQueryPlanStep::FormatSettings settings{
@@ -626,8 +634,8 @@ void QueryPlan::explainPlan(
         .write_header = options.header,
         .compact = options.compact,
         .pretty = options.pretty,
-        .pretty_names = precomputed_pretty_names ? precomputed_pretty_names->pretty_names : empty_pretty_names.pretty_names,
-        .runtime_filter_names = precomputed_pretty_names ? precomputed_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
+        .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
+        .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {
