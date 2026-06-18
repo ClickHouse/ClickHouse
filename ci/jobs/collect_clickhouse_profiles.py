@@ -17,6 +17,7 @@ The collected profiles can be used in release builds with:
 import glob
 import os
 import platform
+import shutil
 import subprocess
 import time
 
@@ -65,6 +66,14 @@ UPLOAD_RESERVE_S = 20 * 60
 # Hard per-test timeout so a single heavy test (large fill / slow prewarm) cannot
 # stall an entire pass.
 PER_TEST_TIMEOUT_S = 120
+
+# Stop launching perf tests once free disk drops below this. Tests that are killed
+# by the per-test timeout never get to DROP the (often huge) tables they created, so
+# disk usage grows steadily during collection; on the smaller runner this otherwise
+# fills the disk and the later BOLT step dies with ENOSPC. The instrumented server's
+# data dir (where those tables live) is reclaimed in full before the BOLT build, so
+# this floor only has to keep collection itself from running the disk to zero.
+MIN_FREE_DISK_GB = 15
 
 PGO_PERF_RUNS = 2  # a couple of runs is enough to mark hot vs cold code for PGO
 BOLT_PERF_RUNS = 1  # BOLT only needs hot-path coverage
@@ -372,6 +381,14 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
                 f"skipping {len(test_files) - i} remaining test(s)"
             )
             break
+        free_gb = shutil.disk_usage(temp_dir).free / (1024 ** 3)
+        if free_gb < MIN_FREE_DISK_GB:
+            print(
+                f"  Free disk {free_gb:.1f}G below {MIN_FREE_DISK_GB}G floor after {ran} test(s); "
+                f"stopping collection to leave room for the BOLT build; "
+                f"skipping {len(test_files) - i} remaining test(s)"
+            )
+            break
         print(f"  Running: {test_name}")
         # Never let the last test overrun the overall deadline.
         per_test = int(min(PER_TEST_TIMEOUT_S, remaining))
@@ -625,12 +642,15 @@ def main():
 
     # --- Stage: Build ClickHouse for BOLT ---
     if res and JobStages.BUILD_FOR_BOLT in stages:
-        # The instrumented build and its raw profraw files are no longer needed once
-        # the profile is merged (the BOLT build only reads PGO_PROFDATA_PATH). Remove
-        # them before the second full build so two complete build trees plus the
-        # datasets don't exhaust the runner's disk.
+        # The instrumented build, its raw profraw files, and the instrumented server's
+        # data directory (which holds tens of GB of tables left behind by perf tests
+        # whose `perf.py` was killed by the per-test timeout before it could DROP them)
+        # are all unneeded once the profile is merged — the BOLT build only reads
+        # PGO_PROFDATA_PATH, and the BOLT pass starts its own fresh server. Remove them
+        # before the second full build so two complete build trees plus the datasets
+        # don't exhaust the runner's disk.
         log_resources("before freeing PGO build dir")
-        Shell.check(f"rm -rf {PGO_BUILD_DIR} {PGO_RAW_PROFILES_DIR}")
+        Shell.check(f"rm -rf {PGO_BUILD_DIR} {PGO_RAW_PROFILES_DIR} {PERF_WD}/pgo_server")
         log_resources("before BOLT build")
         os.makedirs(BOLT_BUILD_DIR, exist_ok=True)
 
