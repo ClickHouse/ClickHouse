@@ -3,9 +3,7 @@
 #include <memory>
 #include <vector>
 
-#ifdef OS_LINUX
-#    include <unistd.h>
-#endif
+#include <base/getL2CacheSize.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -64,16 +62,8 @@ extern const int INVALID_JOIN_ON_EXPRESSION;
 size_t getMinBytesForPrefetchInJoin()
 {
     /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-    /// Threshold: 4 * max(L2 cache size, 256KB). Cached after first call.
-    static const size_t result = []
-    {
-        size_t l2_size = 0;
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-            l2_size = ret;
-#endif
-        return 4 * std::max<size_t>(l2_size, 256 * 1024);
-    }();
+    /// Threshold: 4 * L2 cache size (`getL2CacheSize` defaults to 256 KiB). Cached after first call.
+    static const size_t result = 4 * getL2CacheSize();
     return result;
 }
 
@@ -157,6 +147,38 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
 }
 
 static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_maps);
+
+/// A multi-disjunct (OR) join shares a single data->type across all disjuncts. When the disjuncts
+/// pick different packed fixed-key maps (e.g. keys32 for a (UInt16, UInt16) clause and keys64 for a
+/// (UInt32, UInt32) clause), use the widest packed map that can hold all of them instead of
+/// downgrading the whole join to the generic `hashed` map: a narrower packing always fits into a
+/// wider fixed-key map. Only genuinely different key kinds fall back to `hashed`.
+static HashJoin::Type mergeJoinMethods(HashJoin::Type lhs, HashJoin::Type rhs)
+{
+    using Type = HashJoin::Type;
+
+    /// Rank within a packing family (single-level and two-level are ranked separately); 0 = not a
+    /// packed fixed-key map. Within one join all disjuncts are the same level, so two packed types
+    /// being merged always belong to the same family.
+    auto packed_rank = [](Type type) -> int
+    {
+        switch (type)
+        {
+            case Type::keys32: case Type::two_level_keys32:   return 1;
+            case Type::keys64: case Type::two_level_keys64:   return 2;
+            case Type::keys128: case Type::two_level_keys128: return 3;
+            case Type::keys256: case Type::two_level_keys256: return 4;
+            default:                                          return 0;
+        }
+    };
+
+    const int lhs_rank = packed_rank(lhs);
+    const int rhs_rank = packed_rank(rhs);
+    if (lhs_rank != 0 && rhs_rank != 0)
+        return lhs_rank >= rhs_rank ? lhs : rhs;
+
+    return Type::hashed;
+}
 
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
@@ -279,7 +301,7 @@ HashJoin::HashJoin(
             if (data->type == Type::EMPTY)
                 data->type = current_join_method;
             else if (data->type != current_join_method)
-                data->type = Type::hashed;
+                data->type = mergeJoinMethods(data->type, current_join_method);
         }
     }
 
@@ -375,6 +397,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
+    if (all_fixed && keys_bytes <= 4)
+        return Type::keys32;
+    if (all_fixed && keys_bytes <= 8)
+        return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
     if (all_fixed && keys_bytes <= 32)
@@ -417,6 +443,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
             return Type::two_level_key32;
         case Type::key64:
             return Type::two_level_key64;
+        case Type::keys32:
+            return Type::two_level_keys32;
+        case Type::keys64:
+            return Type::two_level_keys64;
         case Type::keys128:
             return Type::two_level_keys128;
         case Type::keys256:
@@ -2344,7 +2374,7 @@ void HashJoin::publishSharedRuntimeFilters()
         return;
     shared_runtime_filters_publish_attempted = true;
 
-    if (!table_join->enableJoinRuntimeFilterSharedFixedHashTable())
+    if (!table_join->joinRuntimeFilterFromFixedHashTable())
         return;
 
     const auto & descriptors = table_join->getSharedRuntimeFilterDescriptors();
@@ -2591,7 +2621,7 @@ bool HashJoin::hasPostBuildPhase() const
     const bool needs_shared_filter_publish =
         data && data->rows_to_join && data->maps.size() == 1
         && (data->type == Type::key8 || data->type == Type::key16)
-        && table_join->enableJoinRuntimeFilterSharedFixedHashTable()
+        && table_join->joinRuntimeFilterFromFixedHashTable()
         && !table_join->getSharedRuntimeFilterDescriptors().empty();
 
     return rightTableCanBeReranged() || canConvertToFixedHashMap() || needs_shared_filter_publish;
