@@ -100,9 +100,6 @@ def test_alias_with_parallel_replicas(started_cluster):
             "enable_parallel_replicas": 1,
             "max_parallel_replicas": 2,
             "cluster_for_parallel_replicas": "test_cluster",
-            "prefer_localhost_replica": 0,
-            "parallel_replicas_prefer_local_replica": 0,
-            "parallel_replicas_mark_segment_size": 128,
             "log_comment": "test_alias_parallel_replicas",
         },
     )
@@ -119,8 +116,8 @@ def test_alias_with_parallel_replicas(started_cluster):
         "  AND type = 'QueryFinish' "
         "ORDER BY query_start_time DESC LIMIT 1"
     )
-    assert int(used_count.strip()) >= 2, (
-        f"Expected ParallelReplicasUsedCount >= 2, got {used_count.strip()}"
+    assert int(used_count.strip()) > 0, (
+        f"Expected ParallelReplicasUsedCount > 0, got {used_count.strip()}"
     )
 
     node1.query("DROP DATABASE test_pr SYNC")

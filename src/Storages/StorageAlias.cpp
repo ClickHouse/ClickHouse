@@ -14,6 +14,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -317,6 +318,7 @@ struct AliasCheckTasks : IStorage::DataValidationTasksBase
     AliasCheckTasks(StoragePtr target_, IStorage::DataValidationTasksPtr inner_)
         : target(std::move(target_)), inner(std::move(inner_))
     {
+        chassert(inner);
     }
 
     size_t size() const override { return inner->size(); }
@@ -333,8 +335,8 @@ IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskF
 
 std::optional<CheckResult> StorageAlias::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
-    auto & tasks = dynamic_cast<AliasCheckTasks &>(*check_task_list);
-    return tasks.target->checkDataNext(tasks.inner);
+    auto * tasks = assert_cast<AliasCheckTasks *>(check_task_list.get());
+    return tasks->target->checkDataNext(tasks->inner);
 }
 
 CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
