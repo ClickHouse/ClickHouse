@@ -1440,7 +1440,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto locality = join_operator.locality;
 
     /// PROTOTYPE: When a join is not reordered (e.g. it carries a residual non-equi predicate, like
-    /// `inv_quantity_on_hand < cs_quantity`), we still mark it optimized. Previously setOptimized()
+    /// `a < b`), we still mark it optimized. Previously setOptimized()
     /// was called with no row estimate, leaving result_rows_estimation unknown; any enclosing
     /// join-order optimization then treats this whole subtree as 1 row (see computeJoinCost), which
     /// is catastrophic for large intermediates. Derive a coarse result-row estimate from the
@@ -1449,16 +1449,18 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     {
         if (node.children.size() != 2)
             return {};
-        auto lhs = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs = estimateReadRowsCount(*node.children[1]).estimated_rows;
-        if (!lhs || !rhs)
+        auto lhs_opt = estimateReadRowsCount(*node.children[0]).estimated_rows;
+        auto rhs_opt = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        if (!lhs_opt || !rhs_opt)
             return {};
+
+        const UInt64 lhs = *lhs_opt;
+        const UInt64 rhs = *rhs_opt;
         switch (kind)
         {
-            case JoinKind::Left:  return *lhs;            /// preserved side floors the result
-            case JoinKind::Right: return *rhs;
-            case JoinKind::Full:  return *lhs + *rhs;
-            default:              return std::max(*lhs, *rhs); /// Inner/Cross: containment heuristic
+            case JoinKind::Left:  return lhs;  /// preserved side floors the result
+            case JoinKind::Right: return rhs;
+            default:              return std::max(lhs, rhs); /// Full/Inner/Cross: containment heuristic
         }
     };
 

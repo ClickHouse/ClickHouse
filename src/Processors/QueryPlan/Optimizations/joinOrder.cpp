@@ -511,12 +511,12 @@ std::optional<UInt64> JoinOrderOptimizer::estimateCardinality(
     return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind);
 }
 
-static double computeJoinCost(
-    const std::shared_ptr<DPJoinEntry> & left,
-    const std::shared_ptr<DPJoinEntry> & right,
-    double selectivity)
+static double computeJoinCost(const std::shared_ptr<DPJoinEntry> & left,
+                              const std::shared_ptr<DPJoinEntry> & right,
+                              double selectivity)
 {
-    return left->cost + right->cost + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
+    return left->cost + right->cost
+        + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
