@@ -296,8 +296,13 @@ StorageEmbeddedRocksDB::~StorageEmbeddedRocksDB() = default;
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     std::lock_guard lock(rocksdb_ptr_mx);
-    rocksdb_ptr->Close();
-    rocksdb_ptr = nullptr;
+    /// rocksdb_ptr may already be null if a previous truncate() emptied the directory and
+    /// the following initDB() threw (e.g. a read_only table whose data was wiped).
+    if (rocksdb_ptr)
+    {
+        rocksdb_ptr->Close();
+        rocksdb_ptr = nullptr;
+    }
 
     (void)fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
@@ -415,8 +420,13 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 void StorageEmbeddedRocksDB::drop()
 {
     std::lock_guard lock(rocksdb_ptr_mx);
-    rocksdb_ptr->Close();
-    rocksdb_ptr = nullptr;
+    /// rocksdb_ptr may be null if the handle was never opened or was released by a failed
+    /// truncate(); dropping such a table must not dereference it.
+    if (rocksdb_ptr)
+    {
+        rocksdb_ptr->Close();
+        rocksdb_ptr = nullptr;
+    }
 }
 
 bool StorageEmbeddedRocksDB::optimize(
