@@ -1,5 +1,5 @@
 <clickhouse>
-    <path replace="replace">./</path>
+    <path replace="replace">/home/ubuntu/click_master/</path>
     <tmp_path replace="replace">./tmp/</tmp_path>
     <user_files_path replace="replace">./user_files/</user_files_path>
     <format_schema_path replace="replace">./format_schemas/</format_schema_path>
