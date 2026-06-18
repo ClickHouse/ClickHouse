@@ -446,6 +446,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     executor_options.block_size = settings.reader_executor_block_size;
     executor_options.log_file_path = std::move(log_file_path);
     executor_options.max_tail_for_drain = settings.reader_executor_max_tail_for_drain;
+    executor_options.decrypt_ahead = settings.reader_executor_decrypt_ahead;
     executor_options.prefetch_pool = prefetch_pool;
     executor_options.cache_filler_pool = cache_filler_pool;
     executor_options.long_connection_limit = long_connection_limit;

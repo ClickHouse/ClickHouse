@@ -79,6 +79,9 @@ public:
         String log_file_path;
         size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
         size_t plan_look_ahead_window = DEFAULT_PLAN_LOOK_AHEAD;
+        /// Decrypt prefetched bytes on the read-ahead worker instead of at the serve
+        /// boundary (encrypted sources, prefetch path only). See `decryptFetchedAhead`.
+        bool decrypt_ahead = false;
         std::shared_ptr<PrefetchThreadPool> prefetch_pool;
         /// The `CacheFiller` pool that drives deferred cache-fill / write-back
         /// (put) steps, kept separate from `prefetch_pool` so cache-fill work
@@ -386,6 +389,7 @@ private:
         size_t fetched = 0;               /// bytes confirmed fetched (the `Ready` frontier)
         FetchMachine * machine = nullptr; /// non-owning in-flight handle; carries `long_conn`
         ChainedBuffers ready_bytes;                 /// banked fetched prefix for serve, drained as the cursor advances
+        bool ready_bytes_is_plaintext = false;      /// banked bytes were decrypted ahead on the worker (decrypt_ahead)
     };
 
     /// One look-ahead plan, the SOURCE OF TRUTH for the current read: the
@@ -465,6 +469,10 @@ private:
         bool reached_eof = false;
         /// The fetch step's product: raw PHYSICAL source bytes (short at EOF).
         ChainedBuffers fetched;
+        /// Decrypt-ahead product: a PLAINTEXT copy of `fetched` decrypted on the
+        /// worker (same PHYSICAL node labels). Empty unless `decrypt_ahead` is on
+        /// for an encrypted source. `fetched` stays ciphertext for the cache-fill.
+        ChainedBuffers plaintext_fetched;
         /// The put step's inputs (set at retrigger): writers BORROWED from
         /// `read_plan.bufs` - moved out so the put owns them exclusively, and
         /// RETURNED home by the reap (`writer_origins` records each one's
@@ -510,6 +518,11 @@ private:
     /// Safe to call from a worker concurrently with the foreground.
     void decryptInPlace(char * data, size_t size, size_t logical_offset);
 
+    /// Build a decrypted copy of `cipher` (raw PHYSICAL node labels) on the
+    /// read-ahead worker, timing into the machine-local `timing_stats`. Reentrant
+    /// (the decryptor is). The original ciphertext is left intact for the cache-fill.
+    ChainedBuffers decryptFetchedAhead(const ChainedBuffers & cipher, Stats & timing_stats) const;
+
     /// Streams a granular block of a resident run straight from the plan's held cache
     /// readers; `serveHitStep` calls it to serve a resident cursor step.
     ChainedBuffers serveCacheBlock(size_t position_phys, size_t to_read);
@@ -518,7 +531,8 @@ private:
     /// started/finished, COLLECT it (wait the release edge, reclaim its
     /// connection, backfill, finalize) into `chain` and return true; if still
     /// queued, revoke it and return false so the caller reads synchronously.
-    bool tryCollectMachine(ChainedBuffers & chain);
+    /// `is_plaintext` is set when the served `chain` came from decrypt-ahead bytes.
+    bool tryCollectMachine(ChainedBuffers & chain, bool & is_plaintext);
 
     /// Read one gap window synchronously from the source (the no-prefetch /
     /// cancelled path).
@@ -912,6 +926,11 @@ private:
     size_t min_bytes_for_seek;
     size_t block_size;
     size_t max_tail_for_drain;
+    bool decrypt_ahead;
+    /// Set per `readNextWindow` (reset before the serve): the window just served
+    /// came from decrypt-ahead bytes and is already plaintext, so the serve
+    /// boundary must NOT run `decryptWindow` on it.
+    bool served_window_is_plaintext = false;
     /// Look-ahead span for plan-then-stream; raised to at least `window_size`.
     size_t plan_look_ahead_window;
 

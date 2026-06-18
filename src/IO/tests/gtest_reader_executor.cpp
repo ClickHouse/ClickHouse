@@ -988,6 +988,46 @@ TEST(ReaderExecutor, DecryptsMultiNodeWindow)
     EXPECT_EQ(result, plaintext);
 }
 
+TEST(ReaderExecutor, DecryptAheadOnWorkerServesPlaintext)
+{
+    /// `reader_executor_decrypt_ahead`: the prefetch worker decrypts fetched bytes
+    /// ahead, the executor banks plaintext and serves it WITHOUT decrypting at the
+    /// boundary. A multi-window encrypted file read through a real prefetch pool
+    /// exercises the banked-plaintext path (window 0 is synchronous / decrypted on
+    /// serve; later windows are prefetched + decrypted-ahead). The output must equal
+    /// the plaintext - a double-decrypt or a served-ciphertext bug would corrupt it.
+
+    String key(16, 'd');
+    FileEncryption::InitVector iv(UInt128{0xfeedfaceULL});
+
+    const size_t plaintext_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE * 5 + 777;
+    String plaintext(plaintext_size, '\0');
+    for (size_t i = 0; i < plaintext_size; ++i)
+        plaintext[i] = static_cast<char>((i * 17 + 3) & 0xFF);
+
+    String file_bytes = makeEncryptedFile(key, iv, plaintext);
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", file_bytes}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_bytes.size());
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;  /// small -> many windows + prefetch
+    executor_options.decrypt_ahead = true;
+    executor_options.prefetch_pool = pool;
+    executor_options.cache_filler_pool = pool;
+    ReaderExecutor executor(source, objects, {}, executor_options);
+    executor.addDecryptionLayer("/t", 0, [&](UInt128, const String &) { return key; });
+    executor.initDecryption();
+
+    String result = readAll(executor);
+
+    ASSERT_EQ(result.size(), plaintext.size());
+    EXPECT_EQ(result, plaintext);
+}
+
 TEST(ReaderExecutor, EncryptedEofReleasesLongConnectionSlot)
 {
     /// Regression: `atEnd` used to compare the logical `position` against

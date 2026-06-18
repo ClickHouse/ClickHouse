@@ -259,6 +259,7 @@ ReaderExecutor::ReaderExecutor(
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , block_size(options.block_size)
     , max_tail_for_drain(options.max_tail_for_drain)
+    , decrypt_ahead(options.decrypt_ahead)
     , plan_look_ahead_window(std::max(options.plan_look_ahead_window, options.window_size))
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr)
@@ -464,6 +465,9 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         }
     }
 
+    /// Reset before the serve; `interpretStep` sets it only when it serves a window of
+    /// decrypt-ahead bytes (already plaintext), so the boundary below skips decryption.
+    served_window_is_plaintext = false;
     chain = interpretStep(position_phys, to_read);
 
     stats.add(Stats::RequestedBytes, chain.range().size);
@@ -496,6 +500,10 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     maybeLaunchAhead();
 
+    /// A decrypt-ahead window is already plaintext (decrypted on the worker); every
+    /// other window (cache hit, synchronous read) is ciphertext and decrypts here.
+    if (served_window_is_plaintext)
+        return chain;
     return decryptWindow(std::move(chain));
 }
 
@@ -699,6 +707,25 @@ ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
     return plain;
 }
 
+ChainedBuffers ReaderExecutor::decryptFetchedAhead(const ChainedBuffers & cipher, [[maybe_unused]] Stats & timing_stats) const
+{
+    ChainedBuffers plain;
+#if USE_SSL
+    StatTimer decrypt_scope(timing_stats, Stats::DecryptMicroseconds);
+    for (const auto & node : cipher.getNodes())
+    {
+        auto block = std::make_shared<OwnedChainedBuffer>(node.size);
+        std::memcpy(block->data(), node.data(), node.size);
+        /// `fetched` carries PHYSICAL offsets; the keystream is on logical payload
+        /// offsets, so shift by the header size. Keep the PHYSICAL label on the copy
+        /// so the collect path (slice / shift / finalize) treats it like `fetched`.
+        decryptor.decrypt(block->data(), node.size, node.logical_offset - data_start_offset);
+        plain.append(ChainedBufferNode{block, 0, node.size, node.logical_offset});
+    }
+#endif
+    return plain;
+}
+
 size_t ReaderExecutor::totalSize() const
 {
     size_t physical = offset_map.totalSize();
@@ -797,8 +824,9 @@ ChainedBuffers ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_r
     return chain;
 }
 
-bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
+bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plaintext)
 {
+    is_plaintext = false;
     /// The worker may own the connection mid-read, so the revoke/release handoff
     /// must complete before any source touch.
     auto m = std::move(machine);
@@ -913,7 +941,25 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     IntervalSet covered;
     backfillBytes(m->physical_window, requested_phys, m->fetched, result, covered,
         /*push_to_writers=*/false, stats);
-    chain = finalizeAssembledWindow(slice_window, pin_frontier, result, reached_eof);
+
+    /// Decrypt-ahead: when the worker produced a plaintext copy that fully covers the
+    /// served window, assemble the SERVED chain from it so the serve boundary skips
+    /// `decryptWindow`; the cache-fill below still writes the ciphertext `result`. Fall
+    /// back to serving ciphertext when the plaintext copy does not cover the window (a
+    /// late cache hit can extend `result` past the fetched prefix the worker decrypted).
+    ChainedBuffers served_plain;
+    const bool serve_plaintext = !m->plaintext_fetched.empty()
+        && m->plaintext_fetched.range().offset <= slice_window.offset
+        && m->plaintext_fetched.range().end() >= slice_window.end();
+    if (serve_plaintext)
+    {
+        IntervalSet covered_plain;
+        Stats discard;  /// over-read already accounted on `result`'s backfill above
+        assembleAndWriteBack(m->physical_window, requested_phys, m->plaintext_fetched,
+            served_plain, covered_plain, /*push_to_writers=*/false, discard);
+    }
+    chain = finalizeAssembledWindow(slice_window, pin_frontier, serve_plaintext ? served_plain : result, reached_eof);
+    is_plaintext = serve_plaintext;
 #if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: InFlight -> Ready (bytes in hand, serve proceeds)
     shadowSetPhase(*m, RetrievePhase::Ready);
 #endif
@@ -2456,6 +2502,11 @@ void ReaderExecutor::launchRetrieve(size_t ri)
             self->physical_window, /*from_prefetch=*/true,
             self->reached_eof, self->geometry->pressure_level,
             self->extent_snapshot, &self->long_conn, self, self->stats);
+        /// Decrypt-ahead: produce a plaintext copy on this worker thread so the serve
+        /// boundary does not decrypt on the query thread. `fetched` stays ciphertext for
+        /// the cache-fill. Reentrant - safe alongside a concurrent foreground decrypt.
+        if (decrypt_ahead && needsDecryption() && !self->fetched.empty())
+            self->plaintext_fetched = decryptFetchedAhead(self->fetched, self->stats);
         const size_t fetched_size = self->fetched.empty() ? 0 : self->fetched.range().size;
         const bool stopped_short = !self->reached_eof
             && fetched_size < self->physical_window.size
@@ -2525,12 +2576,19 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     /// frontier never strands un-fetched bytes mid-plan.
     const size_t window = machine ? machine->physical_window.size : 0;
     ChainedBuffers collected;
-    if (tryCollectMachine(collected))
+    bool collected_is_plaintext = false;
+    if (tryCollectMachine(collected, collected_is_plaintext))
     {
         /// `collected` is logical (the I/O leaf already shifted + sliced to `position`);
         /// `ready_bytes` is logical too, so bank it directly - no shift, no round-trip.
         if (!collected.empty())
+        {
+            /// `decrypt_ahead` is constant for an executor, so every collect for a given
+            /// retrieve banks the same kind of bytes - the flag never flips mid-stream.
+            chassert(st.ready_bytes.empty() || st.ready_bytes_is_plaintext == collected_is_plaintext);
             st.ready_bytes.append(std::move(collected));
+            st.ready_bytes_is_plaintext = collected_is_plaintext;
+        }
         st.fetched += window;
         st.phase = RetrievePhase::Ready;
         st.machine = nullptr;
@@ -2601,6 +2659,9 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
         else
             return serveRetrieveForeground(ri, position_phys, to_read);  /// not prefetched: read it now
     }
+    /// Banked bytes decrypted ahead on the worker are already plaintext, so the serve
+    /// boundary must skip `decryptWindow` for this window.
+    served_window_is_plaintext = st.ready_bytes_is_plaintext;
     return serveStepFromBanked(step, st, position_phys, to_read);
 }
 
