@@ -501,8 +501,6 @@ public:
     bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
     bool enableSoftwarePrefetch() const { return enable_prefetch; }
 
-    void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
-
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
@@ -565,7 +563,6 @@ private:
     size_t max_joined_block_bytes = 0;
     bool joined_block_split_single_row = false;
     bool enable_lazy_columns_replication = false;
-    bool enable_lazy_columns_indexing = false;
     bool enable_prefetch = true;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
@@ -574,6 +571,9 @@ private:
 
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;
+
+    /// Track if shared runtime filters were already published to keep publication one-shot.
+    bool shared_runtime_filters_publish_attempted = false;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
@@ -608,6 +608,10 @@ private:
     void tryRerangeRightTableDataImpl(Map & map);
 
     bool canConvertToFixedHashMap() const;
+
+    /// Publish a SharedFixedHashTableRuntimeFilter that replaces the Set/BloomFilter
+    /// installed by BuildRuntimeFilterStep, when the build side is a FixedHashMap.
+    void publishSharedRuntimeFilters();
     void tryConvertToFixedHashMap();
 
     template <bool is_signed, typename Key, typename MapsTemplate>

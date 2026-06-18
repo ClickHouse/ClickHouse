@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 
 /// Keys that belong to the disk configuration layer (IDisk), not to the cache layer.
 /// They must be skipped when loading cache settings to avoid UNKNOWN_SETTING errors.
-static const std::set<std::string> non_cache_keys = {"type", "disk", "name", "data_background_cleanup", "thread_pool_size"};
+static const std::set<std::string> non_cache_keys = {"type", "disk", "name", "data_background_cleanup", "thread_pool_size", "skip_access_check"};
 
 namespace DB
 {
@@ -49,6 +49,9 @@ namespace ErrorCodes
     DECLARE(Double, keep_free_space_size_ratio, FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO, "A ratio of free space which cache would try to uphold in the background", 0) \
     DECLARE(Double, keep_free_space_elements_ratio, FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO, "A ratio of free elements which cache would try to uphold in the background", 0) \
     DECLARE(UInt64, keep_free_space_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "A remove batch size of cache elements made by background thread which upholds free space/elements ratio", 0) \
+    DECLARE(NonZeroUInt64, invalidated_entries_cleanup_interval_ms, 10000, "Idle interval in milliseconds of the background task which purges invalidated (lazily-removed) priority queue entries", 0) \
+    DECLARE(NonZeroUInt64, invalidated_entries_cleanup_threshold, 1000, "Number of accumulated invalidated priority queue entries which triggers their background removal", 0) \
+    DECLARE(NonZeroUInt64, invalidated_entries_cleanup_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "Maximum number of invalidated priority queue entries removed under a single write lock per background iteration", 0) \
     DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Enable limiting maximum size of cache which can be written within a query", 0) \
     DECLARE(UInt64, cache_hits_threshold, 0, "Deprecated setting", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "Undocumented. Not recommended for use", 0) \
@@ -80,16 +83,9 @@ FileCacheSettings::FileCacheSettings(const FileCacheSettings & settings)
 {
 }
 
-FileCacheSettings::FileCacheSettings(FileCacheSettings && settings) noexcept
-    : impl(std::make_unique<FileCacheSettingsImpl>(std::move(*settings.impl)))
-{
-}
+FileCacheSettings::FileCacheSettings(FileCacheSettings && settings) noexcept = default;
 
-FileCacheSettings & FileCacheSettings::operator=(FileCacheSettings && settings) noexcept
-{
-    impl = std::make_unique<FileCacheSettingsImpl>(std::move(*settings.impl));
-    return *this;
-}
+FileCacheSettings & FileCacheSettings::operator=(FileCacheSettings && settings) noexcept = default;
 
 bool FileCacheSettings::operator==(const FileCacheSettings & settings) const noexcept
 {
