@@ -157,8 +157,8 @@ class LocalDownloader:
 
 class AzureUploader(CloudUploader):
 
-    def __init__(self, blob_service_client, container_name):
-        super().__init__()
+    def __init__(self, blob_service_client, container_name, use_relpath=False):
+        super().__init__(use_relpath=use_relpath)
         self.blob_service_client = blob_service_client
         self.container_client = self.blob_service_client.get_container_client(
             container_name

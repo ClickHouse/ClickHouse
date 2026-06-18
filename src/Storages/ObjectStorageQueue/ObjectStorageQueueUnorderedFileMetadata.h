@@ -30,6 +30,8 @@ public:
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 
+    PathState getPathState(std::string & failure_message) const override;
+
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
     void prepareProcessedRequestsImpl(Coordination::Requests & requests, LastProcessedFileInfoMapPtr created_nodes) override;

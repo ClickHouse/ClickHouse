@@ -309,10 +309,14 @@ def test_change_listen_host(cluster, zk):
     localhost_client = Client(
         host="127.0.0.1", port=9000, command="/usr/bin/clickhouse"
     )
+    # Clear LLVM_PROFILE_FILE so this manually-launched clickhouse process
+    # does not race with the server over the same profraw merge-pool slots.
     localhost_client.command = [
         "docker",
         "exec",
         "-i",
+        "-e",
+        "LLVM_PROFILE_FILE=",
         instance.docker_id,
     ] + localhost_client.command
     try:
@@ -338,10 +342,14 @@ def test_reload_via_client(cluster, zk):
     localhost_client = Client(
         host="127.0.0.1", port=9000, command="/usr/bin/clickhouse"
     )
+    # Clear LLVM_PROFILE_FILE so this manually-launched clickhouse process
+    # does not race with the server over the same profraw merge-pool slots.
     localhost_client.command = [
         "docker",
         "exec",
         "-i",
+        "-e",
+        "LLVM_PROFILE_FILE=",
         instance.docker_id,
     ] + localhost_client.command
 

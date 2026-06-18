@@ -3,6 +3,7 @@
 #include <Columns/ColumnObject.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 
 #include <list>
