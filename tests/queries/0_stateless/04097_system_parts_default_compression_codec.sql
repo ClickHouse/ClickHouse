@@ -15,7 +15,11 @@ CREATE TABLE t_default_codec
 )
 ENGINE = MergeTree
 ORDER BY x
-SETTINGS default_compression_codec = 'ZSTD(3)';
+-- `remove_empty_parts = 0` keeps the empty active part produced by the fully-deleting
+-- mutation at the end of the test. With the default `remove_empty_parts = 1` the
+-- `MergeTreeCleanupThread` could drop that part via `clearEmptyParts` before the final
+-- `system.parts` assertion runs, making the test flaky on slow runs.
+SETTINGS default_compression_codec = 'ZSTD(3)', remove_empty_parts = 0;
 
 -- Stop background merges so that the two inserted parts are not merged before the
 -- post-insert assertions run; otherwise the insert-path coverage would silently
