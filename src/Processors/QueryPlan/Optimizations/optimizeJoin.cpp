@@ -390,8 +390,7 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
                 const auto kind = join_step->getJoinOperator().kind;
                 est = (kind == JoinKind::Left) ? *lhs
                     : (kind == JoinKind::Right) ? *rhs
-                    : (kind == JoinKind::Full) ? (*lhs + *rhs)
-                    : std::max(*lhs, *rhs); /// Inner/Cross: containment heuristic
+                    : std::max(*lhs, *rhs); /// Full/Inner/Cross: containment heuristic
             }
         }
         return RelationStats{.estimated_rows = est, .table_name = join_step->getReadableRelationName()};

@@ -64,8 +64,8 @@ Positions: 1
                        INPUT :: 2 -> __table2.p_partkey Int32 : 2
               Positions: 0 1 2
                 JoinLogical
-                Join: lineitem[100] ⋈ R1
-                ResultRows: unknown
+                Join: lineitem ⋈ part[10000] ⋈ lineitem[100]
+                ResultRows: 100
                 Type: INNER
                 Strictness: ALL
                 Locality: UNSPECIFIED
@@ -77,9 +77,10 @@ Positions: 1
                          FUNCTION equals(__table4.l_partkey : 1, __table2.p_partkey : 2) -> equals(__table4.l_partkey, __table2.p_partkey) UInt8 : 3
                 Positions: 0 1 2
                 Expression Sources:
-                __table4.l_quantity: {0}
-                __table4.l_partkey: {0}
-                __table2.p_partkey: {1}
+                __table4.l_quantity: {1}
+                __table4.l_partkey: {1}
+                __table2.p_partkey: {0}
+                  ReadFromCommonBuffer
                   Expression (Change column names to column identifiers)
                   Actions: INPUT : 0 -> l_quantity Decimal(15, 2) : 0
                            INPUT : 1 -> l_partkey Int32 : 1
@@ -90,7 +91,6 @@ Positions: 1
                     ReadType: Default
                     Parts: 1
                     Granules: 1
-                  ReadFromCommonBuffer
           SaveSubqueryResultToBuffer
             JoinLogical
             Join: part[10000] ⋈ lineitem[100]
@@ -135,8 +135,8 @@ Positions: 1
         Type: INNER
                 JoinLogical
                 Type: INNER
-                    ReadFromMergeTree (default.lineitem)
                   ReadFromCommonBuffer
+                    ReadFromMergeTree (default.lineitem)
           SaveSubqueryResultToBuffer
               JoinLogical
               Type: INNER
