@@ -834,10 +834,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 plan.optimize(optimization_settings);
             }
 
-            PrettyNames precomputed_pretty_names;
-
-            if (settings.query_plan_options.pretty)
-                precomputed_pretty_names = QueryPlanFormat::buildPrettyNames(plan);
+            PrettyNames precomputed_pretty_names = QueryPlanFormat::buildPrettyNames(plan);
 
             if (settings.json)
             {
