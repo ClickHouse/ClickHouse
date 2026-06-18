@@ -6,9 +6,9 @@ title: 'TabSeparatedWithNamesAndTypes'
 doc_type: 'reference'
 ---
 
-| Input | Output | Alias                  |
-|-------|--------|------------------------|
-|     ✔    |     ✔     | `TSVWithNamesAndTypes` |
+| Input | Output | Alias                                          |
+|-------|--------|------------------------------------------------|
+|     ✔    |     ✔     | `TSVWithNamesAndTypes`, `RawWithNamesAndTypes` |
 
 ## Description {#description}
 
