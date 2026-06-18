@@ -6,7 +6,7 @@ namespace DB
 {
 
 /// Sink which closes input port and reads nothing.
-class NullSink : public ISink
+class NullSink final : public ISink
 {
 public:
     explicit NullSink(SharedHeader header) : ISink(std::move(header)) {}

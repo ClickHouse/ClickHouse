@@ -1,3 +1,5 @@
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -6,6 +8,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Sources/NullSource.h>
@@ -16,6 +19,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -112,7 +116,7 @@ using AggregateFunctionMatches = std::vector<AggregateFunctionMatch>;
 
 /// Here we try to match aggregate functions from the query to
 /// aggregate functions from projection.
-std::optional<AggregateFunctionMatches> matchAggregateFunctions(
+static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
     const AggregateProjectionInfo & info,
     const AggregateDescriptions & aggregates,
     const MatchedTrees::Matches & matches,
@@ -250,16 +254,18 @@ static void appendAggregateFunctions(
     }
 }
 
-std::optional<ActionsDAG> analyzeAggregateProjection(
+static std::optional<ActionsDAG> analyzeAggregateProjection(
     const AggregateProjectionInfo & info,
     const QueryDAG & query,
     const DAGIndex & query_index,
     const Names & keys,
-    const AggregateDescriptions & aggregates)
+    const AggregateDescriptions & aggregates,
+    size_t max_set_size_for_match)
 {
     auto proj_index = buildDAGIndex(*info.before_aggregation);
 
-    MatchedTrees::Matches matches = matchTrees(info.before_aggregation->getOutputs(), *query.dag, false /* check_monotonicity */);
+    MatchedTrees::Matches matches = matchTrees(
+        info.before_aggregation->getOutputs(), *query.dag, false /* check_monotonicity */, max_set_size_for_match);
     auto matched_aggregates = matchAggregateFunctions(info, aggregates, matches, query_index, proj_index);
     if (!matched_aggregates)
         return {};
@@ -339,12 +345,13 @@ struct AggregateProjectionCandidates
     String only_count_column;
 };
 
-AggregateProjectionCandidates getAggregateProjectionCandidates(
+static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
     AggregatingStep & aggregating,
     ReadFromMergeTree & reading,
     const PartitionIdToMaxBlockPtr & max_added_blocks,
-    bool allow_implicit_projections)
+    bool allow_implicit_projections,
+    size_t max_set_size_for_match)
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
@@ -362,8 +369,9 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection
-        && !reading.getMergeTreeData().has_lightweight_delete_parts.load();
+    bool can_use_minmax_projection = allow_implicit_projections
+        && metadata->minmax_count_projection
+        && !reading.getMutationsSnapshot()->hasLightweightDeletedMask();
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
@@ -383,7 +391,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     {
         const auto * projection = &*(metadata->minmax_count_projection);
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
+        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
 
@@ -434,7 +442,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         for (const auto * projection : agg_projections)
         {
             auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-            if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
+            if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
             {
                 AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
                 candidate.projection = projection;
@@ -446,7 +454,8 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     return candidates;
 }
 
-AggregateProjectionCandidates getAggregateProjectionCandidates(QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading)
+static AggregateProjectionCandidates getAggregateProjectionCandidates(
+    QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading, size_t max_set_size_for_match)
 {
     const auto metadata = reading.getStorageMetadata();
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
@@ -495,7 +504,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(QueryPlan::Node &
     for (const auto * projection : agg_projections)
     {
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
+        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
             candidate.projection = projection;
@@ -527,9 +536,7 @@ static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projec
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
-    bool allow_implicit_projections,
-    bool is_parallel_replicas_initiator_with_projection_support,
-    size_t max_step_description_length)
+    const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
         return {};
@@ -558,9 +565,16 @@ std::optional<String> optimizeUseAggregateProjections(
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
+    const size_t max_set_size_for_match = optimization_settings.max_set_size_for_projection_match;
     auto candidates
-        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading)
-                    : getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections));
+        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading, max_set_size_for_match)
+                    : getAggregateProjectionCandidates(
+                          node,
+                          *aggregating,
+                          *reading,
+                          max_added_blocks,
+                          optimization_settings.optimize_use_implicit_projections,
+                          max_set_size_for_match));
 
     auto logger = getLogger("optimizeUseAggregateProjections");
     const auto & query_info = reading->getQueryInfo();
@@ -789,13 +803,13 @@ std::optional<String> optimizeUseAggregateProjections(
     }
 
     QueryPlanStepPtr projection_reading;
-    bool has_parent_parts;
+    bool has_parent_parts = false;
     String selected_projection_name;
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;
 
     bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled()
-        && !is_parallel_replicas_initiator_with_projection_support;
+        && !optimization_settings.is_parallel_replicas_initiator_with_projection_support;
     /// Add reading from projection step.
     if (candidates.minmax_projection)
     {
@@ -892,7 +906,7 @@ std::optional<String> optimizeUseAggregateProjections(
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
 
-        if (has_parent_parts && is_parallel_replicas_initiator_with_projection_support)
+        if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
             fallbackToLocalProjectionReading(projection_reading);
     }
 
@@ -905,7 +919,7 @@ std::optional<String> optimizeUseAggregateProjections(
         });
     }
 
-    projection_reading->setStepDescription(selected_projection_name, max_step_description_length);
+    projection_reading->setStepDescription(selected_projection_name, optimization_settings.max_step_description_length);
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
 
     /// Root node of optimized child plan using @projection_name
@@ -955,7 +969,8 @@ std::optional<String> optimizeUseAggregateProjections(
         const auto & expected_header = node.step->getOutputHeader();
         if (blocksHaveEqualStructure(*projection_header, *expected_header))
         {
-            node.step->updateInputHeader(projection_header);
+            if (!has_parent_parts)
+                node.step->updateInputHeader(projection_header);
         }
         else
         {
@@ -973,7 +988,26 @@ std::optional<String> optimizeUseAggregateProjections(
     }
 
     if (has_parent_parts)
-        node.children.push_back(source_node);
+    {
+        if (aggregating)
+        {
+            node.children.push_back(source_node);
+        }
+        else
+        {
+            /// Some parts have no projection data. DistinctStep must see rows from both readings
+            /// to return the correct set of distinct values; union them into its single input.
+            auto * main_node = node.children.front();
+            SharedHeaders input_headers = {
+                main_node->step->getOutputHeader(),
+                source_node->step->getOutputHeader(),
+            };
+            auto & union_node = nodes.emplace_back();
+            union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
+            union_node.children = {main_node, source_node};
+            node.children.front() = &union_node;
+        }
+    }
     else
         node.children.front() = source_node;
 

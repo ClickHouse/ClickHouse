@@ -7,6 +7,8 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
+#include <Columns/ColumnConst.h>
+
 #include <Core/Joins.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -384,7 +386,8 @@ QueryPlan decorrelateQueryPlan(
             SortDescription{} /*group_by_sort_description_*/,
             aggeregating_step->shouldProduceResultsInBucketOrder(),
             aggeregating_step->usingMemoryBoundMerging(),
-            aggeregating_step->explicitSortingRequired()
+            aggeregating_step->explicitSortingRequired(),
+            false /*enable_sharding_aggregator_*/
         );
         result_step->setStepDescription(*aggeregating_step);
 
@@ -429,8 +432,8 @@ void buildExistsResultExpression(
 {
     ActionsDAG dag(query_plan.getCurrentHeader()->getNamesAndTypesList());
     auto result_type = std::make_shared<DataTypeUInt8>();
-    auto column = result_type->createColumnConst(1, 1);
-    const auto * exists_result = &dag.materializeNode(dag.addColumn(ColumnWithTypeAndName(column, result_type, correlated_subquery.action_node_name)));
+    auto column = result_type->createColumnConst(0, 1);
+    const auto * exists_result = &dag.materializeNode(dag.addColumn(std::move(column), result_type, correlated_subquery.action_node_name));
 
     if (project_only_correlated_columns)
     {
@@ -553,7 +556,7 @@ Planner buildPlannerForCorrelatedSubquery(
 )
 {
     auto subquery_options = select_query_options.subquery();
-    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     /// Register table expression data for correlated columns sources in the global context.
     /// Table expression data would be reused because it can't be initialized
     /// during plan construction for correlated subquery.

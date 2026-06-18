@@ -52,6 +52,11 @@ namespace ProfileEvents
     extern const Event KeeperCheckWatchRequest;
     extern const Event KeeperRemoveWatchRequest;
     extern const Event KeeperAddWatchRequest;
+    extern const Event KeeperWatchesTriggered;
+    extern const Event KeeperWatchTriggeredNodeCreated;
+    extern const Event KeeperWatchTriggeredNodeDeleted;
+    extern const Event KeeperWatchTriggeredNodeDataChanged;
+    extern const Event KeeperWatchTriggeredNodeChildrenChanged;
 }
 
 
@@ -153,6 +158,30 @@ void unregisterEphemeralPath(KeeperStorageBase::Ephemerals & ephemerals, int64_t
         ephemerals.erase(ephemerals_it);
 }
 
+void incrementTriggeredWatchProfileEvent(Coordination::Event event_type, size_t count)
+{
+    if (count == 0)
+        return;
+    ProfileEvents::increment(ProfileEvents::KeeperWatchesTriggered, count);
+    switch (event_type)
+    {
+        case Coordination::Event::CREATED:
+            ProfileEvents::increment(ProfileEvents::KeeperWatchTriggeredNodeCreated, count);
+            break;
+        case Coordination::Event::DELETED:
+            ProfileEvents::increment(ProfileEvents::KeeperWatchTriggeredNodeDeleted, count);
+            break;
+        case Coordination::Event::CHANGED:
+            ProfileEvents::increment(ProfileEvents::KeeperWatchTriggeredNodeDataChanged, count);
+            break;
+        case Coordination::Event::CHILD:
+            ProfileEvents::increment(ProfileEvents::KeeperWatchTriggeredNodeChildrenChanged, count);
+            break;
+        default:
+            break;
+    }
+}
+
 KeeperResponsesForSessions processWatchesImplBase(
     const String & path,
     KeeperStorageBase::Watches & watches,
@@ -182,6 +211,7 @@ KeeperResponsesForSessions processWatchesImplBase(
             }
             result.push_back(KeeperResponseForSession{watcher_session, watch_response});
         }
+        incrementTriggeredWatchProfileEvent(event_type, watch_it->second.size());
 
         if (should_delete)
             watches.erase(watch_it);
@@ -227,6 +257,9 @@ KeeperResponsesForSessions processWatchesImplBase(
                 }
                 result.push_back(KeeperResponseForSession{watcher_session, watch_list_response});
             }
+            incrementTriggeredWatchProfileEvent(
+                static_cast<Coordination::Event>(watch_list_response->type),
+                watch_it->second.size());
 
             if (should_delete)
                 list_watches.erase(watch_it);
@@ -263,6 +296,7 @@ std::pair<KeeperResponsesForSessions, Int64> processWatchesImpl(
                 watch_list_response->state = Coordination::State::CONNECTED;
                 for (auto watcher_session : watch_it->second)
                     result.push_back(KeeperResponseForSession{watcher_session, watch_list_response});
+                incrementTriggeredWatchProfileEvent(event_type, watch_it->second.size());
             }
 
             if (current_path == "/")
@@ -629,6 +663,7 @@ struct KeeperStorageBase::Delta
     Operation operation;
 };
 
+std::string_view deltaTypeToString(const Operation & operation);
 std::string_view deltaTypeToString(const Operation & operation)
 {
     /// Using std::visit ensures compile-time exhaustiveness checking -
@@ -679,6 +714,19 @@ const KeeperStorageBase::Delta & KeeperStorageBase::DeltaRange::front() const
 {
     return *begin_it;
 }
+
+template <typename Container>
+KeeperStorage<Container>::UncommittedStateForSnapshot::UncommittedStateForSnapshot() = default;
+
+template <typename Container>
+KeeperStorage<Container>::UncommittedStateForSnapshot::~UncommittedStateForSnapshot() = default;
+
+template <typename Container>
+KeeperStorage<Container>::UncommittedStateForSnapshot::UncommittedStateForSnapshot(UncommittedStateForSnapshot &&) noexcept = default;
+
+template <typename Container>
+typename KeeperStorage<Container>::UncommittedStateForSnapshot &
+KeeperStorage<Container>::UncommittedStateForSnapshot::operator=(UncommittedStateForSnapshot &&) noexcept = default;
 
 KeeperStorageBase::KeeperStorageBase(int64_t tick_time_ms, const KeeperContextPtr & keeper_context_, const String & superdigest_)
     : keeper_context(keeper_context_), superdigest(superdigest_), session_expiry_queue(tick_time_ms)
@@ -1271,9 +1319,12 @@ int64_t KeeperStorageBase::getNextZXID() const
 }
 
 template<typename Container>
-void KeeperStorage<Container>::applyUncommittedState(KeeperStorage & other, int64_t last_log_idx)  TSA_NO_THREAD_SAFETY_ANALYSIS
+void KeeperStorage<Container>::collectUncommittedTransactionsAfter(
+    int64_t last_log_idx,
+    UncommittedStateForSnapshot & result,
+    std::unordered_set<int64_t> & zxids_to_apply) const
 {
-    std::unordered_set<int64_t> zxids_to_apply;
+    std::lock_guard lock(transaction_mutex);
     for (const auto & transaction : uncommitted_transactions)
     {
         if (transaction.log_idx == 0)
@@ -1282,21 +1333,130 @@ void KeeperStorage<Container>::applyUncommittedState(KeeperStorage & other, int6
         if (transaction.log_idx <= last_log_idx)
             continue;
 
-        other.uncommitted_transactions.push_back(transaction);
+        result.transactions.push_back({transaction.zxid, transaction.nodes_digest, transaction.log_idx});
         zxids_to_apply.insert(transaction.zxid);
     }
+}
 
-    std::list<Delta> uncommitted_deltas_to_apply;
-    for (const auto & uncommitted_delta : uncommitted_state.deltas)
+template<typename Container>
+typename KeeperStorage<Container>::UncommittedStateForSnapshot KeeperStorage<Container>::copyUncommittedStateAfter(int64_t last_log_idx) const
+{
+    UncommittedStateForSnapshot result;
+    std::unordered_set<int64_t> zxids_to_apply;
+    collectUncommittedTransactionsAfter(last_log_idx, result, zxids_to_apply);
+
+    if (zxids_to_apply.empty())
+        return result;
+
     {
-        if (!zxids_to_apply.contains(uncommitted_delta.zxid))
-            continue;
-
-        uncommitted_deltas_to_apply.push_back(uncommitted_delta);
+        std::lock_guard lock(uncommitted_state.deltas_mutex);
+        for (const auto & uncommitted_delta : uncommitted_state.deltas)
+        {
+            if (zxids_to_apply.contains(uncommitted_delta.zxid))
+                result.deltas.push_back(uncommitted_delta);
+        }
     }
 
-    other.uncommitted_state.applyDeltas(uncommitted_deltas_to_apply, /*digest=*/nullptr);
-    other.uncommitted_state.addDeltas(std::move(uncommitted_deltas_to_apply));
+    return result;
+}
+
+template<typename Container>
+void KeeperStorage<Container>::detachMatchingDeltasNoexcept(
+    std::list<Delta> & source,
+    std::list<Delta> & destination,
+    const std::unordered_set<int64_t> & zxids_to_apply) noexcept
+{
+    for (auto it = source.begin(); it != source.end();)
+    {
+        auto current = it++;
+        if (zxids_to_apply.contains(current->zxid))
+            destination.splice(destination.end(), source, current);
+    }
+}
+
+template<typename Container>
+typename KeeperStorage<Container>::UncommittedStateForSnapshot KeeperStorage<Container>::detachUncommittedStateAfter(int64_t last_log_idx)
+{
+    UncommittedStateForSnapshot result;
+    std::unordered_set<int64_t> zxids_to_apply;
+    collectUncommittedTransactionsAfter(last_log_idx, result, zxids_to_apply);
+
+    if (zxids_to_apply.empty())
+        return result;
+
+    {
+        std::lock_guard lock(uncommitted_state.deltas_mutex);
+        detachMatchingDeltasNoexcept(uncommitted_state.deltas, result.deltas, zxids_to_apply);
+    }
+
+    return result;
+}
+
+template<typename Container>
+void KeeperStorage<Container>::applyUncommittedState(UncommittedStateForSnapshot uncommitted_state_for_snapshot)
+{
+    if (uncommitted_state_for_snapshot.empty())
+        return;
+
+    {
+        std::lock_guard lock(transaction_mutex);
+        for (const auto & transaction : uncommitted_state_for_snapshot.transactions)
+            uncommitted_transactions.push_back({transaction.zxid, transaction.nodes_digest, transaction.log_idx});
+    }
+
+    uncommitted_state.applyDeltas(uncommitted_state_for_snapshot.deltas, /*digest=*/nullptr);
+    for (const auto & delta : uncommitted_state_for_snapshot.deltas)
+    {
+        if (const auto * create_delta = std::get_if<CreateNodeDelta>(&delta.operation))
+        {
+            if (create_delta->stat.ephemeralOwner != 0)
+                uncommitted_state.ephemerals[create_delta->stat.ephemeralOwner].emplace(delta.path);
+        }
+        else if (const auto * remove_delta = std::get_if<RemoveNodeDelta>(&delta.operation))
+        {
+            if (remove_delta->stat.ephemeralOwner() != 0)
+                unregisterEphemeralPath(
+                    uncommitted_state.ephemerals, remove_delta->stat.ephemeralOwner(), delta.path, /*throw_if_missing=*/false);
+        }
+        else if (const auto * close_session_delta = std::get_if<CloseSessionDelta>(&delta.operation))
+        {
+            uncommitted_state.ephemerals.erase(close_session_delta->session_id);
+        }
+    }
+
+    uncommitted_state.addDeltas(std::move(uncommitted_state_for_snapshot.deltas));
+}
+
+template<typename Container>
+void KeeperStorage<Container>::applyUncommittedState(KeeperStorage & other, int64_t last_log_idx)
+{
+    other.applyUncommittedState(copyUncommittedStateAfter(last_log_idx));
+}
+
+KeeperStorageStats::KeeperStorageStats(const KeeperStorageStats & other)
+{
+    *this = other;
+}
+
+KeeperStorageStats & KeeperStorageStats::operator=(const KeeperStorageStats & other)
+{
+    if (this == &other)
+        return *this;
+
+    /// Returned stats are a frozen, independently sampled copy. They can be
+    /// stale immediately after return and are intentionally no stronger than
+    /// the previous live-reference behavior.
+    nodes_count.store(other.nodes_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    approximate_data_size.store(other.approximate_data_size.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    total_watches_count.store(other.total_watches_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    watched_paths_count.store(other.watched_paths_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    sessions_with_watches_count.store(other.sessions_with_watches_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    session_with_ephemeral_nodes_count.store(
+        other.session_with_ephemeral_nodes_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    total_emphemeral_nodes_count.store(other.total_emphemeral_nodes_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    last_zxid.store(other.last_zxid.load(std::memory_order_relaxed), std::memory_order_relaxed);
+
+    return *this;
 }
 
 template<typename Container>
@@ -1887,8 +2047,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
 
     if (zk_request.path == Coordination::keeper_api_feature_flags_path
-        || zk_request.path == Coordination::keeper_config_path
-        || zk_request.path == Coordination::keeper_availability_zone_path)
+        || zk_request.path == Coordination::keeper_config_path)
         return {};
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
@@ -2453,8 +2612,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperListRecursiveRequest);
 
     if (zk_request.path == Coordination::keeper_api_feature_flags_path
-        || zk_request.path == Coordination::keeper_config_path
-        || zk_request.path == Coordination::keeper_availability_zone_path)
+        || zk_request.path == Coordination::keeper_config_path)
         return {};
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
@@ -3036,7 +3194,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
         {
             using enum Coordination::ListRequestType;
 
-            bool is_ephemeral;
+            bool is_ephemeral = false;
             if constexpr (!Storage::use_rocksdb)
             {
                 auto child_path = (std::filesystem::path(zk_request.path) / child).generic_string();
@@ -3329,7 +3487,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     return {};
 }
 
-KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & deltas)
+static KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & deltas)
 {
     std::list<KeeperStorageBase::Delta> subdeltas;
     auto it = deltas.begin();
@@ -3689,7 +3847,7 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
-    TransactionInfo * transaction;
+    TransactionInfo * transaction = nullptr;
     uint64_t new_digest = 0;
 
     {

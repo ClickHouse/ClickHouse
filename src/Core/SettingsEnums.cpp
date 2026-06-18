@@ -36,6 +36,8 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
     {{"random",           LoadBalancing::RANDOM},
      {"nearest_hostname", LoadBalancing::NEAREST_HOSTNAME},
      {"hostname_levenshtein_distance", LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE},
+     {"hostname_longest_common_prefix", LoadBalancing::HOSTNAME_LONGEST_COMMON_PREFIX},
+     {"hostname_longest_common_suffix", LoadBalancing::HOSTNAME_LONGEST_COMMON_SUFFIX},
      {"in_order",         LoadBalancing::IN_ORDER},
      {"first_or_random",  LoadBalancing::FIRST_OR_RANDOM},
      {"round_robin",      LoadBalancing::ROUND_ROBIN}})
@@ -134,6 +136,10 @@ IMPLEMENT_SETTING_AUTO_ENUM(LogQueriesType, ErrorCodes::BAD_ARGUMENTS)
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
+
+IMPLEMENT_SETTING_ENUM(TextIndexPostingListApplyMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"materialize", TextIndexPostingListApplyMode::MATERIALIZE},
+     {"lazy", TextIndexPostingListApplyMode::LAZY}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
@@ -302,6 +308,11 @@ IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
      {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
      {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
 
+IMPLEMENT_SETTING_ENUM(InputFormatColumnMatchingCaseSensitivity, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", FormatSettings::InputFormatColumnMatchingCaseSensitivity::AUTO},
+     {"ignore_case", FormatSettings::InputFormatColumnMatchingCaseSensitivity::IGNORE_CASE},
+     {"match_case", FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE}})
+
 IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
     {{"DEFINER", SQLSecurityType::DEFINER},
      {"INVOKER", SQLSecurityType::INVOKER},
@@ -331,7 +342,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"Simple", MergeSelectorAlgorithm::SIMPLE},
      {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
-     {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
+     {"Trivial", MergeSelectorAlgorithm::TRIVIAL},
+     {"Manual", MergeSelectorAlgorithm::MANUAL}})
 
 IMPLEMENT_SETTING_ENUM(
     DatabaseDataLakeCatalogType,
@@ -429,6 +441,18 @@ IMPLEMENT_SETTING_ENUM(
      {"none", SearchOrphanedPartsDisks::NONE}})
 
 IMPLEMENT_SETTING_ENUM(
+    TextIndexPostingListCodec,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"none", TextIndexPostingListCodec::None},
+     {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreePartMinMaxIndexColumns,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"partition_key_only", MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY},
+     {"with_block_number_offset", MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET}})
+
+IMPLEMENT_SETTING_ENUM(
     DecorrelationJoinKind,
     ErrorCodes::BAD_ARGUMENTS,
     {{"left", DecorrelationJoinKind::LEFT},
@@ -475,4 +499,14 @@ IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
      {"symbolized", JemallocProfileFormat::Symbolized},
      {"collapsed", JemallocProfileFormat::Collapsed}})
 
+IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", S3UriStyle::AUTO},
+     {"path", S3UriStyle::PATH},
+     {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
+
+IMPLEMENT_SETTING_ENUM(
+    FileLikeEngineDefaultPartitionStrategy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"wildcard", FileLikeEngineDefaultPartitionStrategy::WILDCARD},
+     {"hive", FileLikeEngineDefaultPartitionStrategy::HIVE}})
 }

@@ -26,7 +26,7 @@ class DeltaLakeMetadataDeltaKernel;
  * Sink to write partitioned data to DeltaLake.
  * Writes a N data files, a file per partition key, and commits them to DeltaLake metadata.
  */
-class DeltaLakePartitionedSink : public SinkToStorage, private WithContext
+class DeltaLakePartitionedSink final : public SinkToStorage, private WithContext
 {
 public:
     DeltaLakePartitionedSink(

@@ -89,6 +89,11 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
     return true;
 }
 
+} /// end anonymous namespace
+
+namespace DB
+{
+
 bool isSafePrimaryKey(const KeyDescription & primary_key)
 {
     for (const auto & type : primary_key.data_types)
@@ -99,6 +104,11 @@ bool isSafePrimaryKey(const KeyDescription & primary_key)
 
     return true;
 }
+
+}
+
+namespace
+{
 
 int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
 {
@@ -345,11 +355,11 @@ struct PartsRangesIterator
     }
 
     Values value;
-    bool in_reverse_order;
-    MarkRange range;
-    size_t part_index;
-    EventType event;
-    bool selected; /// Whether this range was selected or rejected in skip index filtering
+    bool in_reverse_order{};
+    MarkRange range{};
+    size_t part_index{};
+    EventType event{};
+    bool selected{}; /// Whether this range was selected or rejected in skip index filtering
 };
 
 struct PartRangeIndex
@@ -387,11 +397,6 @@ struct PartRangeIndexHash
     }
 };
 
-struct SplitPartsRangesResult
-{
-    RangesInDataParts non_intersecting_parts_ranges;
-    RangesInDataParts intersecting_parts_ranges;
-};
 
 void dump(const std::vector<PartsRangesIterator> & ranges_iterators, WriteBuffer & buffer)
 {
@@ -406,7 +411,7 @@ String toString(const std::vector<PartsRangesIterator> & ranges_iterators)
     return buffer.str();
 }
 
-SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
+SplitPartsRangesResult splitPartsRangesImpl(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
 {
     /** Split ranges in data parts into intersecting ranges in data parts and non intersecting ranges in data parts.
       *
@@ -683,6 +688,12 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
 namespace DB
 {
 
+SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
+{
+    return splitPartsRangesImpl(std::move(ranges_in_data_parts), in_reverse_order, logger);
+}
+
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -918,7 +929,7 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
     return filters;
 }
 
-RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
+static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
     std::vector<PartsRangesIterator> selected_ranges;
@@ -1180,7 +1191,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     if (split_parts_ranges_into_intersecting_and_non_intersecting_final)
     {
-        SplitPartsRangesResult split_result = splitPartsRanges(intersecting_parts_ranges, in_reverse_order, logger);
+        SplitPartsRangesResult split_result = splitPartsRangesImpl(intersecting_parts_ranges, in_reverse_order, logger);
         result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
         intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
     }
