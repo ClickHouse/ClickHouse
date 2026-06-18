@@ -1604,6 +1604,12 @@ class SettingsRandomizer:
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
 
+        # The distributed-plan + parallel-replicas CI job exercises a path that only
+        # works with `parallel_replicas_local_plan = 1`; pin it so the randomizer
+        # cannot pick 0 and trip the still-not-implemented remote-plan execution.
+        if args.no_parallel_replicas and args.distributed_plan:
+            random_settings["parallel_replicas_local_plan"] = 1
+
     @staticmethod
     def get_random_settings(args, tags):
         random_settings = {}
@@ -5659,7 +5665,8 @@ ORDER BY (test_name, callee_offset)
 
     blacklist_check.extend(try_get_skip_list(base_dir, "../analyzer_tech_debt.txt"))
 
-    if args.no_parallel_replicas is True:
+    if args.no_parallel_replicas is True and not args.distributed_plan:
+        # Some blacklisted tests pass with plan serialization, which would trip the OK -> NOT_FAILED check.
         blacklist = try_get_skip_list(base_dir, "../parallel_replicas_blacklist.txt")
         blacklist_check.extend(blacklist)
 
@@ -6424,6 +6431,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Do not include tests that are not supported with parallel replicas feature",
+    )
+    parser.add_argument(
+        "--distributed-plan",
+        action="store_true",
+        default=False,
+        help="Indicates the run uses query plan serialization (serialize_query_plan=1)",
     )
     parser.add_argument(
         "--no-async-insert",

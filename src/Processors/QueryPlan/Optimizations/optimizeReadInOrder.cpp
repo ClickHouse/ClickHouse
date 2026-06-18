@@ -125,7 +125,8 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
     if (node.children.empty())
         return nullptr;
 
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step)
+        || typeid_cast<DelayedCreatingSetsStep *>(step))
         return findReadingStep(*node.children.front(), data);
 
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())

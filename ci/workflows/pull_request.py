@@ -83,6 +83,10 @@ workflow = Workflow.Config(
         JobConfigs.bugfix_validation_ft_pr_job,
         JobConfigs.bugfix_validation_it_job,
         *[
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_tests_distributed_plan_pr_jobs
+        ],
+        *[
             j.set_run_after(
                 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
                 if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES

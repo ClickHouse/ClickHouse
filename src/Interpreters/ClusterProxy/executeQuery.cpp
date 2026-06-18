@@ -797,6 +797,16 @@ void executeQueryWithParallelReplicas(
         chassert(max_replicas_to_use <= connection_pools.size());
         connection_pools.resize(max_replicas_to_use);
 
+        // std::shared_ptr<const QueryPlan> remote_query_plan;
+        // /// Plan serialization is built from the pre-analyzed query tree; with the old
+        // /// analyzer `query_tree` is null and the new path can't run.
+        // if (new_context->getSettingsRef()[Setting::serialize_query_plan]
+        //     && new_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        // {
+        //     remote_query_plan = createRemotePlanForParallelReplicas(query_tree, *header, new_context, processed_stage);
+        //     remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+        // }
+
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,
             query_tree,
@@ -815,6 +825,7 @@ void executeQueryWithParallelReplicas(
             std::move(connection_pools),
             std::nullopt,
             shard.pool);
+            // std::move(remote_query_plan));
 
         query_plan.addStep(std::move(read_from_remote));
     }

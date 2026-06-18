@@ -717,6 +717,18 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
     )
+    functional_tests_distributed_plan_pr_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, distributed plan, ParallelReplicas, s3 storage, parallel",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="amd_binary, distributed plan, ParallelReplicas, s3 storage, sequential",
+            runs_on=RunnerLabels.AMD_SMALL,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
+    )
     functional_tests_jobs_coverage = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
