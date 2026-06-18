@@ -35,4 +35,4 @@ FROM
     WHERE f.m2 IS NOT NULL
 )
 WHERE rn = 1
-SETTINGS input_format_parquet_use_native_reader_v3 = 1, optimize_move_to_prewhere = 1, enable_analyzer = 1, query_plan_enable_optimizations = 1, query_plan_optimize_prewhere = 1;
+SETTINGS input_format_parquet_use_native_reader_v3 = 1, optimize_move_to_prewhere = 1, enable_analyzer = 1, query_plan_enable_optimizations = 1, query_plan_optimize_prewhere = 1, enable_join_runtime_filters = 1;
