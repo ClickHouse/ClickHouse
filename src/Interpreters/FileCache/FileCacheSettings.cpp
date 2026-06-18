@@ -65,7 +65,7 @@ namespace ErrorCodes
     DECLARE(Double, split_cache_ratio, 0.1, "Ratio of system segment to total size of cache for split_cache.", 0) \
     DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
-    DECLARE(Bool, expose_prometheus_usage_metrics, false, "Expose Prometheus gauges for filesystem cache usage by user id. Off by default. Cardinality grows with distinct cache users.", 0) \
+    DECLARE(Bool, expose_prometheus_usage_metrics, false, "Expose Prometheus gauges for filesystem cache usage by cache name and user id. Off by default. Cardinality grows with distinct cache users.", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FileCacheSettings, FileCacheSetting)
