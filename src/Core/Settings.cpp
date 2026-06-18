@@ -7951,7 +7951,7 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 Minimum number of payload columns to trigger transforming hash join payload to row-major. 0 disables the row-major transformation.
 )", 0) \
     DECLARE(UInt64, max_bytes_for_hash_join_row_store, 128_MiB, R"(
-Maximum number of bytes per hash join instance to place into the row-major hash join storage. For `parallel_hash` the build is split across instances, so the budget is scaled the number of instances. 0 means no limit.
+Maximum number of bytes per hash join instance to place into the row-major hash join storage. For `parallel_hash` the build is split across instances, so the budget is scaled by the number of instances. 0 means no limit.
 )", 0) \
     \
     /* ####################################################### */ \
