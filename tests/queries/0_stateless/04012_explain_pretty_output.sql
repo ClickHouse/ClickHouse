@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET join_algorithm = 'parallel_hash'; -- default is now grace_hash; this test validates the ConcurrentHashJoin plan
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_join_swap_table = 0;

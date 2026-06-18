@@ -66,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_avro_schema_registry_max_retries", 0, 5, "New setting controlling the maximum number of retries for transient failures (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429) when communicating with the Confluent Schema Registry. Set to 0 to disable retries. Previous behavior (no retries) is preserved by `compatibility = '26.5'`."},
             {"format_avro_schema_registry_retry_initial_backoff_ms", 100, 100, "New setting controlling the initial backoff (in milliseconds) before retrying a failed Confluent Schema Registry request. The backoff doubles on each retry, capped at 10 seconds. Has no effect when `format_avro_schema_registry_max_retries = 0` (the pre-26.6 behavior restored by `compatibility = '26.5'`)."},
             {"enable_join_transitive_predicates", false, true, "Turn on enable_join_transitive_predicates by default"},
+            {"join_algorithm", "direct,parallel_hash,hash", "direct,grace_hash,hash", "Make grace_hash the default JOIN algorithm so large joins spill to disk automatically instead of running out of memory. parallel_hash does not honor max_bytes_before_external_join and was dropped from the default; hash remains as the fallback for asof/cross/multi-disjunct joins that grace_hash cannot perform. Set join_algorithm = 'direct,parallel_hash,hash' to restore the previous default."},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",

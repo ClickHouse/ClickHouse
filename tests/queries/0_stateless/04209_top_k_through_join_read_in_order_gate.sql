@@ -9,6 +9,10 @@
 
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
+-- The default join_algorithm is grace_hash, which reorders rows and is always
+-- rejected by optimizeReadInOrder's join traversal. This test exercises the
+-- deferral path that only applies to order-preserving joins, so pin hash.
+SET join_algorithm = 'hash';
 
 DROP TABLE IF EXISTS t_l;
 DROP TABLE IF EXISTS t_r;

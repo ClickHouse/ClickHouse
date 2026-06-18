@@ -9,6 +9,7 @@ INSERT INTO users VALUES (8888, 'Alice', 50);
 SET query_plan_join_swap_table = 0;
 SET enable_analyzer = 1; -- Optimization requires LogicalJoinStep
 SET enable_parallel_replicas = 0; -- Optimization requires LogicalJoinStep
+SET join_algorithm = 'parallel_hash,hash'; -- default is now grace_hash; pin parallel_hash with hash fallback (a JOIN ON constant below needs hash)
 SET parallel_hash_join_threshold = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 

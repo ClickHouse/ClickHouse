@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET join_algorithm = 'parallel_hash,hash'; -- default is now grace_hash; pin parallel_hash with hash fallback to keep the validated plan
 SET query_plan_join_swap_table = false;
 SET enable_parallel_replicas = 0;
 SET correlated_subqueries_default_join_kind = 'left';

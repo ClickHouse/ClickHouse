@@ -1,5 +1,6 @@
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
+SET join_algorithm = 'parallel_hash,hash'; -- default is now grace_hash; pin parallel_hash with hash fallback to keep the validated plan
 SET enable_parallel_replicas = 0;
 SET correlated_subqueries_default_join_kind = 'left';
 SET correlated_subqueries_use_in_memory_buffer = 0;

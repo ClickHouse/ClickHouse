@@ -5,51 +5,43 @@ ExpressionTransform × 16
   ExpressionTransform × 16
     (Join)
     SimpleSquashingTransform × 16
-      JoiningTransform × 16 2 → 1
-        Resize 1 → 16
-          (Expression)
-          ExpressionTransform
-            (Expression)
-            ExpressionTransform
-              (Limit)
-              Limit
-                (ReadFromSystemNumbers)
-                NumbersRange 0 → 1
-          (Expression)
-          Resize × 2 16 → 1
-            FillingRightJoinSide
-              SimpleSquashingTransform
-                FillingRightJoinSide
-                  SimpleSquashingTransform
-                    FillingRightJoinSide
-                      SimpleSquashingTransform
-                        FillingRightJoinSide
-                          SimpleSquashingTransform
-                            FillingRightJoinSide
-                              SimpleSquashingTransform
-                                FillingRightJoinSide
-                                  SimpleSquashingTransform
-                                    FillingRightJoinSide
-                                      SimpleSquashingTransform
-                                        FillingRightJoinSide
-                                          SimpleSquashingTransform
-                                            FillingRightJoinSide
-                                              SimpleSquashingTransform
-                                                FillingRightJoinSide
-                                                  SimpleSquashingTransform
-                                                    FillingRightJoinSide
-                                                      SimpleSquashingTransform
-                                                        FillingRightJoinSide
-                                                          SimpleSquashingTransform
-                                                            FillingRightJoinSide
-                                                              SimpleSquashingTransform
-                                                                FillingRightJoinSide
-                                                                  SimpleSquashingTransform
-                                                                    FillingRightJoinSide
-                                                                      SimpleSquashingTransform
-                                                                        FillingRightJoinSide
-                                                                          SimpleSquashingTransform
+      Resize 32 → 16
+        DelayedPorts 32 → 32
+          JoiningTransform 2 → 1
+            DelayedJoinedBlocksWorkerTransform
+              JoiningTransform 2 → 1
+                DelayedJoinedBlocksWorkerTransform
+                  JoiningTransform 2 → 1
+                    DelayedJoinedBlocksWorkerTransform
+                      JoiningTransform 2 → 1
+                        DelayedJoinedBlocksWorkerTransform
+                          JoiningTransform 2 → 1
+                            DelayedJoinedBlocksWorkerTransform
+                              JoiningTransform 2 → 1
+                                DelayedJoinedBlocksWorkerTransform
+                                  JoiningTransform 2 → 1
+                                    DelayedJoinedBlocksWorkerTransform
+                                      JoiningTransform 2 → 1
+                                        DelayedJoinedBlocksWorkerTransform
+                                          JoiningTransform 2 → 1
+                                            DelayedJoinedBlocksWorkerTransform
+                                              JoiningTransform 2 → 1
+                                                DelayedJoinedBlocksWorkerTransform
+                                                  JoiningTransform 2 → 1
+                                                    DelayedJoinedBlocksWorkerTransform
+                                                      JoiningTransform 2 → 1
+                                                        DelayedJoinedBlocksWorkerTransform
+                                                          JoiningTransform 2 → 1
+                                                            DelayedJoinedBlocksWorkerTransform
+                                                              JoiningTransform 2 → 1
+                                                                DelayedJoinedBlocksWorkerTransform
+                                                                  JoiningTransform 2 → 1
+                                                                    DelayedJoinedBlocksWorkerTransform
+                                                                      JoiningTransform 2 → 1
+                                                                        DelayedJoinedBlocksWorkerTransform
+                                                                          DelayedJoinedBlocksTransform 0 → 16
                                                                             Resize 1 → 16
+                                                                              (Expression)
                                                                               ExpressionTransform
                                                                                 (Expression)
                                                                                 ExpressionTransform
@@ -57,6 +49,48 @@ ExpressionTransform × 16
                                                                                   Limit
                                                                                     (ReadFromSystemNumbers)
                                                                                     NumbersRange 0 → 1
+                                                                              (Expression)
+                                                                              Resize × 2 16 → 1
+                                                                                FillingRightJoinSide
+                                                                                  SimpleSquashingTransform
+                                                                                    FillingRightJoinSide
+                                                                                      SimpleSquashingTransform
+                                                                                        FillingRightJoinSide
+                                                                                          SimpleSquashingTransform
+                                                                                            FillingRightJoinSide
+                                                                                              SimpleSquashingTransform
+                                                                                                FillingRightJoinSide
+                                                                                                  SimpleSquashingTransform
+                                                                                                    FillingRightJoinSide
+                                                                                                      SimpleSquashingTransform
+                                                                                                        FillingRightJoinSide
+                                                                                                          SimpleSquashingTransform
+                                                                                                            FillingRightJoinSide
+                                                                                                              SimpleSquashingTransform
+                                                                                                                FillingRightJoinSide
+                                                                                                                  SimpleSquashingTransform
+                                                                                                                    FillingRightJoinSide
+                                                                                                                      SimpleSquashingTransform
+                                                                                                                        FillingRightJoinSide
+                                                                                                                          SimpleSquashingTransform
+                                                                                                                            FillingRightJoinSide
+                                                                                                                              SimpleSquashingTransform
+                                                                                                                                FillingRightJoinSide
+                                                                                                                                  SimpleSquashingTransform
+                                                                                                                                    FillingRightJoinSide
+                                                                                                                                      SimpleSquashingTransform
+                                                                                                                                        FillingRightJoinSide
+                                                                                                                                          SimpleSquashingTransform
+                                                                                                                                            FillingRightJoinSide
+                                                                                                                                              SimpleSquashingTransform
+                                                                                                                                                Resize 1 → 16
+                                                                                                                                                  ExpressionTransform
+                                                                                                                                                    (Expression)
+                                                                                                                                                    ExpressionTransform
+                                                                                                                                                      (Limit)
+                                                                                                                                                      Limit
+                                                                                                                                                        (ReadFromSystemNumbers)
+                                                                                                                                                        NumbersRange 0 → 1
 1
 (Expression)
 ExpressionTransform

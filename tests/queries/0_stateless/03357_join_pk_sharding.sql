@@ -18,6 +18,9 @@ insert into tab_r select number, number, number, number from numbers(1e6);
 --where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 
 set enable_analyzer=1;
+-- PK-range sharding is a ConcurrentHashJoin feature; pin parallel_hash since the
+-- default is now grace_hash, which does not shard by PK ranges.
+set join_algorithm='parallel_hash';
 set query_plan_join_swap_table=0;
 set query_plan_join_shard_by_pk_ranges=1;
 set allow_experimental_parallel_reading_from_replicas=0;

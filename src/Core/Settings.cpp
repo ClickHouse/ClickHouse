@@ -3407,7 +3407,7 @@ See also:
 - [Join table engine](../../engines/table-engines/special/join.md)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,grace_hash,hash", R"(
 Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.

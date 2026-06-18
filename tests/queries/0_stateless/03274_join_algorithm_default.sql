@@ -5,9 +5,9 @@ SET query_plan_optimize_join_order_limit = 0;
 SET enable_join_runtime_filters = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 
--- Test that with default join_algorithm setting, we are doing a parallel hash join
+-- Test that with default join_algorithm setting, we are doing a grace hash join
 
-SELECT value == 'direct,parallel_hash,hash' FROM system.settings WHERE name = 'join_algorithm';
+SELECT value == 'direct,grace_hash,hash' FROM system.settings WHERE name = 'join_algorithm';
 
 EXPLAIN PIPELINE
 SELECT

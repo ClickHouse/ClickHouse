@@ -35,7 +35,9 @@ CREATE TEMPORARY TABLE start_ts AS ( SELECT now() AS ts );
 
 SET join_use_nulls = 1;
 
-{% for join_algorithm in ["'hash'", "'parallel_hash'", "DEFAULT"] -%}
+{# grace_hash (the default since 26.6) scatters rows into hash buckets, so read-in-order
+   cannot stream through it; test only the algorithms that preserve input order. #}
+{% for join_algorithm in ["'hash'", "'parallel_hash'"] -%}
 {% for join_kind in ["LEFT", "INNER"] -%}
 
 SET join_algorithm = {{ join_algorithm }};

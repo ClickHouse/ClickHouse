@@ -1,5 +1,6 @@
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
+SET join_algorithm = 'parallel_hash'; -- default is now grace_hash; this test validates the ConcurrentHashJoin plan
 SET query_plan_join_swap_table = 0; -- Changes query plan
 SET correlated_subqueries_default_join_kind = 'left';
 SET query_plan_remove_unused_columns = 1;
