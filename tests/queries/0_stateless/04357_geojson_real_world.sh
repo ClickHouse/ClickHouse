@@ -57,12 +57,12 @@ ${CLICKHOUSE_CLIENT} -q "SELECT 'Does a county geometry serialise to a WKT POLYG
 # Cross-dataset spatial join: the county that contains New York's point. A Polygon is wrapped as a
 # single-element MultiPolygon so polygons and multipolygons are queried uniformly.
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT 'Which county contains New York (FIPS, name, state FIPS)?', n.id, JSONExtractString(n.properties, 'NAME'), substring(n.id, 1, 2)
-    FROM counties AS n
+    SELECT 'Which county contains New York (FIPS, name, state FIPS)?', id, JSONExtractString(properties, 'NAME'), substring(id, 1, 2)
+    FROM counties
     WHERE pointInPolygon(
         (SELECT geometry.Point FROM cities WHERE JSONExtractString(properties, 'NAME') = 'New York'),
-        if(variantType(n.geometry) = 'MultiPolygon', n.geometry.MultiPolygon, [n.geometry.Polygon]))
-    ORDER BY n.id"
+        if(variantType(geometry) = 'MultiPolygon', geometry.MultiPolygon, [geometry.Polygon]))
+    ORDER BY id"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE counties"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE cities"
