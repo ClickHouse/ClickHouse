@@ -284,6 +284,11 @@ function fuzz
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
 
+    # Default: the loop leaves this unset if it exhausts all retries via the
+    # "alive but busy" branches (TOO_MANY_SIMULTANEOUS_QUERIES /
+    # MEMORY_LIMIT_EXCEEDED); a dead server sets server_died=1 and breaks.
+    server_died=0
+
     for _ in {1..100}
     do
         if clickhouse-client --receive_timeout=5 --query "SELECT 1" 2> err
