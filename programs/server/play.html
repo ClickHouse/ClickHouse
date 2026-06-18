@@ -226,7 +226,11 @@
             display: flex;
             align-items: flex-end;
             gap: 0.25rem;
-            padding: 0.15rem 0.5rem 0 0.5rem;
+            /* Integer top padding (not e.g. 0.15rem = 2.4px): a fractional offset puts
+               the tabs and the [+] button on sub-pixel boundaries where the native
+               button and the div tabs rasterize their bottom border one device pixel
+               apart. */
+            padding: 2px 0.5rem 0 0.5rem;
             background: var(--table-header-color); /* light gray strip */
             /* The border runs along the top of the main area. The active tab covers its
                own 1px segment of it (see .tab.active), so the active title looks like
@@ -271,14 +275,15 @@
             min-width: 0;
             max-width: 16rem;
             padding: 0.25rem 0.5rem;
-            /* All tabs (active and inactive) sit at the same position; the bottom 1px
-               overlaps the strip's border so each tab owns that segment of the line. */
-            margin-bottom: -1px;
             cursor: pointer;
             user-select: none;
             white-space: nowrap;
             color: var(--text-color);
+            /* No bottom border: the single top-of-main line is the strip's border-bottom,
+               and every tab sits directly on it. A per-tab bottom border would render a
+               second line 1px below it. */
             border: 1px solid var(--border-color);
+            border-bottom: none;
             /* Inactive tabs are tinted by the hash of their own query text, mirroring
                the page background formula, so different queries get distinct colors. */
             background: oklch(96% 0.0296 var(--tab-hue, var(--background-color-rotate)));
@@ -289,14 +294,15 @@
             background: oklch(15% 0.0296 var(--tab-hue, var(--background-color-rotate)));
         }
 
-        /* The active tab uses the page background and erases its own segment of the
-           top-of-main border, so its title reads as part of the main area below. */
+        /* The active tab uses the page background and paints over its own segment of the
+           strip's border line (via a 1px box-shadow that adds no layout offset), so its
+           title reads as part of the main area below. */
         .tab.active
         {
             background: var(--background-color);
             color: var(--text-color-active);
             font-weight: bold;
-            border-bottom-color: var(--background-color);
+            box-shadow: 0 1px 0 0 var(--background-color);
         }
 
         .tab-title
@@ -344,7 +350,6 @@
         {
             flex-shrink: 0;
             align-self: flex-end;
-            margin-bottom: -1px;
             padding: 0.25rem 0.6rem;
             cursor: pointer;
             font-weight: bold;
@@ -352,6 +357,7 @@
             background: var(--element-background-color);
             color: var(--text-color);
             border: 1px solid var(--border-color);
+            border-bottom: none; /* sits on the strip line like the tabs (no second line) */
         }
 
         #tab-add:hover, #tab-add:focus
