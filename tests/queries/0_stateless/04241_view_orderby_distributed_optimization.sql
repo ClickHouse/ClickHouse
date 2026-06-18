@@ -4,7 +4,9 @@
 -- and can use merge-sorted-streams instead of returning unsorted rows that the
 -- coordinator would have to fully sort.
 
--- Tags: distributed
+-- Tags: distributed, no-parallel
+-- ^ no-parallel: the SQL SECURITY DEFINER cases below create globally-named users,
+-- which would collide across concurrent runs (e.g. the flaky check).
 
 SET allow_experimental_analyzer = 1;
 
