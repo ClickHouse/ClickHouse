@@ -105,6 +105,7 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
+    extern const SettingsBool join_any_take_last_row;
     extern const SettingsBool join_use_nulls;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -1756,7 +1757,7 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
     right_query_plan.addStep(std::move(join_lookup_step));
 }
 
-std::optional<Names> tryExtractLookupJoinRightKeys(const JoinOperator & join_operator)
+std::optional<Names> tryExtractLookupJoinRightKeys(const JoinOperator & join_operator, bool join_any_take_last_row)
 {
     bool allowed_inner = isInner(join_operator.kind) && (join_operator.strictness == JoinStrictness::All
         || join_operator.strictness == JoinStrictness::Any);
@@ -1765,6 +1766,14 @@ std::optional<Names> tryExtractLookupJoinRightKeys(const JoinOperator & join_ope
         || join_operator.strictness == JoinStrictness::Semi
         || join_operator.strictness == JoinStrictness::Anti);
     if (!allowed_inner && !allowed_left)
+        return {};
+
+    /// The lookup-index join (like every key-value direct join) always returns the first stored
+    /// right row for a key. `join_any_take_last_row` instead asks an `ANY` join to keep the last
+    /// duplicate-key right row, which only `HashJoin` honors. Decline the lookup fast path for
+    /// `ANY` strictness when the setting is enabled, so the regular join path keeps the configured
+    /// semantics instead of silently returning the first row.
+    if (join_operator.strictness == JoinStrictness::Any && join_any_take_last_row)
         return {};
 
     if (!join_operator.residual_filter.empty() || join_operator.expression.empty())
@@ -1844,7 +1853,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::DEFAULT);
     if (!prepared_join && allow_storage_join && allow_lookup_join && direct_join_enabled)
     {
-        if (auto right_key_names = tryExtractLookupJoinRightKeys(join_step_logical->getJoinOperator()))
+        if (auto right_key_names = tryExtractLookupJoinRightKeys(join_step_logical->getJoinOperator(), settings[Setting::join_any_take_last_row]))
             prepared_join = tryGetLookupJoinStorage(*right_key_names, join_node.getRightTableExpression(), planner_context);
     }
     if (prepared_join)
