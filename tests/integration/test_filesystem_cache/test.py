@@ -190,6 +190,83 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
+def test_bypass_cache_does_not_overread_non_last_segment(cluster, node_name):
+    """
+    Regression test for an over-read on the `REMOTE_FS_READ_BYPASS_CACHE` path.
+
+    A non-last file segment read in bypass mode relies on the buffer being
+    right-bounded (the read size is clamped to the range only for a single held
+    segment). For readers without right-bounded support (local object storage)
+    the bypass buffer must be wrapped into `BoundedReadBuffer`, otherwise it
+    reads past the segment and trips a logical error in
+    `CachedOnDiskReadBufferFromFile`.
+
+    The `cache_filesystem_failure` failpoint with `skip_cache_on_disk_failure`
+    leaves segments in `PARTIALLY_DOWNLOADED_NO_CONTINUATION`, so concurrent
+    readers read the front segment in bypass mode while holding the next ones.
+    """
+    node = cluster.instances[node_name]
+    cache_name = f"bypass_overread_{uuid.uuid4().hex[:8]}"
+    table_name = f"bypass_overread_{uuid.uuid4().hex[:8]}"
+    try:
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name} SYNC;
+            CREATE TABLE {table_name} (key UInt32, value String)
+            ENGINE = MergeTree() ORDER BY key
+            SETTINGS disk = disk(
+                type = cache,
+                name = '{cache_name}',
+                path = '{cache_name}/',
+                max_size = '1Gi',
+                max_file_segment_size = 32768,
+                boundary_alignment = 32768,
+                skip_cache_on_disk_failure = true,
+                disk = 'hdd_blob'
+            );
+            INSERT INTO {table_name} SELECT number, randomString(100) FROM numbers(100000);
+            SYSTEM DROP FILESYSTEM CACHE;
+            """
+        )
+
+        test_start = node.query("SELECT now()").strip()
+
+        # Force every download write to fail so segments stay in
+        # PARTIALLY_DOWNLOADED_NO_CONTINUATION and reads fall back to bypass.
+        node.query("SYSTEM ENABLE FAILPOINT cache_filesystem_failure")
+        try:
+            # Concurrent readers: while one query leaves the front segment in a
+            # bypass state, others read it together with the following segments.
+            node.exec_in_container(
+                [
+                    "/usr/bin/clickhouse",
+                    "benchmark",
+                    "--iterations",
+                    "200",
+                    "--concurrency",
+                    "50",
+                    "--query",
+                    f"SELECT * FROM {table_name} FORMAT Null",
+                ]
+            )
+        finally:
+            node.query("SYSTEM DISABLE FAILPOINT cache_filesystem_failure")
+
+        # If the over-read aborted the server, the queries above raise a
+        # connection error (and the cluster teardown reports the crash).
+        # Otherwise make sure no logical error was recorded.
+        node.query("SELECT 1")
+        errors = int(
+            node.query(
+                f"SELECT count() FROM system.errors WHERE name = 'LOGICAL_ERROR' AND last_error_time >= '{test_start}'"
+            ).strip()
+        )
+        assert errors == 0, f"LOGICAL_ERROR occurred on {node.name}"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
 def test_caches_with_the_same_configuration(cluster, node_name):
     node = cluster.instances[node_name]
     cache_path = "cache1"
@@ -657,6 +734,70 @@ INSERT INTO test SELECT randomString(200);
             break
         time.sleep(1)
     assert elements <= expected
+
+
+def test_proactive_invalidated_entries_cleanup(cluster):
+    node = cluster.instances["node"]
+    cache_name = "proactive_invalidated_cleanup"
+    # keep_free_space_*_ratio are left at their defaults (disabled), so the only
+    # thing that purges invalidated (lazily-removed) priority queue entries is the
+    # dedicated background cleanup task. max_size/max_elements are large enough to
+    # hold everything, so no eviction happens (eviction would purge them itself).
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test_proactive_cleanup;
+
+CREATE TABLE test_proactive_cleanup (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(type = cache,
+            name = {cache_name},
+            max_size = '1Gi',
+            max_elements = 100000,
+            max_file_segment_size = 10,
+            boundary_alignment = 10,
+            path = "test_proactive_invalidated_cleanup",
+            invalidated_entries_cleanup_threshold = 5,
+            invalidated_entries_cleanup_interval_ms = 500,
+            disk = hdd_blob),
+        min_bytes_for_wide_part = 10485760;
+    """
+    )
+
+    wait_for_cache_initialized(node, "test_proactive_invalidated_cleanup")
+
+    node.query("INSERT INTO test_proactive_cleanup SELECT randomString(2000);")
+    node.query("SELECT * FROM test_proactive_cleanup FORMAT Null")
+
+    cached = int(
+        node.query(
+            f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+        )
+    )
+    # We need clearly more than the cleanup threshold of invalidated entries.
+    assert cached > 5
+
+    def removed_count():
+        return int(
+            node.query(
+                "SELECT sum(value) FROM system.events "
+                "WHERE event = 'FilesystemCacheBackgroundRemovedInvalidatedEntries'"
+            )
+        )
+
+    before = removed_count()
+
+    # Removing the segments invalidates their priority queue entries lazily
+    # (without taking the priority write lock), leaving them in the queue.
+    node.query(f"SYSTEM DROP FILESYSTEM CACHE '{cache_name}'")
+
+    removed = 0
+    for _ in range(120):
+        removed = removed_count() - before
+        if removed >= cached:
+            break
+        time.sleep(0.5)
+
+    assert removed >= cached
 
 
 cache_dynamic_resize_config = """

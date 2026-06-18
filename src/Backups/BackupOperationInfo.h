@@ -29,7 +29,7 @@ struct BackupOperationInfo
     bool internal = false;
 
     /// Status of backup or restore operation.
-    BackupStatus status;
+    BackupStatus status{};
 
     /// The number of files stored in the backup.
     size_t num_files = 0;

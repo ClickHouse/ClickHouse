@@ -89,7 +89,7 @@ bool CountOf::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         kind = getConvertedArgument(fn_name, pos);
     }
-    assert(kind == "'normal'" || kind == "'regex'");
+    chassert(kind == "'normal'" || kind == "'regex'");
 
     if (kind == "'normal'")
         out = "countSubstrings(" + source + ", " + search + ")";
