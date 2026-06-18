@@ -1556,16 +1556,14 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
 void TCPHandler::processTablesStatusRequest()
 {
-    TablesStatusRequest request;
-    request.read(*in, client_tcp_protocol_version);
-
+    /// `TablesStatusRequest` is sent during connection establishment, before any query
+    /// authenticates the connection with the cluster secret. Authenticate the request
+    /// itself *before* decoding its body — otherwise an unauthenticated peer could read
+    /// table existence, readonly and replication-delay status from the interserver port,
+    /// or force the server to decode an unauthenticated request.
     ContextPtr context_to_resolve_table_names;
     if (is_interserver_mode)
     {
-        /// `TablesStatusRequest` is sent during connection establishment, before any
-        /// query authenticates the connection with the cluster secret. Authenticate the
-        /// request itself, otherwise an unauthenticated peer could read table existence,
-        /// readonly and replication-delay status from the interserver port.
 #if USE_SSL
         if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
         {
@@ -1624,6 +1622,10 @@ void TCPHandler::processTablesStatusRequest()
         chassert(session);
         context_to_resolve_table_names = session->sessionContext();
     }
+
+    /// Decode the request body only after the connection is authenticated above.
+    TablesStatusRequest request;
+    request.read(*in, client_tcp_protocol_version);
 
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)

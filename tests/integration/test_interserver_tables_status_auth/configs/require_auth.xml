@@ -1,6 +1,0 @@
-<clickhouse>
-    <!-- Reject interserver TablesStatusRequest from peers that send no cluster-secret
-         hash (older protocol). Lets the test demonstrate the rejection; old binaries
-         that do not know this setting ignore it and still serve the request. -->
-    <interserver_tables_status_require_auth>1</interserver_tables_status_require_auth>
-</clickhouse>

@@ -822,11 +822,12 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
-    request.write(*out, server_revision);
 
     /// Interserver secret: prove cluster-secret knowledge for this request, since
     /// `TablesStatusRequest` is sent before any query is authenticated. Mirrors the
     /// per-query hash; reuses the `salt`/`nonce` already exchanged during the Hello.
+    /// Sent *before* the request body so the server can authenticate (or reject) without
+    /// decoding an unauthenticated request.
     if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS && !cluster_secret.empty())
     {
 #if USE_SSL
@@ -844,6 +845,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 #endif
     }
 
+    request.write(*out, server_revision);
     out->finishChunk();
     out->next();
 
