@@ -94,6 +94,10 @@ UInt64 StatisticsUniqCombined::estimateCardinality() const
 {
     auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
+    /// When all input values are NULL the null-wrapper returns NULL (no non-null values seen).
+    /// That means 0 distinct non-null values.
+    if (column->isNullAt(0))
+        return 0;
     return column->getUInt(0);
 }
 
