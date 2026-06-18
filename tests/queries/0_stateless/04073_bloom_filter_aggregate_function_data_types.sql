@@ -156,5 +156,26 @@ FROM numbers(1);
 SELECT bloomFilterContains(groupBloomFilterState(1000)(toInt256('123456789012345678901234567890123456789012345678901234567890')), toInt256('123456789012345678901234567890123456789012345678901234567891')) AS result
 FROM numbers(1);
 
+-- Implicit type casting: UInt64 filter with UInt16 value (number % 1000)
+-- Regression test for segfault when value type doesn't match bloom filter's element type
+WITH (SELECT groupBloomFilterState(1000)(number) FROM numbers(1000)) AS bf
+SELECT countIf(bloomFilterContains(bf, number % 1000))
+FROM numbers(100000);
+
+-- Implicit type casting: UInt64 filter with UInt32 value (number % 150000)
+WITH (SELECT groupBloomFilterState(1000)(number) FROM numbers(1000)) AS bf
+SELECT countIf(bloomFilterContains(bf, number % 150000))
+FROM numbers(100000);
+
+-- Implicit type casting: Int64 filter with Int32 expression
+WITH (SELECT groupBloomFilterState(1000)(toInt64(number - 50)) FROM numbers(100)) AS bf
+SELECT bloomFilterContains(bf, toInt32(-10)) AS result
+FROM numbers(10) LIMIT 1;
+
+-- Implicit type casting: Float64 filter with Float32 expression
+WITH (SELECT groupBloomFilterState(1000)(toFloat64(number * 0.1)) FROM numbers(100)) AS bf
+SELECT bloomFilterContains(bf, toFloat32(4.2)) AS result
+FROM numbers(10) LIMIT 1;
+
 -- bloomFilterContains with non-bloom first argument must throw
 SELECT bloomFilterContains(42, toUInt64(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
