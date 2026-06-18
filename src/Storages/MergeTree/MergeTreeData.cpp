@@ -385,6 +385,7 @@ namespace FailPoints
     extern const char mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception[];
     extern const char mergetree_load_unexpected_parts_inject_schedule_failure[];
     extern const char mergetree_load_unexpected_parts_inject_worker_nonretryable_exception[];
+    extern const char mergetree_load_unexpected_parts_inject_worker_retryable_exception[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -2880,13 +2881,16 @@ try
 
     ThreadFuzzer::maybeInjectSleep();
 
+    /// Set by a worker (or the scheduling loop) that hit a retryable error: the part is left unfinished and
+    /// the background task is rescheduled to retry it (see below) instead of terminating the server. Declared
+    /// before the runner so it outlives the workers the runner's destructor waits for.
+    std::atomic_bool retryable_error_while_loading = false;
+
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
     ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_UNEXPECTED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
-    /// A retryable error caught while scheduling a worker; rethrown only after the runner is drained below.
-    std::exception_ptr schedule_error;
     /// Only used to gate the scheduling-failure failpoint so a worker is scheduled before scheduling fails.
     bool any_unexpected_part_scheduled = false;
     for (auto & load_state : unexpected_data_parts)
@@ -2904,56 +2908,85 @@ try
             return;
         }
 
+        /// The first scheduled worker, used only to gate the worker-retryable failpoint so a test can pair an
+        /// earlier retryable worker with a later non-retryable one (see the failpoint below).
+        bool is_first_unexpected_part = !any_unexpected_part_scheduled;
+
         /// Capturing load_state by reference is fine here because it's a reference to this, which outlives runner
-        auto load_unexpected_part = [this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
+        auto load_unexpected_part = [this, &load_state, &retryable_error_while_loading, replicated, is_first_unexpected_part, component_name = Coordination::getCurrentComponent()]()
         {
             auto local_component_guard = Coordination::setCurrentComponent(component_name);
 
-            fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_worker_nonretryable_exception,
+            try
             {
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Injected non-retryable failure while loading unexpected part {}", load_state.loading_info->name);
-            });
-
-            /// A retry after a retryable detach failure re-enters here with the part already loaded; load it
-            /// only once so we resume at the detach step instead of building the part again.
-            if (!load_state.part)
-                loadUnexpectedDataPart(load_state);
-
-            chassert(load_state.part);
-
-            fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_post_load_retryable_exception,
-            {
-                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure after loading unexpected part {}", load_state.part->name);
-            });
-
-            if (load_state.is_broken)
-            {
-                /// renameToDetached moves the part directory before returning (rename updates the storage
-                /// path only after moveDirectory). Past this point the original directory is gone, so a
-                /// retryable error must not reschedule and reload this part on its stale path - fail fast
-                /// for the same reason as the outdated-parts loader (see load_outdated_part).
-                try
-                {
-                    load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
-
-                    fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception,
+                /// Only the first scheduled worker, so a test can make an earlier worker fail retryably while a
+                /// later worker fails non-retryably and check the non-retryable one still escapes to fail fast.
+                /// Checked before the non-retryable failpoint so an earlier worker takes the retryable path.
+                if (is_first_unexpected_part)
+                    fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_worker_retryable_exception,
                     {
-                        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure after moving the directory of unexpected part {}", load_state.part->name);
+                        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure while loading unexpected part {}", load_state.loading_info->name);
                     });
-                }
-                catch (...)
-                {
-                    if (isRetryableException(std::current_exception()))
-                        throw Exception(ErrorCodes::CORRUPTED_DATA,
-                            "Unexpected part {} hit a retryable error after its directory was moved during detach, "
-                            "cannot retry safely: {}", load_state.part->name, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
-                    throw;
-                }
-            }
 
-            /// Mark done only after the optional detach finished: a retryable failure above reschedules this
-            /// part and the rescheduled run must redo the detach rather than skip it.
-            load_state.finished = true;
+                fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_worker_nonretryable_exception,
+                {
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Injected non-retryable failure while loading unexpected part {}", load_state.loading_info->name);
+                });
+
+                /// A retry after a retryable detach failure re-enters here with the part already loaded; load it
+                /// only once so we resume at the detach step instead of building the part again.
+                if (!load_state.part)
+                    loadUnexpectedDataPart(load_state);
+
+                chassert(load_state.part);
+
+                fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_post_load_retryable_exception,
+                {
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure after loading unexpected part {}", load_state.part->name);
+                });
+
+                if (load_state.is_broken)
+                {
+                    /// renameToDetached moves the part directory before returning (rename updates the storage
+                    /// path only after moveDirectory). Past this point the original directory is gone, so a
+                    /// retryable error must not reschedule and reload this part on its stale path - fail fast
+                    /// for the same reason as the outdated-parts loader (see load_outdated_part).
+                    try
+                    {
+                        load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+
+                        fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception,
+                        {
+                            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure after moving the directory of unexpected part {}", load_state.part->name);
+                        });
+                    }
+                    catch (...)
+                    {
+                        if (isRetryableException(std::current_exception()))
+                            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                                "Unexpected part {} hit a retryable error after its directory was moved during detach, "
+                                "cannot retry safely: {}", load_state.part->name, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+                        throw;
+                    }
+                }
+
+                /// Mark done only after the optional detach finished: a retryable failure above reschedules this
+                /// part and the rescheduled run must redo the detach rather than skip it.
+                load_state.finished = true;
+            }
+            catch (...)
+            {
+                /// A non-retryable error means the on-disk set of parts is inconsistent: rethrow so it escapes
+                /// into this worker's future and the post-drain rethrow fails the server fast. A retryable
+                /// error is transient: record it and leave the part unfinished so the rescheduled task retries
+                /// it, but do NOT let it escape into the future. Otherwise the drain (which rethrows the first
+                /// future error in scheduling order) could surface this worker's retryable error ahead of a
+                /// later worker's non-retryable one and reschedule, masking a real inconsistency. Mirrors the
+                /// retryable handling in load_outdated_part.
+                if (!isRetryableException(std::current_exception()))
+                    throw;
+                retryable_error_while_loading = true;
+            }
         };
 
         try
@@ -2970,22 +3003,32 @@ try
         catch (...)
         {
             /// Scheduling the worker (ThreadPool::scheduleOrThrow) can itself throw, e.g. a retryable
-            /// CANNOT_SCHEDULE_TASK. A non-retryable error fails fast. A retryable one is saved and rethrown
-            /// only after the runner is drained below (see there), so a worker error is not masked.
+            /// CANNOT_SCHEDULE_TASK. A non-retryable error fails fast. A retryable one stops dispatching new
+            /// workers and reschedules the task below to retry the unfinished parts. Mirrors load_outdated_part.
             if (!isRetryableException(std::current_exception()))
                 throw;
-            schedule_error = std::current_exception();
+            retryable_error_while_loading = true;
             break;
         }
     }
-    /// Drain the workers and rethrow the first worker error BEFORE handling a scheduling error: an already
-    /// scheduled worker may have stored a non-retryable inconsistent-part failure that must fail fast, and
-    /// a retryable scheduling error would otherwise reschedule the task and mask it. The local runner's
-    /// destructor only waits (it does not rethrow), so a scheduling error unwinding straight to the
-    /// function-level catch would drop that worker error. Mirrors loadOutdatedDataParts.
+    /// Drain the workers and rethrow the first worker error: workers only let NON-retryable (inconsistent
+    /// part) errors escape into their futures - a retryable worker error sets retryable_error_while_loading
+    /// instead - so this rethrows a genuine inconsistency and fails fast, and cannot surface one worker's
+    /// retryable error ahead of another worker's non-retryable one. The local runner's destructor only waits
+    /// (it does not rethrow), so draining here is what inspects the stored worker errors. Mirrors
+    /// loadOutdatedDataParts.
     runner.waitForAllToFinishAndRethrowFirstError();
-    if (schedule_error)
-        std::rethrow_exception(schedule_error);
+
+    if (retryable_error_while_loading)
+    {
+        /// At least one part hit a retryable error (in a worker or while scheduling) and was left unfinished.
+        /// Reschedule the task to retry the remaining parts instead of marking loading finished (which would
+        /// skip them). The function-level catch handles a retryable error that escaped the loop directly.
+        LOG_WARNING(log, "Loading of unexpected parts was interrupted by a retryable error, will retry.");
+        unexpected_data_parts_loading_task->scheduleAfter(loading_parts_initial_backoff_ms);
+        return;
+    }
+
     LOG_DEBUG(log, "Loaded {} unexpected data parts", unexpected_data_parts.size());
 
     {

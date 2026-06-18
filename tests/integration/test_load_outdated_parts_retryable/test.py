@@ -39,6 +39,12 @@ UNEXPECTED_SCHEDULE_FAILPOINT = "mergetree_load_unexpected_parts_inject_schedule
 UNEXPECTED_WORKER_NONRETRYABLE_FAILPOINT = (
     "mergetree_load_unexpected_parts_inject_worker_nonretryable_exception"
 )
+# Makes only the FIRST scheduled unexpected-part worker fail retryably. Paired with the non-retryable
+# failpoint (which fires for every other worker), this reproduces a retryable worker error stored ahead of
+# a later non-retryable one in scheduling order, so the drain must not surface the retryable error first.
+UNEXPECTED_WORKER_RETRYABLE_FAILPOINT = (
+    "mergetree_load_unexpected_parts_inject_worker_retryable_exception"
+)
 
 # Every retryable interrupt in loadOutdatedDataParts logs this single line, regardless of which of the
 # three failpoints fired. loadUnexpectedDataParts logs its own line.
@@ -424,6 +430,45 @@ def test_nonretryable_worker_error_not_masked_by_retryable_schedule_failure():
     # The retryable scheduling error must NOT have caused a reschedule: the worker's non-retryable error is
     # drained and rethrown first. The pre-fix code masked it (the scheduling error rescheduled) and would
     # have logged this line before looping forever instead of terminating.
+    assert int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG)) == interrupts_before
+
+    # A restart with no failpoints loads the (valid, covered) unexpected parts cleanly; data is intact.
+    node.start_clickhouse()
+    assert node.query(f"SELECT count() FROM {table}").strip() == "3000"
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_nonretryable_worker_error_not_masked_by_retryable_worker_error():
+    # loadUnexpectedDataParts runs one worker per unexpected part concurrently. If an earlier-scheduled worker
+    # fails retryably (MEMORY_LIMIT_EXCEEDED) and a later worker fails non-retryably (a genuinely inconsistent
+    # part), the loader must still fail fast. Before the fix the workers let retryable errors escape into their
+    # futures, and the drain (waitForAllToFinishAndRethrowFirstError) rethrows the FIRST future error in
+    # scheduling order - the earlier worker's retryable one - so the function-level catch saw a retryable error
+    # and rescheduled, masking the later non-retryable inconsistency. Now a worker catches its own retryable
+    # error and only sets a retry flag, so only the non-retryable error escapes and is rethrown by the drain.
+    table = "t_unexpected_worker_mask"
+    zk_path = "/clickhouse/tables/t_unexpected_worker_mask"
+    _make_unexpected_parts(table, zk_path)
+
+    # Snapshot the reschedule-interrupt count; with the fix it must NOT grow (fail fast on the worker error).
+    interrupts_before = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG))
+
+    # The first scheduled worker fails retryably; every later worker fails non-retryably. The first worker's
+    # retryable error is stored ahead of the non-retryable one in scheduling order.
+    node.query(f"SYSTEM ENABLE FAILPOINT {UNEXPECTED_WORKER_RETRYABLE_FAILPOINT}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {UNEXPECTED_WORKER_NONRETRYABLE_FAILPOINT}")
+    node.query(f"DETACH TABLE {table}")
+    # The replicated attach thread blocks until unexpected parts finish loading, so run ATTACH async; the
+    # server fails fast and terminates underneath it.
+    node.get_query_request(f"ATTACH TABLE {table}")
+
+    node.wait_for_log_line(TERMINATE_LOG, timeout=90)
+    wait_for_process_stop(node)
+    # The earlier worker's retryable error must NOT have caused a reschedule: it is caught inside the worker
+    # (only a retry flag is set, no exception in its future), so the drain rethrows the later worker's
+    # non-retryable error and the server terminates. The pre-fix code rethrew the retryable error first and
+    # would have logged this reschedule line before looping forever instead of failing fast.
     assert int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG)) == interrupts_before
 
     # A restart with no failpoints loads the (valid, covered) unexpected parts cleanly; data is intact.
