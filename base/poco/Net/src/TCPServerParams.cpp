@@ -23,8 +23,7 @@ TCPServerParams::TCPServerParams():
 	_threadIdleTime(10000000),
 	_maxThreads(0),
 	_maxQueued(64),
-	_threadPriority(Poco::Thread::PRIO_NORMAL),
-	_noDelay(true)
+	_threadPriority(Poco::Thread::PRIO_NORMAL)
 {
 }
 
@@ -59,12 +58,6 @@ void TCPServerParams::setMaxQueued(int count)
 void TCPServerParams::setThreadPriority(Poco::Thread::Priority prio)
 {
 	_threadPriority = prio;
-}
-
-
-void TCPServerParams::setNoDelay(bool flag)
-{
-	_noDelay = flag;
 }
 
 

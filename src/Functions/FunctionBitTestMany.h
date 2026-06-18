@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/range.h>
 
@@ -21,7 +22,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name>
-struct FunctionBitTestMany final : public IFunction
+struct FunctionBitTestMany : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -88,7 +89,7 @@ private:
     {
         if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const = false;
+            bool is_const;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto & val = value_col->getData();
 
@@ -112,7 +113,7 @@ private:
         }
         if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const = false;
+            bool is_const;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto val = value_col_const->template getValue<T>();
 
@@ -147,7 +148,7 @@ private:
             {
                 const auto pos = pos_col_const->getUInt(0);
                 if (pos < 8 * sizeof(ValueType))
-                    mask = static_cast<ValueType>(mask | (static_cast<ValueType>(1) << pos));
+                    mask = mask | (ValueType(1) << pos);
                 else
                     throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
                                    "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos));
@@ -190,7 +191,7 @@ private:
 
             for (size_t i = 0; i < mask.size(); ++i)
                 if (pos[i] < 8 * sizeof(ValueType))
-                    mask[i] = static_cast<ValueType>(mask[i] | (static_cast<ValueType>(1) << pos[i]));
+                    mask[i] = mask[i] | (ValueType(1) << pos[i]);
                 else
                     throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
                                     "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos[i]));
@@ -209,7 +210,7 @@ private:
             const auto new_mask = ValueType(1) << pos;
 
             for (size_t i = 0; i < mask.size(); ++i)
-                mask[i] = static_cast<ValueType>(mask[i] | new_mask);
+                mask[i] = mask[i] | new_mask;
 
             return true;
         }
