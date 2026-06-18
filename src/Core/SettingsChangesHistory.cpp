@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental setting: forward-gap bound below which the ReaderExecutor bridges/reads through on the open source connection instead of a separate read or reopen."},
             {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental setting: drain bound below which the ReaderExecutor reads a dropped long connection out to its right bound so it returns to the pool reusable."},
             {"reader_executor_use_long_connections", true, true, "New experimental setting to reuse a bounded long source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},
+            {"reader_executor_decrypt_ahead", false, false, "New experimental setting to decrypt prefetched bytes on the ReaderExecutor read-ahead worker, ahead of serving, instead of at the serve boundary on the query thread."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
