@@ -41,3 +41,18 @@ hasPhrase function - with positions
 1
 ---- verify some parts do not have a materialized index
 1
+hasPhrase function - with positions - part merge
+-- before merge
+3
+[1,4]
+[1,2,5]
+[3]
+[6]
+[7]
+-- after merge (must match before)
+1
+[1,4]
+[1,2,5]
+[3]
+[6]
+[7]

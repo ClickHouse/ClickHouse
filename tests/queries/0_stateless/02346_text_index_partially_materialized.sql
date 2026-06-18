@@ -207,3 +207,51 @@ SELECT count() > 0 FROM system.parts WHERE database = currentDatabase() AND tabl
 
 DROP TABLE tab_partially;
 DROP TABLE tab_fully;
+
+SELECT 'hasPhrase function - with positions - part merge';
+
+DROP TABLE IF EXISTS tab_merge;
+CREATE TABLE tab_merge (
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, __experimental_positions = 1)
+)
+Engine = MergeTree()
+ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns = 0;
+
+SYSTEM STOP MERGES tab_merge;
+
+INSERT INTO tab_merge VALUES
+    (1, 'quick brown fox'),
+    (2, 'brown fox jumps'),
+    (3, 'lazy fox runs really really fast');
+
+INSERT INTO tab_merge VALUES
+    (4, 'quick brown dog'),
+    (5, 'the brown fox'),
+    (6, 'go go stop');
+
+-- 'alpha' at token position 31 (bucket 0), 'beta' at 32 (bucket 1): the phrase crosses a roaringish bucket boundary.
+INSERT INTO tab_merge SELECT 7, concat(repeat('w ', 31), 'alpha beta');
+
+SELECT '-- before merge';
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_merge' AND active;
+SELECT arraySort(groupArray(id)) FROM tab_merge WHERE hasPhrase(message, 'quick brown');
+SELECT arraySort(groupArray(id)) FROM tab_merge WHERE hasPhrase(message, 'brown fox');
+SELECT arraySort(groupArray(id)) FROM tab_merge WHERE hasPhrase(message, 'really really');
+SELECT arraySort(groupArray(id)) FROM tab_merge WHERE hasPhrase(message, 'go go');
+SELECT arraySort(groupArray(id)) FROM tab_merge WHERE hasPhrase(message, 'alpha beta');
+
+SYSTEM START MERGES tab_merge;
+OPTIMIZE TABLE tab_merge FINAL;
+
+SELECT '-- after merge (must match before)';
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_merge' AND active;
+SELECT arraySort(groupArray(id)) FROM tab_merge WHERE hasPhrase(message, 'quick brown');
+SELECT arraySort(groupArray(id)) FROM tab_merge WHERE hasPhrase(message, 'brown fox');
+SELECT arraySort(groupArray(id)) FROM tab_merge WHERE hasPhrase(message, 'really really');
+SELECT arraySort(groupArray(id)) FROM tab_merge WHERE hasPhrase(message, 'go go');
+SELECT arraySort(groupArray(id)) FROM tab_merge WHERE hasPhrase(message, 'alpha beta');
+
+DROP TABLE tab_merge;
