@@ -924,7 +924,7 @@ void RemoteQueryExecutor::cancelUnlocked()
                 elem->is_cancelled = true;
     }
 
-    if (!isQueryPending() || hasThrownException())
+    if (finished || hasThrownException())
         return;
 
     tryCancel("Cancelling query");

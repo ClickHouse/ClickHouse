@@ -763,6 +763,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserSelectWithUnionQuery select_p;
     ParserFunction table_function_p;
     ParserNameList names_p;
+    ParserSQLSecurity sql_security_p;
 
     ASTPtr table;
     ASTPtr to_inner_uuid;
@@ -775,6 +776,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr as_table_function;
     ASTPtr select;
     ASTPtr from_path;
+    ASTPtr sql_security;
 
     String cluster_str;
     bool attach = false;
@@ -920,6 +922,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         /// Accept both "EMPTY COMMENT ... AS" and "COMMENT ... EMPTY AS" orderings.
         try_parse_empty_or_clone();
+        sql_security_p.parse(pos, sql_security, expected);
         comment = parseComment(pos, expected);
         try_parse_empty_or_clone();
 
@@ -957,6 +960,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         parse_storage();
 
         try_parse_empty_or_clone();
+        sql_security_p.parse(pos, sql_security, expected);
         if (!comment)
             comment = parseComment(pos, expected);
         try_parse_empty_or_clone();
@@ -1002,6 +1006,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!comment)
         comment = parseComment(pos, expected);
 
+    /// `AS table` and `AS table_function` are formatted before the SQL SECURITY clause position,
+    /// so allowing them together would produce text that does not parse back.
+    if (sql_security && (as_table || as_table_function))
+        return false;
+
     auto query = make_intrusive<ASTCreateQuery>();
     node = query;
 
@@ -1032,6 +1041,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (comment)
         query->set(query->comment, comment);
+    if (sql_security)
+        query->set(query->sql_security, sql_security);
 
     if (query->columns_list && query->columns_list->primary_key)
     {

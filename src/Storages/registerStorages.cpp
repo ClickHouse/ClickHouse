@@ -14,6 +14,7 @@ void registerStorageMerge(StorageFactory & factory);
 void registerStorageBuffer(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory);
+void registerStorageQueryRunner(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory);
 void registerStorageDictionary(StorageFactory & factory);
@@ -124,6 +125,7 @@ void registerStorages()
     registerStorageBuffer(factory);
     registerStorageDistributed(factory);
     registerStorageMemory(factory);
+    registerStorageQueryRunner(factory);
     registerStorageFile(factory);
     registerStorageURL(factory);
     registerStorageDictionary(factory);

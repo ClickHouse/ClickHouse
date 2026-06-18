@@ -4,7 +4,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/MaskingPolicy.h>
-#include <Access/ViewDefinerDependencies.h>
+#include <Access/DefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -51,17 +51,17 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     if (query.type == AccessEntityType::USER)
     {
-        auto & view_definer_dependencies = ViewDefinerDependencies::instance();
+        auto & definer_dependencies = DefinerDependencies::instance();
         for (const auto & name : query.names)
         {
-            if (view_definer_dependencies.hasViewDependencies(name))
+            if (definer_dependencies.hasDependencies(name))
             {
-                auto views_storage_ids = view_definer_dependencies.getViewsForDefiner(name);
-                std::vector<String> views;
-                views.reserve(views_storage_ids.size());
-                for (const auto & id : views_storage_ids)
-                    views.push_back(id.getNameForLogs());
-                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer in views {}.", name, toString(views));
+                auto object_storage_ids = definer_dependencies.getObjectsForDefiner(name);
+                std::vector<String> objects;
+                objects.reserve(object_storage_ids.size());
+                for (const auto & id : object_storage_ids)
+                    objects.push_back(id.getNameForLogs());
+                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer of {}.", name, toString(objects));
             }
         }
     }
