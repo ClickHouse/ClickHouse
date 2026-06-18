@@ -61,11 +61,13 @@ block_after_marker() { awk -v m="$2" 'found; $0 == m { found = 1 }' <<< "$1"; }
 # $1 label, $2 table, $3 mutation, $4 where-predicate, $5 expected count, $6 index name,
 # $7 setup SQL (DROP/CREATE/INSERT). See the per-scenario comments below for what each verifies.
 run_scenario() {
-    local label="$1" table="$2" mutation="$3" where="$4" expected="$5" idx="$6" setup="$7"
+    local label="$1" table="$2" mutation="$3" where="$4" expected="$5" idx="$6" setup="$7" packed_ref_files="$8"
 
     local out
     out=$($CLIENT --multiquery $SYNC_ALTER -q "
         $setup
+        SELECT 'pre_files', files FROM system.parts
+            WHERE database = currentDatabase() AND table = '$table' AND active ORDER BY name LIMIT 1;
         $mutation;
 
         SELECT 'sec_bytes', secondary_indices_compressed_bytes FROM system.parts
@@ -84,9 +86,35 @@ run_scenario() {
     granules=$(block_after_marker "$out" '@explain' | explain_index_status "$idx")
 
     echo "[$label]"
+    # When a packed-layout baseline ($8) is given, assert the table really is in the mixed layout
+    # before the mutation: the part has more files than the all-packed twin, i.e. the larger
+    # set index spilled to standalone per-file substreams. This guards the per-file update/drop
+    # paths, which packed-only data would never exercise.
+    if [[ -n "$packed_ref_files" ]]; then
+        local pre_files
+        pre_files=$(tagged_value "$out" pre_files)
+        echo "  set_index_layout: $( ((pre_files > packed_ref_files)) && echo per_file || echo packed )"
+    fi
     echo "  secondary_indices: $( ((sec_bytes > 0)) && echo materialized || echo cleared )"
     echo "  count=$count expected=$expected granules($idx)=$granules check=$check"
 }
+
+# Shared mixed-layout schema/data for scenarios D and G: a small packed minmax (m_v) plus a large
+# set index (s_s) over high-cardinality strings. With a low packed_skip_index_max_bytes the set
+# spills to a standalone per-file substream while the minmax stays in skp_idx.packed. The
+# all-packed twin below (high threshold) gives the baseline file count the scenarios compare
+# against to prove the spill happened.
+MIXED_COLUMNS="id UInt64, v UInt64, s String, INDEX m_v v TYPE minmax GRANULARITY 1, INDEX s_s s TYPE set(0) GRANULARITY 1"
+MIXED_INSERT="SELECT number, number * 7, toString(number) FROM numbers(20000)"
+PACKED_MIXED_FILES=$($CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS ref_packed_mixed;
+    CREATE TABLE ref_packed_mixed ($MIXED_COLUMNS) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024;
+    INSERT INTO ref_packed_mixed $MIXED_INSERT;
+    SELECT files FROM system.parts
+        WHERE database = currentDatabase() AND table = 'ref_packed_mixed' AND active ORDER BY name LIMIT 1;
+    DROP TABLE ref_packed_mixed;
+")
 
 # Scenario A: Wide, sole packed minmax, ALTER UPDATE on the indexed column.
 # Archive rebuilt by the writer; the minmax is recomputed so it stays materialized and usable.
@@ -124,31 +152,27 @@ run_scenario "C_wide_lightweight_delete" c_wide_lwd \
      INSERT INTO c_wide_lwd SELECT number, number * 7 FROM numbers(2000);"
 
 # Scenario D: Wide, mixed (packed minmax + per-file set), ALTER UPDATE on the set's column.
-# Per-file set rebuilt, archive untouched; m_v still prunes.
+# Per-file set rebuilt, archive untouched; m_v still prunes. The set_index_layout line asserts
+# s_s really is per-file before the update (otherwise this would exercise the packed path).
 run_scenario "D_wide_mixed_update_set" d_wide_mixed_update_set \
     "ALTER TABLE d_wide_mixed_update_set UPDATE s = concat(s, '_x') WHERE id < 100" \
     "v BETWEEN 70 AND 700" 91 m_v \
     "DROP TABLE IF EXISTS d_wide_mixed_update_set;
-     CREATE TABLE d_wide_mixed_update_set (
-         id UInt64, v UInt64, s String,
-         INDEX m_v v TYPE minmax GRANULARITY 1,
-         INDEX s_s s TYPE set(100) GRANULARITY 1
-     ) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
-     INSERT INTO d_wide_mixed_update_set SELECT number, number * 7, toString(number % 50) FROM numbers(2000);"
+     CREATE TABLE d_wide_mixed_update_set ($MIXED_COLUMNS) ENGINE = MergeTree ORDER BY id
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4096, index_granularity = 1024;
+     INSERT INTO d_wide_mixed_update_set $MIXED_INSERT;" \
+    "$PACKED_MIXED_FILES"
 
-# Scenario E: Wide, mixed, ALTER UPDATE on the minmax's column. Archive recomputed, set kept.
+# Scenario E: Wide, mixed, ALTER UPDATE on the minmax's column. Archive recomputed, the per-file
+# set is left in place; m_v still prunes.
 run_scenario "E_wide_mixed_update_minmax" e_wide_mixed_update_minmax \
     "ALTER TABLE e_wide_mixed_update_minmax UPDATE v = v + 1 WHERE id < 100" \
     "v BETWEEN 70 AND 700" 91 m_v \
     "DROP TABLE IF EXISTS e_wide_mixed_update_minmax;
-     CREATE TABLE e_wide_mixed_update_minmax (
-         id UInt64, v UInt64, s String,
-         INDEX m_v v TYPE minmax GRANULARITY 1,
-         INDEX s_s s TYPE set(100) GRANULARITY 1
-     ) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
-     INSERT INTO e_wide_mixed_update_minmax SELECT number, number * 7, toString(number % 50) FROM numbers(2000);"
+     CREATE TABLE e_wide_mixed_update_minmax ($MIXED_COLUMNS) ENGINE = MergeTree ORDER BY id
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4096, index_granularity = 1024;
+     INSERT INTO e_wide_mixed_update_minmax $MIXED_INSERT;" \
+    "$PACKED_MIXED_FILES"
 
 # Scenario F: Wide, two packed minmax indices, DROP one. Archive rebuilt smaller in place;
 # the surviving m_w still prunes.
@@ -165,18 +189,16 @@ run_scenario "F_wide_drop_one_of_two_packed" f_wide_drop_packed \
      INSERT INTO f_wide_drop_packed SELECT number, number * 7, number * 11 FROM numbers(2000);"
 
 # Scenario G: Wide, packed minmax + per-file set, DROP the per-file set. Per-file files gone,
-# archive untouched; m_v still prunes.
+# archive untouched; m_v still prunes. The set_index_layout line asserts s_s really is per-file
+# before the drop (otherwise this would exercise dropping a packed index).
 run_scenario "G_wide_drop_perfile_index" g_wide_drop_perfile \
     "ALTER TABLE g_wide_drop_perfile DROP INDEX s_s" \
     "v BETWEEN 70 AND 700" 91 m_v \
     "DROP TABLE IF EXISTS g_wide_drop_perfile;
-     CREATE TABLE g_wide_drop_perfile (
-         id UInt64, v UInt64, s String,
-         INDEX m_v v TYPE minmax GRANULARITY 1,
-         INDEX s_s s TYPE set(100) GRANULARITY 1
-     ) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
-     INSERT INTO g_wide_drop_perfile SELECT number, number * 7, toString(number % 50) FROM numbers(2000);"
+     CREATE TABLE g_wide_drop_perfile ($MIXED_COLUMNS) ENGINE = MergeTree ORDER BY id
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4096, index_granularity = 1024;
+     INSERT INTO g_wide_drop_perfile $MIXED_INSERT;" \
+    "$PACKED_MIXED_FILES"
 
 # Scenario H: Wide, packed minmax, ALTER ADD COLUMN (metadata only, no part rewrite).
 # Same part, archive untouched.
@@ -192,6 +214,8 @@ run_scenario "H_wide_add_column" h_wide_add_column \
 
 # Scenario I: Compact, sole packed minmax, ALTER UPDATE on the indexed column. Compact mutations
 # rewrite the whole part via MutateAllPartColumnsTask; verify the archive path is wired there too.
+# min_bytes_for_wide_part / min_rows_for_wide_part are pinned high so the part stays Compact even
+# when --random-merge-tree-settings injects min_bytes_for_wide_part = 0.
 run_scenario "I_compact_update_indexed" i_compact_update_indexed \
     "ALTER TABLE i_compact_update_indexed UPDATE v = v + 1 WHERE id < 100" \
     "v BETWEEN 70 AND 700" 91 m_v \
@@ -199,7 +223,8 @@ run_scenario "I_compact_update_indexed" i_compact_update_indexed \
      CREATE TABLE i_compact_update_indexed (
          id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
      ) ENGINE = MergeTree ORDER BY id
-     SETTINGS packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+     SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 100000000,
+              packed_skip_index_max_bytes = '1M', index_granularity = 1024;
      INSERT INTO i_compact_update_indexed SELECT number, number * 7 FROM numbers(2000);"
 
 # Scenario J: Wide, sole packed minmax, DROP the only packed index. Special-cased because it

@@ -45,6 +45,9 @@ DROP TABLE t_packed_wide;
 -- Compact part with packed minmax (same checks as wide).
 -- ---------------------------------------------------------------------------------------------
 DROP TABLE IF EXISTS t_packed_compact;
+-- Pin min_bytes_for_wide_part / min_rows_for_wide_part high so the part stays Compact even when
+-- --random-merge-tree-settings injects min_bytes_for_wide_part = 0 (which would silently turn
+-- this into a Wide part and stop exercising the Compact path).
 CREATE TABLE t_packed_compact
 (
     id UInt64,
@@ -53,10 +56,13 @@ CREATE TABLE t_packed_compact
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS packed_skip_index_max_bytes = 4194304, index_granularity = 1024;
+SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 100000000,
+         packed_skip_index_max_bytes = 4194304, index_granularity = 1024;
 
 INSERT INTO t_packed_compact SELECT number, number * 7 FROM numbers(10000);
 
+SELECT 'compact_part_type', part_type FROM system.parts
+WHERE database = currentDatabase() AND table = 't_packed_compact' AND active;
 SELECT 'compact_count', count() FROM t_packed_compact WHERE v BETWEEN 70 AND 700;
 SELECT 'compact_secondary_bytes_positive', secondary_indices_compressed_bytes > 0
 FROM system.parts
@@ -116,6 +122,7 @@ CHECK TABLE t_packed_merge_wide SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_packed_merge_wide;
 
 DROP TABLE IF EXISTS t_packed_merge_compact;
+-- Pinned Compact (see t_packed_compact above): keep the part Compact under random settings.
 CREATE TABLE t_packed_merge_compact
 (
     id UInt64,
@@ -124,7 +131,8 @@ CREATE TABLE t_packed_merge_compact
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS packed_skip_index_max_bytes = 4194304, index_granularity = 1024;
+SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 100000000,
+         packed_skip_index_max_bytes = 4194304, index_granularity = 1024;
 
 INSERT INTO t_packed_merge_compact SELECT number,         number * 7  FROM numbers(10000);
 INSERT INTO t_packed_merge_compact SELECT number + 10000, number * 11 FROM numbers(10000);
@@ -134,6 +142,8 @@ SELECT 'merge_compact_combined_count',  count() FROM t_packed_merge_compact WHER
 
 OPTIMIZE TABLE t_packed_merge_compact FINAL;
 
+SELECT 'merge_compact_part_type_after', part_type FROM system.parts
+WHERE database = currentDatabase() AND table = 't_packed_merge_compact' AND active;
 SELECT 'merge_compact_active_parts_after', count() FROM system.parts
 WHERE database = currentDatabase() AND table = 't_packed_merge_compact' AND active;
 SELECT 'merge_compact_count_after',       count() FROM t_packed_merge_compact WHERE v BETWEEN 70 AND 700;

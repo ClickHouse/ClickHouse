@@ -8,15 +8,18 @@
   secondary_indices: materialized
   count=1 expected=1 granules(m_v)=filtered check=1
 [D_wide_mixed_update_set]
+  set_index_layout: per_file
   secondary_indices: materialized
   count=91 expected=91 granules(m_v)=filtered check=1
 [E_wide_mixed_update_minmax]
+  set_index_layout: per_file
   secondary_indices: materialized
   count=91 expected=91 granules(m_v)=filtered check=1
 [F_wide_drop_one_of_two_packed]
   secondary_indices: materialized
   count=91 expected=91 granules(m_w)=filtered check=1
 [G_wide_drop_perfile_index]
+  set_index_layout: per_file
   secondary_indices: materialized
   count=91 expected=91 granules(m_v)=filtered check=1
 [H_wide_add_column]

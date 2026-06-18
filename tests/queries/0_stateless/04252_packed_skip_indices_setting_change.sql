@@ -102,6 +102,8 @@ DROP TABLE t_wide_on_to_off;
 -- Compact: threshold raised from 0 (packing disabled) to 1 MiB.
 -- ------------------------------------------------------------------
 DROP TABLE IF EXISTS t_compact_off_to_on;
+-- Pin min_bytes_for_wide_part / min_rows_for_wide_part high so the part stays Compact even when
+-- --random-merge-tree-settings injects min_bytes_for_wide_part = 0.
 CREATE TABLE t_compact_off_to_on
 (
     id UInt64,
@@ -110,9 +112,12 @@ CREATE TABLE t_compact_off_to_on
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS packed_skip_index_max_bytes = 0, auto_statistics_types = '', index_granularity = 1024;
+SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 100000000,
+         packed_skip_index_max_bytes = 0, auto_statistics_types = '', index_granularity = 1024;
 
 INSERT INTO t_compact_off_to_on SELECT number, number * 7 FROM numbers(10000);
+SELECT 'compact_off2on_part_type', part_type FROM system.parts
+WHERE database = currentDatabase() AND table = 't_compact_off_to_on' AND active;
 SELECT 'compact_off2on_index_materialized_before', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_off_to_on' AND active;
 
@@ -143,6 +148,7 @@ DROP TABLE t_compact_off_to_on;
 -- Compact: threshold lowered from 1 MiB to 0 (packing disabled).
 -- ------------------------------------------------------------------
 DROP TABLE IF EXISTS t_compact_on_to_off;
+-- Pinned Compact (see t_compact_off_to_on above): keep the part Compact under random settings.
 CREATE TABLE t_compact_on_to_off
 (
     id UInt64,
@@ -151,9 +157,12 @@ CREATE TABLE t_compact_on_to_off
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS packed_skip_index_max_bytes = '1M', auto_statistics_types = '', index_granularity = 1024;
+SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 100000000,
+         packed_skip_index_max_bytes = '1M', auto_statistics_types = '', index_granularity = 1024;
 
 INSERT INTO t_compact_on_to_off SELECT number, number * 7 FROM numbers(10000);
+SELECT 'compact_on2off_part_type', part_type FROM system.parts
+WHERE database = currentDatabase() AND table = 't_compact_on_to_off' AND active;
 SELECT 'compact_on2off_index_materialized_before', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_on_to_off' AND active;
 
