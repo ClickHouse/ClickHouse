@@ -339,18 +339,13 @@ private:
     static Vec vecLoad(const void * p) { return _mm256_loadu_si256(reinterpret_cast<const __m256i *>(p)); }
     static Vec vecCmpeq(Vec a, Vec b) { return _mm256_cmpeq_epi8(a, b); }
     static Vec vecOr(Vec a, Vec b) { return _mm256_or_si256(a, b); }
-    static Vec vecXor(Vec a, Vec b) { return _mm256_xor_si256(a, b); }
-    static Vec vecAnd(Vec a, Vec b) { return _mm256_and_si256(a, b); }
     static int vecMovemask(Vec v) { return _mm256_movemask_epi8(v); }
     static Vec vecSet1(uint8_t v) { return _mm256_set1_epi8(static_cast<int8_t>(v)); }
-    static Vec vecZero() { return _mm256_setzero_si256(); }
 #elif defined(__aarch64__) && defined(__ARM_NEON)
     using Vec = uint8x16_t;
     static Vec vecLoad(const void * p) { return vld1q_u8(reinterpret_cast<const uint8_t *>(p)); }
     static Vec vecCmpeq(Vec a, Vec b) { return vceqq_u8(a, b); }
     static Vec vecOr(Vec a, Vec b) { return vorrq_u8(a, b); }
-    static Vec vecXor(Vec a, Vec b) { return veorq_u8(a, b); }
-    static Vec vecAnd(Vec a, Vec b) { return vandq_u8(a, b); }
     static int vecMovemask(Vec v)
     {
         const uint8x16_t bitmask = {1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128};
@@ -361,7 +356,6 @@ private:
         return static_cast<int>(vgetq_lane_u16(vreinterpretq_u16_u8(paired), 0));
     }
     static Vec vecSet1(uint8_t v) { return vdupq_n_u8(v); }
-    static Vec vecZero() { return vdupq_n_u8(0); }
 #endif
 
     Vec patl;

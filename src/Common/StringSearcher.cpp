@@ -243,11 +243,6 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
 #if defined(__AVX2__) || (defined(__aarch64__) && defined(__ARM_NEON))
     constexpr size_t N = sizeof(Vec);
 
-    /// Continuation bytes (10xxxxxx): after XOR with 0x80 → 00xxxxxx, AND with 0x40 → 0.
-    /// Non-continuation bytes keep bit 6 set. movemask of cmpeq-to-zero gives 1 for continuation.
-    const auto v_0x80 = vecSet1(0x80);
-    const auto v_0x40 = vecSet1(0x40);
-
     if (unlikely(force_fallback))
         goto scalar;
 
@@ -262,17 +257,15 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
             const auto v_against_u = vecCmpeq(v_haystack, patu);
             const auto v_against_l_or_u = vecOr(v_against_l, v_against_u);
 
-            /// Mask out continuation bytes.
-            const auto v_xor = vecXor(v_haystack, v_0x80);
-            const auto v_test = vecAnd(v_xor, v_0x40);
-            const auto v_is_cont = vecCmpeq(v_test, vecZero());
-            const auto cont_mask = static_cast<uint32_t>(vecMovemask(v_is_cont));
-
-            const auto mask = static_cast<uint32_t>(vecMovemask(v_against_l_or_u)) & ~cont_mask;
+            const auto mask = static_cast<uint32_t>(vecMovemask(v_against_l_or_u));
 
             if (mask == 0)
             {
+                /// No first-byte candidate in this window. The needle's first byte is a UTF-8
+                /// lead or ASCII byte, so it never equals a continuation byte; skip the whole
+                /// window and realign to the next sequence boundary for the scalar tail.
                 haystack += N;
+                UTF8::syncForward(haystack, haystack_end);
                 continue;
             }
 
