@@ -4999,13 +4999,16 @@ async function reconcileStartup() {
             activeTabId = (loaded.meta && savedTabs.some(t => t.id === loaded.meta.activeTabId))
                 ? loaded.meta.activeTabId : savedTabs[0].id;
         } else {
-            const match = url_tab_name ? savedTabs.find(t => t.title === url_tab_name) : null;
+            let match = url_tab_name ? savedTabs.find(t => t.title === url_tab_name) : null;
             if (match) {
-                /// Substitute the URL query into the named tab; drop a stale result if it changed.
+                /// Named URL: substitute the URL query into that tab; drop a stale result if it changed.
                 if (match.query !== url_query) { match.query = url_query; match.result = null; }
                 activeTabId = match.id;
+            } else if (!url_tab_name && (match = savedTabs.find(t => t.query === url_query))) {
+                /// Unnamed URL: a tab already holds this exact query, so switch to it (keep its result).
+                activeTabId = match.id;
             } else {
-                /// Not found or unnamed URL: open a new tab carrying the name/query.
+                /// Not found: open a new tab carrying the name (if any) and query.
                 const t = makeTab(url_tab_name || undefined, url_query);
                 tabs.push(t);
                 activeTabId = t.id;
