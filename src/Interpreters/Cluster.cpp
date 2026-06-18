@@ -133,6 +133,10 @@ Cluster::Address::Address(
     if (!port)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
+    /// Optional per-node ports for the distributed-plan engine; zero means "not configured".
+    stateless_worker_port = static_cast<UInt16>(config.getInt(config_prefix + ".stateless_worker_port", 0));
+    streaming_exchange_port = static_cast<UInt16>(config.getInt(config_prefix + ".streaming_exchange_port", 0));
+
     is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
 
     /// By default compression is disabled if address looks like localhost.

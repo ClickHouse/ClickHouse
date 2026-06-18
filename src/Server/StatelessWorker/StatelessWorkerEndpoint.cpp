@@ -82,10 +82,11 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
     }
 
     writeVarUInt(task_description.exchange_stream_sources.stream_hosts.size(), out);
-    for (const auto & [stream, host] : task_description.exchange_stream_sources.stream_hosts)
+    for (const auto & [stream, address] : task_description.exchange_stream_sources.stream_hosts)
     {
         writeStringBinary(stream, out);
-        writeStringBinary(host, out);
+        writeStringBinary(address.host, out);
+        writeVarUInt(address.port, out);
     }
 
     writeVarUInt(task_description.settings_changes.size(), out);
@@ -166,9 +167,15 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
     {
         String stream;
         readStringBinary(stream, in);
-        String host;
-        readStringBinary(host, in);
-        task_description.exchange_stream_sources.stream_hosts[stream] = host;
+        StreamSourceAddress address;
+        readStringBinary(address.host, in);
+        if (version >= 2)
+        {
+            UInt64 port = 0;
+            readVarUInt(port, in);
+            address.port = static_cast<UInt16>(port);
+        }
+        task_description.exchange_stream_sources.stream_hosts[stream] = address;
     }
 
     if (version >= 1)
