@@ -37,10 +37,10 @@ struct ActionsDAGWithInversionPushDown
     const ActionsDAG::Node * predicate = nullptr;
 
     /// `boolean_context`: Pass true only when the caller uses `predicate_` as a filter: it tests each row for truthiness
-    /// and discards the value (index analysis of a WHERE/PREWHERE). Then `cloneDAGWithInversionPushDown` may
-    /// apply truthiness-preserving but value-changing rewrites, e.g. `tryRewriteCoalesceBoolean` turns `ifNull(X, 0)` -> `X`,
-    /// which differ on NULL rows.
-    /// There is not correctness cost with passing false but may miss some optimization opportunities.
+    /// and discards the value (index analysis of a WHERE/PREWHERE). Then `cloneDAGWithInversionPushDown` may apply
+    /// truthiness-preserving but value-changing rewrites (`tryRewriteCoalesceBoolean`, `tryRewriteCoalesceComparison`),
+    /// which can differ from the original (e.g. `NULL` vs `false`) on NULL rows but agree on truthiness.
+    /// There is no correctness cost to passing false, but it may miss some optimization opportunities.
     explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context);
 };
 
