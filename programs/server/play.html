@@ -220,15 +220,13 @@
            (not sticky). It bleeds into #main's 0.5rem padding with a negative margin so the
            gray/black strip spans the full width. The bleed is reliable here because the
            element is not position: sticky (which is what made it behave differently across
-           browsers before). The bottom margin is 0 so the active tab connects directly to
-           the controls below: a gap there would expose the controls' upward drop-shadow as
-           a faint darker band, making the active tab look a shade lighter than the page. */
+           browsers before). */
         #tab-bar
         {
             display: flex;
             align-items: flex-end;
             gap: 0.25rem;
-            margin: -0.5rem -0.5rem 0 -0.5rem;
+            margin: -0.5rem -0.5rem 0.5rem -0.5rem;
             /* Integer top padding (not e.g. 0.15rem = 2.4px): a fractional offset puts
                the tabs and the [+] button on sub-pixel boundaries where the native
                button and the div tabs rasterize their bottom border one device pixel
