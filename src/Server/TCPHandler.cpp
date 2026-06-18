@@ -765,13 +765,20 @@ void TCPHandler::runImpl()
 
                     try
                     {
-                        sendMergeTreeAllRangesAnnouncement(*query_state, announcement);
+                        const auto announcement_mode = announcement.mode;
+                        sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
                         ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                         ProfileEvents::increment(
                             ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
                         /// Older initiators (protocol < ANNOUNCEMENT_RESPONSE) don't send a response.
                         if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+                            return std::nullopt;
+
+                        /// `Default` mode callers discard the response; the initiator side skips
+                        /// sending it (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`).
+                        /// Don't block on a packet that will never arrive.
+                        if (announcement_mode == CoordinationMode::Default)
                             return std::nullopt;
 
                         return receiveAllRangesAnnouncementResponse(*query_state);
