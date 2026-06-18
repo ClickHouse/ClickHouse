@@ -79,6 +79,12 @@ public:
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
 
+    /// Returns true iff `other` can be safely merged into this statistics object.
+    /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
+    /// shifts the aggregate-function state layout) should return false so that
+    /// ColumnStatistics::structureEquals routes the part to a rebuild instead of a corrupt merge.
+    virtual bool isCompatibleWith(const IStatistics &) const { return true; }
+
 protected:
     SingleStatisticsDescription stat;
 };

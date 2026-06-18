@@ -180,6 +180,8 @@ bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
     {
         if (i->first != j->first)
             return false;
+        if (!i->second->isCompatibleWith(*j->second))
+            return false;
     }
 
     return true;

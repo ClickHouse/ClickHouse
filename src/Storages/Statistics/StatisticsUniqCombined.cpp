@@ -54,12 +54,18 @@ void StatisticsUniqCombined::build(const ColumnPtr & column)
 void StatisticsUniqCombined::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniqCombined * other = typeid_cast<const StatisticsUniqCombined *>(other_stats.get());
-    /// If the column type changed between parts (e.g. via a concurrent ALTER that wraps it in Nullable),
-    /// the null-wrapper shifts the HLL state layout and makes the two states incompatible.
-    /// Merging them would corrupt memory; skip instead.
-    if (collector->sizeOfData() != other->collector->sizeOfData())
-        return;
     collector->merge(data, other->data, arena.get());
+}
+
+bool StatisticsUniqCombined::isCompatibleWith(const IStatistics & other) const
+{
+    const auto * other_combined = typeid_cast<const StatisticsUniqCombined *>(&other);
+    if (!other_combined)
+        return false;
+    /// A column type change (e.g. wrapping in Nullable) causes the aggregate function to gain
+    /// a null-wrapper that shifts the HLL state layout. States with different sizes are incompatible
+    /// and must not be merged — signal this so structureEquals routes the part to a rebuild.
+    return collector->sizeOfData() == other_combined->collector->sizeOfData();
 }
 
 void StatisticsUniqCombined::serialize(WriteBuffer & buf)
