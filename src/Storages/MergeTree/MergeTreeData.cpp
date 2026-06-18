@@ -5242,9 +5242,9 @@ void MergeTreeData::changeSettings(
                         if (!disk->existsDirectory(relative_data_path))
                             return false;
 
-                        /// A newly added disk may have only entries ignored by part loading:
+                        /// A newly added disk may have only explicitly safe entries:
                         /// matching format_version.txt, temporary root directories, and empty/non-part detached entries.
-                        /// Anything parseable as a root or detached part is existing table data.
+                        /// Anything else would become owned by the table path after the policy change.
                         validate_format_version(disk);
 
                         for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
@@ -5263,8 +5263,7 @@ void MergeTreeData::changeSettings(
                                 continue;
                             }
 
-                            if (MergeTreePartInfo::tryParsePartName(name, format_version))
-                                return true;
+                            return true;
                         }
 
                         return false;

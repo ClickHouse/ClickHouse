@@ -87,7 +87,7 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
                 "bash",
                 "-c",
                 f"mkdir -p {shlex.quote(disk2_data_path)} && "
-                f"echo 255 > {shlex.quote(disk2_data_path)}/format_version.txt",
+                f"printf 255 > {shlex.quote(disk2_data_path)}/format_version.txt",
             ]
         )
         assert "Version file" in node.query_and_get_error(
@@ -98,6 +98,7 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
         node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
 
     for table_name, part_path in [
+        ("test_unknown_root_entry", "not_a_part"),
         ("test_valid_root_part", "all_0_0_0"),
         ("test_valid_detached_part", "detached/all_0_0_0"),
     ]:
