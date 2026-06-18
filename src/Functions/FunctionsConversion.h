@@ -1376,7 +1376,8 @@ struct ConvertThroughParsing
                             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                             {
                                 if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing))
-                                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to type {}", TypeName<typename ToDataType::FieldType>);
+                                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string '{}' as type {}",
+                                        String(read_buffer.buffer().begin(), read_buffer.buffer().size()), TypeName<typename ToDataType::FieldType>);
                             }
                             else
                                 parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing);
@@ -1820,8 +1821,8 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
-                        named_from.column->getName(), result_type->getName());
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value '{}' in column {} cannot be safely converted into type {}",
+                        toString(vec_from[i]), named_from.column->getName(), result_type->getName());
                 }
             }
         }

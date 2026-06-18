@@ -1456,6 +1456,42 @@ bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTy
     auto from_inner = removeNullable(from_type);
     auto to_inner = removeNullable(to_type);
 
+    /// Int*, UInt*, Float*, Bool — the numeric types that JSON inference produces
+    /// (Int64, UInt64, Float64, Bool) and the typed-path types they can safely
+    /// convert to via accurateCast. Bool is UInt8, so isNativeInteger covers it.
+    auto isIntOrFloat = [](const IDataType & t) -> bool
+    {
+        return isNativeInteger(t) || isFloat(t);
+    };
+
+    auto isDateOrDateTime = [](const IDataType & t) -> bool
+    {
+        return isDateOrDate32(t) || isDateTime(t) || isDateTime64(t);
+    };
+
+    /// From numeric (Int64, UInt64, Float64, Bool in Dynamic) →
+    /// to Int*/UInt*/Float*/Bool/String. accurateCast handles overflow.
+    /// Exception: Float64 → Float32 narrowing is excluded because accurateCast
+    /// rejects precision loss (the round-trip Float64→Float32→Float64 is not exact),
+    /// while format+parse handles it correctly via text serialization.
+    if (isIntOrFloat(*from_inner) && (isIntOrFloat(*to_inner) || isStringOrFixedString(*to_inner)))
+    {
+        if (isFloat(*from_inner) && isFloat(*to_inner)
+            && from_inner->getSizeOfValueInMemory() > to_inner->getSizeOfValueInMemory())
+            return false;
+        return true;
+    }
+
+    /// From Date/DateTime/DateTime64 → to String only.
+    /// Cross-cast to numeric is disallowed because CAST interprets the
+    /// internal numeric representation, while format+parse would go through
+    /// a text date representation that cannot be parsed as a number.
+    /// Cross-cast between Date/DateTime/DateTime64 is also disallowed because
+    /// castColumnAccurate may fail on text representations (e.g. DateTime64
+    /// text "2024-01-15 12:30:00" cannot be parsed as Date by the CAST path).
+    if (isDateOrDateTime(*from_inner) && isStringOrFixedString(*to_inner))
+        return true;
+
     /// "Simple non-nested" = any type without subtypes: numbers, strings, dates,
     /// decimals, UUID, IPv4, IPv6, Enum, etc. Types with subtypes (Array, Tuple,
     /// Map, Nullable, Object, Variant, LowCardinality) are excluded. Dynamic has
@@ -1465,23 +1501,16 @@ bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTy
         return !t.haveSubtypes() && !isDynamic(t);
     };
 
-    auto isNumericOrDate = [](const IDataType & t) -> bool
-    {
-        return isNumber(t) || isDateOrDate32(t) || isDateTime(t)
-            || isDateTime64(t) || isDecimal(t);
-    };
-
-    /// numeric/date <-> numeric/date
-    if (isNumericOrDate(*from_inner) && isNumericOrDate(*to_inner))
-        return true;
-
-    /// string <-> simple non-nested
+    /// From String → any simple non-nested type.
+    /// Both paths go through text parsing so semantics match.
     if (isStringOrFixedString(*from_inner) && isSimpleNonNested(*to_inner))
         return true;
+
+    /// Any simple non-nested → String.
     if (isSimpleNonNested(*from_inner) && isStringOrFixedString(*to_inner))
         return true;
 
-    /// Array(safe) -> Array(safe)
+    /// Array(safe) → Array(safe): recursive.
     if (isArray(*from_inner) && isArray(*to_inner))
     {
         const auto & from_arr = assert_cast<const DataTypeArray &>(*from_inner);
@@ -1516,23 +1545,23 @@ bool canCastDynamicToTyped(const ColumnDynamic & col_dynamic, const DataTypePtr 
 struct ObjectConversionPlan
 {
     /// Typed paths in destination but not in source (need dynamic->typed).
-    std::unordered_map<String, DataTypePtr> new_typed_paths;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> new_typed_paths;
 
     /// Typed paths in source but not in destination (need typed->dynamic).
-    std::unordered_map<String, DataTypePtr> removed_typed_paths;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> removed_typed_paths;
 
     /// Typed paths in both but with different types (need CAST).
     /// Maps path -> (from_type, to_type).
-    std::unordered_map<String, std::pair<DataTypePtr, DataTypePtr>> changed_typed_paths;
+    UnorderedMapWithMemoryTracking<String, std::pair<DataTypePtr, DataTypePtr>> changed_typed_paths;
 
     /// Typed paths in both with the same type (reuse column pointer).
-    std::unordered_set<String> unchanged_typed_paths;
+    UnorderedSetWithMemoryTracking<String> unchanged_typed_paths;
 
     /// New SKIP exact paths (in destination but not in source).
-    std::unordered_set<String> new_skip_paths;
+    UnorderedSetWithMemoryTracking<String> new_skip_paths;
 
     /// New SKIP REGEXP patterns (in destination but not in source).
-    std::vector<String> new_skip_regexps;
+    VectorWithMemoryTracking<String> new_skip_regexps;
 
     /// Whether max_dynamic_paths or max_dynamic_types changed.
     bool dynamic_limits_changed = false;
@@ -1617,7 +1646,7 @@ ObjectConversionPlan buildObjectConversionPlan(
 
     const auto & src_regexps = src_type.getPathRegexpsToSkip();
     const auto & dst_regexps = dst_type.getPathRegexpsToSkip();
-    std::unordered_set<String> src_regexp_set(src_regexps.begin(), src_regexps.end());
+    UnorderedSetWithMemoryTracking<String> src_regexp_set(src_regexps.begin(), src_regexps.end());
     for (const auto & regexp : dst_regexps)
     {
         if (!src_regexp_set.contains(regexp))
@@ -1778,7 +1807,7 @@ ColumnPtr convertObjectColumns(
     /// ======================== Phase 1: Build skip predicate ========================
 
     /// Compile regexps.
-    std::vector<std::unique_ptr<re2::RE2>> compiled_new_skip_regexps;
+    VectorWithMemoryTracking<std::unique_ptr<re2::RE2>> compiled_new_skip_regexps;
     compiled_new_skip_regexps.reserve(plan.new_skip_regexps.size());
     for (const auto & pattern : plan.new_skip_regexps)
         compiled_new_skip_regexps.push_back(std::make_unique<re2::RE2>(pattern));
@@ -1806,9 +1835,9 @@ ColumnPtr convertObjectColumns(
     /// ======================== Phase 2: Classify source dynamic paths ========================
 
     /// Paths that stay as dynamic (not skipped, not promoted to typed).
-    std::vector<String> src_dynamic_paths_to_reuse;
+    VectorWithMemoryTracking<String> src_dynamic_paths_to_reuse;
     /// Paths that become typed paths in destination.
-    std::vector<String> src_dynamic_paths_to_typed;
+    VectorWithMemoryTracking<String> src_dynamic_paths_to_typed;
 
     for (const auto & [path, _col] : src_dynamic_paths)
     {
@@ -1827,7 +1856,7 @@ ColumnPtr convertObjectColumns(
 
     /// Track which new typed paths were populated from dynamic paths (so we know
     /// which ones still need to be populated from shared data or filled with defaults).
-    std::unordered_set<String> new_typed_paths_populated;
+    UnorderedSetWithMemoryTracking<String> new_typed_paths_populated;
 
     /// Unchanged typed paths: reuse by pointer.
     for (const auto & path : plan.unchanged_typed_paths)
@@ -1854,7 +1883,7 @@ ColumnPtr convertObjectColumns(
         if (canCastDynamicToTyped(dynamic_col, it_type->second))
         {
             auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
-            dst_typed_columns[path] = castColumn({it_col->second, dynamic_type, ""}, it_type->second);
+            dst_typed_columns[path] = castColumnAccurate({it_col->second, dynamic_type, ""}, it_type->second);
         }
         else
         {
@@ -1866,7 +1895,7 @@ ColumnPtr convertObjectColumns(
 
     /// New typed paths not from dynamic — will be filled from shared data in Phase 7 or defaults in Phase 8.
     /// Create empty mutable columns for them now.
-    std::unordered_map<String, MutableColumnPtr> new_typed_path_mutable_columns;
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> new_typed_path_mutable_columns;
     for (const auto & [path, tp] : plan.new_typed_paths)
     {
         if (!new_typed_paths_populated.contains(path))
@@ -1893,14 +1922,14 @@ ColumnPtr convertObjectColumns(
         : 0;
 
     /// Sort removed typed paths for deterministic ordering.
-    std::vector<String> sorted_removed_typed_paths;
+    VectorWithMemoryTracking<String> sorted_removed_typed_paths;
     sorted_removed_typed_paths.reserve(plan.removed_typed_paths.size());
     for (const auto & [path, _] : plan.removed_typed_paths)
         sorted_removed_typed_paths.push_back(path);
     std::sort(sorted_removed_typed_paths.begin(), sorted_removed_typed_paths.end());
 
     /// Removed typed paths that overflow into shared data: (path, ColumnDynamic).
-    std::vector<std::pair<String, ColumnPtr>> removed_typed_paths_to_shared_data;
+    VectorWithMemoryTracking<std::pair<String, ColumnPtr>> removed_typed_paths_to_shared_data;
 
     for (const auto & path : sorted_removed_typed_paths)
     {
@@ -1992,7 +2021,7 @@ ColumnPtr convertObjectColumns(
         /// Prepare typed nodes for new typed paths that come from shared data.
         /// Uses the JSON parser + typed node path to match Object deserialization behavior.
         using TypedNodePtr = std::unique_ptr<JSONExtractTreeNode<JSONParserForConversion>>;
-        std::unordered_map<String, TypedNodePtr> new_typed_path_nodes;
+        UnorderedMapWithMemoryTracking<String, TypedNodePtr> new_typed_path_nodes;
         JSONParserForConversion shared_data_parser;
         JSONExtractInsertSettings shared_data_insert_settings;
         FormatSettings json_format_settings = format_settings;
@@ -2002,7 +2031,7 @@ ColumnPtr convertObjectColumns(
             new_typed_path_nodes[path] = buildJSONExtractTree<JSONParserForConversion>(plan.new_typed_paths.at(path), "JSON type conversion");
 
         /// Track which new typed paths got a value in each row.
-        std::unordered_set<String> populated_in_row;
+        UnorderedSetWithMemoryTracking<String> populated_in_row;
 
         const auto & src_shared_offsets = src.getSharedDataOffsets();
         auto [src_paths_col, src_values_col] = src.getSharedDataPathsAndValues();
@@ -2122,7 +2151,7 @@ ColumnPtr convertObjectColumns(
 
     /// Lock max_dynamic_paths if shared data is non-empty.
     size_t effective_max_dynamic_paths = dst_global_max_dynamic_paths;
-    if (assert_cast<const ColumnArray &>(*dst_shared_data).getData().size() > 0)
+    if (!assert_cast<const ColumnArray &>(*dst_shared_data).getData().empty())
         effective_max_dynamic_paths = dst_dynamic_columns.size();
 
     return ColumnObject::create(

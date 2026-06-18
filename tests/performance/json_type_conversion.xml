@@ -1,8 +1,4 @@
 <test>
-    <settings>
-        <json_use_optimized_type_conversion>0</json_use_optimized_type_conversion>
-    </settings>
-
     <!-- Dataset A: 3 typed paths, 100 dynamic paths, 100 shared data paths, no spare dynamic slots -->
     <create_query>
         CREATE TABLE t_json_perf_a (data JSON(t1 Int64, t2 String, t3 Float64, SKIP dummy, max_dynamic_paths=100))
