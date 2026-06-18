@@ -285,6 +285,11 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
                 validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperListRecursiveRequest>(*concrete_request_list_recursive));
             }
+            else if (const auto * concrete_request_list_with_stat_and_data = dynamic_cast<const ZooKeeperFilteredListWithStatsAndDataRequest *>(generic_request.get()))
+            {
+                validateOrSpecifyRequestType(/*is_read=*/true);
+                requests.push_back(std::make_shared<TestKeeperFilteredListWithStatsAndDataRequest>(*concrete_request_list_with_stat_and_data));
+            }
             else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
             {
                 validateOrSpecifyRequestType(/*is_read=*/true);
@@ -294,11 +299,6 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
             {
                 validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperExistsRequest>(*concrete_request_exists));
-            }
-            else if (const auto * concrete_request_list_with_stat_and_data = dynamic_cast<const ZooKeeperFilteredListWithStatsAndDataRequest *>(generic_request.get()))
-            {
-                validateOrSpecifyRequestType(/*is_read=*/true);
-                requests.push_back(std::make_shared<TestKeeperFilteredListWithStatsAndDataRequest>(*concrete_request_list_with_stat_and_data));
             }
             else
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
