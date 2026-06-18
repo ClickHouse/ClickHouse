@@ -4964,11 +4964,11 @@ Result:
     DECLARE(Bool, cast_float_to_decimal_uses_rounding, true, R"(
 Controls how casting a floating-point value (`Float32`/`Float64`) to a `Decimal` type handles the fractional part.
 
-When enabled, the value is rounded to the nearest representable `Decimal` (ties are rounded half away from zero), matching the behavior of PostgreSQL and MySQL. When disabled, the fractional part is truncated toward zero, which was the behavior before this setting was introduced.
+When enabled, the value is rounded to the nearest representable `Decimal` (ties are rounded to even, i.e. banker's rounding), consistent with the default tie-breaking of the `round` function. When disabled, the fractional part is truncated toward zero, which was the behavior before this setting was introduced.
 
 Possible values:
 
-- 1 — Round to nearest (ties away from zero).
+- 1 — Round to nearest (ties to even).
 - 0 — Truncate toward zero.
 )", 0) \
     DECLARE(Bool, cast_ipv4_ipv6_default_on_conversion_error, false, R"(

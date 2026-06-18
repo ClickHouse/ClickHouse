@@ -832,7 +832,7 @@ Unsupported arguments:
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`.
-For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded half away from zero); for string inputs, excessive digits in the fraction are discarded (not rounded).
+For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded to even, i.e. banker's rounding); for string inputs, excessive digits in the fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
 
@@ -888,7 +888,7 @@ Unsupported arguments:
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`.
-For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded half away from zero); for string inputs, excessive digits in the fraction are discarded (not rounded).
+For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded to even, i.e. banker's rounding); for string inputs, excessive digits in the fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
 
@@ -945,7 +945,7 @@ Unsupported arguments:
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`.
-For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded half away from zero); for string inputs, excessive digits in the fraction are discarded (not rounded).
+For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded to even, i.e. banker's rounding); for string inputs, excessive digits in the fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
 
@@ -1001,7 +1001,7 @@ Unsupported arguments:
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`.
-For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded half away from zero); for string inputs, excessive digits in the fraction are discarded (not rounded).
+For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded to even, i.e. banker's rounding); for string inputs, excessive digits in the fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
 

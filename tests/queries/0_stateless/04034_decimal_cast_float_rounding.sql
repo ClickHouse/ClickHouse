@@ -2,7 +2,7 @@
 -- instead of truncating toward zero.
 -- See https://github.com/ClickHouse/ClickHouse/issues/57935
 
--- Scale 0: half values round away from zero
+-- Scale 0: half values round to even (banker's rounding)
 SELECT 'Scale 0 - positive half values:';
 SELECT
     toFloat64(number * 2 + 1) / 2 AS x,
@@ -33,11 +33,12 @@ SELECT CAST(toFloat32(0.5), 'Decimal(9, 0)') AS d1, CAST(toFloat32(-0.5), 'Decim
 SELECT 'Edge values that round to representable limits:';
 SELECT CAST(toFloat64(2147483647.4), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-2147483647.4), 'Decimal(9, 0)') AS d2;
 
--- Negative edge toward INT32_MIN: a value rounding into the lower limit must be accepted;
--- anything past the limit must still throw. Decimal(9,0) holds -2147483648 exactly.
+-- Negative edge toward INT32_MIN: a value rounding into the lower limit must be accepted.
+-- Decimal(9,0) holds -2147483648 exactly; under round-half-to-even, -2147483648.5 rounds to the
+-- even neighbor -2147483648, so it fits in range (true overflow is covered below).
 SELECT 'Negative edge rounding:';
 SELECT CAST(toFloat64(-2147483647.9), 'Decimal(9, 0)');
-SELECT CAST(toFloat64(-2147483648.5), 'Decimal(9, 0)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(toFloat64(-2147483648.5), 'Decimal(9, 0)');
 
 -- True overflow must still throw.
 SELECT 'True overflow still throws:';
@@ -84,8 +85,8 @@ SET cast_float_to_decimal_uses_rounding = 1;
 -- The setting also reaches the float -> `DateTime64`/`Time64` conversion paths
 -- (`toDateTime64`/`toTime64`), which internally cast through Decimal, not only `CAST(... AS Decimal)`.
 SELECT 'Float -> DateTime64 honors the rounding setting:';
-SELECT toDateTime64(2.5, 0, 'UTC') AS rounded;
-SELECT toDateTime64(2.5, 0, 'UTC') AS truncated SETTINGS cast_float_to_decimal_uses_rounding = 0;
+SELECT toDateTime64(1.5, 0, 'UTC') AS rounded;
+SELECT toDateTime64(1.5, 0, 'UTC') AS truncated SETTINGS cast_float_to_decimal_uses_rounding = 0;
 SELECT 'Float -> Time64 honors the rounding setting:';
-SELECT toTime64(2.5, 0) AS rounded;
-SELECT toTime64(2.5, 0) AS truncated SETTINGS cast_float_to_decimal_uses_rounding = 0;
+SELECT toTime64(1.5, 0) AS rounded;
+SELECT toTime64(1.5, 0) AS truncated SETTINGS cast_float_to_decimal_uses_rounding = 0;

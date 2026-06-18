@@ -1,34 +1,35 @@
 Scale 0 - positive half values:
-0.5	1
+0.5	0
 1.5	2
-2.5	3
+2.5	2
 3.5	4
 Scale 0 - negative half values:
--0.5	-1
+-0.5	0
 -1.5	-2
--2.5	-3
+-2.5	-2
 -3.5	-4
 Scale 0 - non-half rounding:
 3	-3
 2	-2
 Scale 2 - exact half values:
-1.13	-1.13
+1.12	-1.12
 2.38	-2.38
 0.88	-0.88
 Float32 input:
-1	-1
+0	0
 Edge values that round to representable limits:
 2147483647	-2147483647
 Negative edge rounding:
+-2147483648
 -2147483648
 True overflow still throws:
 Float32 non-half rounding:
 3	-3
 2	-2
 Column path matches scalar:
-0.5	1
+0.5	0
 1.5	2
--0.5	-1
+-0.5	0
 -1.5	-2
 2.7	3
 -2.7	-3
@@ -47,8 +48,8 @@ Truncation when rounding is disabled (batch):
 2.7	2
 -2.7	-2
 Float -> DateTime64 honors the rounding setting:
-1970-01-01 00:00:03
 1970-01-01 00:00:02
+1970-01-01 00:00:01
 Float -> Time64 honors the rounding setting:
-00:00:03
 00:00:02
+00:00:01

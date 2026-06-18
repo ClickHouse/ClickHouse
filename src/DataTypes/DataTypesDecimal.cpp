@@ -433,7 +433,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
         /// behavior from before `cast_float_to_decimal_uses_rounding` was introduced.
         FromFieldType out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
         if (round)
-            out = std::round(out);
+            out = std::rint(out);
 
         /// Bound at `2^(width - 1)` (i.e. `ToNativeType::max + 1`) rather than `max` itself:
         /// for signed `ToNativeType` the valid range is `[-2^(width-1), 2^(width-1) - 1]`, and
@@ -505,7 +505,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
             /// (legacy `compatibility` mode), keep the raw product so the `static_cast` below
             /// truncates toward zero.
             FromFieldType scaled = is_zero ? FromFieldType{} : from[i] * multiplier;
-            FromFieldType out = round ? std::round(scaled) : scaled;
+            FromFieldType out = round ? std::rint(scaled) : scaled;
 
             /// `!isFinite(out)` catches `inf` products from finite inputs (e.g. `Float32` ×
             /// scale-76 multiplier for `Decimal256`), where the bound itself may also be `inf`.
