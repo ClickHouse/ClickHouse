@@ -5,10 +5,14 @@
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
+#include <Common/LoggingFormatStringHelpers.h>
+
+#include <exception>
 #include <optional>
 
 #include <arrow/io/interfaces.h>
 #include <arrow/memory_pool.h>
+#include <arrow/status.h>
 
 #define ORC_MAGIC_BYTES "ORC"
 #define PARQUET_MAGIC_BYTES "PAR1"
@@ -138,6 +142,37 @@ private:
 /// through ClickHouse's `Allocator<false>`, which *can* throw
 /// `MEMORY_LIMIT_EXCEEDED`; we catch it and convert to `arrow::Status::OutOfMemory`
 /// so arrow unwinds via its normal error path.
+/// Carries the original ClickHouse exception inside arrow::Status, so that errors
+/// raised by our code called from arrow (e.g. `MEMORY_LIMIT_EXCEEDED` thrown by
+/// `ArrowMemoryPool`) can be rethrown with the original error code instead of being
+/// flattened into a string. The detail travels with the status object itself
+/// (including across arrow's internal threads and through Status::WithMessage),
+/// unlike any thread-local state.
+class ExceptionStatusDetail : public arrow::StatusDetail
+{
+public:
+    explicit ExceptionStatusDetail(std::exception_ptr exception_) : exception(std::move(exception_)) {}
+
+    const char * type_id() const override { return "DB::Exception"; }
+    std::string ToString() const override;
+
+    std::exception_ptr exception;
+};
+
+/// Converts a non-ok status to an exception. If the status carries the original
+/// ClickHouse exception (see `ExceptionStatusDetail`), rethrows it with `context`
+/// appended to the message; otherwise throws an `Exception` with `error_code` and
+/// the status text. The context format string becomes the exception's
+/// `message_format_string` (used for aggregation in `system.errors` and
+/// `system.text_log`), so it must be a literal with enough static text.
+[[noreturn]] void throwFromArrowStatus(const arrow::Status & status, int error_code, PreformattedMessage context);
+
+template <typename... Args>
+[[noreturn]] void throwFromArrowStatus(const arrow::Status & status, int error_code, FormatStringHelper<Args...> fmt, Args &&... args)
+{
+    throwFromArrowStatus(status, error_code, PreformattedMessage::create(std::move(fmt), std::forward<Args>(args)...));
+}
+
 class ArrowMemoryPool : public arrow::MemoryPool
 {
 public:

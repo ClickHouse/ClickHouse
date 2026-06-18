@@ -97,6 +97,7 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     return res;
 }
 
+void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeProjection>(

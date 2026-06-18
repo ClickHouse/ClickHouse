@@ -443,7 +443,7 @@ void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Po
 
     parent_path = PathGetter::fromConfig(key, config);
 
-    name = StringGetter(NumberGetter::fromConfig(key + ".name_length", config, 5));
+    name = StringGetter(NumberGetter::fromConfig(key + ".name_length", config, 10));
 
     if (config.has(key + ".data"))
         data = StringGetter::fromConfig(key + ".data", config);
