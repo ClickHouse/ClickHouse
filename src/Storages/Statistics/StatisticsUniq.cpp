@@ -50,6 +50,11 @@ void StatisticsUniq::build(const ColumnPtr & column)
 void StatisticsUniq::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
+    /// If the column type changed between parts (e.g. via a concurrent ALTER that wraps it in Nullable),
+    /// the null-wrapper shifts the aggregate state layout and makes the two states incompatible.
+    /// Merging them would corrupt memory; skip instead.
+    if (collector->sizeOfData() != other->collector->sizeOfData())
+        return;
     collector->merge(data, other->data, arena.get());
 }
 
