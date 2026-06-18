@@ -52,7 +52,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int QUERY_IS_PROHIBITED;
@@ -78,7 +78,7 @@ BlockIO InterpreterDeleteQuery::execute()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
     /// The WHERE predicate is read to select the rows to delete, so it requires SELECT on its columns
     /// (virtual columns excluded, as in a plain SELECT). Checked with the resolved storage.
