@@ -344,6 +344,43 @@ class TestUnnestJoinRewrite(unittest.TestCase):
         sql = "SELECT * FROM t JOIN (SELECT unnest(arr) AS a) u USING (id)"
         self.assertEqual(rewrite_query(sql), sql)
 
+    def test_join_unnest_qualified_table_alias_left_unchanged(self):
+        # `UNNEST(arr) AS u(x)` in JOIN position would rewrite to
+        # `ARRAY JOIN arr AS x`, which drops the table alias `u`. Because the
+        # projection references `u.x`, the rewrite would leave `u` unresolved, so
+        # the whole construct must be left unchanged instead.
+        sql = "SELECT u.x FROM t CROSS JOIN UNNEST(arr) AS u(x)"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_join_arrayjoin_qualified_table_alias_left_unchanged(self):
+        # The `arrayJoin(arr) AS tag (TagName)` form has the same alias loss; a
+        # qualified projection `tag.TagName` keeps the construct unchanged.
+        sql = "SELECT tag.TagName FROM t LEFT JOIN arrayJoin(arr) AS tag (TagName) ON TRUE"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_join_unnest_unqualified_column_still_rewritten(self):
+        # The table alias `u` is never referenced as a qualifier, so the rewrite
+        # is safe: the column alias `x` is reachable unqualified after the
+        # `ARRAY JOIN`.
+        self.assertEqual(
+            rewrite_query("SELECT x FROM t CROSS JOIN UNNEST(arr) AS u(x)"),
+            "SELECT x FROM t \nARRAY JOIN arr AS x",
+        )
+
+    def test_join_subquery_qualified_table_alias_left_unchanged(self):
+        # The subquery `UNNEST` path has the same alias loss: the rewrite to
+        # `ARRAY JOIN arr AS tag` drops `u`, so a `u.tag` projection keeps the
+        # construct unchanged.
+        sql = "SELECT u.tag FROM t CROSS JOIN (SELECT unnest(arr) AS a) u(tag) ON TRUE"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_join_subquery_unqualified_column_still_rewritten(self):
+        # No qualified `u.` reference, so the subquery collapse is safe.
+        self.assertEqual(
+            rewrite_query("SELECT tag FROM t CROSS JOIN (SELECT unnest(arr) AS a) u(tag) ON TRUE"),
+            "SELECT tag FROM t ARRAY JOIN arr AS tag",
+        )
+
 
 class TestJsonExtractRewrite(unittest.TestCase):
     def test_arrow_text_operator_simple_identifier(self):

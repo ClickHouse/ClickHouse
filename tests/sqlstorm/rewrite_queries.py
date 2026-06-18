@@ -294,6 +294,27 @@ def rewrite_functions(sql):
     return sql
 
 
+def alias_used_as_qualifier(alias, *contexts):
+    """True if `alias` is used as a table qualifier (`alias.column`) in any of
+    the given SQL fragments.
+
+    `UNNEST(arr) AS u(x)` / `(SELECT unnest(arr) AS a) u(x)` in JOIN position is
+    rewritten to `ARRAY JOIN arr AS x`, which exposes the unnested column
+    unqualified: the table alias `u` no longer exists afterwards. If the query
+    still references that alias as a qualifier (`u.x`) anywhere outside the table
+    expression, dropping it would leave the reference unresolved, so the caller
+    leaves the whole construct unchanged instead. The `FROM`-position path keeps
+    the alias via a subquery wrapper and does not need this guard.
+
+    The lookbehind keeps the match precise: it skips `xu.` (a longer identifier
+    ending in the alias) and `t.u.` (where the alias is an inner component of a
+    different qualified name)."""
+    if not alias:
+        return False
+    pat = re.compile(r'(?<![\w.])' + re.escape(alias) + r'\s*\.', re.IGNORECASE)
+    return any(pat.search(ctx) for ctx in contexts if ctx)
+
+
 def rewrite_unnest_lateral(sql):
     """
     Rewrite LATERAL and `JOIN (SELECT unnest(expr) AS col) ... ON TRUE` patterns.
@@ -367,9 +388,11 @@ def rewrite_unnest_lateral(sql):
         # parenthesis.
         after = sql[paren_end + 1:]
         pos = 0
+        table_alias = None
         alias_m = re.match(r'\s*(?:AS\s+)?(\w+)(?:\s*\(\s*(\w+)\s*\))?', after, re.IGNORECASE)
         if alias_m and alias_m.group(1).upper() not in _NOT_AN_ALIAS:
             pos = alias_m.end()
+            table_alias = alias_m.group(1)
             if alias_m.group(2):
                 col = alias_m.group(2)
         # Consume a no-op `ON TRUE`. A genuine join condition cannot be expressed
@@ -392,6 +415,15 @@ def rewrite_unnest_lateral(sql):
             # Without `ON TRUE`, a following comma would also merge the next FROM
             # item into the ARRAY JOIN expression list, and a leftover `(` means
             # the alias tail was not fully parsed; be conservative in all cases.
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
+        # `ARRAY JOIN` exposes the unnested column unqualified, so the table
+        # alias (`u` in `(SELECT unnest(arr) AS a) u(tag)`) ceases to exist. If
+        # the query references it as a qualifier (`u.tag`) outside the table
+        # expression, leave the whole construct unchanged rather than emit an
+        # unresolved reference.
+        if alias_used_as_qualifier(table_alias, sql[:m.start()], after[pos:]):
             result.append(sql[i:m.end()])
             i = m.end()
             continue
@@ -585,6 +617,17 @@ def rewrite_arrayjoin_to_array_join(sql):
         # conservative guard in `rewrite_unnest_lateral` and leave the construct
         # unchanged in both cases.
         if re.match(r'\s*[,(]', rest):
+            result.append(sql[i:paren_end + 1])
+            i = paren_end + 1
+            continue
+
+        # The comma/`JOIN` rewrite to `ARRAY JOIN expr AS col` drops the table
+        # alias (`u` in `UNNEST(arr) AS u(x)`); only the column alias survives.
+        # If the query references that table alias as a qualifier (`u.x`) outside
+        # the table expression, leave the construct unchanged so the reference
+        # does not become unresolved. The `FROM` path below keeps the alias via a
+        # subquery wrapper and is exempt.
+        if not wrap_in_subquery and alias_used_as_qualifier(alias, new_prefix, rest):
             result.append(sql[i:paren_end + 1])
             i = paren_end + 1
             continue
