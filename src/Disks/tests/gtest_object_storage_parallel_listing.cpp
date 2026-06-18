@@ -7,11 +7,12 @@
 
 #include <atomic>
 #include <algorithm>
-#include <cstdio>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <fmt/format.h>
 
 using namespace DB;
 
@@ -27,6 +28,10 @@ struct FakeS3
     std::vector<std::string> keys; /// sorted, unique
     size_t page_size = 1000;
     mutable std::atomic<size_t> requests{0};
+    /// Requests that used a non-empty `StartAfter` and requests that used an empty `Delimiter` — both are
+    /// unsupported by S3 Express / directory buckets, so the gated (no-keyspace-split) path must avoid them.
+    mutable std::atomic<size_t> requests_with_start_after{0};
+    mutable std::atomic<size_t> requests_with_empty_delimiter{0};
 
     void add(std::string key) { keys.push_back(std::move(key)); }
 
@@ -40,10 +45,13 @@ struct FakeS3
         const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & token) const
     {
         requests.fetch_add(1, std::memory_order_relaxed);
+        if (!start_after.empty())
+            requests_with_start_after.fetch_add(1, std::memory_order_relaxed);
+        if (delimiter.empty())
+            requests_with_empty_delimiter.fetch_add(1, std::memory_order_relaxed);
 
         const std::string & marker = token.empty() ? start_after : token;
-        const bool marker_is_group = !delimiter.empty() && marker.size() >= delimiter.size()
-            && marker.compare(marker.size() - delimiter.size(), delimiter.size(), delimiter) == 0;
+        const bool marker_is_group = !delimiter.empty() && marker.ends_with(delimiter);
 
         ObjectStorageListResult res;
         size_t count = 0;
@@ -52,13 +60,13 @@ struct FakeS3
 
         for (const auto & key : keys)
         {
-            if (key.size() < prefix.size() || key.compare(0, prefix.size(), prefix) != 0)
+            if (!key.starts_with(prefix))
                 continue;
             if (!marker.empty())
             {
                 if (key <= marker)
                     continue;
-                if (marker_is_group && key.size() >= marker.size() && key.compare(0, marker.size(), marker) == 0)
+                if (marker_is_group && key.starts_with(marker))
                     continue; /// already covered by the previously emitted common prefix
             }
 
@@ -118,7 +126,7 @@ std::vector<std::string> expectedUnder(const FakeS3 & s3, const std::string & pr
 {
     std::vector<std::string> e;
     for (const auto & k : s3.keys)
-        if (k.size() >= prefix.size() && k.compare(0, prefix.size(), prefix) == 0)
+        if (k.starts_with(prefix))
             e.push_back(k);
     std::sort(e.begin(), e.end());
     return e;
@@ -167,6 +175,69 @@ TEST(ObjectStorageParallelListing, FlatBigDirectoryUUIDs)
     assertCompleteForAllParallelism(s3, "mb/flat/", expectedUnder(s3, "mb/flat/"));
 }
 
+TEST(ObjectStorageParallelListing, KeyspaceSplitCanBeDisabledForDirectoryBuckets)
+{
+    /// S3 Express / directory buckets reject `StartAfter` and only allow the '/' delimiter, so for them
+    /// keyspace splitting is disabled. The same big flat directory must still be listed completely, but
+    /// only via serial pagination — never issuing a `StartAfter` request or an empty delimiter — while the
+    /// hierarchical delimiter walk (used here only at the root) stays available.
+    auto fill = [](FakeS3 & s3)
+    {
+        const char * hex = "0123456789abcdef";
+        for (size_t i = 0; i < 6000; ++i)
+        {
+            std::string name = "mb/flat/";
+            size_t x = i * 2654435761u + 12345u;
+            for (size_t c = 0; c < 16; ++c)
+            {
+                name.push_back(hex[x & 0xf]);
+                x = x * 1103515245u + 12345u;
+            }
+            name += ".txt.zst";
+            s3.add(std::move(name));
+        }
+        s3.finalize();
+    };
+
+    std::vector<std::string> expected;
+    {
+        FakeS3 s3;
+        fill(s3);
+        expected = expectedUnder(s3, "mb/flat/");
+    }
+
+    /// Sanity check the gate is meaningful: with splitting enabled, this uniform directory IS split, so
+    /// `StartAfter` and empty-delimiter requests are indeed issued.
+    {
+        FakeS3 s3;
+        s3.page_size = 50;
+        fill(s3);
+        ObjectStorageParallelListingIterator iterator(
+            "mb/flat/", 16, /* max_buffered_keys */ 256, makeListLevel(s3), descendAll, /* allow_keyspace_split */ true);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected);
+        EXPECT_GT(s3.requests_with_start_after.load(), 0u);
+        EXPECT_GT(s3.requests_with_empty_delimiter.load(), 0u);
+    }
+
+    /// With splitting disabled, the listing is still complete, but no `StartAfter` and no empty delimiter
+    /// are ever sent, regardless of the requested parallelism.
+    for (size_t threads : {1, 4, 16})
+    {
+        FakeS3 s3;
+        s3.page_size = 50;
+        fill(s3);
+        ObjectStorageParallelListingIterator iterator(
+            "mb/flat/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), descendAll, /* allow_keyspace_split */ false);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+        EXPECT_EQ(s3.requests_with_start_after.load(), 0u) << "threads=" << threads;
+        EXPECT_EQ(s3.requests_with_empty_delimiter.load(), 0u) << "threads=" << threads;
+    }
+}
+
 TEST(ObjectStorageParallelListing, GapsOutsideSampledAlphabet)
 {
     /// Mostly hex keys, plus a handful whose first byte after the prefix is OUTSIDE the hex alphabet
@@ -205,11 +276,7 @@ TEST(ObjectStorageParallelListing, SharedLongPrefixThenDiverge)
     FakeS3 s3;
     s3.page_size = 30;
     for (size_t i = 0; i < 2000; ++i)
-    {
-        char buf[8];
-        std::snprintf(buf, sizeof(buf), "%05zu", i);
-        s3.add("d/common_prefix_part_" + std::string(buf));
-    }
+        s3.add(fmt::format("d/common_prefix_part_{:05}", i));
     s3.finalize();
 
     assertCompleteForAllParallelism(s3, "d/", expectedUnder(s3, "d/"));
@@ -256,11 +323,7 @@ TEST(ObjectStorageParallelListing, HierarchicalTree)
     for (int y = 2020; y <= 2023; ++y)
         for (int m = 1; m <= 12; ++m)
             for (int f = 0; f < 30; ++f)
-            {
-                char buf[64];
-                std::snprintf(buf, sizeof(buf), "root/year=%d/month=%02d/data_%03d.parquet", y, m, f);
-                s3.add(buf);
-            }
+                s3.add(fmt::format("root/year={}/month={:02}/data_{:03}.parquet", y, m, f));
     s3.finalize();
 
     assertCompleteForAllParallelism(s3, "root/", expectedUnder(s3, "root/"));
