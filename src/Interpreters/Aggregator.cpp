@@ -1038,9 +1038,21 @@ void Aggregator::executeImpl(
         = requires(typename Method::Data d, typename Method::Key k) { d.erase(k); }
         && !Method::low_cardinality_optimization;
 
-    /// A heap that never rejected anything is pure overhead - freeze it and
-    /// route to the regular aggregation path (see `TopKAggregationHeap::freeze`).
-    if (params.top_k_keys > 0 && method.top_k_heap.shouldFreeze())
+    /// Freeze the heap and route to the regular aggregation path
+    /// (see `TopKAggregationHeap::freeze`) when:
+    ///   * it never rejected anything, so it is pure overhead (`shouldFreeze`), or
+    ///   * a boundary tie-set grew it past its cap (`tie_overflow`).  Freezing keeps
+    ///     every remaining group with a complete state, which is safe when a sort
+    ///     follows the aggregation (Pattern 1: the downstream `LIMIT` discards any
+    ///     evicted-rank key regardless).  Without a downstream sort
+    ///     (`top_k_requires_pruning`, Pattern 2) it is only safe if nothing was
+    ///     evicted yet, since a re-admitted evicted key would carry a partial state
+    ///     the unsorted `LIMIT` could return.
+    const bool tie_overflow_freeze_safe
+        = !params.top_k_requires_pruning || method.top_k_heap.evicted_keys == 0;
+    if (params.top_k_keys > 0 && !method.top_k_heap.frozen
+        && (method.top_k_heap.shouldFreeze()
+            || (method.top_k_heap.tie_overflow && tie_overflow_freeze_safe)))
     {
         method.top_k_heap.freeze();
         ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);

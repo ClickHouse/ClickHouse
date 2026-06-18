@@ -36,6 +36,14 @@ struct TopKAggregationHeap
     UInt64 skipped_rows = 0;
     UInt64 evicted_keys = 0;
 
+    /// Set when the boundary tie-set (keys that compare equal to the boundary and
+    /// therefore cannot be evicted) has grown the heap past `tie_overflow_limit`.
+    /// Distinct keys can tie under the heap's order (NaN payloads, or in prefix
+    /// mode every full key sharing the boundary prefix), so the tie guard can
+    /// otherwise grow the heap without bound.  The caller freezes the heap when
+    /// it is safe to do so (see `Aggregator::executeImpl`).
+    bool tie_overflow = false;
+
     static constexpr UInt64 freeze_observation_threshold = 256 * 1024;
 
     bool shouldFreeze() const
@@ -164,6 +172,8 @@ struct TopKAggregationHeap
             {
                 std::push_heap(heap_indices.begin(), heap_indices.end(), cmp);
                 compaction_threshold = std::max(compaction_threshold, heap_indices.size() + capacity / 2 + 1);
+                if (heap_indices.size() > tie_overflow_limit)
+                    tie_overflow = true;
                 break;
             }
 
@@ -208,6 +218,13 @@ private:
             ? std::numeric_limits<size_t>::max()
             : capacity + half;
         chassert(compaction_threshold >= capacity);
+
+        /// The heap may exceed `capacity` by at most `max_preallocated_rows` of
+        /// boundary-tied keys before `tie_overflow` is raised; this caps the
+        /// extra storage the tie guard can accumulate.
+        tie_overflow_limit = capacity > std::numeric_limits<size_t>::max() - max_preallocated_rows
+            ? std::numeric_limits<size_t>::max()
+            : capacity + max_preallocated_rows;
     }
 
     size_t reserveHint() const
@@ -401,6 +418,7 @@ private:
     std::vector<size_t> heap_indices;
     size_t capacity = 0;
     size_t compaction_threshold = 0;
+    size_t tie_overflow_limit = 0;  /// heap size past which `tie_overflow` is raised
 };
 
 }
