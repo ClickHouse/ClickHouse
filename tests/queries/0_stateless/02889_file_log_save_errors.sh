@@ -22,7 +22,7 @@ do
 	echo "Error $i" >> ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/b.jsonl
 done
 
-${CLICKHOUSE_CLIENT} --query "create table file_log(key UInt8, value UInt8) engine=FileLog('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/', 'JSONEachRow') settings handle_error_mode='stream';"
+${CLICKHOUSE_CLIENT} --query "create table file_log(key UInt8, value UInt8) engine=FileLog('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/', 'JSONEachRow') settings handle_error_mode='stream', poll_directory_watch_events_backoff_max=1000;"
 ${CLICKHOUSE_CLIENT} --query "create Materialized View log_errors engine=MergeTree order by tuple() as select _error as error, _raw_record as record, _filename as file from file_log where not isNull(_error);"
 
 function count()
@@ -31,16 +31,12 @@ function count()
 	echo $COUNT
 }
 
-# Wait for at least 6 error records with a bounded timeout.
-# Reduced from 20 to 6 errors (3 per file) so the FileLog background thread
-# can finish quickly even under TSAN/MSAN overhead. Normal runtime is ~14s;
-# the 300s ceiling provides headroom for the slowest random settings the
-# flaky check explores while still preventing an unbounded hang.
-# Use a lower-bound check (`-lt`) instead of exact equality: if `log_errors`
-# ever overshoots 6 (e.g. duplicate read by the FileLog background thread),
-# the final `SELECT` below will fail fast on the reference comparison
-# instead of spinning until the timeout.
-TIMEOUT=300
+# Wait for at least 6 error records. `poll_directory_watch_events_backoff_max=1000`
+# on the table above bounds the FileLog watcher's backoff to ~1s (default is 32s),
+# so detection stays fast even under sanitizer/parallel load. The timeout must stay
+# under the flaky-check 180s per-test limit; a lower-bound (`-lt`) check lets any
+# overshoot be caught immediately by the final reference comparison.
+TIMEOUT=120
 START=$EPOCHSECONDS
 while [[ $(count) -lt 6 ]]; do
 	if ((EPOCHSECONDS - START > TIMEOUT)); then
