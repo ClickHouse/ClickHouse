@@ -4138,32 +4138,12 @@ static BoolMask forAnyHyperrectangle(
     const DataTypes & data_types,
     size_t prefix_size,
     BoolMask initial_mask,
-    const Hyperrectangle * column_bounds,
+    const Hyperrectangle * key_bounds,
     F && callback)
 {
-    /// Returns the column's "wide" range used when the hyperrectangle decomposition would otherwise
-    /// widen the column to (-inf, +inf). When column_bounds is provided, it carries a tighter
-    /// fallback (e.g. the part's partition minmax for that column).
-    auto wide_range = [&](size_t i) -> Range
+    auto universe = [&](size_t i) -> Range
     {
-        if (column_bounds && i < column_bounds->size())
-            return (*column_bounds)[i];
-        if (isNullableOrLowCardinalityNullable(data_types[i]))
-            return Range::createWholeUniverse();
-        return Range::createWholeUniverseWithoutNull();
-    };
-
-    /// Intersect a one-sided range with the column's fallback bound if any. If the result is
-    /// empty (the granule's open side and the partition minmax do not overlap, which is
-    /// theoretically possible but not expected in practice), keep the original range so the
-    /// callback can still evaluate; the worst case is no extra pruning.
-    auto tighten = [&](Range r, size_t i) -> Range
-    {
-        if (!column_bounds || i >= column_bounds->size())
-            return r;
-        if (auto intersected = r.intersectWith((*column_bounds)[i]))
-            return *intersected;
-        return r;
+        return key_bounds ? (*key_bounds)[i] : createTypeAwareWholeUniverse(data_types[i]);
     };
 
     if (!left_bounded && !right_bounded)
@@ -4193,13 +4173,9 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = tighten(
-                Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size])),
-                prefix_size);
+            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, universe(prefix_size));
         else if (right_bounded)
-            hyperrectangle[prefix_size] = tighten(
-                Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size])),
-                prefix_size);
+            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, universe(prefix_size));
 
         return callback(hyperrectangle);
     }
@@ -4209,16 +4185,12 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded && right_bounded)
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
     else if (left_bounded)
-        hyperrectangle[prefix_size] = tighten(
-            Range::createLeftBounded(left_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size])),
-            prefix_size);
+        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, universe(prefix_size));
     else if (right_bounded)
-        hyperrectangle[prefix_size] = tighten(
-            Range::createRightBounded(right_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size])),
-            prefix_size);
+        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, universe(prefix_size));
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
-        hyperrectangle[i] = wide_range(i);
+        hyperrectangle[i] = universe(i);
 
     auto result = BoolMask::combine(initial_mask, callback(hyperrectangle));
 
@@ -4235,7 +4207,7 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, column_bounds, callback));
+                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
 
         if (result.isComplete())
             return result;
@@ -4249,7 +4221,7 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, column_bounds, callback));
+                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
     }
 
     return result;
@@ -4262,20 +4234,14 @@ BoolMask KeyCondition::checkInRange(
     const FieldRef * right_keys,
     const DataTypes & data_types,
     BoolMask initial_mask,
-    const Hyperrectangle * column_bounds) const
+    const Hyperrectangle * key_bounds) const
 {
     Hyperrectangle key_ranges;
-
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
-    {
-        if (isNullableOrLowCardinalityNullable(data_types[i]))
-            key_ranges.push_back(Range::createWholeUniverse());
-        else
-            key_ranges.push_back(Range::createWholeUniverseWithoutNull());
-    }
+        key_ranges.push_back(createTypeAwareWholeUniverse(data_types[i]));
 
-    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask, column_bounds,
+    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask, key_bounds,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
