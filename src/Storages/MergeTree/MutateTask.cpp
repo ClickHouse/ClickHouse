@@ -121,6 +121,12 @@ enum class ExecuteTTLType : uint8_t
 namespace MutationHelpers
 {
 
+/// Placeholder substream that `getColumnsForNewDataPart` records for a column that will be written
+/// later by the mutation and is therefore not yet present in the part. It is not a real stream and
+/// must never be resolved against the source part's checksums (a part may happen to contain a real
+/// column whose name collides with this sentinel).
+static const String NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER = "dummy";
+
 static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
 {
     for (const auto & command : commands)
@@ -808,7 +814,7 @@ getColumnsForNewDataPart(
             if (fill_columns_substreams)
             {
                 new_columns_substreams.addColumn(it->name);
-                new_columns_substreams.addSubstreamToLastColumn("dummy");
+                new_columns_substreams.addSubstreamToLastColumn(NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER);
             }
 
             ++it;
@@ -985,8 +991,19 @@ static std::unordered_map<String, size_t> getStreamCounts(
             bool resolved_all = !recorded_substreams->empty();
             for (const auto & substream : *recorded_substreams)
             {
-                /// The placeholder substreams of not-yet-written columns in a new part won't resolve
-                /// here; fall back to enumeration in that case to preserve the previous behaviour.
+                /// A not-yet-written column in a new part carries only the placeholder substream
+                /// (see getColumnsForNewDataPart). It is not a real stream, and it must not be
+                /// resolved against the source checksums: a part may contain an unrelated column
+                /// whose name happens to collide with the placeholder, and resolving it would mark
+                /// that unchanged stream as skipped, dropping it from the new part. Fall back to
+                /// enumeration in that case to preserve the previous behaviour.
+                if (substream == NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER)
+                {
+                    resolved_all = false;
+                    break;
+                }
+
+                /// Other substreams that don't resolve (e.g. placeholders of old parts) also fall back.
                 if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part_checksums))
                     resolved.push_back(std::move(*stream_name));
                 else
