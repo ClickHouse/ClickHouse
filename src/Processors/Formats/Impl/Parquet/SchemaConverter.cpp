@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
+#include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -121,6 +122,11 @@ NamesAndTypesList SchemaConverter::inferSchema()
 
 std::optional<size_t> SchemaConverter::processSubtree(String name, bool requested, DataTypePtr type_hint, SchemaContext schema_context)
 {
+    /// A deeply nested schema (e.g. a long chain of REQUIRED groups) recurses here per level.
+    /// The definition-level cap below only counts OPTIONAL/REPEATED nesting, so without this an
+    /// untrusted file could overflow the stack (uncatchable crash) instead of throwing.
+    checkStackSize();
+
     if (type_hint)
         chassert(requested);
     if (schema_idx >= file_metadata.schema.size())
