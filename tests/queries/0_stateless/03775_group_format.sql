@@ -41,7 +41,8 @@ select groupFormat('JSONEachRow')(NULL) from numbers(3);
 select groupFormat('JSONEachRow')(if(number = 0, NULL, number)) from numbers(3) settings optimize_rewrite_aggregate_function_with_if = 1;
 select groupFormat('JSONEachRow')(if(number = 0, NULL, number)) from numbers(3) settings optimize_rewrite_aggregate_function_with_if = 0;
 
--- State round-trip: serialize then deserialize via finalizeAggregation.
+-- Finalize an in-memory state. This does not exercise the binary `serialize` / `deserialize`;
+-- see `04342_group_format_serialization` for the on-disk aggregate-state round-trip.
 select finalizeAggregation(groupFormatState('JSONEachRow')(number, toString(number))) from numbers(3);
 
 -- State merge: two partial states merged via groupFormatMerge (order-independent check).
@@ -60,7 +61,7 @@ from
     )
 );
 
--- Equivalence: direct aggregation vs state round-trip must produce the same result.
+-- Equivalence: direct aggregation vs in-memory state finalization must produce the same result.
 select
     groupFormat('JSONEachRow')(number) as direct,
     finalizeAggregation(groupFormatState('JSONEachRow')(number)) as via_state,
