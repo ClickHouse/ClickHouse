@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <algorithm>
+#include <cstdint>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -106,6 +107,25 @@ struct FakeS3
     }
 };
 
+/// A well-distributed `digits`-hex-digit name derived from `i` (splitmix64). A plain LCG sampled at its
+/// low bits (`hex[x & 0xf]`) is unusable here: the low nibble of an LCG cycles with a tiny period that does
+/// not depend on the seed's high bits, so all `i` sharing `i mod 16` collapse to one name (~16 distinct
+/// keys total) and a flat directory is never actually split. This yields ~`n` distinct keys with a uniform
+/// first byte, so keyspace splitting is genuinely exercised. `digits` must be <= 16.
+std::string hexName(uint64_t i, size_t digits = 16)
+{
+    uint64_t z = i + 0x9E3779B97F4A7C15ULL;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    z = z ^ (z >> 31);
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string s;
+    s.reserve(digits);
+    for (size_t c = 0; c < digits; ++c)
+        s.push_back(hex[(z >> (c * 4)) & 0xf]);
+    return s;
+}
+
 ObjectStorageParallelListingIterator::ListLevelFunction makeListLevel(const FakeS3 & s3)
 {
     return [&s3](const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & token)
@@ -156,20 +176,8 @@ TEST(ObjectStorageParallelListing, FlatBigDirectoryUUIDs)
     /// must be split by keyspace. Mimics musicbrainz/mlhdplus-complete.
     FakeS3 s3;
     s3.page_size = 50;
-    const char * hex = "0123456789abcdef";
-    /// Deterministic pseudo-random hex names (no Math.random available; derive from index).
     for (size_t i = 0; i < 6000; ++i)
-    {
-        std::string name = "mb/flat/";
-        size_t x = i * 2654435761u + 12345u;
-        for (size_t c = 0; c < 16; ++c)
-        {
-            name.push_back(hex[x & 0xf]);
-            x = x * 1103515245u + 12345u;
-        }
-        name += ".txt.zst";
-        s3.add(std::move(name));
-    }
+        s3.add("mb/flat/" + hexName(i) + ".txt.zst");
     s3.finalize();
 
     assertCompleteForAllParallelism(s3, "mb/flat/", expectedUnder(s3, "mb/flat/"));
@@ -183,19 +191,8 @@ TEST(ObjectStorageParallelListing, KeyspaceSplitCanBeDisabledForDirectoryBuckets
     /// hierarchical delimiter walk (used here only at the root) stays available.
     auto fill = [](FakeS3 & s3)
     {
-        const char * hex = "0123456789abcdef";
         for (size_t i = 0; i < 6000; ++i)
-        {
-            std::string name = "mb/flat/";
-            size_t x = i * 2654435761u + 12345u;
-            for (size_t c = 0; c < 16; ++c)
-            {
-                name.push_back(hex[x & 0xf]);
-                x = x * 1103515245u + 12345u;
-            }
-            name += ".txt.zst";
-            s3.add(std::move(name));
-        }
+            s3.add("mb/flat/" + hexName(i) + ".txt.zst");
         s3.finalize();
     };
 
@@ -245,18 +242,8 @@ TEST(ObjectStorageParallelListing, GapsOutsideSampledAlphabet)
     /// alphabet-bucket split would miss them; contiguous range-tiling must still cover them.
     FakeS3 s3;
     s3.page_size = 40;
-    const char * hex = "0123456789abcdef";
     for (size_t i = 0; i < 3000; ++i)
-    {
-        std::string name = "p/";
-        size_t x = i * 40503u + 7u;
-        for (size_t c = 0; c < 12; ++c)
-        {
-            name.push_back(hex[x & 0xf]);
-            x = x * 22695477u + 1u;
-        }
-        s3.add(std::move(name));
-    }
+        s3.add("p/" + hexName(i, 12));
     /// Keys with first-byte well outside the hex range, spread across the byte space.
     for (char weird : {'!', '%', '-', '.', 'A', 'Z', '_', '~'})
         for (int j = 0; j < 5; ++j)
@@ -335,19 +322,9 @@ TEST(ObjectStorageParallelListing, MixedHierarchicalAndFlat)
     /// hierarchical descent and keyspace splitting).
     FakeS3 s3;
     s3.page_size = 25;
-    const char * hex = "0123456789abcdef";
     for (int p = 0; p < 8; ++p)
         for (size_t i = 0; i < 400; ++i)
-        {
-            std::string name = "m/part=" + std::to_string(p) + "/";
-            size_t x = (p * 1000 + i) * 2654435761u + 1u;
-            for (size_t c = 0; c < 10; ++c)
-            {
-                name.push_back(hex[x & 0xf]);
-                x = x * 1103515245u + 12345u;
-            }
-            s3.add(std::move(name));
-        }
+            s3.add("m/part=" + std::to_string(p) + "/" + hexName(p * 1000 + i, 10));
     s3.finalize();
 
     assertCompleteForAllParallelism(s3, "m/", expectedUnder(s3, "m/"));
