@@ -41,7 +41,7 @@ def test_storage_policy_configuration_change(started_cluster):
     node.start_clickhouse()
 
 
-def test_alter_storage_policy_with_empty_directory(started_cluster):
+def test_alter_storage_policy_with_empty_contents(started_cluster):
     node.query(
         "CREATE TABLE test_empty_dir (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'disk1_only_policy'"
     )
@@ -68,9 +68,20 @@ def test_alter_storage_policy_with_empty_directory(started_cluster):
     )
 
     node.query("ALTER TABLE test_empty_dir MODIFY SETTING storage_policy = 'test_policy'")
-    assert node.query(
-        "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 'test_empty_dir'"
-    ).strip().startswith("/var/lib/clickhouse2")
+    assert (
+        node.query(
+            """
+            SELECT count() > 0
+            FROM system.storage_policies
+            WHERE policy_name = (
+                SELECT storage_policy
+                FROM system.tables
+                WHERE database = currentDatabase() AND name = 'test_empty_dir'
+            ) AND has(disks, 'disk2')
+            """
+        )
+        == "1\n"
+    )
     assert node.query("SELECT * FROM test_empty_dir") == "1\n"
 
     node.query("DROP TABLE test_empty_dir")
