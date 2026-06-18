@@ -1,3 +1,8 @@
+-- Tags: no-old-analyzer
+-- The `EXPLAIN SYNTAX` below renders differently under the old analyzer, which expands `*` and pushes
+-- the predicate into the subquery, so this test runs only with the (default) new analyzer. The numeric
+-- assertions are analyzer-independent (the construction settings are applied by wrapping in `executeQuery`).
+
 -- Tests the query-construction settings (`select` / `filter` / `order` / `sort` and
 -- `limit` / `offset` / `page`). They shape a query's *result*, materialized by wrapping the
 -- (sub)query as a derived table in `executeQuery` rather than folded into the query tree by the
