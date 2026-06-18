@@ -39,7 +39,8 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     size_t num_threads_,
     size_t max_buffered_keys_,
     ListLevelFunction list_level_,
-    std::function<bool(const std::string & common_prefix)> should_descend_)
+    std::function<bool(const std::string & common_prefix)> should_descend_,
+    bool allow_keyspace_split_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
     , list_level(std::move(list_level_))
@@ -55,7 +56,9 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     ListRange root;
     root.prefix = std::move(root_prefix_);
     root.split_pos = root.prefix.size();
-    root.split_budget = FLAT_SPLIT_BUDGET;
+    /// A zero budget disables flat keyspace splitting (and the `StartAfter`/empty-delimiter requests it
+    /// issues), so a flat directory is paginated serially; the hierarchical delimiter walk is unaffected.
+    root.split_budget = allow_keyspace_split_ ? FLAT_SPLIT_BUDGET : 0;
     root.use_delimiter = true;
     ranges_to_list.push_back(std::move(root));
     outstanding_ranges = 1;

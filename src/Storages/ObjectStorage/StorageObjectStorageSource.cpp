@@ -1343,7 +1343,8 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 list_object_parallelism,
                 /* max_buffered_keys */ list_object_keys_size * list_object_parallelism * 2,
                 std::move(list_level),
-                makeShouldDescendPredicate(key_with_globs.path));
+                makeShouldDescendPredicate(key_with_globs.path),
+                /* allow_keyspace_split */ object_storage->supportsListingKeyspaceSplit());
         }
         else
         {

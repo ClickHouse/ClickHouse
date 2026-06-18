@@ -221,6 +221,14 @@ public:
     /// (common prefixes) concurrently instead of listing the whole prefix in a single serial stream.
     virtual bool supportsDelimitedListing() const { return false; }
 
+    /// Whether a big flat "directory" (no sub-"directories") may be listed in parallel by splitting its
+    /// keyspace. The split issues `listObjectsSingleLevel` requests that resume strictly after an arbitrary
+    /// key (`start_after`) and use an empty delimiter to list a raw key range recursively. Some endpoints
+    /// (e.g. S3 Express / directory buckets) do not support `StartAfter` and only allow the '/' delimiter,
+    /// so for them this must return false and flat ranges fall back to serial pagination (the hierarchical
+    /// delimiter walk, which uses only '/' and continuation tokens, stays available).
+    virtual bool supportsListingKeyspaceSplit() const { return false; }
+
     /// List a single "directory level" under `path_prefix`, grouping deeper keys by `delimiter`.
     /// Unlike `listObjects`/`iterate` (which list recursively), this returns only the keys directly
     /// under the prefix together with the immediate sub-"directories" (common prefixes).

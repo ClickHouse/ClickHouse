@@ -49,12 +49,17 @@ public:
     /// `should_descend(common_prefix)` decides whether a discovered sub-"directory" might contain a key
     /// of interest. It may be called concurrently. Returning `true` when unsure is safe.
     /// `max_buffered_keys` softly bounds how many keys may be buffered ahead of the consumer.
+    /// `allow_keyspace_split` enables splitting a big flat directory by keyspace (issuing `start_after`
+    /// requests with an empty delimiter). Set it to false for storages that do not support `StartAfter`
+    /// or a non-'/' delimiter (e.g. S3 Express / directory buckets); such flat ranges are then paginated
+    /// serially, while the hierarchical delimiter walk stays parallel.
     ObjectStorageParallelListingIterator(
         std::string root_prefix_,
         size_t num_threads_,
         size_t max_buffered_keys_,
         ListLevelFunction list_level_,
-        std::function<bool(const std::string & common_prefix)> should_descend_);
+        std::function<bool(const std::string & common_prefix)> should_descend_,
+        bool allow_keyspace_split_ = true);
 
     ~ObjectStorageParallelListingIterator() override;
 
