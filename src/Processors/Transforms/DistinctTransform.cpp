@@ -10,6 +10,7 @@ namespace ErrorCodes
 {
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chunk)
@@ -69,6 +70,9 @@ void DistinctTransform::buildFilter(
     {
         for (size_t i = 0; i < rows; ++i)
         {
+            if (isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT was cancelled");
+
             if (!(*mask)[i])
             {
                 /// Already known duplicate row (by LC index), skip insertion
@@ -84,6 +88,9 @@ void DistinctTransform::buildFilter(
     {
         for (size_t i = 0; i < rows; ++i)
         {
+            if (isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT was cancelled");
+
             auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
             /// Emit the record if there is no such key in the current set yet.
@@ -148,28 +155,44 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
         {
             const auto & col = assert_cast<const ColumnUInt8 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
+            {
+                if (isCancelled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT LC optimization was cancelled");
                 handle_index(static_cast<size_t>(col[row]), row);
+            }
             break;
         }
         case sizeof(UInt16):
         {
             const auto & col = assert_cast<const ColumnUInt16 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
+            {
+                if (isCancelled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT LC optimization was cancelled");
                 handle_index(static_cast<size_t>(col[row]), row);
+            }
             break;
         }
         case sizeof(UInt32):
         {
             const auto & col = assert_cast<const ColumnUInt32 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
+            {
+                if (isCancelled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT LC optimization was cancelled");
                 handle_index(static_cast<size_t>(col[row]), row);
+            }
             break;
         }
         case sizeof(UInt64):
         {
             const auto & col = assert_cast<const ColumnUInt64 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
+            {
+                if (isCancelled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT LC optimization was cancelled");
                 handle_index(static_cast<size_t>(col[row]), row);
+            }
             break;
         }
         default:
@@ -183,6 +206,9 @@ void DistinctTransform::transform(Chunk & chunk)
 {
     if (unlikely(!chunk.hasRows()))
         return;
+
+    if (isCancelled())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT was cancelled");
 
     /// Convert to full column, because SetVariant for sparse column is not implemented.
     removeSpecialColumnRepresentations(chunk);
