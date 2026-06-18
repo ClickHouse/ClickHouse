@@ -593,6 +593,14 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
 }
 
 
+/// Reference (don't copy) zero-length STR/BIN payloads: msgpack copies them via
+/// memcpy(dst, null, 0), which is UB under the nonnull attribute. The empty payload
+/// is never dereferenced during schema inference.
+static bool msgpackReferenceEmptyData(msgpack::type::object_type, size_t size, void *)
+{
+    return size == 0;
+}
+
 msgpack::object_handle MsgPackSchemaReader::readObject()
 {
     if (buf.eof())
@@ -607,7 +615,9 @@ msgpack::object_handle MsgPackSchemaReader::readObject()
         offset = 0;
         try
         {
-            object_handle = msgpack::unpack(buf.position(), buf.buffer().end() - buf.position(), offset);
+            object_handle = msgpack::unpack(
+                buf.position(), buf.buffer().end() - buf.position(), offset,
+                msgpackReferenceEmptyData, nullptr, msgpack::unpack_limit());
             need_more_data = false;
         }
         catch (msgpack::insufficient_bytes &)
