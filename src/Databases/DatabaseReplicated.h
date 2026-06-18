@@ -82,6 +82,8 @@ public:
     void dropTable(ContextPtr, const String & table_name, bool sync) override;
     void dropDetachedTable(
         ContextPtr local_context, const String & table_name, bool sync, const std::function<void()> & dependency_cleanup) override;
+    bool hasDetachedTableMetadataInZooKeeper(ContextPtr local_context, const String & table_name) const;
+    bool dropDetachedTableMetadataIfExistsInZooKeeper(ContextPtr local_context, const String & table_name);
     void renameTable(ContextPtr context, const String & table_name, IDatabase & to_database,
                      const String & to_table_name, bool exchange, bool dictionary) override;
     void detachTablePermanently(ContextPtr context, const String & table_name) override;

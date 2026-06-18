@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <atomic>
+#include <mutex>
 #include <tuple>
 #include <utility>
 
@@ -2286,6 +2287,42 @@ void DatabaseReplicated::dropDetachedTable(
         std::lock_guard lock{metadata_mutex};
         assertDigest(local_context);
     }
+}
+
+bool DatabaseReplicated::hasDetachedTableMetadataInZooKeeper(ContextPtr local_context, const String & table_name) const
+{
+    auto txn = local_context->getZooKeeperMetadataTransaction();
+    if (!txn || !txn->isInitialQuery())
+        return false;
+
+    String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+    return txn->getZooKeeper()->exists(metadata_zk_path);
+}
+
+bool DatabaseReplicated::dropDetachedTableMetadataIfExistsInZooKeeper(ContextPtr local_context, const String & table_name)
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::dropDetachedTableMetadataIfExistsInZooKeeper");
+    waitDatabaseStarted();
+
+    auto txn = local_context->getZooKeeperMetadataTransaction();
+    if (!txn || !txn->isInitialQuery())
+        return false;
+
+    String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+    Coordination::Stat metadata_stat;
+    if (!txn->getZooKeeper()->exists(metadata_zk_path, &metadata_stat))
+        return false;
+
+    {
+        std::lock_guard lock{metadata_mutex};
+        txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, metadata_stat.version));
+        if (!is_recovering)
+            txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(tables_metadata_digest), -1));
+    }
+
+    std::lock_guard lock{metadata_mutex};
+    assertDigest(local_context);
+    return true;
 }
 
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,

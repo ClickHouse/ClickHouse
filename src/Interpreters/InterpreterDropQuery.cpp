@@ -420,7 +420,19 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
     if (query.if_exists)
     {
         if (!database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
+        {
+            if (auto * replicated_database = typeid_cast<DatabaseReplicated *>(database.get()))
+            {
+                /// Initial `DatabaseReplicated` DDL worker can have no local detached metadata
+                /// while stale Keeper `/metadata/<table>` still exists. Clean it before `IF EXISTS` skips locally.
+                if (replicated_database->hasDetachedTableMetadataInZooKeeper(context_, table_name))
+                {
+                    context_->checkAccess(AccessType::DROP_TABLE, table_id);
+                    replicated_database->dropDetachedTableMetadataIfExistsInZooKeeper(context_, table_name);
+                }
+            }
             return {};
+        }
     }
     if (!database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
