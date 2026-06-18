@@ -14,6 +14,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -139,8 +140,34 @@ String extractQueryTextFromField(const Field & field, const DataTypePtr & type, 
     return field.safeGet<String>();
 }
 
+/// `eval(SELECT ...)` and `view(SELECT ...)` produce an `ASTFunction` whose argument is a bare
+/// `ASTSelectWithUnionQuery` (not wrapped in an `ASTSubquery`). When such a construct is nested inside
+/// a scalar expression — e.g. `eval(if(cond, eval(SELECT ...), ...))` — evaluating the surrounding
+/// expression as a constant calls `IAST::getColumnName` on the bare query node, which has no column
+/// name and raises a `LOGICAL_ERROR`. Detect these unwrapped query nodes and reject them up front
+/// with a clear message instead. A properly wrapped scalar subquery (`ASTSubquery`) is a valid part of
+/// a constant expression and is left alone.
+bool argumentContainsUnwrappedQuery(const ASTPtr & ast)
+{
+    if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        return true;
+
+    if (ast->as<ASTSubquery>())
+        return false;
+
+    for (const auto & child : ast->children)
+        if (argumentContainsUnwrappedQuery(child))
+            return true;
+
+    return false;
+}
+
 String evaluateConstantQueryText(const ASTPtr & argument, ContextPtr context)
 {
+    if (argumentContainsUnwrappedQuery(argument))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Table function `eval` argument is not a constant expression");
+
     /// The old analyzer's constant-expression path cannot evaluate some valid constants, for example lambdas in higher-order functions.
     auto evaluation_context = Context::createCopy(context);
     evaluation_context->setSetting("allow_experimental_analyzer", true);
