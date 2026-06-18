@@ -207,9 +207,13 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             /// own the counter even when a settings LimitStep sits downstream (LIMIT ... AFTER ...
             /// SETTINGS limit = N); otherwise that outer limit would shadow it and report rows after
             /// the range instead of the total scanned, diverging from normal LIMIT semantics.
-            processors.emplace_back(processor);
-            if (limit_processor)
-                limit_candidates.erase(limit_processor);
+            if (!limit_processor || limit_processor->isLimitForSettings())
+            {
+                processors.emplace_back(processor);
+                if (limit_processor)
+                    limit_candidates.erase(limit_processor);
+                continue;
+            }
             continue;
         }
 

@@ -236,7 +236,11 @@ void LimitRangeTransform::transform(Chunk & chunk)
     if (start_expression && (start_all || !started))
     {
         Block block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-        start_expression->execute(block, block.rows());
+        /// Pass the real chunk row count by reference (the `size_t & num_rows` overload) with
+        /// dry_run = false; otherwise the boundary predicate is evaluated in dry-run mode and a
+        /// zero-column block would mistakenly report 0 rows.
+        size_t start_rows = num_rows;
+        start_expression->execute(block, start_rows, /*dry_run=*/false);
         start_col = block.getByPosition(start_column_position).column;
     }
 
@@ -244,7 +248,8 @@ void LimitRangeTransform::transform(Chunk & chunk)
     if (end_expression)
     {
         Block block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-        end_expression->execute(block, block.rows());
+        size_t end_rows = num_rows;
+        end_expression->execute(block, end_rows, /*dry_run=*/false);
         end_col = block.getByPosition(end_column_position).column;
     }
 

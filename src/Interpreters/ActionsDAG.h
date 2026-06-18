@@ -595,6 +595,7 @@ struct ActionsAndProjectInputsFlag
 {
     ActionsDAG dag;
     bool project_input = false;
+    NameSet force_output_columns;
 };
 
 using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;

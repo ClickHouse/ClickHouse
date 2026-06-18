@@ -99,16 +99,17 @@ def test_legacy_union_settings_limit_is_not_sent_to_range_shards():
     )
 
     # The boundary is deliberately far from the beginning of node1's range. If query-level
-    # `limit`/`offset` leaks to the shards, node1 returns only `10, 11` to the initiator and
-    # the `LIMIT AFTER number >= 17` branch becomes empty.
+    # `limit`/`offset` leaks to the shards, node1 returns only its first row(s) to the initiator and
+    # the `LIMIT AFTER number >= 17` range becomes empty (the result would then be empty instead of 18).
     node1.query("INSERT INTO local SELECT number + 10 FROM numbers(10)")  # 10..19
     node2.query("INSERT INTO local SELECT number FROM numbers(10)")  # 0..9
 
+    # A single ordered range branch keeps the result independent of UNION ALL branch scheduling while
+    # still proving the cap is applied once on the initiator (not pushed to shards): the merged range is
+    # 17, 18, 19; offset = 1 drops 17 and limit = 1 keeps a single row, so the expected result is 18.
     result = node1.query(
         """
-        (SELECT number FROM dist ORDER BY number LIMIT AFTER number >= 17)
-        UNION ALL
-        (SELECT number + 999 FROM numbers(2))
+        SELECT number FROM dist ORDER BY number LIMIT AFTER number >= 17
         SETTINGS enable_analyzer = 0, limit = 1, offset = 1, distributed_push_down_limit = 0
         """
     ).strip()

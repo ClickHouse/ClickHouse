@@ -128,6 +128,25 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
     extern const int ILLEGAL_COLUMN;
+    extern const int UNEXPECTED_EXPRESSION;
+}
+
+namespace
+{
+
+bool astContainsArrayJoinFunction(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>())
+        if (function->name == "arrayJoin")
+            return true;
+    for (const auto & child : ast->children)
+        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
+            return true;
+    return false;
+}
+
 }
 
 namespace
@@ -1840,6 +1859,8 @@ bool SelectQueryExpressionAnalyzer::appendLimitRange(ExpressionActionsChain & ch
     {
         if (!expr)
             return;
+        if (astContainsArrayJoinFunction(expr))
+            throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
         getRootActionsForHaving(expr, only_types, step.actions()->dag);
         const auto & column_name = expr->getColumnName();
         if (!only_types)

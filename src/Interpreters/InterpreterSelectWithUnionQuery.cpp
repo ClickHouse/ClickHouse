@@ -15,6 +15,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -52,6 +53,24 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
+}
+
+namespace
+{
+
+void removeLimitOffsetSettings(ASTSelectQuery & query)
+{
+    ASTPtr settings_ast = query.settings();
+    if (!settings_ast)
+        return;
+
+    auto & settings_query = settings_ast->as<ASTSetQuery &>();
+    settings_query.changes.removeSetting("limit");
+    settings_query.changes.removeSetting("offset");
+    if (settings_query.changes.empty())
+        query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+}
+
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
@@ -141,6 +160,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             settings_offset_for_range = settings[Setting::offset];
             context->setSetting("limit", Field(UInt64(0)));
             context->setSetting("offset", Field(UInt64(0)));
+            removeLimitOffsetSettings(*select_query);
         }
         else if (!select_query->withFill() && !select_query->limit_with_ties)
         {
@@ -412,21 +432,16 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             {
                 for (const auto & child : ast->list_of_selects->children)
                 {
-                    if (const auto * sq = child->as<ASTSelectQuery>())
+                    if (rangeBranchNeedsTotalsDrain(child))
                     {
-                        if (sq->limitAfter() || sq->limitUntil())
-                        {
-                            if (sq->group_by_with_totals)
-                                always_read_till_end = true;
-                            if (hasWithTotalsInAnySubqueryInFromClause(*sq))
-                                always_read_till_end = true;
-                        }
+                        always_read_till_end = true;
+                        break;
                     }
                 }
             }
 
             auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), effective_limit, effective_offset, always_read_till_end);
+                query_plan.getCurrentHeader(), effective_limit, effective_offset, always_read_till_end, false, SortDescription{}, true);
             limit->setStepDescription("LIMIT OFFSET for SETTINGS");
             query_plan.addStep(std::move(limit));
         }

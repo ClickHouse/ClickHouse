@@ -16,9 +16,13 @@ SELECT * FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT 3 AFTER numb
 SELECT * FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT 3 AFTER number >= 5) ORDER BY number DESC SETTINGS enable_analyzer = 0;
 
 -- 3. Trivial GROUP BY + LIMIT n AFTER: the optimization must not set max_rows_to_group_by = n
---    which would stop aggregation before the boundary key appears.
-SELECT number % 100 AS k FROM numbers(10000) GROUP BY k LIMIT 5 AFTER k >= 50 SETTINGS optimize_trivial_group_by_limit_query = 1;
-SELECT number % 100 AS k FROM numbers(10000) GROUP BY k LIMIT 5 AFTER k >= 50 SETTINGS optimize_trivial_group_by_limit_query = 1, enable_analyzer = 0;
+--    which would stop aggregation before the boundary key appears. We assert the row count of the
+--    range window instead of the exact keys: GROUP BY output order is not deterministic, but with all
+--    100 groups computed the boundary k >= 50 is always reached (at most 50 low keys can precede it),
+--    so the window always yields exactly 5 rows. An explicit ORDER BY would make the optimization skip
+--    on `hasOrderBy` and thus stop exercising the `hasLimitAfter` guard, so it is deliberately omitted.
+SELECT count() FROM (SELECT number % 100 AS k FROM numbers(10000) GROUP BY k LIMIT 5 AFTER k >= 50 SETTINGS optimize_trivial_group_by_limit_query = 1);
+SELECT count() FROM (SELECT number % 100 AS k FROM numbers(10000) GROUP BY k LIMIT 5 AFTER k >= 50 SETTINGS optimize_trivial_group_by_limit_query = 1) SETTINGS enable_analyzer = 0;
 
 -- 4. WITH TOTALS + SETTINGS limit: the outer settings LimitStep must propagate
 --    always_read_till_end so totals are not lost.

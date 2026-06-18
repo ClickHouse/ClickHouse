@@ -3601,7 +3601,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         if (settings_limit_for_range > 0)
         {
             auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), settings_limit_for_range, settings_offset_for_range, always_read_till_end);
+                query_plan.getCurrentHeader(), settings_limit_for_range, settings_offset_for_range, always_read_till_end, false, SortDescription{}, true);
             limit->setStepDescription("LIMIT OFFSET for SETTINGS");
             query_plan.addStep(std::move(limit));
         }

@@ -126,6 +126,43 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     return false;
 }
 
+namespace
+{
+
+bool rangeSelectNeedsTotalsDrain(const ASTSelectQuery & query)
+{
+    if (!query.limitAfter() && !query.limitUntil())
+        return false;
+    if (query.group_by_with_totals)
+        return true;
+    return hasWithTotalsInAnySubqueryInFromClause(query);
+}
+
+}
+
+bool rangeBranchNeedsTotalsDrain(const ASTPtr & ast)
+{
+    if (const auto * select = ast->as<ASTSelectQuery>())
+        return rangeSelectNeedsTotalsDrain(*select);
+
+    if (const auto * union_query = ast->as<ASTSelectWithUnionQuery>())
+    {
+        for (const auto & child : union_query->list_of_selects->children)
+            if (rangeBranchNeedsTotalsDrain(child))
+                return true;
+        return false;
+    }
+
+    if (const auto * intersect_except_query = ast->as<ASTSelectIntersectExceptQuery>())
+    {
+        for (const auto & child : intersect_except_query->getListOfSelects())
+            if (rangeBranchNeedsTotalsDrain(child))
+                return true;
+    }
+
+    return false;
+}
+
 /// The parameter is_create_parameterized_view is used in getSampleBlock of the subquery.
 /// If it is set to true, then query parameters are allowed in the subquery, and that expression is not evaluated.
 static NamesAndTypesList getColumnsFromTableExpression(

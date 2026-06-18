@@ -17,6 +17,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -42,6 +43,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -647,6 +649,9 @@ LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
         if (!boundary_node)
             return;
 
+        if (hasFunctionNode(boundary_node, "arrayJoin"))
+            throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
+
         auto [boundary_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
             boundary_node,
             input_columns,
@@ -663,6 +668,7 @@ LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
 
     auto before_limit_range_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     before_limit_range_actions->dag = ActionsDAG(input_columns);
+    before_limit_range_actions->force_output_columns = required_column_names;
     auto & before_limit_range_outputs = before_limit_range_actions->dag.getOutputs();
 
     /// Keep all current stream columns and ensure boundary-predicate columns are also present.
