@@ -329,6 +329,13 @@
             color: var(--text-color-active);
         }
 
+        /* The tab being edited drops its width cap and flexes to fit the full title. */
+        .tab.editing
+        {
+            max-width: none;
+            flex-shrink: 0;
+        }
+
         .tab-close
         {
             line-height: 1;
@@ -3581,6 +3588,8 @@ function startTitleEdit(tab, titleEl) {
     titleEl.contentEditable = 'true';
     titleEl.spellcheck = false;
     titleEl.classList.add('editing');
+    /// Mark the tab so it drops its max-width and flexes to fit the title being typed.
+    titleEl.closest('.tab').classList.add('editing');
 
     /// Select the whole title for easy replacement.
     const range = document.createRange();
