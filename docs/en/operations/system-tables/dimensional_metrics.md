@@ -53,6 +53,12 @@ Indicates startup scripts failures by error type. Set to 1 when a startup script
 ### merge_tree_parts {#merge_tree_parts}
 Number of merge tree data parts, labelled by part state, part type, and whether it is a projection part.
 
+### `filesystem_cache_size_bytes` {#filesystem-cache-size-bytes}
+Filesystem cache size in bytes, labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_cache_usage_metrics_per_user`.
+
+### `filesystem_cache_elements` {#filesystem-cache-elements}
+Filesystem cache elements (file segments), labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_cache_usage_metrics_per_user`.
+
 ## See also {#see-also}
 
 - [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
