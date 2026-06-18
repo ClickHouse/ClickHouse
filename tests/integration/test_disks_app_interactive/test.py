@@ -90,7 +90,7 @@ class DisksClient(object):
 
         events = self.poller.poll(timeout)
         if not events:
-            raise TimeoutError(f"Disks client returned no output")
+            raise TimeoutError("Disks client returned no output")
 
         for fd_num, event in events:
             if event & (select.EPOLLIN | select.EPOLLPRI):

@@ -275,7 +275,7 @@ def test_backup_restore(cluster):
     )
     azure_query(
         node,
-        f"INSERT INTO test_simple_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        "INSERT INTO test_simple_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
     )
     print(get_azure_file_content("test_simple_write_c.csv", port))
     assert get_azure_file_content("test_simple_write_c.csv", port) == '1,"a"\n'
@@ -295,14 +295,14 @@ def test_backup_restore(cluster):
         f"RESTORE TABLE test_simple_write_connection_string AS test_simple_write_connection_string_restored FROM {backup_destination};",
     )
     assert (
-        azure_query(node, f"SELECT * from test_simple_write_connection_string_restored")
+        azure_query(node, "SELECT * from test_simple_write_connection_string_restored")
         == "1\ta\n"
     )
 
 
 def test_backup_restore_diff_container(cluster):
     node = cluster.instances["node"]
-    port = cluster.env_variables["AZURITE_PORT"]
+    cluster.env_variables["AZURITE_PORT"]
     azure_query(node, "DROP TABLE IF EXISTS test_simple_write_connection_string_cont1")
     azure_query(
         node,
@@ -310,7 +310,7 @@ def test_backup_restore_diff_container(cluster):
     )
     azure_query(
         node,
-        f"INSERT INTO test_simple_write_connection_string_cont1 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        "INSERT INTO test_simple_write_connection_string_cont1 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
     )
     backup_name = new_backup_name()
     backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont1', '{backup_name}')"
@@ -327,7 +327,7 @@ def test_backup_restore_diff_container(cluster):
     )
     assert (
         azure_query(
-            node, f"SELECT * from test_simple_write_connection_string_restored_cont1"
+            node, "SELECT * from test_simple_write_connection_string_restored_cont1"
         )
         == "1\ta\n"
     )
@@ -343,7 +343,7 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
     )
     azure_query(
         node,
-        f"INSERT INTO test_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        "INSERT INTO test_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
     )
     print(get_azure_file_content("test_simple_write.csv", port))
     assert get_azure_file_content("test_simple_write.csv", port) == '1,"a"\n'
@@ -361,7 +361,7 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
         f"RESTORE TABLE test_write_connection_string AS test_write_connection_string_restored FROM {backup_destination};",
     )
     assert (
-        azure_query(node, f"SELECT * from test_write_connection_string_restored")
+        azure_query(node, "SELECT * from test_write_connection_string_restored")
         == "1\ta\n"
     )
 
@@ -376,7 +376,7 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
     )
     azure_query(
         node,
-        f"INSERT INTO test_write_connection_string_2 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        "INSERT INTO test_write_connection_string_2 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
     )
     print(get_azure_file_content("test_simple_write_2.csv", port))
     assert get_azure_file_content("test_simple_write_2.csv", port) == '1,"a"\n'
@@ -394,7 +394,7 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
         f"RESTORE TABLE test_write_connection_string_2 AS test_write_connection_string_restored_2 FROM {backup_destination};",
     )
     assert (
-        azure_query(node, f"SELECT * from test_write_connection_string_restored_2")
+        azure_query(node, "SELECT * from test_write_connection_string_restored_2")
         == "1\ta\n"
     )
 
@@ -495,12 +495,12 @@ def test_backup_restore_on_merge_tree(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        f"""
+        """
         DROP TABLE IF EXISTS test_simple_merge_tree;
         CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'
         """,
     )
-    azure_query(node, f"INSERT INTO test_simple_merge_tree VALUES (1, 'a')")
+    azure_query(node, "INSERT INTO test_simple_merge_tree VALUES (1, 'a')")
 
     backup_name = new_backup_name()
     backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{backup_name}')"
@@ -508,23 +508,23 @@ def test_backup_restore_on_merge_tree(cluster):
         node,
         f"BACKUP TABLE test_simple_merge_tree TO {backup_destination}",
     )
-    azure_query(node, f"DROP TABLE IF EXISTS test_simple_merge_tree_restored")
+    azure_query(node, "DROP TABLE IF EXISTS test_simple_merge_tree_restored")
     azure_query(
         node,
         f"RESTORE TABLE test_simple_merge_tree AS test_simple_merge_tree_restored FROM {backup_destination};",
     )
     assert (
-        azure_query(node, f"SELECT * from test_simple_merge_tree_restored") == "1\ta\n"
+        azure_query(node, "SELECT * from test_simple_merge_tree_restored") == "1\ta\n"
     )
-    azure_query(node, f"DROP TABLE test_simple_merge_tree")
-    azure_query(node, f"DROP TABLE test_simple_merge_tree_restored")
+    azure_query(node, "DROP TABLE test_simple_merge_tree")
+    azure_query(node, "DROP TABLE test_simple_merge_tree_restored")
 
 
 def test_backup_restore_correct_block_ids(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        f"""
+        """
         DROP TABLE IF EXISTS test_simple_merge_tree;
         CREATE TABLE test_simple_merge_tree(key UInt64, data String)
         Engine = MergeTree()
@@ -615,7 +615,7 @@ def test_backup_restore_with_checksum_data_file_name(cluster):
         f"CREATE TABLE test (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c.csv', 'CSV')",
     )
     azure_query(
-        node, f"INSERT INTO test SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')"
+        node, "INSERT INTO test SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')"
     )
 
     backup_name = new_backup_name()
@@ -630,19 +630,19 @@ def test_backup_restore_with_checksum_data_file_name(cluster):
         node,
         f"RESTORE TABLE test AS test_restored FROM {backup_destination};",
     )
-    assert azure_query(node, f"SELECT * from test_restored") == "1\ta\n"
+    assert azure_query(node, "SELECT * from test_restored") == "1\ta\n"
 
 
 def test_backup_restore_on_merge_tree_with_checksum_data_file_name(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        f"""
+        """
         DROP TABLE IF EXISTS test;
         CREATE TABLE test(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'
         """,
     )
-    azure_query(node, f"INSERT INTO test VALUES (1, 'a')")
+    azure_query(node, "INSERT INTO test VALUES (1, 'a')")
 
     backup_name = new_backup_name()
     backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{backup_name}')"
@@ -650,14 +650,14 @@ def test_backup_restore_on_merge_tree_with_checksum_data_file_name(cluster):
         node,
         f"BACKUP TABLE test TO {backup_destination} SETTINGS data_file_name_generator='checksum'",
     )
-    azure_query(node, f"DROP TABLE IF EXISTS test_restored")
+    azure_query(node, "DROP TABLE IF EXISTS test_restored")
     azure_query(
         node,
         f"RESTORE TABLE test AS test_restored FROM {backup_destination};",
     )
-    assert azure_query(node, f"SELECT * from test_restored") == "1\ta\n"
-    azure_query(node, f"DROP TABLE test")
-    azure_query(node, f"DROP TABLE test_restored")
+    assert azure_query(node, "SELECT * from test_restored") == "1\ta\n"
+    azure_query(node, "DROP TABLE test")
+    azure_query(node, "DROP TABLE test_restored")
 
 
 def get_profile_event_count(node, event):

@@ -1,7 +1,21 @@
 """Quick tests, faster than 30 seconds"""
 
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
+import json
+import logging
+import math
+import random
+import threading
+import time
+
+from kafka import KafkaAdminClient, KafkaProducer
+import kafka.errors
+import pytest
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV, assert_eq_with_retry
+from google.protobuf.internal.encoder import _VarintBytes
 import helpers.kafka.common as k
 
 
@@ -1754,7 +1768,7 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
 
             instance.wait_for_log_line(log_line, repetitions=4)
 
-            members = k.describe_consumer_group(kafka_cluster, consumer_group)
+            k.describe_consumer_group(kafka_cluster, consumer_group)
             # pprint.pprint(members)
             # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
             # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
@@ -2451,7 +2465,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
             pm.drop_instance_zk_connections(instance)
             # FIXME: we need to make sure that this happens during writing to RMT
             instance.wait_for_log_line(
-                f"Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
+                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
                 timeout=60,
             )
 
@@ -3763,10 +3777,10 @@ def test_kafka_json_type(kafka_cluster):
         """
     )
 
-    while int(instance.query(f"SELECT count() FROM test.dst")) < 2:
+    while int(instance.query("SELECT count() FROM test.dst")) < 2:
         time.sleep(1)
 
-    result = instance.query(f"SELECT * FROM test.dst ORDER BY a;")
+    result = instance.query("SELECT * FROM test.dst ORDER BY a;")
 
     instance.query(
         f"""
@@ -3793,7 +3807,7 @@ def test_kafka_assigned_partitions(kafka_cluster):
     k.kafka_create_topic(admin_client, topic_name, num_partitions=num_partitions)
 
     metrics_before = instance.query(
-            f"""
+            """
             SELECT
                 anyIf(value, metric = 'KafkaAssignedPartitions') AS KafkaAssignedPartitions,
                 anyIf(value, metric = 'KafkaConsumersWithAssignment') AS KafkaConsumersWithAssignment

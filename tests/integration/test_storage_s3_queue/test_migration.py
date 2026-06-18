@@ -1,23 +1,16 @@
-import io
 import json
 import logging
-import random
-import string
 import time
 import uuid
-from multiprocessing.dummy import Pool
-from datetime import datetime
 import pytest
 from kazoo.exceptions import NoNodeError
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_queue_common import (
     generate_random_files,
     create_table,
     create_mv,
 )
-from helpers.config_cluster import minio_secret_key
 
 
 @pytest.fixture(autouse=True)
@@ -145,7 +138,7 @@ def test_migration(started_cluster, setting_prefix, buckets_num):
     def add_files_and_check():
         rows = 1000
         use_prefix = prefixes[prefix_ind[0]]
-        total_values = generate_random_files(
+        generate_random_files(
             started_cluster,
             files_path,
             rows,
