@@ -64,7 +64,12 @@ public:
 
             auto nested_type = array_type->getNestedType();
             if (allow_unaligned)
-                nested_type = makeNullable(nested_type);
+            {
+                if (arguments[index].type->isNullable() && checkAndGetDataType<DataTypeArray>(nested_type.get()))
+                    nested_type = makeNullableAllowingArray(nested_type);
+                else
+                    nested_type = makeNullable(nested_type);
+            }
             arguments_types.emplace_back(nested_type);
         }
 

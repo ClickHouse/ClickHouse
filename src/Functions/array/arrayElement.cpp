@@ -42,6 +42,20 @@ enum class ArrayElementExceptionMode : uint8_t
     Null /// Return ColumnNullable with NULLs if array index out of range or map key not found.
 };
 
+bool canBeWrappedInNullableAllowingArray(const IColumn & column)
+{
+    if (column.canBeInsideNullable())
+        return true;
+
+    if (checkAndGetColumn<ColumnArray>(&column))
+        return true;
+
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+        return checkAndGetColumn<ColumnArray>(&column_const->getDataColumn());
+
+    return false;
+}
+
 namespace ArrayImpl
 {
 template <ArrayElementExceptionMode mode>
@@ -2155,7 +2169,16 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
     }
 
     auto nested_type = array_type->getNestedType();
-    return is_null_mode && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
+    if constexpr (is_null_mode)
+    {
+        if (nested_type->canBeInsideNullable())
+            return makeNullable(nested_type);
+
+        if (arguments[0]->isNullable() && checkAndGetDataType<DataTypeArray>(nested_type.get()))
+            return makeNullableAllowingArray(nested_type);
+    }
+
+    return nested_type;
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2194,7 +2217,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
                 nested_result = nullable_result->getNestedColumnPtr();
             }
 
-            if (result_type->isNullable() && nested_result->canBeInsideNullable())
+            if (result_type->isNullable() && canBeWrappedInNullableAllowingArray(*nested_result))
                 return ColumnNullable::create(nested_result, std::move(null_map));
 
             return nested_result;
@@ -2224,7 +2247,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
         else
             null_map_data.resize_fill(nested_result->size(), 0);
 
-        if (nested_result->canBeInsideNullable())
+        if (canBeWrappedInNullableAllowingArray(*nested_result))
             return ColumnNullable::create(nested_result, std::move(null_map));
 
         return nested_result;
@@ -2264,7 +2287,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
         ArrayImpl::NullMapBuilder<mode> builder;
         auto res = perform(arguments, removeNullable(result_type), builder, input_rows_count);
 
-        if (builder && res->canBeInsideNullable())
+        if (builder && canBeWrappedInNullableAllowingArray(*res))
             return ColumnNullable::create(res, std::move(builder).getNullMapColumnPtr());
 
         return res;
