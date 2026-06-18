@@ -321,6 +321,9 @@ private:
     static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
+    /// Send an exception when the connection buffers are not initialized yet
+    /// (for example, when their allocation failed because the server memory limit is reached).
+    void trySendExceptionWithoutConnectionBuffers(const Exception & e);
     void sendProgress(QueryState & state);
     static void sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendLogs(QueryState & state) TSA_REQUIRES(callback_mutex);
