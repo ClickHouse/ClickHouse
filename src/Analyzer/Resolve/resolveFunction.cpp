@@ -160,6 +160,36 @@ static QueryTreeNodePtr createNotWrapper(QueryTreeNodePtr node)
     return not_fn;
 }
 
+static QueryTreeNodePtr makeTupleHasNoNullElementsPredicate(const QueryTreeNodePtr & tuple_value, size_t tuple_size)
+{
+    QueryTreeNodePtr result;
+    for (size_t i = 0; i != tuple_size; ++i)
+    {
+        auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
+        tuple_element_function->getArguments().getNodes().push_back(tuple_value->clone());
+        tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1)));
+
+        auto is_null_function = std::make_shared<FunctionNode>("isNull");
+        is_null_function->getArguments().getNodes().push_back(tuple_element_function);
+
+        auto element_is_not_null = std::make_shared<FunctionNode>("not");
+        element_is_not_null->getArguments().getNodes().push_back(is_null_function);
+
+        if (result)
+        {
+            auto and_function = std::make_shared<FunctionNode>("and");
+            and_function->getArguments().getNodes() = {std::move(result), std::move(element_is_not_null)};
+            result = std::move(and_function);
+        }
+        else
+        {
+            result = std::move(element_is_not_null);
+        }
+    }
+
+    return result;
+}
+
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
 QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     QueryTreeNodePtr array_arg,    // [1,2,number]
@@ -173,12 +203,28 @@ QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     has_fn->getArguments().getNodes().push_back(array_arg);
     has_fn->getArguments().getNodes().push_back(element_arg);
 
+    QueryTreeNodePtr in_result = has_fn;
+    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
+    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
+    /// elements to preserve `IN` semantics in the row-wise rewrite.
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(element_arg->getResultType()).get());
+        tuple_type && !tuple_type->getElements().empty())
+    {
+        auto and_fn = std::make_shared<FunctionNode>("and");
+        and_fn->getArguments().getNodes() =
+        {
+            makeTupleHasNoNullElementsPredicate(element_arg, tuple_type->getElements().size()),
+            std::move(in_result),
+        };
+        in_result = std::move(and_fn);
+    }
+
     auto null_const = std::make_shared<ConstantNode>(
         Field{},
         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
 
     auto raw_if = std::make_shared<FunctionNode>("if");
-    raw_if->getArguments().getNodes() = {is_null_fn, null_const, has_fn};
+    raw_if->getArguments().getNodes() = {is_null_fn, null_const, in_result};
 
     QueryTreeNodePtr if_node = raw_if;
     resolveFunction(if_node, scope);

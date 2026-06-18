@@ -255,6 +255,44 @@ bool isTupleFunction(const ASTPtr & ast)
     return function && function->name == "tuple";
 }
 
+size_t getTupleElementCount(const DataTypePtr & type, const ASTPtr & ast)
+{
+    if (type)
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+        if (tuple_type)
+            return tuple_type->getElements().size();
+    }
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "tuple")
+        return function->arguments->children.size();
+
+    return 0;
+}
+
+ASTPtr makeTupleHasNoNullElementsPredicate(const ASTPtr & tuple_value, size_t tuple_size)
+{
+    ASTPtr result;
+    for (size_t i = 0; i != tuple_size; ++i)
+    {
+        auto element_is_not_null = makeASTFunction(
+            "not",
+            makeASTFunction(
+                "isNull",
+                makeASTFunction(
+                    "tupleElement",
+                    tuple_value->clone(),
+                    make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1)))));
+
+        if (result)
+            result = makeASTFunction("and", std::move(result), std::move(element_is_not_null));
+        else
+            result = std::move(element_is_not_null);
+    }
+
+    return result;
+}
+
 ASTPtr makeArrayForNonConstantInRightOperand(
     const ASTPtr & right_operand,
     bool right_operand_is_array,
@@ -307,23 +345,35 @@ ASTPtr makeNonConstantInReplacement(
     bool right_operand_is_array,
     bool right_operand_tuple_function_is_set,
     const DataTypePtr & right_operand_type,
-    bool left_operand_is_tuple)
+    bool left_operand_is_tuple,
+    size_t left_operand_tuple_size)
 {
     const auto & arguments = node.arguments->children;
     const auto & left_operand = arguments.at(0);
     const auto & right_operand = arguments.at(1);
 
+    ASTPtr right_operand_array = makeArrayForNonConstantInRightOperand(
+        right_operand,
+        right_operand_is_array,
+        right_operand_tuple_function_is_set,
+        right_operand_type,
+        left_operand_is_tuple);
+
     auto has_function = makeASTFunction(
         "has",
-        makeArrayForNonConstantInRightOperand(
-            right_operand,
-            right_operand_is_array,
-            right_operand_tuple_function_is_set,
-            right_operand_type,
-            left_operand_is_tuple),
+        std::move(right_operand_array),
         left_operand->clone());
 
     ASTPtr result = has_function;
+    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
+    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
+    /// elements to preserve `IN` semantics in the row-wise rewrite.
+    if (!inFunctionComparesNulls(node.name) && left_operand_tuple_size != 0)
+        result = makeASTFunction(
+            "and",
+            makeTupleHasNoNullElementsPredicate(left_operand, left_operand_tuple_size),
+            std::move(result));
+
     if (!inFunctionComparesNulls(node.name))
     {
         result = makeFunctionCall("if",
@@ -962,7 +1012,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         right_argument_is_array,
                         right_argument_tuple_function_is_set,
                         right_argument_type,
-                        left_argument_is_tuple);
+                        left_argument_is_tuple,
+                        getTupleElementCount(left_argument_type, node.arguments->children.at(0)));
                     visit(replacement, data);
 
                     auto replacement_name = replacement->getColumnName();

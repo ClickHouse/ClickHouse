@@ -59,6 +59,10 @@ SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number +
 0	1	0
 1	1	0
 2	1	0
+SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 0;
+0	1
+SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 1;
+1	0
 SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
 FROM (SELECT materialize(NULL) AS x, materialize(2) AS y);
 \N	\N	\N	\N
@@ -139,6 +143,10 @@ SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number +
 0	1	0
 1	1	0
 2	1	0
+SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 0;
+0	1
+SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 1;
+1	0
 SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
 FROM (SELECT materialize(NULL) AS x, materialize(2) AS y);
 \N	\N	\N	\N
