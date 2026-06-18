@@ -1,9 +1,9 @@
 insert with self deduplication
-6
-6
+3
+3
 insert with deduplication by data hash
-9
-9
+6
+6
 insert with self deduplication by user token
 3
 3
@@ -11,11 +11,8 @@ insert with deduplication by user token
 6
 6
 insert with self deduplication in join mv
-6
-6
+3
+3
 1	Alice	Smith
 1	Alice	Smith
-1	Alice	Smith
-1	Alice	Smith
-2	Bob	Johnson
 2	Bob	Johnson
