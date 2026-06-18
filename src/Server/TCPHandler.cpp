@@ -1598,8 +1598,10 @@ void TCPHandler::processTablesStatusRequest()
         else if (server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth]
                  && !is_interserver_authenticated)
         {
-            /// Older client that sends no hash: rejected only when the operator has opted
-            /// in (after the whole cluster is upgraded), to avoid breaking rolling upgrades.
+            /// Older client that sends no hash: rejected by default
+            /// (`interserver_tables_status_require_auth` defaults to true). Operators can
+            /// turn the setting off as a temporary opt-out for a mixed-version rolling
+            /// upgrade.
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                 "TablesStatusRequest requires interserver authentication");
         }
