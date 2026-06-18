@@ -3293,6 +3293,12 @@ public:
                         return {true, is_constant_positive, false};
                     }
 
+                    // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
+                    // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
+                    // so the function is monotonic decreasing even though the raw constant looks positive.
+                    if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
+                        is_constant_positive = false;
+
                     // division is saturated to `inf`, thus it doesn't have overflow issues.
                     return {true, is_constant_positive, true};
                 }
@@ -3441,6 +3447,12 @@ public:
                     return {true, is_constant_positive, false, is_strict};
                 }
 
+                // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
+                // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
+                // so the function is monotonic decreasing even though the raw constant looks positive.
+                if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
+                    is_constant_positive = false;
+
                 // `divide` is floating-point (saturates, order-preserving), `intDiv` by a Float divisor
                 // computes through floating point, and `intDiv` with an unsigned result never wraps, so
                 // all are always monotonic.
@@ -3568,6 +3580,27 @@ public:
         // D <= right_point: a null right bound is +inf over the unsigned domain (== max >= D), so it crosses.
         const bool right_at_or_above = right_point.isNull() || accurateLessOrEqual(wrap_field, right_point);
         return left_below && right_at_or_above;
+    }
+
+    /// Mirror of the unsigned-dividend wrap: when the dividend is signed and the divisor is an
+    /// unsigned constant, `DivideIntegralImpl` reinterprets the divisor through `make_signed_t` of
+    /// the wider operand type. With `sizeof(dividend) <= sizeof(divisor)` an unsigned constant whose
+    /// high bit is set (`>= 2^(8 * divisor_width - 1)`) becomes negative, so `intDiv` divides by an
+    /// effectively negative value and is monotonic decreasing even though the raw constant compares
+    /// as positive (e.g. `intDiv(Int8, toUInt8(200))` == `intDiv(Int8, toInt8(-56))`). With
+    /// `sizeof(dividend) > sizeof(divisor)` the divisor widens into the dividend's signed type and
+    /// stays positive, so no flip occurs. The signed dividend is never reinterpreted, so there is no
+    /// discontinuity (unlike `intDivRangeCrossesSignedWrap`): the function is fully monotonic, only
+    /// its direction is reversed. Returns true when the divisor reinterprets as negative.
+    static bool intDivConstReinterpretsNegative(const DataTypePtr & arg_type, const DataTypePtr & divisor_type, const Field & constant)
+    {
+        if (!isInt(arg_type) || !isUInt(divisor_type))
+            return false;
+        if (arg_type->getSizeOfValueInMemory() > divisor_type->getSizeOfValueInMemory())
+            return false;
+        const size_t divisor_width_bytes = divisor_type->getSizeOfValueInMemory();
+        const Field wrap_field(UInt256(1) << (8 * divisor_width_bytes - 1));
+        return accurateLessOrEqual(wrap_field, constant);
     }
 
 private:

@@ -78,3 +78,42 @@ SELECT countSubstrings(arrayStringConcat(groupArray(explain), '\n'), 'Prefix sor
        WHERE explain LIKE '%Prefix sort description%';
 
 DROP TABLE t_intdiv_mono;
+
+-- Mirror case: signed dividend with an unsigned constant divisor whose high bit is set. DivideIntegralImpl
+-- reinterprets the divisor through make_signed_t of the wider operand, so toUInt8(200) becomes -56 and the
+-- function is monotonic DEcreasing, but the raw constant compares as positive. Without deriving the sign
+-- from the effective divisor the chain is reported increasing, building a reversed Range and aborting with
+-- Invalid binary search result in MergeTreeSetIndex. intDiv(a, toUInt8(200)) == intDiv(a, toInt8(-56)).
+CREATE TABLE t_intdiv_mono (a Int8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_intdiv_mono SELECT number - 127 FROM numbers(255);
+SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toUInt8(200)) IN (1, 2))
+     = (SELECT countIf(intDiv(a, toUInt8(200)) IN (1, 2)) FROM t_intdiv_mono);
+SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toUInt8(200)) NOT IN (0))
+     = (SELECT countIf(intDiv(a, toUInt8(200)) NOT IN (0)) FROM t_intdiv_mono);
+-- The reinterpreted divisor is negative, so read-in-order keeps intDiv in the prefix sort under DESC.
+SELECT countSubstrings(arrayStringConcat(groupArray(explain), '\n'), 'Prefix sort description: intDiv')
+       FROM (EXPLAIN actions = 1 SELECT a FROM t_intdiv_mono ORDER BY intDiv(a, toUInt8(200)) DESC
+             SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1)
+       WHERE explain LIKE '%Prefix sort description%';
+-- High bit NOT set (toUInt8(100) stays positive): no flip, still prunes correctly.
+SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toUInt8(100)) IN (0, 1))
+     = (SELECT countIf(intDiv(a, toUInt8(100)) IN (0, 1)) FROM t_intdiv_mono);
+
+DROP TABLE t_intdiv_mono;
+
+-- sizeof(dividend) > sizeof(divisor): the unsigned divisor widens into the signed dividend type and stays
+-- positive (no reinterpretation), so intDiv(Int16, toUInt8(200)) divides by +200 and stays increasing.
+CREATE TABLE t_intdiv_mono (a Int16) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_intdiv_mono SELECT number - 100 FROM numbers(200);
+SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toUInt8(200)) IN (0))
+     = (SELECT countIf(intDiv(a, toUInt8(200)) IN (0)) FROM t_intdiv_mono);
+
+DROP TABLE t_intdiv_mono;
+
+-- Wider width: Int32 dividend with a UInt32 divisor whose high bit is set (3e9 reinterprets negative).
+CREATE TABLE t_intdiv_mono (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192;
+INSERT INTO t_intdiv_mono SELECT number - 500 FROM numbers(1000);
+SELECT (SELECT count() FROM t_intdiv_mono WHERE intDiv(a, toUInt32(3000000000)) IN (0))
+     = (SELECT countIf(intDiv(a, toUInt32(3000000000)) IN (0)) FROM t_intdiv_mono);
+
+DROP TABLE t_intdiv_mono;
