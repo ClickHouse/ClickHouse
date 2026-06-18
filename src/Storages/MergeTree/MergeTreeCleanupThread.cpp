@@ -69,11 +69,21 @@ Float32 MergeTreeCleanupThread::iterate()
         if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
                 static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds])))
         {
+            /// Each helper below lists and deletes on the shared object storage and can run long on
+            /// its own — in particular `clearOldPartsFromFilesystem` has an internal pause point
+            /// (`storage_merge_tree_background_clear_old_parts_pause`). Re-check lease freshness
+            /// before each one so that if an earlier helper consumes most of
+            /// `leader_election_session_timeout` and another node legitimately takes over, the
+            /// remaining destructive helpers fail closed instead of running as a stale leader.
             cleaned_parts += storage.clearOldPartsFromFilesystem(/* force */ false, /* with_pause_point */ true);
-            cleaned_other += storage.clearOldMutations();
-            cleaned_part_like += storage.clearEmptyParts();
-            cleaned_part_like += storage.clearUnusedPatchParts();
-            cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
+            if (storage.canRunDestructiveCleanup())
+                cleaned_other += storage.clearOldMutations();
+            if (storage.canRunDestructiveCleanup())
+                cleaned_part_like += storage.clearEmptyParts();
+            if (storage.canRunDestructiveCleanup())
+                cleaned_part_like += storage.clearUnusedPatchParts();
+            if (storage.canRunDestructiveCleanup())
+                cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
         }
     }
 
