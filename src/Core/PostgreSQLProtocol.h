@@ -221,6 +221,9 @@ public:
     {
         Int32 size = 0;
         readBinaryBigEndian(size, *in);
+        if (size < 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} received from client, it must be at least 4", size);
         in->ignore(size - 4);
     }
 
@@ -516,8 +519,15 @@ public:
         readNullTerminated(auth_method, in);
         Int32 size_sasl_mechanism = 0;
         readBinaryBigEndian(size_sasl_mechanism, in);
-        sasl_mechanism.resize(size_sasl_mechanism);
-        in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
+        /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
+        if (size_sasl_mechanism < -1)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong SASL mechanism length {} in SASLInitialResponse, it must not be less than -1", size_sasl_mechanism);
+        if (size_sasl_mechanism > 0)
+        {
+            sasl_mechanism.resize(size_sasl_mechanism);
+            in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
+        }
     }
 
     MessageType getMessageType() const override
@@ -566,6 +576,9 @@ public:
         readBinaryBigEndian(message_type, in);
         Int32 size = 0;
         readBinaryBigEndian(size, in);
+        if (size < 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in SASLResponse, it must be at least 4", size);
         sasl_mechanism.resize(size - 4);
         in.readStrict(sasl_mechanism.data(), size - 4);
     }
@@ -770,6 +783,16 @@ public:
         {
             Int32 sz_param = 0;
             readBinaryBigEndian(sz_param, in);
+            /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
+            /// any other negative value is malformed.
+            if (sz_param < -1)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
+            if (sz_param == -1)
+            {
+                parameters.emplace_back("NULL");
+                continue;
+            }
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
             parameters.push_back(current_param);
@@ -1151,6 +1174,9 @@ public:
     {
         Int32 sz = 0;
         readBinaryBigEndian(sz, in);
+        if (sz < static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyData, it must be at least 4", sz);
         query.reserve(sz - sizeof(Int32));
         for (size_t i = 0; i < sz - sizeof(Int32); ++i)
         {
