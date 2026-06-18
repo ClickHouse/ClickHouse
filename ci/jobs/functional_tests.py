@@ -550,11 +550,15 @@ def main():
             else:
                 print("skip log export config for local run")
 
-        # Randomize cache policies. The filesystem cache (storage_conf) supports only LRU and
-        # SLRU, while the mark and uncompressed caches (cache_policy.xml) also support SIEVE.
-        file_cache_policy = random.choice(["LRU", "SLRU"])
-        cache_policy = random.choice(["LRU", "SLRU", "SIEVE"])
-        print(f"Using filesystem cache policy: {file_cache_policy}, mark/uncompressed cache policy: {cache_policy}")
+        # Randomize the mark and uncompressed cache policy (cache_policy.xml) across LRU, SLRU
+        # and SIEVE to exercise all eviction policies. SIEVE is only implemented for the
+        # CacheBase-backed caches, so it is not applied to the filesystem cache (storage_conf,
+        # backed by FileCachePolicy). During bugfix validation the install configs are used with
+        # downloaded master-side binaries that do not have the SIEVE branch in CacheBase, so SIEVE
+        # is excluded there to avoid a server start-up failure.
+        cache_policies = ["LRU", "SLRU"] if is_bugfix_validation else ["LRU", "SLRU", "SIEVE"]
+        cache_policy = random.choice(cache_policies)
+        print(f"Using mark/uncompressed cache policy: {cache_policy}")
 
         commands = [
             f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
@@ -576,11 +580,7 @@ def main():
             CH.set_random_timezone,
         ]
 
-        # The filesystem cache defaults to LRU (in storage_conf*.xml); the mark and uncompressed caches default to SLRU (in cache_policy.xml).
-        if file_cache_policy != "LRU":
-            commands.append(
-                f"sed -i 's|<cache_policy>LRU</cache_policy>|<cache_policy>{file_cache_policy}</cache_policy>|' /etc/clickhouse-server/config.d/storage_conf*.xml"
-            )
+        # The mark and uncompressed caches default to SLRU (in cache_policy.xml).
         if cache_policy != "SLRU":
             commands.append(
                 f"sed -i -e 's|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>{cache_policy}</mark_cache_policy>|' "
