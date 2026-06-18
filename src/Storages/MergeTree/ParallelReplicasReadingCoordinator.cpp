@@ -1268,36 +1268,11 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
         auto coordinator = getCoordinator(request.stream_id);
         if (!coordinator)
-        {
-            /// Rolling-upgrade case: an older follower (parallel-replicas protocol <
-            /// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE`) doesn't know
-            /// about `#split_i` streams and announced with the bare table name. The new
-            /// coordinator pinned the snapshot replica to the initiator and only registered
-            /// `#split_i` streams, so this follower's stream is "unknown" — but it's also unable
-            /// to read the announcement-response that would tell it to stop. Surface a
-            /// `finish=true` empty response instead of throwing so the follower's pool exits
-            /// cleanly; the query completes via the initiator's local splits. Newer requesters
-            /// have no excuse for an unknown stream — throw, that's a real bug.
-            if (request.replica_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
-            {
-                LOG_DEBUG(
-                    getLogger("ParallelReplicasReadingCoordinator"),
-                    "Replica {} (protocol {}) asked for unknown stream {}; rolling-upgrade fallback: "
-                    "telling it that reading is finished. The follower will not contribute work to "
-                    "this query — the initiator and protocol-{}+ followers cover the read set",
-                    request.replica_num,
-                    request.replica_protocol_version,
-                    request.stream_id,
-                    DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE);
-                return response;
-            }
-
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Got read request from replica {} for unknown stream {}.",
                 request.replica_num,
                 request.stream_id);
-        }
 
         if (request.mode != coordinator->getCoordinationMode())
             throw Exception(
