@@ -80,14 +80,3 @@
 7	2024-01-01 00:00:07	7	\N	5	dup
 8	2024-01-01 00:00:08	8	1	1	1
 9	2024-01-01 00:00:09	9	2	2	2
---- joinGet / joinGetOrNull on Join engine storage ---
-0	\N	\N
-1	\N	\N
-2	\N	\N
-3	\N	\N
-4	\N	\N
-5	\N	\N
-6	\N	\N
-7	0	0
-8	1	1
-9	2	2

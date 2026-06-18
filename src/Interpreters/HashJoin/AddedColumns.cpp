@@ -102,45 +102,23 @@ void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & col
     for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
     {
         const auto & access_index = output_access_indexes[dst_idx];
+        chassert(access_index.type != ColumnAccessIndex::Type::RowStore);
+
         auto & col = columns[dst_idx];
         col->reserve(col->size() + size_to_reserve);
-        if (access_index.type == ColumnAccessIndex::Type::RowStore)
+        for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
         {
-            for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
+            if (!*row_ref_i)
             {
-                if (!*row_ref_i)
-                {
-                    type_name[dst_idx].type->insertDefaultInto(*col);
-                    continue;
-                }
-                const auto * row_ref = reinterpret_cast<const RowRef *>(*row_ref_i);
-                const char * row_data = row_ref->columns_info->row_store->getRowAt(row_ref->row_num);
-
-                if (access_index.is_nullable)
-                {
-                    auto & nullable_column = assert_cast<ColumnNullable &>(*col);
-                    nullable_column.insertDataNullable(row_data + access_index.field_offset, access_index.field_size);
-                }
-                else
-                    col->insertData(row_data + access_index.field_offset, access_index.field_size);
+                type_name[dst_idx].type->insertDefaultInto(*col);
+                continue;
             }
-        }
-        else
-        {
-            for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
-            {
-                if (!*row_ref_i)
-                {
-                    type_name[dst_idx].type->insertDefaultInto(*col);
-                    continue;
-                }
-                const auto * row_ref = reinterpret_cast<const RowRef *>(*row_ref_i);
-                const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, access_index.index);
-                if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block->isNullable())
-                    nullable_col->insertFromNotNullable(*column_from_block, row_num);
-                else
-                    col->insertFrom(*column_from_block, row_num);
-            }
+            const auto * row_ref = reinterpret_cast<const RowRef *>(*row_ref_i);
+            const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, access_index.index);
+            if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block->isNullable())
+                nullable_col->insertFromNotNullable(*column_from_block, row_num);
+            else
+                col->insertFrom(*column_from_block, row_num);
         }
     }
 }

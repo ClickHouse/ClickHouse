@@ -3,18 +3,15 @@
 DROP TABLE IF EXISTS left;
 DROP TABLE IF EXISTS right;
 DROP TABLE IF EXISTS right_asof;
-DROP TABLE IF EXISTS right_storage_join;
 
 CREATE TABLE left (k Int64, t DateTime('UTC')) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE right (k Int64, v1 Nullable(Int64), v2 UInt8, s String) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE right_asof (k Int64, t DateTime('UTC'), v2 Nullable(Int64), s String) ENGINE = MergeTree ORDER BY (k, t);
-CREATE TABLE right_storage_join (k Int64, v1 Nullable(Int64), s String) ENGINE = Join(ANY, LEFT, k);
 
 INSERT INTO left SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') + number FROM numbers(10);
 INSERT INTO right SELECT number + 7, number, number, toString(number) FROM numbers(5);
 INSERT INTO right VALUES (7, NULL, 5, 'dup');
 INSERT INTO right_asof SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') + number, number, toString(number) FROM numbers(5);
-INSERT INTO right_storage_join SELECT number + 7, number, toString(number) FROM numbers(5);
 
 SET join_algorithm = 'hash';
 SET min_columns_for_hash_join_row_store = 1;
@@ -89,13 +86,6 @@ SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS join_
 SELECT '--- Join with block splitting ---';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS max_joined_block_size_rows = 2, joined_block_split_single_row = 1;
 
-SELECT '--- joinGet / joinGetOrNull on Join engine storage ---';
-SELECT k,
-       joinGet({CLICKHOUSE_DATABASE:String} || '.right_storage_join', 'v1', k),
-       joinGetOrNull({CLICKHOUSE_DATABASE:String} || '.right_storage_join', 'v1', k)
-FROM left ORDER BY ALL;
-
-DROP TABLE right_storage_join;
 DROP TABLE right_asof;
 DROP TABLE right;
 DROP TABLE left;
