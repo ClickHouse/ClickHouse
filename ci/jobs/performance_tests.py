@@ -91,7 +91,9 @@ FROM input(
      stat_threshold Float64,
      test String,
      query_index Int32,
-     query_display_name String'
+     query_display_name String,
+     changed_threshold Float64,
+     unstable_threshold Float64'
 ) FORMAT TSV"""
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
@@ -784,7 +786,7 @@ class CHServer:
         delay = 2
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {self.port} --query "select 1"', verbose=True
+                f'clickhouse-client --port {self.port} --receive_timeout=5 --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print("Server ready")
@@ -879,6 +881,28 @@ def find_base_release_build(info, build_type):
         if Shell.check(f"curl -sfI {link} > /dev/null"):
             return link
     return None
+
+
+# The number of distinct "slower" queries that fails the whole performance
+# check. This is the gate that actually decides the Praktika `Check Results`
+# status: `report.py` embeds a status into `report.html`, but `main` below
+# discards it ("always green mode") and recomputes the final status by
+# reparsing the "N slower" message, so the effective gate lives here. The value
+# must stay synchronized with the slower-queries threshold in
+# `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
+# "slower" queries is dominated by CI noise (a single bad shard run, frequency
+# scaling, or code-layout artifacts can push several unrelated micro benchmarks
+# over their per-query thresholds at once), while a genuine regression shows up
+# as a small cluster of related queries with large magnitudes that the
+# per-query thresholds catch on their own.
+SLOWER_QUERIES_FAIL_THRESHOLD = 10
+
+
+def too_many_slow(message):
+    match = re.search(r"(|.* )(\d+) slower.*", message)
+    return (
+        int(match.group(2).strip()) > SLOWER_QUERIES_FAIL_THRESHOLD if match else False
+    )
 
 
 def main():
@@ -1433,11 +1457,6 @@ def main():
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
     message = ""
     if res and JobStages.CHECK_RESULTS in stages:
-
-        def too_many_slow(msg):
-            match = re.search(r"(|.* )(\d+) slower.*", msg)
-            threshold = 5
-            return int(match.group(2).strip()) > threshold if match else False
 
         # Try to fetch status from the report.
         sw = Utils.Stopwatch()

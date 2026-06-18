@@ -99,6 +99,8 @@ public:
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
+    bool isIcebergStorage() const { return configuration->isIcebergConfiguration(); }
+
     bool isObjectStorage() const override { return true; }
 
     bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
