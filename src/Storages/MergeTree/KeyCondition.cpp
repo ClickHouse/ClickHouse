@@ -834,7 +834,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
 ///
 /// The rewritten disjunction is only truthiness-preserving, not value-preserving: when an earlier
 /// argument is `NULL`, a branch can evaluate to `NULL` where the original `coalesce` comparison was
-/// `false` (cf. the `notEquals` exclusion below). Like `tryRewriteCoalesceBoolean`, the caller
+/// `false` (cf. the `notEquals` exclusion below). Like `tryRewriteCoalesceCondition`, the caller
 /// therefore applies it only in truth-tested (`boolean_context`) position, where `false` and `NULL`
 /// both reject the row; in a value position it could change an enclosing result.
 /// Returns `nullptr` if the pattern does not match.
@@ -980,7 +980,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
 /// (`boolean_context == true`); under `NOT` or as a value argument like `equals(ifNull(X, 0), 0)` the
 /// rewrite would change the result. Also requires a falsy (numeric zero) constant fallback; returns
 /// nullptr otherwise. Two-argument form only. Complements `tryRewriteCoalesceComparison`.
-static const ActionsDAG::Node * tryRewriteCoalesceBoolean(
+static const ActionsDAG::Node * tryRewriteCoalesceCondition(
     const ActionsDAG::Node & node,
     const String & name,
     ActionsDAG & inverted_dag,
@@ -1137,7 +1137,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 && boolean_context
                 && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
                 && ((res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteCoalesceBoolean(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
+                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
             {
                 handled_inversion = true;
             }
