@@ -10,7 +10,7 @@ nodes = [
         main_configs=["configs/clusters.xml"],
         with_zookeeper=True,
         image="clickhouse/clickhouse-server",
-        tag="24.3",  # earlier versions lead to "Not found column sum(a) in block." exception 🤷
+        tag="25.12",  # latest pre-PR8 release: has stream_id (PR=7) but no announcement response
         stay_alive=True,
         use_old_analyzer=False,
         with_installed_binary=True,
@@ -171,6 +171,38 @@ def test_backward_compatability(start_cluster):
                 },
             )
             == "99999\n" * 10
+        )
+
+    # Non-idempotent aggregate: catches silent work duplication that the idempotent
+    # `LIMIT 10` queries above would mask. Each `a` value appears exactly 10 times
+    # (number % 100000 over 1e6 rows); under the split-stream bug a newer follower's
+    # per-split pools would each read the same parts and inflate the count by
+    # `~max_threads`.
+    for node in nodes:
+        assert (
+            node.query(
+                """
+                select a, count()
+                from t
+                group by a
+                order by a
+                limit 5
+                """,
+                settings={
+                    "cluster_for_parallel_replicas": "parallel_replicas",
+                    "max_parallel_replicas": 3,
+                    "allow_experimental_parallel_reading_from_replicas": 1,
+                    "parallel_replicas_for_non_replicated_merge_tree": 1,
+                    "merge_tree_min_rows_for_concurrent_read": 0,
+                    "merge_tree_min_bytes_for_concurrent_read": 0,
+                    "merge_tree_min_read_task_size": 1,
+                    "optimize_read_in_order": 1,
+                    "optimize_aggregation_in_order": 1,
+                    "parallel_replicas_local_plan": 1,
+                    "max_threads": 4,
+                },
+            )
+            == "0\t10\n1\t10\n2\t10\n3\t10\n4\t10\n"
         )
 
     for node in nodes:
