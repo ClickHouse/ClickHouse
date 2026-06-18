@@ -7,6 +7,8 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Logger.h>
 
+#include <vector>
+
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
 #if defined(__x86_64__) || defined(__i386__)
 #include <immintrin.h>
@@ -166,14 +168,151 @@ private:
 };
 
 
+/// The quantization (codec) of a flat "fastknn" granule. Persisted with each granule so that, before scanning, a part
+/// can be validated against the index definition: different quantizations have different code layouts and semantics, so
+/// decoding a part with the wrong one would read past code boundaries or return garbage (e.g. on ATTACH of a part built
+/// by a differently-quantized index). `b1` and `b1_projected` share a layout but differ semantically, so the id (not
+/// just `bytes_per_vector`) is what distinguishes them.
+enum class FlatQuantization : UInt8
+{
+    B1 = 0,
+    B1Projected = 1,
+    TurboQuant = 2,
+    RaBitQ = 3,
+    E8 = 4,
+};
+
+/// ---------------------------------------------------------------------------------------------------------------------
+/// "fastknn" method: a flat (brute-force) variant of the vector similarity index.
+///
+/// Instead of building an HNSW graph (usearch index_dense), it stores the quantized vectors as a plain contiguous matrix
+/// and answers a query by an exhaustive scan. For binary ('b1') quantization this scan is a Hamming distance over packed
+/// bit-codes (dim/8 bytes per vector), which usearch's `metric_punned_t` computes with AVX popcount. The result is exact
+/// within the quantization, and is meant to be combined with rescoring (re-rank the shortlist against the full-precision
+/// column). No graph is built, so there is no graph build cost and no graph storage overhead (which for binary vectors
+/// would dwarf the vectors themselves).
+struct MergeTreeIndexGranuleVectorSimilarityFlat final : public IMergeTreeIndexGranule
+{
+    MergeTreeIndexGranuleVectorSimilarityFlat(
+        const String & index_name_,
+        unum::usearch::metric_kind_t metric_kind_,
+        unum::usearch::scalar_kind_t scalar_kind_,
+        size_t dimensions_);
+
+    ~MergeTreeIndexGranuleVectorSimilarityFlat() override = default;
+
+    void serializeBinary(WriteBuffer & ostr) const override;
+    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+
+    bool empty() const override { return num_vectors == 0; }
+    size_t memoryUsageBytes() const override { return codes.size(); }
+
+    const String index_name;
+    const unum::usearch::metric_kind_t metric_kind;
+    const unum::usearch::scalar_kind_t scalar_kind;
+    const size_t dimensions;
+    size_t bytes_per_vector = 0;       /// dim/8 for b1; dim/4 for turboquant; dim/8 + sizeof(float) for rabitq (1-bit code + per-vector correction factor)
+    size_t num_vectors = 0;
+    FlatQuantization quantization = FlatQuantization::B1; /// persisted so a part can be validated against the index codec
+    size_t e8_bits = 0;                /// 'e8' only: bits per 8-dim sub-quantizer; persisted so the layout can be validated on load
+    std::vector<UInt8> codes;          /// num_vectors * bytes_per_vector packed quantized codes
+
+    LoggerPtr logger = getLogger("VectorSimilarityIndexFlat");
+
+private:
+    /// Bump whenever the on-disk flat format changes. v3 persists the quantization id and `e8_bits` and validates the layout.
+    static constexpr UInt64 FILE_FORMAT_VERSION = 3;
+};
+
+
+struct MergeTreeIndexAggregatorVectorSimilarityFlat final : IMergeTreeIndexAggregator
+{
+    MergeTreeIndexAggregatorVectorSimilarityFlat(
+        const String & index_name_,
+        const Block & index_sample_block_,
+        UInt64 dimensions_,
+        unum::usearch::metric_kind_t metric_kind_,
+        unum::usearch::scalar_kind_t scalar_kind_,
+        bool projected_,
+        bool turboquant_,
+        bool rabitq_,
+        bool e8_,
+        size_t e8_bits_);
+
+    ~MergeTreeIndexAggregatorVectorSimilarityFlat() override = default;
+
+    bool empty() const override { return num_vectors == 0; }
+    MergeTreeIndexGranulePtr getGranuleAndReset() override;
+    void update(const Block & block, size_t * pos, size_t limit) override;
+
+    const String index_name;
+    const Block index_sample_block;
+    const UInt64 dimensions;
+    const unum::usearch::metric_kind_t metric_kind;
+    const unum::usearch::scalar_kind_t scalar_kind;
+    const bool projected;          /// 'b1_projected' quantization: random-project before sign-binarizing
+    const bool turboquant;         /// 'turboquant' quantization: random-project, then 2-bit Lloyd-Max per coordinate
+    const bool rabitq;             /// 'rabitq' quantization: random-project, sign-binarize, store a per-vector correction factor
+    const bool e8;                 /// 'e8' quantization: random-project, then quantize each 8-dim sub-vector to the fixed E8 lattice
+    const size_t e8_bits;          /// 'e8' quantization: bits per 8-dim sub-quantizer (codebook size 2^bits)
+    size_t bytes_per_vector = 0;
+    size_t num_vectors = 0;
+    std::vector<UInt8> codes;
+    std::vector<float> projection;     /// sign-flip diagonals for the fast (Walsh-Hadamard) random projection, lazily generated ('b1_projected'/'turboquant'/'rabitq'/'e8')
+    std::vector<float> projection_qjl; /// second, independent projection for the 'turboquant' QJL stage, lazily generated
+};
+
+
+class MergeTreeIndexConditionVectorSimilarityFlat final : public IMergeTreeIndexCondition
+{
+public:
+    MergeTreeIndexConditionVectorSimilarityFlat(
+        const std::optional<VectorSearchParameters> & parameters_,
+        const String & index_column_,
+        unum::usearch::metric_kind_t metric_kind_,
+        bool projected_,
+        bool turboquant_,
+        bool rabitq_,
+        bool e8_,
+        size_t e8_bits_,
+        ContextPtr context);
+
+    ~MergeTreeIndexConditionVectorSimilarityFlat() override = default;
+
+    bool alwaysUnknownOrTrue() const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
+    std::string getDescription() const override { return ""; }
+
+private:
+    std::optional<VectorSearchParameters> parameters;
+    const String index_column;
+    const unum::usearch::metric_kind_t metric_kind;
+    const bool projected;          /// 'b1_projected' quantization: random-project the query before sign-binarizing
+    const bool turboquant;         /// 'turboquant' quantization: random-project + 2-bit Lloyd-Max
+    const bool rabitq;             /// 'rabitq' quantization: random-project + sign + per-vector correction factor (asymmetric estimator)
+    const bool e8;                 /// 'e8' quantization: random-project + per-8-dim E8 lattice product quantization (ADC scan)
+    const size_t e8_bits;          /// 'e8' quantization: bits per 8-dim sub-quantizer
+    const float index_fetch_multiplier;
+    const size_t max_limit;
+    const bool is_rescoring;
+};
+
+
 class MergeTreeIndexVectorSimilarity : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexVectorSimilarity(
         const IndexDescription & index_,
+        const String & method_,
         UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
+        bool projected_,
+        bool turboquant_,
+        bool rabitq_,
+        bool e8_,
+        size_t e8_bits_,
         UsearchHnswParams usearch_hnsw_params_);
 
     ~MergeTreeIndexVectorSimilarity() override = default;
@@ -185,9 +324,15 @@ public:
     bool isVectorSimilarityIndex() const override { return true; }
 
 private:
+    const String method;       /// "hnsw" (usearch graph) or "fastknn" (flat brute-force scan)
     const UInt64 dimensions;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
+    const bool projected;        /// fastknn + 'b1_projected' quantization (random projection before sign)
+    const bool turboquant;       /// fastknn + 'turboquant' quantization (random projection + 2-bit Lloyd-Max)
+    const bool rabitq;           /// fastknn + 'rabitq' quantization (random projection + sign + per-vector correction factor)
+    const bool e8;               /// fastknn + 'e8' quantization (random projection + per-8-dim E8 lattice product quantization)
+    const size_t e8_bits;        /// 'e8' quantization: bits per 8-dim sub-quantizer
     const UsearchHnswParams usearch_hnsw_params;
 };
 

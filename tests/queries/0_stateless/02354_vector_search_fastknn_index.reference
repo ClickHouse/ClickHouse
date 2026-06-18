@@ -1,0 +1,27 @@
+-- b1: nearest neighbour of a row is itself
+<dbpedia:Honda>
+<dbpedia:Pizza>
+-- b1_projected: nearest neighbour of a row is itself
+<dbpedia:Honda>
+<dbpedia:Pizza>
+-- turboquant: nearest neighbour of a row is itself
+<dbpedia:Honda>
+<dbpedia:Pizza>
+-- rabitq: nearest neighbour of a row is itself
+<dbpedia:Honda>
+<dbpedia:Pizza>
+-- rescoring off: each estimator alone still ranks a row nearest to itself
+<dbpedia:Honda>
+<dbpedia:Honda>
+<dbpedia:Honda>
+<dbpedia:Honda>
+-- all quantizations return the requested number of rows
+4
+4
+4
+4
+-- the fastknn index is used
+1
+1
+1
+1
