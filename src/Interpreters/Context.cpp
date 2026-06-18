@@ -7804,10 +7804,8 @@ std::shared_ptr<LongConnectionLimit> Context::getLongConnectionLimit() const
 
 void Context::reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const
 {
-    /// Hot-reload on config change: update the live limit's capacity (lock-free, soft -- a value
-    /// below the in-flight count just stops new acquisitions until it drains). Routed through
-    /// `getLongConnectionLimit` so there is a single creation path and a first use racing a reload
-    /// can never both construct the limit.
+    /// Routed through `getLongConnectionLimit` so there is a single creation path and a first use
+    /// racing a reload can never both construct the limit.
     getLongConnectionLimit()->setCapacity(max_remote_read_connections);
 }
 

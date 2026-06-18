@@ -43,23 +43,22 @@ namespace ErrorCodes
 /// Returns the bytes read; less than `chunk` only at EOF.
 static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
 {
-    if (buf.supportsExternalBufferMode())
+    if (!buf.supportsExternalBufferMode())
+        return buf.read(dest, chunk);
+
+    size_t total = 0;
+    while (total < chunk)
     {
-        size_t total = 0;
-        while (total < chunk)
-        {
-            buf.set(dest + total, chunk - total);
-            if (!buf.next())
-                break;
-            const size_t got = buf.available();
-            if (got == 0)
-                break;
-            buf.position() = buf.buffer().end();
-            total += got;
-        }
-        return total;
+        buf.set(dest + total, chunk - total);
+        if (!buf.next())
+            break;
+        const size_t got = buf.available();
+        if (got == 0)
+            break;
+        buf.position() = buf.buffer().end();
+        total += got;
     }
-    return buf.read(dest, chunk);
+    return total;
 }
 
 void ReaderExecutor::Stats::add(Counter c, UInt64 value)
@@ -94,6 +93,18 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
             break;
         case WorkMicroseconds:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, value);
+            break;
+        case LongConnectionOpened:
+            ProfileEvents::increment(ProfileEvents::LongConnectionOpened, value);
+            break;
+        case LongConnectionHits:
+            ProfileEvents::increment(ProfileEvents::LongConnectionHits, value);
+            break;
+        case LongConnectionFallbacks:
+            ProfileEvents::increment(ProfileEvents::LongConnectionFallbacks, value);
+            break;
+        case LongConnectionBytes:
+            ProfileEvents::increment(ProfileEvents::LongConnectionBytes, value);
             break;
         case NumCounters:
             break;
@@ -169,9 +180,6 @@ size_t ReaderExecutor::LongConnection::skipForward(size_t gap, size_t block_byte
     size_t skipped = 0;
     while (skipped < gap)
     {
-        /// Discard via `readIntoBlock`, not a raw `read`: in external-buffer mode a raw read would
-        /// refill the source buffer's stale external pointer (the last served window's block)
-        /// instead of `scratch`, corrupting or use-after-free'ing already-served data.
         const size_t got = readIntoBlock(*buffer, scratch->data(), std::min(gap - skipped, scratch_size));
         if (got == 0)
             break;
@@ -213,7 +221,7 @@ bool ReaderExecutor::tryOpenLong(const StoredObject & object, size_t object_offs
     auto slot = long_connection_limit->tryAcquire(long_connection_limit);
     if (!slot)
     {
-        ProfileEvents::increment(ProfileEvents::LongConnectionFallbacks);
+        stats.add(Stats::LongConnectionFallbacks);
         return false;
     }
 
@@ -243,7 +251,7 @@ bool ReaderExecutor::tryOpenLong(const StoredObject & object, size_t object_offs
         .slot = std::move(slot),
     });
     stats.add(Stats::SourceRequests);
-    ProfileEvents::increment(ProfileEvents::LongConnectionOpened);
+    stats.add(Stats::LongConnectionOpened);
     return true;
 }
 
@@ -254,10 +262,10 @@ size_t ReaderExecutor::serveFromLong(size_t object_offset, size_t want, char * d
         /// Bridge a small forward gap by discarding it on the open stream.
         const size_t skipped = long_conn->skipForward(object_offset - long_conn->current_position, block_size);
         stats.add(Stats::BytesFromSource, skipped);
-        ProfileEvents::increment(ProfileEvents::LongConnectionBytes, skipped);
+        stats.add(Stats::LongConnectionBytes, skipped);
     }
     const size_t got = long_conn->readInto(dst, want);
-    ProfileEvents::increment(ProfileEvents::LongConnectionBytes, got);
+    stats.add(Stats::LongConnectionBytes, got);
     if (long_conn->atBound())
         long_conn.reset();   /// fully read to its bound -> pool-reusable, release the slot
     return got;
@@ -340,7 +348,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         && long_conn->canContinue(object_offset, want, min_bytes_for_seek))
     {
         /// Reuse the held connection for this contiguous (or small-gap) window.
-        ProfileEvents::increment(ProfileEvents::LongConnectionHits);
+        stats.add(Stats::LongConnectionHits);
         got = serveFromLong(object_offset, want, block->data());
     }
     else

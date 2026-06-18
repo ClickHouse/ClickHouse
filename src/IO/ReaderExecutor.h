@@ -78,8 +78,8 @@ public:
 private:
     /// Per-instance read-path counters. `add` is the only mutator and the single place a
     /// counter maps to its ProfileEvent (and modeled-cost contribution), so they never
-    /// drift and every update is instantly observable. The cache / connection counters
-    /// have no caller in this minimal slice, so they stay 0 until their features land.
+    /// drift and every update is instantly observable. The cache counters have no caller
+    /// in this minimal slice, so they stay 0 until caching lands.
     struct Stats
     {
         enum Counter : size_t
@@ -91,6 +91,10 @@ private:
             CacheGetRequests,
             CachePopulateRequests,
             WorkMicroseconds,
+            LongConnectionOpened,       /// held connections opened for reuse
+            LongConnectionHits,         /// windows served from a held connection
+            LongConnectionFallbacks,    /// opens skipped because no slot was free
+            LongConnectionBytes,        /// bytes served through held connections
             NumCounters,
         };
 

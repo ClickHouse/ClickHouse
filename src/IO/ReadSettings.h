@@ -151,8 +151,8 @@ struct ReadSettings
     {
         bool enabled = false;
         bool use_long_connections = true;
-        size_t min_bytes_for_seek = 2097152;
-        size_t max_tail_for_drain = 1048576;
+        size_t min_bytes_for_seek = 2 * (1 << 20);
+        size_t max_tail_for_drain = 1 << 20;
     };
     ReaderExecutorSettings reader_executor;
 
