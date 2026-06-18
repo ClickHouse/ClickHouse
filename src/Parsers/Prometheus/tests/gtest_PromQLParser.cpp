@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Common/Exception.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 using namespace DB;
@@ -172,15 +173,107 @@ PrometheusQueryTree(INSTANT_VECTOR):
         instance NE 'demo.promlabs.com:10000'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_THROW(parse(R"(
         {__name__=~".*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {job=~".*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {job!="demo"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus accepts a negated equality matcher against empty string because it cannot match the empty string.
+    EXPECT_EQ(parse(R"(
+        {job!=""}
         )"), R"(
-{__name__=~".*"}
+{job!=""}
 
 PrometheusQueryTree(INSTANT_VECTOR):
     InstantSelector:
-        __name__ RE '.*'
+        job NE ''
 )");
+
+    /// Behavior: Prometheus accepts a negated regex matcher that rejects the empty string because the matcher itself cannot match empty.
+    EXPECT_EQ(parse(R"(
+        {job!~".*"}
+        )"), R"(
+{job!~".*"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        job NRE '.*'
+)");
+
+    /// Behavior: Prometheus rejects selectors where every matcher can match the empty string.
+    EXPECT_THROW(parse(R"(
+        {job=""}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus treats `!~ ".+"` as matching the empty string, so it is not a non-empty matcher.
+    EXPECT_THROW(parse(R"(
+        {job!~".+"}
+        )"), DB::Exception);
+
+    EXPECT_EQ(parse(R"(
+        {__name__=~".+"}
+        )"), R"(
+{__name__=~".+"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ RE '.+'
+)");
+
+    EXPECT_EQ(parse(R"(
+        {__name__=~".+", job=~".*"}
+        )"), R"(
+{__name__=~".+",job=~".*"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ RE '.+'
+        job RE '.*'
+)");
+
+    EXPECT_THROW(parse(R"(
+        demo_memory_usage_bytes{job=~"(.*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {__name__=~".+", job=~"(.*"}
+        )"), DB::Exception);
+
+    EXPECT_THROW(parse(R"(
+        {job=~"(.*", __name__=~".+"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus validates later regex matchers even when an earlier equality matcher is already non-empty.
+    EXPECT_THROW(parse(R"(
+        {__name__="demo_memory_usage_bytes", instance=~"(.*"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus validates earlier regex matchers before observing a later non-empty matcher.
+    EXPECT_THROW(parse(R"(
+        {instance=~"(.*", __name__="demo_memory_usage_bytes"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus rejects an outside metric name combined with any in-brace `__name__` equality matcher.
+    EXPECT_THROW(parse(R"(
+        foo{__name__="foo"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus rejects conflicting outside and in-brace metric names at parse/type-check time.
+    EXPECT_THROW(parse(R"(
+        foo{__name__="bar"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus rejects an outside metric name combined with an in-brace regex metric-name matcher.
+    EXPECT_THROW(parse(R"(
+        foo{__name__=~"foo"}
+        )"), DB::Exception);
 
     /// Aggregation operators.
     EXPECT_EQ(parse("sum(demo_memory_usage_bytes)"), R"(
