@@ -309,11 +309,12 @@ void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
     getData().updateHashWithValueRange(nested_begin, nested_end, hash);
     /// Hash the array boundaries relative to the start of the range — see the comment in
     /// ColumnString::updateHashWithValueRange. Absolute offsets would make the hash position-dependent
-    /// and break deduplication of equal rows located at different offsets.
+    /// and break deduplication of equal rows located at different offsets. The raw bytes are fed (not
+    /// SipHash::update(UInt64)) to keep the byte stream identical on big-endian targets.
     for (size_t i = begin; i < end; ++i)
     {
         UInt64 relative_offset = getOffsets()[i] - nested_begin;
-        hash.update(relative_offset);
+        hash.update(reinterpret_cast<const char *>(&relative_offset), sizeof(relative_offset));
     }
 }
 

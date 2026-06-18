@@ -837,10 +837,13 @@ void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     /// located at different offsets (e.g. repeated blocks combined into one async insert) would hash
     /// differently and fail to deduplicate. For begin == 0 this is byte-identical to hashing the raw
     /// offsets, so already-persisted deduplication hashes stay valid.
+    /// Feed the raw bytes (not SipHash::update(UInt64)) so the byte stream is the same on big-endian
+    /// targets too — the scalar overload endian-normalizes the value, which would change the begin == 0
+    /// stream on s390x.
     for (size_t i = begin; i < end; ++i)
     {
         UInt64 relative_offset = offsets[i] - chars_begin;
-        hash.update(relative_offset);
+        hash.update(reinterpret_cast<const char *>(&relative_offset), sizeof(relative_offset));
     }
 }
 
