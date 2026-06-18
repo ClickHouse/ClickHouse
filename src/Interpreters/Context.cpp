@@ -892,6 +892,14 @@ struct ContextSharedPart : boost::noncopyable
         return config ? *config : Poco::Util::Application::instance().config();
     }
 
+    ConfigurationPtr getConfig() const
+    {
+        SharedLockGuard lock(mutex);
+        if (config)
+            return config;
+        return ConfigurationPtr(&Poco::Util::Application::instance().config(), /* shared= */ true);
+    }
+
     /** Perform a complex job of destroying objects in advance.
       */
     void shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
@@ -1314,6 +1322,12 @@ void ContextData::resetSharedContext()
 {
     std::lock_guard<std::mutex> lock(mutex_shared_context);
     shared = nullptr;
+}
+
+ConfigurationPtr ContextData::tryGetConfig() const
+{
+    std::lock_guard<std::mutex> lock(mutex_shared_context);
+    return shared ? shared->getConfig() : nullptr;
 }
 
 Context::Context() = default;
@@ -7188,6 +7202,12 @@ void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address
 void Context::setInitialUserName(const String & initial_user_name)
 {
     client_info.initial_user = initial_user_name;
+    need_recalculate_access = true;
+}
+
+void Context::setAuthenticatedUserName(const String & authenticated_user_name)
+{
+    client_info.authenticated_user = authenticated_user_name;
     need_recalculate_access = true;
 }
 
