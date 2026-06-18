@@ -81,24 +81,17 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
 
-    /// When loading an already-created table from existing metadata (server startup or RESTORE), the S3
-    /// credentials were validated at CREATE time, so do not re-apply the user-query credential restriction
-    /// here. Otherwise a table that legitimately used server-managed credentials would fail to load after a
-    /// restart. This mirrors the dynamic-disk `isLoadingFromExistingMetadata` skip. A user-issued `ATTACH`
-    /// uses `LoadingStrictnessLevel::ATTACH` and is still re-validated.
-    ContextPtr object_storage_context = context;
-    if (isLoadingFromExistingMetadata(args.mode))
-    {
-        auto unrestricted_context = Context::createCopy(context);
-        unrestricted_context->setSetting("s3_allow_server_credentials_in_user_queries", true);
-        object_storage_context = unrestricted_context;
-    }
-
+    /// The user-query credential restriction is NOT relaxed when loading from existing metadata: a table whose
+    /// definition resolves to server-managed credentials (e.g. a named collection later re-bound to
+    /// `use_environment_credentials = 1`, or a server `<s3>` `role_arn` added afterwards) must not silently
+    /// regain the server identity on restart, since a user `CREATE`/`ATTACH` of the same definition would be
+    /// refused. Such a table simply fails to build its client and becomes inaccessible after a restart rather
+    /// than escalating; the server itself still starts (a per-table load error is not fatal).
     return std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
-        configuration->createObjectStorage(object_storage_context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
         context_copy, /// Use global context.
         args.table_id,
         args.columns,

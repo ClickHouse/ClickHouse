@@ -330,16 +330,17 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     /// The object storage S3 client is built once here and reused by background threads, so the effective
     /// per-session credential restriction must be captured now from the CREATE query (its
     /// `s3_allow_server_credentials_in_user_queries` value arrives as `allow_server_credentials_in_user_queries_`).
-    /// When loading an already-created table from existing metadata (server startup or RESTORE), the S3
-    /// credentials were validated at CREATE time, so the restriction is skipped; otherwise a queue that
-    /// legitimately used server-managed credentials would fail to load after a restart. Mirrors the dynamic-disk
-    /// `isLoadingFromExistingMetadata` skip; user `ATTACH` is still checked. `context_` stays the persistent
-    /// global context held weakly by `WithContext`, and `createObjectStorage` copies the context it is given
-    /// into its credential refresher, so the transient settings copy here is safe.
+    /// The restriction is NOT relaxed when loading from existing metadata: a queue whose definition resolves to
+    /// server-managed credentials (e.g. a named collection later re-bound to `use_environment_credentials = 1`)
+    /// must not silently regain the server identity on restart, since that is something a user `CREATE`/`ATTACH`
+    /// of the same definition would be refused. Such a queue simply fails to build its client and becomes
+    /// inaccessible after a restart rather than escalating; the server itself still starts. `context_` stays the
+    /// persistent global context held weakly by `WithContext`, and `createObjectStorage` copies the context it is
+    /// given into its credential refresher, so the transient settings copy here is safe.
     auto object_storage_context = Context::createCopy(context_);
     object_storage_context->setSetting(
         "s3_allow_server_credentials_in_user_queries",
-        allow_server_credentials_in_user_queries_ || isLoadingFromExistingMetadata(mode));
+        allow_server_credentials_in_user_queries_);
 
     object_storage = configuration->createObjectStorage(object_storage_context, /* is_readonly */true, std::nullopt);
     FormatFactory::instance().checkFormatName(configuration->format);
