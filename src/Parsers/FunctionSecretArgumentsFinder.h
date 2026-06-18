@@ -7,6 +7,7 @@
 #include <base/defines.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <algorithm>
 
 namespace DB
 {
@@ -87,11 +88,8 @@ protected:
         /// increasing order, but a malformed query can mix the named secret form (`key = ...`) with the
         /// positional form and ask to mask an earlier index after a later one. Masking is best-effort
         /// over arbitrary user input, so it must widen the range rather than assert on the order.
-        size_t end = result.start + result.count;
-        if (index + 1 > end)
-            end = index + 1;
-        if (index < result.start)
-            result.start = index;
+        size_t end = std::max(result.start + result.count, index + 1);
+        result.start = std::min(result.start, index);
         result.count = end - result.start;
         if (!argument_is_named)
             result.are_named = false;
