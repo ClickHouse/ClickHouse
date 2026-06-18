@@ -417,6 +417,44 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
+    /// `UPDATE`/`DELETE` read the columns in their WHERE predicate (and UPDATE assignment
+    /// expressions), so they require SELECT on those columns (virtual columns excluded, as in a
+    /// plain SELECT). Kept out of `getRequiredAccessForCommand` (used by KILL MUTATION) and computed
+    /// here, before any dispatch, so the initiating user's read access is enforced on every path:
+    /// local execution, the replicated/cloud enqueue, and the ON CLUSTER pre-check (where the worker
+    /// does not run as the initiator unless `distributed_ddl_use_initial_user_and_roles` is enabled).
+    AccessRightsElements read_access;
+    {
+        auto metadata_ptr = table ? table->getInMemoryMetadataPtr(getContext(), false) : nullptr;
+        bool has_mutation_command = false;
+        for (const auto & child : alter.command_list->children)
+        {
+            const auto & command = child->as<const ASTAlterCommand &>();
+            if (command.type == ASTAlterCommand::UPDATE)
+            {
+                has_mutation_command = true;
+                if (metadata_ptr)
+                {
+                    addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, *metadata_ptr);
+                    for (const ASTPtr & assignment : command.update_assignments->children)
+                        addExpressionColumnsSelectAccess(
+                            read_access, assignment->as<const ASTAssignment &>().expression().get(),
+                            table_id.database_name, table_id.table_name, *metadata_ptr);
+                }
+            }
+            else if (command.type == ASTAlterCommand::DELETE)
+            {
+                has_mutation_command = true;
+                if (metadata_ptr)
+                    addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, *metadata_ptr);
+            }
+        }
+        /// Table is not present locally (e.g. ON CLUSTER issued from a node without it): the read
+        /// columns cannot be resolved, so fail closed by requiring SELECT on the whole table.
+        if (!metadata_ptr && table_id && has_mutation_command)
+            read_access.emplace_back(AccessType::SELECT, table_id.database_name, table_id.table_name);
+    }
+
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (table && table->as<StorageKeeperMap>())
@@ -424,6 +462,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
+        /// Enforce the read (SELECT) requirements on the initiator too, since the remote DDL worker
+        /// may not run as the initiating user.
+        params.access_to_check.append_range(read_access);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -432,34 +473,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!table_id)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
-    /// `UPDATE`/`DELETE` read the columns in their WHERE predicate (and UPDATE assignment expressions),
-    /// so they require SELECT on those columns. Resolved against the table schema so virtual columns are
-    /// excluded; this keeps `getRequiredAccessForCommand` (used by KILL MUTATION and the ON CLUSTER
-    /// pre-check) free of read requirements. Enforced here, before the replicated/cloud DDL enqueue, so
-    /// the initiating user's access is checked even when execution is delegated to other replicas.
-    if (table)
-    {
-        AccessRightsElements read_access;
-        const auto & metadata = *table->getInMemoryMetadataPtr(getContext(), false);
-        for (const auto & child : alter.command_list->children)
-        {
-            const auto & command = child->as<const ASTAlterCommand &>();
-            if (command.type == ASTAlterCommand::UPDATE)
-            {
-                addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, metadata);
-                for (const ASTPtr & assignment : command.update_assignments->children)
-                    addExpressionColumnsSelectAccess(
-                        read_access, assignment->as<const ASTAssignment &>().expression().get(),
-                        table_id.database_name, table_id.table_name, metadata);
-            }
-            else if (command.type == ASTAlterCommand::DELETE)
-            {
-                addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, metadata);
-            }
-        }
-        if (!read_access.empty())
-            getContext()->checkAccess(read_access);
-    }
+    if (!read_access.empty())
+        getContext()->checkAccess(read_access);
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))

@@ -86,9 +86,36 @@ BlockIO InterpreterUpdateQuery::execute()
     AccessRightsElements required_access;
     required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
 
+    /// The WHERE predicate and the assignment expressions read columns, so they require SELECT on
+    /// those columns (virtual columns excluded, as in a plain SELECT). Computed before any dispatch
+    /// so the initiating user's read access is enforced on every path, including ON CLUSTER, where
+    /// the remote DDL worker may not run as the initiating user.
+    AccessRightsElements read_access;
+    if (auto resolved_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
+    {
+        if (StoragePtr resolved_table = DatabaseCatalog::instance().tryGetTable(resolved_id, getContext()))
+        {
+            const auto & metadata = *resolved_table->getInMemoryMetadataPtr(getContext(), false);
+            addExpressionColumnsSelectAccess(read_access, update_query.predicate.get(), resolved_id.database_name, resolved_id.table_name, metadata);
+            for (const ASTPtr & assignment : update_query.assignments->children)
+                addExpressionColumnsSelectAccess(
+                    read_access, assignment->as<const ASTAssignment &>().expression().get(),
+                    resolved_id.database_name, resolved_id.table_name, metadata);
+        }
+        else if (!update_query.cluster.empty())
+        {
+            /// ON CLUSTER from a node without the table: columns cannot be resolved, so fail closed
+            /// by requiring SELECT on the whole table.
+            read_access.emplace_back(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name);
+        }
+    }
+
     if (!update_query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
+        /// Enforce the read (SELECT) requirements on the initiator too, since the remote DDL worker
+        /// may not run as the initiating user.
+        required_access.append_range(read_access);
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -105,19 +132,8 @@ BlockIO InterpreterUpdateQuery::execute()
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
-    /// The WHERE predicate and the assignment expressions read columns, so they require SELECT on
-    /// those columns (virtual columns excluded, as in a plain SELECT). Checked with the resolved storage.
-    {
-        AccessRightsElements read_access;
-        const auto & metadata = *table->getInMemoryMetadataPtr(getContext(), false);
-        addExpressionColumnsSelectAccess(read_access, update_query.predicate.get(), table_id.database_name, table_id.table_name, metadata);
-        for (const ASTPtr & assignment : update_query.assignments->children)
-            addExpressionColumnsSelectAccess(
-                read_access, assignment->as<const ASTAssignment &>().expression().get(),
-                table_id.database_name, table_id.table_name, metadata);
-        if (!read_access.empty())
-            getContext()->checkAccess(read_access);
-    }
+    if (!read_access.empty())
+        getContext()->checkAccess(read_access);
 
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);
