@@ -39,7 +39,7 @@ test_sed() {
 
     # A bad expression must fail and leave the original file untouched (fail-close).
     echo "--- bad expression error ---"
-    run "sed 's/[/x/' $file" 2>&1 | grep -o "unterminated \`s' command" | head -n 1
+    run "sed 's/[/x/' $file" 2>&1 | grep -o "sed wrote to stderr" | head -n 1
     echo "--- unchanged after failed sed ---"
     run "read $file"
 

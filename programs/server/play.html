@@ -2063,6 +2063,13 @@ class QueryResultElement extends HTMLElement
         let cell = this._current_selected_cell;
         if (!cell) { return; }
 
+        if (e.key === 'Escape')
+        {
+            e.preventDefault();
+            this.clearSelection();
+            return;
+        }
+
         const row = cell.parentElement;
         const table = row.parentElement;
         let cell_index = cell.cellIndex;

@@ -9,7 +9,7 @@ QUX
 QUX bar
 
 --- bad expression error ---
-unterminated `s' command
+sed wrote to stderr
 --- unchanged after failed sed ---
 QUX
 QUX bar
@@ -25,7 +25,7 @@ QUX
 QUX bar
 
 --- bad expression error ---
-unterminated `s' command
+sed wrote to stderr
 --- unchanged after failed sed ---
 QUX
 QUX bar
