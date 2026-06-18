@@ -216,26 +216,39 @@
             z-index: 0; /* stacking context so children don't overlap #menu */
         }
 
-        /* Tab bar: the first child of #main, so it scrolls together with the page content
-           (not sticky). It bleeds into #main's 0.5rem padding with a negative margin so the
-           gray/black strip spans the full width. The bleed is reliable here because the
-           element is not position: sticky (which is what made it behave differently across
-           browsers before). */
+        /* Tab bar: the first child of #main, scrolling vertically together with the page
+           content. Sticky on the horizontal axis only (left: 0, no top) like #controls and
+           #logo-container, so it stays at the left edge while a wide result is scrolled
+           horizontally but still scrolls away vertically.
+           The full-width gray/black strip and the top-of-main border are painted by
+           ::before, which extends 0.5rem into #main's side padding. A negative left/right
+           margin is NOT used for that bleed: it is clamped away under position: sticky in
+           some browsers, leaving #main's padding showing to the left of the tabs. */
         #tab-bar
         {
             display: flex;
             align-items: flex-end;
             gap: 0.25rem;
-            margin: -0.5rem -0.5rem 0.5rem -0.5rem;
+            position: sticky;
+            left: 0;
+            margin: -0.5rem 0 0.5rem 0; /* negative top bleeds into #main's top padding */
             /* Integer top padding (not e.g. 0.15rem = 2.4px): a fractional offset puts
                the tabs and the [+] button on sub-pixel boundaries where the native
                button and the div tabs rasterize their bottom border one device pixel
                apart. */
             padding: 2px 0.5rem 0 0.5rem;
+        }
+
+        #tab-bar::before
+        {
+            content: "";
+            position: absolute;
+            /* Cover the tab bar and bleed 0.5rem into #main's side padding for a full-width
+               strip; +1px at the bottom so the border sits exactly at each tab's bottom
+               (the active tab covers its own 1px segment via its box-shadow). */
+            inset: 0 -0.5rem -1px -0.5rem;
+            z-index: -1;
             background: var(--table-header-color); /* light gray strip */
-            /* The border runs along the top of the main area. The active tab covers its
-               own 1px segment of it (see .tab.active), so the active title looks like
-               part of the main area below. */
             border-bottom: 1px solid var(--border-color);
         }
 
@@ -247,7 +260,7 @@
             display: none;
         }
 
-        [data-theme="dark"] #tab-bar
+        [data-theme="dark"] #tab-bar::before
         {
             background: #000; /* pure black strip */
         }
