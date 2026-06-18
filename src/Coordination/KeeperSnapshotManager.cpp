@@ -393,14 +393,17 @@ namespace
     /// Serialize a chunked (independently-compressed ZSTD) snapshot into `raw_out`.
     ///
     /// The caller must NOT wrap `raw_out` with a compression layer — the chunked format
-    /// manages its own per-chunk ZSTD compression. A placeholder header of
-    /// chunkedSnapshotHeaderSize(chunk_count) zeroed bytes is written first; the caller
-    /// backpatches it after this function returns the chunk descriptor table.
+    /// manages its own per-chunk ZSTD compression. Writing is fully append-only: the 13-byte
+    /// FRONT HEADER is written first, then chunk 0 (METADATA) at byte offset 13, followed
+    /// by NODES and SESSIONS chunks, and finally the FOOTER (descriptor table). No seek or
+    /// backpatch is needed.
     ///
     /// Chunk layout written:
-    ///   1 × METADATA  — version byte, snapshot_meta, zxid+digest, session_id, ACL map
+    ///   FRONT HEADER  — fixed 13 bytes: magic[4] + version[1] + chunk_count[8]
+    ///   1 × METADATA  — version byte, snapshot_meta, zxid+digest, session_id, ACL map (starts at offset 13)
     ///   K × NODES     — each: uint64_t node_count, then node_count V7-encoded path+node pairs
     ///   1 × SESSIONS  — sorted sessions + optional cluster config
+    ///   FOOTER        — chunk_count × 25-byte descriptor (the front-header + footer index)
     ///
     /// K = ceil(total_non_system_nodes / chunk_size_limit), minimum 1.
     template <typename Storage>
@@ -419,21 +422,16 @@ namespace
         const size_t nodes_chunk_count = total_nodes == 0 ? 1 : (total_nodes + chunk_size_limit - 1) / chunk_size_limit;
         const uint64_t total_chunk_count = 1 + nodes_chunk_count + 1; // METADATA + N*NODES + SESSIONS
 
-        // Write zeroed header placeholder; backpatched by the caller after chunks are written.
-        const size_t header_size = chunkedSnapshotHeaderSize(total_chunk_count);
-        {
-            static const char kZeros[64] = {};
-            size_t remaining = header_size;
-            while (remaining > 0)
-            {
-                const size_t batch = std::min(remaining, sizeof(kZeros));
-                raw_out.write(kZeros, batch);
-                remaining -= batch;
-            }
-        }
-
         std::vector<SnapshotChunkDescriptor> chunks;
         chunks.reserve(total_chunk_count);
+
+        // FRONT HEADER (13 bytes): magic + version + chunk_count. All known up front → no backpatch.
+        // Writing it into raw_out first makes the first chunk's recorded offset == 13 automatically.
+        {
+            char header_bytes[chunkedSnapshotHeaderSize()];
+            packChunkedSnapshotHeader(total_chunk_count, header_bytes);
+            raw_out.write(header_bytes, sizeof(header_bytes));
+        }
 
         // Stream-compress one chunk into raw_out and record its descriptor.
         // write_body writes the chunk's uncompressed content into the passed WriteBuffer and
@@ -593,6 +591,11 @@ namespace
                 return 0;
             });
 
+        // Append the FOOTER (descriptor table). Fully sequential — no seek/backpatch, no trailer.
+        std::vector<char> footer(chunkedSnapshotFooterSize(chunks.size()));
+        packChunkedSnapshotFooter(chunks, footer.data());
+        raw_out.write(footer.data(), footer.size());
+
         return chunks;
     }
 }
@@ -603,7 +606,7 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
     if (snapshot.version >= SnapshotVersion::V8)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Chunked snapshots must be written via serializeChunkedSnapshot (which manages per-chunk compression "
-            "and header backpatch), not via the legacy streaming serialiser");
+            "and the front-header + footer index), not via the legacy streaming serialiser");
 
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
@@ -726,6 +729,10 @@ void KeeperStorageSnapshot<Storage>::deserialize(
     SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
     if (current_version > MAX_SUPPORTED_SNAPSHOT_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
+    if (current_version >= SnapshotVersion::V8)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "Snapshot version {} reached the legacy reader; V8+ snapshots must use the chunked "
+            "front-header path, or the input is corrupt/unsupported", version);
 
     deserialization_result.snapshot_meta = deserializeSnapshotMetadata(in);
     Storage & storage = *deserialization_result.storage;
@@ -1345,20 +1352,13 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::serializeSnapshotToB
 {
     if (snapshot.version >= SnapshotVersion::V8)
     {
-        // Chunked format: write directly to the nuraft buffer without a compression wrapper.
-        // serializeChunkedSnapshot writes a zero-filled header placeholder followed by
-        // independently-compressed ZSTD chunks, and returns the chunk descriptor table.
-        // We backpatch the real header via memcpy into the contiguous nuraft::buffer.
+        // Chunked format: append-only. serializeChunkedSnapshot writes a 13-byte front header,
+        // per-chunk ZSTD frames, then the footer (descriptor table) — no trailer, no backpatch.
         auto writer = std::make_unique<WriteBufferFromNuraftBuffer>();
         auto * raw_ptr = writer.get();
-        auto chunks = serializeChunkedSnapshot(snapshot, *writer, keeper_context);
+        serializeChunkedSnapshot(snapshot, *writer, keeper_context);
         writer->finalize();
-        auto buf = raw_ptr->getBuffer();
-        const size_t hdr_size = chunkedSnapshotHeaderSize(chunks.size());
-        std::vector<char> header_buf(hdr_size);
-        packChunkedSnapshotHeader(chunks, header_buf.data());
-        std::memcpy(buf->data_begin(), header_buf.data(), hdr_size);
-        return buf;
+        return raw_ptr->getBuffer();
     }
 
     std::unique_ptr<WriteBufferFromNuraftBuffer> writer = std::make_unique<WriteBufferFromNuraftBuffer>();
@@ -1387,7 +1387,7 @@ KeeperSnapshotManager<Storage>::deserializeChunkedSnapshotFromBuffer(nuraft::ptr
         const char * buf_data = reinterpret_cast<const char *>(buffer->data_begin());
         const size_t buf_size = buffer->size();
 
-        auto chunks = parseAndValidateChunkedSnapshotHeader(buf_data, buf_size);
+        auto chunks = parseAndValidateChunkedSnapshot(buf_data, buf_size);
 
         // Chunked snapshot storage: root "/" must come from the snapshot, not the constructor.
         SnapshotDeserializationResult<Storage> result;
@@ -1401,7 +1401,7 @@ KeeperSnapshotManager<Storage>::deserializeChunkedSnapshotFromBuffer(nuraft::ptr
 
         bool recalculate_digest = keeper_context->digestEnabled();
 
-        // ── METADATA chunk (always chunks[0], validated by parseAndValidateChunkedSnapshotHeader) ──────────────
+        // ── METADATA chunk (always chunks[0], validated by parseAndValidateChunkedSnapshot) ──────────────
         {
             const SnapshotChunkDescriptor & metadata_chunk_info = chunks[0];
             auto compressed_metadata = makeChunkReader(
@@ -1711,24 +1711,27 @@ bool KeeperSnapshotManager<Storage>::isZstdCompressed(nuraft::ptr<nuraft::buffer
     return memcmp(magic_from_buffer, ZSTD_COMPRESSED_MAGIC, 4) == 0;
 }
 
-/// Returns true iff `buffer` starts with "CKFS" (chunked snapshot magic).
+/// Returns true iff `buffer` is a structurally valid chunked snapshot. NOT a magic-only check: a
+/// legacy non-ZSTD (CompressedWriteBuffer) snapshot begins with a CityHash128 checksum that can
+/// coincidentally start with CKFS, so looksLikeChunkedSnapshot also validates chunk_count, footer fit,
+/// the full descriptor table, and the exact footer boundary. Version is validated later by
+/// parseAndValidateChunkedSnapshot (→ UNKNOWN_FORMAT_VERSION).
 static bool isChunkedSnapshot(nuraft::ptr<nuraft::buffer> buffer)
 {
-    if (buffer->size() < 4)
-        return false;
-    const char * p = reinterpret_cast<const char *>(buffer->data_begin());
-    return std::memcmp(p, KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4) == 0;
+    return looksLikeChunkedSnapshot(
+        reinterpret_cast<const char *>(buffer->data_begin()), buffer->size());
 }
 
 template<typename Storage>
 SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage) const
 {
     buffer->pos(0);
-
-    // 3-way detection:
-    //   "CKFS" → chunked ZSTD format (version 8)
-    //   ZSTD magic → legacy ZSTD (V3-V7)
-    //   else    → legacy LZ4 (V0-V2)
+    // Format detection (chunked first):
+    //   CKFS magic + valid chunked structure → chunked format (v8); version checked by parseAndValidateChunkedSnapshot
+    //     (a legacy non-ZSTD CompressedWriteBuffer checksum can start with CKFS, so isChunkedSnapshot
+    //      validates the whole descriptor table, not just the magic, before routing here)
+    //   ZSTD magic (front)                    → legacy ZSTD (V3-V7) — mutually exclusive by magic
+    //   else                                  → legacy LZ4 / CompressedReadBuffer (V0-V2)
     if (isChunkedSnapshot(buffer))
         return deserializeChunkedSnapshotFromBuffer(buffer, load_full_storage);
 
@@ -1752,13 +1755,13 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
 
 /// Decompress ONLY the METADATA chunk (chunks[0]) of a chunked snapshot and return the snapshot
 /// metadata. Never touches NODES or SESSIONS chunks — O(1) in node count.
-/// Called from deserializeSnapshotMetadataFromBuffer after "CKFS" magic is detected.
+/// Called from deserializeSnapshotMetadataFromBuffer after CKFS front magic is detected.
 static SnapshotMetadataPtr deserializeChunkedSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer)
 {
     const char * buf_data = reinterpret_cast<const char *>(buffer->data_begin());
     const size_t buf_size = buffer->size();
 
-    auto chunks = parseAndValidateChunkedSnapshotHeader(buf_data, buf_size);
+    auto chunks = parseAndValidateChunkedSnapshot(buf_data, buf_size);
 
     // Decompress ONLY chunks[0] (METADATA) — intentionally never touch NODES or SESSIONS.
     const SnapshotChunkDescriptor & metadata_chunk_descriptor = chunks[0];
@@ -1783,7 +1786,7 @@ SnapshotMetadataPtr KeeperSnapshotManager<Storage>::deserializeSnapshotMetadataF
     /// buffer at offset `0` on success and on throw.
     SCOPE_EXIT({ buffer->pos(0); });
 
-    // Chunked snapshot: snapshot_meta lives in the METADATA chunk only.
+    // Chunked snapshot (CKFS front magic): snapshot_meta lives in the METADATA chunk only.
     // Use the dedicated fast path that decompresses only chunks[0] — O(1) in node count.
     // The full deserializer (deserializeChunkedSnapshotFromBuffer) would process all NODES and SESSIONS
     // chunks, which at 56M-node scale allocates gigabytes of temporary data while the
@@ -1806,6 +1809,10 @@ SnapshotMetadataPtr KeeperSnapshotManager<Storage>::deserializeSnapshotMetadataF
     SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
     if (current_version > MAX_SUPPORTED_SNAPSHOT_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
+    if (current_version >= SnapshotVersion::V8)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "Snapshot version {} reached the legacy reader; V8+ snapshots must use the chunked "
+            "front-header path, or the input is corrupt/unsupported", version);
 
     return deserializeSnapshotMetadata(*compressed_reader);
 }
@@ -1957,31 +1964,15 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
 
         if (snapshot.version >= SnapshotVersion::V8)
         {
-            // Chunked format: write directly without a compression wrapper; serializeChunkedSnapshot
-            // manages its own per-chunk ZSTD compression. After all chunks are written we
-            // capture the total byte count before seeking back so the metric
-            // reflects the real file size, not the post-seek position, then seek to
-            // position 0 and overwrite the placeholder header.
+            // Chunked format: append-only (front header + per-chunk ZSTD frames + footer; no trailer).
+            // No seek/backpatch, so a forward-only WriteBuffer is sufficient.
             auto * raw_writer = writer.get();
-            auto chunks = serializeChunkedSnapshot(snapshot, *raw_writer, keeper_context);
+            serializeChunkedSnapshot(snapshot, *raw_writer, keeper_context);
 
-            // Capture total bytes BEFORE seeking back to avoid recording the
-            // seek-back position (0 + header_size) instead of the real file size.
+            // count() now equals the full file size (header + chunks + footer).
             const size_t bytes_written = raw_writer->count();
             ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
 
-            raw_writer->next(); // flush internal buffer to OS before seeking
-
-            auto * seekable = dynamic_cast<WriteBufferFromFileDescriptor *>(raw_writer);
-            if (!seekable)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Chunked snapshot disk writer does not support seek — cannot backpatch header");
-            seekable->seek(0, SEEK_SET);
-
-            const size_t hdr_size = chunkedSnapshotHeaderSize(chunks.size());
-            std::vector<char> header_buf(hdr_size);
-            packChunkedSnapshotHeader(chunks, header_buf.data());
-            raw_writer->write(header_buf.data(), hdr_size);
             raw_writer->finalize();
 
             Stopwatch watch;

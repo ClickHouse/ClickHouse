@@ -20,6 +20,9 @@
 #include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 #include <Disks/DiskLocal.h>
 
+#include <Coordination/WriteBufferFromNuraftBuffer.h>
+
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
@@ -2017,62 +2020,75 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateSnapshotKeepsPreviousMetadataAndAll
 }
 
 // ---------------------------------------------------------------------------
-// Chunked snapshot header pack/unpack + bounds validation tests.
+// Chunked snapshot footer pack/unpack + bounds validation tests.
 // These tests exercise KeeperChunkedSnapshot.h / .cpp independently of the actual
-// snapshot write or read paths.
+// snapshot write or read paths. In the new layout frames start at offset 0 (no
+// front header); the FOOTER (descriptor table) and TRAILER follow the chunk data.
 // ---------------------------------------------------------------------------
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_FORMAT_VERSION;
+}
 
-/// Build a minimal valid 3-chunk header (METADATA, NODES, SESSIONS) and round-trip through
-/// packChunkedSnapshotHeader + parseAndValidateChunkedSnapshotHeader.
+/// Build a chunked-snapshot buffer with the front-header layout from a descriptor list.
+/// Frames carry absolute offsets/sizes (offsets must start at >= 13, just past the front header).
+/// footer_offset = byte just past the last frame; buffer is [front header][chunk region (zeros)][footer].
+static std::vector<char> buildChunkedBufferFromDescriptors(const std::vector<SnapshotChunkDescriptor> & frames)
+{
+    uint64_t footer_offset = chunkedSnapshotHeaderSize(); // starts at 13 when no frames
+    for (const auto & f : frames)
+        footer_offset = std::max(footer_offset, f.compressed_offset + f.compressed_size);
+    const size_t total = static_cast<size_t>(footer_offset) + chunkedSnapshotFooterSize(frames.size());
+    std::vector<char> buf(total, '\0');
+    packChunkedSnapshotHeader(static_cast<uint64_t>(frames.size()), buf.data()); // FRONT HEADER @ [0,13)
+    packChunkedSnapshotFooter(frames, buf.data() + footer_offset);               // FOOTER @ end, no trailer
+    return buf;
+}
+
+/// Build a minimal valid 3-chunk header+footer (METADATA, NODES, SESSIONS) and round-trip through
+/// packChunkedSnapshotHeader + packChunkedSnapshotFooter + parseAndValidateChunkedSnapshot.
+/// Frames start at offset 13 — just past the 13-byte front header.
 TEST(KeeperChunkedSnapshotHeader, RoundTripMinimal)
 {
-    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
-    // Frames start right after the header; no gaps.
+    // Frames start at offset 13 (just past the front header); contiguous, no gaps.
     std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::METADATA, hdr_size,         100},
-        {SnapshotChunkType::NODES,    hdr_size + 100,   200},
-        {SnapshotChunkType::SESSIONS, hdr_size + 300,    50},
+        {SnapshotChunkType::METADATA,  13,  100},
+        {SnapshotChunkType::NODES,    113,  200},
+        {SnapshotChunkType::SESSIONS, 313,   50},
     };
-    const size_t total_size = hdr_size + 350;
+    auto buf = buildChunkedBufferFromDescriptors(frames);
 
-    std::vector<char> buf(total_size, '\0');
-    packChunkedSnapshotHeader(frames, buf.data());
-
-    auto parsed = parseAndValidateChunkedSnapshotHeader(buf.data(), total_size);
+    auto parsed = parseAndValidateChunkedSnapshot(buf.data(), buf.size());
 
     ASSERT_EQ(parsed.size(), 3u);
     EXPECT_EQ(parsed[0].type, SnapshotChunkType::METADATA);
-    EXPECT_EQ(parsed[0].compressed_offset, hdr_size);
+    EXPECT_EQ(parsed[0].compressed_offset, 13u);
     EXPECT_EQ(parsed[0].compressed_size, 100u);
     EXPECT_EQ(parsed[1].type, SnapshotChunkType::NODES);
-    EXPECT_EQ(parsed[1].compressed_offset, hdr_size + 100);
+    EXPECT_EQ(parsed[1].compressed_offset, 113u);
     EXPECT_EQ(parsed[1].compressed_size, 200u);
     EXPECT_EQ(parsed[2].type, SnapshotChunkType::SESSIONS);
-    EXPECT_EQ(parsed[2].compressed_offset, hdr_size + 300);
+    EXPECT_EQ(parsed[2].compressed_offset, 313u);
     EXPECT_EQ(parsed[2].compressed_size, 50u);
 }
 
 /// Multiple NODES frames round-trip correctly (K > 1 per the write path).
 TEST(KeeperChunkedSnapshotHeader, RoundTripMultipleNodesFrames)
 {
-    const uint64_t chunk_count = 5; // METADATA + 3 NODES + SESSIONS
-    const size_t hdr_size = chunkedSnapshotHeaderSize(chunk_count);
-
+    // Frames start at offset 13 (just past front header); METADATA + 3 NODES + SESSIONS.
     std::vector<SnapshotChunkDescriptor> frames;
-    frames.push_back({SnapshotChunkType::METADATA, hdr_size, 80});
-    frames.push_back({SnapshotChunkType::NODES, hdr_size + 80, 300});
-    frames.push_back({SnapshotChunkType::NODES, hdr_size + 380, 250});
-    frames.push_back({SnapshotChunkType::NODES, hdr_size + 630, 150});
-    frames.push_back({SnapshotChunkType::SESSIONS, hdr_size + 780, 40});
-    const size_t total_size = hdr_size + 820;
+    frames.push_back({SnapshotChunkType::METADATA,  13,  80});
+    frames.push_back({SnapshotChunkType::NODES,      93, 300});
+    frames.push_back({SnapshotChunkType::NODES,     393, 250});
+    frames.push_back({SnapshotChunkType::NODES,     643, 150});
+    frames.push_back({SnapshotChunkType::SESSIONS,  793,  40});
 
-    std::vector<char> buf(total_size, '\0');
-    packChunkedSnapshotHeader(frames, buf.data());
+    auto buf = buildChunkedBufferFromDescriptors(frames);
 
-    auto parsed = parseAndValidateChunkedSnapshotHeader(buf.data(), total_size);
+    auto parsed = parseAndValidateChunkedSnapshot(buf.data(), buf.size());
 
     ASSERT_EQ(parsed.size(), 5u);
     EXPECT_EQ(parsed[0].type, SnapshotChunkType::METADATA);
@@ -2083,175 +2099,182 @@ TEST(KeeperChunkedSnapshotHeader, RoundTripMultipleNodesFrames)
     EXPECT_EQ(parsed[4].compressed_size, 40u);
 }
 
-/// Frames with gaps between them (non-contiguous) are still valid.
+/// Frames with gaps between them (non-contiguous) are still valid (but trailing gap before footer is not).
 TEST(KeeperChunkedSnapshotHeader, RoundTripWithGapsBetweenFrames)
 {
-    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
-    const size_t gap = 128;
+    // Frames start at offset 13 (just past front header); gaps between chunks are permitted.
+    const uint64_t gap = 128;
     std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::METADATA, hdr_size,                        100},
-        {SnapshotChunkType::NODES,    hdr_size + 100 + gap,            200},
-        {SnapshotChunkType::SESSIONS, hdr_size + 100 + gap + 200 + gap, 50},
+        {SnapshotChunkType::METADATA,                               13, 100},
+        {SnapshotChunkType::NODES,                      13 + 100 + gap, 200},
+        {SnapshotChunkType::SESSIONS, 13 + 100 + gap + 200 + gap,        50},
     };
-    const size_t total_size = frames.back().compressed_offset + frames.back().compressed_size;
 
-    std::vector<char> buf(total_size, '\0');
-    packChunkedSnapshotHeader(frames, buf.data());
+    auto buf = buildChunkedBufferFromDescriptors(frames);
 
-    auto parsed = parseAndValidateChunkedSnapshotHeader(buf.data(), total_size);
+    auto parsed = parseAndValidateChunkedSnapshot(buf.data(), buf.size());
     ASSERT_EQ(parsed.size(), 3u);
-    EXPECT_EQ(parsed[1].compressed_offset, hdr_size + 100 + gap);
+    EXPECT_EQ(parsed[1].compressed_offset, 13u + 100u + gap);
 }
 
 // --- Rejection tests ---------------------------------------------------------
 
 TEST(KeeperChunkedSnapshotHeader, RejectsBufTooSmall)
 {
-    // A buffer of 12 bytes (< 13) must be rejected immediately.
-    std::vector<char> buf(12, '\0');
-    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), 12), DB::Exception);
+    // A buffer smaller than chunkedSnapshotHeaderSize() (13) must be rejected immediately.
+    const size_t small_size = chunkedSnapshotHeaderSize() - 1;
+    std::vector<char> buf(small_size, '\0');
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), small_size), DB::Exception);
 }
 
 TEST(KeeperChunkedSnapshotHeader, RejectsWrongMagic)
 {
-    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
     std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::METADATA, hdr_size, 10},
-        {SnapshotChunkType::NODES,    hdr_size + 10, 20},
-        {SnapshotChunkType::SESSIONS, hdr_size + 30, 10},
+        {SnapshotChunkType::METADATA,  13, 10},
+        {SnapshotChunkType::NODES,     23, 20},
+        {SnapshotChunkType::SESSIONS,  43, 10},
     };
-    std::vector<char> buf(hdr_size + 40, '\0');
-    packChunkedSnapshotHeader(frames, buf.data());
+    auto buf = buildChunkedBufferFromDescriptors(frames);
 
-    // Overwrite first magic byte with garbage.
-    buf[0] = 'X';
-    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
+    // Corrupt the first byte of the FRONT header magic.
+    buf[0] ^= 0xFF;
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception);
 }
 
 TEST(KeeperChunkedSnapshotHeader, RejectsChunkCountTwo)
 {
     // chunk_count == 2 is always invalid (need at least METADATA+NODES+SESSIONS=3).
-    const size_t hdr_size = chunkedSnapshotHeaderSize(2);
-    std::vector<char> buf(hdr_size + 100, '\0');
-
-    // Write a syntactically-valid 2-chunk header.
+    // Build a valid-looking buffer with 2 descriptors in the footer.
     std::vector<SnapshotChunkDescriptor> frames_2 = {
-        {SnapshotChunkType::METADATA, hdr_size, 50},
-        {SnapshotChunkType::SESSIONS, hdr_size + 50, 50},
+        {SnapshotChunkType::METADATA,  13, 50},
+        {SnapshotChunkType::SESSIONS,  63, 50},
     };
-    packChunkedSnapshotHeader(frames_2, buf.data());
+    auto buf = buildChunkedBufferFromDescriptors(frames_2);
 
     // Should throw CORRUPTED_DATA (chunk_count < 3).
-    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception);
 }
 
 TEST(KeeperChunkedSnapshotHeader, RejectsChunkCountZeroAndOne)
 {
     for (uint64_t cc : {uint64_t{0}, uint64_t{1}})
     {
-        const size_t hdr_size = chunkedSnapshotHeaderSize(cc);
-        std::vector<char> buf(hdr_size + 10, '\0');
-        // Write magic + version + chunk_count manually.
+        // Build a buffer with a FRONT HEADER having chunk_count = 0 or 1.
+        const size_t footer_size = chunkedSnapshotFooterSize(cc);
+        // Put some chunk area after the 13-byte header, then the (empty or 1-desc) footer.
+        const size_t total = chunkedSnapshotHeaderSize() + 100 + footer_size;
+        std::vector<char> buf(total, '\0');
+        // Write front header: magic[4] + version[1] + chunk_count[8]
         memcpy(buf.data(), KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4);
-        buf[4] = KEEPER_CHUNKED_SNAPSHOT_VERSION;
+        buf[4] = static_cast<char>(KEEPER_CHUNKED_SNAPSHOT_VERSION);
         memcpy(buf.data() + 5, &cc, 8);
-        EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
+        EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception);
     }
 }
 
-TEST(KeeperChunkedSnapshotHeader, RejectsOffsetOverlappingHeader)
+TEST(KeeperChunkedSnapshotHeader, RejectsChunkExtendingIntoFooter)
 {
-    // A frame that starts before the header ends.
-    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
+    // A chunk whose [offset, offset+size) extends past footer_offset.
+    // Build a valid 3-chunk buffer, then hand-corrupt the last chunk's compressed_size
+    // in the footer descriptor so the chunk appears to extend into the footer region.
     std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::METADATA, hdr_size - 1, 100}, // overlaps header
-        {SnapshotChunkType::NODES,    hdr_size + 100, 200},
-        {SnapshotChunkType::SESSIONS, hdr_size + 300, 50},
+        {SnapshotChunkType::METADATA,  13, 100},
+        {SnapshotChunkType::NODES,    113, 200},
+        {SnapshotChunkType::SESSIONS, 313,  50}, // last byte at 363 = footer_offset
     };
-    std::vector<char> buf(hdr_size + 350, '\0');
-    packChunkedSnapshotHeader(frames, buf.data());
-    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
+    auto buf = buildChunkedBufferFromDescriptors(frames);
+
+    // Locate the SESSIONS descriptor in the footer and inflate its compressed_size by 1.
+    // footer_offset = 363; footer starts at buf[363]; SESSIONS is the 3rd descriptor (index 2).
+    const uint64_t footer_offset = 363;
+    char * footer = buf.data() + footer_offset;
+    // descriptor[2]: type(1) + offset(8) + size(8) = offset 17 into the footer for the size field
+    uint64_t bad_size = 51; // one byte past footer_offset
+    memcpy(footer + KEEPER_CHUNKED_SNAPSHOT_DESCRIPTOR_SIZE * 2 + 1 + 8, &bad_size, 8);
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception);
 }
 
 TEST(KeeperChunkedSnapshotHeader, RejectsOverlappingFrames)
 {
     // Frame 1 starts before frame 0 ends (overlapping by 1 byte).
-    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
     std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::METADATA, hdr_size, 100},
-        {SnapshotChunkType::NODES,    hdr_size + 99, 200}, // starts 1 byte before frame 0 ends
-        {SnapshotChunkType::SESSIONS, hdr_size + 299, 50},
+        {SnapshotChunkType::METADATA,  13, 100},
+        {SnapshotChunkType::NODES,    112, 200}, // starts 1 byte before frame 0 ends (13+100=113)
+        {SnapshotChunkType::SESSIONS, 312,  50},
     };
-    std::vector<char> buf(hdr_size + 349, '\0');
-    packChunkedSnapshotHeader(frames, buf.data());
-    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
+    auto buf = buildChunkedBufferFromDescriptors(frames);
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception);
 }
 
 TEST(KeeperChunkedSnapshotHeader, RejectsFrameExceedingBufferSize)
 {
-    // A frame whose end extends beyond the buffer.
-    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
+    // Build a valid buffer, then corrupt the last descriptor's compressed_size so the
+    // chunk appears to extend past footer_offset.
     std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::METADATA, hdr_size, 100},
-        {SnapshotChunkType::NODES,    hdr_size + 100, 200},
-        {SnapshotChunkType::SESSIONS, hdr_size + 300, 9999}, // way too large
+        {SnapshotChunkType::METADATA,  13, 100},
+        {SnapshotChunkType::NODES,    113, 200},
+        {SnapshotChunkType::SESSIONS, 313,  50},
     };
-    std::vector<char> buf(hdr_size + 350, '\0'); // total_size only covers first two frames
-    packChunkedSnapshotHeader(frames, buf.data());
-    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
+    auto buf = buildChunkedBufferFromDescriptors(frames);
+
+    // footer_offset = 363; SESSIONS descriptor (index 2) has compressed_size field
+    // at footer_offset + DESCRIPTOR_SIZE*2 + 1 (type) + 8 (offset) = 363 + 50 + 9 = 422
+    const uint64_t footer_offset = 363;
+    char * footer = buf.data() + footer_offset;
+    uint64_t bad_size = 9999; // way too large — 313 + 9999 = 10312 > footer_offset=363
+    memcpy(footer + KEEPER_CHUNKED_SNAPSHOT_DESCRIPTOR_SIZE * 2 + 1 + 8, &bad_size, 8);
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception);
 }
 
 TEST(KeeperChunkedSnapshotHeader, RejectsWrongFirstChunkType)
 {
     // First chunk must be METADATA, not NODES.
-    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
     std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::NODES,    hdr_size, 100},     // wrong: should be METADATA
-        {SnapshotChunkType::NODES,    hdr_size + 100, 200},
-        {SnapshotChunkType::SESSIONS, hdr_size + 300, 50},
+        {SnapshotChunkType::NODES,     13, 100},     // wrong: should be METADATA
+        {SnapshotChunkType::NODES,    113, 200},
+        {SnapshotChunkType::SESSIONS, 313,  50},
     };
-    std::vector<char> buf(hdr_size + 350, '\0');
-    packChunkedSnapshotHeader(frames, buf.data());
-    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
+    auto buf = buildChunkedBufferFromDescriptors(frames);
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception);
 }
 
 TEST(KeeperChunkedSnapshotHeader, RejectsWrongLastChunkType)
 {
     // Last chunk must be SESSIONS, not NODES.
-    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
     std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::METADATA, hdr_size, 100},
-        {SnapshotChunkType::NODES,    hdr_size + 100, 200},
-        {SnapshotChunkType::NODES,    hdr_size + 300, 50}, // wrong: should be SESSIONS
+        {SnapshotChunkType::METADATA,  13, 100},
+        {SnapshotChunkType::NODES,    113, 200},
+        {SnapshotChunkType::NODES,    313,  50}, // wrong: should be SESSIONS
     };
-    std::vector<char> buf(hdr_size + 350, '\0');
-    packChunkedSnapshotHeader(frames, buf.data());
-    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
+    auto buf = buildChunkedBufferFromDescriptors(frames);
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception);
 }
 
 TEST(KeeperChunkedSnapshotHeader, RejectsNonMonotonicOffsets)
 {
-    // First frame at a higher offset than the second — non-monotonic.
-    const size_t hdr_size = chunkedSnapshotHeaderSize(3);
+    // First frame at a higher offset than the second — non-monotonic (NODES starts before METADATA ends).
     std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::METADATA, hdr_size + 300, 10},
-        {SnapshotChunkType::NODES,    hdr_size + 100, 200}, // starts before frame 0 ends
-        {SnapshotChunkType::SESSIONS, hdr_size + 300, 50},
+        {SnapshotChunkType::METADATA, 300, 10},
+        {SnapshotChunkType::NODES,    100, 200}, // starts before frame 0 ends (300+10=310 > 100)
+        {SnapshotChunkType::SESSIONS, 400,  50},
     };
-    std::vector<char> buf(hdr_size + 400, '\0');
-    packChunkedSnapshotHeader(frames, buf.data());
-    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
+    auto buf = buildChunkedBufferFromDescriptors(frames);
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception);
 }
 
 TEST(KeeperChunkedSnapshotHeader, ChunkCountExceedsBufferCapacity)
 {
-    // chunk_count so large that chunkedSnapshotHeaderSize(chunk_count) > buf_size.
-    std::vector<char> buf(16, '\0');
+    // chunk_count so large that chunkedSnapshotFooterSize(chunk_count) would not fit in the buffer.
+    // Total buffer = 32 bytes; header occupies first 13, leaving only 19 bytes after it.
+    // chunk_count=100 → footer_size=2500, which far exceeds the 19 available bytes.
+    const size_t total = 32;
+    std::vector<char> buf(total, '\0');
+    // Write front header: magic[4] + version[1] + chunk_count[8]
     memcpy(buf.data(), KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4);
-    buf[4] = KEEPER_CHUNKED_SNAPSHOT_VERSION;
-    uint64_t big = 100; // chunkedSnapshotHeaderSize(100) = 2513, but buf is only 16 bytes
-    memcpy(buf.data() + 5, &big, 8);
-    EXPECT_THROW(parseAndValidateChunkedSnapshotHeader(buf.data(), buf.size()), DB::Exception);
+    buf[4] = static_cast<char>(KEEPER_CHUNKED_SNAPSHOT_VERSION);
+    uint64_t big_count = 100;
+    memcpy(buf.data() + 5, &big_count, 8);
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception);
 }
 
 /// Verify that the chunked snapshot write path produces a structurally valid snapshot buffer.
@@ -2288,8 +2311,8 @@ TEST(KeeperChunkedSnapshotWrite, InspectBytes)
     const char * data = reinterpret_cast<const char *>(buf->data_begin());
     const size_t data_size = buf->size();
 
-    // Parse and validate the chunked snapshot header; throws on any structural violation.
-    auto frames = parseAndValidateChunkedSnapshotHeader(data, data_size);
+    // Parse and validate the chunked snapshot; throws on any structural violation.
+    auto frames = parseAndValidateChunkedSnapshot(data, data_size);
 
     // Must have METADATA + at least 1 NODES + SESSIONS.
     ASSERT_GE(frames.size(), DB::KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT);
@@ -2299,6 +2322,20 @@ TEST(KeeperChunkedSnapshotWrite, InspectBytes)
     EXPECT_EQ(frames.back().type,  SnapshotChunkType::SESSIONS);
     for (size_t i = 1; i + 1 < frames.size(); ++i)
         EXPECT_EQ(frames[i].type, SnapshotChunkType::NODES) << "Chunk " << i << " should be NODES";
+
+    // Front-header layout: CKFS magic is at the front (first 4 bytes), version at byte 4,
+    // and chunk_count at bytes 5-12.
+    EXPECT_EQ(memcmp(data, "CKFS", 4), 0) << "CKFS magic must be at the front (header)";
+    EXPECT_EQ(static_cast<uint8_t>(data[4]), 8u) << "Header version byte must be 8";
+    {
+        uint64_t hdr_count = 0;
+        memcpy(&hdr_count, data + 5, 8);
+        EXPECT_EQ(hdr_count, frames.size()) << "Header chunk_count must match parsed frame count";
+    }
+    // First chunk must start at offset 13 (just past the 13-byte front header).
+    EXPECT_EQ(frames.front().compressed_offset, 13u) << "First chunk must start at offset 13 in the front-header layout";
+    // Last 4 bytes must NOT be CKFS (no trailer).
+    EXPECT_NE(memcmp(data + data_size - 4, "CKFS", 4), 0) << "Last bytes must NOT be CKFS (no trailer in front-header layout)";
 
     // Every frame must begin with the ZSTD magic bytes (0x28 0xB5 0x2F 0xFD).
     static constexpr unsigned char kZstdMagic[4] = {0x28, 0xB5, 0x2F, 0xFD};
@@ -2311,7 +2348,7 @@ TEST(KeeperChunkedSnapshotWrite, InspectBytes)
     }
 
     // Verify that the first NODES frame descriptor carries a non-zero node_count.
-    // node_count now lives in the header descriptor (not the frame body).
+    // node_count lives in the footer descriptor (not the frame body).
     // Storage has 4 non-system nodes: /, /alpha, /beta, /gamma (system nodes excluded).
     // With the default chunk_size_limit (100000), all 4 fit in one NODES frame.
     {
@@ -2365,20 +2402,25 @@ TEST(KeeperChunkedSnapshotWrite, DiskInspectBytes)
     raw_file.read(raw.data(), static_cast<std::streamsize>(file_size));
     raw_file.close();
 
-    // Reported bytes must equal actual file size (count() captured before seek-back).
+    // Reported bytes must equal actual file size (append-only — count() is the final file size).
     EXPECT_EQ(reported_bytes, file_size)
-        << "KeeperSnapshotWrittenBytes mismatch — count() must be captured before seek-back";
+        << "KeeperSnapshotWrittenBytes mismatch — count() must equal the final file size";
 
     ASSERT_GT(file_size, 0u);
 
-    // Parse and validate the chunked snapshot header.
-    auto frames = parseAndValidateChunkedSnapshotHeader(raw.data(), file_size);
+    // Parse and validate the chunked snapshot.
+    auto frames = parseAndValidateChunkedSnapshot(raw.data(), file_size);
 
     ASSERT_GE(frames.size(), DB::KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT);
     EXPECT_EQ(frames.front().type, SnapshotChunkType::METADATA);
     EXPECT_EQ(frames.back().type,  SnapshotChunkType::SESSIONS);
     for (size_t i = 1; i + 1 < frames.size(); ++i)
         EXPECT_EQ(frames[i].type, SnapshotChunkType::NODES) << "Chunk " << i << " should be NODES";
+
+    // Front-header layout: CKFS magic at front, first chunk at offset 13, no tail magic.
+    EXPECT_EQ(memcmp(raw.data(), "CKFS", 4), 0) << "CKFS magic must be at front (header)";
+    EXPECT_EQ(frames.front().compressed_offset, 13u) << "First chunk must start at offset 13";
+    EXPECT_NE(memcmp(raw.data() + file_size - 4, "CKFS", 4), 0) << "Last bytes must NOT be CKFS (no trailer)";
 
     static constexpr unsigned char kZstdMagic[4] = {0x28, 0xB5, 0x2F, 0xFD};
     for (size_t i = 0; i < frames.size(); ++i)
@@ -2389,13 +2431,15 @@ TEST(KeeperChunkedSnapshotWrite, DiskInspectBytes)
     }
 }
 
-TEST(KeeperChunkedSnapshotHeader, HeaderSizeComputation)
+TEST(KeeperChunkedSnapshotHeader, HeaderAndFooterSizeComputation)
 {
-    // Verify the constexpr formula: 13 + 25 * chunk_count.
-    EXPECT_EQ(chunkedSnapshotHeaderSize(0),   13u);
-    EXPECT_EQ(chunkedSnapshotHeaderSize(1),   38u);
-    EXPECT_EQ(chunkedSnapshotHeaderSize(3),   88u);
-    EXPECT_EQ(chunkedSnapshotHeaderSize(100), 2513u);
+    // Header is fixed 13 bytes: magic[4] + version[1] + chunk_count[8].
+    EXPECT_EQ(chunkedSnapshotHeaderSize(), 13u);
+    // Footer is 25 * chunk_count bytes (one descriptor per chunk).
+    EXPECT_EQ(chunkedSnapshotFooterSize(0),   0u);
+    EXPECT_EQ(chunkedSnapshotFooterSize(1),   25u);
+    EXPECT_EQ(chunkedSnapshotFooterSize(3),   75u);
+    EXPECT_EQ(chunkedSnapshotFooterSize(100), 2500u);
 }
 
 // ─── Chunked snapshot read-path tests (sequential deserialization + validating load API) ──────────
@@ -2447,9 +2491,15 @@ TEST(KeeperChunkedSnapshotRead, RoundTripBasic)
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
-    // Verify 3-way detection: buffer starts with "CKFS" magic.
-    ASSERT_GE(buf->size(), 4u);
-    EXPECT_EQ(memcmp(buf->data_begin(), "CKFS", 4), 0) << "Chunked snapshot must start with CKFS magic";
+    // Verify front-header layout: CKFS magic at offset 0, version byte 8 at offset 4, NO tail magic.
+    ASSERT_GE(buf->size(), static_cast<size_t>(chunkedSnapshotHeaderSize()));
+    const char * data_ptr = reinterpret_cast<const char *>(buf->data_begin());
+    EXPECT_EQ(memcmp(data_ptr, "CKFS", 4), 0)
+        << "Chunked snapshot must start with CKFS magic (front-header layout)";
+    EXPECT_EQ(static_cast<uint8_t>(data_ptr[4]), 8u)
+        << "Front header version byte must be 8";
+    EXPECT_NE(memcmp(data_ptr + buf->size() - 4, "CKFS", 4), 0)
+        << "Chunked snapshot must NOT end with CKFS (no trailer in front-header layout)";
 
     // Deserialize via the public API — must route to deserializeChunkedSnapshotFromBuffer.
     auto result = mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true);
@@ -2580,9 +2630,11 @@ TEST(KeeperChunkedSnapshotRead, LegacyV7SnapshotStillLoads)
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
 
-    // Must NOT start with CKFS magic — it's a ZSTD-compressed legacy snapshot.
+    // Must NOT end with CKFS magic — it's a ZSTD-compressed legacy snapshot without a chunked trailer.
     ASSERT_GE(buf->size(), 4u);
-    EXPECT_NE(memcmp(buf->data_begin(), "CKFS", 4), 0) << "V7 snapshot must not have CKFS magic";
+    const char * v7_data = reinterpret_cast<const char *>(buf->data_begin());
+    EXPECT_NE(memcmp(v7_data + buf->size() - 4, "CKFS", 4), 0)
+        << "V7 snapshot must not have CKFS magic at tail";
 
     // 3-way detection should route to legacy ZSTD path.
     auto result = mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true);
@@ -2708,7 +2760,7 @@ TEST(KeeperChunkedSnapshotValidation, MetadataOnlyFastPath)
     // Locate the first NODES chunk and corrupt its middle bytes.
     const char * raw_const = reinterpret_cast<const char *>(buf->data_begin());
     const size_t buf_size = buf->size();
-    auto frames = parseAndValidateChunkedSnapshotHeader(raw_const, buf_size);
+    auto frames = parseAndValidateChunkedSnapshot(raw_const, buf_size);
     ASSERT_GE(frames.size(), DB::KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT);
 
     // Find the first NODES chunk.
@@ -2739,9 +2791,9 @@ TEST(KeeperChunkedSnapshotValidation, MetadataOnlyFastPath)
         << "Full deserializer must throw on NODES chunk corruption";
 }
 
-/// Corrupt the chunked snapshot header version byte (position 4 in the buffer) to a value != 8.
-/// deserializeSnapshotFromBuffer must throw (UNKNOWN_FORMAT_VERSION from
-/// parseAndValidateChunkedSnapshotHeader) before touching any chunk data.
+/// Corrupt the chunked snapshot front-header version byte to a value != 8.
+/// deserializeSnapshotFromBuffer must throw UNKNOWN_FORMAT_VERSION (from
+/// parseAndValidateChunkedSnapshot) before touching any chunk data.
 TEST(KeeperChunkedSnapshotValidation, WrongHeaderVersionRejected)
 {
     ChangelogDirTest snap_dir("./chunked_val_hdrver");
@@ -2761,19 +2813,29 @@ TEST(KeeperChunkedSnapshotValidation, WrongHeaderVersionRejected)
     DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
     auto buf = mgr.serializeSnapshotToBuffer(snap);
     ASSERT_NE(buf, nullptr);
-    ASSERT_GE(buf->size(), 5u);
+    ASSERT_GE(buf->size(), chunkedSnapshotHeaderSize());
 
-    // Position 4 is the version byte in the chunked snapshot header (after 4 magic bytes).
-    // Change it from 8 to 9 to simulate an unknown future version.
+    // The version byte is at offset 4 from the start of the buffer (front header: magic[4]+version[1]).
     auto * raw_mut = reinterpret_cast<char *>(buf->data_begin());
-    ASSERT_EQ(static_cast<uint8_t>(raw_mut[4]), 8u) << "Expected version byte 8 at position 4";
-    raw_mut[4] = 9;
+    const size_t ver_idx = 4; // front header version field
+    ASSERT_EQ(static_cast<uint8_t>(raw_mut[ver_idx]), 8u) << "Expected front header version byte 8";
+    raw_mut[ver_idx] = 9; // simulate an unknown future version
 
-    // Both public entry points must reject this.
-    EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(buf, true), DB::Exception)
-        << "deserializeSnapshotFromBuffer must throw on unknown chunked snapshot header version";
-    EXPECT_THROW(mgr.deserializeSnapshotMetadataFromBuffer(buf), DB::Exception)
-        << "deserializeSnapshotMetadataFromBuffer must throw on unknown chunked snapshot header version";
+    // looksLikeChunkedSnapshot passes version-independently (structural sniff succeeds, version not checked)
+    // so both public APIs route to the parser, which throws UNKNOWN_FORMAT_VERSION.
+    auto expect_unknown_version = [](auto && fn, const char * what)
+    {
+        try { fn(); FAIL() << what << " must throw on unknown chunked header version"; }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FORMAT_VERSION)
+                << what << " expected UNKNOWN_FORMAT_VERSION, got: " << e.message();
+        }
+    };
+    expect_unknown_version([&]{ mgr.deserializeSnapshotFromBuffer(buf, true); }, "deserializeSnapshotFromBuffer");
+    expect_unknown_version([&]{ mgr.deserializeSnapshotMetadataFromBuffer(buf); }, "deserializeSnapshotMetadataFromBuffer");
+    const char * cdata = reinterpret_cast<const char *>(buf->data_begin());
+    expect_unknown_version([&]{ parseAndValidateChunkedSnapshot(cdata, buf->size()); }, "parseAndValidateChunkedSnapshot");
 }
 
 /// Corrupt the middle of a NODES chunk compressed data. The ZSTD checksum embedded by
@@ -2802,7 +2864,7 @@ TEST(KeeperChunkedSnapshotValidation, CorruptNodeFrameRejected)
 
     const char * raw_const = reinterpret_cast<const char *>(buf->data_begin());
     const size_t buf_size = buf->size();
-    auto frames = parseAndValidateChunkedSnapshotHeader(raw_const, buf_size);
+    auto frames = parseAndValidateChunkedSnapshot(raw_const, buf_size);
 
     // Find the first NODES chunk.
     const SnapshotChunkDescriptor * nodes_fd = nullptr;
@@ -2824,6 +2886,47 @@ TEST(KeeperChunkedSnapshotValidation, CorruptNodeFrameRejected)
 
     EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true), DB::Exception)
         << "Corrupt NODES chunk must throw during full deserialization";
+}
+
+/// Corrupt the first footer descriptor's type byte to an out-of-range value.
+/// The trailer arithmetic stays valid so detection still routes to the chunked parser,
+/// which must throw on the corrupt descriptor type.
+TEST(KeeperChunkedSnapshotValidation, CorruptFooterDescriptorRejected)
+{
+    ChangelogDirTest snap_dir("./chunked_val_corrupt_footer");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/cfd1", "v1");
+    addNode(storage, "/cfd2", "v2");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 3;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/3, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    const char * data = reinterpret_cast<const char *>(buf->data_begin());
+    const size_t size = buf->size();
+
+    // Find footer_offset from the front header (derived from buf_size and chunk_count).
+    auto frames = parseAndValidateChunkedSnapshot(data, size);
+    const size_t footer_offset = size - chunkedSnapshotFooterSize(frames.size());
+
+    // Corrupt descriptor[0].type to an out-of-range value (0x7F > SESSIONS=2).
+    auto * raw_mut = reinterpret_cast<char *>(buf->data_begin());
+    raw_mut[footer_offset] = static_cast<char>(0x7F);
+
+    // The trailer arithmetic is still valid (footer_offset unchanged), so detection routes to the
+    // chunked parser; the parser must reject the invalid chunk type.
+    EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true), DB::Exception);
+    EXPECT_THROW(mgr.deserializeSnapshotMetadataFromBuffer(buf), DB::Exception);
 }
 
 /// Chunked snapshot path-only mode (load_full_storage=false) must not attempt to finalize storage.
@@ -2932,7 +3035,7 @@ static std::string buildNodesChunkBytes(const std::vector<FakeNodeEntry> & entri
 static std::string decompressSnapshotChunk(nuraft::ptr<nuraft::buffer> buf, size_t chunk_idx)
 {
     const char * raw = reinterpret_cast<const char *>(buf->data_begin());
-    auto frames = parseAndValidateChunkedSnapshotHeader(raw, buf->size());
+    auto frames = parseAndValidateChunkedSnapshot(raw, buf->size());
     if (chunk_idx >= frames.size())
         throw std::runtime_error("decompressSnapshotChunk: chunk_idx out of range");
     const SnapshotChunkDescriptor & fd = frames[chunk_idx];
@@ -2974,7 +3077,7 @@ static nuraft::ptr<nuraft::buffer> replaceFirstChunkOfType(
     const char * raw = reinterpret_cast<const char *>(orig_buf->data_begin());
     const size_t raw_size = orig_buf->size();
 
-    auto frames = parseAndValidateChunkedSnapshotHeader(raw, raw_size);
+    auto frames = parseAndValidateChunkedSnapshot(raw, raw_size);
 
     // Find the first chunk of the requested type.
     size_t target_idx = frames.size();
@@ -3007,43 +3110,40 @@ static nuraft::ptr<nuraft::buffer> replaceFirstChunkOfType(
             std::string("replaceFirstChunkOfType: ZSTD compress failed: ")
             + ZSTD_getErrorName(new_cs));
 
-    // Compute new frame descriptors with updated offsets.
-    const size_t header_sz = chunkedSnapshotHeaderSize(static_cast<uint64_t>(frames.size()));
+    // Compute new frame descriptors with updated offsets (chunks start at offset 13, past the front header).
     std::vector<SnapshotChunkDescriptor> new_descs;
     new_descs.reserve(frames.size());
-    size_t total_sz = header_sz;
+    uint64_t pos = chunkedSnapshotHeaderSize(); // start at 13, just past the front header
     for (size_t i = 0; i < frames.size(); ++i)
     {
-        const size_t payload_sz = (i == target_idx) ? new_cs : frames[i].compressed_size;
+        const uint64_t payload_sz = (i == target_idx) ? new_cs : frames[i].compressed_size;
         const uint64_t nc = (i == target_idx) ? node_count_for_replaced : frames[i].node_count;
-        new_descs.push_back(SnapshotChunkDescriptor{
-            frames[i].type,
-            static_cast<uint64_t>(total_sz),
-            static_cast<uint64_t>(payload_sz),
-            nc});
-        total_sz += payload_sz;
+        new_descs.push_back(SnapshotChunkDescriptor{frames[i].type, pos, payload_sz, nc});
+        pos += payload_sz;
     }
+    const uint64_t footer_offset = pos;
+    const size_t total_sz = static_cast<size_t>(footer_offset)
+        + chunkedSnapshotFooterSize(frames.size());
 
-    // Allocate and fill the new buffer.
+    // Allocate and fill the new buffer: [front header][chunk data][footer]
     auto new_buf = nuraft::buffer::alloc(total_sz);
     char * dst = reinterpret_cast<char *>(new_buf->data_begin());
 
-    packChunkedSnapshotHeader(std::span<const SnapshotChunkDescriptor>(new_descs), dst);
+    // Write front header first.
+    packChunkedSnapshotHeader(static_cast<uint64_t>(frames.size()), dst);
 
-    size_t pos = header_sz;
+    // Write chunk data.
     for (size_t i = 0; i < frames.size(); ++i)
     {
+        char * cdst = dst + new_descs[i].compressed_offset;
         if (i == target_idx)
-        {
-            memcpy(dst + pos, new_compressed.data(), new_cs);
-            pos += new_cs;
-        }
+            memcpy(cdst, new_compressed.data(), new_cs);
         else
-        {
-            memcpy(dst + pos, raw + frames[i].compressed_offset, frames[i].compressed_size);
-            pos += frames[i].compressed_size;
-        }
+            memcpy(cdst, raw + frames[i].compressed_offset, frames[i].compressed_size);
     }
+
+    // Write footer.
+    packChunkedSnapshotFooter(std::span<const SnapshotChunkDescriptor>(new_descs), dst + footer_offset);
     return new_buf;
 }
 
@@ -3286,7 +3386,7 @@ TEST(KeeperChunkedSnapshotValidation, SessionsTrailingBytesRejected)
 
     // Find the SESSIONS chunk index.
     const char * raw_const = reinterpret_cast<const char *>(buf->data_begin());
-    auto frames = parseAndValidateChunkedSnapshotHeader(raw_const, buf->size());
+    auto frames = parseAndValidateChunkedSnapshot(raw_const, buf->size());
     size_t sess_idx = frames.size();
     for (size_t i = 0; i < frames.size(); ++i)
     {
@@ -3325,7 +3425,7 @@ TEST(KeeperChunkedSnapshotValidation, SessionsTrailingBytesRejected)
 /// The streaming ZstdInflatingReadBuffer path can silently accept inner-buffer EOF without
 /// checking that ZSTD_decompressStream returned 0 (i.e. the full frame was consumed).
 /// The chunked snapshot header only enforces non-overlap between chunks (not contiguity), so
-/// 4 dropped checksum bytes become a legal inter-chunk gap — parseAndValidateChunkedSnapshotHeader
+/// 4 dropped checksum bytes become a legal inter-chunk gap — parseAndValidateChunkedSnapshotFooter
 /// passes, the ZSTD reader decompresses the payload, and the corruption is invisible.
 ///
 /// The fix adds require_frame_complete=true to ZstdInflatingReadBuffer for chunked snapshot reads:
@@ -3361,11 +3461,11 @@ TEST(KeeperChunkedSnapshotValidation, F1ZstdFrameTrailerDropped)
     }
     ASSERT_NE(good_buf, nullptr);
 
-    // Parse header and verify K ≥ 2 NODES chunks (needed for the parallel path test).
+    // Parse and verify K ≥ 2 NODES chunks (needed for the parallel path test).
     std::vector<DB::SnapshotChunkDescriptor> frames;
     {
         const char * raw = reinterpret_cast<const char *>(good_buf->data_begin());
-        frames = DB::parseAndValidateChunkedSnapshotHeader(raw, good_buf->size());
+        frames = DB::parseAndValidateChunkedSnapshot(raw, good_buf->size());
     }
     size_t nodes_count = 0;
     size_t first_nodes_frame_idx = 0; // index in `frames[]` of the first NODES chunk
@@ -3380,22 +3480,25 @@ TEST(KeeperChunkedSnapshotValidation, F1ZstdFrameTrailerDropped)
     }
     ASSERT_GE(nodes_count, 2u) << "Need ≥2 NODES chunks (chunk=1 with 3 nodes) for parallel path";
 
-    // Return a copy of good_buf with chunks[chunk_idx].compressed_size shrunk by 4.
+    // Return a copy of good_buf with chunks[frame_idx].compressed_size shrunk by 4.
     // The 4 bytes are the ZSTD content-checksum epilogue (ZSTD_c_checksumFlag=1).
-    // They become an inter-chunk gap — legal under the non-overlap-only header check —
-    // so parseAndValidateChunkedSnapshotHeader still passes on the tampered buffer.
-    // Chunked snapshot header layout: compressed_size of chunk i is at byte offset 22 + 25*i.
-    // (magic=4 + version=1 + chunk_count=8 = 13; then per descriptor: type=1 + offset=8 = 9 more; 13+9=22)
+    // They become an inter-chunk gap — legal under the non-overlap-only footer check —
+    // so parseAndValidateChunkedSnapshotFooter still passes on the tampered buffer.
+    // Footer layout: compressed_size of descriptor i is at
+    //   footer_offset + DESCRIPTOR_SIZE * i + 1 (type) + 8 (offset)   [= +9 into descriptor]
     // Each descriptor is 25 bytes (type=1 + compressed_offset=8 + compressed_size=8 + node_count=8).
+    const size_t footer_offset = good_buf->size() - chunkedSnapshotFooterSize(frames.size());
     auto makeTrailerDropped = [&](size_t frame_idx) -> nuraft::ptr<nuraft::buffer>
     {
         nuraft::ptr<nuraft::buffer> bad = nuraft::buffer::alloc(good_buf->size());
         std::memcpy(bad->data_begin(), good_buf->data_begin(), good_buf->size());
-        char * hdr = reinterpret_cast<char *>(bad->data_begin());
+        char * footer = reinterpret_cast<char *>(bad->data_begin()) + footer_offset;
+        // descriptor: type[1] + compressed_offset[8] + compressed_size[8] + node_count[8]
+        char * cs_field = footer + KEEPER_CHUNKED_SNAPSHOT_DESCRIPTOR_SIZE * frame_idx + 1 + 8;
         uint64_t cs = 0;
-        std::memcpy(&cs, hdr + 22 + 25 * frame_idx, 8);
-        cs -= 4; // drop the 4-byte ZSTD checksum trailer
-        std::memcpy(hdr + 22 + 25 * frame_idx, &cs, 8);
+        std::memcpy(&cs, cs_field, 8);
+        cs -= 4; // drop the 4-byte ZSTD content-checksum epilogue
+        std::memcpy(cs_field, &cs, 8);
         return bad;
     };
 
@@ -3544,7 +3647,7 @@ TEST(KeeperChunkedSnapshotParallel, ParallelVsSequential)
     // Verify we actually got multiple NODES chunks (otherwise the parallel path is not tested).
     {
         const char * raw = reinterpret_cast<const char *>(source_buf->data_begin());
-        auto frames = parseAndValidateChunkedSnapshotHeader(raw, source_buf->size());
+        auto frames = parseAndValidateChunkedSnapshot(raw, source_buf->size());
         size_t nodes_frame_count = 0;
         for (const auto & fd : frames)
             if (fd.type == SnapshotChunkType::NODES)
@@ -3704,10 +3807,15 @@ TEST(KeeperMemorySnapshotApplyTest, ApplyChunkedSnapshotReplacesCommittedState)
         chunked_buf = src_mgr.serializeSnapshotToBuffer(snap);
     }
     ASSERT_NE(chunked_buf, nullptr);
-    // Verify the buffer is actually a chunked snapshot (starts with "CKFS" magic).
-    ASSERT_GE(chunked_buf->size(), 4u);
-    EXPECT_EQ(std::memcmp(chunked_buf->data_begin(), "CKFS", 4), 0)
-        << "Serialized buffer must start with chunked snapshot magic 'CKFS'";
+    // Verify the buffer is actually a chunked snapshot (front-header layout: CKFS at offset 0).
+    ASSERT_GE(chunked_buf->size(), static_cast<size_t>(chunkedSnapshotHeaderSize()));
+    const char * cdata = reinterpret_cast<const char *>(chunked_buf->data_begin());
+    EXPECT_EQ(std::memcmp(cdata, "CKFS", 4), 0)
+        << "Serialized buffer must start with chunked snapshot magic 'CKFS' (front-header layout)";
+    EXPECT_EQ(static_cast<uint8_t>(cdata[4]), 8u)
+        << "Front header version byte must be 8";
+    EXPECT_NE(std::memcmp(cdata + chunked_buf->size() - 4, "CKFS", 4), 0)
+        << "Serialized buffer must NOT end with CKFS (no trailer in front-header layout)";
 
     // Install the chunked snapshot into the state machine via the follower path.
     nuraft::snapshot snapshot_meta(10, 0, std::make_shared<nuraft::cluster_config>());
@@ -3765,6 +3873,395 @@ TEST(KeeperMemorySnapshotApplyTest, ApplyChunkedSnapshotReplacesCommittedState)
 
     // last_commit_index must reflect the snapshot index.
     EXPECT_EQ(state_machine->last_commit_index(), 10u);
+}
+
+// ─── Chunked snapshot detection tests ───────────────────────────────────────────────────────────
+// These tests verify front-header detection — CKFS magic plus a structural sniff of chunk_count,
+// footer fit, the descriptor table, and the exact footer boundary (not magic-only, since a
+// legacy CompressedWriteBuffer checksum can start with CKFS).
+
+/// 1. ChunkedDetectedViaFrontMagic: a real V8 snapshot is detected by its front magic and round-trips.
+TEST(KeeperChunkedSnapshotDetection, ChunkedDetectedViaFrontMagic)
+{
+    ChangelogDirTest snap_dir("./chunked_det_front");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/det1", "v1");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 5;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/5, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    const char * data = reinterpret_cast<const char *>(buf->data_begin());
+    const size_t size = buf->size();
+
+    // First 4 bytes must be CKFS (front header magic); version byte at [4] must be 8.
+    ASSERT_GE(size, static_cast<size_t>(chunkedSnapshotHeaderSize()));
+    EXPECT_EQ(memcmp(data, "CKFS", 4), 0) << "CKFS magic must be at front (header)";
+    EXPECT_EQ(static_cast<uint8_t>(data[4]), 8u) << "Front header version byte must be 8";
+    // Last 4 bytes must NOT be CKFS (no trailer in front-header layout).
+    EXPECT_NE(memcmp(data + size - 4, "CKFS", 4), 0) << "Last bytes must NOT be CKFS (no trailer)";
+
+    // Full round-trip.
+    auto result = mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true);
+    ASSERT_NE(result.storage, nullptr);
+    EXPECT_NE(result.storage->container.find("/det1"), result.storage->container.end());
+
+    // Metadata-only fast path (O(1) in node count).
+    auto meta = mgr.deserializeSnapshotMetadataFromBuffer(buf);
+    ASSERT_NE(meta, nullptr);
+    EXPECT_EQ(meta->get_last_log_idx(), 5u);
+}
+
+/// 2. LegacyZstdNotMisdetectedAsChunked: a V7 ZSTD snapshot is NOT mistaken for chunked.
+TEST(KeeperChunkedSnapshotDetection, LegacyZstdNotMisdetectedAsChunked)
+{
+    ChangelogDirTest snap_dir("./chunked_det_legv7");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/legacy", "old_data");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 3;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/3, /*cluster_config=*/nullptr, DB::SnapshotVersion::V7);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    const char * data = reinterpret_cast<const char *>(buf->data_begin());
+    const size_t size = buf->size();
+
+    // A V7 snapshot must not have CKFS as its front magic (it's a ZSTD frame).
+    ASSERT_GE(size, 4u);
+    EXPECT_NE(memcmp(data, "CKFS", 4), 0) << "V7 snapshot must NOT have CKFS at front";
+    EXPECT_FALSE(looksLikeChunkedSnapshot(data, size)) << "V7 snapshot must not be detected as chunked";
+
+    // Must still load successfully via the legacy path.
+    auto result = mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true);
+    ASSERT_NE(result.storage, nullptr);
+    EXPECT_NE(result.storage->container.find("/legacy"), result.storage->container.end());
+}
+
+/// FrontMagicWithBadStructureNotChunked: prove the predicate is NOT magic-only and NOT magic+count-only.
+/// A buffer starting with CKFS but with an invalid descriptor table must not be detected as chunked.
+TEST(KeeperChunkedSnapshotDetection, FrontMagicWithBadStructureNotChunked)
+{
+    // (a) plausible magic but chunk_count < MIN (2 < 3)
+    {
+        std::vector<char> b(128, '\0');
+        memcpy(b.data(), KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4);
+        b[4] = static_cast<char>(KEEPER_CHUNKED_SNAPSHOT_VERSION);
+        uint64_t cc = 2; memcpy(b.data() + 5, &cc, 8);
+        EXPECT_FALSE(looksLikeChunkedSnapshot(b.data(), b.size()))
+            << "(a) chunk_count=2 < MIN must return false";
+    }
+    // (b) chunk_count so large the footer cannot fit
+    {
+        std::vector<char> b(128, '\0');
+        memcpy(b.data(), KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4);
+        b[4] = static_cast<char>(KEEPER_CHUNKED_SNAPSHOT_VERSION);
+        uint64_t cc = 1ull << 40; memcpy(b.data() + 5, &cc, 8);
+        EXPECT_FALSE(looksLikeChunkedSnapshot(b.data(), b.size()))
+            << "(b) huge chunk_count footer-doesn't-fit must return false";
+    }
+    // (c) THE KEY CASE: plausible chunk_count (3) + footer fits, but the descriptor table is invalid.
+    //     buf_size = 13 + 3*25 = 88 → footer_offset = 13; the all-zero "descriptors" have
+    //     offset 0 < 13 (out of bounds) and a wrong chunk order → must be rejected.
+    {
+        const size_t hdr = chunkedSnapshotHeaderSize();
+        const uint64_t cc3 = 3;
+        const size_t total = hdr + static_cast<size_t>(cc3) * KEEPER_CHUNKED_SNAPSHOT_DESCRIPTOR_SIZE; // 88
+        std::vector<char> c(total, '\0');
+        memcpy(c.data(), KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4);
+        c[4] = static_cast<char>(KEEPER_CHUNKED_SNAPSHOT_VERSION);
+        memcpy(c.data() + 5, &cc3, 8);
+        // footer_offset = 13 (derived); all-zero descriptors have compressed_offset=0 < 13 → ChunkOutOfBounds
+        EXPECT_FALSE(looksLikeChunkedSnapshot(c.data(), c.size()))
+            << "(c) all-zero descriptors with out-of-bounds offsets must return false (full structural sniff)";
+    }
+}
+
+/// UnsupportedVersionRoutedToParser: a structurally valid front-header buffer with version=9
+/// is detected (version-independent sniff) and routed to the parser which throws UNKNOWN_FORMAT_VERSION.
+TEST(KeeperChunkedSnapshotDetection, UnsupportedVersionRoutedToParser)
+{
+    ChangelogDirTest snap_dir("./chunked_det_v9router");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
+
+    // Build a structurally valid front-header buffer, then flip only the version byte to 9.
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::METADATA,  13, 10},
+        {SnapshotChunkType::NODES,     23, 10},
+        {SnapshotChunkType::SESSIONS,  33, 10},
+    };
+    auto raw = buildChunkedBufferFromDescriptors(frames);
+    raw[4] = 9; // unsupported version; magic + footer structure intact
+
+    // looksLikeChunkedSnapshot is version-independent → structural sniff passes.
+    EXPECT_TRUE(looksLikeChunkedSnapshot(raw.data(), raw.size()))
+        << "Version-9 buffer with valid structure must return true from looksLikeChunkedSnapshot";
+
+    // Wrap in nuraft buffer.
+    auto buf = nuraft::buffer::alloc(raw.size());
+    std::memcpy(buf->data_begin(), raw.data(), raw.size());
+
+    auto expect_unknown_version = [](auto && fn, const char * what)
+    {
+        try { fn(); FAIL() << what << " must throw on unsupported chunked version"; }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FORMAT_VERSION)
+                << what << " expected UNKNOWN_FORMAT_VERSION, got: " << e.message();
+        }
+    };
+    expect_unknown_version([&]{ mgr.deserializeSnapshotFromBuffer(buf, true); },    "deserializeSnapshotFromBuffer");
+    expect_unknown_version([&]{ mgr.deserializeSnapshotMetadataFromBuffer(buf); },  "deserializeSnapshotMetadataFromBuffer");
+}
+
+/// TooSmallBufferNotChunked: buffers smaller than the header size must return false from
+/// looksLikeChunkedSnapshot, and parseAndValidateChunkedSnapshot must throw.
+TEST(KeeperChunkedSnapshotDetection, TooSmallBufferNotChunked)
+{
+    for (size_t n = 0; n < chunkedSnapshotHeaderSize(); ++n)
+    {
+        std::vector<char> buf(n, '\0');
+        EXPECT_FALSE(looksLikeChunkedSnapshot(buf.data(), n))
+            << "Buffer of size " << n << " must not look like chunked snapshot";
+    }
+    // parseAndValidateChunkedSnapshot must also throw on too-small input.
+    std::vector<char> small(chunkedSnapshotHeaderSize() - 1, '\0');
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(small.data(), small.size()), DB::Exception);
+}
+
+/// CorruptHeaderRejectedByParser: valid V8 buffer with corrupt front magic → parser throws;
+/// separately, huge chunk_count (footer doesn't fit) → parser throws.
+TEST(KeeperChunkedSnapshotDetection, CorruptHeaderRejectedByParser)
+{
+    ChangelogDirTest snap_dir("./chunked_det_corr_hdr");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/ctr", "v1");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/2, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
+    auto good_buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(good_buf, nullptr);
+
+    // Variant A: corrupt front magic byte → parser throws CORRUPTED_DATA.
+    {
+        auto bad = nuraft::buffer::alloc(good_buf->size());
+        std::memcpy(bad->data_begin(), good_buf->data_begin(), good_buf->size());
+        reinterpret_cast<char *>(bad->data_begin())[0] ^= 0xFF; // corrupt magic[0]
+        const char * raw = reinterpret_cast<const char *>(bad->data_begin());
+        EXPECT_THROW(parseAndValidateChunkedSnapshot(raw, bad->size()), DB::Exception);
+    }
+
+    // Variant B: corrupt chunk_count to a huge value (footer doesn't fit) → parser throws.
+    {
+        auto bad = nuraft::buffer::alloc(good_buf->size());
+        std::memcpy(bad->data_begin(), good_buf->data_begin(), good_buf->size());
+        uint64_t huge_count = 0xFFFFFFFFFFFFFFFFULL;
+        std::memcpy(reinterpret_cast<char *>(bad->data_begin()) + 5, &huge_count, 8);
+        const char * raw = reinterpret_cast<const char *>(bad->data_begin());
+        EXPECT_THROW(parseAndValidateChunkedSnapshot(raw, bad->size()), DB::Exception);
+    }
+}
+
+/// CorruptOrTruncatedChunkedRejectedByPublicApi: a chunked snapshot with a corrupted front magic
+/// or truncated footer must be rejected through both public APIs.
+TEST(KeeperChunkedSnapshotDetection, CorruptOrTruncatedChunkedRejectedByPublicApi)
+{
+    ChangelogDirTest snap_dir("./chunked_det_corr_or_trunc");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/ctm1", "v1");
+    addNode(storage, "/ctm2", "v2");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 7;
+
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/7, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/true);
+    auto good_buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(good_buf, nullptr);
+
+    // Get the frame count so we can compute the footer size.
+    const char * good_data = reinterpret_cast<const char *>(good_buf->data_begin());
+    auto frames = parseAndValidateChunkedSnapshot(good_data, good_buf->size());
+    const size_t footer_sz = chunkedSnapshotFooterSize(frames.size());
+
+    // Variant A: corrupt the front magic byte — isChunkedSnapshot=false → legacy reader.
+    // The first bytes are now corrupt, so the legacy reader (ZSTD/LZ4) cannot decode them either.
+    // Both APIs must throw DB::Exception.
+    {
+        auto bad = nuraft::buffer::alloc(good_buf->size());
+        std::memcpy(bad->data_begin(), good_buf->data_begin(), good_buf->size());
+        reinterpret_cast<char *>(bad->data_begin())[0] ^= 0xFF;
+        EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, true), DB::Exception)
+            << "Corrupt-magic must throw through deserializeSnapshotFromBuffer";
+        EXPECT_THROW(mgr.deserializeSnapshotMetadataFromBuffer(bad), DB::Exception)
+            << "Corrupt-magic must throw through deserializeSnapshotMetadataFromBuffer";
+    }
+
+    // Variant B: truncate the buffer by dropping the trailing footer.
+    // Front magic + chunk_count are intact, but the footer can no longer be located at
+    // buf_size - footer_size (it's now in the middle of chunk data). The structural sniff
+    // finds invalid descriptors there → isChunkedSnapshot=false → legacy reader rejects.
+    {
+        const size_t truncated_size = good_buf->size() - footer_sz;
+        auto bad = nuraft::buffer::alloc(truncated_size);
+        std::memcpy(bad->data_begin(), good_buf->data_begin(), truncated_size);
+        EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(bad, true), DB::Exception)
+            << "Footer-truncated must throw through deserializeSnapshotFromBuffer";
+        EXPECT_THROW(mgr.deserializeSnapshotMetadataFromBuffer(bad), DB::Exception)
+            << "Footer-truncated must throw through deserializeSnapshotMetadataFromBuffer";
+    }
+}
+
+/// RejectsTrailingGapBeforeFooter: a buffer where the last chunk ends before footer_offset
+/// (trailing gap) must be rejected by both the parser and the detector.
+TEST(KeeperChunkedSnapshotDetection, RejectsTrailingGapBeforeFooter)
+{
+    // Build a valid 3-chunk structure with a deliberate 7-byte gap between the last chunk and footer.
+    // last chunk ends at 43, but force the footer to start at 50 (7-byte trailing gap).
+    std::vector<SnapshotChunkDescriptor> frames = {
+        {SnapshotChunkType::METADATA,  13, 10},
+        {SnapshotChunkType::NODES,     23, 10},
+        {SnapshotChunkType::SESSIONS,  33, 10},
+    };
+    // Manual construction: total size = 50 + 75 (footer for 3 chunks) = 125
+    const uint64_t footer_offset = 50; // 7-byte gap after last chunk (ends at 43)
+    const size_t total = static_cast<size_t>(footer_offset) + chunkedSnapshotFooterSize(frames.size()); // 125
+    std::vector<char> buf(total, '\0');
+    packChunkedSnapshotHeader(static_cast<uint64_t>(frames.size()), buf.data());
+    packChunkedSnapshotFooter(frames, buf.data() + footer_offset);
+    // The front header says chunk_count=3, footer_offset derived as total-75=50.
+    // The last chunk ends at 43 != 50 → TrailingGap.
+    EXPECT_THROW(parseAndValidateChunkedSnapshot(buf.data(), buf.size()), DB::Exception)
+        << "Trailing gap before footer must throw CORRUPTED_DATA from parseAndValidateChunkedSnapshot";
+    EXPECT_FALSE(looksLikeChunkedSnapshot(buf.data(), buf.size()))
+        << "Trailing gap before footer must return false from looksLikeChunkedSnapshot (detector also rejects)";
+}
+
+/// LegacyNonZstdSnapshotStillLoads: a legacy snapshot serialized with compress_snapshots_zstd_=false
+/// (CompressedWriteBuffer/CompressedReadBuffer path, CityHash front) round-trips correctly under
+/// the new front-header detection. Confirms the non-ZSTD legacy path is unaffected.
+TEST(KeeperChunkedSnapshotDetection, LegacyNonZstdSnapshotStillLoads)
+{
+    ChangelogDirTest snap_dir("./chunked_det_legacy_nonzstd");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    DB::KeeperMemoryStorage storage(500, "", keeper_context);
+    addNode(storage, "/lnz1", "data1");
+    addNode(storage, "/lnz2", "data2");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 4;
+
+    // V7 with compress_snapshots_zstd_=false → CompressedWriteBuffer → CityHash128 front bytes.
+    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+        &storage, /*up_to_log_idx=*/4, /*cluster_config=*/nullptr, DB::SnapshotVersion::V7);
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/false);
+    auto buf = mgr.serializeSnapshotToBuffer(snap);
+    ASSERT_NE(buf, nullptr);
+
+    const char * data = reinterpret_cast<const char *>(buf->data_begin());
+    // The legacy non-ZSTD front is a CityHash128 checksum — must NOT start with CKFS.
+    EXPECT_FALSE(looksLikeChunkedSnapshot(data, buf->size()))
+        << "Non-ZSTD legacy snapshot must not be detected as chunked";
+
+    // Must round-trip successfully via the legacy LZ4/CompressedReadBuffer path.
+    auto result = mgr.deserializeSnapshotFromBuffer(buf, /*load_full_storage=*/true);
+    ASSERT_NE(result.storage, nullptr);
+    EXPECT_NE(result.storage->container.find("/lnz1"), result.storage->container.end());
+    EXPECT_NE(result.storage->container.find("/lnz2"), result.storage->container.end());
+}
+
+/// LegacyInnerVersion8RejectedByLegacyReader: a legacy-framed (CompressedWriteBuffer) stream
+/// whose decompressed first byte is 8 must be rejected with UNKNOWN_FORMAT_VERSION by both public
+/// APIs. This exercises the §4g guards at KeeperStorageSnapshot<>::deserialize (≈line 724) and
+/// deserializeSnapshotMetadataFromBuffer (≈line 1806), which are KEPT despite moving detection
+/// to the front header.
+TEST(KeeperChunkedSnapshotDetection, LegacyInnerVersion8RejectedByLegacyReader)
+{
+    ChangelogDirTest snap_dir("./chunked_det_leg_v8guard");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
+    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
+
+    // Build a legacy CompressedWriteBuffer-framed stream whose decompressed first byte is 8.
+    // This simulates a corrupt/crafted stream that happens to decompress to version byte 8
+    // but was NOT detected as a chunked snapshot (front bytes != CKFS or structural sniff fails).
+    auto writer = std::make_unique<DB::WriteBufferFromNuraftBuffer>();
+    auto * raw_ptr = writer.get();
+    {
+        DB::CompressedWriteBuffer compressed(*writer);  // legacy framing; front = CityHash checksum
+        DB::writeBinary(static_cast<uint8_t>(8), compressed);  // inner version byte = 8
+        DB::writeBinary(static_cast<uint64_t>(0), compressed); // a little extra body
+        compressed.finalize();
+    }
+    writer->finalize();
+    auto buf = raw_ptr->getBuffer();
+    ASSERT_NE(buf, nullptr);
+
+    const char * data = reinterpret_cast<const char *>(buf->data_begin());
+    // Must NOT be detected as a chunked snapshot (CityHash front != CKFS or structural sniff fails).
+    EXPECT_FALSE(looksLikeChunkedSnapshot(data, buf->size()))
+        << "Legacy CompressedWriteBuffer stream must not be detected as chunked";
+
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_snapshots_zstd_=*/false);
+
+    auto expect_unknown_version = [](auto && fn, const char * what)
+    {
+        try { fn(); FAIL() << what << " must throw UNKNOWN_FORMAT_VERSION for inner version 8 in legacy reader"; }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FORMAT_VERSION)
+                << what << " expected UNKNOWN_FORMAT_VERSION, got: " << e.message();
+        }
+    };
+    expect_unknown_version([&]{ mgr.deserializeSnapshotFromBuffer(buf, true); },   "deserializeSnapshotFromBuffer");
+    expect_unknown_version([&]{ mgr.deserializeSnapshotMetadataFromBuffer(buf); }, "deserializeSnapshotMetadataFromBuffer");
 }
 
 } // namespace DB
