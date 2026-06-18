@@ -3703,6 +3703,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (is_parallel_reading_from_replicas)
         reader_settings.use_partial_aggregate_cache = false;
 
+    /// Distributed bucket reads slice each part by bucket_id; PAC key has no bucket component
+    /// so subset aggregates must not be cached as full-part aggregates.
+    if (distributed_read_bucket_count > 0)
+        reader_settings.use_partial_aggregate_cache = false;
+
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
     /// (which may skip index analysis).
