@@ -52,7 +52,7 @@ struct DeserializedSetsRegistry;
 
 class SettingsChanges;
 
-/// Options from EXPLAIN PLAN query.
+/// Options from EXPLAIN queries based on plan.
 struct ExplainPlanOptions
 {
     /// Add output header to step.
@@ -79,7 +79,6 @@ struct ExplainPlanOptions
     bool pretty = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
     bool processors_profile = false;
-
 
     SettingsChanges toSettingsChanges() const;
 };

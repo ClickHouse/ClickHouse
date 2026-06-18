@@ -87,7 +87,6 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("column_structure", int(column_structure));
     changes.emplace_back("pretty", int(pretty));
     changes.emplace_back("compact", int(compact));
-    changes.emplace_back("processors", int(processors_profile));
 
     return changes;
 }
