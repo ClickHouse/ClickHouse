@@ -209,8 +209,8 @@ namespace
     template <ErrorHandling error_handling, ReturnType return_type>
     struct alignas(CH_CACHE_LINE_SIZE) ParsedValue
     {
-        static constexpr Int32 min_year = return_type == ReturnType::DateTime64 ? 1900 : 1970;
-        static constexpr Int32 max_year = return_type == ReturnType::DateTime64 ? 2299 : 2106;
+        static constexpr Int32 min_year = return_type == ReturnType::DateTime64 ? 0 : 1970;
+        static constexpr Int32 max_year = return_type == ReturnType::DateTime64 ? 9999 : 2106;
 
         /// If both week_date_format and week_date_format is false, date is composed of year, month and day
         Int32 year = 1970; /// year, range [1970, 2106]

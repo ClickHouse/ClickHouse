@@ -14,8 +14,11 @@
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-int-conversion"
+#include <cctz/civil_time.h>
 #include <cctz/time_zone.h>
 #pragma clang diagnostic pop
+
+#include <chrono>
 
 /// For the expansion of gtest macros.
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
@@ -92,6 +95,134 @@ TEST(DateLUTTest, makeDayNumTest)
     EXPECT_EQ(0, lut.makeDayNum(1970, 1, 1));
     EXPECT_EQ(120529, lut.makeDayNum(2300, 12, 31));
     EXPECT_EQ(120529, lut.makeDayNum(2500, 12, 25));
+}
+
+
+namespace
+{
+
+/// Start-of-day Unix time of a civil day in a time zone, matching DateLUTImpl's tie-break for ambiguous midnights.
+Int64 referenceStartOfDay(const cctz::time_zone & tz, const cctz::civil_day & day)
+{
+    const cctz::time_zone::civil_lookup lookup = tz.lookup(day);
+    const auto tp = lookup.trans < lookup.post ? lookup.post : lookup.pre;
+    return std::chrono::duration_cast<cctz::seconds>(tp.time_since_epoch()).count();
+}
+
+UInt8 referenceDayOfWeek(const cctz::civil_day & day)
+{
+    switch (cctz::get_weekday(day))
+    {
+        case cctz::weekday::monday:     return 1;
+        case cctz::weekday::tuesday:    return 2;
+        case cctz::weekday::wednesday:  return 3;
+        case cctz::weekday::thursday:   return 4;
+        case cctz::weekday::friday:     return 5;
+        case cctz::weekday::saturday:   return 6;
+        case cctz::weekday::sunday:     return 7;
+    }
+    return 0;
+}
+
+}
+
+/// DateTime64 now supports values outside of [1900, 2299]. For out-of-range time points, DateLUTImpl
+/// falls back to cctz; here we cross-check the fallback against an independent cctz computation, sweeping
+/// across the 1900 and 2300 boundaries for several time zones (including ones with DST and non-whole-hour offsets).
+TEST(DateLUTTest, TimeValuesOutOfRange)
+{
+    const std::vector<const char *> zones = {"UTC", "Europe/Moscow", "America/New_York", "Asia/Kolkata", "Australia/Lord_Howe"};
+
+    for (const char * zone : zones)
+    {
+        const DateLUTImpl & lut = DateLUT::instance(zone);
+        cctz::time_zone tz;
+        ASSERT_TRUE(cctz::load_time_zone(zone, &tz)) << zone;
+
+        /// Only out-of-range years: the in-range path keeps its own (pre-existing) behaviour for time zones
+        /// whose offset has a sub-minute component before 1900 (e.g. Moscow's +2:30:17 LMT).
+        for (Int64 year : {1000, 1500, 1700, 1850, 1899, 2300, 2350, 2500, 5000, 9999})
+        {
+            for (int month : {1, 2, 3, 6, 9, 12})
+            {
+                const cctz::civil_second cs(year, month, 14, 13, 47, 5);
+                const Int64 t = cctz::convert(cs, tz).time_since_epoch().count();
+
+                const cctz::civil_second local = cctz::convert(std::chrono::system_clock::from_time_t(static_cast<time_t>(t)), tz);
+                const cctz::civil_day cd(local);
+
+                SCOPED_TRACE(std::string(zone) + " year=" + std::to_string(year) + " month=" + std::to_string(month)
+                    + " t=" + std::to_string(t));
+
+                EXPECT_EQ(lut.toYear(t), local.year());
+                EXPECT_EQ(lut.toMonth(t), local.month());
+                EXPECT_EQ(lut.toDayOfMonth(t), local.day());
+                EXPECT_EQ(lut.toDayOfWeek(t), referenceDayOfWeek(cd));
+                EXPECT_EQ(lut.toHour(t), static_cast<unsigned>(local.hour()));
+                EXPECT_EQ(lut.toMinute(t), static_cast<unsigned>(local.minute()));
+                EXPECT_EQ(lut.toSecond(t), static_cast<unsigned>(local.second()));
+
+                EXPECT_EQ(lut.toDate(t), referenceStartOfDay(tz, cd));
+
+                const auto comp = lut.toDateTimeComponents(t);
+                EXPECT_EQ(comp.date.year, local.year());
+                EXPECT_EQ(comp.date.month, local.month());
+                EXPECT_EQ(comp.date.day, local.day());
+                EXPECT_EQ(comp.time.hour, static_cast<UInt64>(local.hour()));
+                EXPECT_EQ(comp.time.minute, local.minute());
+                EXPECT_EQ(comp.time.second, local.second());
+
+                /// makeDateTime is the inverse for unambiguous local times.
+                if (tz.lookup(cs).kind == cctz::time_zone::civil_lookup::UNIQUE)
+                    EXPECT_EQ(lut.makeDateTime(static_cast<Int16>(local.year()), static_cast<UInt8>(local.month()),
+                        static_cast<UInt8>(local.day()), static_cast<UInt8>(local.hour()),
+                        static_cast<UInt8>(local.minute()), static_cast<UInt8>(local.second())), t);
+
+                /// Start of month / year.
+                EXPECT_EQ(lut.toDayOfYear(t), static_cast<UInt16>(cd - cctz::civil_day(local.year(), 1, 1) + 1));
+                EXPECT_EQ(lut.toFirstDayOfMonth(t), referenceStartOfDay(tz, cctz::civil_day(local.year(), local.month(), 1)));
+                EXPECT_EQ(lut.toFirstDayOfYear(t), referenceStartOfDay(tz, cctz::civil_day(local.year(), 1, 1)));
+            }
+        }
+    }
+}
+
+/// Calendar arithmetic must keep working across the boundaries of the lookup table.
+TEST(DateLUTTest, ArithmeticOutOfRange)
+{
+    const DateLUTImpl & lut = DateLUT::instance("UTC");
+
+    /// 2250-06-15 12:00:00 UTC, in range; adding 100 years lands in 2350 (out of range).
+    const Int64 in_range = cctz::convert(cctz::civil_second(2250, 6, 15, 12, 0, 0), cctz::utc_time_zone()).time_since_epoch().count();
+    EXPECT_EQ(lut.toYear(lut.addYears(in_range, 100)), 2350);
+    EXPECT_EQ(lut.toYear(lut.addYears(in_range, -400)), 1850);
+    EXPECT_EQ(lut.toMonth(lut.addMonths(in_range, 1300)), 10);  // +108 years 4 months -> 2358-10
+    EXPECT_EQ(lut.toYear(lut.addMonths(in_range, 1300)), 2358);
+
+    /// Out-of-range input.
+    const Int64 oor = cctz::convert(cctz::civil_second(1850, 3, 31, 0, 0, 0), cctz::utc_time_zone()).time_since_epoch().count();
+    EXPECT_EQ(lut.toYear(lut.addYears(oor, 1)), 1851);
+    EXPECT_EQ(lut.toMonth(lut.addMonths(oor, 1)), 4);   // 1850-03-31 + 1 month -> 1850-04-30
+    EXPECT_EQ(lut.toDayOfMonth(lut.addMonths(oor, 1)), 30);
+    EXPECT_EQ(lut.toYear(lut.addDays(oor, 365)), 1851);
+}
+
+/// Week / ISO computations are timezone-independent and repeat every 400 years. Verify the periodicity holds
+/// across the boundary (year Y vs Y + 400) for the out-of-range escape path.
+TEST(DateLUTTest, WeekFunctionsOutOfRangePeriodicity)
+{
+    const DateLUTImpl & lut = DateLUT::instance("UTC");
+
+    for (int month : {1, 3, 7, 12})
+    {
+        const Int64 oor = cctz::convert(cctz::civil_second(1850, month, 14, 0, 0, 0), cctz::utc_time_zone()).time_since_epoch().count();
+        const Int64 in_range = cctz::convert(cctz::civil_second(2250, month, 14, 0, 0, 0), cctz::utc_time_zone()).time_since_epoch().count();
+
+        EXPECT_EQ(lut.toISOWeek(oor), lut.toISOWeek(in_range)) << "month=" << month;
+        EXPECT_EQ(lut.toYearWeek(oor, 0).second, lut.toYearWeek(in_range, 0).second) << "month=" << month;
+        EXPECT_EQ(lut.toISOYear(oor) + 400, lut.toISOYear(in_range)) << "month=" << month;
+        EXPECT_EQ(lut.toYearWeek(oor, 0).first + 400, lut.toYearWeek(in_range, 0).first) << "month=" << month;
+    }
 }
 
 
