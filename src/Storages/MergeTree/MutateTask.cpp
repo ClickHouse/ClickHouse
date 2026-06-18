@@ -1102,7 +1102,7 @@ static NameToNameVector collectFilesForRenames(
             {
                 if (idx.name == command.column_name)
                 {
-                    index = MergeTreeIndexFactory::instance().get(idx);
+                    index = MergeTreeIndexFactory::instance().get(idx, *source_part->storage.getSettings());
                     break;
                 }
             }
