@@ -838,9 +838,10 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     /// fold-and-drop them; they must keep flowing as required inputs to stay in the stream at
     /// distributed stage boundaries. Literals and re-creatable alias constants stay foldable.
     std::unordered_set<const ActionsDAG::Node *> keep_inputs;
-    for (const auto * input : project_names_actions->dag.getInputs())
-        if (input->column && source_constants.contains(input->result_name))
-            keep_inputs.insert(input);
+    if (!source_constants.empty())
+        for (const auto * input : project_names_actions->dag.getInputs())
+            if (input->column && source_constants.contains(input->result_name))
+                keep_inputs.insert(input);
 
     if (query_node.hasInterpolate())
     {

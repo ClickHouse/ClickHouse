@@ -100,9 +100,10 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
     /// free-standing COLUMN outputs and orphan: they must keep flowing as required inputs so the
     /// column stays in the stream. Literals/aliases are excluded, so they stay foldable.
     std::unordered_set<const ActionsDAG::Node *> used_inputs;
-    for (const auto * input : actions->dag.getInputs())
-        if (input->column && source_const_inputs.contains(input->result_name))
-            used_inputs.insert(input);
+    if (!source_const_inputs.empty())
+        for (const auto * input : actions->dag.getInputs())
+            if (input->column && source_const_inputs.contains(input->result_name))
+                used_inputs.insert(input);
 
     actions->dag.removeUnusedActions(used_inputs);
     actions->project_input = true;
