@@ -106,7 +106,15 @@ def test_cluster_all_replicas_query(
         except QueryRuntimeException as e:
             error = str(e)
     assert "ALL_CONNECTION_TRIES_FAILED" in error
-    assert "receive timeout 857 ms" in error
+    # The configured handshake_timeout_ms=857 may surface through the async
+    # `HedgedConnections` / `AsyncTaskExecutor` path (which formats as
+    # "(..., receive timeout {} ms)") OR through the synchronous
+    # `ReadBufferFromPocoSocket` path (which formats as
+    # "(peer: ..., local: ..., {} ms)" without the "receive timeout" prefix).
+    # Both formats include the timeout value in milliseconds, so check for
+    # "857 ms" alone — this verifies the configured timeout was applied
+    # without locking the test to one specific socket-error code path.
+    assert "857 ms" in error
 
 
 @pytest.mark.parametrize(

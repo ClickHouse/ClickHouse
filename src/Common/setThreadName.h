@@ -56,6 +56,7 @@ namespace DB
     M(DISTRIBUTED_SCHEDULE_POOL, "BgDistSchPool") \
     M(DISTRIBUTED_SINK, "DistrOutStrProc") \
     M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
+    M(DISTRIBUTED_QUERY_TASK, "DistQueryTask") \
     M(DROP_TABLES, "DropTables") \
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
@@ -65,6 +66,7 @@ namespace DB
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HTTP_HANDLER, "HTTPHandler") \
+    M(HTTP_SERVER_CONN, "HTTPSrvConn") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
@@ -74,6 +76,9 @@ namespace DB
     M(KEEPER_RESPONSE, "KeeperResponse") \
     M(KEEPER_SNAPSHOT, "KeeperSnapshot") \
     M(KEEPER_SNAPSHOT_S3, "KeeperSnapS3") \
+    M(KEEPER_COMMIT, "KeeperCommit") \
+    M(KEEPER_APPEND, "KeeperAppend") \
+    M(KEEPER_READ, "KeeperRead") \
     M(KAFKA_BACKGROUND, "KafkaBackgrd") \
     M(KAFKA_BROKER, "KafkaBroker") \
     M(KAFKA_CLEANUP, "KafkaClnup") \
@@ -142,6 +147,8 @@ namespace DB
     M(S3_LIST_POOL, "ListObjectS3") \
     M(SESSION_CLEANUP, "SessionCleanup") \
     M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
+    M(SIGNAL_LISTENER, "SignalListnr") \
+    M(SSH_HANDLER, "SSHHandler") \
     M(SUGGEST, "Suggest") \
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
     M(SYSTEM_REPLICAS, "SysReplicas") \
@@ -161,6 +168,7 @@ namespace DB
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
+    M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
 
 
 enum class ThreadName : uint8_t
@@ -177,9 +185,27 @@ enum class ThreadName : uint8_t
   *  which will be visible in ps, gdb, /proc,
   *  for convenience of observation and debugging.
   *
+  *  On Linux 5.17+ also names the current thread's stack VMA via
+  *  `prctl(PR_SET_VMA_ANON_NAME, ..., THREAD_STACK_VMA_NAME)`, so
+  *  `AsynchronousMetrics` can attribute the matching `/proc/self/smaps`
+  *  entry to thread stacks (`MemoryThreadStacks*`).
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
 
 std::string_view toString(ThreadName name);
+
+/// Tag attached to every named thread's stack VMA via
+/// `prctl(PR_SET_VMA_ANON_NAME)`. Appears in `/proc/self/smaps` as
+/// `[anon:<name>]` on the VMA header line. `const char *` (not
+/// `std::string_view`) so it can be passed directly to `prctl` without
+/// tripping `bugprone-suspicious-stringview-data-usage`.
+inline constexpr const char * THREAD_STACK_VMA_NAME = "clickhouse_stack";
+
+/// True if any thread observed EINVAL from `prctl(PR_SET_VMA_ANON_NAME)`,
+/// i.e. running on a Linux kernel older than 5.17. Used by
+/// `ServerAsynchronousMetrics` to surface the limitation via
+/// `system.warnings`. Always `false` on non-Linux (the metric does not
+/// exist there, so there is nothing to warn about).
+bool isThreadStackVMANamingUnsupported() noexcept;
 }

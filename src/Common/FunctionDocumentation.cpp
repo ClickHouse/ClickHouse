@@ -225,6 +225,7 @@ String FunctionDocumentation::categoryAsString() const
     {
         {Category::Unknown, ""}, /// Default enum value for default-constructed FunctionDocumentation objects. Be consistent with other default fields (empty).
 
+        {Category::AI, "AI"},
         {Category::Arithmetic, "Arithmetic"},
         {Category::Array, "Arrays"},
         {Category::Bit, "Bit"},

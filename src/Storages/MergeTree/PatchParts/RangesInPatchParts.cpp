@@ -6,6 +6,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
@@ -265,7 +266,8 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     if (it->type != "minmax")
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", column_name, it->type);
 
-    auto index_ptr = MergeTreeIndexFactory::instance().get(*it);
+    static const MergeTreeSettings default_settings;
+    auto index_ptr = MergeTreeIndexFactory::instance().get(*it, default_settings);
     /// Check that index exists in data part. It may be absent for parts created in earlier versions.
     if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName()))
         return {};
@@ -314,7 +316,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     return result;
 }
 
-bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
+static bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
 {
     return (lhs.min <= rhs.min && rhs.min <= lhs.max) || (rhs.min <= lhs.min && lhs.min <= rhs.max);
 }

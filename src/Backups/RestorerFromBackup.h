@@ -9,6 +9,7 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 #include <filesystem>
+#include <unordered_set>
 
 
 namespace DB
@@ -57,6 +58,7 @@ public:
     bool isNonEmptyTableAllowed() const { return getRestoreSettings().allow_non_empty_tables; }
     std::shared_ptr<IRestoreCoordination> getRestoreCoordination() const { return restore_coordination; }
     ContextMutablePtr getContext() const { return context; }
+    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return zookeeper_retries_info; }
 
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.
@@ -120,6 +122,10 @@ private:
 
     std::vector<DataRestoreTask> data_restore_tasks TSA_GUARDED_BY(mutex);
     std::unique_ptr<AccessRestorerFromBackup> access_restorer TSA_GUARDED_BY(mutex);
+
+    /// Databases skipped during restore because they use external engines
+    /// and restore_replace_external_engines_to_null is set.
+    std::unordered_set<String> skipped_databases TSA_GUARDED_BY(mutex);
 };
 
 }

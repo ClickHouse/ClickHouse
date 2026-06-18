@@ -566,7 +566,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
 Cluster::Cluster(
     const Settings & settings,
-    const std::vector<std::vector<String>> & names,
+    const HostsByShard & names,
     const ClusterConnectionParameters & params)
 {
     UInt32 current_shard_num = 1;

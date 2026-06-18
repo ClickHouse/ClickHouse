@@ -359,8 +359,8 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
     const NullMap * src_null_map = nullptr;
     NullMap * res_null_map = nullptr;
 
-    const IColumn * inner_col;
-    IColumn * inner_res_col;
+    const IColumn * inner_col = nullptr;
+    IColumn * inner_res_col = nullptr;
 
     const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
     if (nullable_col)

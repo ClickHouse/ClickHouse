@@ -210,7 +210,7 @@ namespace
         /// Extracts the settings of transport compression from a query info if possible.
         static std::optional<TransportCompression> fromQueryInfo(const GRPCQueryInfo & query_info)
         {
-            TransportCompression res;
+            TransportCompression res{};
             if (!query_info.transport_compression_type().empty())
             {
                 res.setAlgorithm(query_info.transport_compression_type(), ErrorCodes::INVALID_GRPC_QUERY_INFO);
@@ -246,7 +246,7 @@ namespace
         /// Extracts the settings of transport compression from the server configuration.
         static TransportCompression fromConfiguration(const Poco::Util::AbstractConfiguration & config)
         {
-            TransportCompression res;
+            TransportCompression res{};
             if (config.has("grpc.transport_compression_type"))
             {
                 res.setAlgorithm(config.getString("grpc.transport_compression_type"), ErrorCodes::INVALID_CONFIG_PARAMETER);
@@ -653,8 +653,8 @@ namespace
     private:
         bool nextImpl() override
         {
-            const void * new_pos;
-            size_t new_size;
+            const void * new_pos = nullptr;
+            size_t new_size = 0;
             std::tie(new_pos, new_size) = callback();
             if (!new_size)
                 return false;
@@ -1017,7 +1017,7 @@ namespace
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            initializePipeline(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
+            initializePipeline(input_storage->getInMemoryMetadataPtr(context, false)->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -1141,7 +1141,7 @@ namespace
 
         read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
-        assert(!pipeline);
+        chassert(!pipeline);
 
         const Settings & settings = query_context->getSettingsRef();
 
@@ -1199,7 +1199,7 @@ namespace
                 if (!external_table.data().empty())
                 {
                     /// The data will be written directly to the table.
-                    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+                    auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
                     auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
 
                     std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
@@ -1720,7 +1720,7 @@ namespace
         /// Copy output to `result.output`, with optional compressing.
         if (write_buffer)
         {
-            size_t output_size;
+            size_t output_size = 0;
             if (send_final_message)
             {
                 if (compressing_write_buffer)
