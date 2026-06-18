@@ -19,6 +19,26 @@
 namespace DB
 {
 
+namespace
+{
+
+/// Wraps the target storage and its task list together so the target lifetime
+/// is guaranteed for the entire duration of a CHECK TABLE operation.
+struct AliasCheckTasks : IStorage::DataValidationTasksBase
+{
+    StoragePtr target;
+    IStorage::DataValidationTasksPtr inner;
+
+    AliasCheckTasks(StoragePtr target_, IStorage::DataValidationTasksPtr inner_)
+        : target(std::move(target_)), inner(std::move(inner_))
+    {
+    }
+
+    size_t size() const override { return inner->size(); }
+};
+
+}
+
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
@@ -732,6 +752,19 @@ SELECT count() FROM important_data;  -- Data intact, returns 2
 ```
 )DOCS_MD",
         .syntax = "ENGINE = Alias([target_db, ]target_table)"});
+}
+
+IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context)
+{
+    auto target = getTargetTable(TargetAccess{query_context, AccessType::CHECK});
+    auto inner = target->getCheckTaskList(filter, query_context);
+    return std::make_shared<AliasCheckTasks>(std::move(target), std::move(inner));
+}
+
+std::optional<CheckResult> StorageAlias::checkDataNext(DataValidationTasksPtr & check_task_list)
+{
+    auto & alias_tasks = dynamic_cast<AliasCheckTasks &>(*check_task_list);
+    return alias_tasks.target->checkDataNext(alias_tasks.inner);
 }
 
 }
