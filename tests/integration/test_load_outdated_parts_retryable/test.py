@@ -204,7 +204,7 @@ def test_retryable_exception_while_loading_unexpected_parts_does_not_terminate()
     zk = cluster.get_kazoo_client("zoo1")
     zk.delete(os.path.join(zk_path, "replicas/1/parts", "all_0_0_0"))
     node.exec_in_container(
-        ["bash", "-c", f"mv {data_path}/all_0_0_0/columns.txt {data_path}/all_0_0_0/columns.txt.bak"]
+        ["mv", f"{data_path}/all_0_0_0/columns.txt", f"{data_path}/all_0_0_0/columns.txt.bak"]
     )
 
     # Snapshot the interrupt count before enabling the failpoint so the assertion below counts only the
@@ -285,7 +285,7 @@ def test_retryable_exception_after_outdated_cleanup_move_fails_fast():
     ).strip()
     assert outdated_part
     node.exec_in_container(
-        ["bash", "-c", f"mv {data_path}/{outdated_part}/columns.txt {data_path}/{outdated_part}/columns.txt.bak"]
+        ["mv", f"{data_path}/{outdated_part}/columns.txt", f"{data_path}/{outdated_part}/columns.txt.bak"]
     )
 
     # Snapshot the reschedule-interrupt count before enabling the failpoint. With the fix the loader fails
@@ -345,7 +345,7 @@ def test_retryable_exception_after_unexpected_cleanup_move_fails_fast():
     zk = cluster.get_kazoo_client("zoo1")
     zk.delete(os.path.join(zk_path, "replicas/1/parts", "all_0_0_0"))
     node.exec_in_container(
-        ["bash", "-c", f"mv {data_path}/all_0_0_0/count.txt {data_path}/all_0_0_0/count.txt.bak"]
+        ["mv", f"{data_path}/all_0_0_0/count.txt", f"{data_path}/all_0_0_0/count.txt.bak"]
     )
 
     # Snapshot the reschedule-interrupt count; with the fix it must NOT grow (fail fast, no requeue).
@@ -401,7 +401,7 @@ def test_retryable_exception_before_outdated_cleanup_move_reschedules():
     ).strip()
     assert outdated_part
     node.exec_in_container(
-        ["bash", "-c", f"mv {data_path}/{outdated_part}/columns.txt {data_path}/{outdated_part}/columns.txt.bak"]
+        ["mv", f"{data_path}/{outdated_part}/columns.txt", f"{data_path}/{outdated_part}/columns.txt.bak"]
     )
 
     interrupts_before = int(node.count_in_log(OUTDATED_INTERRUPT_LOG))
@@ -450,7 +450,7 @@ def test_retryable_exception_before_unexpected_cleanup_move_reschedules():
     zk = cluster.get_kazoo_client("zoo1")
     zk.delete(os.path.join(zk_path, "replicas/1/parts", "all_0_0_0"))
     node.exec_in_container(
-        ["bash", "-c", f"mv {data_path}/all_0_0_0/count.txt {data_path}/all_0_0_0/count.txt.bak"]
+        ["mv", f"{data_path}/all_0_0_0/count.txt", f"{data_path}/all_0_0_0/count.txt.bak"]
     )
 
     interrupts_before = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG))
