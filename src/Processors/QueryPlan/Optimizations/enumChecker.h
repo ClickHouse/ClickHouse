@@ -90,8 +90,6 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const TUInt S, const TU
     if (!join_kind)
         return;
 
-    /// `isValidJoinOrder` returns the kind relative to the (S1, S2) orientation we were
-    /// handed, so we can use it directly without swapping the inputs.
     auto kind = *join_kind;
 
     auto applicable_edge = optimizer.getApplicableExpressions(lhs, rhs);
