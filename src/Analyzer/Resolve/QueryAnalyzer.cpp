@@ -2128,11 +2128,24 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
     if (matcher_node_typed.getMatcherType() == MatcherNodeType::COLUMNS_LIST)
     {
         auto identifiers = matcher_node_typed.getColumnsIdentifiers();
+        const auto & identifiers_quote_styles = matcher_node_typed.getColumnsIdentifierQuoteStyles();
         result.reserve(identifiers.size());
 
-        for (const auto & identifier : identifiers)
+        for (size_t i = 0; i < identifiers.size(); ++i)
         {
-            auto resolve_result = tryResolveIdentifier(IdentifierLookup{identifier, IdentifierLookupContext::EXPRESSION}, scope);
+            const auto & identifier = identifiers[i];
+            IdentifierLookup identifier_lookup{identifier, IdentifierLookupContext::EXPRESSION};
+            /// Propagate per-part quote styles so `COLUMNS("FirstName")` stays case-sensitive
+            /// in standard mode (otherwise the unqualified COLUMNS path would look up via
+            /// `IdentifierLookup` with no quote info, behaving like an unquoted reference).
+            if (i < identifiers_quote_styles.size())
+            {
+                identifier_lookup.is_part_double_quoted.reserve(identifiers_quote_styles[i].size());
+                for (auto style : identifiers_quote_styles[i])
+                    identifier_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
+            }
+
+            auto resolve_result = tryResolveIdentifier(identifier_lookup, scope);
             if (!resolve_result.isResolved())
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                         "Unknown identifier '{}' inside COLUMNS matcher. In scope {}",

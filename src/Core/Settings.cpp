@@ -7683,7 +7683,7 @@ Possible values:
 Example with `standard` mode:
 - `SELECT FirstName FROM t` matches column `firstname`, `FIRSTNAME`, or `FirstName`
 - `SELECT "FirstName" FROM t` only matches column `FirstName` exactly
-- `SELECT `FirstName` FROM t` matches any case (same as unquoted)
+- ``SELECT `FirstName` FROM t`` matches any case (same as unquoted)
 
 Scope: this setting affects identifier resolution inside the query analyzer. `INSERT` target
 table / column-list lookup and DDL statements (`CREATE`, `DROP`, `ALTER`, `RENAME`) still resolve

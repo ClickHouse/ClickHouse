@@ -1265,34 +1265,47 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
 static bool qualifierBindsToJoinSubtree(
     const QueryTreeNodePtr & join_tree_node,
     const std::string & qualifier,
+    bool case_insensitive,
+    bool double_quoted_alias_blocks_case_insensitive,
     const IdentifierResolveScope & scope)
 {
     if (!join_tree_node || qualifier.empty())
         return false;
 
-    if (join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
-        return true;
+    auto names_equal = [case_insensitive](const std::string & a, const std::string & b)
+    {
+        return case_insensitive ? Poco::icompare(a, b) == 0 : a == b;
+    };
+
+    if (join_tree_node->hasAlias())
+    {
+        const bool alias_case_insensitive
+            = case_insensitive && !(double_quoted_alias_blocks_case_insensitive && join_tree_node->isAliasDoubleQuoted());
+        if (alias_case_insensitive ? Poco::icompare(join_tree_node->getAlias(), qualifier) == 0
+                                   : join_tree_node->getAlias() == qualifier)
+            return true;
+    }
 
     switch (join_tree_node->getNodeType())
     {
         case QueryTreeNodeType::JOIN:
         {
             const auto & join = join_tree_node->as<JoinNode &>();
-            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), qualifier, scope)
-                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), qualifier, scope);
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), qualifier, case_insensitive, double_quoted_alias_blocks_case_insensitive, scope)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), qualifier, case_insensitive, double_quoted_alias_blocks_case_insensitive, scope);
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
             const auto & cross = join_tree_node->as<CrossJoinNode &>();
             for (const auto & expr : cross.getTableExpressions())
-                if (qualifierBindsToJoinSubtree(expr, qualifier, scope))
+                if (qualifierBindsToJoinSubtree(expr, qualifier, case_insensitive, double_quoted_alias_blocks_case_insensitive, scope))
                     return true;
             return false;
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
-            return qualifierBindsToJoinSubtree(arr.getTableExpression(), qualifier, scope);
+            return qualifierBindsToJoinSubtree(arr.getTableExpression(), qualifier, case_insensitive, double_quoted_alias_blocks_case_insensitive, scope);
         }
         default:
             break;
@@ -1301,7 +1314,7 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
-    return !it->second.table_name.empty() && it->second.table_name == qualifier;
+    return !it->second.table_name.empty() && names_equal(it->second.table_name, qualifier);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
@@ -1363,8 +1376,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
         const auto & path_start = identifier_lookup.identifier.front();
-        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), path_start, scope);
-        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), path_start, scope);
+        /// In standard mode an unquoted qualifier `B.id` should bind to a right-side alias `b`
+        /// case-insensitively, while a double-quoted alias definition stays case-sensitive
+        const bool case_insensitive = identifier_lookup.isPartCaseInsensitive(0, scope.isStandardMode());
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), path_start, case_insensitive, /*double_quoted_alias_blocks_case_insensitive=*/true, scope);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), path_start, case_insensitive, /*double_quoted_alias_blocks_case_insensitive=*/true, scope);
     }
 
     QueryTreeNodePtr left_resolved_identifier = nullptr;
