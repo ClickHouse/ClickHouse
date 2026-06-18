@@ -168,7 +168,7 @@ private:
     const bool enable_software_prefetch_in_join = false;
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
-    const bool enable_join_runtime_filter_shared_fixed_hash_table = false;
+    const bool join_runtime_filter_from_fixed_hash_table = false;
     const size_t min_columns_for_hash_join_row_store = 0;
     const size_t max_bytes_for_hash_join_row_store = 0;
 
@@ -335,7 +335,7 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
-    bool enableJoinRuntimeFilterSharedFixedHashTable() const { return enable_join_runtime_filter_shared_fixed_hash_table; }
+    bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
     size_t minColumnsForHashJoinRowStore() const { return min_columns_for_hash_join_row_store; }
     size_t maxBytesForHashJoinRowStore() const { return max_bytes_for_hash_join_row_store; }
 
