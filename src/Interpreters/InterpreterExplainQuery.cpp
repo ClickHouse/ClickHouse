@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsOverflowMode result_overflow_mode;
     extern const SettingsBool make_distributed_plan;
 }
@@ -1077,6 +1078,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             pipeline.setMeasureStepWallClock(true);
 
             CompletedPipelineExecutor executor(pipeline);
+
+            if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
+                executor.setCancelCallback(
+                    std::move(cancel_callback),
+                    query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
             watch.restart();
             executor.execute();
