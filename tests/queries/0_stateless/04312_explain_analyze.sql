@@ -44,4 +44,11 @@ SELECT
 FROM (EXPLAIN ANALYZE
     SELECT number FROM numbers_mt(100000) ORDER BY number % 7, number);
 
-SET enable_materialized_cte = 1;
+-- With `processors = 1` every Actual line is followed by exactly one distribution line
+-- that reports the processor count and the min/median/max/sum of the elapsed time.
+SELECT
+    countIf(explain LIKE '%Time per processor%') >= 1,
+    countIf(explain LIKE '%Time per processor (%):%min %· median %· max %· sum %') = countIf(explain LIKE '%Time per processor%'),
+    countIf(explain LIKE '%Time per processor%') = countIf(explain LIKE '%Actual%')
+FROM (EXPLAIN ANALYZE processors = 1
+    SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);
