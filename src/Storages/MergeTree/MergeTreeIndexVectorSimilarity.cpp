@@ -646,7 +646,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 
 #endif // USE_USEARCH
 
-MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     const String & method = args[0].safeGet<String>();
@@ -690,7 +690,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 #endif
 }
 
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
 

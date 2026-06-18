@@ -2091,7 +2091,7 @@ void ReadFromMergeTree::buildIndexes(
         if (ignored_index_names.contains(index.name))
             continue;
 
-        auto index_helper = MergeTreeIndexFactory::instance().get(index);
+        auto index_helper = MergeTreeIndexFactory::instance().get(index, *data.getSettings());
 
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
