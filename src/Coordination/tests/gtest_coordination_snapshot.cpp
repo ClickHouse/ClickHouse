@@ -2926,6 +2926,8 @@ static std::string buildNodesChunkBytes(const std::vector<FakeNodeEntry> & entri
 }
 
 /// Decompress and return the uncompressed content of chunks[chunk_idx] in a chunked snapshot buffer.
+/// Uses ZSTD streaming decompression so it works for both one-shot frames (known content size)
+/// and streaming frames produced by ZstdDeflatingWriteBuffer (unknown content size).
 static std::string decompressSnapshotChunk(nuraft::ptr<nuraft::buffer> buf, size_t chunk_idx)
 {
     const char * raw = reinterpret_cast<const char *>(buf->data_begin());
@@ -2935,14 +2937,27 @@ static std::string decompressSnapshotChunk(nuraft::ptr<nuraft::buffer> buf, size
     const SnapshotChunkDescriptor & fd = frames[chunk_idx];
     const char * src = raw + fd.compressed_offset;
     const size_t src_size = static_cast<size_t>(fd.compressed_size);
-    const unsigned long long dsize = ZSTD_getFrameContentSize(src, src_size);
-    if (dsize == ZSTD_CONTENTSIZE_ERROR || dsize == ZSTD_CONTENTSIZE_UNKNOWN)
-        throw std::runtime_error("decompressSnapshotChunk: cannot determine content size");
-    std::string out(static_cast<size_t>(dsize), '\0');
-    const size_t actual = ZSTD_decompress(out.data(), dsize, src, src_size);
-    if (ZSTD_isError(actual))
-        throw std::runtime_error(
-            std::string("decompressSnapshotChunk: decompress failed: ") + ZSTD_getErrorName(actual));
+
+    ZSTD_DStream * dstream = ZSTD_createDStream();
+    if (!dstream)
+        throw std::runtime_error("decompressSnapshotChunk: ZSTD_createDStream failed");
+    SCOPE_EXIT({ ZSTD_freeDStream(dstream); });
+
+    std::string out;
+    out.reserve(src_size * 4); // initial guess; will grow as needed
+    constexpr size_t kOutBufSize = 128 * 1024;
+    std::string tmp_out(kOutBufSize, '\0');
+
+    ZSTD_inBuffer in_buf{src, src_size, 0};
+    while (in_buf.pos < in_buf.size)
+    {
+        ZSTD_outBuffer out_buf{tmp_out.data(), kOutBufSize, 0};
+        const size_t ret = ZSTD_decompressStream(dstream, &out_buf, &in_buf);
+        if (ZSTD_isError(ret))
+            throw std::runtime_error(
+                std::string("decompressSnapshotChunk: decompress failed: ") + ZSTD_getErrorName(ret));
+        out.append(tmp_out.data(), out_buf.pos);
+    }
     return out;
 }
 

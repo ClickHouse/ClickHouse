@@ -35,7 +35,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
-#include <zstd.h>
 
 namespace ProfileEvents
 {
@@ -442,73 +441,65 @@ namespace
             }
         }
 
-        // Reusable ZSTD compression context (level 3, content checksum for integrity).
-        ZSTD_CCtx * cctx = ZSTD_createCCtx();
-        if (!cctx)
-            throw Exception(ErrorCodes::CANNOT_COMPRESS,
-                "Chunked snapshot: failed to create ZSTD compression context");
-        SCOPE_EXIT({ ZSTD_freeCCtx(cctx); });
-        ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, 3);
-        ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
-
         std::vector<SnapshotChunkDescriptor> chunks;
         chunks.reserve(total_chunk_count);
 
-        // Compress the finalised `scratch` buffer and write one ZSTD frame to `raw_out`.
-        // Records the chunk descriptor (type, absolute offset, compressed size).
-        auto compress_and_record = [&](SnapshotChunkType type, WriteBufferFromOwnString & scratch) -> void
+        // Stream-compress one chunk into raw_out and record its descriptor.
+        // write_body writes the chunk's uncompressed content into the passed WriteBuffer and
+        // returns the chunk's node_count (0 for METADATA/SESSIONS).
+        // All three chunk types (METADATA, NODES, SESSIONS) use this single helper so that
+        // compression is always performed via ZstdDeflatingWriteBuffer (level 3, streaming).
+        auto write_chunk = [&](SnapshotChunkType type, auto && write_body)
         {
-            const std::string & uncompressed = scratch.str(); // finalises if not already
-            const size_t max_compressed = ZSTD_compressBound(uncompressed.size());
-            std::string compressed(max_compressed, '\0');
-            const size_t compressed_size = ZSTD_compress2(
-                cctx,
-                compressed.data(), max_compressed,
-                uncompressed.data(), uncompressed.size());
-            if (ZSTD_isError(compressed_size))
-                throw Exception(ErrorCodes::CANNOT_COMPRESS,
-                    "Chunked snapshot ZSTD compression failed: {}", ZSTD_getErrorName(compressed_size));
             const uint64_t offset = static_cast<uint64_t>(raw_out.count());
-            raw_out.write(compressed.data(), compressed_size);
-            chunks.push_back(SnapshotChunkDescriptor{type, offset, static_cast<uint64_t>(compressed_size), /*node_count=*/0});
+            WriteBufferFromOwnString chunk_buf;
+            uint64_t node_count = 0;
+            {
+                ZstdDeflatingWriteBuffer zstd(&chunk_buf, /*compression_level=*/3);
+                node_count = write_body(zstd);
+                zstd.finalize();
+            } // zstd finalised and destroyed; chunk_buf now holds the complete ZSTD frame
+            const std::string & compressed = chunk_buf.str();
+            raw_out.write(compressed.data(), compressed.size());
+            chunks.push_back(SnapshotChunkDescriptor{type, offset, static_cast<uint64_t>(compressed.size()), node_count});
         };
 
         // ── METADATA chunk ────────────────────────────────────────────────────────
+        write_chunk(SnapshotChunkType::METADATA, [&](WriteBuffer & out) -> uint64_t
         {
-            WriteBufferFromOwnString scratch;
-            writeBinary(static_cast<uint8_t>(SnapshotVersion::V8), scratch);
-            serializeSnapshotMetadata(snapshot.snapshot_meta, scratch);
+            writeBinary(static_cast<uint8_t>(SnapshotVersion::V8), out);
+            serializeSnapshotMetadata(snapshot.snapshot_meta, out);
             // Chunked snapshot >= V5: always write zxid + digest
-            writeBinary(snapshot.zxid, scratch);
+            writeBinary(snapshot.zxid, out);
             if (keeper_context->digestEnabled())
             {
-                writeBinary(static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION), scratch);
-                writeBinary(snapshot.nodes_digest, scratch);
+                writeBinary(static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION), out);
+                writeBinary(snapshot.nodes_digest, out);
             }
             else
             {
-                writeBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), scratch);
+                writeBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), out);
             }
-            writeBinary(snapshot.session_id, scratch);
+            writeBinary(snapshot.session_id, out);
 
             // ACL map — sorted for determinism across replicas (same as legacy serialiser).
             std::vector<std::pair<ACLId, Coordination::ACLs>> sorted_acl_map(
                 snapshot.acl_map.begin(), snapshot.acl_map.end());
             ::sort(sorted_acl_map.begin(), sorted_acl_map.end());
-            writeBinary(sorted_acl_map.size(), scratch);
+            writeBinary(sorted_acl_map.size(), out);
             for (const auto & [acl_id, acls] : sorted_acl_map)
             {
-                writeBinary(acl_id, scratch); // Chunked snapshot always uses V7+ uint32_t ACLId
-                writeBinary(acls.size(), scratch);
+                writeBinary(acl_id, out); // Chunked snapshot always uses V7+ uint32_t ACLId
+                writeBinary(acls.size(), out);
                 for (const auto & acl : acls)
                 {
-                    writeBinary(acl.permissions, scratch);
-                    writeBinary(acl.scheme, scratch);
-                    writeBinary(acl.id, scratch);
+                    writeBinary(acl.permissions, out);
+                    writeBinary(acl.scheme, out);
+                    writeBinary(acl.id, out);
                 }
             }
-            compress_and_record(SnapshotChunkType::METADATA, scratch);
-        }
+            return 0;
+        });
 
         // ── NODES chunks ──────────────────────────────────────────────────────────
         // Each chunk body contains node_count × (path binary + V7-encoded node).
@@ -523,14 +514,9 @@ namespace
             {
                 const size_t nodes_for_this_chunk = std::min(remaining_nodes, chunk_size_limit);
 
-                const uint64_t offset = static_cast<uint64_t>(raw_out.count());
-                uint64_t actual_node_count = 0;
-
-                // chunk_buf is declared before zstd so it outlives the deflating buffer.
-                // ZstdDeflatingWriteBuffer holds a non-owning pointer to chunk_buf.
-                WriteBufferFromOwnString chunk_buf;
+                write_chunk(SnapshotChunkType::NODES, [&](WriteBuffer & out) -> uint64_t
                 {
-                    ZstdDeflatingWriteBuffer zstd(&chunk_buf, /*compression_level=*/3);
+                    uint64_t actual_node_count = 0;
 
                     while (actual_node_count < nodes_for_this_chunk
                         && container_pos < snapshot.snapshot_container_size)
@@ -554,11 +540,11 @@ namespace
                                 "Chunked snapshot serialize: node mzxid {} > snapshot zxid {}",
                                 node.stats.mzxid, snapshot.zxid);
 
-                        writeBinary(path, zstd);
+                        writeBinary(path, out);
                         // The chunked format reuses V7 per-node encoding (METADATA version byte = 8 is a
                         // chunk tag, not a node-encoding selector). The reader must decode
                         // each node with readNode(…, SnapshotVersion::V7, …).
-                        writeNode(node, SnapshotVersion::V7, zstd);
+                        writeNode(node, SnapshotVersion::V7, out);
                         ++actual_node_count;
 
                         const bool last = (container_pos + 1 >= snapshot.snapshot_container_size);
@@ -567,42 +553,33 @@ namespace
                         ++container_pos;
                     }
 
-                    zstd.finalize();
-                } // zstd finalised and destroyed; chunk_buf now holds the complete ZSTD frame
+                    return actual_node_count;
+                });
 
-                const std::string & compressed = chunk_buf.str();
-                raw_out.write(compressed.data(), compressed.size());
-                chunks.push_back(SnapshotChunkDescriptor{
-                    SnapshotChunkType::NODES,
-                    offset,
-                    static_cast<uint64_t>(compressed.size()),
-                    actual_node_count});
-
-                remaining_nodes -= actual_node_count;
+                remaining_nodes -= chunks.back().node_count;
             }
         }
 
         // ── SESSIONS chunk ────────────────────────────────────────────────────────
+        write_chunk(SnapshotChunkType::SESSIONS, [&](WriteBuffer & out) -> uint64_t
         {
-            WriteBufferFromOwnString scratch;
-
             // Sorted sessions for determinism across replicas (same as legacy serialiser).
             std::vector<std::pair<int64_t, int64_t>> sorted_sessions(
                 snapshot.session_and_timeout.begin(), snapshot.session_and_timeout.end());
             ::sort(sorted_sessions.begin(), sorted_sessions.end());
-            writeBinary(sorted_sessions.size(), scratch);
+            writeBinary(sorted_sessions.size(), out);
             for (const auto & [session_id, timeout] : sorted_sessions)
             {
-                writeBinary(session_id, scratch);
-                writeBinary(timeout, scratch);
+                writeBinary(session_id, out);
+                writeBinary(timeout, out);
                 KeeperStorageBase::AuthIDs ids;
                 if (snapshot.session_and_auth.contains(session_id))
                     ids = snapshot.session_and_auth.at(session_id);
-                writeBinary(ids.size(), scratch);
+                writeBinary(ids.size(), out);
                 for (const auto & [scheme, id] : ids)
                 {
-                    writeBinary(scheme, scratch);
-                    writeBinary(id, scratch);
+                    writeBinary(scheme, out);
+                    writeBinary(id, out);
                 }
             }
 
@@ -613,12 +590,12 @@ namespace
             if (snapshot.cluster_config)
             {
                 auto cluster_buf = snapshot.cluster_config->serialize();
-                writeVarUInt(cluster_buf->size(), scratch);
-                scratch.write(reinterpret_cast<const char *>(cluster_buf->data_begin()), cluster_buf->size());
+                writeVarUInt(cluster_buf->size(), out);
+                out.write(reinterpret_cast<const char *>(cluster_buf->data_begin()), cluster_buf->size());
             }
 
-            compress_and_record(SnapshotChunkType::SESSIONS, scratch);
-        }
+            return 0;
+        });
 
         return chunks;
     }
@@ -1105,8 +1082,8 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     // RocksDB managers never read chunked snapshots, so the pool is memory-storage-only.
     if constexpr (!use_rocksdb)
     {
-        const auto & cs = keeper_context->getCoordinationSettings();
-        const uint64_t raw = static_cast<uint64_t>(cs[CoordinationSetting::snapshot_deser_threads]);
+        const auto & coordination_settings = keeper_context->getCoordinationSettings();
+        const uint64_t raw = static_cast<uint64_t>(coordination_settings[CoordinationSetting::snapshot_deser_threads]);
         if (raw == 0)
             deser_threads = std::clamp<size_t>(getNumberOfCPUCoresToUse() / 2, 1, 4);
         else
