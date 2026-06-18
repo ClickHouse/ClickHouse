@@ -1434,9 +1434,8 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// Without this, a write to a slow or stuck sink (e.g. a slow terminal) blocks the
             /// client, so the first Ctrl+C appears to have no effect until the whole block is
             /// written. The hook lets the output buffer stop waiting and discard the rest.
-            /// The hook is removed in resetOutput() after the output format (and its background
-            /// parallel-formatting threads, which write through std_out) have been finished and
-            /// joined, so that std_out's hook is never mutated while a collector thread reads it.
+            /// Cleared in resetOutput() after the parallel-formatting threads are joined, so it is
+            /// never mutated while a collector thread reads it.
             std_out->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
 
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
@@ -1866,15 +1865,15 @@ void ClientBase::resetOutput()
     output_format.reset();
     pending_progress.reset();
 
-    /// Remove the per-query cancellation hook now that the output format has been finished and
-    /// its background parallel-formatting threads joined (in output_format.reset() above). Those
-    /// threads write through std_out and read its cancellation hook, so clearing it here - rather
-    /// than from a scope guard in processOrdinaryQuery that can fire while they are still running -
-    /// avoids a data race on std_out's hook. std_out outlives a single query, so the stale hook
-    /// must be cleared; the per-query pager / "INTO OUTFILE AND STDOUT" buffers are destroyed
-    /// below instead.
-    if (std_out)
-        std_out->setCancellationHook({});
+    /// Clear std_out's per-query cancellation hook. The placement matters in two directions:
+    /// registered here (after output_format.reset() joined the parallel-formatting threads that
+    /// read the hook in WriteBufferFromFileDescriptor::nextImpl) it cannot race with a collector;
+    /// firing at function end (a SCOPE_EXIT, after the final teardown flushes below) it keeps
+    /// Ctrl+C able to interrupt those flushes to a slow/stuck stdout. std_out outlives the query.
+    SCOPE_EXIT({
+        if (std_out)
+            std_out->setCancellationHook({});
+    });
 
     /// out_file_buf wraps std_out_wrapper (via a raw pointer), so it must be finalized
     /// first to flush remaining data (e.g. the gzip footer) into std_out_wrapper.
