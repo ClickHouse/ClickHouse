@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <future>
 #include <memory>
-#include <semaphore>
 #include <optional>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -48,6 +47,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
@@ -55,7 +55,6 @@
 #include <Interpreters/IcebergMetadataLog.h>
 #include <base/wide_integer_to_string.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <base/scope_guard.h>
 
 
 namespace ProfileEvents
@@ -69,6 +68,13 @@ extern const Event IcebergManifestFileFetchTaskMicroseconds;
 extern const Event IcebergManifestFilesParallelFetched;
 };
 
+namespace CurrentMetrics
+{
+extern const Metric IcebergManifestFileFetchThreads;
+extern const Metric IcebergManifestFileFetchThreadsActive;
+extern const Metric IcebergManifestFileFetchThreadsScheduled;
+};
+
 
 namespace DB
 {
@@ -80,7 +86,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
-extern const SettingsUInt64 iceberg_metadata_files_parallel_loading_threads;
+extern const SettingsMaxThreads iceberg_metadata_files_parallel_loading_threads;
 };
 
 
@@ -167,77 +173,60 @@ void SingleThreadIcebergKeysIterator::initParallelPrefetch()
     if (n == 0)
         return;
 
-    ThreadPool & pool = getIOThreadPool().get();
-    auto thread_group = CurrentThread::getGroup();
+    /// Dedicated pool sized to K = parallel_loading_threads; concurrency is bounded by the pool
+    /// size (the codebase convention, mirroring BlobCopierThread). MaxThreads guarantees K >= 1.
+    /// A dedicated pool (not a shared one like getIcebergCatalogThreadpool) is required because
+    /// the cap K is a per-query setting, whereas shared pools are sized by a fixed server setting.
+    prefetch_pool.emplace(
+        CurrentMetrics::IcebergManifestFileFetchThreads,
+        CurrentMetrics::IcebergManifestFileFetchThreadsActive,
+        CurrentMetrics::IcebergManifestFileFetchThreadsScheduled,
+        parallel_loading_threads);
+    /// The runner auto-switches each task to the query's thread group under ICEBERG_MANIFEST_FETCH,
+    /// so no manual ThreadGroupSwitcher is needed.
+    prefetch_runner.emplace(*prefetch_pool, DB::ThreadName::ICEBERG_MANIFEST_FETCH);
 
-    /// Reserve to avoid reallocation: std::future is move-only, and vector reallocation
-    /// with non-noexcept move + no copy would cause a compile error on some STL versions.
-    prefetch_entries.reserve(n);
+    prefetch_manifest_indices.reserve(n);
+    prefetch_tasks.reserve(n);
 
-    /// Limit how many getManifestFile calls run simultaneously to parallel_loading_threads.
-    /// Note: all N tasks are submitted to the shared IO pool up front, and every task beyond
-    /// the cap blocks on acquire(). So whenever N > parallel_loading_threads (i.e. routinely,
-    /// e.g. 30 manifests with threads=8 parks 22 tasks) we park shared IO-pool threads on the
-    /// semaphore, not just at very large N. TODO: a consumer-driven sliding window (submitting
-    /// at most K tasks and submitting the next as each future is consumed) avoids parking the
-    /// shared pool; the semaphore is the simpler fix for now.
-    auto sem = std::make_shared<std::counting_semaphore<64>>(parallel_loading_threads);
-
-    /// Submit one getManifestFile task per matching manifest, in manifest_list order.
-    /// CacheBase::getOrSet has singleflight protection — concurrent callers for the same
-    /// key serialize on a per-key token mutex, so we don't cause N duplicate S3 GETs.
+    /// Submit one getManifestFile task per matching manifest, in manifest_list order, keeping the
+    /// task handles (and their manifest indices) in that order for ordered consumption in next().
+    /// CacheBase::getOrSet has singleflight protection — concurrent callers for the same key
+    /// serialize on a per-key token mutex, so we don't cause N duplicate S3 GETs.
     for (size_t i = 0; i < n; ++i)
     {
         const auto & entry = data_snapshot->manifest_list_entries[i];
         if (entry.content_type != manifest_file_content_type)
             continue;
 
-        auto promise = std::make_shared<std::promise<Iceberg::ManifestFileCacheableInfo>>();
-        prefetch_entries.push_back({i, promise->get_future()});
-
-        /// Capture all data by value. object_storage, local_context and the shared_ptrs
-        /// inside persistent_components are all reference-counted, so the lambda keeps
-        /// them alive even if SingleThreadIcebergKeysIterator is destroyed while a task
-        /// is still running.
-        pool.scheduleOrThrowOnError(
-            [promise_cap = std::move(promise),
-             object_storage_cap = this->object_storage,
+        /// Capture all data by value. object_storage, local_context and the shared_ptrs inside
+        /// persistent_components are all reference-counted, so the task keeps them alive even if
+        /// this iterator is destroyed while a task is still running. enqueueAndGiveOwnership
+        /// deletes the std::ref overload, so capture by value (not by reference).
+        prefetch_manifest_indices.push_back(i);
+        prefetch_tasks.push_back(prefetch_runner->enqueueAndGiveOwnership(
+            [object_storage_cap = this->object_storage,
              persistent_components_cap = this->persistent_components,
              local_context_cap = this->local_context,
              log_cap = this->log,
              filename = entry.manifest_file_path,
-             bytes_size = entry.manifest_file_byte_size,
-             thread_group_cap = thread_group,
-             sem_cap = sem]() mutable
+             bytes_size = entry.manifest_file_byte_size]() -> Iceberg::ManifestFileCacheableInfo
             {
-                /// Acquire the slot before attaching to the query's thread group, so a task
-                /// parked waiting for a slot does not attribute its idle wait to the group.
-                sem_cap->acquire();
-                SCOPE_EXIT({ sem_cap->release(); });
-                DB::ThreadGroupSwitcher switcher(thread_group_cap, DB::ThreadName::ICEBERG_MANIFEST_FETCH);
-                try
-                {
-                    ProfileEventTimeIncrement<Microseconds> task_watch(ProfileEvents::IcebergManifestFileFetchTaskMicroseconds);
-                    auto result = Iceberg::getManifestFile(
-                        object_storage_cap,
-                        persistent_components_cap,
-                        local_context_cap,
-                        log_cap,
-                        filename,
-                        bytes_size);
-                    promise_cap->set_value(std::move(result));
-                }
-                catch (...)
-                {
-                    promise_cap->set_exception(std::current_exception());
-                }
-            });
+                ProfileEventTimeIncrement<Microseconds> task_watch(ProfileEvents::IcebergManifestFileFetchTaskMicroseconds);
+                return Iceberg::getManifestFile(
+                    object_storage_cap,
+                    persistent_components_cap,
+                    local_context_cap,
+                    log_cap,
+                    filename,
+                    bytes_size);
+            }));
     }
 
     LOG_DEBUG(
         log,
         "Submitted {} parallel manifest file fetch tasks ({} total entries, thread_count={})",
-        prefetch_entries.size(),
+        prefetch_tasks.size(),
         n,
         parallel_loading_threads);
 }
@@ -272,12 +261,12 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
 
         if (parallel_loading_threads > 1)
         {
-            /// Parallel path: consume pre-fetched futures in manifest_list_entry order.
-            if (prefetch_consume_pos >= prefetch_entries.size())
+            /// Parallel path: consume task futures in manifest_list (submission) order.
+            if (prefetch_consume_pos >= prefetch_tasks.size())
                 return std::nullopt;
 
-            auto & [manifest_idx, fut] = prefetch_entries[prefetch_consume_pos++];
-            const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_idx];
+            const size_t pos = prefetch_consume_pos++;
+            const auto & manifest_list_entry = data_snapshot->manifest_list_entries[prefetch_manifest_indices[pos]];
 
             /// Block until the prefetch task delivers this manifest (or rethrows on error).
             /// On a cold cache with real parallelism, WaitMicros << TaskMicros (summed);
@@ -285,7 +274,7 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             ManifestFileCacheableInfo cacheable_part = [&]
             {
                 ProfileEventTimeIncrement<Microseconds> wait_watch(ProfileEvents::IcebergManifestFilesParallelFetchWaitMicroseconds);
-                return fut.get();
+                return prefetch_tasks[pos]->future.get();
             }();
             ProfileEvents::increment(ProfileEvents::IcebergManifestFilesParallelFetched);
 
@@ -370,28 +359,30 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     , log(getLogger("IcebergIterator"))
     , manifest_file_content_type(manifest_file_content_type_)
     , parallel_loading_threads(
-          std::clamp<UInt64>(
-              local_context_ ? local_context_->getSettingsRef()[Setting::iceberg_metadata_files_parallel_loading_threads].value : 1ULL,
-              1ULL, 64ULL))
+          local_context_ ? local_context_->getSettingsRef()[Setting::iceberg_metadata_files_parallel_loading_threads].value : 1ULL)
 {
+    /// MaxThreads guarantees the value reaching here is >= 1 (0 is auto-mapped to CPU cores),
+    /// so no clamp is needed. Teardown of in-flight prefetch tasks is handled by the destructor.
 }
 
 SingleThreadIcebergKeysIterator::~SingleThreadIcebergKeysIterator()
 {
-    /// Wait for any in-flight prefetch tasks that were not yet consumed by next().
-    /// The lambda captures shared_ptrs by value so the objects remain alive, but we
-    /// must wait to prevent the thread-pool thread from writing to a promise whose
-    /// shared state we no longer observe.
-    for (size_t i = prefetch_consume_pos; i < prefetch_entries.size(); ++i)
+    /// Drain give-ownership prefetch tasks before any member is destroyed (runner and pool are
+    /// both still alive here). The runner does not track give-ownership tasks, so its own
+    /// destructor would not wait for them, and a running task wrapper dereferences the runner
+    /// (this->thread_name) — so we must wait here, as the give-ownership contract prescribes
+    /// (mirrors BlobCopierThread). Passing the whole vector is safe: tasks already consumed by
+    /// next() have an invalidated future (future.get() was called) and are skipped; this static
+    /// overload only future.wait()s (it does not future.get()), so it never rethrows. The
+    /// try/catch keeps the destructor non-throwing regardless.
+    /// give-ownership tasks cannot be cancelled, so on early drop (LIMIT/cancel) the remaining
+    /// fetches run to completion here rather than being cancelled — safe, not free.
+    try
     {
-        if (prefetch_entries[i].future.valid())
-        {
-            try
-            {
-                prefetch_entries[i].future.wait();
-            }
-            catch (...) {} // NOLINT: intentional swallow in destructor
-        }
+        ManifestFetchRunner::waitForAllToFinish(prefetch_tasks);
+    }
+    catch (...) // NOLINT: intentional swallow in destructor
+    {
     }
 }
 
