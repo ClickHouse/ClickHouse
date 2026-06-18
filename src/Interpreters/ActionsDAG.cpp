@@ -1206,7 +1206,12 @@ void ActionsDAG::pushMaterializeOutwardForConstants()
             }
             any_through_materialize = any_through_materialize || resolved->through_materialize;
             all_deterministic = all_deterministic && resolved->deterministic;
-            args.push_back({resolved->column, node.children[i]->result_type, node.children[i]->result_name});
+            /// DAG-stored consts are size 0 by convention, some functions (e.g. moduloOrNull) misbehave
+            /// on size-0 input - match getFunctionArguments and resize to size 1 before execute
+            ColumnPtr column = resolved->column;
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()); column_const && column_const->empty())
+                column = ColumnConst::create(column_const->getDataColumnPtr(), 1);
+            args.push_back({std::move(column), node.children[i]->result_type, node.children[i]->result_name});
         }
         if (!all_resolved)
             continue;
