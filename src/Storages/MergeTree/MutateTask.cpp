@@ -865,8 +865,12 @@ getColumnsForNewDataPart(
                 else
                 {
 
-                    if (was_removed)
-                    { /// DROP COLUMN xxx, RENAME COLUMN yyy TO xxx
+                    if (renamed_columns_to_from.contains(it->name))
+                    {
+                        /// Another column is renamed into this name; take its type from the
+                        /// renamed-from column, not from the same-named source column that is
+                        /// being renamed away (DROP xxx + RENAME yyy TO xxx, or the swap
+                        /// RENAME xxx TO zzz + RENAME yyy TO xxx).
                         auto renamed_from = renamed_columns_to_from.at(it->name);
                         auto maybe_name_and_type = source_columns.tryGetByName(renamed_from);
                         if (!maybe_name_and_type)
@@ -2061,7 +2065,7 @@ private:
 
             if (need_recalculate)
             {
-                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
+                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx, *ctx->data->getSettings()));
             }
             else
             {
@@ -2888,7 +2892,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     {
         if (ctx->indices_to_drop_names.contains(index.name))
         {
-            ctx->indices_to_drop.insert(index_factory.get(index));
+            ctx->indices_to_drop.insert(index_factory.get(index, *ctx->data->getSettings()));
             continue;
         }
 
@@ -2898,7 +2902,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         if (need_recalculate)
         {
             bool inserted = false;
-            auto index_ptr = index_factory.get(index);
+            auto index_ptr = index_factory.get(index, *ctx->data->getSettings());
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
