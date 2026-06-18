@@ -58,6 +58,32 @@ SELECT arr FROM test_array_values_mixed ORDER BY arr;
 DROP TABLE test_array_values_mixed;
 SET input_format_values_interpret_expressions = 1;
 
+-- Regression: non-literal ARRAY[...] forms must not share a ConstantExpressionTemplate
+-- cache entry with [...]. These forms produce the same AST but differ in fixed tokens
+-- (ARRAY keyword vs nothing), so they previously hashed to the same key and caused
+-- template-token mismatch failures when mixed in one INSERT.
+
+-- Empty arrays: ARRAY[] and [] share the same AST (array()) and the same result type.
+SET input_format_values_interpret_expressions = 0;
+CREATE TABLE test_array_empty_mixed (arr Array(UInt32)) ENGINE = Memory;
+INSERT INTO test_array_empty_mixed VALUES (ARRAY[]), ([]), (ARRAY[]);
+SELECT arr FROM test_array_empty_mixed;
+DROP TABLE test_array_empty_mixed;
+
+-- Expression arrays: ARRAY[1+1] and [2+2] share the same AST structure.
+CREATE TABLE test_array_expr_mixed (arr Array(UInt32)) ENGINE = Memory;
+INSERT INTO test_array_expr_mixed VALUES (ARRAY[1 + 1]), ([2 + 2]), (ARRAY[3 + 3]);
+SELECT arr FROM test_array_expr_mixed ORDER BY arr;
+DROP TABLE test_array_expr_mixed;
+
+-- All-NULL arrays: ReplaceLiteralsVisitor skips NULL literals, so ARRAY remains a fixed
+-- token in the template. ARRAY[NULL] and [NULL] must not share a cache entry.
+CREATE TABLE test_array_null_mixed (arr Array(Nullable(UInt32))) ENGINE = Memory;
+INSERT INTO test_array_null_mixed VALUES (ARRAY[NULL]), ([NULL]), (ARRAY[NULL]);
+SELECT arr FROM test_array_null_mixed;
+DROP TABLE test_array_null_mixed;
+SET input_format_values_interpret_expressions = 1;
+
 -- Precedence: ARRAY[n] is always an array constructor, never an identifier subscript.
 -- This follows PostgreSQL, where ARRAY is a reserved constructor keyword.
 -- To subscript a column named ARRAY, quote it: `ARRAY`[n].
