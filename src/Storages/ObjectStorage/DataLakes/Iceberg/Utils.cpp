@@ -99,6 +99,8 @@ namespace DB::Setting
 static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
 static constexpr auto MAX_TRANSACTION_RETRIES = 1000;
 
+static constexpr size_t MAX_LIST_RETRIES = 5;
+
 namespace DB::Iceberg
 {
 
@@ -311,61 +313,66 @@ bool writeMetadataFileAndVersionHint(
         return false;
     }
 
-    if (try_write_version_hint)
+    /// Once any writer has created `version-hint.text`, every subsequent writer must keep it in
+    /// sync, otherwise readers with `iceberg_use_version_hint = 1` observe stale data when a
+    /// writer that does not have the setting enabled advances the table.
+    size_t i = 0;
+    while (i < MAX_TRANSACTION_RETRIES)
     {
-        size_t i = 0;
-        while (i < MAX_TRANSACTION_RETRIES)
+        StoredObject object_info(storage_version_hint_path);
+        std::string version_hint_value;
+        std::string etag;
+        std::string write_if_none_match = "*";
+        if (object_storage->exists(object_info))
         {
-            StoredObject object_info(storage_version_hint_path);
-            std::string version_hint_value;
-            std::string etag;
-            std::string write_if_none_match = "*";
-            if (object_storage->exists(object_info))
-            {
-                auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
-                version_hint_value = object_data;
-                boost::algorithm::trim(version_hint_value);
-                etag = object_metadata.etag;
-                write_if_none_match.clear();
-            }
+            auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
+            version_hint_value = object_data;
+            boost::algorithm::trim(version_hint_value);
+            etag = object_metadata.etag;
+            write_if_none_match.clear();
+        }
+        else if (!try_write_version_hint)
+        {
+            /// The file does not exist and this writer was not asked to create it.
+            break;
+        }
 
-            Int32 old_version = 0;
-            if (!version_hint_value.empty())
+        Int32 old_version = 0;
+        if (!version_hint_value.empty())
+        {
+            if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
             {
-                if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
-                {
-                    old_version = std::stoi(version_hint_value);
-                }
-                else
-                {
-                    old_version = getMetadataFileAndVersion(version_hint_value).version;
-                }
-            }
-            if (old_version < metadata_file_info.version)
-            {
-                try
-                {
-                    /// Write just the version number for Spark/spec compatibility.
-                    Iceberg::writeMessageToFile(
-                        std::to_string(metadata_file_info.version),
-                        storage_version_hint_path,
-                        object_storage,
-                        context,
-                        write_if_none_match,
-                        /* write-if-match */ etag);
-                    break;
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                }
+                old_version = std::stoi(version_hint_value);
             }
             else
             {
+                old_version = getMetadataFileAndVersion(version_hint_value).version;
+            }
+        }
+        if (old_version < metadata_file_info.version)
+        {
+            try
+            {
+                /// Write just the version number for Spark/spec compatibility.
+                Iceberg::writeMessageToFile(
+                    std::to_string(metadata_file_info.version),
+                    storage_version_hint_path,
+                    object_storage,
+                    context,
+                    write_if_none_match,
+                    /* write-if-match */ etag);
                 break;
             }
-            ++i;
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
+        else
+        {
+            break;
+        }
+        ++i;
     }
 
     return true;
@@ -1074,7 +1081,21 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
         bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
-        const auto metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+
+        std::vector<String> metadata_files;
+        for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+        {
+            metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+            if (!metadata_files.empty())
+                break;
+            LOG_DEBUG(
+                log,
+                "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
+                "(attempt {} of {}), retrying",
+                table_path,
+                attempt + 1,
+                MAX_LIST_RETRIES);
+        }
         if (metadata_files.empty())
         {
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);

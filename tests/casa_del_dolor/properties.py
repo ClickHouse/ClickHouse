@@ -457,7 +457,7 @@ object_storages_properties = {
         "s3_strict_upload_part_size": threshold_generator(
             0.2, 0.2, 0, 100 * 1024 * 1024
         ),
-        "s3_upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10),
+        "s3_upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "s3_upload_part_size_multiply_parts_count_threshold": threshold_generator(
             0.2, 0.2, 1, 1000
         ),
@@ -498,7 +498,7 @@ object_storages_properties = {
         # "skip_access_check": true_false_lambda, may break the startup
         "strict_upload_part_size": threshold_generator(0.2, 0.2, 0, 100 * 1024 * 1024),
         "thread_pool_size": threads_lambda,
-        "upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10),
+        "upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "upload_part_size_multiply_parts_count_threshold": threshold_generator(
             0.2, 0.2, 1, 1000
         ),
@@ -1703,6 +1703,7 @@ keeper_settings = {
         "nuraft_max_uncommitted_log_entries": threshold_generator(
             0.2, 0.2, 0, 1000000
         ),
+        "nuraft_use_bg_thread_for_snapshot_io": true_false_lambda,
         "nuraft_streaming_mode": true_false_lambda,
         "parallel_read_chunk_size": threshold_generator(0.2, 0.2, 1, 1024),
         "parallel_read_min_batch": threshold_generator(0.2, 0.2, 0, 4096),
