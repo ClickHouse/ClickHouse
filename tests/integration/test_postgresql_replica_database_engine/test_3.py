@@ -935,6 +935,27 @@ def test_use_extended_date_and_time_types_setting(started_cluster):
     cursor.execute("DROP TABLE IF EXISTS test_date_types")
 
 
+def test_use_extended_date_and_time_types_setting_table_engine_rejected(started_cluster):
+    # The setting only affects the MaterializedPostgreSQL database engine, where the nested
+    # table structure is derived from PostgreSQL. For the table engine the user declares the
+    # column types explicitly, so the setting cannot have any effect and must be rejected with
+    # a clear exception rather than silently ignored.
+    table = "test_date_types_table_engine"
+    error = instance.query_and_get_error(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, d Date)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_use_extended_date_and_time_types = 0
+        """
+    )
+    assert (
+        "materialized_postgresql_use_extended_date_and_time_types" in error
+        and "table engine" in error
+    ), error
+
+
 def test_numeric_to_int256(started_cluster):
     # https://github.com/ClickHouse/ClickHouse/issues/59224
     # PostgreSQL numeric with precision wider than Decimal256 can hold (76 digits) and scale 0
