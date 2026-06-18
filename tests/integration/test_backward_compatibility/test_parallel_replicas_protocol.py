@@ -45,6 +45,8 @@ split_topology_nodes = [
     )
     for num in range(2)
 ] + [
+    # Third node intentionally uses the current build (no `image`/`tag`/`with_installed_binary`),
+    # so the cluster mixes 25.12 with the version under test — exactly the rolling-upgrade shape.
     cluster.add_instance(
         "split_node2",
         main_configs=["configs/clusters_split_topology.xml"],
