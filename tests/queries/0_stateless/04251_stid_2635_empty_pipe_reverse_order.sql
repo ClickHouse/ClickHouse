@@ -38,10 +38,14 @@ INSERT INTO stid_2635_r SELECT number + 1000 FROM numbers(200);
 -- This query reaches `readByLayers` -> `read({}, ReadType::InReverseOrder)` for the empty left
 -- layer. It aborted with the empty-pipe LOGICAL_ERROR before the fix. `FORMAT Null` is required:
 -- wrapping the result in an aggregate prunes the `ORDER BY` and the read-by-layers path with it.
+-- `optimize_read_in_order` and `query_plan_read_in_order` are pinned because the test runner
+-- randomizes the former: with either off, `read_in_order` is not set and the guarded path is skipped.
 SELECT k FROM stid_2635_l JOIN stid_2635_r USING (k)
 ORDER BY k DESC
 SETTINGS join_algorithm = 'full_sorting_merge',
          query_plan_join_shard_by_pk_ranges = 1,
+         optimize_read_in_order = 1,
+         query_plan_read_in_order = 1,
          query_plan_read_in_order_through_join = 1,
          read_in_order_use_virtual_row = 1,
          enable_join_runtime_filters = 0,
