@@ -587,8 +587,8 @@ struct RequestFromLog
     int64_t session_id = 0;
     size_t executor_id = 0;
     bool has_watch = false;
-    DB::DateTime64 request_event_time;
-    DB::DateTime64 response_event_time;
+    DB::DateTime64 request_event_time{};
+    DB::DateTime64 response_event_time{};
     std::shared_ptr<Coordination::ZooKeeper> connection;
 };
 

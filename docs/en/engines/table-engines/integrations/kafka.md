@@ -54,6 +54,7 @@ SETTINGS
     [kafka_thread_per_consumer = 0,]
     [kafka_handle_error_mode = 'default',]
     [kafka_commit_on_select = false,]
+    [kafka_consumer_acquire_timeout_ms = 30000,]
     [kafka_max_rows_per_message = 1,]
     [kafka_compression_codec = '',]
     [kafka_compression_level = -1];
@@ -86,6 +87,7 @@ Optional parameters:
 - `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
 - `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`), dead_letter_queue (error related data will be saved in system.dead_letter_queue).
 - `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
+- `kafka_consumer_acquire_timeout_ms` — Timeout in milliseconds for acquiring a Kafka consumer during direct `SELECT` queries on a `Kafka2` table (with Keeper-based offset storage). When multiple concurrent direct `SELECT` queries run on the same table, each must wait for consumers to become available. The timeout prevents deadlocks when queries hold different subsets of consumers. Default: `30000`.
 - `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
 - `kafka_autodetect_client_rack` — Automatically sets the `client.rack` parameter for `librdkafka` to prefer the nearest Kafka replicas.
   Supported sources:
@@ -348,10 +350,8 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ### Known limitations {#known-limitations}
 
 As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
-- The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
 - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
 - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
-- Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
 
 **See Also**
 
