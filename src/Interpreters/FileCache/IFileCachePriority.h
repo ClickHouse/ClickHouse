@@ -442,6 +442,15 @@ public:
     virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
 
     using OnEvictCallback = std::function<void(const FileSegment & segment)>;
+    using OnUsageChangeCallback = std::function<void(const UserID & user_id, Int64 size_delta, Int64 elements_delta)>;
+
+    virtual void setOnUsageChangeCallback(OnUsageChangeCallback callback)
+    {
+        chassert(!on_usage_change_callback, "on_usage_change_callback cannot be set twice");
+        on_usage_change_callback = std::move(callback);
+    }
+
+    const OnUsageChangeCallback & getOnUsageChangeCallback() const { return on_usage_change_callback; }
 
 protected:
     IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_);
@@ -463,6 +472,12 @@ protected:
     /// lock. Returns the number of pending entries removed.
     virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
 
+    void notifyUsageChange(const UserID & user_id, Int64 size_delta, Int64 elements_delta) const
+    {
+        if (queue_type == QueueType::Main && on_usage_change_callback && (size_delta || elements_delta))
+            on_usage_change_callback(user_id, size_delta, elements_delta);
+    }
+
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
@@ -470,6 +485,7 @@ protected:
     /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
     std::atomic<size_t> invalidated_threshold = 0;
     std::function<void()> invalidate_notifier;
+    OnUsageChangeCallback on_usage_change_callback;
 
 private:
     void cleanupTaskFunc();

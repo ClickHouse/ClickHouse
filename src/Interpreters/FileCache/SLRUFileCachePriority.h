@@ -121,6 +121,8 @@ public:
 
     FileCachePriorityPtr copy() const;
 
+    void setOnUsageChangeCallback(OnUsageChangeCallback callback) override;
+
 protected:
     void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
     {

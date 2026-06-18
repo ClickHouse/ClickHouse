@@ -20,7 +20,13 @@ class SplitFileCachePriority : public IFileCachePriority
 public:
     class SplitIterator;
     using CachePriorityCreatorFunction
-        = std::function<IFileCachePriorityPtr(QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String description)>;
+        = std::function<IFileCachePriorityPtr(
+            QueueType queue_type,
+            size_t max_size,
+            size_t max_elements,
+            double size_ratio,
+            size_t overcommit_eviction_evict_step,
+            String description)>;
     using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
     using SegmentType = FileSegmentKeyType;
     using PriorityPerType = std::array<IFileCachePriorityPtr, 3>;
@@ -117,6 +123,8 @@ public:
         const CacheStateGuard::Lock & lock) override;
 
     void resetEvictionPos() override;
+
+    void setOnUsageChangeCallback(OnUsageChangeCallback callback) override;
 
 protected:
     void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override

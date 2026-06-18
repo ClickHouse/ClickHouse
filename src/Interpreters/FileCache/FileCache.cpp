@@ -16,6 +16,7 @@
 #include <Common/callOnce.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
 #include <Common/randomSeed.h>
@@ -113,15 +114,39 @@ namespace FileCacheSetting
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
+    extern const FileCacheSettingsBool expose_prometheus_usage_metrics;
 }
 
 namespace
 {
+    DimensionalMetrics::MetricFamily & filesystem_cache_size_bytes = DimensionalMetrics::Factory::instance().registerMetric(
+        "filesystem_cache_size_bytes",
+        "Filesystem cache size in bytes, labelled by user id.",
+        {"user_id"});
+
+    DimensionalMetrics::MetricFamily & filesystem_cache_elements = DimensionalMetrics::Factory::instance().registerMetric(
+        "filesystem_cache_elements",
+        "Filesystem cache elements (file segments), labelled by user id.",
+        {"user_id"});
+
     std::string getCommonUserID()
     {
         auto user_from_context = DB::Context::getGlobalContextInstance()->getFilesystemCacheUser();
         const auto user = user_from_context.empty() ? toString(ServerUUID::get()) : user_from_context;
         return user;
+    }
+
+    void updateFilesystemCacheUsageMetrics(const String & user_id, Int64 size_delta, Int64 elements_delta)
+    {
+        if (size_delta > 0)
+            filesystem_cache_size_bytes.withLabels({user_id}).increment(static_cast<DimensionalMetrics::Value>(size_delta));
+        else if (size_delta < 0)
+            filesystem_cache_size_bytes.withLabels({user_id}).decrement(static_cast<DimensionalMetrics::Value>(-size_delta));
+
+        if (elements_delta > 0)
+            filesystem_cache_elements.withLabels({user_id}).increment(static_cast<DimensionalMetrics::Value>(elements_delta));
+        else if (elements_delta < 0)
+            filesystem_cache_elements.withLabels({user_id}).decrement(static_cast<DimensionalMetrics::Value>(-elements_delta));
     }
 }
 
@@ -234,7 +259,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     {
         case FileCachePolicy::LRU:
         {
-            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, size_t /*size_ratio*/, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
+            creator_function = [](
+                IFileCachePriority::QueueType queue_type,
+                size_t max_size,
+                size_t max_elements,
+                double /*size_ratio*/,
+                size_t /*overcommit_eviction_evict_step*/,
+                String description) -> IFileCachePriorityPtr
             {
                 return std::make_unique<LRUFileCachePriority>(
                     queue_type,
@@ -246,7 +277,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         }
         case FileCachePolicy::SLRU:
         {
-            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
+            creator_function = [](
+                IFileCachePriority::QueueType queue_type,
+                size_t max_size,
+                size_t max_elements,
+                double size_ratio,
+                size_t /*overcommit_eviction_evict_step*/,
+                String description) -> IFileCachePriorityPtr
             {
                 return std::make_unique<SLRUFileCachePriority>(
                     queue_type,
@@ -260,7 +297,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 #if ENABLE_DISTRIBUTED_CACHE
         case FileCachePolicy::LRU_OVERCOMMIT:
         {
-            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
+            creator_function = [](
+                IFileCachePriority::QueueType queue_type,
+                size_t max_size,
+                size_t max_elements,
+                double /*size_ratio*/,
+                size_t overcommit_eviction_evict_step,
+                String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
                     overcommit_eviction_evict_step,
@@ -273,7 +316,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         }
         case FileCachePolicy::SLRU_OVERCOMMIT:
         {
-            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
+            creator_function = [](
+                IFileCachePriority::QueueType queue_type,
+                size_t max_size,
+                size_t max_elements,
+                double size_ratio,
+                size_t overcommit_eviction_evict_step,
+                String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<SLRUFileCachePriority>>(
                     overcommit_eviction_evict_step,
@@ -313,6 +362,20 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             settings[FileCacheSetting::overcommit_eviction_evict_step],
             cache_name
         );
+    }
+    if (settings[FileCacheSetting::expose_prometheus_usage_metrics])
+    {
+        main_priority->setOnUsageChangeCallback([this](const String & user_id, Int64 size_delta, Int64 elements_delta)
+        {
+            try
+            {
+                updateFilesystemCacheUsageMetrics(user_id, size_delta, elements_delta);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to update filesystem cache usage metrics");
+            }
+        });
     }
     main_priority->setCleanupSettings(
         settings[FileCacheSetting::invalidated_entries_cleanup_threshold],

@@ -166,7 +166,10 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
         CurrentMetrics::add(CurrentMetrics::FilesystemCachePriorityQueueElements);
 
     if (entry->size)
+    {
+        notifyUsageChange(entry->key_metadata->origin.user_id, static_cast<Int64>(entry->size), 1);
         state->add(entry->size, /* elements */1, *state_lock);
+    }
 
     LOG_TEST(
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
@@ -181,7 +184,10 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     /// If size is 0, entry is invalidated, current_elements_num was already updated.
     auto & entry = **it;
     if (entry.size)
+    {
+        notifyUsageChange(entry.key_metadata->origin.user_id, -static_cast<Int64>(entry.size.load()), -1);
         state->sub(entry.size, /* elements */1);
+    }
 
     const bool was_invalidated = entry.getState() == Entry::State::Invalidated;
     entry.setRemoved(lock);
@@ -769,7 +775,10 @@ void LRUFileCachePriority::LRUIterator::invalidateImpl() noexcept
              entry_ptr->toString(), cache_priority->getApproxStateInfoForLog());
 #endif
 
-    size_t entry_size = entry_ptr->size;
+    const size_t entry_size = entry_ptr->size;
+    if (entry_size)
+        cache_priority->notifyUsageChange(entry_ptr->key_metadata->origin.user_id, -static_cast<Int64>(entry_size), -1);
+
     entry_ptr->size = 0;
     entry_ptr->setInvalidatedFlag();
     if (cache_priority->getQueueType() == QueueType::Main)
@@ -803,6 +812,11 @@ void LRUFileCachePriority::LRUIterator::incrementSize(
         "Incrementing size with {} in LRU queue for entry {}",
         size, entry_ptr->toString());
 
+    cache_priority->notifyUsageChange(
+        entry_ptr->key_metadata->origin.user_id,
+        static_cast<Int64>(size),
+        static_cast<Int64>(elements));
+
     cache_priority->state->add(size, elements, lock);
     entry_ptr->size += size;
 
@@ -822,6 +836,7 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
              "Decrement size with {} in LRU queue entry {}",
              size, entry_ptr->toString());
 
+    cache_priority->notifyUsageChange(entry_ptr->key_metadata->origin.user_id, -static_cast<Int64>(size), 0);
     cache_priority->state->sub(size, 0);
     entry_ptr->size -= size;
 }
