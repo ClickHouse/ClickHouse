@@ -3574,9 +3574,11 @@ function startTitleEdit(tab, titleEl) {
 /// Rebuild the whole tab bar. Cheap (few nodes) so we never diff.
 function renderTabBar() {
     const active = getActiveTab();
-    /// Hidden when there is a single tab that has never produced a result, so the
-    /// page looks exactly as it did before tabs existed (no layout shift on load).
-    tab_bar_elem.hidden = (tabs.length <= 1 && (!active || !active.result));
+    /// Hidden when there is a single tab that has never produced a result from a genuine
+    /// run, so the page looks exactly as before tabs existed. Keying off `result.ran`
+    /// (rather than merely `result != null`) also ignores any stale/fabricated result
+    /// snapshot that an older build may have persisted to IndexedDB.
+    tab_bar_elem.hidden = (tabs.length <= 1 && !(active && active.result && active.result.ran));
 
     tabs_elem.textContent = '';
     for (const tab of tabs) {
@@ -3746,6 +3748,7 @@ function saveHistory(stateData, titleForDoc) {
     if (!tab) return;
     tab.query = stateData.query;
     tab.result = {
+        ran: true,   /// marks a genuine run; the tab bar's visibility keys off this
         format: stateData.format,
         ok: stateData.ok,
         data: stateData.data,
