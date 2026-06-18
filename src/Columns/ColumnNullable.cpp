@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <iterator>
+
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
@@ -702,16 +705,17 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             ::sort(std::ranges::next(res.begin(), null_range.from), std::ranges::next(res.begin(), null_range.to));
     }
 
-    if (is_nulls_last || null_ranges.empty())
-    {
-        equal_ranges = std::move(new_ranges);
-        std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
-    }
-    else
-    {
-        equal_ranges = std::move(null_ranges);
-        std::move(new_ranges.begin(), new_ranges.end(), std::back_inserter(equal_ranges));
-    }
+    /// `equal_ranges` must stay sorted by `from` (downstream limit handling relies on it). Both
+    /// `new_ranges` and `null_ranges` are individually sorted, but concatenating them is not, so
+    /// merge the two sorted lists instead.
+    EqualRanges merged;
+    merged.reserve(new_ranges.size() + null_ranges.size());
+    std::merge(
+        std::make_move_iterator(new_ranges.begin()), std::make_move_iterator(new_ranges.end()),
+        std::make_move_iterator(null_ranges.begin()), std::make_move_iterator(null_ranges.end()),
+        std::back_inserter(merged),
+        [](const EqualRange & lhs, const EqualRange & rhs) { return lhs.from < rhs.from; });
+    equal_ranges = std::move(merged);
 }
 
 void ColumnNullable::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -904,15 +908,18 @@ ColumnPtr ColumnNullable::replicate(const Offsets & offsets) const
 
 
 template <bool negative>
-void ColumnNullable::applyNullMapImpl(const NullMap & map)
+void ColumnNullable::applyNullMapImpl(const NullMap & map, size_t offset)
 {
     NullMap & arr = getNullMapData();
 
-    if (arr.size() != map.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent sizes of ColumnNullable objects");
+    if (offset + map.size() != arr.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Null map of size {} at offset {} does not match ColumnNullable of size {}",
+            map.size(), offset, arr.size());
 
-    for (size_t i = 0, size = arr.size(); i < size; ++i)
-        arr[i] |= negative ^ map[i];
+    for (size_t i = 0, size = map.size(); i < size; ++i)
+        arr[offset + i] |= negative ^ map[i];
 }
 
 void ColumnNullable::applyNullMap(const NullMap & map)
@@ -925,9 +932,9 @@ void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
     applyNullMapImpl<false>(map.getData());
 }
 
-void ColumnNullable::applyNegatedNullMap(const NullMap & map)
+void ColumnNullable::applyNegatedNullMap(const NullMap & map, size_t offset)
 {
-    applyNullMapImpl<true>(map);
+    applyNullMapImpl<true>(map, offset);
 }
 
 void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
