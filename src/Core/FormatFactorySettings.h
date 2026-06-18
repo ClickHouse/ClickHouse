@@ -1243,6 +1243,11 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_always_write_decimal_point_in_float_and_decimal, false, R"(
+Always print a decimal point for floating-point and Decimal numbers in text formats, even when the value is a whole number. For example, output `1.` instead of `1`.
+
+Disabled by default.
+)", 0) \
     DECLARE(UInt64, output_format_float_precision, 0, R"(
 When non-zero, format floating-point output (`Float32`, `Float64`, `BFloat16`) with at most this many digits after the decimal point (trailing zeros are removed).
 When 0 (the default), use the shortest round-trip representation.
