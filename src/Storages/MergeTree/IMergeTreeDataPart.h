@@ -174,7 +174,10 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
-    void remove();
+    /// If out_directory_was_moved is set, it is assigned true once the part directory has actually been
+    /// moved during removal, so a caller can distinguish a retryable pre-move failure (original path intact,
+    /// safe to retry) from a post-move one (original path gone, must not reload the part on its old path).
+    void remove(bool * out_directory_was_moved = nullptr);
 
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
@@ -450,12 +453,16 @@ public:
     size_t getFileSizeOrZero(const String & file_name) const;
     auto getFilesChecksums() const { return checksums.files; }
 
-    /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix, bool ignore_error = false);
+    /// Moves a part to detached/ directory and adds prefix to its name.
+    /// out_directory_was_moved is forwarded to renameTo (see below).
+    void renameToDetached(const String & prefix, bool ignore_error = false, bool * out_directory_was_moved = nullptr);
 
     /// Makes checks and move part to new directory
-    /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists);
+    /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly.
+    /// If out_directory_was_moved is set, it is assigned true once the directory has actually been moved,
+    /// so a caller can distinguish a retryable failure from the pre-move checks (original path intact) from
+    /// one after the move started (original path gone).
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, bool * out_directory_was_moved = nullptr);
 
     /// Makes clone of a part in detached/ directory via hard links
     virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,

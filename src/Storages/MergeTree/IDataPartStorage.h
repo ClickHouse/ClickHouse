@@ -168,13 +168,18 @@ public:
 
     /// Remove data part.
     /// can_remove_shared_data, names_not_to_remove are specific for DiskObjectStorage.
-    /// projections, checksums are needed to avoid recursive listing
+    /// projections, checksums are needed to avoid recursive listing.
+    /// If out_directory_was_moved is set, it is assigned true once the part directory has actually been
+    /// moved (renamed to the delete_tmp_ directory). It stays false while only the pre-move steps ran
+    /// (e.g. the zero-copy can_remove_callback), so a caller can tell a retryable pre-move failure (the
+    /// original path is intact, safe to retry) from a post-move one (the path is gone).
     virtual void remove(
         CanRemoveCallback && can_remove_callback,
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
-        LoggerPtr log) = 0;
+        LoggerPtr log,
+        bool * out_directory_was_moved = nullptr) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
@@ -339,12 +344,16 @@ public:
     /// Ideally, new_root_path should be the same as current root (but it is not true).
     /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
     ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
+    /// If out_directory_was_moved is set, it is assigned true once the directory has actually been moved
+    /// (after moveDirectory), so a caller can tell a retryable pre-move failure (original path intact) from
+    /// a post-move one (original path gone).
     virtual void rename(
         std::string new_root_path,
         std::string new_part_dir,
         LoggerPtr log,
         bool remove_new_dir_if_exists,
-        bool fsync_part_dir) = 0;
+        bool fsync_part_dir,
+        bool * out_directory_was_moved = nullptr) = 0;
 
     /// Starts a transaction of mutable operations.
     virtual void beginTransaction() = 0;

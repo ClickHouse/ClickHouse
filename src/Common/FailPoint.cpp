@@ -213,6 +213,7 @@ static struct InitFiu
     REGULAR(mergetree_load_unexpected_parts_inject_schedule_failure) \
     REGULAR(mergetree_load_unexpected_parts_inject_worker_nonretryable_exception) \
     REGULAR(mergetree_load_unexpected_parts_inject_worker_retryable_exception) \
+    REGULAR(mergetree_part_cleanup_inject_pre_move_retryable_exception) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault)
 

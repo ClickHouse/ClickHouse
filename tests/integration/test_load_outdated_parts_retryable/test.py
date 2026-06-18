@@ -30,6 +30,13 @@ OUTDATED_POST_CLEANUP_MOVE_FAILPOINT = (
 UNEXPECTED_POST_CLEANUP_MOVE_FAILPOINT = (
     "mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception"
 )
+# Fire a retryable error in the PRE-move phase of a directory-moving cleanup step (before renameToDetached /
+# remove() actually call moveDirectory - e.g. while the zero-copy can_remove check talks to Keeper). The
+# original directory is still in place at that point, so this MUST be retried (requeue + reschedule), NOT
+# failed fast. This is the regression for the over-eager fail-fast that set the moved flag before the move.
+PART_CLEANUP_PRE_MOVE_FAILPOINT = (
+    "mergetree_part_cleanup_inject_pre_move_retryable_exception"
+)
 # loadUnexpectedDataParts schedules one worker per unexpected part. A retryable error while scheduling a
 # later worker (CANNOT_SCHEDULE_TASK) must reschedule the task (pure scheduling pressure) WITHOUT dropping
 # an error already stored by an earlier worker. These two failpoints reproduce that race: the first makes
@@ -360,6 +367,114 @@ def test_retryable_exception_after_unexpected_cleanup_move_fails_fast():
 
     # Restart reconciles the already-detached directory cleanly and the data on the merged part is intact.
     node.start_clickhouse()
+    assert node.query(f"SELECT count() FROM {table}").strip() == "2000"
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_retryable_exception_before_outdated_cleanup_move_reschedules():
+    # The inverse of the post-move case above. The directory-moving cleanup steps (renameToDetached for broken
+    # parts, remove() for duplicates) do retryable PRE-move work before they touch the directory - for example
+    # remove()'s zero-copy can_remove check talks to Keeper, which can fail transiently. A retryable error
+    # there leaves the original directory in place, so it MUST be retried (requeue + reschedule), not failed
+    # fast. The fix only converts a retryable error to fail-fast once the move has actually started; this test
+    # pins that boundary so a regression that fails fast on a transient pre-move error is caught.
+    node.query("DROP TABLE IF EXISTS t_outdated_premove SYNC")
+    node.query(
+        """
+        CREATE TABLE t_outdated_premove (a UInt64, b String) ENGINE = MergeTree ORDER BY a
+        SETTINGS old_parts_lifetime = 600, merge_tree_clear_old_parts_interval_seconds = 600
+        """
+    )
+    node.query("INSERT INTO t_outdated_premove SELECT number, toString(number) FROM numbers(1000)")
+    node.query("INSERT INTO t_outdated_premove SELECT number, toString(number) FROM numbers(1000, 1000)")
+    node.query("INSERT INTO t_outdated_premove SELECT number, toString(number) FROM numbers(2000, 1000)")
+    node.query("OPTIMIZE TABLE t_outdated_premove FINAL")
+
+    data_path = node.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE name = 't_outdated_premove'"
+    ).strip()
+    # Corrupt one inactive (outdated) part so the loader marks it broken and routes it through the
+    # directory-moving renameToDetached cleanup step (where the pre-move failpoint fires).
+    outdated_part = node.query(
+        "SELECT name FROM system.parts WHERE table = 't_outdated_premove' AND active = 0 ORDER BY name LIMIT 1"
+    ).strip()
+    assert outdated_part
+    node.exec_in_container(
+        ["bash", "-c", f"mv {data_path}/{outdated_part}/columns.txt {data_path}/{outdated_part}/columns.txt.bak"]
+    )
+
+    interrupts_before = int(node.count_in_log(OUTDATED_INTERRUPT_LOG))
+
+    # Inject a retryable error in the PRE-move phase of the cleanup step. The directory is still in place, so
+    # the loader must reschedule (log the interrupt line) and keep the server alive, NOT terminate.
+    node.query(f"SYSTEM ENABLE FAILPOINT {PART_CLEANUP_PRE_MOVE_FAILPOINT}")
+    node.query("DETACH TABLE t_outdated_premove")
+    node.query("ATTACH TABLE t_outdated_premove")
+
+    # The interrupt line must grow (the part was requeued and the task rescheduled); the server stays up.
+    wait_for_log_count_above(node, OUTDATED_INTERRUPT_LOG, interrupts_before)
+    assert node.query("SELECT 1").strip() == "1"
+
+    # Clear the transient condition; the same background task finishes the (still-present) part.
+    node.query(f"SYSTEM DISABLE FAILPOINT {PART_CLEANUP_PRE_MOVE_FAILPOINT}")
+    node.query("SYSTEM WAIT LOADING PARTS t_outdated_premove", timeout=60)
+    assert node.query("SELECT count() FROM t_outdated_premove").strip() == "3000"
+
+    node.query("DROP TABLE t_outdated_premove SYNC")
+
+
+def test_retryable_exception_before_unexpected_cleanup_move_reschedules():
+    # Same pre-move boundary for loadUnexpectedDataParts: a retryable error from the pre-move work of the
+    # broken part's renameToDetached must reschedule and keep retrying (the directory is still in place), not
+    # fail fast. Only a retryable error after the move has begun fails fast (the separate post-cleanup-move
+    # case above).
+    table = "t_unexpected_premove"
+    zk_path = "/clickhouse/tables/t_unexpected_premove"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (key UInt64) ENGINE = ReplicatedMergeTree('{zk_path}', '1') ORDER BY key
+        SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts = 0
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(1000)")
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(1000, 1000)")
+    node.query(f"OPTIMIZE TABLE {table} FINAL")
+
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE name = '{table}'"
+    ).strip()
+    # Make all_0_0_0 an unexpected BROKEN part (drop from ZK, remove count.txt) so it routes through the
+    # directory-moving renameToDetached cleanup step where the pre-move failpoint fires.
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.delete(os.path.join(zk_path, "replicas/1/parts", "all_0_0_0"))
+    node.exec_in_container(
+        ["bash", "-c", f"mv {data_path}/all_0_0_0/count.txt {data_path}/all_0_0_0/count.txt.bak"]
+    )
+
+    interrupts_before = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG))
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PART_CLEANUP_PRE_MOVE_FAILPOINT}")
+    node.query(f"DETACH TABLE {table}")
+    # The replicated attach thread blocks until unexpected parts finish loading, so run ATTACH async; the
+    # server must stay up (reschedule), not terminate.
+    attach = node.get_query_request(f"ATTACH TABLE {table}")
+
+    # The loader keeps retrying the pre-move failure while the failpoint fires; require several NEW retries
+    # and that the server is still alive.
+    retries = 0
+    for _ in range(60):
+        retries = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG)) - interrupts_before
+        if retries >= 3:
+            break
+        time.sleep(0.5)
+    assert retries >= 3
+    assert node.query("SELECT 1").strip() == "1"
+
+    # Clear the transient condition; the broken part's detach finishes and ATTACH returns.
+    node.query(f"SYSTEM DISABLE FAILPOINT {PART_CLEANUP_PRE_MOVE_FAILPOINT}")
+    attach.get_answer()
     assert node.query(f"SELECT count() FROM {table}").strip() == "2000"
 
     node.query(f"DROP TABLE {table} SYNC")

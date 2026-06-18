@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
@@ -32,6 +33,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char mergetree_part_cleanup_inject_pre_move_retryable_exception[];
 }
 
 std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
@@ -632,7 +639,8 @@ void DataPartStorageOnDiskBase::rename(
     std::string new_part_dir,
     LoggerPtr log,
     bool remove_new_dir_if_exists,
-    bool fsync_part_dir)
+    bool fsync_part_dir,
+    bool * out_directory_was_moved)
 {
     if (new_root_path.ends_with('/'))
         new_root_path.pop_back();
@@ -668,10 +676,25 @@ void DataPartStorageOnDiskBase::rename(
 
     String from = getRelativePath();
 
+    /// Models a transient error thrown by the pre-move work above (the existence check / stale-target
+    /// cleanup): the directory has not moved yet, so a caller can still retry. Gated on
+    /// out_directory_was_moved so it only fires for callers that opted into the move signal (the part
+    /// loaders' detach path), not for every part rename.
+    if (out_directory_was_moved)
+        fiu_do_on(FailPoints::mergetree_part_cleanup_inject_pre_move_retryable_exception,
+        {
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure before moving the directory of part {}", from);
+        });
+
     /// Why?
     executeWriteOperation([&](auto & disk)
     {
         disk.setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
+        /// The move below makes the original path disappear; signal it before the call so a caller that
+        /// catches a failure from moveDirectory still sees the directory as moved (it may have partially
+        /// moved). Everything above this point left the original path intact.
+        if (out_directory_was_moved)
+            *out_directory_was_moved = true;
         disk.moveDirectory(from, to);
 
         /// Only after moveDirectory() since before the directory does not exist.
@@ -689,7 +712,8 @@ void DataPartStorageOnDiskBase::remove(
     const MergeTreeDataPartChecksums & checksums,
     std::list<ProjectionChecksums> projections,
     bool is_temp,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool * out_directory_was_moved)
 {
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
     /// when we try to remove two parts with the same name, but different relative paths,
@@ -771,8 +795,23 @@ void DataPartStorageOnDiskBase::remove(
         if (!can_remove_description)
             can_remove_description.emplace(can_remove_callback());
 
+        /// Models a transient error thrown by the pre-move work (e.g. the zero-copy can_remove_callback's
+        /// unlockSharedData talks to Keeper): the directory has not moved yet, so a caller can still retry.
+        /// Gated on out_directory_was_moved so it only fires for callers that opted into the move signal
+        /// (the part loaders), not for every background part removal.
+        if (out_directory_was_moved)
+            fiu_do_on(FailPoints::mergetree_part_cleanup_inject_pre_move_retryable_exception,
+            {
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure before moving the directory of part {}", part_dir);
+            });
+
         try
         {
+            /// The move makes the original path disappear; signal it before the call so a caller that
+            /// catches a failure from moveDirectory still treats the directory as moved (it may have
+            /// partially moved). Everything above this point left the original path intact.
+            if (out_directory_was_moved)
+                *out_directory_was_moved = true;
             disk->moveDirectory(from, to);
             /// NOTE: we intentionally don't update part_dir here because it would cause a data race
             /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).

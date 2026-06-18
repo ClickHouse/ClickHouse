@@ -2947,13 +2947,16 @@ try
 
                 if (load_state.is_broken)
                 {
-                    /// renameToDetached moves the part directory before returning (rename updates the storage
-                    /// path only after moveDirectory). Past this point the original directory is gone, so a
-                    /// retryable error must not reschedule and reload this part on its stale path - fail fast
-                    /// for the same reason as the outdated-parts loader (see load_outdated_part).
+                    /// renameToDetached moves the part directory before returning and sets directory_was_moved
+                    /// true once the move has started. Its pre-move work can still throw a retryable error
+                    /// while the original directory is in place (safe to reschedule and retry); only once the
+                    /// move has begun is the original path gone, so a retryable error from that point must fail
+                    /// fast rather than reschedule the part on its stale path - the same boundary as the
+                    /// outdated-parts loader (see load_outdated_part).
+                    bool directory_was_moved = false;
                     try
                     {
-                        load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                        load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated, &directory_was_moved); /// detached parts must not have '_' in prefixes
 
                         fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception,
                         {
@@ -2962,7 +2965,7 @@ try
                     }
                     catch (...)
                     {
-                        if (isRetryableException(std::current_exception()))
+                        if (directory_was_moved && isRetryableException(std::current_exception()))
                             throw Exception(ErrorCodes::CORRUPTED_DATA,
                                 "Unexpected part {} hit a retryable error after its directory was moved during detach, "
                                 "cannot retry safely: {}", load_state.part->name, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
@@ -3129,10 +3132,12 @@ try
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
             LoadPartResult res;
-            /// Set right before a cleanup step that moves the part's on-disk directory (renameToDetached
-            /// for broken parts, remove() for duplicates). Once the move has begun, the directory my_part
-            /// points at is gone, so a retryable error from that point on cannot be retried by reloading
-            /// the original path and must fail fast instead of being requeued (see the catch below).
+            /// Assigned true by the cleanup step (renameToDetached for broken parts, remove() for duplicates)
+            /// once it has actually moved the part's on-disk directory. The pre-move work of those steps (e.g.
+            /// the zero-copy unlockSharedData Keeper call) can throw a retryable error while the directory is
+            /// still in place - that is safely retried by requeueing. Only after the move has begun is the
+            /// original path gone, so a retryable error from that point on cannot be retried by reloading the
+            /// original path and must fail fast instead of being requeued (see the catch below).
             bool cleanup_moved_directory = false;
             try
             {
@@ -3154,17 +3159,15 @@ try
                 if (res.is_broken)
                 {
                     forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
-                    /// renameToDetached / remove move the part directory before returning (rename updates the
-                    /// storage path only after moveDirectory; remove renames to delete_tmp_ and leaves part_dir
-                    /// pointing at the original). Past this point the original directory is gone, so a retryable
-                    /// error must not requeue my_part (the retry would reload a moved/missing path) - fail fast.
-                    cleanup_moved_directory = true;
-                    res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                    /// renameToDetached / remove move the part directory before returning, and set
+                    /// cleanup_moved_directory true once the move has started. A retryable error from the
+                    /// pre-move steps leaves the original path intact (safe to requeue); past the move the
+                    /// original directory is gone, so a retryable error must fail fast (see the catch below).
+                    res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated, &cleanup_moved_directory); /// detached parts must not have '_' in prefixes
                 }
                 else if (res.part->is_duplicate)
                 {
-                    cleanup_moved_directory = true;
-                    res.part->remove();
+                    res.part->remove(&cleanup_moved_directory);
                 }
                 else
                     preparePartForRemoval(res.part);
@@ -3191,8 +3194,11 @@ try
                 /// A retryable error thrown after a cleanup step already moved the part directory cannot be
                 /// retried by reloading my_part: its original path no longer exists, so the reload would hit
                 /// the broken/duplicate path on a stale name (turning a transient remove error into a later
-                /// terminate, or re-detaching the wrong path). Fail fast as for a genuine inconsistency by
-                /// rethrowing a non-retryable error, which the function-level catch turns into terminate.
+                /// terminate, or re-detaching the wrong path). cleanup_moved_directory is set by the cleanup
+                /// step only once the move has actually begun, so a retryable error from its pre-move work
+                /// (e.g. the zero-copy unlockSharedData Keeper call) still falls through to the safe requeue
+                /// below. Past the move, fail fast by rethrowing a non-retryable error, which the
+                /// function-level catch turns into terminate.
                 if (cleanup_moved_directory)
                     throw Exception(ErrorCodes::CORRUPTED_DATA,
                         "Outdated part {} hit a retryable error after its directory was moved during cleanup, "
