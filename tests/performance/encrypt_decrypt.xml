@@ -1,6 +1,6 @@
 <test>
   <!-- Non-empty plaintext encrypt/decrypt performance test.
-  Tests realistic workloads with constant and variable keys/IVs across CBC, CTR, and GCM modes.
+  Tests realistic workloads with constant and variable keys/IVs across ECB, CBC, CTR, and GCM modes.
   Complements encrypt_decrypt_empty_string.xml which only tests the empty plaintext NO-OP path. -->
 
     <substitutions>
@@ -8,19 +8,31 @@
           <name>func</name>
           <values>
               <!-- Constant key + constant IV: encrypt -->
+              <value>encrypt('aes-128-ecb', materialize(plaintext), key16)</value>
               <value>encrypt('aes-128-cbc', materialize(plaintext), key16, iv16)</value>
               <value>encrypt('aes-128-ctr', materialize(plaintext), key16, iv16)</value>
               <value>encrypt('aes-128-gcm', materialize(plaintext), key16, iv12)</value>
 
               <!-- Constant key + constant IV: encrypt then decrypt -->
+              <value>decrypt('aes-128-ecb', encrypt('aes-128-ecb', materialize(plaintext), key16), key16)</value>
               <value>decrypt('aes-128-cbc', encrypt('aes-128-cbc', materialize(plaintext), key16, iv16), key16, iv16)</value>
               <value>decrypt('aes-128-gcm', encrypt('aes-128-gcm', materialize(plaintext), key16, iv12), key16, iv12)</value>
 
-              <!-- Variable key, constant IV: encrypt (key changes per row, falls back to full init) -->
+              <!-- Variable key, constant IV: encrypt (key changes per row, full init per row) -->
               <value>encrypt('aes-128-cbc', materialize(plaintext), randomString(16), iv16)</value>
+              <value>encrypt('aes-128-ecb', materialize(plaintext), randomString(16))</value>
 
-              <!-- Constant key, variable IV: encrypt (IV changes per row, falls back to full init) -->
+              <!-- Alternating keys: every row misses the key schedule cache -->
+              <value>encrypt('aes-128-cbc', materialize(plaintext), concat(repeat('k', 15), toString(number % 2)), iv16)</value>
+
+              <!-- Constant key, variable IV: encrypt (IV changes per row, only the IV is reset) -->
               <value>encrypt('aes-128-cbc', materialize(plaintext), key16, randomString(16))</value>
+
+              <!-- Variable key / variable IV round trips (deterministic per-row values,
+                   so decrypt sees the same key/IV as encrypt) -->
+              <value>decrypt('aes-128-cbc', encrypt('aes-128-cbc', materialize(plaintext), vkey16, iv16), vkey16, iv16)</value>
+              <value>decrypt('aes-128-ecb', encrypt('aes-128-ecb', materialize(plaintext), vkey16), vkey16)</value>
+              <value>decrypt('aes-128-cbc', encrypt('aes-128-cbc', materialize(plaintext), key16, viv16), key16, viv16)</value>
            </values>
         </substitution>
         <substitution>
@@ -38,7 +50,7 @@
     </substitutions>
 
     <!-- allow OpenSSL-related code to load ciphers and warm-up -->
-    <fill_query>WITH {plaintext} as plaintext, repeat('k', 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12 SELECT count() FROM {table} WHERE NOT ignore({func}) LIMIT 1</fill_query>
+    <fill_query>WITH {plaintext} as plaintext, repeat('k', 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12, substring(concat(toString(number), key16), 1, 16) as vkey16, substring(concat(toString(number), iv16), 1, 16) as viv16 SELECT count() FROM {table} WHERE NOT ignore({func}) LIMIT 1</fill_query>
 
-    <query>WITH {plaintext} as plaintext, repeat('k', 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12 SELECT count() FROM {table} WHERE NOT ignore({func})</query>
+    <query>WITH {plaintext} as plaintext, repeat('k', 16) as key16, repeat('iv', 8) as iv16, substring(iv16, 1, 12) as iv12, substring(concat(toString(number), key16), 1, 16) as vkey16, substring(concat(toString(number), iv16), 1, 16) as viv16 SELECT count() FROM {table} WHERE NOT ignore({func})</query>
 </test>
