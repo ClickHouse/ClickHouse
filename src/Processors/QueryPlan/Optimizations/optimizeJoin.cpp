@@ -393,6 +393,16 @@ static StatsColumnsResult collectStatsColumnsForRelation(const QueryPlan::Node &
     {
         mapped = top_level_columns;
     }
+    else if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
+             transform && transform->getTransformTraits().preserves_number_of_rows)
+    {
+        /// Generic row-preserving transform (e.g. a window function). Keep walking down so the
+        /// underlying read and any `FilterStep` columns are still discovered. This must stay in
+        /// sync with the matching branch in `estimateReadRowsCount`; otherwise the estimator would
+        /// not be built here while the fold still treats the step as a pass-through, dropping the
+        /// statistics-backed estimate for the whole relation.
+        mapped = top_level_columns;
+    }
     else
     {
         return {};
@@ -535,7 +545,7 @@ RelationStats estimateReadRowsCount(
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return estimateReadRowsCount(*node.children.front(), filter, estimator);
 
     return {};
 }
