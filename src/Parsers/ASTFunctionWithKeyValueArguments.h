@@ -34,9 +34,9 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
-    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    void forEachPointerToChild(std::function<void(void**)> f) override
     {
-        f(&second, nullptr);
+        f(reinterpret_cast<void **>(&second));
     }
 
 protected:

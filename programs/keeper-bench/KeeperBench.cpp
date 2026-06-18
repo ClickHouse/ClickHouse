@@ -3,9 +3,6 @@
 #include <Runner.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
-#include <Common/ThreadPool.h>
-#include <IO/SharedThreadPools.h>
-#include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include <boost/program_options/variables_map.hpp>
 
@@ -23,7 +20,6 @@ std::optional<T> valueToOptional(const boost::program_options::variable_value & 
 
 }
 
-int mainEntryClickHouseKeeperBench(int argc, char ** argv);
 int mainEntryClickHouseKeeperBench(int argc, char ** argv)
 {
 
@@ -32,13 +28,6 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
     //Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
     //Poco::Logger::root().setChannel(channel);
     //Poco::Logger::root().setLevel("trace");
-
-    /// Join global-pool threads before the statics they may have accessed are destroyed.
-    /// That way, accesses happen-before destruction.
-    SCOPE_EXIT_SAFE({
-        DB::StaticThreadPool::shutdownAll();
-        GlobalThreadPool::shutdown();
-    });
 
     try
     {
@@ -62,7 +51,7 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         boost::program_options::notify(options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
@@ -76,7 +65,7 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
                       options["hosts"].as<Strings>(),
                       valueToOptional<double>(options["time-limit"]),
                       valueToOptional<double>(options["report-delay"]),
-                      options.contains("continue_on_errors") ? std::optional<bool>(true) : std::nullopt,
+                      options.count("continue_on_errors") ? std::optional<bool>(true) : std::nullopt,
                       valueToOptional<size_t>(options["iterations"]));
 
         try
