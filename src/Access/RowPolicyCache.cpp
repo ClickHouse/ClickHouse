@@ -7,6 +7,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -14,6 +15,12 @@
 #include <boost/smart_ptr/make_shared.hpp>
 #include <Core/Defines.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event RowPolicyCacheRecalculations;
+    extern const Event RowPolicyCacheRecalculationMicroseconds;
+}
 
 namespace DB
 {
@@ -205,6 +212,7 @@ void RowPolicyCache::mixFiltersIfNeeded()
 void RowPolicyCache::mixFilters()
 {
     /// `mutex` is already locked.
+    ProfileEvents::increment(ProfileEvents::RowPolicyCacheRecalculations);
     Stopwatch watch;
     for (auto i = enabled_row_policies.begin(), e = enabled_row_policies.end(); i != e;)
     {
@@ -219,6 +227,7 @@ void RowPolicyCache::mixFilters()
     }
 
     const auto elapsed_ms = watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::RowPolicyCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
     /// O(enabled sets * policies), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
         LOG_WARNING(getLogger("RowPolicyCache"), "Re-mixed row policy filters for {} enabled set(s) over {} policies in {} ms", enabled_row_policies.size(), all_policies.size(), elapsed_ms);

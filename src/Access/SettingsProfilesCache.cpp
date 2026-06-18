@@ -3,10 +3,17 @@
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event SettingsProfileCacheRecalculations;
+    extern const Event SettingsProfileCacheRecalculationMicroseconds;
+}
 
 namespace DB
 {
@@ -119,6 +126,7 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
 void SettingsProfilesCache::mergeSettingsAndConstraints()
 {
     /// `mutex` is already locked.
+    ProfileEvents::increment(ProfileEvents::SettingsProfileCacheRecalculations);
     Stopwatch watch;
     for (auto i = enabled_settings.begin(), e = enabled_settings.end(); i != e;)
     {
@@ -133,6 +141,7 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
     }
 
     const auto elapsed_ms = watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::SettingsProfileCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
     /// O(enabled sets * profiles), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
         LOG_WARNING(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", enabled_settings.size(), all_profiles.size(), elapsed_ms);

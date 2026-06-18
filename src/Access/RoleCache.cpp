@@ -5,9 +5,16 @@
 #include <boost/container/flat_set.hpp>
 #include <base/FnTraits.h>
 #include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event RoleCacheRecalculations;
+    extern const Event RoleCacheRecalculationMicroseconds;
+}
 
 namespace DB
 {
@@ -106,6 +113,7 @@ void RoleCache::collectEnabledRoles(scope_guard * notifications)
 {
     /// `mutex` is already locked.
 
+    ProfileEvents::increment(ProfileEvents::RoleCacheRecalculations);
     Stopwatch watch;
     for (auto i = enabled_roles_by_params.begin(), e = enabled_roles_by_params.end(); i != e;)
     {
@@ -122,6 +130,7 @@ void RoleCache::collectEnabledRoles(scope_guard * notifications)
     }
 
     const auto elapsed_ms = watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::RoleCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
     /// O(enabled sets * roles), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
         LOG_WARNING(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", enabled_roles_by_params.size(), elapsed_ms);

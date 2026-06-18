@@ -5,6 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <base/range.h>
@@ -14,6 +15,12 @@
 #include <boost/range/algorithm/stable_sort.hpp>
 #include <boost/smart_ptr/make_shared.hpp>
 
+
+namespace ProfileEvents
+{
+    extern const Event QuotaCacheRecalculations;
+    extern const Event QuotaCacheRecalculationMicroseconds;
+}
 
 namespace DB
 {
@@ -347,6 +354,7 @@ void QuotaCache::chooseQuotaToConsume()
 {
     /// `mutex` is already locked.
 
+    ProfileEvents::increment(ProfileEvents::QuotaCacheRecalculations);
     Stopwatch watch;
     for (auto i = enabled_quotas.begin(), e = enabled_quotas.end(); i != e;)
     {
@@ -361,6 +369,7 @@ void QuotaCache::chooseQuotaToConsume()
     }
 
     const auto elapsed_ms = watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::QuotaCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
     /// O(enabled sets * quotas), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
         LOG_WARNING(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
