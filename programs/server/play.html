@@ -3434,14 +3434,25 @@ async function postMulti(posted_request_num, parsed)
     }, parsed[0].query);
 }
 
-async function restoreFromHistory(state) {
+/// `token` ties this render to one activation/history navigation (the value of
+/// `request_num` at the time). After each await we bail if it changed, so a slow
+/// activation cannot apply its state on top of a newer one.
+async function restoreFromHistory(state, token) {
+    if (token === undefined) token = request_num;
     clear();
+    /// Reset the result-action targets to this tab, so an empty/other tab can't download or
+    /// copy the previously active tab's query/result. Shown again below if a result renders.
+    document.getElementById('download-div').style.display = 'none';
+    document.getElementById('copy-div').style.display = 'none';
+    last_query_for_download = state.query || '';
+    last_params_for_download = state.params || {};
     query_area.value = state.query;
     query_area.dispatchEvent(new Event('input'));
     resultEl.queryText = state.query;
 
     /// Restore query parameter inputs and their values.
     await updateQueryParams();
+    if (token !== request_num) return;
     if (state.params)
     {
         setParamValues(state.params);
@@ -3487,7 +3498,7 @@ async function restoreFromHistory(state) {
         resultEl.flushFragment(fragment);
     } else if (format == 'JSONCompactColumns') {
         is_chart = true;
-        if (posted_request_num != request_num) { return; }
+        if (token !== request_num) { return; }
         resultEl.renderChart(JSON.parse(state.data));
     } else {
         is_raw = true;
@@ -3496,6 +3507,7 @@ async function restoreFromHistory(state) {
 
     if (resultEl.isExplainGraph) {
         await resultEl.renderGraph();
+        if (token !== request_num) return;
     } else {
         if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
         if (is_table) resultEl.renderTotals();
@@ -3504,6 +3516,8 @@ async function restoreFromHistory(state) {
     }
 
     progressEl.finish();
+    /// A result is shown for this tab, so its download/copy actions apply to this query.
+    document.getElementById('download-div').style.display = 'block';
     document.getElementById('copy-div').style.display = is_raw ? 'block' : 'none';
 
     if (is_raw) {
@@ -3564,6 +3578,18 @@ function captureActiveTab() {
     tab.params = getParamValues();
 }
 
+/// Invalidate any in-flight query and abort its HTTP requests, so a late response cannot
+/// render or be saved into the now-active tab. Bumping `request_num` also supersedes any
+/// run still suspended on an await (it captured the old value) and any in-progress tab
+/// activation (`restoreFromHistory` bails when the token no longer matches `request_num`).
+function invalidateInFlight() {
+    ++request_num;
+    if (controller) controller.abort();
+    for (const ac of multiQueryControllers) ac.abort();
+    multiQueryControllers = [];
+    if (typeof in_flight !== 'undefined' && in_flight) endFlight();
+}
+
 /// Load a tab's content into the editor and re-render its stored result.
 /// Routed through `restoreFromHistory` so the syntax backdrop, params and run
 /// buttons resync (it dispatches an 'input' event), exactly like history navigation.
@@ -3571,15 +3597,14 @@ async function activateTab(id) {
     const tab = tabs.find(t => t.id === id);
     if (!tab) return;
     activeTabId = id;
-    /// Invalidate any in-flight query from the previous tab and abort its requests,
-    /// so a late response cannot render into the now-active tab.
-    ++request_num;
-    if (controller) controller.abort();
-    for (const ac of multiQueryControllers) ac.abort();
-    multiQueryControllers = [];
-    if (typeof in_flight !== 'undefined' && in_flight) endFlight();
+    invalidateInFlight();
+    const token = request_num;
 
-    await restoreFromHistory(tab.result ? { ...tab.result, query: tab.query } : { query: tab.query, params: tab.params, data: null });
+    /// Render the stored result (tab.result) but always restore the editor's parameter
+    /// inputs from the live tab.params, which reflects the latest param edits even if they
+    /// happened after the last run (whose snapshot is in tab.result.params).
+    await restoreFromHistory(tab.result ? { ...tab.result, query: tab.query, params: tab.params } : { query: tab.query, params: tab.params, data: null }, token);
+    if (token !== request_num) return; /// a newer activation/run superseded this one
     /// Always recolor the page (and thus the active tab slab) to this tab's query,
     /// even when there is no result to render (restoreFromHistory skips this otherwise).
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
@@ -3828,6 +3853,9 @@ function buildHistoryParams(params, tabName) {
     if (run_immediately) out.push('run=1');
     if (server_address != location.origin) out.push('url=' + encodeURIComponent(server_address));
     for (const [name, value] of Object.entries(params || {})) {
+        /// Skip empty values: an unset parameter should not pollute the URL, and a stale
+        /// empty `param_x=` must not later override a non-empty value saved on the tab.
+        if (value === '' || value === undefined || value === null) continue;
         out.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
     }
     if (tabName) out.push('tab=' + encodeURIComponent(tabName));
@@ -3874,7 +3902,9 @@ function saveHistory(stateData, titleForDoc) {
         elapsed_ns: stateData.elapsed_ns,
         params: stateData.params,
     };
-    writeHistoryEntry(tab, stateData, titleForDoc);
+    /// Carry `ran` in the history entry too, so Back/Forward to a data-less run state
+    /// (large or multi-query results) replaces the result rather than keeping a stale one.
+    writeHistoryEntry(tab, { ...stateData, ran: true }, titleForDoc);
 }
 
 /// Record a history entry for the active tab on tab switch / rename, reusing the
@@ -3891,6 +3921,7 @@ function syncHistory() {
         data: r.data ?? null,
         elapsed_ns: r.elapsed_ns ?? 0,
         params: tab.params,
+        ran: !!(tab.result && tab.result.ran),
     });
 }
 
@@ -3909,12 +3940,26 @@ function resolveTabForState(state) {
 window.onpopstate = function(event) {
     if (!event.state) return;
     captureActiveTab();
+    /// Back/Forward can switch tabs while a query is in flight; invalidate it just like a
+    /// click switch, so a late response is not saved into the tab we are navigating to.
+    invalidateInFlight();
+    const token = request_num;
     const tab = resolveTabForState(event.state);
     activeTabId = tab.id;
     tab.query = event.state.query;
-    tab.result = event.state.data ? { ...event.state } : tab.result;
+    /// Replace the result from the history entry: a "ran" entry (even with data: null for
+    /// large/multi-query results) becomes a result snapshot; a non-run entry clears it. This
+    /// avoids leaving a stale small-result snapshot attached to a different query.
+    tab.result = event.state.ran ? {
+        ran: true,
+        format: event.state.format,
+        ok: event.state.ok,
+        data: event.state.data,
+        elapsed_ns: event.state.elapsed_ns,
+        params: event.state.params,
+    } : null;
     if (event.state.params) tab.params = event.state.params;
-    restoreFromHistory(event.state).then(renderTabBar);
+    restoreFromHistory(event.state, token).then(() => { if (token === request_num) renderTabBar(); });
     scheduleSave();
 };
 
@@ -3948,7 +3993,11 @@ function endFlight() {
 /// Run the query under cursor, or all queries intersecting the selection.
 async function postOne()
 {
-    ++request_num;
+    /// Capture the request id now; `getQueryUnderCursor`/`splitAllQueries` await the lexer
+    /// (WASM) load, during which a tab switch may bump `request_num`. Reading the global
+    /// after the await would let this stale run execute/save in the wrong tab, so bail if
+    /// it changed and pass the captured id (not the global) to the post functions.
+    const my_request_num = ++request_num;
     document.body.scrollTo(0, 0);
     beginFlight();
 
@@ -3957,6 +4006,7 @@ async function postOne()
         /// Find all queries that intersect the selection and run them.
         const all_text = query_area.value;
         const parsed = await splitAllQueries(all_text);
+        if (my_request_num !== request_num) return;
         const selStart = query_area.selectionStart;
         const selEnd = query_area.selectionEnd;
 
@@ -3969,15 +4019,16 @@ async function postOne()
         }
 
         if (selected.length > 1) {
-            await postMulti(request_num, selected);
+            await postMulti(my_request_num, selected);
         } else if (selected.length === 1) {
-            await postSingle(request_num, selected[0].query, all_text);
+            await postSingle(my_request_num, selected[0].query, all_text);
         }
     } else {
         const query = await getQueryUnderCursor();
+        if (my_request_num !== request_num) return;
         /// In multi-query mode, preserve the full textarea content in history/URL
         /// even when running a single query under cursor (so refresh restores all queries).
-        await postSingle(request_num, query, isMultiQuery ? query_area.value : undefined);
+        await postSingle(my_request_num, query, isMultiQuery ? query_area.value : undefined);
     }
 
     endFlight();
@@ -3986,18 +4037,20 @@ async function postOne()
 /// Run all queries from the textarea.
 async function postAll()
 {
-    ++request_num;
+    const my_request_num = ++request_num;
     document.body.scrollTo(0, 0);
     beginFlight();
 
     const all_text = query_area.value;
     const parsed = await splitAllQueries(all_text);
+    if (my_request_num !== request_num) return;
 
     if (parsed.length > 1) {
-        await postMulti(request_num, parsed);
+        await postMulti(my_request_num, parsed);
     } else {
         const query = await getQueryUnderCursor();
-        await postSingle(request_num, query);
+        if (my_request_num !== request_num) return;
+        await postSingle(my_request_num, query);
     }
 
     endFlight();
@@ -4899,6 +4952,10 @@ async function updateQueryParams()
             {
                 this.style.width = Math.min(this.scrollWidth, this.clientWidth * 2) + 'px';
             }
+            /// Parameters are tab-owned: persist edited values into the active tab too, not
+            /// just the query text, so a reload without switching/running keeps them.
+            const tab = getActiveTab();
+            if (tab) { tab.params = getParamValues(); scheduleSave(); }
         });
         wrapper.appendChild(input);
 
@@ -5025,17 +5082,25 @@ async function reconcileStartup() {
         renderTabBar();
     }
 
-    if (defer_run_for_reconcile && query_area.value) {
-        /// Apply URL param_* overrides for the active query, then auto-run. Doing it here
-        /// (rather than in the synchronous block) guarantees the run targets the reconciled
-        /// active tab and is never aborted by a tab switch during reconciliation.
+    /// Re-apply URL param_* overrides for the active query for ANY URL carrying a query
+    /// (not only run=1): activateTab above restored the saved tab's params, which would
+    /// otherwise discard the values from the URL. Done after reconciliation so it targets
+    /// the reconciled active tab. The auto-run itself is still gated on run=1 below.
+    if (url_query) {
         await updateQueryParams();
         const urlParamValues = {};
         for (const param of currentQueryParams) {
             const value = current_url.searchParams.get('param_' + param.name);
             if (value !== null) urlParamValues[param.name] = value;
         }
-        if (Object.keys(urlParamValues).length) setParamValues(urlParamValues);
+        if (Object.keys(urlParamValues).length) {
+            setParamValues(urlParamValues);
+            const tab = getActiveTab();
+            if (tab) tab.params = getParamValues();
+        }
+    }
+
+    if (defer_run_for_reconcile && query_area.value) {
         postAll();   /// saves history itself on completion
     } else if (activated) {
         syncHistory();   /// reflect the restored active tab in the URL (replaceState)
