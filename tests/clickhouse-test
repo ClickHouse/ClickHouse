@@ -1701,6 +1701,10 @@ class MergeTreeSettingsRandomizer:
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
         "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
+        "text_index_dictionary_block_size": lambda: random.choice([16, 64, 128, 256, 512, 1024, 8192]),
+        "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
+        "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),
+        "text_index_posting_list_codec": lambda: random.choice(["none", "bitpacking"]),
         "map_serialization_version": lambda: random.choice(["basic", "with_buckets"]),
         "map_serialization_version_for_zero_level_parts": lambda: random.choice(["basic", "with_buckets"]),
         "max_buckets_in_map": lambda: random.randint(1, 100),
@@ -1714,11 +1718,25 @@ class MergeTreeSettingsRandomizer:
     @staticmethod
     def get_random_settings(args):
         random_settings = {}
+        # Tiny granules multiply the number of marks per part (marks ~ rows /
+        # index_granularity), which is disproportionately expensive on slow
+        # builds and can turn a few-second test into minutes. Raise the lower
+        # bounds for index_granularity / index_granularity_bytes there.
+        slow_build = (
+            any(flag in args.build_flags for flag in BuildFlags.SANITIZERS)
+            or BuildFlags.DEBUG in args.build_flags
+            or BuildFlags.WITH_COVERAGE in args.build_flags
+        )
         for setting, generator in MergeTreeSettingsRandomizer.settings.items():
             if setting in args.changed_merge_tree_settings:
                 continue
 
-            value = generator()
+            if slow_build and setting == "index_granularity":
+                value = random.randint(100, 65536)
+            elif slow_build and setting == "index_granularity_bytes":
+                value = random.randint(100 * 1024, 30 * 1024 * 1024)
+            else:
+                value = generator()
             if type(value) == str and value == "":
                 continue
 
