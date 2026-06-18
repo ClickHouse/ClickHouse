@@ -66,6 +66,20 @@ def test_remote_view_resolves_query_on_remote_with_serialized_plan():
     )
 
 
+def test_remote_view_if_permitted_resolves_query_on_remote_with_serialized_plan():
+    assert (
+        initiator.query(
+            """
+            SELECT *
+            FROM remote('remote', viewIfPermitted(SELECT x FROM remote_only_eval_table ELSE null('x UInt64')))
+            SETTINGS enable_analyzer = 1,
+                serialize_query_plan = 1
+            """
+        )
+        == "42\n"
+    )
+
+
 def test_remote_eval_insert_select_keeps_input_query_on_remote():
     remote.query("DROP TABLE IF EXISTS remote_eval_insert_result")
     remote.query("CREATE TABLE remote_eval_insert_result (x UInt64) ENGINE = Memory")

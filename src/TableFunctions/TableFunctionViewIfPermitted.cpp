@@ -53,6 +53,7 @@ private:
     VectorWithMemoryTracking<size_t> getTableExpressionArgumentIndexes(
         const ASTPtr & ast_function,
         ContextPtr context) const override;
+    bool hasShardSideResolvedQueryArguments() const override { return true; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 

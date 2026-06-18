@@ -55,13 +55,17 @@ namespace FailPoints
 namespace ClusterProxy
 {
 
-/// `view` and `eval` table-function sources may contain queries that can only be
-/// resolved on the shard side. Keep sending their ASTs instead of building a
-/// serialized plan on the initiator.
-static bool shouldSendASTForTableFunctionSource(const ASTPtr & table_func_ptr)
+/// Some table-function sources may contain queries that can only be resolved on
+/// the shard side. Keep sending their ASTs instead of building a serialized plan
+/// on the initiator.
+static bool shouldSendASTForTableFunctionSource(const ASTPtr & table_func_ptr, ContextPtr context)
 {
     const auto * function = table_func_ptr ? table_func_ptr->as<ASTFunction>() : nullptr;
-    return function && (function->name == "view" || function->name == "eval");
+    if (!function)
+        return false;
+
+    const auto table_function = TableFunctionFactory::instance().tryGet(function->name, context);
+    return table_function && table_function->hasShardSideResolvedQueryArguments();
 }
 
 /// select query has database, table and table function names as AST pointers
@@ -184,7 +188,7 @@ void SelectStreamFactory::createForShardImpl(
         /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColumns,
         /// But distributed_group_by_no_merge requires Complete.
         if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan]
-            && !settings[Setting::distributed_group_by_no_merge] && !shouldSendASTForTableFunctionSource(table_func_ptr))
+            && !settings[Setting::distributed_group_by_no_merge] && !shouldSendASTForTableFunctionSource(table_func_ptr, context))
         {
             query_plan = createLocalPlan(
                 query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);

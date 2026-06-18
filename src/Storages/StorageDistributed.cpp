@@ -891,8 +891,9 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         if (table_expression_modifiers)
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
-        /// Subquery in table functions `view` and `eval` may reference tables that don't exist on the initiator.
-        if (table_function_node->getTableFunctionName() == "view" || table_function_node->getTableFunctionName() == "eval")
+        const auto table_function = TableFunctionFactory::instance().tryGet(table_function_node->getTableFunctionName(), query_context);
+
+        if (table_function && table_function->hasShardSideResolvedQueryArguments())
         {
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
             auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
@@ -905,7 +906,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
             auto storage = std::make_shared<StorageDummy>(fake_storage_id, ColumnsDescription{column_names_and_types});
 
-            table_function_node->resolve({}, std::move(storage), query_context, /*unresolved_arguments_indexes_=*/{ 0 });
+            auto skip_analysis_arguments_indexes = table_function->skipAnalysisForArguments(table_function_node, query_context);
+            table_function_node->resolve({}, std::move(storage), query_context, std::move(skip_analysis_arguments_indexes));
         }
         else
         {

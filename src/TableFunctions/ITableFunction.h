@@ -70,6 +70,9 @@ public:
     /// Return a query represented by a table function when it can be used directly in distributed rewrites.
     virtual const ASTSelectWithUnionQuery * getSelectQueryForDistributedRewrite() const { return nullptr; }
 
+    /// Returns true if table function query arguments can reference tables that only exist on the shard.
+    virtual bool hasShardSideResolvedQueryArguments() const { return false; }
+
     /// Returns true if this table function can be parsed on the initiator to check distributed rewrites.
     virtual bool supportsInitiatorSideDistributedRewrite() const { return true; }
 
