@@ -86,9 +86,16 @@ private:
     /// the restriction cannot be read from the query context of whichever query touches the catalog first.
     const bool allow_server_credentials_in_user_queries;
 
-    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl;
+    std::shared_ptr<DataLake::ICatalog> catalog_impl;
 
     void validateSettings();
+
+    /// Builds `catalog_impl` based on the configured catalog type.
+    /// Called only from the constructor, so no synchronization is required; `catalog_impl`
+    /// is published when the constructed `DatabaseDataLake` is handed off to other threads.
+    /// If `initialize` is called outside the constructor (e.g. on config reload),
+    /// a mutex must be added to guard `catalog_impl` against concurrent readers in `getCatalog`.
+    void initialize();
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,

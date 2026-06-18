@@ -141,6 +141,7 @@ DatabaseDataLake::DatabaseDataLake(
     , db_uuid(uuid)
 {
     validateSettings();
+    initialize();
 }
 
 void DatabaseDataLake::validateSettings()
@@ -160,11 +161,11 @@ void DatabaseDataLake::validateSettings()
     }
 }
 
-std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
+void DatabaseDataLake::initialize()
 {
-    if (catalog_impl)
-        return catalog_impl;
-
+    /// This function is intentionally not synchronized: it is invoked only from the
+    /// constructor, before the `DatabaseDataLake` instance becomes reachable by any
+    /// other thread.
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
@@ -308,7 +309,10 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             break;
         }
     }
+}
 
+std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
+{
     return catalog_impl;
 }
 
