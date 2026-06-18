@@ -202,6 +202,11 @@ bool UTF8CaseInsensitiveSearcherImpl::compareTrivial(
 
 bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
 {
+    /// An empty needle matches anywhere; `startsWith`/`endsWith` call compare directly, and without this
+    /// the scalar tail would dereference `pos` (which equals `haystack_end` for an empty needle).
+    if (needle == needle_end)
+        return true;
+
 #if defined(__AVX2__) || (defined(__aarch64__) && defined(__ARM_NEON))
     constexpr size_t N = sizeof(Vec);
 

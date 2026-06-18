@@ -311,9 +311,9 @@ public:
 };
 
 
-/// Case-insensitive UTF-8 searcher.
-/// StringZilla (x86_64_v4, AVX-512) is the runtime-dispatched upgrade; the Default impl is the baseline:
-/// AVX2 when the build targets it (the default x86-64-v3 level), NEON on ARM, scalar otherwise.
+/// Case-insensitive UTF-8 searcher, provided by the Default impl on every target (AVX2 on x86 when the
+/// build targets it, NEON on ARM, scalar otherwise). Folding is one code point at a time via
+/// `Poco::Unicode::toLower`, so results are identical across CPUs.
 
 /// Default (Poco-based) implementation. The SIMD cache path is used whenever AVX2 or ARM NEON is available
 /// at the build's baseline ISA, mirroring the ASCII searcher above; below that it is scalar.
