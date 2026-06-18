@@ -40,30 +40,11 @@ if [ $FOUND -eq 0 ]; then
   exit 1
 fi
 
-# Look for a second, older master baseline. The newly-covered-code analysis
-# uses it to cross-validate: a line is considered "newly covered by this PR"
-# only if it is uncovered in BOTH master baselines, which filters out the
-# run-to-run variance of the coverage build (typically ~1000 lines flicker
-# between two adjacent master runs). The second baseline is optional — if
-# none is available, the analysis falls back to single-baseline mode and
-# prints a warning.
-SAW_FIRST=0
-for TEST_COMMIT in "${COMMITS[@]}"; do
-  if [ "${TEST_COMMIT}" = "${FIRST_BASE_COMMIT}" ]; then
-    SAW_FIRST=1
-    continue
-  fi
-  if [ ${SAW_FIRST} -eq 0 ]; then
-    continue
-  fi
-  COVERAGE_URL_2="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage/llvm_coverage.info"
-  echo "Checking second baseline coverage for commit ${TEST_COMMIT}..."
-  if wget --spider "${COVERAGE_URL_2}" 2>&1 | grep -q '200 OK'; then
-    echo "Found second baseline at ${COVERAGE_URL_2}"
-    wget --quiet "${COVERAGE_URL_2}" -O base_llvm_coverage_2.info
-    break
-  fi
-done
+# Note: additional older master baselines for cross-validation in the
+# newly-covered analysis are downloaded on demand in llvm_coverage_job.py,
+# only when the newly-covered analysis will actually run (tests-only PR,
+# binary unchanged). Doing it here would fetch ~530 MB per baseline even for
+# PRs where the analysis is suppressed.
 
 export CURRENT_COMMIT
 export BASE_COMMIT

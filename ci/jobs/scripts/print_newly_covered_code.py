@@ -167,8 +167,15 @@ def _format_block_preview(rel: str, lines_in_block: list[int], context: int = 2)
 
 if __name__ == "__main__":
     BASE = f"{temp_dir}/base_llvm_coverage.info"
-    BASE2 = f"{temp_dir}/base_llvm_coverage_2.info"
     CURR = f"{temp_dir}/llvm_coverage.info"
+    # Up to 4 extra baselines downloaded by generate_diff_coverage_report.sh.
+    # We intersect their zero-sets: a line must be uncovered in ALL of them to
+    # pass the filter. More baselines = fewer false positives from run-to-run
+    # flicker. The list is intentionally open-ended so raising TARGET_EXTRA_BASELINES
+    # in the shell script automatically takes effect here.
+    EXTRA_BASELINE_PATHS = [
+        f"{temp_dir}/base_llvm_coverage_{i}.info" for i in range(2, 8)
+    ]
 
     if not (os.path.exists(BASE) and os.path.exists(CURR)):
         msg = "Baseline or current .info file missing - skipping newly-covered analysis."
@@ -185,35 +192,53 @@ if __name__ == "__main__":
     curr_data = _parse_info(CURR)
     print(f"  {len(curr_data)} files in current")
 
-    # Cross-validation against a second, older master baseline. Without it,
-    # the coverage build's run-to-run variance (typically ~1000 lines flicker
-    # between two adjacent master runs) shows up as false-positive newly-
-    # covered lines. With it, we keep only lines that are uncovered in BOTH
-    # masters — i.e. genuinely cold code, not "sometimes-cold" code that
-    # happens to be hit this run by chance. Store baseline-2's zero set as
-    # a (rel, key) pair-set rather than a full dict to keep peak memory low.
-    have_base2 = os.path.exists(BASE2) and os.path.getsize(BASE2) > 0
-    base2_zero_lines: set[tuple[str, int]] = set()
-    base2_zero_fns: set[tuple[str, str]] = set()
-    if have_base2:
-        print(f"Parsing second baseline coverage from {BASE2} ...")
-        _b2 = _parse_info(BASE2)
-        print(f"  {len(_b2)} files in second baseline")
-        for _rel, _v in _b2.items():
+    # Cross-validation: intersect the zero-coverage sets from all available
+    # extra master baselines. A line passes only if it is uncovered in every
+    # one of them (N-of-N). This filters out the run-to-run variance that makes
+    # background-work-dependent code (ZooKeeper, RabbitMQ, Backups, ...) flicker
+    # between covered and uncovered across master runs. We store only the
+    # intersection as a (rel, key) pair-set to keep peak memory low.
+    extra_zero_lines: set[tuple[str, int]] | None = None
+    extra_zero_fns: set[tuple[str, str]] | None = None
+    extra_baselines_used = 0
+
+    for extra_path in EXTRA_BASELINE_PATHS:
+        if not (os.path.exists(extra_path) and os.path.getsize(extra_path) > 0):
+            continue
+        print(f"Parsing extra baseline coverage from {extra_path} ...")
+        _bx = _parse_info(extra_path)
+        print(f"  {len(_bx)} files in {os.path.basename(extra_path)}")
+        this_zero_lines: set[tuple[str, int]] = set()
+        this_zero_fns: set[tuple[str, str]] = set()
+        for _rel, _v in _bx.items():
             for _ln, _cnt in _v["lines"].items():
                 if _cnt == 0:
-                    base2_zero_lines.add((_rel, _ln))
+                    this_zero_lines.add((_rel, _ln))
             for _fn, _cnt in _v["fns"].items():
                 if _cnt == 0:
-                    base2_zero_fns.add((_rel, _fn))
-        del _b2
+                    this_zero_fns.add((_rel, _fn))
+        del _bx
+        if extra_zero_lines is None:
+            extra_zero_lines = this_zero_lines
+            extra_zero_fns = this_zero_fns
+        else:
+            extra_zero_lines &= this_zero_lines
+            extra_zero_fns &= this_zero_fns
+        extra_baselines_used += 1
+
+    have_extra = extra_zero_lines is not None
+    if have_extra:
+        assert extra_zero_lines is not None and extra_zero_fns is not None
+        total_baselines = 1 + extra_baselines_used
         print(
-            f"  cross-validation enabled: requiring uncovered in both master baselines "
-            f"({len(base2_zero_lines):,} candidate lines / {len(base2_zero_fns):,} functions in B2)"
+            f"  cross-validation enabled across {total_baselines} master baselines "
+            f"(requiring uncovered in all of them): "
+            f"{len(extra_zero_lines):,} candidate lines / {len(extra_zero_fns):,} functions "
+            f"survive the {extra_baselines_used}-way intersection"
         )
     else:
         print(
-            "Note: second master baseline not available — falling back to "
+            "Note: no extra master baselines available - falling back to "
             "single-baseline mode. The count below may include run-to-run "
             "coverage variance (~1000 lines is typical noise between two "
             "adjacent master runs)."
@@ -266,10 +291,10 @@ if __name__ == "__main__":
         for ln, cnt in c["lines"].items():
             if cnt <= 0 or b["lines"].get(ln) != 0:
                 continue
-            # If a second master baseline was downloaded, require that the line
-            # is also uncovered there. If the line is absent or non-zero in B2,
-            # treat it as flutter and drop it.
-            if have_base2 and (rel, ln) not in base2_zero_lines:
+            # Require the line to be uncovered in ALL extra master baselines
+            # (N-of-N intersection). Lines absent from or covered in any baseline
+            # are treated as flicker and dropped.
+            if have_extra and (rel, ln) not in extra_zero_lines:
                 continue
             if _is_noise(rel, ln):
                 continue
@@ -277,7 +302,7 @@ if __name__ == "__main__":
         for fn, cnt in c["fns"].items():
             if cnt <= 0 or b["fns"].get(fn) != 0:
                 continue
-            if have_base2 and (rel, fn) not in base2_zero_fns:
+            if have_extra and (rel, fn) not in extra_zero_fns:
                 continue
             nc_fns[rel].append(fn)
 

@@ -13,6 +13,49 @@ from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 CURRENT_DIR = Utils.cwd()
 TEMP_DIR = f"{CURRENT_DIR}/ci/tmp/"
 
+# Number of *extra* master baselines to download for the newly-covered cross-
+# validation (on top of the primary base_llvm_coverage.info that the diff
+# script always fetches). Only downloaded when the newly-covered analysis
+# will actually run (tests-only PR, binary unchanged). Each file is ~530 MB,
+# so keeping this to a reasonable number limits the on-demand download cost.
+_EXTRA_BASELINES_TARGET = 5
+_S3_BASE_URL = "https://clickhouse-builds.s3.amazonaws.com/REFs/master"
+
+
+def _download_extra_baselines(master_commits: list[str], first_base_commit: str) -> int:
+    """Download up to _EXTRA_BASELINES_TARGET additional master coverage baselines.
+
+    Walks master_commits (nearest-first) starting after first_base_commit,
+    skipping commits that have no published .info, until the target count is
+    reached. Files are written to TEMP_DIR/base_llvm_coverage_{2..N}.info.
+    Returns the number of extra baselines successfully downloaded.
+    """
+    found = 0
+    slot = 2
+    saw_first = False
+    for sha in master_commits:
+        if sha == first_base_commit:
+            saw_first = True
+            continue
+        if not saw_first:
+            continue
+        if found >= _EXTRA_BASELINES_TARGET:
+            break
+        url = f"{_S3_BASE_URL}/{sha}/llvm_coverage/llvm_coverage.info"
+        dest = Path(TEMP_DIR) / f"base_llvm_coverage_{slot}.info"
+        check = Shell.get_output(f"wget --spider '{url}' 2>&1 || true", verbose=False)
+        if "200 OK" not in check:
+            continue
+        print(f"Downloading extra baseline #{slot} from {sha[:12]}...")
+        rc = Shell.run(f"wget --quiet '{url}' -O '{dest}'", verbose=False)
+        if rc == 0 and dest.exists() and dest.stat().st_size > 0:
+            found += 1
+            slot += 1
+        else:
+            dest.unlink(missing_ok=True)
+    print(f"Downloaded {found} extra master baseline(s) for cross-validation (target: {_EXTRA_BASELINES_TARGET}).")
+    return found
+
 
 def get_lcov_summary(
     info_file_path: str,
@@ -453,6 +496,15 @@ if __name__ == "__main__":
                 and _binary_unchanged
                 and _global_stats_available
             ):
+                # Download extra master baselines for cross-validation only when
+                # the newly-covered analysis will actually run. Each file is
+                # ~530 MB, so we defer the downloads to here rather than doing
+                # them unconditionally in generate_diff_coverage_report.sh.
+                # The primary base_llvm_coverage.info was already fetched by the
+                # shell script; we just need the extras (slots 2..N).
+                _first_base = master_track_commits[0] if master_track_commits else base_commit_sha
+                _download_extra_baselines(master_track_commits, _first_base)
+
                 _nc_log = f"{TEMP_DIR}{Utils.normalize_string('Newly Covered Code')}.log"
                 Shell.run(
                     f"python3 ci/jobs/scripts/print_newly_covered_code.py 2>&1 | tee {_nc_log}",
