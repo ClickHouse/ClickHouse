@@ -680,7 +680,7 @@ void DataPartStorageOnDiskBase::rename(
     /// cleanup): the directory has not moved yet, so a caller can still retry. Gated on
     /// out_directory_was_moved so it only fires for callers that opted into the move signal (the part
     /// loaders' detach path), not for every part rename.
-    if (out_directory_was_moved)
+    if (out_directory_was_moved != nullptr)
         fiu_do_on(FailPoints::mergetree_part_cleanup_inject_pre_move_retryable_exception,
         {
             throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure before moving the directory of part {}", from);
@@ -693,7 +693,7 @@ void DataPartStorageOnDiskBase::rename(
         /// The move below makes the original path disappear; signal it before the call so a caller that
         /// catches a failure from moveDirectory still sees the directory as moved (it may have partially
         /// moved). Everything above this point left the original path intact.
-        if (out_directory_was_moved)
+        if (out_directory_was_moved != nullptr)
             *out_directory_was_moved = true;
         disk.moveDirectory(from, to);
 
@@ -799,7 +799,7 @@ void DataPartStorageOnDiskBase::remove(
         /// unlockSharedData talks to Keeper): the directory has not moved yet, so a caller can still retry.
         /// Gated on out_directory_was_moved so it only fires for callers that opted into the move signal
         /// (the part loaders), not for every background part removal.
-        if (out_directory_was_moved)
+        if (out_directory_was_moved != nullptr)
             fiu_do_on(FailPoints::mergetree_part_cleanup_inject_pre_move_retryable_exception,
             {
                 throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure before moving the directory of part {}", part_dir);
@@ -810,7 +810,7 @@ void DataPartStorageOnDiskBase::remove(
             /// The move makes the original path disappear; signal it before the call so a caller that
             /// catches a failure from moveDirectory still treats the directory as moved (it may have
             /// partially moved). Everything above this point left the original path intact.
-            if (out_directory_was_moved)
+            if (out_directory_was_moved != nullptr)
                 *out_directory_was_moved = true;
             disk->moveDirectory(from, to);
             /// NOTE: we intentionally don't update part_dir here because it would cause a data race
