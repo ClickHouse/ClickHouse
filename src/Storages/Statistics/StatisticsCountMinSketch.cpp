@@ -32,13 +32,12 @@ StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescrip
 
 Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
 {
-    /// Try to convert field to data_type. Converting string to proper data types such as: number, date, datetime, IPv4, Decimal etc.
-    /// Return null if val larger than the range of data_type
-    ///
-    /// For example: if data_type is Int32:
-    ///     1. For 1.0, 1, '1', return Field(1)
-    ///     2. For 1.1, max_value_int64, return null
-    Field val_converted = convertFieldToType(val, *data_type, data_type.get());
+    /// Coerce the comparison field to data_type (e.g. parse '5' into a number). `val` may have an
+    /// unrelated type on paths that do not pre-coerce it, such as `col IN (subquery)`.
+    /// No from_type_hint: a hint equal to data_type short-circuits convertFieldToType into a no-op.
+    /// The try-variant returns null (-> zero selectivity) instead of throwing on an out-of-range or
+    /// unconvertible field, mirroring how TDigest/MinMax guard via tryConvertToFloat64.
+    Field val_converted = tryConvertFieldToType(val, *data_type);
     if (val_converted.isNull())
         return 0;
 
@@ -54,7 +53,7 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
     }
 
     if (isStringOrFixedString(data_type))
-        return static_cast<Float64>(sketch.get_estimate(val.safeGet<String>()));
+        return static_cast<Float64>(sketch.get_estimate(val_converted.safeGet<String>()));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'countmin' does not support estimate data type of {}", data_type->getName());
 }
