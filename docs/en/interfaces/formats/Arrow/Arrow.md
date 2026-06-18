@@ -6,7 +6,6 @@ keywords: ['Arrow']
 output_format: true
 slug: /interfaces/formats/Arrow
 title: 'Arrow'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -15,9 +14,8 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-[Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats.
-ClickHouse supports read and write operations for these formats.
-`Arrow` is Apache Arrow's "file mode" format, designed for in-memory random access.
+[Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
+`Arrow` is Apache Arrow's "file mode" format. It is designed for in-memory random access.
 
 ## Data types matching {#data-types-matching}
 
@@ -49,12 +47,10 @@ The table below shows the supported data types and how they correspond to ClickH
 | `UINT32`                                | [IPv4](/sql-reference/data-types/ipv4.md)                                                          | `UINT32`                   |
 | `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/sql-reference/data-types/ipv6.md)                                                          | `FIXED_SIZE_BINARY`        |
 | `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/sql-reference/data-types/int-uint.md)                             | `FIXED_SIZE_BINARY`        |
-| `DURATION`                              | [Interval](/sql-reference/data-types/special-data-types/interval.md) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`    |
-| `INT64`                                 | [Interval](/sql-reference/data-types/special-data-types/interval.md) (Minute/Hour/Day/Week/Month/Quarter/Year) | `INT64`         |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
-The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [`output_format_arrow_low_cardinality_as_dictionary`](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary) setting that allows to output [LowCardinality](/sql-reference/data-types/lowcardinality.md) type as a `DICTIONARY` type. Note that there might be unused values in `LowCardinality` dictionary, which can lead to unused values in Arrow `DICTIONARY` during output.
+The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [`output_format_arrow_low_cardinality_as_dictionary`](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary) setting that allows to output [LowCardinality](/sql-reference/data-types/lowcardinality.md) type as a `DICTIONARY` type.
 
 Unsupported Arrow data types: 
 - `FIXED_SIZE_BINARY`
@@ -62,70 +58,24 @@ Unsupported Arrow data types:
 - `UUID`
 - `ENUM`.
 
-The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
+The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#cast) the data to the data type set for the ClickHouse table column.
 
 ## Example usage {#example-usage}
 
-In the example below we use the `forex` dataset available in the
-[ClickHouse SQL playground](https://sql.clickhouse.com).
+### Inserting data {#inserting-data}
+
+You can insert Arrow data from a file into ClickHouse table using the following command:
+
+```bash
+$ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
+```
 
 ### Selecting data {#selecting-data}
 
-We select one day of `EUR/USD` exchange rates from the playground and save it
-into a local `forex_eurusd.arrow` file. We query the playground over the HTTP
-interface, where the host is `sql-clickhouse.clickhouse.com` and the user is
-`demo` (which has no password):
+You can select data from a ClickHouse table and save it into some file in the Arrow format using the following command:
 
 ```bash
-curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
-    --data-binary "
-        SELECT
-            concat(base, '.', quote) AS base_quote,
-            datetime AS last_update,
-            CAST(bid, 'Float32') AS bid,
-            CAST(ask, 'Float32') AS ask,
-            ask - bid AS spread
-        FROM forex
-        WHERE base = 'EUR' AND quote = 'USD'
-            AND datetime >= '2020-01-01' AND datetime < '2020-01-02'
-        ORDER BY datetime ASC
-        FORMAT Arrow
-        SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
-```
-
-### Reading the file back {#reading-data}
-
-We can now read the local Arrow file back with
-[`clickhouse-local`](/operations/utilities/clickhouse-local) using the
-[`file`](/sql-reference/table-functions/file) table function. The file is
-self-describing, so the `Arrow` format infers the schema automatically:
-
-```bash
-clickhouse-local --query "
-    SELECT *
-    FROM file('forex_eurusd.arrow', Arrow)
-    ORDER BY last_update ASC
-    LIMIT 5
-    FORMAT PrettyCompact"
-```
-
-```response title="Response"
-   ┌─base_quote─┬─────────────last_update─┬─────bid─┬─────ask─┬────────────────spread─┐
-1. │ EUR.USD    │ 2020-01-01 17:00:00.065 │  1.1212 │ 1.12172 │ 0.0005199909210205078 │
-2. │ EUR.USD    │ 2020-01-01 17:00:10.447 │  1.1212 │ 1.12192 │ 0.0007200241088867188 │
-3. │ EUR.USD    │ 2020-01-01 17:00:10.498 │ 1.12117 │ 1.12161 │ 0.0004400014877319336 │
-4. │ EUR.USD    │ 2020-01-01 17:00:12.579 │  1.1212 │ 1.12161 │ 0.0004100799560546875 │
-5. │ EUR.USD    │ 2020-01-01 17:00:12.630 │  1.1212 │ 1.12172 │ 0.0005199909210205078 │
-   └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
-```
-
-### Inserting data {#inserting-data}
-
-To load an Arrow file into a ClickHouse table, pipe it into `clickhouse-client`
-with `FORMAT Arrow`:
-
-```bash
-cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
 ```
 
 ## Format settings {#format-settings}

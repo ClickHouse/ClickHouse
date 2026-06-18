@@ -100,7 +100,6 @@ HTTPInputStream::HTTPInputStream(HTTPSession& session):
 	HTTPIOS(session, std::ios::in),
 	std::istream(&_buf)
 {
-	poco_ios_init(&_buf);
 }
 
 
@@ -118,7 +117,6 @@ HTTPOutputStream::HTTPOutputStream(HTTPSession& session):
 	HTTPIOS(session, std::ios::out),
 	std::ostream(&_buf)
 {
-	poco_ios_init(&_buf);
 }
 
 

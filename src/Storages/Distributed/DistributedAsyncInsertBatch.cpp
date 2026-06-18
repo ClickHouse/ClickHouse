@@ -3,12 +3,9 @@
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
@@ -54,7 +51,7 @@ namespace ErrorCodes
 }
 
 /// Can the batch be split and send files from batch one-by-one instead?
-static bool isSplittableErrorCode(int code, bool remote)
+bool isSplittableErrorCode(int code, bool remote)
 {
     return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
         /// FunctionRange::max_elements and similar
@@ -195,7 +192,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
         ReadBufferFromFile in{parent.current_batch_file_path};
         while (!in.eof())
         {
-            UInt64 idx = 0;
+            UInt64 idx;
             in >> idx >> "\n";
             files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
         }
@@ -219,7 +216,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
 
         try
         {
-            ReadBufferFromFile header_buffer(file);
+            ReadBufferFromFile header_buffer(files.back());
             const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
             if (header.rows)
             {

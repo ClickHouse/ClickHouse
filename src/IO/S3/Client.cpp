@@ -6,9 +6,7 @@
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
-#include <Common/SipHash.h>
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
@@ -16,12 +14,10 @@
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
-#include <aws/s3/model/GetObjectTaggingRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/ErrorMacros.h>
-#include <aws/core/utils/logging/LogLevel.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Exception.h>
@@ -127,18 +123,18 @@ bool Client::RetryStrategy::useGCSRewrite(const Aws::Client::AWSError<Aws::Clien
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
 {
     chassert(attemptedRetries >= 0);
-    uint64_t backoff_limited_pow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
+    uint64_t backoffLimitedPow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
 
-    uint64_t res = 0;
+    uint64_t res;
     if (config.jitter_factor > 0)
     {
         auto dist = std::uniform_real_distribution<double>(1.0, 1.0 + config.jitter_factor);
         double jitter = dist(thread_local_rng);
         res = static_cast<std::uint64_t>(
-            std::min(jitter * static_cast<double>(config.initial_delay_ms) * static_cast<double>(backoff_limited_pow), static_cast<double>(config.max_delay_ms)));
+            std::min(jitter * config.initial_delay_ms * backoffLimitedPow, static_cast<double>(config.max_delay_ms)));
     }
     else
-        res = std::min<uint64_t>(config.initial_delay_ms * backoff_limited_pow, config.max_delay_ms);
+        res = std::min<uint64_t>(config.initial_delay_ms * backoffLimitedPow, config.max_delay_ms);
 
     LOG_TEST(log, "Next retry in {} ms", res);
     return res;
@@ -222,12 +218,11 @@ std::unique_ptr<Client> Client::create(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
     const PocoHTTPClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-    const ClientSettings & client_settings,
-    const std::shared_ptr<ClientCache> & shared_cache)
+    const ClientSettings & client_settings)
 {
     verifyClientConfiguration(client_configuration);
     return std::unique_ptr<Client>(
-        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings, shared_cache));
+        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
 }
 
 std::unique_ptr<Client> Client::clone() const
@@ -262,8 +257,7 @@ Client::Client(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
     const PocoHTTPClientConfiguration & client_configuration_,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads_,
-    const ClientSettings & client_settings_,
-    const std::shared_ptr<ClientCache> & shared_cache)
+    const ClientSettings & client_settings_)
     : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, client_settings_.use_virtual_addressing)
     , credentials_provider(credentials_provider_)
     , client_configuration(client_configuration_)
@@ -279,7 +273,7 @@ Client::Client(
 
     provider_type = deduceProviderType(initial_endpoint);
     LOG_TRACE(log, "Provider type: {}", toString(provider_type));
-    LOG_TRACE(log, "Client configured with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
+
     if (provider_type == ProviderType::GCS)
     {
         /// GCS can operate in 2 modes for header and query params names:
@@ -303,10 +297,7 @@ Client::Client(
 
     detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
-    if (shared_cache)
-        cache = shared_cache;
-    else
-        cache = std::make_shared<ClientCache>();
+    cache = std::make_shared<ClientCache>();
     ClientCacheRegistry::instance().registerClient(cache);
 
     ProfileEvents::increment(ProfileEvents::S3Clients);
@@ -329,7 +320,7 @@ Client::Client(
     , sse_kms_config(other.sse_kms_config)
     , log(getLogger("S3Client"))
 {
-    cache = other.cache;
+    cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
 
     logConfiguration();
@@ -372,7 +363,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
         if (region.empty())
             region = getRegionForBucket(bucket, /*force_detect*/ true);
 
-        chassert(!explicit_region.empty());
+        assert(!explicit_region.empty());
         if (region == explicit_region)
             return false;
 
@@ -500,12 +491,6 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
 /// doRequest calls virtuall function from Aws::S3::Client while DB::S3::Client has not virtual calls for each request type
 
-Model::GetObjectTaggingOutcome Client::GetObjectTagging(GetObjectTaggingRequest & request) const
-{
-    return processRequestResult(
-        doRequest(request, [this](const Model::GetObjectTaggingRequest & req) { return GetObjectTagging(req); }));
-}
-
 Model::ListObjectsV2Outcome Client::ListObjectsV2(ListObjectsV2Request & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
@@ -595,12 +580,6 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
         request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
 }
 
-Model::PutObjectTaggingOutcome Client::PutObjectTagging(PutObjectTaggingRequest & request) const
-{
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::PutObjectTaggingRequest & req) { return PutObjectTagging(req); });
-}
-
 Model::UploadPartOutcome Client::UploadPart(UploadPartRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
@@ -687,7 +666,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (found_new_endpoint)
         {
             auto uri_override = request.getURIOverride();
-            chassert(uri_override.has_value());
+            assert(uri_override.has_value());
             updateURIForBucket(bucket, std::move(*uri_override));
         }
     );
@@ -714,25 +693,21 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             continue;
         }
 
-        /// IllegalLocationConstraintException may indicate that we are working with an opt-in region (e.g. me-south-1)
-        /// In that case, we need to update the region and try again
-        bool is_illegal_constraint_exception = error.GetExceptionName() == "IllegalLocationConstraintException";
-        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY && !is_illegal_constraint_exception)
+        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
             return result;
 
         // maybe we detect a correct region
-        if (!detect_region || is_illegal_constraint_exception)
+        if (!detect_region)
         {
             if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
             {
-                LOG_INFO(log, "Detected new region: {}", region);
                 request.overrideRegion(region);
                 insertRegionOverride(bucket, region);
             }
         }
 
         // we possibly got new location, need to try with that one
-        auto new_uri = is_illegal_constraint_exception ? std::optional<S3::URI>(initial_endpoint) : getURIFromError(error);
+        auto new_uri = getURIFromError(error);
         if (!new_uri)
             return result;
 
@@ -908,7 +883,7 @@ void Client::slowDownAfterRetryableError() const
         if (current_time_ms >= next_time_ms)
         {
             if (next_time_ms != 0)
-                LOG_TRACE(log, "Retry time has passed; proceeding without delay");
+                LOG_TEST(log, "Retry time has passed; proceeding without delay");
             break;
         }
         UInt64 sleep_ms = next_time_ms - current_time_ms;
@@ -917,7 +892,7 @@ void Client::slowDownAfterRetryableError() const
         /// This prevents synchronized retries, reducing the risk of overwhelming the S3 server.
         std::uniform_real_distribution<double> dist(1.0, 1.1);
         double jitter = dist(thread_local_rng);
-        sleep_ms = static_cast<UInt64>(jitter * static_cast<double>(sleep_ms));
+        sleep_ms = static_cast<UInt64>(jitter * sleep_ms);
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
         sleepForMilliseconds(sleep_ms);
@@ -966,24 +941,6 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
         /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
         httpRequest->DeleteHeader("x-amz-api-version");
     }
-}
-
-std::string Client::getGCSOAuthToken() const
-{
-    if (provider_type != ProviderType::GCS)
-        return "";
-
-    const auto & http_client = GetHttpClient();
-
-    if (!http_client)
-        return "";
-
-    auto * gcp_oauth_client = dynamic_cast<PocoHTTPClientGCPOAuth *>(http_client.get());
-
-    if (!gcp_oauth_client)
-        return "";
-
-    return gcp_oauth_client->getBearerToken();
 }
 
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
@@ -1114,86 +1071,37 @@ void ClientCache::clearCache()
 void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)
 {
     std::lock_guard lock(clients_mutex);
-    auto it = client_caches.find(client_cache.get());
-    if (it != client_caches.end())
-    {
-        ++it->second.second;
-        return;
-    }
-    client_caches.emplace(client_cache.get(), std::pair{std::weak_ptr<ClientCache>(client_cache), size_t(1)});
+    auto [it, inserted] = client_caches.emplace(client_cache.get(), client_cache);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Same S3 client registered twice");
 }
 
 void ClientCacheRegistry::unregisterClient(ClientCache * client)
 {
     std::lock_guard lock(clients_mutex);
-    auto it = client_caches.find(client);
-    if (it == client_caches.end())
+    auto erased = client_caches.erase(client);
+    if (erased == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't unregister S3 client, either it was already unregistered or not registered at all");
-    if (--it->second.second == 0)
-        client_caches.erase(it);
-}
-
-size_t ClientCacheRegistry::getClientRefcountForTesting(ClientCache * client)
-{
-    std::lock_guard lock(clients_mutex);
-    auto it = client_caches.find(client);
-    if (it == client_caches.end())
-        return 0;
-    return it->second.second;
-}
-
-void ClientCacheRegistry::pruneExpiredCachesLocked()
-{
-    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.expired(); });
-}
-
-std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const std::string & endpoint, const std::string & bucket)
-{
-    SipHash hash;
-    hash.update(endpoint.size());
-    hash.update(endpoint);
-    hash.update(bucket);
-    UInt128 key = hash.get128();
-
-    std::lock_guard lock(cache_by_key_mutex);
-    if (auto it = cache_by_endpoint_bucket.find(key); it != cache_by_endpoint_bucket.end())
-    {
-        if (auto cached = it->second.lock(); cached)
-            return cached;
-        cache_by_endpoint_bucket.erase(it);
-    }
-    auto cache = std::make_shared<ClientCache>();
-    cache_by_endpoint_bucket[key] = cache;
-
-    pruneExpiredCachesLocked();
-
-    return cache;
 }
 
 void ClientCacheRegistry::clearCacheForAll()
 {
-    {
-        std::lock_guard lock(clients_mutex);
+    std::lock_guard lock(clients_mutex);
 
-        for (auto it = client_caches.begin(); it != client_caches.end();)
+    for (auto it = client_caches.begin(); it != client_caches.end();)
+    {
+        if (auto locked_client = it->second.lock(); locked_client)
         {
-            if (auto locked_client = it->second.first.lock(); locked_client)
-            {
-                locked_client->clearCache();
-                ++it;
-            }
-            else
-            {
-                LOG_INFO(getLogger("ClientCacheRegistry"), "Deleting leftover S3 client cache");
-                it = client_caches.erase(it);
-            }
+            locked_client->clearCache();
+            ++it;
+        }
+        else
+        {
+            LOG_INFO(getLogger("ClientCacheRegistry"), "Deleting leftover S3 client cache");
+            it = client_caches.erase(it);
         }
     }
 
-    {
-        std::lock_guard lock(cache_by_key_mutex);
-        pruneExpiredCachesLocked();
-    }
 }
 
 ClientFactory::ClientFactory()
@@ -1208,9 +1116,6 @@ ClientFactory::ClientFactory()
     aws_options.httpOptions.httpClientFactory_create_fn = []() { return std::make_shared<PocoHTTPClientFactory>(); };
 
     aws_options.loggingOptions = Aws::LoggingOptions{};
-    /// Log level is set to Off by default, skipping calling logger_create_fn entirely.
-    /// https://github.com/ClickHouse/aws-sdk-cpp/blob/22f694afbdc7e9766894998c3745e23f004f8b86/src/aws-cpp-sdk-core/include/aws/core/Aws.h#L31
-    aws_options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
     aws_options.loggingOptions.logger_create_fn = []() { return std::make_shared<AWSLogger>(false); };
 
     aws_options.ioOptions = Aws::IoOptions{};
@@ -1222,6 +1127,7 @@ ClientFactory::ClientFactory()
 
 ClientFactory::~ClientFactory()
 {
+    Aws::Utils::Logging::ShutdownAWSLogging();
     Aws::ShutdownAPI(aws_options);
 }
 
@@ -1240,8 +1146,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     ServerSideEncryptionKMSConfig sse_kms_config,
     HTTPHeaderEntries headers,
     CredentialsConfiguration credentials_configuration,
-    const String & session_token,
-    const std::shared_ptr<ClientCache> & shared_cache)
+    const String & session_token)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
@@ -1272,7 +1177,15 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     credentials_configuration.use_environment_credentials =
         credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
-    auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider = std::make_shared<S3CredentialsProviderChain>(
+            client_configuration,
+            std::move(credentials),
+            credentials_configuration);
+
+    if (!credentials_configuration.role_arn.empty())
+        credentials_provider = std::make_shared<AwsAuthSTSAssumeRoleCredentialsProvider>(credentials_configuration.role_arn,
+            credentials_configuration.role_session_name, credentials_configuration.expiration_window_seconds,
+            std::move(credentials_provider), client_configuration, credentials_configuration.sts_endpoint_override);
 
     /// Disable per-thread retry loops if global retry coordination is in use.
     if (client_configuration.s3_slow_all_threads_after_retryable_error)
@@ -1295,8 +1208,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         client_configuration, // Client configuration.
         client_settings.is_s3express_bucket ? Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::RequestDependent
                                             : Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-        client_settings,
-        shared_cache);
+        client_settings);
 }
 
 PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
@@ -1309,7 +1221,8 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     bool enable_s3_requests_logging,
     bool for_disk_s3,
     std::optional<std::string> opt_disk_name,
-    const HTTPRequestThrottler & request_throttler,
+    const ThrottlerPtr & get_request_throttler,
+    const ThrottlerPtr & put_request_throttler,
     const String & protocol)
 {
     auto context = Context::getGlobalContextInstance();
@@ -1331,7 +1244,8 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         for_disk_s3,
         opt_disk_name,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
-        request_throttler,
+        get_request_throttler,
+        put_request_throttler,
         error_report);
 
     config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());
