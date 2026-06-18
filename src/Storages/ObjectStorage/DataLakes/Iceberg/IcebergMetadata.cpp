@@ -1324,7 +1324,8 @@ void IcebergMetadata::truncate(ContextPtr local_context, std::shared_ptr<DataLak
         log.get(),
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true);
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_explicit_metadata_file_path */ true);
 
     /// `getMetadataJSONObject` returns a freshly parsed object (only the JSON string is cached),
     /// so it is safe to mutate it below.

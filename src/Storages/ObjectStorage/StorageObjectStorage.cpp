@@ -655,6 +655,7 @@ void StorageObjectStorage::truncate(
 
     if (configuration->isDataLakeConfiguration())
     {
+        configuration->lazyInitializeIfNeeded(object_storage, context);
         configuration->truncate(context, catalog, storage_id);
         return;
     }
