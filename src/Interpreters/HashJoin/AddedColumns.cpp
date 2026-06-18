@@ -6,43 +6,6 @@
 namespace DB
 {
 
-namespace
-{
-
-/// Translates a stored (possibly compressed) `ColumnsInfo` pointer to one that can be read directly.
-/// When the join compressed its right-side blocks, decompressed blocks are fetched from the join's cache
-/// and kept alive in `held` for as long as this resolver lives (i.e. while the output is being built).
-/// When compression is off, it is a transparent pass-through with no overhead.
-struct DecompressResolver
-{
-    const HashJoin * join;
-    const bool active;
-    std::vector<DecompressedColumnsPtr> held;
-    std::unordered_map<const ColumnsInfo *, const ColumnsInfo *> resolved;
-
-    explicit DecompressResolver(const LazyOutput & lazy_output)
-        : join(lazy_output.join), active(lazy_output.have_compressed)
-    {
-    }
-
-    const ColumnsInfo * operator()(const ColumnsInfo * columns_info)
-    {
-        if (!active || columns_info == nullptr)
-            return columns_info;
-
-        auto [it, inserted] = resolved.try_emplace(columns_info, nullptr);
-        if (inserted)
-        {
-            auto decompressed = join->getDecompressedColumns(columns_info);
-            it->second = decompressed.get();
-            held.push_back(std::move(decompressed));
-        }
-        return it->second;
-    }
-};
-
-}
-
 JoinOnKeyColumns::JoinOnKeyColumns(
     const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
     : key_names(key_names_)
@@ -106,16 +69,11 @@ void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColum
     }
 }
 
-static std::pair<const IColumn *, size_t> getColumnAndRow(const ColumnsInfo & columns_info, size_t row_num, size_t column_index)
+std::pair<const IColumn *, size_t> getColumnAndRow(const ColumnsInfo & columns_info, size_t row_num, size_t column_index)
 {
     if (const auto * replicated_column_from_block = columns_info.replicated_columns[column_index])
         return {replicated_column_from_block->getNestedColumn().get(), replicated_column_from_block->getIndexes().getIndexAt(row_num)};
     return {columns_info.columns[column_index].get(), row_num};
-}
-
-std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index)
-{
-    return getColumnAndRow(*row_ref->columns_info, row_ref->row_num, column_index);
 }
 
 void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
