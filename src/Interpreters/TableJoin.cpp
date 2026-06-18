@@ -270,7 +270,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
-    , max_memory_usage(settings.max_bytes_in_join)
+    , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
     , enable_analyzer(true)

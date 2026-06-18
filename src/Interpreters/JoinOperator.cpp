@@ -33,6 +33,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 max_bytes_in_join;
+    extern const SettingsUInt64 max_memory_usage;
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
@@ -86,6 +87,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_join;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
+    extern const QueryPlanSerializationSettingsUInt64 max_memory_usage;
     extern const QueryPlanSerializationSettingsOverflowMode join_overflow_mode;
     extern const QueryPlanSerializationSettingsBool join_any_take_last_row;
     extern const QueryPlanSerializationSettingsUInt64 cross_join_min_rows_to_compress;
@@ -141,6 +143,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
 
     max_rows_in_join = query_settings[Setting::max_rows_in_join];
     max_bytes_in_join = query_settings[Setting::max_bytes_in_join];
+    max_memory_usage = query_settings[Setting::max_memory_usage];
     default_max_bytes_in_join = query_settings[Setting::default_max_bytes_in_join];
 
     joined_block_split_single_row = query_settings[Setting::joined_block_split_single_row];
@@ -201,6 +204,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 
     max_rows_in_join = settings[QueryPlanSerializationSetting::max_rows_in_join];
     max_bytes_in_join = settings[QueryPlanSerializationSetting::max_bytes_in_join];
+    max_memory_usage = settings[QueryPlanSerializationSetting::max_memory_usage];
 
     join_overflow_mode = settings[QueryPlanSerializationSetting::join_overflow_mode];
     join_any_take_last_row = settings[QueryPlanSerializationSetting::join_any_take_last_row];
@@ -258,6 +262,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::max_rows_in_join] = max_rows_in_join;
     settings[QueryPlanSerializationSetting::max_bytes_in_join] = max_bytes_in_join;
+    settings[QueryPlanSerializationSetting::max_memory_usage] = max_memory_usage;
 
     settings[QueryPlanSerializationSetting::join_overflow_mode] = join_overflow_mode;
     settings[QueryPlanSerializationSetting::join_any_take_last_row] = join_any_take_last_row;
