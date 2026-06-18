@@ -133,6 +133,24 @@ public:
         recursive_cte_table.emplace(std::move(recursive_cte_table_value));
     }
 
+    /// Returns true if union node is a keyed recursive CTE (WITH RECURSIVE name USING KEY (...) AS), false otherwise
+    bool hasRecursiveCTEKeyColumns() const
+    {
+        return !recursive_cte_key_columns.empty();
+    }
+
+    /// Get keyed recursive CTE key column names
+    const Names & getRecursiveCTEKeyColumns() const
+    {
+        return recursive_cte_key_columns;
+    }
+
+    /// Set keyed recursive CTE key column names
+    void setRecursiveCTEKeyColumns(Names recursive_cte_key_columns_value)
+    {
+        recursive_cte_key_columns = std::move(recursive_cte_key_columns_value);
+    }
+
     /// Get union node CTE name
     const std::string & getCTEName() const
     {
@@ -228,6 +246,7 @@ private:
     bool is_materialized = false;
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
+    Names recursive_cte_key_columns;
     std::string cte_name;
     ContextMutablePtr context;
     SelectUnionMode union_mode;

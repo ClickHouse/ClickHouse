@@ -16,6 +16,8 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier s_ident;
     ParserKeyword s_as(Keyword::AS);
     ParserKeyword s_materialized(Keyword::MATERIALIZED);
+    ParserKeyword s_using(Keyword::USING);
+    ParserKeyword s_key(Keyword::KEY);
     ParserSubquery s_subquery;
     ParserAliasesExpressionList exp_list_for_aliases;
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
@@ -38,8 +40,8 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     pos = old_pos;
 
-    // Trying to parse structure: identifier [(alias1, alias2, ...)] AS (subquery)
-    if (ASTPtr cte_name, aliases;
+    // Trying to parse structure: identifier [(alias1, alias2, ...)] [USING KEY (key1, key2, ...)] AS (subquery)
+    if (ASTPtr cte_name, aliases, key_columns;
         s_ident.parse(pos, cte_name, expected) &&
         (
             [&]() -> bool {
@@ -58,6 +60,25 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return true;
             }()
         ) &&
+        (
+            [&]() -> bool {
+                if (s_using.ignore(pos, expected))
+                {
+                    if (!s_key.ignore(pos, expected))
+                        return false;
+                    if (!open_bracket.ignore(pos, expected))
+                        return false;
+                    ParserList key_columns_list_parser(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+                    if (ASTPtr key_columns_list; key_columns_list_parser.parse(pos, key_columns_list, expected))
+                    {
+                        key_columns = key_columns_list;
+                        return close_bracket.ignore(pos, expected);
+                    }
+                    return false;
+                }
+                return true;
+            }()
+        ) &&
         s_as.ignore(pos, expected))
     {
         bool has_materialized_keyword = s_materialized.ignore(pos, expected);
@@ -69,6 +90,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             tryGetIdentifierNameInto(cte_name, with_element->name);
             with_element->aliases = std::move(aliases);
             with_element->is_materialized = has_materialized_keyword;
+            with_element->key_columns = std::move(key_columns);
             with_element->subquery = std::move(subquery);
             with_element->children.push_back(with_element->subquery);
 

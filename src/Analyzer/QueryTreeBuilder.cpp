@@ -97,6 +97,7 @@ private:
     {
         std::string_view cte_name;
         bool is_materialized = false;
+        Names key_columns; /// WITH RECURSIVE name USING KEY (a, b) AS (...)
     };
 
     QueryTreeNodePtr buildSelectOrUnionExpression(
@@ -202,6 +203,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
+    union_node->setRecursiveCTEKeyColumns(cte_data.key_columns);
     union_node->setOriginalAST(select_with_union_query);
 
     size_t select_lists_children_size = select_lists.children.size();
@@ -245,6 +247,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
+    union_node->setRecursiveCTEKeyColumns(cte_data.key_columns);
     union_node->setOriginalAST(select_intersect_except_query);
 
     size_t select_lists_size = select_lists.size();
@@ -349,11 +352,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             for (auto & with_node : current_query_tree->getWith().getNodes())
             {
                 auto * with_union_node = with_node->as<UnionNode>();
-                auto * with_query_node = with_node->as<QueryNode>();
 
-                const bool materialized_cte = (with_query_node && with_query_node->isMaterialized()) || (with_union_node && with_union_node->isMaterialized());
-                if (materialized_cte)
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MATERIALIZED CTE is not supported in recursive WITH");
+                /// Union-shaped CTEs are speculatively marked recursive below, and the recursive
+                /// evaluation cannot itself be materialized. Plain SELECT CTEs can never be
+                /// recursive, so MATERIALIZED is allowed for them: they are materialized once and
+                /// every recursive step reads the snapshot instead of re-evaluating the subquery
+                /// per step.
+                if (with_union_node && with_union_node->isMaterialized())
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MATERIALIZED is not supported for the recursive CTE itself in recursive WITH");
 
                 if (!with_union_node)
                     continue;
@@ -798,8 +804,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         CommonTableExpressionData cte_data = {
             .cte_name = with_element->name,
             .is_materialized = with_element->is_materialized,
+            .key_columns = {},
         };
+
+        if (with_element->key_columns)
+        {
+            for (const auto & key_column : with_element->key_columns->children)
+                cte_data.key_columns.push_back(key_column->as<ASTIdentifier &>().name());
+        }
+
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, cte_data /*cte_data*/, with_element->aliases /*aliases*/, context);
+
+        if (!cte_data.key_columns.empty() && query_node->getNodeType() != QueryTreeNodeType::UNION)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "USING KEY is supported only for recursive UNION common table expressions");
 
         result = std::move(query_node);
     }
