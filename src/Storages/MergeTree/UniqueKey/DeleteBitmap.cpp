@@ -438,15 +438,22 @@ DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values)
     result.body_size = unpackUInt32LE(header + sizeof(UInt32) * 2);
     result.magic_ok = (magic == DeleteBitmap::MAGIC);
 
-    /// Clamp what we actually read so a corrupt declared size can't force a
-    /// huge allocation; the declared `body_size` is still reported above.
-    const UInt32 body_to_read = std::min(result.body_size, MAX_SERIALIZED_BODY_SIZE);
+    /// Validate the header *before* allocating: a non-`.rbm` file (bad magic) or
+    /// a corrupt/oversized declared `body_size` must not drive a multi-hundred-MB
+    /// allocation only to then be reported as bad. The declared `body_size` is
+    /// already recorded above, so a caller still sees the absurd value. Version
+    /// doesn't bound the allocation, so an unknown-version but intact file still
+    /// gets its CRC checked below; only `magic`/`body_size` gate the buffer.
+    /// Mirrors `deserialize`, which bounds `body_size` before allocating.
+    if (!result.magic_ok || result.body_size > MAX_SERIALIZED_BODY_SIZE)
+        return result;
+
     std::unique_ptr<char[]> body;
     size_t body_bytes = 0;
-    if (body_to_read)
+    if (result.body_size)
     {
-        body = std::make_unique_for_overwrite<char[]>(body_to_read);
-        body_bytes = in.read(body.get(), body_to_read);
+        body = std::make_unique_for_overwrite<char[]>(result.body_size);
+        body_bytes = in.read(body.get(), result.body_size);
     }
     result.body_read = (body_bytes == result.body_size);
 
@@ -462,6 +469,12 @@ DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values)
         result.crc_computed = computeCRC32(header, DeleteBitmap::HEADER_SIZE, body.get(), body_bytes);
         result.crc_ok = (result.crc_stored == result.crc_computed);
     }
+
+    /// Deliberately tolerant of bytes past the CRC: `deserialize` rejects them
+    /// ("unexpected trailing bytes after CRC"), but an inspector's job is to
+    /// surface what the frame *does* contain, not to re-impose the reader's
+    /// strictness. The header/CRC/stats we report are still accurate for the
+    /// declared frame; we don't read `in.eof()` here.
 
     /// Decode independently of the CRC verdict — a CRC-corrupt file should still
     /// surface stats when its body happens to parse. `readSafe` throws on a
