@@ -1633,6 +1633,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
     MarkRanges * exact_ranges,
+    const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
     LoggerPtr log)
 {
@@ -1712,6 +1713,31 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
+    /// For index columns that are also covered by the part's partition minmax index, use a minmax bounds
+    /// instead of (-inf, +inf).
+    /// Partition minmax index is always store in value-ascending order, so we do not need to consider reverse_flags here.
+    Hyperrectangle index_bounds;
+    index_bounds.reserve(used_key_size);
+    for (size_t i = 0; i < used_key_size; ++i)
+        index_bounds.push_back(createTypeAwareWholeUniverse(key_types[i]));
+
+    /// pk_to_minmax_slot maps each PK column to its slot in the part's partition-minmax index.
+    if (pk_to_minmax_slot)
+    {
+        auto minmax_index = part->getMinMaxIndex();
+        if (minmax_index && minmax_index->initialized)
+        {
+            const auto & hyperrectangle = minmax_index->hyperrectangle;
+            for (size_t i = 0; i < used_key_size; ++i)
+            {
+                const auto slot = (*pk_to_minmax_slot)[i];
+                if (slot)
+                    index_bounds[i] = hyperrectangle[*slot];
+            }
+        }
+    }
+
+
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
         = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
@@ -1731,9 +1757,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     if ((*index_columns)[i].column)
                         create_field_ref(range.begin, i, left);
                     else
-                        left = NEGATIVE_INFINITY;
+                        left = index_bounds[i].left;
 
-                    right = POSITIVE_INFINITY;
+                    right = index_bounds[i].right;
                 }
             }
             else
@@ -1749,13 +1775,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                     else
                     {
-                        /// If the PK column was not loaded in memory - exclude it from the analysis.
-                        left = NEGATIVE_INFINITY;
-                        right = POSITIVE_INFINITY;
+                        left = index_bounds[i].left;
+                        right = index_bounds[i].right;
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
+            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
         };
 
         auto check_part_offset_condition = [&]()
