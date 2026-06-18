@@ -78,4 +78,4 @@ void packChunkedSnapshotHeader(std::span<const SnapshotChunkDescriptor> chunks, 
 /// The function validates all chunk descriptors against `buf_size` before returning.
 std::vector<SnapshotChunkDescriptor> parseAndValidateChunkedSnapshotHeader(const char * buf, size_t buf_size);
 
-} // namespace DB
+}

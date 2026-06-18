@@ -166,4 +166,4 @@ std::vector<SnapshotChunkDescriptor> parseAndValidateChunkedSnapshotHeader(const
     return chunks;
 }
 
-} // namespace DB
+}
