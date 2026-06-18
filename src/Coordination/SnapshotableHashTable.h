@@ -264,14 +264,11 @@ public:
         return KeyPtr{new char[size], KeyDeleter{size, &arena}};
     }
 
-    /// A batch of nodes parsed off-thread, ready to be merged into the table.
-    /// Owns a private std::list using the SAME default std::allocator as `List`,
-    /// so finalize can splice() it in O(1) (equal, stateless allocators).
-    /// MOVE-ONLY: ListElem holds a bare string_view key whose char[] is arena-owned
-    /// but NOT auto-freed by ~ListElem; the batch's own destructor frees un-spliced
-    /// keys. A copy would shallow-copy those string_views and both copies' destructors
-    /// would double-free the same char[]. KeeperMemNode is copyable, so std::list<ListElem>
-    /// is copyable by default — we must explicitly forbid it.
+    /// A batch of nodes parsed off-thread. Its private std::list uses the same default
+    /// (stateless) allocator as `List`, so finalize can splice() it in O(1). Move-only:
+    /// ListElem keys are bare string_views into arena-owned char[] that ~ListElem does not
+    /// free, so a copy would double-free; std::list<ListElem> is copyable by default, so
+    /// copies are explicitly forbidden below.
     struct LocalInsertBatch
     {
         List nodes;                    ///< std::list<ListElem>, default (stateless) allocator
@@ -331,12 +328,6 @@ public:
             return nodes.size();
         }
     };
-
-    // Compile-time guarantee that splice() is O(1): the batch list and the table list share
-    // the same stateless default std::allocator (List = std::list<ListElem> above).
-    static_assert(
-        std::allocator_traits<typename List::allocator_type>::is_always_equal::value,
-        "LocalInsertBatch splice requires a stateless, always-equal list allocator");
 
     /// Create a new local insert batch backed by this table's arena.
     LocalInsertBatch beginLocalInsert()

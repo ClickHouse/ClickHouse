@@ -5086,13 +5086,13 @@ void finalizeMemorySnapshotLoad(
     uint64_t out_total_children = 0;
     uint64_t out_non_root = 0;
     storage.container.buildMapFromBatches(
-        std::span<LocalBatch>{batches.data(), batches.size()},
+        std::span<LocalBatch>{batches},
         out_total_children, out_non_root);
 
     // Step 2: root invariant check — must run BEFORE the children walk which dereferences parents.
     // The chunked snapshot path constructs storage with insert_initial_root=false so the snapshot's
     // own "/" is the only source of the root.
-    if (storage.container.find("/") == storage.container.end())
+    if (!storage.container.contains("/"))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot has no root '/' node");
 
     // Step 3: children walk — one traversal. updateValueForLoad throws CORRUPTED_DATA on
@@ -5123,9 +5123,8 @@ void finalizeMemorySnapshotLoad(
 
     // Step 4: folded equality validation O(1).
     // With per-node children.size() <= numChildren() (inline check above), non-negative
-    // numChildren (parse-time check), and Σ children.size() == out_non_root:
+    // numChildren (parse-time check), and sum of children.size() == out_non_root:
     //   out_non_root == out_total_children ⟹ children.size() == numChildren() for every node.
-    // (a_i <= b_i & Σa == Σb ⟹ a_i == b_i)
     if (out_non_root != out_total_children)
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,

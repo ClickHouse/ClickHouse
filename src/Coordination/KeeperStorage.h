@@ -10,6 +10,7 @@
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperReadThreadPool.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
+#include <Coordination/KeeperStorage_fwd.h>
 #include <Common/SharedMutex.h>
 #include <Common/Concepts.h>
 
@@ -661,8 +662,12 @@ public:
     /// can populate the root from the snapshot's own serialized `"/"` node.
     /// Invariant: `initialize_system_nodes=true` requires `insert_initial_root=true`, because
     /// `initializeSystemNodes` assumes `"/"` already exists.
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_,
-                  bool initialize_system_nodes = true, bool insert_initial_root = true);
+    KeeperStorage(
+        int64_t tick_time_ms,
+        const String & superdigest_,
+        const KeeperContextPtr & keeper_context_,
+        bool initialize_system_nodes = true,
+        bool insert_initial_root = true);
     ~KeeperStorage();
 
     void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;
@@ -743,11 +748,11 @@ private:
 /// Per-frame state accumulated by one deserialization worker (or the serial caller).
 struct MemorySnapshotLoadHandle
 {
-    SnapshotableHashTable<KeeperMemNode>::LocalInsertBatch nodes; ///< parsed node batch
-    uint64_t digest_sum = 0;                                       ///< Σ node.getDigest(path); commutative
-    KeeperMemoryStorage::Ephemerals local_ephemerals;              ///< owner -> set<path>
+    SnapshotableHashTable<KeeperMemNode>::LocalInsertBatch nodes; /// parsed node batch
+    uint64_t digest_sum = 0;
+    KeeperMemoryStorage::Ephemerals local_ephemerals;
     size_t local_ephemeral_nodes = 0;
-    std::unordered_map<ACLId, uint64_t> acl_usage;                 ///< id -> count (post cleanup_acl)
+    std::unordered_map<ACLId, uint64_t> acl_usage;
 };
 
 /// Create a new handle whose node batch is backed by `storage.container`'s arena.
@@ -760,7 +765,7 @@ MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperMemoryStorage & storage);
 ///   1. storage.container.buildMapFromBatches — splice + reserve + map walk
 ///   2. Root invariant: find("/") must exist
 ///   3. Children walk via updateValueForLoad + inline over-count check
-///   4. Folded equality validation (Σ children.size() == total declared)
+///   4. Folded equality validation (sum of children.size() == total declared)
 ///   5. Merge side state: digest, ephemerals, ACL usage
 ///
 /// Caller must hold the storage lock exclusive (apply_snapshot) or be the init thread.
