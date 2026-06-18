@@ -1,0 +1,24 @@
+# Source files for LLVMProfileData
+set(LLVMPROFILEDATA_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/DataAccessProf.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/GCOV.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/IndexedMemProfData.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/InstrProfCorrelator.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/InstrProf.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/InstrProfReader.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/InstrProfWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/ItaniumManglingCanonicalizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/MemProfCommon.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/MemProf.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/MemProfRadixTree.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/MemProfReader.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/MemProfSummaryBuilder.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/MemProfSummary.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/PGOCtxProfReader.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/PGOCtxProfWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/ProfileSummaryBuilder.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/SampleProf.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/SampleProfReader.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/SampleProfWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/ProfileData/SymbolRemappingReader.cpp
+)

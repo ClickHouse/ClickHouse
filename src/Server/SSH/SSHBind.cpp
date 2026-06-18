@@ -41,6 +41,12 @@ void SSHBind::setHostKey(const std::string & key_path)
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed setting host key in sshbind due to {}", getError());
 }
 
+void SSHBind::setBanner(const std::string & banner)
+{
+    if (ssh_bind_options_set(bind.get(), SSH_BIND_OPTIONS_BANNER, banner.c_str()) != SSH_OK)
+        throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed setting banner in sshbind due to {}", getError());
+}
+
 String SSHBind::getError()
 {
     return String(ssh_get_error(bind.get()));

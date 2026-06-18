@@ -63,7 +63,7 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
 static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
     GetColumnsOptions options(GetColumnsOptions::All);
-    options.withVirtuals();
+    options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     options.withSubcolumns();
 
     auto columns_list = storage_snapshot->getColumns(options);
@@ -600,6 +600,13 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
 
         /// disallow arrayJoin expressions to be moved to PREWHERE for now
         if (function_name == "arrayJoin")
+            return true;
+
+        /// Disallow GLOBAL IN conditions from being moved to PREWHERE.
+        /// GLOBAL IN sets are populated via external tables attached by `ReadFromRemote`;
+        /// they cannot be built synchronously during PREWHERE evaluation, which runs
+        /// before the pipeline-level `CreatingSetsStep` has a chance to execute.
+        if (functionIsGlobalInOperator(function_name))
             return true;
 
         size_t arguments_size = function_node.getArgumentsSize();
