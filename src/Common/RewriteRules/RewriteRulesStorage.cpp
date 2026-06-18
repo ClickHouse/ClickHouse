@@ -236,6 +236,15 @@ class RewriteRulesStorage::ZooKeeperStorage : public IRewriteRulesStorage, prote
 {
 private:
     std::string root_path;
+    /// Serializes access to the mutable members below (`zookeeper_client`, `wait_event`,
+    /// `collections_node_cversion`, `max_child_mzxid`). The background watcher calls
+    /// `waitUpdate` without holding `RewriteRules::mutex`, while `CREATE`/`ALTER`/`DROP
+    /// RULE` reach `write`/`remove`/`list` on the same instance. Without this lock both
+    /// paths could enter `getClient` and read/reset `zookeeper_client` concurrently when
+    /// the Keeper session expires. `RewriteRules::mutex` is always acquired before this
+    /// one (DDL and reload paths), and `waitUpdate` takes only this one, so the lock
+    /// order is consistent and cannot deadlock.
+    mutable std::mutex zk_mutex;
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
     mutable Coordination::EventPtr wait_event;
     mutable Int32 collections_node_cversion = 0;
@@ -258,7 +267,8 @@ public:
             root_path = "/" + root_path;
 
         auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::ZooKeeperStorage");
-        auto client = getClient();
+        std::lock_guard lock(zk_mutex);
+        auto client = getClient(lock);
         if (root_path != "/" && !client->exists(root_path))
         {
             client->createAncestors(root_path);
@@ -272,20 +282,35 @@ public:
 
     bool waitUpdate(size_t timeout) override
     {
-        if (!wait_event)
+        Coordination::EventPtr event;
+        {
+            std::lock_guard lock(zk_mutex);
+            event = wait_event;
+        }
+
+        /// `list` has not run yet (nothing loaded), so report an update to trigger
+        /// the initial load.
+        if (!event)
         {
             return true;
         }
 
-        if (wait_event->tryWait(timeout))
+        /// Block for the watch WITHOUT holding `zk_mutex`. Holding it here would stall
+        /// concurrent `CREATE`/`ALTER`/`DROP RULE` storage operations for the whole
+        /// timeout. `Poco::Event::tryWait` is itself thread-safe.
+        if (event->tryWait(timeout))
         {
             return true;
         }
 
+        /// Timed out: the child-list watch did not fire, but a data-only `ALTER RULE`
+        /// on another replica modifies only a child znode's data (no parent watch).
+        /// Re-acquire `zk_mutex` to inspect Keeper and read the shared members.
+        std::lock_guard lock(zk_mutex);
         auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::waitUpdate");
         std::string res;
         Coordination::Stat stat;
-        auto client = getClient();
+        auto client = getClient(lock);
 
         if (!client->tryGet(root_path, res, &stat))
         {
@@ -312,12 +337,13 @@ public:
 
     std::vector<std::string> list() const override
     {
+        std::lock_guard lock(zk_mutex);
         auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::list");
         if (!wait_event)
             wait_event = std::make_shared<Poco::Event>();
 
         Coordination::Stat stat;
-        auto client = getClient();
+        auto client = getClient(lock);
         auto children = client->getChildren(root_path, &stat, wait_event);
         collections_node_cversion = stat.cversion;
 
@@ -354,18 +380,21 @@ public:
 
     bool exists(const std::string & file_name) const override
     {
+        std::lock_guard lock(zk_mutex);
         auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::exists");
-        return getClient()->exists(getPath(file_name));
+        return getClient(lock)->exists(getPath(file_name));
     }
 
     std::string read(const std::string & file_name) const override
     {
+        std::lock_guard lock(zk_mutex);
         auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::read");
-        return getClient()->get(getPath(file_name));
+        return getClient(lock)->get(getPath(file_name));
     }
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
+        std::lock_guard lock(zk_mutex);
         auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::write");
         if (replace)
         {
@@ -375,7 +404,7 @@ public:
             /// followed by `ALTER RULE` on another would, with `createOrUpdate`,
             /// resurrect the dropped znode and diverge the replicated state from the
             /// user's intent. Update the existing node and fail if it is gone instead.
-            auto code = getClient()->trySet(getPath(file_name), data);
+            auto code = getClient(lock)->trySet(getPath(file_name), data);
 
             if (code == Coordination::Error::ZNONODE)
             {
@@ -391,7 +420,7 @@ public:
         }
         else
         {
-            auto code = getClient()->tryCreate(getPath(file_name), data, zkutil::CreateMode::Persistent);
+            auto code = getClient(lock)->tryCreate(getPath(file_name), data, zkutil::CreateMode::Persistent);
 
             if (code == Coordination::Error::ZNODEEXISTS)
             {
@@ -413,14 +442,16 @@ public:
 
     void remove(const std::string & file_name) override
     {
+        std::lock_guard lock(zk_mutex);
         auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::remove");
-        getClient()->remove(getPath(file_name));
+        getClient(lock)->remove(getPath(file_name));
     }
 
     bool removeIfExists(const std::string & file_name) override
     {
+        std::lock_guard lock(zk_mutex);
         auto component_guard = Coordination::setCurrentComponent("RewriteRulesStorage::removeIfExists");
-        auto code = getClient()->tryRemove(getPath(file_name));
+        auto code = getClient(lock)->tryRemove(getPath(file_name));
         if (code == Coordination::Error::ZOK)
             return true;
         if (code == Coordination::Error::ZNONODE)
@@ -429,7 +460,8 @@ public:
     }
 
 private:
-    zkutil::ZooKeeperPtr getClient() const
+    /// Requires `zk_mutex` to be held: it reads and may reset `zookeeper_client`.
+    zkutil::ZooKeeperPtr getClient(std::lock_guard<std::mutex> & /*zk_lock*/) const
     {
         if (!zookeeper_client || zookeeper_client->expired())
         {
