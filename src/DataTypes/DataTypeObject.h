@@ -53,7 +53,7 @@ public:
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return true; }
     bool isComparableForEquality() const override { return true; }
-    bool haveSubtypes() const override { return false; }
+    bool haveSubtypes() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
 

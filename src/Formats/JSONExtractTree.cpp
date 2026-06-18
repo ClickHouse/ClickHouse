@@ -1602,6 +1602,28 @@ private:
 };
 
 
+/// Helper to insert a numeric value directly into a ColumnVariant discriminator/offset slot.
+/// Used by DynamicNode and ObjectJSONNode fast paths to avoid full type-inference overhead.
+template <typename ColumnType, typename ValueType>
+void insertValueIntoDynamicVariant(const ColumnDynamic::VariantInfo & variant_info, ColumnVariant & variant_column, ValueType value, const String & type_name)
+{
+    auto global_discr = variant_info.variant_name_to_discriminator.at(type_name);
+    auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discr);
+    assert_cast<ColumnType &>(variant).insertValue(value);
+    variant_column.getOffsets().push_back(variant.size() - 1);
+    variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discr));
+}
+
+/// Helper to insert a string value directly into a ColumnVariant string slot.
+void insertStringIntoDynamicVariant(ColumnVariant & variant_column, std::string_view data, UInt8 global_discr)
+{
+    auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discr);
+    assert_cast<ColumnString &>(variant).insertData(data.data(), data.size());
+    variant_column.getOffsets().push_back(variant.size() - 1);
+    variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discr));
+}
+
+
 template <typename JSONParser>
 class DynamicNode : public JSONExtractTreeNode<JSONParser>
 {
@@ -1629,6 +1651,111 @@ public:
         auto & variant_column = column_dynamic.getVariantColumn();
         const auto & variant_info = column_dynamic.getVariantInfo();
         const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+
+        /// Fast path for simple JSON element types: we know the exact ClickHouse type
+        /// without running full type inference, so try to insert directly into the
+        /// corresponding variant. If the variant can't be added (max types reached),
+        /// fall through to the generic path which handles shared variant insertion.
+        switch (element.type())
+        {
+            case ElementType::BOOL:
+            {
+                if (variant_info.variant_name_to_discriminator.contains("Bool")
+                    || column_dynamic.addNewVariant(getDataTypesCache().getType("Bool"), "Bool"))
+                {
+                    insertValueIntoDynamicVariant<ColumnUInt8, UInt8>(variant_info, variant_column, element.getBool(), "Bool");
+                    return true;
+                }
+                break;
+            }
+            case ElementType::INT64:
+            {
+                if (variant_info.variant_name_to_discriminator.contains("Int64")
+                    || column_dynamic.addNewVariant(getDataTypesCache().getType("Int64"), "Int64"))
+                {
+                    insertValueIntoDynamicVariant<ColumnInt64, Int64>(variant_info, variant_column, element.getInt64(), "Int64");
+                    return true;
+                }
+                break;
+            }
+            case ElementType::UINT64:
+            {
+                if (variant_info.variant_name_to_discriminator.contains("UInt64")
+                    || column_dynamic.addNewVariant(getDataTypesCache().getType("UInt64"), "UInt64"))
+                {
+                    insertValueIntoDynamicVariant<ColumnUInt64, UInt64>(variant_info, variant_column, element.getUInt64(), "UInt64");
+                    return true;
+                }
+                break;
+            }
+            case ElementType::DOUBLE:
+            {
+                if (variant_info.variant_name_to_discriminator.contains("Float64")
+                    || column_dynamic.addNewVariant(getDataTypesCache().getType("Float64"), "Float64"))
+                {
+                    insertValueIntoDynamicVariant<ColumnFloat64, Float64>(variant_info, variant_column, element.getDouble(), "Float64");
+                    return true;
+                }
+                break;
+            }
+            case ElementType::STRING:
+            {
+                std::string_view data = element.getString();
+
+                /// Without date/datetime inference, insert as String directly.
+                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)
+                {
+                    if (variant_info.variant_name_to_discriminator.contains("String")
+                        || column_dynamic.addNewVariant(getDataTypesCache().getType("String"), "String"))
+                    {
+                        insertStringIntoDynamicVariant(variant_column, data, variant_info.variant_name_to_discriminator.at("String"));
+                        return true;
+                    }
+                    break;
+                }
+
+                /// Try existing Date/DateTime/DateTime64 variants before falling back to String.
+                if (auto it = variant_info.variant_name_to_discriminator.find("Date"); it != variant_info.variant_name_to_discriminator.end())
+                {
+                    DayNum date;
+                    if (tryInferDateFromString(data, date))
+                    {
+                        insertValueIntoDynamicVariant<ColumnDate, DayNum>(variant_info, variant_column, date, "Date");
+                        return true;
+                    }
+                }
+
+                if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
+                {
+                    time_t value = 0;
+                    if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                    {
+                        insertValueIntoDynamicVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
+                        return true;
+                    }
+                }
+
+                if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
+                {
+                    DateTime64 value;
+                    if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                    {
+                        insertValueIntoDynamicVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
+                        return true;
+                    }
+                }
+
+                if (auto it = variant_info.variant_name_to_discriminator.find("String"); it != variant_info.variant_name_to_discriminator.end())
+                {
+                    insertStringIntoDynamicVariant(variant_column, data, it->second);
+                    return true;
+                }
+
+                break;
+            }
+            default:
+                break;
+        }
 
         if (insert_settings.try_existing_variants_in_dynamic_first)
         {
@@ -1795,6 +1922,10 @@ private:
     }
 
     DataTypePtr object_type;
+
+    /// Time zone references for Date/DateTime inference from strings.
+    const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
+    const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
 
     /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
     mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
@@ -2082,122 +2213,10 @@ private:
         return false;
     }
 
+    /// The fast-path logic for simple types (Bool, Int64, UInt64, Float64, String)
+    /// now lives in DynamicNode::insertResultToColumn, so this just delegates.
     bool insertIntoDynamicPath(ColumnDynamic & column_dynamic, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const
     {
-        /// Check if element is NULL.
-        if (element.isNull())
-        {
-            column_dynamic.insertDefault();
-            return true;
-        }
-
-        auto & variant_column = column_dynamic.getVariantColumn();
-        const auto & variant_info = column_dynamic.getVariantInfo();
-
-        /// Fast track where we process simple data types explicitly to avoid
-        /// additional costs of generic code in DynamicNode::insertResultToColumn.
-        switch (element.type())
-        {
-            case ElementType::BOOL:
-            {
-                if (variant_info.variant_name_to_discriminator.contains("Bool") || column_dynamic.addNewVariant(getDataTypesCache().getType("Bool"), "Bool"))
-                {
-                    insertValueIntoNumericVariant<ColumnUInt8, UInt8>(variant_info, variant_column, element.getBool(), "Bool");
-                    return true;
-                }
-
-                break;
-            }
-            case ElementType::INT64:
-            {
-                if (variant_info.variant_name_to_discriminator.contains("Int64") || column_dynamic.addNewVariant(getDataTypesCache().getType("Int64"), "Int64"))
-                {
-                    insertValueIntoNumericVariant<ColumnInt64, Int64>(variant_info, variant_column, element.getInt64(), "Int64");
-                    return true;
-                }
-
-                break;
-            }
-            case ElementType::UINT64:
-            {
-                if (variant_info.variant_name_to_discriminator.contains("UInt64") || column_dynamic.addNewVariant(getDataTypesCache().getType("UInt64"), "UInt64"))
-                {
-                    insertValueIntoNumericVariant<ColumnUInt64, UInt64>(variant_info, variant_column, element.getUInt64(), "UInt64");
-                    return true;
-                }
-
-                break;
-            }
-            case ElementType::DOUBLE:
-            {
-                if (variant_info.variant_name_to_discriminator.contains("Float64") || column_dynamic.addNewVariant(getDataTypesCache().getType("Float64"), "Float64"))
-                {
-                    insertValueIntoNumericVariant<ColumnFloat64, Float64>(variant_info, variant_column, element.getDouble(), "Float64");
-                    return true;
-                }
-
-                break;
-            }
-            case ElementType::STRING:
-            {
-                std::string_view data = element.getString();
-
-                /// With String value we should consider Date/DateTime/DateTime64 inference.
-                /// If inference is disabled, just insert String.
-                if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)
-                {
-                    if (variant_info.variant_name_to_discriminator.contains("String") || column_dynamic.addNewVariant(getDataTypesCache().getType("String"), "String"))
-                    {
-                        insertValueIntoStringVariant(variant_column, data, variant_info.variant_name_to_discriminator.at("String"));
-                        return true;
-                    }
-                }
-
-                /// In most cases data is consistent and the same path contains the same type of values.
-                /// So for Date/DateTime/DateTime64 we check if variant info already has these types and try
-                /// to parse data from string into existing variant.
-                if (auto it = variant_info.variant_name_to_discriminator.find("Date"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    DayNum date;
-                    if (tryInferDateFromString(data, date))
-                    {
-                        insertValueIntoNumericVariant<ColumnDate, DayNum>(variant_info, variant_column, date, "Date");
-                        return true;
-                    }
-                }
-
-                if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    time_t value = 0;
-                    if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
-                    {
-                        insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
-                        return true;
-                    }
-                }
-
-                if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    DateTime64 value;
-                    if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
-                    {
-                        insertValueIntoNumericVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
-                        return true;
-                    }
-                }
-
-                if (auto it = variant_info.variant_name_to_discriminator.find("String"); it != variant_info.variant_name_to_discriminator.end())
-                {
-                    insertValueIntoStringVariant(variant_column, data, it->second);
-                    return true;
-                }
-
-                break;
-            }
-            default:
-                break;
-        }
-
         return dynamic_node->insertResultToColumn(column_dynamic, element, insert_settings, format_settings, error);
     }
 
@@ -2299,24 +2318,6 @@ private:
         }
 
         return false;
-    }
-
-    template <typename ColumnType, typename ElementType>
-    void insertValueIntoNumericVariant(const ColumnDynamic::VariantInfo & variant_info, ColumnVariant & variant_column, ElementType value, const String & type_name) const
-    {
-        auto global_discr = variant_info.variant_name_to_discriminator.at(type_name);
-        auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discr);
-        assert_cast<ColumnType &>(variant).insertValue(value);
-        variant_column.getOffsets().push_back(variant.size() - 1);
-        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discr));
-    }
-
-    void insertValueIntoStringVariant(ColumnVariant & variant_column, std::string_view data, UInt8 global_discr) const
-    {
-        auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discr);
-        assert_cast<ColumnString &>(variant).insertData(data.data(), data.size());
-        variant_column.getOffsets().push_back(variant.size() - 1);
-        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discr));
     }
 
     const FormatSettings & getDefaultFormatSettings() const

@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
             {"text_index_density_threshold", 0.2, 0.2, "New setting for lazy posting list density threshold"},
             {"show_remote_databases_in_system_tables", false, false, "Renamed from `show_data_lake_catalogs_in_system_tables` and broadened to also hide `MySQL` and `PostgreSQL` databases from `system.tables`, `system.columns` and `system.completions` by default, since enumerating their tables requires expensive remote calls. Users who relied on the previous behavior must set this setting to `true`. The old name is kept as an alias."},
+            {"json_use_optimized_type_conversion", true, true, "New setting to enable optimized JSON-to-JSON type conversion that avoids full serialize+parse when only a subset of paths change."},
             {"enable_streaming_queries", false, false, "New setting"},
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
             {"output_format_float_precision", 0, 0, "A new setting to control decimal digits in float output"},

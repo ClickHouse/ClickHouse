@@ -1,0 +1,145 @@
+--- Identity conversion (only metadata changes) ---
+{"b":10,"c":"x"}
+{"b":20,"c":"y"}
+{"b":30,"c":"z"}
+--- Unchanged typed paths (pointer reuse) ---
+{"a":1,"b":"x","c":10}
+{"a":2,"b":"y","c":20}
+{"a":3,"b":"z","c":30}
+--- Changed typed path (CAST Int32 -> Int64) ---
+-100
+1
+2
+--- New typed path from dynamic (canCastDynamicToTyped=true, Int64->Int32) ---
+1
+2
+3
+--- New typed path from dynamic (canCastDynamicToTyped=false, mixed variant types) ---
+{"a":"1"}
+{"a":"42"}
+{"a":"text"}
+--- New typed path from shared data ---
+1
+10
+100
+--- New typed path from shared data (present in some rows, absent in others) ---
+3
+0
+300
+--- New typed path absent in source (fill with defaults) ---
+
+
+
+--- Removed typed path: promotable, already canonical (Int64) ---
+{"a":100,"b":"x"}
+{"a":200,"b":"y"}
+{"a":300,"b":"z"}
+--- Removed typed path: promotable, needs CAST (Int8 -> Int64) ---
+{"a":-5,"b":"y"}
+{"a":1,"b":"x"}
+{"a":127,"b":"z"}
+--- Removed typed path: promotable Float32 -> Float64 ---
+{"a":1.5}
+{"a":2.5}
+{"a":3.5}
+--- Removed typed path: promotable Date (with date inference) ---
+{"a":"2024-01-15"}
+{"a":"2024-06-01"}
+{"a":"2025-12-31"}
+--- Removed typed path: non-promotable (UUID via convertTypedColumnToDynamic) ---
+{"a":"00000000-0000-0000-0000-000000000000"}
+{"a":"550e8400-e29b-41d4-a716-446655440000"}
+{"a":"6ba7b810-9dad-11d1-80b4-00c04fd430c8"}
+--- Removed typed path: Nullable with NULLs ---
+{"a":1}
+{"a":3}
+{}
+{"b":99}
+--- Removed typed path: overflow to shared data (no dynamic slots) ---
+{"a":1,"b":2,"c":3}
+{"a":10,"b":20,"c":30}
+{"a":100,"b":200,"c":300}
+--- Removed typed path: some fit in dynamic, rest overflow to shared data ---
+{"a":1,"b":2,"c":3}
+{"a":10,"b":20,"c":30}
+--- Skip: dynamic path skipped ---
+{"a":1,"c":3}
+{"a":10,"c":30}
+--- Skip: sub-path matching ---
+{"b":3}
+{"b":30}
+--- Skip: regexp matching ---
+{"a":1,"c":3,"d_secret_key":4}
+{"a":10,"c":30,"d_secret_key":40}
+--- Skip: shared data entries skipped ---
+{"a":1,"b":2}
+{"a":10,"b":20}
+--- Skip: removed typed path matches skip rule (exact) ---
+{"a":1,"c":10}
+{"a":2,"c":20}
+{"a":3,"c":30}
+--- Skip: removed typed path matches skip rule (regexp) ---
+{"a":1,"c":10}
+{"a":2,"c":20}
+{"a":3,"c":30}
+--- Skip: removed typed path matches skip rule (sub-path) ---
+{"b":3}
+{"b":30}
+{"b":300}
+--- Shared data reusable (no changes affect it) ---
+{"a":1,"b":2,"c":3}
+{"a":10,"b":20,"c":30}
+--- Shared data NOT reusable: new typed path found in shared data ---
+{"a":1,"b":2}
+{"a":10,"b":20}
+{"a":100}
+--- Phase 7: merge removed typed paths into shared data (sorted merge) ---
+{"a":1,"b":2,"c":3,"d":4}
+{"a":10,"b":20,"c":30,"d":40}
+--- Combination: add typed + remove typed + skip ---
+{"a":3,"b":"foo","d":"too"}
+{"a":1,"b":"hello","d":"keep"}
+{"a":2,"b":"world","d":"this"}
+--- Structural type: adding Tuple typed path triggers format+parse fallback ---
+{"a":[1,2]}
+{"a":[3,4]}
+{"a":[5,6]}
+--- Structural type: removing Map typed path triggers fallback ---
+{"a":{"k1":1}}
+{"a":{"k2":2}}
+{"a":{"k3":3}}
+--- dynamic_limits_changed: fallback to format+parse ---
+{"a":1,"b":2}
+{"a":10,"b":20}
+--- Setting disabled: force format+parse ---
+{"a":1,"b":"hello"}
+{"a":2,"b":"world"}
+--- Empty column ---
+--- Verify optimized matches format+parse for complex scenario ---
+optimized:
+{"a":1,"b":1.5,"c":"hello","d":[1,2,3]}
+{"a":2,"b":2.5,"c":"world","d":[4,5]}
+{"a":3,"b":3.5,"c":"","e":true}
+format_parse:
+{"a":1,"b":1.5,"c":"hello","d":[1,2,3]}
+{"a":2,"b":2.5,"c":"world","d":[4,5]}
+{"a":3,"b":3.5,"c":"","e":true}
+--- Promotable types: Decimal -> Float64 ---
+{"a":1.123}
+{"a":2.456}
+{"a":3.789}
+--- Promotable types: Array(Int8) -> Array(Int64) ---
+{"a":[1,2,3]}
+{"a":[4,5]}
+{"a":[]}
+--- Promotable types: Nullable(Int16) -> Nullable(Int64) ---
+{"a":1}
+{"a":100}
+{}
+--- Max dynamic paths locked when shared data non-empty ---
+{"a":1,"b":2,"c":3,"d":4,"e":5}
+{"a":10,"b":20,"c":30,"d":40,"e":50}
+--- sharedDataIsAffectedByNewTypedPaths with mixed rows ---
+{"b":20,"c":30}
+{"a":1,"b":2}
+{"a":10,"b":0}
