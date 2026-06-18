@@ -96,7 +96,7 @@ namespace ErrorCodes
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
     DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
-    DECLARE(UInt64, snapshot_deser_threads, 0, "Number of threads for parallel chunked-snapshot decompression and parse during load. 0 = auto (clamp(cores/2, 1, 4)); explicit values are clamped to [1, 8]. 1 disables parallelism and uses the calling thread.", 0) \
+    DECLARE(UInt64, snapshot_deser_threads, 4, "Number of threads for parallel chunked-snapshot decompression and parse during load. 0 = use all CPU cores. 1 disables parallelism (uses the calling thread). Not clamped — the value is used as-is.", 0) \
     DECLARE(UInt64, snapshot_chunk_size, 100000, "Number of nodes per independently-compressed ZSTD chunk in the chunked snapshot format. Only affects the chunked snapshot format (write_snapshot_version=8). Distinct from snapshot_transfer_chunk_size which controls network transfer bytes.", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)

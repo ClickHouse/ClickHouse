@@ -1074,17 +1074,15 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     , keeper_context(keeper_context_)
 {
     // ── Deserialisation thread pool ────────────────────────────────────────────────────────────
-    // Compute effective thread count.  0 → auto (clamp(cores/2, 1, 4)); explicit values clamped to [1, 8].
+    // Compute effective thread count.  0 → use all CPU cores; any other value is used as-is (no clamping).
+    // The pool is only created when deser_threads > 1; deser_threads == 1 runs serially on the calling thread.
     // Never created under snapshots_lock — pool construction is safe here.
     // RocksDB managers never read chunked snapshots, so the pool is memory-storage-only.
     if constexpr (!use_rocksdb)
     {
         const auto & coordination_settings = keeper_context->getCoordinationSettings();
         const uint64_t raw = static_cast<uint64_t>(coordination_settings[CoordinationSetting::snapshot_deser_threads]);
-        if (raw == 0)
-            deser_threads = std::clamp<size_t>(getNumberOfCPUCoresToUse() / 2, 1, 4);
-        else
-            deser_threads = std::clamp<size_t>(static_cast<size_t>(raw), 1, 8);
+        deser_threads = (raw == 0) ? getNumberOfCPUCoresToUse() : static_cast<size_t>(raw);
 
         if (deser_threads > 1)
         {
