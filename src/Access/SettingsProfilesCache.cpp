@@ -11,8 +11,9 @@
 
 namespace ProfileEvents
 {
-    extern const Event SettingsProfileCacheRecalculations;
-    extern const Event SettingsProfileCacheRecalculationMicroseconds;
+    /// NOLINT: not settings; the names contain "Settings" so check-settings-style mistakes them for setting externs.
+    extern const Event SettingsProfileCacheRecalculations; // NOLINT
+    extern const Event SettingsProfileCacheRecalculationMicroseconds; // NOLINT
 }
 
 namespace DB
