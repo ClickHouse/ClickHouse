@@ -26,7 +26,7 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
     auto G0 = std::make_shared<ThreadGroup>(context, 0);
     auto G1 = std::make_shared<ThreadGroup>(context, 0);
 
-    /// Thread was detached → must end detached after the failed switch.
+    /// Started detached → must end detached after the failed switch.
     FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_attach_failure);
     {
         ThreadGroupSwitcher switcher(G1, ThreadName::REMOTE_FS_READ_THREAD_POOL);
@@ -34,7 +34,7 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
             << "Failed switch from detached state must leave the thread detached";
     }
 
-    /// Thread was attached to G0 → must end attached to G0 after the failed switch.
+    /// Started attached to G0 → must end attached to G0 after the failed switch.
     CurrentThread::attachToGroupIfDetached(G0);
     FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_attach_failure);
     {

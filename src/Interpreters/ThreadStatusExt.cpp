@@ -374,15 +374,9 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
         applyGlobalSettings();
         applyQuerySettings();
 
-        /// Failpoint fires here: all context fields are already populated
-        /// (performance_counters/memory_tracker parents, query_context, local_data, …)
-        /// but initPerformanceCounters has not run yet. This mirrors the 26.4 incident
-        /// where TasksStatsCounters::reset() threw at exactly this point in the call
-        /// stack without a try/catch, leaving the thread attached to a stale group.
-        /// The try-catch above calls detachFromGroup() which resets all those fields.
         fiu_do_on(FailPoints::thread_group_switcher_attach_failure,
         {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in attachToGroupImpl after context fields set");
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in attachToGroupImpl");
         });
 
         initPerformanceCounters();

@@ -55,7 +55,6 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
     {
         /// Unexpected. For caller's convenience avoid throwing exceptions.
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-        /// Best-effort restore of prev_thread_group for allow_existing_group=true callers.
         if (prev_thread_group && !CurrentThread::getGroup())
         {
             try
