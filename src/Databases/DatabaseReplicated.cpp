@@ -2239,43 +2239,51 @@ void DatabaseReplicated::dropDetachedTable(
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
+    auto drop_info = prepareDropDetachedTable(local_context, table_name);
 
     /// Only update local digest if table is still in table_name_to_path (still counted in digest).
     /// adjustDigestOnTableLostFromRestart already subtracted for tables lost during failed RESTART REPLICA.
     /// detachTablePermanently already subtracted when table was properly detached.
     bool digest_updated = false;
-    std::lock_guard lock{metadata_mutex};
-    const bool table_in_map = std::invoke(
-        [this, table_name]()
-        {
-            std::lock_guard table_lock{mutex};
-            return table_name_to_path.contains(table_name);
-        });
-
-    UInt64 new_digest = tables_metadata_digest;
-    if (txn && txn->isInitialQuery())
     {
-        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
-        Coordination::Stat metadata_stat;
-        if (txn->getZooKeeper()->exists(metadata_zk_path, &metadata_stat))
-        {
-            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, metadata_stat.version));
-
-            if (table_in_map)
+        std::lock_guard lock{metadata_mutex};
+        const bool table_in_map =
+            [this, table_name]()
             {
-                new_digest -= getMetadataHash(table_name);
-                digest_updated = true;
+                std::lock_guard table_lock{mutex};
+                return table_name_to_path.contains(table_name);
+            }();
+
+        UInt64 new_digest = tables_metadata_digest;
+        if (txn && txn->isInitialQuery())
+        {
+            String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+            Coordination::Stat metadata_stat;
+            if (txn->getZooKeeper()->exists(metadata_zk_path, &metadata_stat))
+            {
+                txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, metadata_stat.version));
+
+                if (table_in_map)
+                {
+                    new_digest -= getMetadataHash(table_name);
+                    digest_updated = true;
+                }
+                if (!is_recovering)
+                    txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
             }
-            if (!is_recovering)
-                txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
         }
+
+        commitDropDetachedTableMetadata(local_context, table_name, drop_info);
+
+        if (digest_updated)
+            tables_metadata_digest = new_digest;
     }
 
-    DatabaseAtomic::dropDetachedTable(local_context, table_name, sync, dependency_cleanup);
+    finishDropDetachedTable(table_name, sync, dependency_cleanup, drop_info);
 
     if (digest_updated)
     {
-        tables_metadata_digest = new_digest;
+        std::lock_guard lock{metadata_mutex};
         assertDigest(local_context);
     }
 }

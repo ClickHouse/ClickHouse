@@ -251,6 +251,13 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
 void DatabaseAtomic::dropDetachedTable(
     ContextPtr local_context, const String & table_name, const bool sync, const std::function<void()> & dependency_cleanup)
 {
+    auto drop_info = prepareDropDetachedTable(local_context, table_name);
+    commitDropDetachedTableMetadata(local_context, table_name, drop_info);
+    finishDropDetachedTable(table_name, sync, dependency_cleanup, drop_info);
+}
+
+DatabaseAtomic::DropDetachedTableInfo DatabaseAtomic::prepareDropDetachedTable(ContextPtr local_context, const String & table_name)
+{
     waitDatabaseStarted();
 
     auto db_disk = getDisk();
@@ -272,33 +279,30 @@ void DatabaseAtomic::dropDetachedTable(
                 query_status->throwIfKilled();
         });
 
-    String table_metadata_path_drop;
+    return DropDetachedTableInfo{
+        .table_metadata_path = table_metadata_path,
+        .table_metadata_path_drop = std::nullopt,
+        .storage_id = storage_id,
+        .uuid_reservation = std::move(reservation),
+    };
+}
 
-    {
-        std::lock_guard lock(mutex);
-        table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(storage_id);
-
-        db_disk->createDirectories(fs::path(table_metadata_path_drop).parent_path());
-
-        auto txn = local_context->getZooKeeperMetadataTransaction();
-        if (txn && !local_context->isInternalSubquery())
-            txn->commit();
-
-        LOG_TRACE(log, "Rename metadata from {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
-        db_disk->replaceFile(table_metadata_path, table_metadata_path_drop);
-
-        /// Metadata rename is the commit point for dropping a detached table.
-        /// Restart will continue cleanup from the file in `metadata_dropped`.
-        table_name_to_path.erase(table_name);
-        snapshot_detached_tables.erase(table_name);
-    }
+void DatabaseAtomic::finishDropDetachedTable(
+    const String & table_name,
+    const bool sync,
+    const std::function<void()> & dependency_cleanup,
+    DropDetachedTableInfo & drop_info)
+{
+    auto db_disk = getDisk();
 
     /// UUID reservation must survive until `dropTableFinally` calls `removeUUIDMappingFinally`.
     /// Before this point, `reservation` destructor restores previous state on exceptions/cancellation.
-    static_cast<void>(reservation.release());
+    static_cast<void>(drop_info.uuid_reservation.release());
 
+    chassert(drop_info.table_metadata_path_drop.has_value());
     LOG_TRACE(log, "Table {} ready for remove.", table_name);
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, table_metadata_path_drop, sync);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(
+        drop_info.storage_id, nullptr, db_disk, *drop_info.table_metadata_path_drop, sync);
 
     try
     {
@@ -306,7 +310,7 @@ void DatabaseAtomic::dropDetachedTable(
 
         /// Metadata is already moved to `metadata_dropped`, so removing detached flag is safe.
         /// If a crash happens before this removal, we can only get a stale orphan flag.
-        const auto detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
+        const auto detached_flag_path = getDetachedPermanentlyFlagPath(drop_info.table_metadata_path);
         LOG_TRACE(log, "Deleting {} flag.", detached_flag_path);
         db_disk->removeFileIfExists(detached_flag_path);
 
@@ -319,6 +323,33 @@ void DatabaseAtomic::dropDetachedTable(
     catch (...)
     {
         tryLogCurrentException(log, "Cannot finish cleanup after detached table was marked as dropped");
+    }
+}
+
+void DatabaseAtomic::commitDropDetachedTableMetadata(
+    ContextPtr local_context,
+    const String & table_name,
+    DropDetachedTableInfo & drop_info)
+{
+    auto db_disk = getDisk();
+
+    {
+        std::lock_guard lock(mutex);
+        drop_info.table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(drop_info.storage_id);
+
+        db_disk->createDirectories(fs::path(*drop_info.table_metadata_path_drop).parent_path());
+
+        auto txn = local_context->getZooKeeperMetadataTransaction();
+        if (txn && !local_context->isInternalSubquery())
+            txn->commit();
+
+        LOG_TRACE(log, "Rename metadata from {} to {} for removing.", drop_info.table_metadata_path, *drop_info.table_metadata_path_drop);
+        db_disk->replaceFile(drop_info.table_metadata_path, *drop_info.table_metadata_path_drop);
+
+        /// Metadata rename is the commit point for dropping a detached table.
+        /// Restart will continue cleanup from the file in `metadata_dropped`.
+        table_name_to_path.erase(table_name);
+        snapshot_detached_tables.erase(table_name);
     }
 }
 

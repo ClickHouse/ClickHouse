@@ -4,6 +4,7 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
 #include <Storages/IStorage_fwd.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -91,6 +92,22 @@ protected:
     void assertDetachedTableNotInUse(const UUID & uuid) TSA_REQUIRES(mutex);
     using DetachedTables = std::unordered_map<UUID, StoragePtr>;
     [[nodiscard]] DetachedTables cleanupDetachedTables() TSA_REQUIRES(mutex);
+
+    struct DropDetachedTableInfo
+    {
+        String table_metadata_path;
+        std::optional<String> table_metadata_path_drop;
+        StorageID storage_id = StorageID::createEmpty();
+        scope_guard uuid_reservation;
+    };
+
+    DropDetachedTableInfo prepareDropDetachedTable(ContextPtr local_context, const String & table_name);
+    void commitDropDetachedTableMetadata(ContextPtr local_context, const String & table_name, DropDetachedTableInfo & drop_info);
+    void finishDropDetachedTable(
+        const String & table_name,
+        bool sync,
+        const std::function<void()> & dependency_cleanup,
+        DropDetachedTableInfo & drop_info);
 
     void createDirectories();
     void createDirectoriesUnlocked() TSA_REQUIRES(mutex);
