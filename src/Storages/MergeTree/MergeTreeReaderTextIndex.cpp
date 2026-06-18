@@ -73,7 +73,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     MergeTreeIndexDeserializationState state
     {
         .version = index_format.version,
-        .condition = index.condition.get(),
+        .condition = index.condition_template->generateUnsubstituted().get(),
         .part = *data_part,
         .index = *index.index,
     };
@@ -81,7 +81,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
 
     /// Validate lazy mode request once; actual support is determined from the on-disk sparse-index header.
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     const auto & ctx_settings = condition_text.getContext()->getSettingsRef();
     const auto apply_mode = ctx_settings[Setting::text_index_posting_list_apply_mode].value;
 
@@ -110,7 +110,7 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
     /// Lazy mode requires the per-segment block-index section (from `WithCodec` onward) and
     /// pure-token queries — pattern predicates take the eager materialize path.
     auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
 
     use_lazy_mode = lazy_mode_requested
         && postings_codec->getType() != IPostingListCodec::Type::None
@@ -122,7 +122,7 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
 
 void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader * main_reader)
 {
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     if (!condition_text.hasSearchPatterns())
         return;
 
@@ -250,7 +250,7 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
     use_fallback.resize(columns_to_read.size(), false);
 
     const auto & analyzer = granule->getAnalyzer();
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
@@ -308,7 +308,7 @@ PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view t
     if (!(token_info.header & PostingsSerialization::Flags::IsCompressed))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Multi-block postings must be compressed", token);
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     auto * postings_cache = condition_text.postingsCache().get();
     const auto & index_id_for_cache = granule->getIndexIdForCaches();
 
@@ -502,7 +502,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
     if (!effective_range.has_value())
         return result;
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     const auto & analyzer = granule->getAnalyzer();
     range_posting.addRangeClosed(static_cast<UInt32>(effective_range->begin), static_cast<UInt32>(effective_range->end));
 
@@ -651,7 +651,7 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     size_t old_size = column_data.size();
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
     chassert(search_query->patterns.empty());
 

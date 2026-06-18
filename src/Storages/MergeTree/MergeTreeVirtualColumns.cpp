@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -37,6 +38,13 @@ const DataTypePtr PartDataVersionColumn::type = std::make_shared<DataTypeUInt64>
 
 const String PartitionIdColumn::name = "_partition_id";
 const DataTypePtr PartitionIdColumn::type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
+const String PartitionValueColumn::name = "_partition_value";
+DataTypePtr PartitionValueColumn::type(const KeyDescription * partition_key)
+{
+    auto partition_types = partition_key->sample_block.getDataTypes();
+    return std::make_shared<DataTypeTuple>(std::move(partition_types));
+}
 
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection)
 {

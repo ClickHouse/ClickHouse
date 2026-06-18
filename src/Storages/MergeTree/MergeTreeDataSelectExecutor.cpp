@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
@@ -45,6 +46,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
@@ -53,6 +55,8 @@
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 
 
 namespace CurrentMetrics
@@ -143,7 +147,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, log);
+        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, nullptr, nullptr, &exact_ranges, settings, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
@@ -209,7 +213,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     const SelectQueryInfo & select_query_info,
     NamesAndTypesList available_real_columns,
     const RangesInDataParts & parts,
-    KeyCondition & key_condition,
+    ConditionTemplate<KeyCondition>::Ptr & key_condition,
     const MergeTreeData & data,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
@@ -263,7 +267,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         /// read) into the relative `SAMPLE 0.1` (how much data to read).
         size_t approx_total_rows = 0;
         if (relative_sample_size > 1 || relative_sample_offset > 1)
-            approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, key_condition, settings, log);
+            approx_total_rows = getApproximateTotalRowsToRead(parts, metadata_snapshot, key_condition->generateUnsubstituted(), settings, log);
 
         if (relative_sample_size > 1)
         {
@@ -418,10 +422,13 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_lower_limit)
             {
-                if (!key_condition.addCondition(
-                        sampling_key.column_names[0],
-                        Range::createLeftBounded(lower, true, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
+                if (!std::ranges::contains(metadata_snapshot->getPrimaryKey().column_names, sampling_key.column_names[0]))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
+
+                key_condition->addTransformation([lower, sampling_key_name = sampling_key.column_names[0], sampling_key_type = sampling_key.data_types[0]](KeyCondition & condition)
+                {
+                    condition.addCondition(sampling_key_name, Range::createLeftBounded(lower, true, isNullableOrLowCardinalityNullable(sampling_key_type)));
+                });
 
                 ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -437,10 +444,13 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_upper_limit)
             {
-                if (!key_condition.addCondition(
-                        sampling_key.column_names[0],
-                        Range::createRightBounded(upper, false, isNullableOrLowCardinalityNullable(sampling_key.data_types[0]))))
+                if (!std::ranges::contains(metadata_snapshot->getPrimaryKey().column_names, sampling_key.column_names[0]))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
+
+                key_condition->addTransformation([upper, sampling_key_name = sampling_key.column_names[0], sampling_key_type = sampling_key.data_types[0]](KeyCondition & condition)
+                {
+                    condition.addCondition(sampling_key_name, Range::createRightBounded(upper, false, isNullableOrLowCardinalityNullable(sampling_key_type)));
+                });
 
                 ASTPtr args = make_intrusive<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -481,11 +491,14 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     return sampling;
 }
 
-void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
-    std::optional<KeyCondition> & part_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context)
+ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool skip_folding,
+    ContextPtr context)
 {
-    if (!predicate)
-        return;
+    if (!filter_dag || !filter_dag->predicate)
+        return nullptr;
 
     auto part_offset_type = std::make_shared<DataTypeUInt64>();
     auto part_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -493,37 +506,46 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_type->createColumn(), part_type, "_part")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->predicate, &sample, context);
     if (!dag)
-        return;
+        return nullptr;
 
     /// The _part filter should only be effective in conjunction with the _part_offset filter.
     auto required_columns = dag->getRequiredColumnsNames();
     if (std::find(required_columns.begin(), required_columns.end(), "_part_offset") == required_columns.end())
-        return;
+        return nullptr;
 
-    part_offset_condition.emplace(KeyCondition{
-        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context),
-        context,
-        sample.getNames(),
-        std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
-        {}});
+    auto factory = [sample, context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> KeyCondition
+    {
+        return KeyCondition{
+            ActionsDAGWithInversionPushDown(predicate, context),
+            context,
+            sample.getNames(),
+            std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
+            {}};
+    };
+
+    auto sub_filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(dag->getOutputs().front(), context);
+    return std::make_shared<ConditionTemplate<KeyCondition>>(std::move(sub_filter_dag), std::move(factory), metadata_snapshot, context, skip_folding);
 }
 
-void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
-    std::optional<KeyCondition> & total_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context)
+ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool skip_folding,
+    ContextPtr context)
 {
-    if (!predicate)
-        return;
+    if (!filter_dag || !filter_dag->predicate)
+        return nullptr;
 
     auto part_offset_type = std::make_shared<DataTypeUInt64>();
     Block sample
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_starting_offset")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->predicate, &sample, context);
     if (!dag)
-        return;
+        return nullptr;
 
     /// Try to recognize and fold expressions of the form:
     ///     _part_offset + _part_starting_offset
@@ -538,7 +560,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
     auto matches = matchTrees({node1, node2}, *dag, false /* check_monotonicity */);
     auto new_inputs = resolveMatchedInputs(matches, {node1, node2}, dag->getOutputs());
     if (!new_inputs)
-        return;
+        return nullptr;
     dag = ActionsDAG::foldActionsByProjection(*new_inputs, dag->getOutputs());
 
     /// total_offset_condition is only valid if _part_offset and _part_starting_offset are used *together*.
@@ -546,15 +568,22 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
     /// If more than one input remains, it means either of them is used independently,
     /// and we should skip adding total_offset_condition in that case.
     if (dag->getInputs().size() != 1)
-        return;
+        return nullptr;
 
-    auto required_columns = dag->getRequiredColumns();
-    total_offset_condition.emplace(KeyCondition{
-        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context),
-        context,
-        required_columns.getNames(),
-        std::make_shared<ExpressionActions>(ActionsDAG(required_columns), ExpressionActionsSettings{}),
-        {}});
+    auto factory = [context](const ActionsDAG * specialized_dag, const ActionsDAG::Node * predicate) -> KeyCondition
+    {
+        chassert(specialized_dag);
+        auto required_columns = specialized_dag->getRequiredColumns();
+        return KeyCondition{
+            ActionsDAGWithInversionPushDown(predicate, context),
+            context,
+            required_columns.getNames(),
+            std::make_shared<ExpressionActions>(ActionsDAG(required_columns), ExpressionActionsSettings{}),
+            {}};
+    };
+
+    auto sub_filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(dag->getOutputs().front(), context);
+    return std::make_shared<ConditionTemplate<KeyCondition>>(std::move(sub_filter_dag), std::move(factory), metadata_snapshot, context, skip_folding);
 }
 
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
@@ -615,7 +644,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const RangesInDataParts & parts,
     const std::optional<PartitionPruner> & partition_pruner,
-    const std::optional<KeyCondition> & minmax_idx_condition,
+    const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
     const std::optional<std::unordered_set<String>> & part_values,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
@@ -632,7 +661,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
         minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
 
     if (metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
-        && (!minmax_idx_condition || minmax_idx_condition->alwaysUnknownOrTrue())
+        && (!minmax_idx_condition || minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
         && (!partition_pruner || partition_pruner->isUseless()))
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -676,14 +705,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     if (minmax_idx_condition)
     {
-        auto description = minmax_idx_condition->getDescription();
+        auto description = minmax_idx_condition->generateUnsubstituted().getDescription();
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::MinMax,
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
             .num_parts_after = part_filter_counters.num_parts_after_minmax,
             .num_granules_after = part_filter_counters.num_granules_after_minmax});
-        LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->toString());
+        LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->generateUnsubstituted().toString());
     }
 
     if (partition_pruner)
@@ -915,8 +944,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     /// has only 1 element, but the template has the full RPN which can exceed 32 elements.
     bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
                                 && !use_skip_indexes_on_data_read_
-                                && key_condition_rpn_template.has_value()
-                                && key_condition_rpn_template->getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+                                && key_condition_rpn_template != nullptr
+                                && key_condition_rpn_template->generateUnsubstituted().getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
 
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
@@ -960,9 +989,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition,
-                    part_offset_condition,
-                    total_offset_condition,
+                    key_condition->generateForPartition(ranges.data_part->partition),
+                    part_offset_condition ? &part_offset_condition->generateForPartition(ranges.data_part->partition) : nullptr,
+                    total_offset_condition ? &total_offset_condition->generateForPartition(ranges.data_part->partition) : nullptr,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     settings,
                     log);
@@ -1038,8 +1067,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
-                            index_and_condition.condition,
-                            key_condition_rpn_template,
+                            index_and_condition.condition_template->generateForPartition(ranges.data_part->partition),
+                            key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
                             ranges.data_part,
                             ranges.ranges,
                             ranges.read_hints,
@@ -1059,10 +1088,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-                if (use_skip_indexes_for_disjunctions && key_condition_rpn_template.has_value())
+                if (use_skip_indexes_for_disjunctions && key_condition_rpn_template != nullptr)
                 {
                     ranges.ranges = mergePartialResultsForDisjunctions(ranges.data_part,
-                                        ranges.ranges, key_condition_rpn_template.value(),
+                                        ranges.ranges, key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
                                         partial_eval_results, reader_settings, log);
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
@@ -1196,7 +1225,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             pk_stat.elapsed_us.load() / 1000,
             num_threads);
 
-        auto description = key_condition.getDescription();
+        auto description = key_condition->generateUnsubstituted().getDescription();
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::PrimaryKey,
@@ -1236,7 +1265,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .name = index_name,
                     .part_name = parts_with_ranges[part_index].data_part->name,
                     .description = std::move(description),
-                    .condition = index_and_condition.condition->getDescription(),
+                    .condition = index_and_condition.condition_template->generateForPartition(parts_with_ranges[part_index].data_part->partition)->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -1246,7 +1275,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .type = ReadFromMergeTree::IndexType::Skip,
                     .name = index_name,
                     .description = std::move(description),
-                    .condition = index_and_condition.condition->getDescription(),
+                    .condition = index_and_condition.condition_template->generateUnsubstituted()->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -1597,8 +1626,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const RangesInDataPart & part_with_ranges,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
-    const std::optional<KeyCondition> & part_offset_condition,
-    const std::optional<KeyCondition> & total_offset_condition,
+    const KeyCondition * part_offset_condition,
+    const KeyCondition * total_offset_condition,
     MarkRanges * exact_ranges,
     const Settings & settings,
     LoggerPtr log)
@@ -2206,7 +2235,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     const RangesInDataParts & parts,
     const std::optional<std::unordered_set<String>> & part_values,
-    const std::optional<KeyCondition> & minmax_idx_condition,
+    const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
@@ -2241,7 +2270,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_initial_selected_granules += num_granules;
 
         /// hyperrectangle must come from the part whose metadata built the condition.
-        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        if (minmax_idx_condition && !minmax_idx_condition->generateForPartition(part->partition).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
@@ -2265,7 +2294,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     const RangesInDataParts & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
-    const std::optional<KeyCondition> & minmax_idx_condition,
+    const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
@@ -2307,7 +2336,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             counters.num_initial_selected_granules += num_granules;
 
             /// hyperrectangle must come from the part whose metadata built the condition.
-            if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+            if (minmax_idx_condition && !minmax_idx_condition->generateForPartition(part->partition).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
                 continue;
 
             counters.num_parts_after_minmax += 1;

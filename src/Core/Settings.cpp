@@ -1731,6 +1731,14 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, use_partition_key) \
+    DECLARE(Bool, use_constant_folding_in_index_analysis, false, R"(
+Substitute partition-level constants into the filter predicate when analyzing per-part primary key and skip indexes.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
 
