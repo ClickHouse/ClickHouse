@@ -497,3 +497,38 @@ def test_session_log_certificate_login_failure():
         check_callback=lambda r: r.strip() != "",
     ).strip()
     assert result == "LoginFailure\t1", result
+
+
+def test_session_log_certificate_https_non_cert_auth():
+    # A client may present a TLS certificate over HTTPS while authenticating by another method
+    # (here 'peter' authenticates without certificate authentication). The presented certificate
+    # must still be recorded in system.session_log, even though it is not used for authentication.
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert (
+        execute_query_https(
+            "SELECT currentUser()",
+            user="peter",
+            enable_ssl_auth=False,
+            cert_name="client1",
+        )
+        == "peter\n"
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # The login succeeded via a non-certificate method, but the presented certificate must still
+    # be recorded with fully-populated metadata on the HTTPS (HTTP interface) LoginSuccess row.
+    result = instance.query_with_retry(
+        """
+        SELECT count()
+        FROM system.session_log
+        WHERE user = 'peter' AND type = 'LoginSuccess' AND interface = 'HTTP'
+              AND has(certificate_subjects, 'CN:client1')
+              AND certificate_issuer != '' AND certificate_serial != ''
+              AND certificate_not_before IS NOT NULL AND certificate_not_after IS NOT NULL
+              AND certificate_not_before < certificate_not_after
+        """,
+        check_callback=lambda r: r.strip() not in ("", "0"),
+    ).strip()
+    assert result not in ("", "0"), result
