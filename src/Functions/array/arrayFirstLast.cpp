@@ -35,7 +35,7 @@ struct ArrayFirstLastImpl
     static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
         if constexpr (element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null)
-            return makeNullable(array_element);
+            return makeNullableAllowingArray(array_element);
 
         return array_element;
     }
@@ -298,4 +298,3 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
 }
 
 }
-
