@@ -320,13 +320,20 @@ void StorageMaterializedPostgreSQL::restoreDataFromBackup(
     /// created (the constructor calls `replication_handler->startup`). Restoring the backed-up parts of the
     /// nested ReplacingMergeTree on top of that freshly replicated data would mix the backup snapshot with the
     /// current remote state, so an in-place restore cannot faithfully represent the backup. Fail closed and
-    /// direct the user to restore the data as a standalone ReplacingMergeTree instead - the data is still captured
-    /// by `backupData`, so `RESTORE TABLE <src> AS <dst> ... SETTINGS allow_different_table_def = 1` works.
+    /// direct the user to restore the data into a separately pre-created ReplacingMergeTree table instead - the
+    /// data is still captured by `backupData`. The target must already exist as a ReplacingMergeTree: restoring
+    /// `... AS <new_table>` into a not-yet-existing table would recreate it from the backup definition (again as
+    /// MaterializedPostgreSQL) and hit this same error, and `allow_different_table_def` only skips the definition
+    /// comparison against an already existing target.
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
         "Restoring a MaterializedPostgreSQL table ({}) in place is not supported, because the table would start "
-        "replicating from the live PostgreSQL source and mix it with the backup snapshot. Restore the data as a "
-        "standalone ReplacingMergeTree instead, e.g. RESTORE TABLE ... AS <new_table> SETTINGS allow_different_table_def = 1",
+        "replicating from the live PostgreSQL source and mix it with the backup snapshot. "
+        "Restore the data into a separate ReplacingMergeTree table that you have created beforehand with the same "
+        "structure as the nested table (including the _sign and _version columns), e.g.: "
+        "RESTORE TABLE <src> AS <existing_replacing_mergetree> SETTINGS allow_different_table_def = 1. "
+        "Restoring AS a not-yet-existing table would recreate it as MaterializedPostgreSQL from the backup "
+        "definition and fail with this same error, so the target must already exist as a ReplacingMergeTree.",
         getStorageID().getNameForLogs());
 }
 
