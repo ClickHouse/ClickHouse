@@ -2017,9 +2017,9 @@ TEST(KeeperSnapshotManagerCleanupTest, CreateSnapshotKeepsPreviousMetadataAndAll
 }
 
 // ---------------------------------------------------------------------------
-// Chunked snapshot header pack/unpack + bounds validation tests (C1 — inert scaffolding)
+// Chunked snapshot header pack/unpack + bounds validation tests.
 // These tests exercise KeeperChunkedSnapshot.h / .cpp independently of the actual
-// snapshot write or read paths, which are added in later commits.
+// snapshot write or read paths.
 // ---------------------------------------------------------------------------
 
 namespace DB
@@ -2275,7 +2275,7 @@ TEST(KeeperChunkedSnapshotWrite, InspectBytes)
     addNode(storage, "/gamma",   "data");
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 10;
 
-    // Build a chunked snapshot (explicit version bypass — gate not opened until C3).
+    // Build a chunked snapshot (explicit version passed to the snapshot constructor).
     DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snapshot(
         &storage, /*up_to_log_idx=*/10, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
 
@@ -2331,7 +2331,7 @@ TEST(KeeperChunkedSnapshotWrite, InspectBytes)
 /// Verify the chunked snapshot disk write path (serializeSnapshotToDisk):
 ///  - chunk structure/ordering on raw file bytes
 ///  - ZSTD magic at each chunk offset
-///  - KeeperSnapshotWrittenBytes equals actual file size (U3 fix: captured before seek-back)
+///  - KeeperSnapshotWrittenBytes equals actual file size (captured before seek-back)
 TEST(KeeperChunkedSnapshotWrite, DiskInspectBytes)
 {
     ChangelogDirTest snap_dir("./chunked_disk_test_snap");
@@ -2373,9 +2373,9 @@ TEST(KeeperChunkedSnapshotWrite, DiskInspectBytes)
     raw_file.read(raw.data(), static_cast<std::streamsize>(file_size));
     raw_file.close();
 
-    // U3 fix: reported bytes must equal actual file size (count() captured before seek-back).
+    // Reported bytes must equal actual file size (count() captured before seek-back).
     EXPECT_EQ(reported_bytes, file_size)
-        << "KeeperSnapshotWrittenBytes mismatch — count() was captured after seek-back (U3 bug)";
+        << "KeeperSnapshotWrittenBytes mismatch — count() must be captured before seek-back";
 
     ASSERT_GT(file_size, 0u);
 
@@ -2406,7 +2406,7 @@ TEST(KeeperChunkedSnapshotHeader, HeaderSizeComputation)
     EXPECT_EQ(chunkedSnapshotHeaderSize(100), 1713u);
 }
 
-// ─── Chunked snapshot read-path tests (C3: sequential deserialization + validating load API) ────────
+// ─── Chunked snapshot read-path tests (sequential deserialization + validating load API) ──────────
 
 /// Serialize a small chunked snapshot and deserialize it back via `deserializeSnapshotFromBuffer`.
 /// Verifies:
@@ -2598,11 +2598,11 @@ TEST(KeeperChunkedSnapshotRead, LegacyV7SnapshotStillLoads)
     ASSERT_NE(result.storage->container.find("/legacy"), result.storage->container.end());
 }
 
-// ─── Chunked snapshot validation / corruption tests (C3 gate-opening correctness surface) ─────────
+// ─── Chunked snapshot validation / corruption tests ──────────────────────────────────────────────
 
 /// Chunked snapshot round-trip produces semantically identical storage to V7 (same format for individual
-/// nodes; only the chunked framing differs). Verifies that the C3 sequential reader is not simply
-/// consistent with the C2 writer by accident — both formats yield identical results.
+/// nodes; only the chunked framing differs). Verifies the reader is not merely self-consistent with the
+/// writer by accident — both formats yield identical results.
 TEST(KeeperChunkedSnapshotValidation, ChunkedEqualsV7)
 {
     ChangelogDirTest snap_dir("./chunked_val_eq_v7");
@@ -3048,8 +3048,8 @@ static nuraft::ptr<nuraft::buffer> replaceFirstNodesChunk(
 
 // ── Rejection tests ──────────────────────────────────────────────────────────
 
-/// (4b) NODES chunk with node_count == 0 → no root → CORRUPTED_DATA at step 2
-/// of finalizeMemorySnapshotLoad ("Chunked snapshot has no root '/' node").
+/// NODES chunk with node_count == 0 → no root → CORRUPTED_DATA
+/// ("Chunked snapshot has no root '/' node").
 TEST(KeeperChunkedSnapshotValidation, EmptyNodesFrameNoRoot)
 {
     ChangelogDirTest snap_dir("./chunked_val_emptyroot");
@@ -3071,7 +3071,7 @@ TEST(KeeperChunkedSnapshotValidation, EmptyNodesFrameNoRoot)
     ASSERT_NE(buf, nullptr);
 
     // Replace NODES with an empty frame (node_count=0, no nodes at all).
-    // finalizeMemorySnapshotLoad step 2 must reject: no '/' root in container.
+    // Deserialization must reject: no '/' root in container.
     auto tampered = replaceFirstNodesChunk(buf, buildNodesChunkBytes({}));
 
     EXPECT_THROW(
@@ -3080,9 +3080,8 @@ TEST(KeeperChunkedSnapshotValidation, EmptyNodesFrameNoRoot)
         << "Empty NODES frame must be rejected (no '/' root)";
 }
 
-/// (7a) NODES frame has '/' and '/a/b' but is missing '/a'.
-/// updateValueForLoad in finalizeMemorySnapshotLoad step 3 throws CORRUPTED_DATA
-/// because the parent '/a' is absent from the container.
+/// NODES frame has '/' and '/a/b' but is missing '/a'.
+/// Loading must throw CORRUPTED_DATA because the parent '/a' is absent from the container.
 TEST(KeeperChunkedSnapshotValidation, MissingParentInNodesFrame)
 {
     ChangelogDirTest snap_dir("./chunked_val_missingparent");
@@ -3105,7 +3104,7 @@ TEST(KeeperChunkedSnapshotValidation, MissingParentInNodesFrame)
     ASSERT_NE(buf, nullptr);
 
     // Replace NODES with '/' + '/a/b', deliberately omitting '/a'.
-    // When step 3 processes '/a/b', it looks up parent '/a' → not found → CORRUPTED_DATA.
+    // When loading '/a/b', the parent '/a' is not found → CORRUPTED_DATA.
     std::vector<FakeNodeEntry> nodes;
     nodes.push_back(FakeNodeEntry{.path = "/"});     // root present
     nodes.push_back(FakeNodeEntry{.path = "/a/b"});  // child present but parent '/a' absent
@@ -3117,9 +3116,8 @@ TEST(KeeperChunkedSnapshotValidation, MissingParentInNodesFrame)
         << "Missing parent '/a' must be rejected by updateValueForLoad";
 }
 
-/// (7b-over) A node whose declared numChildren is 0 but that has one actual
-/// child.  The inline check in step 3 of finalizeMemorySnapshotLoad must
-/// reject: children.size() > numChildren().
+/// A node whose declared numChildren is 0 but that has one actual child.
+/// Loading must reject because children.size() > numChildren().
 TEST(KeeperChunkedSnapshotValidation, NumChildrenOvercount)
 {
     ChangelogDirTest snap_dir("./chunked_val_overcount");
@@ -3141,7 +3139,7 @@ TEST(KeeperChunkedSnapshotValidation, NumChildrenOvercount)
     ASSERT_NE(buf, nullptr);
 
     // '/' declares numChildren=0 but '/a' is a real child.
-    // Step 3: addChild("a") → children.size()==1 > numChildren()==0 → CORRUPTED_DATA.
+    // addChild("a") → children.size()==1 > numChildren()==0 → CORRUPTED_DATA.
     FakeNodeEntry root;
     root.path         = "/";
     root.num_children = 0;   // under-declares: actual child '/a' will exceed this
@@ -3155,12 +3153,11 @@ TEST(KeeperChunkedSnapshotValidation, NumChildrenOvercount)
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
         DB::Exception)
-        << "numChildren=0 with one actual child must be rejected (over-count check in step 3)";
+        << "numChildren=0 with one actual child must be rejected (children.size() > numChildren())";
 }
 
-/// (7b-under) A node whose declared numChildren is 5 but that has only one
-/// actual child.  The step-4 folded equality check must reject:
-/// out_non_root (1) != out_total_children (5).
+/// A node whose declared numChildren is 5 but that has only one actual child.
+/// The post-load equality check must reject: out_non_root (1) != out_total_children (5).
 TEST(KeeperChunkedSnapshotValidation, NumChildrenUndercount)
 {
     ChangelogDirTest snap_dir("./chunked_val_undercount");
@@ -3182,7 +3179,7 @@ TEST(KeeperChunkedSnapshotValidation, NumChildrenUndercount)
     ASSERT_NE(buf, nullptr);
 
     // '/' over-declares numChildren=5 but only '/a' exists (1 non-root node).
-    // Step 3 passes (1 ≤ 5); step 4 rejects: out_non_root(1) != out_total_children(5).
+    // The per-child check passes (1 ≤ 5); the post-load equality check rejects: out_non_root(1) != out_total_children(5).
     FakeNodeEntry root;
     root.path         = "/";
     root.num_children = 5;   // over-declares: only one actual child
@@ -3196,7 +3193,7 @@ TEST(KeeperChunkedSnapshotValidation, NumChildrenUndercount)
     EXPECT_THROW(
         mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true),
         DB::Exception)
-        << "numChildren=5 with only 1 actual child must be rejected (under-count check in step 4)";
+        << "numChildren=5 with only 1 actual child must be rejected (out_non_root != out_total_children)";
 }
 
 /// (7c) A node whose raw num_children field is -1.
@@ -3344,22 +3341,19 @@ TEST(KeeperChunkedSnapshotValidation, SessionsTrailingBytesRejected)
     }
 }
 
-/// Regression for F1-zstd-frame-completion-not-verified: when a chunked snapshot chunk's
-/// compressed_size is shrunk to exclude the 4-byte ZSTD content-checksum trailer, deserialization
-/// must throw.
+/// Regression: when a chunked snapshot chunk's compressed_size is shrunk to exclude the
+/// 4-byte ZSTD content-checksum trailer, deserialization must throw.
 ///
-/// Context: the C4 streaming decompression rework (F3) replaced the one-shot ZSTD_decompress
-/// path (which required the full ZSTD frame including the checksum) with ZstdInflatingReadBuffer.
-/// The old path rejected a truncated ZSTD frame with ZSTD_error_srcSize_wrong; the new path
-/// silently accepted inner-buffer EOF without checking ZSTD_decompressStream returned 0.
-/// The chunked snapshot header only enforces non-overlap between chunks (not contiguity), so the
+/// The streaming ZstdInflatingReadBuffer path can silently accept inner-buffer EOF without
+/// checking that ZSTD_decompressStream returned 0 (i.e. the full frame was consumed).
+/// The chunked snapshot header only enforces non-overlap between chunks (not contiguity), so
 /// 4 dropped checksum bytes become a legal inter-chunk gap — parseAndValidateChunkedSnapshotHeader
 /// passes, the ZSTD reader decompresses the payload, and the corruption is invisible.
 ///
 /// The fix adds require_frame_complete=true to ZstdInflatingReadBuffer for chunked snapshot reads:
 /// when the inner buffer reaches EOF with ZSTD_decompressStream returning non-zero, we throw.
 /// This test verifies that a tampered NODES chunk (serial and parallel paths) and a tampered
-/// METADATA chunk are both rejected after the fix.
+/// METADATA chunk are both rejected.
 TEST(KeeperChunkedSnapshotValidation, F1ZstdFrameTrailerDropped)
 {
     ChangelogDirTest snap_dir("./chunked_val_f1_trailer");
@@ -3468,7 +3462,7 @@ TEST(KeeperChunkedSnapshotValidation, F1ZstdFrameTrailerDropped)
     }
 }
 
-/// ── C4 tests: digest recalculation and parallel load determinism ──────────────────────────────
+/// ── Digest recalculation and parallel load determinism ────────────────────────────────────────
 
 /// Verify that loading a chunked snapshot that has NO_DIGEST in its METADATA chunk
 /// (serialized with digestEnabled=false) under a digest-enabled KeeperContext
@@ -3653,11 +3647,11 @@ TEST(KeeperChunkedSnapshotParallel, ParallelVsSequential)
         << "Re-serialized buffers must be byte-identical (deterministic chunk order)";
 }
 
-/// Plan test #9: follower `apply_snapshot` of a chunked snapshot buffer replaces committed state and
+/// Follower `apply_snapshot` of a chunked snapshot buffer replaces committed state and
 /// correctly restores ephemerals, ACL usage, and nodes_digest.
 ///
 /// Uses `snapshot_chunk_size=2` to force multiple NODES chunks so the parallel
-/// decompression+parse path (C4) is exercised inside the storage lock.
+/// decompression+parse path is exercised inside the storage lock.
 /// `snapshot_deser_threads=2` is set explicitly on the receiving state machine so
 /// the parallel path runs deterministically regardless of host CPU count.
 TEST(KeeperMemorySnapshotApplyTest, ApplyChunkedSnapshotReplacesCommittedState)

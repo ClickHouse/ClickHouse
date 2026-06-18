@@ -76,7 +76,7 @@ namespace
     /// Sets require_frame_complete=true to verify that ZSTD_decompressStream reaches ret==0
     /// (i.e. the full frame including the 4-byte content-checksum epilogue is consumed).
     /// This restores the integrity guarantee that the superseded one-shot ZSTD_decompress
-    /// path (C3) provided: a corrupt or truncated frame is detected rather than accepted.
+    /// path provided: a corrupt or truncated frame is detected rather than accepted.
     static std::unique_ptr<ReadBuffer> makeChunkReader(const char * data, size_t size)
     {
         auto raw = std::make_unique<ReadBufferFromMemory>(data, size);
@@ -1089,7 +1089,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     , storage_tick_time(storage_tick_time_)
     , keeper_context(keeper_context_)
 {
-    // ── Deserialisation thread pool (C4) ──────────────────────────────────────────────────────
+    // ── Deserialisation thread pool ────────────────────────────────────────────────────────────
     // Compute effective thread count.  0 → auto (clamp(cores/2, 1, 4)); explicit values clamped to [1, 8].
     // Never created under snapshots_lock — pool construction is safe here.
     // RocksDB managers never read chunked snapshots, so the pool is memory-storage-only.
@@ -1105,7 +1105,7 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
         if (deser_threads > 1)
         {
             // shutdown_on_exception=false: a worker exception must not permanently poison
-            // the pool (verified §7.2 / §10 of the design).  wait() rethrows + clears.
+            // the pool; wait() rethrows and clears it.
             deser_pool.emplace(
                 CurrentMetrics::KeeperSnapshotDeserThreads,
                 CurrentMetrics::KeeperSnapshotDeserThreadsActive,
@@ -1512,7 +1512,7 @@ KeeperSnapshotManager<Storage>::deserializeChunkedSnapshotFromBuffer(
 
     const size_t K = nodes_chunks.size();
 
-    // Pre-initialise handles SERIALLY before scheduling any tasks (U1 lifecycle):
+    // Pre-initialise handles serially before scheduling any tasks:
     // beginMemorySnapshotLoad touches storage; workers must never touch storage directly.
     std::vector<MemorySnapshotLoadHandle> handles;
     if (load_full_storage)
@@ -2055,13 +2055,13 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
         {
             // Chunked format: write directly without a compression wrapper; serializeChunkedSnapshot
             // manages its own per-chunk ZSTD compression. After all chunks are written we
-            // capture the total byte count (U3: before seeking back so the metric
-            // reflects the real file size, not the post-seek position), then seek to
+            // capture the total byte count before seeking back so the metric
+            // reflects the real file size, not the post-seek position, then seek to
             // position 0 and overwrite the placeholder header.
             auto * raw_writer = writer.get();
             auto chunks = serializeChunkedSnapshot(snapshot, *raw_writer, keeper_context);
 
-            // U3: capture total bytes BEFORE seeking back to avoid recording the
+            // Capture total bytes BEFORE seeking back to avoid recording the
             // seek-back position (0 + header_size) instead of the real file size.
             const size_t bytes_written = raw_writer->count();
             ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);

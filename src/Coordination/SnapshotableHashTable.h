@@ -333,7 +333,7 @@ public:
     };
 
     // Compile-time guarantee that splice() is O(1): the batch list and the table list share
-    // the same stateless default std::allocator (verified: List = std::list<ListElem> above).
+    // the same stateless default std::allocator (List = std::list<ListElem> above).
     static_assert(
         std::allocator_traits<typename List::allocator_type>::is_always_equal::value,
         "LocalInsertBatch splice requires a stateless, always-equal list allocator");

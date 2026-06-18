@@ -40,7 +40,7 @@ enum SnapshotVersion : uint8_t
     V5 = 5, /// add ZXID and digest to snapshots
     V6 = 6, /// remove is_sequential, per node size, data length
     V7 = 7, /// acl_id narrowed from uint64_t to uint32_t, seq_num widened from int32_t to int64_t
-    V8 = 8, /// chunked independently-compressed ZSTD chunks, parallel-read capable (active from C3; C4 adds parallel per-chunk deserialization)
+    V8 = 8, /// chunked, independently-compressed ZSTD chunks; supports parallel reads and parallel per-chunk deserialization
 };
 
 static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V8;
@@ -309,7 +309,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    /// Thread pool for parallel chunked snapshot deserialization (C4).
+    /// Thread pool for parallel chunked snapshot deserialization.
     /// Pre-created in the constructor (never under snapshots_lock).
     /// Empty when deser_threads == 1 (serial path used instead).
     /// mutable: deserializeChunkedSnapshotFromBuffer is called from const methods.

@@ -48,9 +48,9 @@ enum class SnapshotChunkType : uint8_t
 /// One entry in the chunked snapshot header's chunk table.
 struct SnapshotChunkDescriptor
 {
-    SnapshotChunkType type;
-    uint64_t    compressed_offset; ///< absolute byte offset from the start of the buffer/file
-    uint64_t    compressed_size;   ///< byte length of this independently-compressed ZSTD frame
+    SnapshotChunkType type = SnapshotChunkType::METADATA;
+    uint64_t    compressed_offset = 0; ///< absolute byte offset from the start of the buffer/file
+    uint64_t    compressed_size = 0;   ///< byte length of this independently-compressed ZSTD frame
 };
 
 /// Compute the header byte size for a given number of chunks.
@@ -64,8 +64,6 @@ constexpr size_t chunkedSnapshotHeaderSize(uint64_t chunk_count) noexcept
 /// `buf` must point to at least chunkedSnapshotHeaderSize(chunks.size()) writable bytes.
 /// The chunk descriptors must already contain valid type/offset/size values.
 /// Values are stored in native byte order (no byte-swapping is applied).
-/// Homogeneous-architecture cluster assumption: all Keeper nodes must share the same
-/// CPU architecture, so the binary format is read back with matching native byte order.
 void packChunkedSnapshotHeader(std::span<const SnapshotChunkDescriptor> chunks, char * buf) noexcept;
 
 /// Parse a chunked snapshot header from `buf` and return the chunk descriptors.
@@ -77,10 +75,5 @@ void packChunkedSnapshotHeader(std::span<const SnapshotChunkDescriptor> chunks, 
 /// `buf_size` is the total number of bytes in the buffer (header + all chunk data).
 /// The function validates all chunk descriptors against `buf_size` before returning.
 std::vector<SnapshotChunkDescriptor> parseAndValidateChunkedSnapshotHeader(const char * buf, size_t buf_size);
-
-/// Static assertions for layout correctness.
-static_assert(chunkedSnapshotHeaderSize(0) == 13,  "chunkedSnapshotHeaderSize(0) must equal 13 (4+1+8)");
-static_assert(chunkedSnapshotHeaderSize(1) == 30,  "chunkedSnapshotHeaderSize(1) must equal 30 (13+17)");
-static_assert(chunkedSnapshotHeaderSize(3) == 64,  "chunkedSnapshotHeaderSize(3) must equal 64 (13+51)");
 
 } // namespace DB
