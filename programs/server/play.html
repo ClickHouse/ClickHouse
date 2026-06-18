@@ -382,7 +382,7 @@
         .tab-close
         {
             line-height: 1;
-            font-size: 1.1em;
+            font-size: 1em; /* same size as the [+] glyph, so the two align vertically */
             padding: 0 0.15rem;
             color: var(--misc-text-color);
             flex-shrink: 0; /* never shrink the close icon */
@@ -400,6 +400,10 @@
         {
             flex-shrink: 0;
             align-self: flex-end;
+            /* Center the [+] glyph so it lines up vertically with each tab's close [x]. */
+            display: flex;
+            align-items: center;
+            justify-content: center;
             padding: 0.25rem 0.6rem;
             cursor: pointer;
             font-weight: bold;
