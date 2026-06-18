@@ -783,7 +783,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     /// If the function has a NULLS modifier (IGNORE NULLS / RESPECT NULLS), we must always print
     /// parentheses, otherwise the modifier cannot be parsed back (e.g. `count IGNORE NULLS` is not parseable).
     bool has_nulls_action = getNullsAction() != NullsAction::EMPTY;
-    bool need_parens = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action;
+    /// A window function must always print parentheses too: the grammar requires `f() OVER (...)`,
+    /// so a no-argument one like `cume_dist() OVER (...)` re-parses as a bare identifier `cume_dist`
+    /// followed by `OVER` if the `()` is dropped, breaking the format-parse round-trip.
+    bool need_parens = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action || isWindowFunction();
 
     if (need_parens)
         ostr << '(';

@@ -1,0 +1,8 @@
+CREATE TABLE t (`c0` Int CODEC(cume_dist() OVER (ORDER BY x ASC, b DESC), NONE)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int CODEC(rank() OVER (ORDER BY x ASC), NONE)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int CODEC(row_number() OVER (PARTITION BY y), NONE)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int CODEC(dense_rank() OVER w, NONE)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int CODEC(lagInFrame(c0) OVER (ORDER BY x ASC), NONE)) ENGINE = MergeTree ORDER BY c0
+CREATE TABLE t (`c0` Int CODEC(Delta, NONE)) ENGINE = MergeTree ORDER BY c0
+SELECT cume_dist() OVER (ORDER BY number ASC) FROM numbers(3)
+SELECT count() OVER (ORDER BY number ASC) FROM numbers(3)
