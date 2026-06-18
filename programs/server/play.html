@@ -305,13 +305,14 @@
             cursor: text;
         }
 
-        .tab-title-input
+        /* While editing, let the title grow with its content instead of being clipped
+           to an ellipsis, and remove the focus outline. */
+        .tab-title.editing
         {
-            font: inherit;
-            min-width: 2ch;
-            padding: 0;
-            border: none;
-            background: transparent;
+            overflow: visible;
+            text-overflow: clip;
+            min-width: 1ch;
+            outline: none;
             color: var(--text-color-active);
         }
 
@@ -3557,55 +3558,42 @@ function closeTab(id) {
     scheduleSave();
 }
 
-/// Begin inline editing of the active tab's title.
+/// Begin inline editing of the active tab's title. The title `span` itself becomes
+/// editable (rather than swapping in an `input`), so it grows with its content and the
+/// tab width does not jump when editing starts.
 function startTitleEdit(tab, titleEl) {
-    const input = document.createElement('input');
-    input.className = 'tab-title-input';
-    input.value = tab.title;
-    titleEl.replaceWith(input);
+    titleEl.contentEditable = 'true';
+    titleEl.spellcheck = false;
+    titleEl.classList.add('editing');
 
-    /// Grow/shrink the input to fit its text, measuring with a hidden span that copies
-    /// the input's typography so the width is accurate for the proportional tab font.
-    const autosize = () => {
-        const meas = document.createElement('span');
-        const cs = getComputedStyle(input);
-        meas.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;padding:0;';
-        meas.style.fontFamily = cs.fontFamily;
-        meas.style.fontSize = cs.fontSize;
-        meas.style.fontWeight = cs.fontWeight;
-        meas.style.fontStyle = cs.fontStyle;
-        meas.style.letterSpacing = cs.letterSpacing;
-        meas.textContent = input.value || ' ';
-        document.body.appendChild(meas);
-        /// box-sizing is border-box, so the width must include padding + border, plus a
-        /// couple of pixels of slack for the caret and rounding.
-        const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-        const bord = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
-        input.style.width = Math.ceil(meas.offsetWidth + pad + bord + 3) + 'px';
-        meas.remove();
-    };
-    autosize();
-    input.addEventListener('input', autosize);
-    input.focus();
-    input.select();
+    /// Select the whole title for easy replacement.
+    const range = document.createRange();
+    range.selectNodeContents(titleEl);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    titleEl.focus();
 
     let done = false;
     const commit = (save) => {
         if (done) return;
         done = true;
         if (save) {
-            const v = input.value.trim();
+            /// Collapse any pasted newlines/runs of whitespace into single spaces.
+            const v = titleEl.textContent.replace(/\s+/g, ' ').trim();
             if (v) tab.title = v;
         }
-        renderTabBar();
+        renderTabBar();   /// rebuilds the bar, replacing this editable span with a static one
         syncHistory();
         scheduleSave();
     };
-    input.addEventListener('keydown', (e) => {
+    titleEl.addEventListener('keydown', (e) => {
+        /// Keep keys (Space/Enter) from reaching the tab-level switch handler.
+        e.stopPropagation();
         if (e.key === 'Enter') { e.preventDefault(); commit(true); }
         else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
     });
-    input.addEventListener('blur', () => commit(true));
+    titleEl.addEventListener('blur', () => commit(true));
 }
 
 /// Rebuild the whole tab bar. Cheap (few nodes) so we never diff.
