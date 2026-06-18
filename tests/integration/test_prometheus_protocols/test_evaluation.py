@@ -1,7 +1,9 @@
+import json
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import tsv_close_to
+from helpers.test_tools import TSV, tsv_close_to
 from .prometheus_test_utils import *
 
 
@@ -437,7 +439,12 @@ def do_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert execute_query_in_prometheus(query, timestamp) == result
+    actual_prometheus_result = execute_query_in_prometheus(query, timestamp)
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), (
+        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
+    )
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to(
@@ -446,8 +453,51 @@ def do_query_test(
 
     actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
     assert (
-        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        http_api_response_close_to(
+            actual_result_from_http_api, actual_prometheus_result, eps=eps
+        )
         == clickhouse_http_api_result_is_same_as_prometheus
+    ), (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, "
+        f"prometheus_result: {actual_prometheus_result}"
+    )
+
+
+def _result_with_series_sorted(response):
+    data = json.loads(response)
+    if data.get("resultType") in ("vector", "matrix"):
+        data["result"].sort(
+            key=lambda series: json.dumps(series.get("metric", {}), sort_keys=True)
+        )
+    return data
+
+
+# Evaluates a query whose Prometheus vector/matrix series order is nondeterministic.
+def do_unordered_query_test(query, timestamp, result, chresult):
+    expected_result = _result_with_series_sorted(result)
+    assert (
+        _result_with_series_sorted(execute_query_in_prometheus_reader(query, timestamp))
+        == expected_result
+    )
+    assert (
+        _result_with_series_sorted(
+            execute_query_in_prometheus_receiver(query, timestamp)
+        )
+        == expected_result
+    )
+
+    actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
+    actual_chresult_sorted = TSV(actual_chresult)
+    actual_chresult_sorted.lines.sort()
+    expected_chresult_sorted = TSV(chresult)
+    expected_chresult_sorted.lines.sort()
+    assert (
+        actual_chresult_sorted == expected_chresult_sorted
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
+
+    actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
+    assert (
+        _result_with_series_sorted(actual_result_from_http_api) == expected_result
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
@@ -482,8 +532,13 @@ def do_range_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert (
-        execute_range_query_in_prometheus(query, start_time, end_time, step) == result
+    actual_prometheus_result = execute_range_query_in_prometheus(
+        query, start_time, end_time, step
+    )
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), (
+        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
     )
 
     actual_chresult = execute_range_query_in_clickhouse_sql(
@@ -497,9 +552,14 @@ def do_range_query_test(
         query, start_time, end_time, step
     )
     assert (
-        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        http_api_response_close_to(
+            actual_result_from_http_api, actual_prometheus_result, eps=eps
+        )
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+    ), (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, "
+        f"prometheus_result: {actual_prometheus_result}"
+    )
 
 
 # Evaluates a query in ClickHouse only (no comparison with Prometheus) and checks the result.
@@ -521,6 +581,29 @@ def do_clickhouse_only_query_test(
     assert http_api_response_close_to(
         actual_result_from_http_api, result, eps=eps
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
+def do_clickhouse_only_query_test_expect_error(query, timestamp, expected_cherror):
+    assert expected_cherror in execute_query_in_clickhouse_sql(
+        query, timestamp, expect_error=True
+    )
+    assert expected_cherror in execute_query_in_clickhouse_http_api(
+        query, timestamp, expect_error=True
+    )
+
+
+def test_native_promql_error_paths():
+    do_clickhouse_only_query_test_expect_error(
+        "sort(test)",
+        130,
+        "Function sort is not implemented",
+    )
+
+    do_clickhouse_only_query_test_expect_error(
+        "day_of_week(test, test)",
+        130,
+        "Function 'day_of_week' expects 1 arguments, but was called with 2 arguments",
+    )
 
 
 def test_up():
@@ -642,6 +725,35 @@ def test_instant_selectors():
                 "[('__name__','test')]",
                 "1970-01-01 00:02:11.000",
                 "3",
+            ]
+        ],
+    )
+
+
+def test_timestamp_modifier_fixed_evaluation_time():
+    do_query_test(
+        "test @ 130",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "3"]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "1970-01-01 00:04:10.000",
+                "3",
+            ]
+        ],
+    )
+
+    do_range_query_test(
+        "last_over_time(test[45s] @ 130)",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "3"], [190, "3"], [250, "3"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:10.000',3),('1970-01-01 00:03:10.000',3),('1970-01-01 00:04:10.000',3)]",
             ]
         ],
     )
@@ -2928,6 +3040,216 @@ def test_aggregation_operators():
             ["[('size','s')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:20.000',1)]"],
             ["[('size','xl')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]"],
         ],
+    )
+
+    # Behavior: without explicit grouping, Prometheus outputs only the generated value label
+    # and counts equal sample values across all input series.
+    do_unordered_query_test(
+        "count_values(\"value\", foo)",
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"value": "16"}, "value": [110, "1"]}, {"metric": {"value": "4"}, "value": [110, "1"]}, {"metric": {"value": "8"}, "value": [110, "1"]}]}',
+        [
+            ["[('value','16')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','4')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','8')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", {__name__=~"foo|bar"})',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"value": "10"}, "value": [110, "1"]}, {"metric": {"value": "16"}, "value": [110, "1"]}, {"metric": {"value": "3"}, "value": [110, "1"]}, {"metric": {"value": "4"}, "value": [110, "1"]}, {"metric": {"value": "8"}, "value": [110, "2"]}, {"metric": {"value": "9"}, "value": [110, "1"]}]}',
+        [
+            ["[('value','10')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','16')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','3')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','4')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','8')]", "1970-01-01 00:01:50.000", 2],
+            ["[('value','9')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
+    # Behavior: Prometheus appends the generated value label to `by` grouping so both
+    # the requested grouping label and generated value label appear.
+    do_unordered_query_test(
+        'count_values("value", foo) by (shape)',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "value": "16"}, "value": [110, "1"]}, {"metric": {"shape": "square", "value": "4"}, "value": [110, "1"]}, {"metric": {"shape": "triangle", "value": "8"}, "value": [110, "1"]}]}',
+        [
+            ["[('shape','circle'),('value','16')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','square'),('value','4')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','triangle'),('value','8')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
+    # Behavior: Prometheus overwrites the input label with the generated sample-value
+    # label before grouping when the generated label name already exists.
+    do_unordered_query_test(
+        'count_values("shape", {__name__=~"foo|bar"}) by (shape)',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "10"}, "value": [110, "1"]}, {"metric": {"shape": "16"}, "value": [110, "1"]}, {"metric": {"shape": "3"}, "value": [110, "1"]}, {"metric": {"shape": "4"}, "value": [110, "1"]}, {"metric": {"shape": "8"}, "value": [110, "2"]}, {"metric": {"shape": "9"}, "value": [110, "1"]}]}',
+        [
+            ["[('shape','10')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','16')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','3')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','4')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','8')]", "1970-01-01 00:01:50.000", 2],
+            ["[('shape','9')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
+    do_unordered_query_test(
+        '(count_values("value", last_over_time(foo[1s])))[20:10]',
+        130,
+        '{"resultType": "matrix", "result": [{"metric": {"value": "16"}, "values": [[130, "1"]]}, {"metric": {"value": "40"}, "values": [[130, "1"]]}, {"metric": {"value": "80"}, "values": [[120, "1"]]}]}',
+        [
+            ["[('value','16')]", "[('1970-01-01 00:02:10.000',1)]"],
+            ["[('value','40')]", "[('1970-01-01 00:02:10.000',1)]"],
+            ["[('value','80')]", "[('1970-01-01 00:02:00.000',1)]"],
+        ],
+    )
+
+    # Behavior: Prometheus re-evaluates `count_values` at each range/subquery step,
+    # so generated label values can vary per timestamp.
+    do_unordered_query_test(
+        '(count_values("value", vector(time())))[40s:10s]',
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {"value": "150"}, "values": [[150, "1"]]}, {"metric": {"value": "160"}, "values": [[160, "1"]]}, {"metric": {"value": "170"}, "values": [[170, "1"]]}, {"metric": {"value": "180"}, "values": [[180, "1"]]}]}',
+        [
+            ["[('value','150')]", "[('1970-01-01 00:02:30.000',1)]"],
+            ["[('value','160')]", "[('1970-01-01 00:02:40.000',1)]"],
+            ["[('value','170')]", "[('1970-01-01 00:02:50.000',1)]"],
+            ["[('value','180')]", "[('1970-01-01 00:03:00.000',1)]"],
+        ],
+    )
+
+    do_unordered_query_test(
+        "count_values(\"value\", foo) without (shape)",
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"size": "l", "value": "16"}, "value": [130, "1"]}, {"metric": {"size": "m", "value": "80"}, "value": [130, "1"]}, {"metric": {"size": "s", "value": "40"}, "value": [130, "1"]}]}',
+        [
+            ["[('size','l'),('value','16')]", "1970-01-01 00:02:10.000", 1],
+            ["[('size','m'),('value','80')]", "1970-01-01 00:02:10.000", 1],
+            ["[('size','s'),('value','40')]", "1970-01-01 00:02:10.000", 1],
+        ],
+    )
+
+    # Behavior: Prometheus inserts the generated value label before `without`, so
+    # `without(value)` removes it and can collapse different sample values into one group.
+    do_unordered_query_test(
+        'count_values("value", {__name__=~"foo|bar"}) without (value)',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "size": "l"}, "value": [110, "2"]}, {"metric": {"shape": "rectangle", "size": "l"}, "value": [110, "1"]}, {"metric": {"shape": "square", "size": "s"}, "value": [110, "2"]}, {"metric": {"shape": "triangle", "size": "m"}, "value": [110, "1"]}, {"metric": {"shape": "triangle", "size": "xl"}, "value": [110, "1"]}]}',
+        [
+            ["[('shape','circle'),('size','l')]", "1970-01-01 00:01:50.000", 2],
+            ["[('shape','rectangle'),('size','l')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','square'),('size','s')]", "1970-01-01 00:01:50.000", 2],
+            ["[('shape','triangle'),('size','m')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','triangle'),('size','xl')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
+    # Behavior: Prometheus removes `__name__` from `without` grouping keys
+    # even when `__name__` is the `count_values` destination label. The generated
+    # metric name does not keep sample-value buckets split; results collapse by
+    # the remaining labels instead.
+    do_unordered_query_test(
+        'count_values("__name__", {__name__=~"foo|bar"}) without (shape)',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [110, "3"]}, {"metric": {"size": "m"}, "value": [110, "1"]}, {"metric": {"size": "s"}, "value": [110, "2"]}, {"metric": {"size": "xl"}, "value": [110, "1"]}]}',
+        [
+            ["[('size','l')]", "1970-01-01 00:01:50.000", 3],
+            ["[('size','m')]", "1970-01-01 00:01:50.000", 1],
+            ["[('size','s')]", "1970-01-01 00:01:50.000", 2],
+            ["[('size','xl')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
+    do_unordered_query_test(
+        "count_values(\"size\", foo) without (shape)",
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"size": "16"}, "value": [130, "1"]}, {"metric": {"size": "40"}, "value": [130, "1"]}, {"metric": {"size": "80"}, "value": [130, "1"]}]}',
+        [
+            ["[('size','16')]", "1970-01-01 00:02:10.000", 1],
+            ["[('size','40')]", "1970-01-01 00:02:10.000", 1],
+            ["[('size','80')]", "1970-01-01 00:02:10.000", 1],
+        ],
+    )
+
+    # Behavior: Prometheus formats generated label values with Go
+    # `strconv.FormatFloat(value, 'f', -1, 64)`.
+    do_unordered_query_test(
+        'count_values("value", vector(1.5))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "1.5"}, "value": [120, "1"]}]}',
+        [["[('value','1.5')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(-0))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "-0"}, "value": [120, "1"]}]}',
+        [["[('value','-0')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(+Inf))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "+Inf"}, "value": [120, "1"]}]}',
+        [["[('value','+Inf')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(-Inf))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "-Inf"}, "value": [120, "1"]}]}',
+        [["[('value','-Inf')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(NaN))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "NaN"}, "value": [120, "1"]}]}',
+        [["[('value','NaN')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(0.0000001))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "0.0000001"}, "value": [120, "1"]}]}',
+        [["[('value','0.0000001')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(1e21))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "1000000000000000000000"}, "value": [120, "1"]}]}',
+        [["[('value','1000000000000000000000')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # Behavior: Prometheus returns an empty vector for empty input.
+    do_unordered_query_test(
+        'count_values("value", nonexistent_metric)',
+        120,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: current Prometheus validates aggregation value-label names with UTF-8
+    # rules, so legacy-invalid names like `~value` are accepted.
+    do_query_test(
+        'count_values("~value", vector(1))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"~value": "1"}, "value": [120, "1"]}]}',
+        [["[('~value','1')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # Behavior: Prometheus rejects an empty generated label name.
+    do_query_test_expect_error(
+        'count_values("", vector(1))',
+        120,
+        "invalid label name",
+        "invalid label name",
     )
 
     do_query_test(

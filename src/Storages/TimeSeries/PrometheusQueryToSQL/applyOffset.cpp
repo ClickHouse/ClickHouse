@@ -72,7 +72,7 @@ namespace
                     new_timestamp = makeASTFunction(
                         "plus",
                         make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value)));
+                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value.value)));
                 }
                 else
                 {
@@ -105,7 +105,8 @@ namespace
     SQLQueryPiece setEvaluationTime(const PQT::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
     {
         /// <expression> is expected to be calculated at a fixed evaluation time.
-        if (expression.start_time != expression.end_time)
+        const auto expression_range = context.node_range_getter.get(offset_node->getExpression());
+        if (expression_range.start_time != expression_range.end_time)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Expression {} is expected to be calculated at a fixed evaluation time",
@@ -175,33 +176,9 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group,
-                ///        arrayJoin(timeSeriesRange(<start_time>, <end_time>, <step>)) AS timestamp,
-                ///        value
-                /// FROM <raw_data>
-                SelectQueryBuilder builder;
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-                auto new_timestamp = makeASTFunction(
-                    "arrayJoin",
-                    makeASTFunction(
-                        "timeSeriesRange",
-                        timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
-                        timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
-                        timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)));
-
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-
-                auto & subqueries = context.subqueries;
-                subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
-                builder.from_table = subqueries.back().name;
-
-                expression.select_query = builder.getSelectQuery();
-
+                /// `NodeEvaluationRangeGetter` has already planned the child range selector at the fixed evaluation time.
+                /// Keep raw sample timestamps unchanged here so range-vector functions can aggregate that fixed window first
+                /// and then repeat the resulting value across the outer query grid.
                 return std::move(expression);
             }
         }
