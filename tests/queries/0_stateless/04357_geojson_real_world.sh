@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 # Reads real-world public-domain GeoJSON datasets and exercises the parsed geometries with the geo
 # functions, so the test proves the geometry values are correct and usable, not merely parseable.
