@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class SerializationUUID final : public SimpleTextSerialization
+class SerializationUUID : public SimpleTextSerialization
 {
 private:
     SerializationUUID() = default;

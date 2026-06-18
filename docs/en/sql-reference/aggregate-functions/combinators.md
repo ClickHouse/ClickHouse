@@ -7,6 +7,8 @@ title: 'Aggregate Function Combinators'
 doc_type: 'reference'
 ---
 
+# Aggregate function combinators
+
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
 ## -If {#-if}
@@ -81,11 +83,15 @@ The value of an aggregate function with the `SimpleAggregateFunction(...)` type.
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─toTypeName(c)────────────────────────┬─c─┐
 │ SimpleAggregateFunction(any, UInt64) │ 0 │
 └──────────────────────────────────────┴───┘
@@ -150,11 +156,15 @@ Type depends on the aggregate function used.
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─avg(number)─┬─avgOrDefault(number)─┐
 │         nan │                    0 │
 └─────────────┴──────────────────────┘
@@ -162,7 +172,9 @@ SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 
 Also `-OrDefault` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT avgOrDefaultIf(x, x > 10)
 FROM
 (
@@ -170,7 +182,9 @@ FROM
 )
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─avgOrDefaultIf(x, greater(x, 10))─┐
 │                              0.00 │
 └───────────────────────────────────┘
@@ -205,11 +219,15 @@ Type: `Nullable(aggregate function return type)`.
 
 Add `-orNull` to the end of aggregate function.
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
 │              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
 └───────────────────┴───────────────────────────────┘
@@ -217,7 +235,9 @@ SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE n
 
 Also `-OrNull` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT avgOrNullIf(x, x > 10)
 FROM
 (
@@ -225,7 +245,9 @@ FROM
 )
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─avgOrNullIf(x, greater(x, 10))─┐
 │                           ᴺᵁᴸᴸ │
 └────────────────────────────────┘
