@@ -496,7 +496,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     maybeLaunchAhead();
 
-    return chain;
+    return decryptWindow(std::move(chain));
 }
 
 void ReaderExecutor::seek(size_t new_position)
@@ -679,6 +679,24 @@ void ReaderExecutor::decryptInPlace(
     StatTimer decrypt_scope(stats, Stats::DecryptMicroseconds);
     decryptor.decrypt(data, size, logical_offset);
 #endif
+}
+
+ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
+{
+    /// Without encryption (or without SSL) this short-circuits and the served
+    /// window is returned untouched - zero-copy for the plaintext path.
+    if (!needsDecryption() || cipher.empty())
+        return std::move(cipher);
+
+    ChainedBuffers plain;
+    for (const auto & node : cipher.getNodes())
+    {
+        auto block = std::make_shared<OwnedChainedBuffer>(node.size);
+        std::memcpy(block->data(), node.data(), node.size);
+        decryptInPlace(block->data(), node.size, node.logical_offset);
+        plain.append(ChainedBufferNode{block, 0, node.size, node.logical_offset});
+    }
+    return plain;
 }
 
 size_t ReaderExecutor::totalSize() const

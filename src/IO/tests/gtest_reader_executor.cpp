@@ -927,11 +927,10 @@ namespace
         return file_bytes;
     }
 
-    /// Read the whole file through the executor and decrypt each served node via
-    /// decryptInPlace - mirrors how PipelineReadBuffer consumes encrypted reads
-    /// now that the executor returns ciphertext (logical offsets) and decryption
-    /// is deferred to the consumer.
-    String readAllDecrypted(ReaderExecutor & executor)
+    /// Read the whole file through the executor and concatenate the served
+    /// nodes. The executor serves plaintext - it decrypts each window inside
+    /// `readNextWindow` - so the consumer just copies the bytes out.
+    String readAll(ReaderExecutor & executor)
     {
         String result;
         while (true)
@@ -940,23 +939,18 @@ namespace
             if (w.empty())
                 break;
             for (const auto & n : w.getNodes())
-            {
-                String chunk(n.data(), n.size);
-                if (executor.needsDecryption())
-                    executor.decryptInPlace(chunk.data(), chunk.size(), n.logical_offset);
-                result += chunk;
-            }
+                result.append(n.data(), n.size);
         }
         return result;
     }
 }
 
-TEST(ReaderExecutor, DecryptInPlaceAcrossMultipleNodes)
+TEST(ReaderExecutor, DecryptsMultiNodeWindow)
 {
-    /// End-to-end exercise of `decryptInPlace` over a multi-node window: the
-    /// executor returns ciphertext (logical offsets) and the consumer decrypts
-    /// each served node. Plaintext is larger than CHAINED_BUFFER_BLOCK_SIZE (and a
-    /// non-multiple total) so several nodes, including a partial tail, are decrypted.
+    /// End-to-end: the executor serves plaintext over a multi-node window
+    /// (`readNextWindow` decrypts each node at its logical offset). Plaintext is
+    /// larger than CHAINED_BUFFER_BLOCK_SIZE (and a non-multiple total) so several
+    /// nodes, including a partial tail, are decrypted.
 
     String key(16, 'k');
     FileEncryption::InitVector iv(UInt128{0x0123456789abcdefULL});
@@ -974,8 +968,8 @@ TEST(ReaderExecutor, DecryptInPlaceAcrossMultipleNodes)
     objects.emplace_back("obj", "", file_bytes.size());
 
     /// Window larger than the plaintext so the entire file is read in one
-    /// readNextWindow call — the >3 MiB ciphertext is served as several nodes,
-    /// each decrypted by decryptInPlace (3 full blocks + 1 partial).
+    /// readNextWindow call — the >3 MiB payload is served as several plaintext
+    /// nodes (3 full blocks + 1 partial), each decrypted at its logical offset.
     ReaderExecutor::Options executor_options;
     executor_options.window_size = plaintext_size + ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
     ReaderExecutor executor(source, objects, {}, executor_options);
@@ -988,7 +982,7 @@ TEST(ReaderExecutor, DecryptInPlaceAcrossMultipleNodes)
         });
     executor.initDecryption();
 
-    String result = readAllDecrypted(executor);
+    String result = readAll(executor);
 
     ASSERT_EQ(result.size(), plaintext.size());
     EXPECT_EQ(result, plaintext);
@@ -1034,7 +1028,7 @@ TEST(ReaderExecutor, EncryptedEofReleasesLongConnectionSlot)
     EXPECT_EQ(long_connection_limit->getActiveCount(), 0u);
 }
 
-TEST(ReaderExecutor, DecryptInPlaceSmallPayload)
+TEST(ReaderExecutor, DecryptsSmallPayload)
 {
     /// Same path but payload smaller than CHAINED_BUFFER_BLOCK_SIZE — exercises the
     /// single-iteration loop.
@@ -1056,11 +1050,11 @@ TEST(ReaderExecutor, DecryptInPlaceSmallPayload)
         [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
-    String result = readAllDecrypted(executor);
+    String result = readAll(executor);
     EXPECT_EQ(result, plaintext);
 }
 
-TEST(ReaderExecutor, DecryptInPlaceMultiLayer)
+TEST(ReaderExecutor, DecryptsMultiLayer)
 {
     /// Two encryption layers stacked, in the layout that a legacy
     /// `DiskEncrypted`-over-`DiskEncrypted` configuration actually
@@ -1071,8 +1065,8 @@ TEST(ReaderExecutor, DecryptInPlaceMultiLayer)
     /// The outer encryption keystream covers the inner header AND payload
     /// — i.e. outer's keystream offset for user-byte P is `P + 64`, while
     /// inner's is `P`. `initDecryption` must peel the outer layer off the
-    /// inner header bytes before parsing them; `decryptInPlace` must apply
-    /// per-layer keystream offsets to recover the plaintext.
+    /// inner header bytes before parsing them; the executor's per-layer
+    /// keystream offsets must recover the plaintext.
 
     String key_inner(16, 'i');
     String key_outer(16, 'o');
@@ -1143,7 +1137,7 @@ TEST(ReaderExecutor, DecryptInPlaceMultiLayer)
         [&](UInt128, const String &) { return key_inner; });
     executor.initDecryption();
 
-    String result = readAllDecrypted(executor);
+    String result = readAll(executor);
     ASSERT_EQ(result.size(), plaintext.size());
     EXPECT_EQ(result, plaintext);
 }
@@ -1230,7 +1224,6 @@ TEST(ReaderExecutorDecryptor, ConcurrentDecryptIsReentrant)
         threads.emplace_back([&, t]
         {
             const size_t off = t * chunk_size;
-            String chunk = ciphertext.substr(off, chunk_size);
             start.arrive_and_wait();
             /// Decrypt many times to widen the race window.
             for (int rep = 0; rep < 64; ++rep)
@@ -2291,10 +2284,7 @@ TEST(ReaderExecutor, ReadBigAtBoundsLongConnectionOnEncryptedFile)
             break;
         for (const auto & n : chain.getNodes())
         {
-            String chunk(n.data(), n.size);
-            if (transient->needsDecryption())
-                transient->decryptInPlace(chunk.data(), chunk.size(), n.logical_offset);
-            got += chunk;
+            got.append(n.data(), n.size);
             total += n.size;
         }
     }

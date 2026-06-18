@@ -154,10 +154,6 @@ size_t PipelineReadBuffer::readBigAt(
                 break;
             const size_t copy = std::min(node.size, want - total_copied);
             std::memcpy(to + total_copied, node.data(), copy);
-            /// The transient returns encrypted bytes (decryption is deferred to
-            /// the consumer); decrypt the copied prefix at its logical offset.
-            if (sub->needsDecryption())
-                sub->decryptInPlace(to + total_copied, copy, node.logical_offset);
             total_copied += copy;
         }
 
@@ -204,22 +200,10 @@ bool PipelineReadBuffer::nextImpl()
             chain.range().offset, chain.range().end(), chain.getNodes().size());
     }
 
+    /// The executor serves plaintext (it decrypts each window in `readNextWindow`),
+    /// so the span is exposed directly - no copy, no decrypt on the read path.
     auto span = chain.peek();
-    if (executor->needsDecryption())
-    {
-        /// Decrypt only the span we are about to serve - read-ahead/prefetched
-        /// bytes never peeked are never decrypted. Decrypt into a scratch buffer
-        /// so the chain stays encrypted and a rewind that re-serves this span
-        /// re-decrypts it cleanly (CTR is position-addressable).
-        decrypt_buf.resize(span.size);
-        std::memcpy(decrypt_buf.data(), span.data, span.size);
-        executor->decryptInPlace(decrypt_buf.data(), span.size, span.logical_offset);
-        internal_buffer = Buffer(decrypt_buf.data(), decrypt_buf.data() + span.size);
-    }
-    else
-    {
-        internal_buffer = Buffer(span.data, span.data + span.size);
-    }
+    internal_buffer = Buffer(span.data, span.data + span.size);
     working_buffer = internal_buffer;
     pos = working_buffer.begin();
     read_position = span.logical_offset + span.size;

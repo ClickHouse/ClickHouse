@@ -57,10 +57,6 @@ private:
     /// `getPosition()` subtracts `available()` to get the caller's
     /// current read position.
     size_t read_position = 0;
-    /// Scratch buffer holding the decrypted copy of the span currently served
-    /// (encrypted sources only). The chain's bytes stay encrypted, so a rewind
-    /// re-serves and re-decrypts correctly - we never decrypt in place.
-    Memory<> decrypt_buf;
     LoggerPtr log = getLogger("PipelineReadBuffer");
 };
 

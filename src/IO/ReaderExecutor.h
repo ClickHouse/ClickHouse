@@ -151,15 +151,6 @@ public:
     /// before any read; no-op when no layers / no SSL.
     void initDecryption();
 
-    /// Whether served payload must be decrypted on consume (by
-    /// `PipelineReadBuffer` via `decryptInPlace`).
-    bool needsDecryption() const { return data_start_offset > 0; }
-
-    /// Decrypt in place at `logical_offset` via the reentrant `decryptor`; CTR
-    /// is position-addressable, so the consumer decrypts only the chunk it
-    /// serves. Safe to call from a worker concurrently with the foreground.
-    void decryptInPlace(char * data, size_t size, size_t logical_offset);
-
     // ─── Introspection ───────────────────────────────────────────────────
 
     size_t getPosition() const { return position; }
@@ -503,6 +494,21 @@ private:
     };
 
     // ─── Window serve path ───────────────────────────────────────────────
+
+    /// Whether served payload is encrypted (`data_start_offset` is the header
+    /// size, 0 when there is no encryption / no SSL).
+    bool needsDecryption() const { return data_start_offset > 0; }
+
+    /// Return a plaintext copy of `cipher` (or `cipher` unchanged when there is
+    /// nothing to decrypt). Each node is copied into a fresh `OwnedChainedBuffer`
+    /// and decrypted at its `logical_offset` - never in place, since the served
+    /// nodes alias live page-cache / cache cells. CTR is position-addressable, so
+    /// per-node decryption at each node's logical offset is exact.
+    ChainedBuffers decryptWindow(ChainedBuffers && cipher);
+
+    /// Decrypt `data` in place at `logical_offset` via the reentrant `decryptor`.
+    /// Safe to call from a worker concurrently with the foreground.
+    void decryptInPlace(char * data, size_t size, size_t logical_offset);
 
     /// Streams a granular block of a resident run straight from the plan's held cache
     /// readers; `serveHitStep` calls it to serve a resident cursor step.
