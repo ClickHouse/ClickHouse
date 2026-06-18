@@ -1170,7 +1170,7 @@ void TestKeeper::list(
     request.with_data = with_data;
 
     RequestInfo request_info;
-    request_info.request = std::make_shared<TestKeeperListRequest>(std::move(request));
+    request_info.request = std::make_shared<TestKeeperFilteredListWithStatsAndDataRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
     request_info.watch = watch;
     pushRequest(std::move(request_info));
