@@ -50,6 +50,11 @@ namespace CurrentMetrics
     extern const Metric HashJoinDecompressedColumnsCacheCells;
 }
 
+namespace ProfileEvents
+{
+    extern const Event JoinInMemoryCompressedColumns;
+}
+
 namespace DB
 {
 
@@ -678,6 +683,7 @@ ColumnPtr compressColumnIfWorthwhile(const ColumnPtr & column, bool & compressed
     if (compressed->allocatedBytes() * 10 <= column->byteSize() * 9)
     {
         compressed_any = true;
+        ProfileEvents::increment(ProfileEvents::JoinInMemoryCompressedColumns);
         return compressed;
     }
     return column->cloneResized(column->size());

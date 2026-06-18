@@ -395,6 +395,7 @@
     M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.", ValueType::Bytes) \
+    M(JoinInMemoryCompressedColumns, "Number of right-side join columns kept compressed in memory under memory pressure by enable_join_in_memory_compression.", ValueType::Number) \
     \
     M(IcebergPartitionPrunedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
     M(IcebergTrivialCountOptimizationApplied, "Trivial count optimization applied while reading from Iceberg", ValueType::Number) \
