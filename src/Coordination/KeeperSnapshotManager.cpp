@@ -1751,66 +1751,6 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
     return result;
 }
 
-/// Drain and validate the tail of the METADATA chunk (everything after snapshot_meta):
-/// zxid, digest, session_id_counter, and ACL map — values are discarded.
-/// Throws CORRUPTED_DATA if any bytes remain after the ACL map, which would indicate
-/// format drift or corruption.
-///
-/// Field order must stay in sync with the METADATA parsing block in
-/// deserializeChunkedSnapshotFromBuffer.
-static void drainChunkedSnapshotMetadataChunkTail(ReadBuffer & rbuf)
-{
-    // zxid
-    {
-        int64_t zxid = 0;
-        readBinary(zxid, rbuf);
-    }
-
-    // Digest
-    {
-        uint8_t digest_version = 0;
-        readBinary(digest_version, rbuf);
-        if (digest_version != static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST))
-        {
-            uint64_t nodes_digest = 0;
-            readBinary(nodes_digest, rbuf);
-        }
-    }
-
-    // session_id_counter
-    {
-        int64_t session_id = 0;
-        readBinary(session_id, rbuf);
-    }
-
-    // ACL map
-    {
-        size_t acl_map_size = 0;
-        readBinary(acl_map_size, rbuf);
-        for (size_t i = 0; i < acl_map_size; ++i)
-        {
-            ACLId acl_id = 0;
-            readBinary(acl_id, rbuf);
-            size_t acls_size = 0;
-            readBinary(acls_size, rbuf);
-            for (size_t j = 0; j < acls_size; ++j)
-            {
-                int32_t permissions = 0;
-                String scheme;
-                String id;
-                readBinary(permissions, rbuf);
-                readBinary(scheme, rbuf);
-                readBinary(id, rbuf);
-            }
-        }
-    }
-
-    if (!rbuf.eof())
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "Chunked snapshot: trailing bytes after METADATA chunk content");
-}
-
 /// Decompress ONLY the METADATA chunk (chunks[0]) of a chunked snapshot and return the snapshot
 /// metadata. Never touches NODES or SESSIONS chunks — O(1) in node count.
 /// Called from deserializeSnapshotMetadataFromBuffer after "CKFS" magic is detected.
@@ -1834,9 +1774,7 @@ static SnapshotMetadataPtr deserializeChunkedSnapshotMetadataFromBuffer(nuraft::
             "Chunked snapshot: unexpected version byte {} in METADATA chunk (expected 8)",
             version_byte);
 
-    auto snapshot_meta = deserializeSnapshotMetadata(rbuf);
-    drainChunkedSnapshotMetadataChunkTail(rbuf); // Validate full chunk layout; values discarded.
-    return snapshot_meta;
+    return deserializeSnapshotMetadata(rbuf);
 }
 
 template<typename Storage>

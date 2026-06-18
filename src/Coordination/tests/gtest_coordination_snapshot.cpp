@@ -3248,45 +3248,6 @@ TEST(KeeperChunkedSnapshotValidation, NegativeNumChildrenRejected)
         << "Negative num_children must be rejected by readChunkedSnapshotNode";
 }
 
-/// Append a junk byte after the ACL map in the METADATA chunk.  The metadata-only
-/// fast path (deserializeSnapshotMetadataFromBuffer) must throw CORRUPTED_DATA —
-/// verifying the F1-metadata-only-chunk-tail-unvalidated fix.
-TEST(KeeperChunkedSnapshotValidation, MetadataTailTamperedRejected)
-{
-    ChangelogDirTest snap_dir("./chunked_val_metatail");
-
-    auto settings = std::make_shared<DB::CoordinationSettings>();
-    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
-    keeper_context->setLocalLogsPreprocessed();
-    keeper_context->setRocksDBOptions();
-    keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapDisk", snap_dir.path));
-
-    DB::KeeperMemoryStorage storage(500, "", keeper_context);
-    addNode(storage, "/node1", "v1");
-    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 10;
-
-    DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
-        &storage, /*up_to_log_idx=*/10, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> mgr(3, keeper_context, /*compress_zstd=*/true);
-    auto buf = mgr.serializeSnapshotToBuffer(snap);
-    ASSERT_NE(buf, nullptr);
-
-    // Decompress METADATA chunk (always chunks[0]) and append a junk byte after the ACL map.
-    std::string meta_bytes = decompressSnapshotChunk(buf, 0);
-    meta_bytes += '\xFF'; // trailing garbage
-
-    // Replace the METADATA chunk with the tampered version.
-    auto tampered = replaceFirstChunkOfType(buf, SnapshotChunkType::METADATA, meta_bytes);
-
-    // The metadata-only fast path must detect the trailing byte (F1 fix).
-    EXPECT_THROW(mgr.deserializeSnapshotMetadataFromBuffer(tampered), DB::Exception)
-        << "deserializeSnapshotMetadataFromBuffer must throw on trailing bytes in METADATA chunk";
-
-    // The full deserialiser must also detect it.
-    EXPECT_THROW(mgr.deserializeSnapshotFromBuffer(tampered, /*load_full_storage=*/true), DB::Exception)
-        << "deserializeSnapshotFromBuffer must throw on trailing bytes in METADATA chunk";
-}
-
 /// Append a junk byte after the cluster config in the SESSIONS chunk.  The full
 /// deserialiser must throw CORRUPTED_DATA — verifying the F2-sessions-chunk-no-eof-drain fix.
 /// Verifies the SESSIONS-chunk EOF drain (the second `if (!rbuf.eof())` check, after the
