@@ -37,4 +37,8 @@ std::optional<IASTHash> tryComputePartialAggregateCacheQueryHash(
     bool group_by_use_nulls,
     bool has_sort_description_for_merging);
 
+/// PAC must not run when any overflow mode can stop the query early with incomplete per-part aggregates.
+/// Same checklist as `use_query_cache` in `executeQuery.cpp`.
+bool partialAggregateCacheCompatibleWithOverflowModes(const Settings & settings);
+
 }

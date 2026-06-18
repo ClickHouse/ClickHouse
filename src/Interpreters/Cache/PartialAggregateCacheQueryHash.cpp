@@ -16,6 +16,30 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool use_partial_aggregate_cache;
+extern const SettingsOverflowMode distinct_overflow_mode;
+extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+extern const SettingsOverflowMode join_overflow_mode;
+extern const SettingsOverflowMode read_overflow_mode;
+extern const SettingsOverflowMode read_overflow_mode_leaf;
+extern const SettingsOverflowMode result_overflow_mode;
+extern const SettingsOverflowMode set_overflow_mode;
+extern const SettingsOverflowMode sort_overflow_mode;
+extern const SettingsOverflowMode timeout_overflow_mode;
+extern const SettingsOverflowMode transfer_overflow_mode;
+}
+
+bool partialAggregateCacheCompatibleWithOverflowModes(const Settings & settings)
+{
+    return settings[Setting::read_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
+        && settings[Setting::group_by_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::sort_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::result_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::timeout_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::set_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::join_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::transfer_overflow_mode] == OverflowMode::THROW
+        && settings[Setting::distinct_overflow_mode] == OverflowMode::THROW;
 }
 
 std::optional<IASTHash> computePartialAggregateCacheQueryHash(
@@ -98,6 +122,8 @@ std::optional<IASTHash> tryComputePartialAggregateCacheQueryHash(
     bool has_sort_description_for_merging)
 {
     if (!settings[Setting::use_partial_aggregate_cache])
+        return std::nullopt;
+    if (!partialAggregateCacheCompatibleWithOverflowModes(settings))
         return std::nullopt;
     return computePartialAggregateCacheQueryHash(
         cache,

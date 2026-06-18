@@ -46,6 +46,8 @@ struct BuildQueryPipelineSettings
 
     bool use_partial_aggregate_cache;
     bool partial_aggregate_cache_allow_parallel_aggregation_streams;
+    /// False when any overflow mode can stop the query with incomplete per-part aggregates (same checklist as query result cache).
+    bool partial_aggregate_cache_compatible_with_overflow_modes;
 
     /// Plan-time `PartialAggregateCache` probe in `ReadFromMergeTree`. Unset for `GROUPING SETS` or multiple plain `AggregatingStep`s.
     std::optional<IASTHash> partial_aggregate_cache_query_hash;

@@ -396,11 +396,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     std::shared_ptr<PartialAggregateCache> partial_aggregate_cache_holder;
     std::optional<IASTHash> partial_aggregate_query_hash;
     /// Partial aggregate cache: plan probe in `ReadFromMergeTree` when hash is available; execution `get`/`put` in `AggregatingTransform`.
-    /// Disabled when `sort_description_for_merging` is non-empty (in-order aggregation) or when `partial_cache_is_compatible_with_group_by_limits` is false.
+    /// Disabled for in-order aggregation, non-`throw` overflow modes, or `max_rows_to_group_by` with non-`throw` `group_by_overflow_mode`.
     const bool partial_cache_is_compatible_with_group_by_limits
         = params.max_rows_to_group_by == 0 || params.group_by_overflow_mode == OverflowMode::THROW;
     if (!use_sharded_aggregation
         && settings.use_partial_aggregate_cache
+        && settings.partial_aggregate_cache_compatible_with_overflow_modes
         && sort_description_for_merging.empty()
         && partial_cache_is_compatible_with_group_by_limits)
     {

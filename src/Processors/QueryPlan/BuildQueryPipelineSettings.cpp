@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Interpreters/Cache/PartialAggregateCacheQueryHash.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -42,6 +43,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
 
     use_partial_aggregate_cache = settings[Setting::use_partial_aggregate_cache];
     partial_aggregate_cache_allow_parallel_aggregation_streams = settings[Setting::partial_aggregate_cache_allow_parallel_aggregation_streams];
+    partial_aggregate_cache_compatible_with_overflow_modes = partialAggregateCacheCompatibleWithOverflowModes(settings);
 
     block_marshalling_callback = from->getBlockMarshallingCallback();
 }
