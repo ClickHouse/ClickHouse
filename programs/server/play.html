@@ -309,9 +309,9 @@
         {
             font: inherit;
             min-width: 2ch;
-            padding: 0 0.15rem;
-            border: 1px solid var(--border-color-selected);
-            background: var(--element-background-color);
+            padding: 0;
+            border: none;
+            background: transparent;
             color: var(--text-color-active);
         }
 
@@ -3577,7 +3577,11 @@ function startTitleEdit(tab, titleEl) {
         meas.style.letterSpacing = cs.letterSpacing;
         meas.textContent = input.value || ' ';
         document.body.appendChild(meas);
-        input.style.width = (meas.offsetWidth + 2) + 'px';
+        /// box-sizing is border-box, so the width must include padding + border, plus a
+        /// couple of pixels of slack for the caret and rounding.
+        const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+        const bord = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+        input.style.width = Math.ceil(meas.offsetWidth + pad + bord + 3) + 'px';
         meas.remove();
     };
     autosize();
@@ -3643,6 +3647,8 @@ function renderTabBar() {
             }
         });
         el.addEventListener('keydown', (e) => {
+            /// Ignore keys coming from the inline title editor (so Space/Enter type normally).
+            if (e.target !== el) return;
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchToTab(tab.id); }
         });
         tabs_elem.appendChild(el);
