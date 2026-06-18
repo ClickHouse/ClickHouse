@@ -269,6 +269,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_TABLE;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -1586,12 +1587,12 @@ static void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
             }
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
@@ -1611,7 +1612,7 @@ static void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<CoalescingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
             }
         }
     };
@@ -2090,7 +2091,7 @@ void ReadFromMergeTree::buildIndexes(
         if (ignored_index_names.contains(index.name))
             continue;
 
-        auto index_helper = MergeTreeIndexFactory::instance().get(index);
+        auto index_helper = MergeTreeIndexFactory::instance().get(index, *data.getSettings());
 
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
@@ -4898,12 +4899,17 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         }
     }
 
+    /// The table could be dropped concurrently after the plan was serialized,
+    /// so a failed lookup is a regular error, not a logical one.
     StorageID table_id(database_name, table_name);
-    auto storage_ptr = DatabaseCatalog::instance().tryGetTable(table_id, ctx.context);
-    if (!storage_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {}.{} not found in catalog", database_name, table_name);
+    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, ctx.context);
 
-    MergeTreeData & table = dynamic_cast<MergeTreeData &>(*storage_ptr);
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(storage_ptr.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE,
+            "Table {} is not a MergeTree table", table_id.getNameForLogs());
+
+    MergeTreeData & table = *merge_tree;
     MergeTreeDataSelectExecutor executor(table);
 
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(table.getInMemoryMetadataPtr(ctx.context, false), ctx.context);

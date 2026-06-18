@@ -2,11 +2,14 @@
 
 #include <IO/OffsetMap.h>
 #include <IO/IFileBasedSourceReader.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/ChainedBuffers.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
+#include <Common/Stopwatch.h>
 #include <base/types.h>
 
+#include <array>
 #include <memory>
 #include <optional>
 
@@ -16,7 +19,7 @@ namespace DB
 class ReadBufferFromFileBase;
 
 /// Maps a logical read position to a `StoredObject` (via `OffsetMap`) and serves
-/// bytes from an `IFileBasedSourceReader`, one block at a time, into an owned buffer.
+/// bytes from an `IFileBasedSourceReader` as a `ChainedBuffers`, one block at a time.
 /// Drives the experimental `use_reader_executor` read path. One instance per
 /// column-stream; not thread-safe.
 class ReaderExecutor
@@ -31,19 +34,10 @@ public:
 
     ~ReaderExecutor();
 
-    /// A contiguous run of bytes starting at the current position. `data` points
-    /// into the executor's own block buffer and stays valid only until the next
-    /// `readNextChunk` / `seek`. `size == 0` means EOF.
-    struct Chunk
-    {
-        const char * data = nullptr;
-        size_t size = 0;
-        size_t logical_offset = 0;
-    };
-
-    /// Read the next block (<= `block_size`, clamped to the current object's end
-    /// for known-size objects), advancing the position by the bytes read.
-    Chunk readNextChunk();
+    /// Read the next block (<= `block_size`, clamped to the current object's end for
+    /// known-size objects) into a fresh chain buffer and advance the position by the bytes
+    /// read. Returns a single-node `ChainedBuffers` at the current position; an empty `ChainedBuffers` is EOF.
+    ChainedBuffers readNextWindow();
 
     void seek(size_t new_position);
 
@@ -61,6 +55,47 @@ public:
     String getFileName() const { return log_file_path; }
 
 private:
+    /// Per-instance read-path counters. `add` is the only mutator and the single place a
+    /// counter maps to its ProfileEvent (and modeled-cost contribution), so they never
+    /// drift and every update is instantly observable. The cache / connection counters
+    /// have no caller in this minimal slice, so they stay 0 until their features land.
+    struct Stats
+    {
+        enum Counter : size_t
+        {
+            SourceRequests,         /// chunks opened and read from the source
+            BytesFromSource,        /// physical bytes read from the source
+            RequestedBytes,         /// useful bytes delivered to the caller (KPI denominator)
+            IncompleteConnections,
+            CacheGetRequests,
+            CachePopulateRequests,
+            WorkMicroseconds,
+            NumCounters,
+        };
+
+        void add(Counter c, UInt64 value = 1);
+        UInt64 get(Counter c) const { return values[c]; }
+
+    private:
+        std::array<UInt64, NumCounters> values{};
+    };
+
+    /// RAII timer: on scope exit adds its lifetime to a `Stats` timing counter via `add`.
+    class StatTimer
+    {
+    public:
+        StatTimer(Stats & target_, Stats::Counter counter_) : target(target_), counter(counter_) {}
+        ~StatTimer() { target.add(counter, watch.elapsedMicroseconds()); }
+
+        StatTimer(const StatTimer &) = delete;
+        StatTimer & operator=(const StatTimer &) = delete;
+
+    private:
+        Stats & target;
+        Stats::Counter counter;
+        Stopwatch watch;
+    };
+
     /// At known size, EOF is `position >= totalSize`. At unknown size, a short
     /// source read latches `reached_eof`; a backward `seek` clears it. A
     /// `read_until` bound caps EOF earlier.
@@ -80,8 +115,8 @@ private:
     /// Hard upper bound on the logical read position; `nullopt` = read to end.
     std::optional<size_t> read_until;
 
-    /// Backs the bytes returned by the latest `readNextChunk`.
-    Memory<> block;
+    Stats stats;
+    CurrentMetrics::Increment active_metric;  /// the ReaderExecutorActive gauge, for the lifetime
 
     LoggerPtr log = getLogger("ReaderExecutor");
 };
