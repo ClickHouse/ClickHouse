@@ -24,12 +24,15 @@ class MockControl:
         self._port = port
 
     def _apply(self, url):
-        # The mock is briefly unreachable when these tests flood it, so retry until it answers.
+        # Retry while the flooded mock is briefly unreachable. Each attempt is short
+        # and the total wait is capped, so a wedged mock that accepts the connection
+        # but never replies fails within the window instead of stalling for minutes.
         response = ""
-        for _ in range(20):
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
             response = self._cluster.exec_in_container(
                 self._cluster.get_container_id(self._container),
-                ["curl", "-s", "--max-time", "10", url],
+                ["curl", "-s", "--connect-timeout", "1", "--max-time", "1", url],
                 nothrow=True,
             )
             if response == "OK":
