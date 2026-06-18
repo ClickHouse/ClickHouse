@@ -1,6 +1,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
+#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -52,6 +53,22 @@ ColumnDefaultKind toColumnDefaultKind(ColumnDefaultSpecifier specifier)
         case ColumnDefaultSpecifier::Materialized: return ColumnDefaultKind::Materialized;
         case ColumnDefaultSpecifier::Alias: return ColumnDefaultKind::Alias;
         case ColumnDefaultSpecifier::Ephemeral: return ColumnDefaultKind::Ephemeral;
+    }
+}
+
+void ASTColumnDeclaration::resetChild(IndexSlot slot)
+{
+    UInt8 idx = getIndex(slot);
+    if (idx == kNotSet)
+        return;
+    children.erase(children.begin() + idx);
+    setIndex(slot, kNotSet);
+    /// After erasing at position `idx`, all greater indices must be decremented.
+    for (IndexSlot other_slot : magic_enum::enum_values<IndexSlot>())
+    {
+        UInt8 other_idx = getIndex(other_slot);
+        if (other_idx != kNotSet && other_idx > idx)
+            setIndex(other_slot, other_idx - 1);
     }
 }
 
