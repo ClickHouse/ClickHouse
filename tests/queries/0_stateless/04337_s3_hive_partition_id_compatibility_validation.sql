@@ -1,4 +1,5 @@
--- Tags: no-random-settings
+-- Tags: no-fasttest, no-random-settings
+-- Tag no-fasttest: Depends on S3
 
 SET compatibility = '26.6';
 CREATE TABLE old_export (d Date, x UInt64)
