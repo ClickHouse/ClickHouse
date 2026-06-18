@@ -549,7 +549,17 @@ ColumnPtr ArrowIPCBlockInputFormat::decodeGeoColumn(const ColumnPtr & source, co
         nullable = &assert_cast<const ColumnNullable &>(*source);
         data = &nullable->getNestedColumn();
     }
-    const auto & strings = assert_cast<const ColumnString &>(*data);
+    /// The schema-level "geo" metadata is untrusted: a file may tag a non-binary field (e.g. an Int32 or a
+    /// list) as geometry. Reject it with a clean INCORRECT_DATA instead of letting the cast below misbehave
+    /// (a bad-cast exception in checked builds, undefined behavior in release). WKB/WKT geometry is always a
+    /// variable-length binary column, which decodes to ColumnString.
+    const auto * strings_ptr = typeid_cast<const ColumnString *>(data);
+    if (!strings_ptr)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow column tagged as geometry in the \"geo\" metadata must decode to a binary/string column, but got {}",
+            data->getName());
+    const auto & strings = *strings_ptr;
 
     for (size_t i = 0; i < strings.size(); ++i)
     {
