@@ -543,10 +543,9 @@ void ReaderExecutor::seek(size_t new_position)
     /// fast path above keeps the plan only for a forward seek into the in-flight window,
     /// where the bank stays contiguous.)
     ///
-    /// Reap outstanding deferred-fill (put) machines FIRST: each holds writer_origins
-    /// into this plan's `bufs`, and `reapPutMachine` writes its writers back into
-    /// `read_plan.bufs[origin]`. Dropping the plan with puts still in flight would
-    /// reap them against the next plan's (smaller) bufs - an out-of-range origin.
+    /// Reap outstanding deferred-fill (put) machines FIRST: each holds non-owning
+    /// views into this plan's `bufs` writers. Dropping the plan with puts still in
+    /// flight would leave those views dangling.
     /// `observeAndSchedule` does the same drain before every re-plan; mirror it here.
     sweepPutLane(/*wait=*/true);
     read_plan = {};
@@ -1514,7 +1513,7 @@ void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, cons
     for (size_t i = 0; i < read_plan.bufs.size(); ++i)
         for (auto & w : read_plan.bufs[i].writers)
             if (w.writer && isScheduledFillTarget(physical_window, i, w.range))
-                writeSliceToWriter(w, physical_window, result, Stats::BytesPushedToCacheSync, out_stats);
+                writeSliceToWriter(w.writer.get(), physical_window, result, Stats::BytesPushedToCacheSync, out_stats);
 }
 
 bool ReaderExecutor::isScheduledFillTarget(ByteRange window, size_t entry, ByteRange cell) const
@@ -1530,16 +1529,16 @@ bool ReaderExecutor::isScheduledFillTarget(ByteRange window, size_t entry, ByteR
     return false;
 }
 
-void ReaderExecutor::writeSliceToWriter(MissEntry & w, ByteRange window, const ChainedBuffers & chain,
+void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
     Stats::Counter bytes_counter, Stats & out_stats)
 {
-    chassert(w.writer);
+    chassert(writer);
     /// Clamp the write target to the window's served portion and the buffer's own
     /// aligned range; the buffer further skips already-committed bytes internally
     /// (committed-set idempotency), so an out-of-order/overlapping slice from an
     /// interleaved promotion never double-counts.
-    const size_t lo = std::max(w.writer->range().offset, window.offset);
-    const size_t hi = std::min(w.writer->range().end(), window.end());
+    const size_t lo = std::max(writer->range().offset, window.offset);
+    const size_t hi = std::min(writer->range().end(), window.end());
     if (lo >= hi)
         return;
     auto slice = chain.slice(ByteRange{lo, hi - lo});
@@ -1547,15 +1546,15 @@ void ReaderExecutor::writeSliceToWriter(MissEntry & w, ByteRange window, const C
         return;
     out_stats.add(Stats::CachePopulateRequests);
     StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-    out_stats.add(bytes_counter, w.writer->write(std::move(slice)));
+    out_stats.add(bytes_counter, writer->write(std::move(slice)));
     HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
         static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
 }
 
-void ReaderExecutor::pushChainToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
+void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
     const ChainedBuffers & chain, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats)
 {
-    for (auto & w : writers)
+    for (const auto & view : views)
     {
         /// The put step's stop point: stop between writers on a cancel, leaving
         /// the remaining ones untouched for the caller's abandon path. (Nothing
@@ -1563,7 +1562,7 @@ void ReaderExecutor::pushChainToWriters(VectorWithMemoryTracking<MissEntry> & wr
         /// fetch-side flag before its put - see `schedulePutStep`.)
         if (interrupt && interrupt->load(std::memory_order_relaxed))
             break;
-        writeSliceToWriter(w, window, chain, bytes_counter, out_stats);
+        writeSliceToWriter(view.writer, window, chain, bytes_counter, out_stats);
     }
 }
 
@@ -2028,39 +2027,27 @@ std::optional<ReaderExecutor::LongConnection> ReaderExecutor::takeLong(std::opti
 
 void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled)
 {
-    /// An earlier put may still be borrowing writers that span this window too
-    /// (one fs segment / page run covers many windows) - join it so each writer
-    /// has exactly one owner.
-    flushPutLaneOverlapping(m->physical_window);
-
-    /// BORROW this window's writers from the plan into the machine, but only the
-    /// ones the plan SCHEDULE designates as fill targets for a retrieve
-    /// overlapping this window (`buildSchedule`'s `into`). A cell holding the
-    /// request is a target in every missing tier (promotion); a slack-only cell
-    /// is a target ONLY in its owning lower tier - so a faster tier never
-    /// receives un-requested slack bytes. The put step owns the borrowed writers
-    /// exclusively while it writes; the reap returns them home (`writer_origins`)
-    /// so the next window's fill - and the plan teardown's finalize - find them
-    /// where they have always lived. Runs AFTER `finalizeAssembledWindow`, so
-    /// the in-flight pin was taken first.
+    /// Record NON-OWNING views of this window's fill-target writers in the shared
+    /// `read_plan.bufs`: the ones the plan SCHEDULE designates as fill targets for a
+    /// retrieve overlapping this window (`buildSchedule`'s `into`). A cell holding the
+    /// request is a target in every missing tier (promotion); a slack-only cell is a
+    /// target ONLY in its owning lower tier - so a faster tier never receives
+    /// un-requested slack bytes. The writers are NOT moved out: the put lane's single
+    /// in-flight slot serializes writes, so the step writes them in place and the reap
+    /// returns nothing. Runs AFTER `finalizeAssembledWindow`, so the in-flight pin was
+    /// taken first.
     for (size_t i = 0; i < read_plan.bufs.size(); ++i)
     {
         auto & buf = read_plan.bufs[i];
-        auto kept = std::stable_partition(buf.writers.begin(), buf.writers.end(),
-            [&](const MissEntry & w)
-            {
-                const bool overlaps_window = w.writer && w.range.offset < m->physical_window.end()
-                    && m->physical_window.offset < w.range.end();
-                return !(overlaps_window && isScheduledFillTarget(m->physical_window, i, w.range));
-            });
-        for (auto it = kept; it != buf.writers.end(); ++it)
+        for (auto & w : buf.writers)
         {
-            m->writers.push_back(std::move(*it));
-            m->writer_origins.push_back(i);
+            const bool overlaps_window = w.writer && w.range.offset < m->physical_window.end()
+                && m->physical_window.offset < w.range.end();
+            if (overlaps_window && isScheduledFillTarget(m->physical_window, i, w.range))
+                m->writer_views.push_back({w.writer.get(), w.range});
         }
-        buf.writers.erase(kept, buf.writers.end());
     }
-    if (m->writers.empty())
+    if (m->writer_views.empty())
         return;  /// nothing to fill for this window
 
     m->fill_chain = assembled;
@@ -2075,23 +2062,20 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
         const size_t fill_end = self->fill_chain.empty()
             ? self->physical_window.offset
             : std::min(self->physical_window.end(), self->fill_chain.range().end());
-        pushChainToWriters(self->writers, self->physical_window, self->fill_chain,
+        pushChainToWriters(self->writer_views, self->physical_window, self->fill_chain,
             self->put_bytes_counter, &self->interrupt_requested, self->stats);
         /// Pin the partial segment under the just-written frontier until the
         /// reap (see `fill_pin`): the foreground's finalize pinned BEFORE this
         /// fill landed, so a fresh segment was not pinnable there.
-        for (const auto & w : self->writers)
+        for (const auto & view : self->writer_views)
         {
-            if (w.writer && fill_end >= w.writer->range().offset && fill_end < w.writer->range().end())
-                if (auto pin = w.writer->pin(fill_end))
+            if (view.writer && fill_end >= view.writer->range().offset && fill_end < view.writer->range().end())
+                if (auto pin = view.writer->pin(fill_end))
                 {
                     self->fill_pin = std::move(pin);
                     break;
                 }
         }
-        /// The writers are NOT released here - the reap returns them home (a
-        /// writer spans many windows and the next one needs it). Only the chain
-        /// is dropped: the fill is committed (or abandoned on abort).
         self->fill_chain = {};
         return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
@@ -2103,18 +2087,8 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
 
 void ReaderExecutor::reapPutMachine(FetchMachine & m)
 {
-    /// Return the borrowed writers home so the next window's fill and the plan
-    /// teardown's finalize find them where they have always lived. Valid by
-    /// construction: every reap precedes the plan teardown, so the recorded
-    /// bufs indices still address the borrowing plan.
-    chassert(m.writers.size() == m.writer_origins.size());
-    for (size_t i = 0; i < m.writers.size(); ++i)
-    {
-        chassert(m.writer_origins[i] < read_plan.bufs.size());
-        read_plan.bufs[m.writer_origins[i]].writers.push_back(std::move(m.writers[i]));
-    }
-    m.writers.clear();
-    m.writer_origins.clear();
+    /// The put wrote the shared `read_plan.bufs` writers in place (it held only
+    /// non-owning views), so nothing comes home - just fold the pin, stats, and phase.
 
     /// Hand the put's Strategy-A pin to the foreground slot the pre-machine
     /// pin lived in: the fill landed, but its segment stays mid-stream until
@@ -2161,7 +2135,7 @@ void ReaderExecutor::enqueuePutLane(std::shared_ptr<FetchMachine> m)
         if (m->put_optional)
         {
             stats.add(Stats::PromoteSkipped);
-            reapPutMachine(*m);   /// return its borrowed writers home; nothing is lost (already cached lower)
+            reapPutMachine(*m);   /// fold its stats; nothing is lost (already cached lower)
             return;
         }
         put_runner->waitReleased(*put_lane.in_flight);
@@ -2250,15 +2224,28 @@ void ReaderExecutor::flushPutLaneOverlapping(ByteRange window)
 {
     auto overlaps = [&](const FetchMachine & m)
     {
-        for (const auto & w : m.writers)
-            if (w.range.offset < window.end() && window.offset < w.range.end())
+        for (const auto & view : m.writer_views)
+            if (view.range.offset < window.end() && window.offset < view.range.end())
                 return true;
         return false;
     };
 
-    /// Queued puts that overlap: run inline on the foreground, in FIFO order. They hold
-    /// writers DISJOINT from the in-flight put (the borrow erased each from `read_plan.bufs`),
-    /// so running them while the in-flight put writes its own writers is race-free.
+    /// Join the async in-flight put FIRST if it overlaps (block until its write lands,
+    /// then reap): two lane puts may now VIEW the same writer (no borrow erases it), so a
+    /// pending put run inline on the foreground must not write a shared writer while the
+    /// worker still holds the in-flight one. The in-flight put is the oldest, so joining it
+    /// first is also frontier order.
+    if (put_lane.in_flight && overlaps(*put_lane.in_flight))
+    {
+        const auto st = put_lane.in_flight->state.load();
+        if (st == MachineState::Scheduled || st == MachineState::Running)
+            put_runner->waitReleased(*put_lane.in_flight);
+        reapPutMachine(*put_lane.in_flight);
+        put_lane.in_flight.reset();
+    }
+
+    /// Then the queued puts that overlap: run inline on the foreground, in FIFO order.
+    /// Nothing is on the worker now, so a shared writer is written by at most one at a time.
     for (auto it = put_lane.pending.begin(); it != put_lane.pending.end();)
     {
         if (overlaps(**it))
@@ -2271,18 +2258,25 @@ void ReaderExecutor::flushPutLaneOverlapping(ByteRange window)
             ++it;
     }
 
-    /// The async in-flight put that overlaps: join it (block until its write lands), then reap.
-    if (put_lane.in_flight && overlaps(*put_lane.in_flight))
-    {
-        const auto st = put_lane.in_flight->state.load();
-        if (st == MachineState::Scheduled || st == MachineState::Running)
-            put_runner->waitReleased(*put_lane.in_flight);
-        reapPutMachine(*put_lane.in_flight);
-        put_lane.in_flight.reset();
-    }
-
     /// Re-arm the head: any remaining pending no longer overlaps `window`.
     armPutLaneHead();
+}
+
+bool ReaderExecutor::putLaneClaims(const CacheWriter * writer) const
+{
+    auto claims = [&](const FetchMachine & m)
+    {
+        for (const auto & view : m.writer_views)
+            if (view.writer == writer)
+                return true;
+        return false;
+    };
+    if (put_lane.in_flight && claims(*put_lane.in_flight))
+        return true;
+    for (const auto & m : put_lane.pending)
+        if (claims(*m))
+            return true;
+    return false;
 }
 
 void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, const ChainedBuffers & bytes, Stats & out_stats)
@@ -2308,31 +2302,26 @@ void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, c
     pm->requested_range = range;
     pm->physical_window = range;
 
-    /// Borrow the faster-tier writers overlapping `range` that are HOME - chain
-    /// order, breaking at the serving tier (`[CF-promote]`, decided here on the
-    /// foreground; the machine gets a flat list). A writer on loan to a fill is
-    /// simply not here - that part of the promote is skipped, not waited for.
-    for (size_t i = 0; i < read_plan.bufs.size(); ++i)
+    /// View the faster-tier writers overlapping `range` - chain order, breaking at the
+    /// serving tier (`[CF-promote]`, decided here on the foreground; the machine gets a
+    /// flat list). A writer a pending/in-flight put already covers is skipped
+    /// (`putLaneClaims`, the post-borrow analog of "on loan") - that part of the promote
+    /// is dropped, not waited for, so a promote never re-writes a cell a fill fills.
+    for (auto & buf : read_plan.bufs)
     {
-        auto & buf = read_plan.bufs[i];
         if (!buf.provider)
             continue;
         if (buf.provider->tier() == from_tier)
             break;
-        auto kept = std::stable_partition(buf.writers.begin(), buf.writers.end(),
-            [&](const MissEntry & w)
-            {
-                return !(w.writer && w.range.offset < range.end() && range.offset < w.range.end());
-            });
-        for (auto it = kept; it != buf.writers.end(); ++it)
+        for (auto & w : buf.writers)
         {
-            pm->writers.push_back(std::move(*it));
-            pm->writer_origins.push_back(i);
+            const bool overlaps_range = w.writer && w.range.offset < range.end() && range.offset < w.range.end();
+            if (overlaps_range && !putLaneClaims(w.writer.get()))
+                pm->writer_views.push_back({w.writer.get(), w.range});
         }
-        buf.writers.erase(kept, buf.writers.end());
     }
-    if (pm->writers.empty())
-        return;  /// nothing faster populatable for this run (or all on loan)
+    if (pm->writer_views.empty())
+        return;  /// nothing faster populatable for this run (or all already covered)
 
     pm->fill_chain = bytes;
     pm->put_wait.restart();
@@ -2341,7 +2330,7 @@ void ReaderExecutor::schedulePromoteStep(CacheTier from_tier, ByteRange range, c
     pm->run_step = [this, self = pm.get()]
     {
         self->stats.add(Stats::PutWaitMicroseconds, self->put_wait.elapsedMicroseconds());
-        pushChainToWriters(self->writers, self->physical_window, self->fill_chain,
+        pushChainToWriters(self->writer_views, self->physical_window, self->fill_chain,
             self->put_bytes_counter, &self->interrupt_requested, self->stats);
         self->fill_chain = {};
         return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;

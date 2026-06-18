@@ -433,6 +433,18 @@ private:
         std::shared_ptr<const CoverageMap> geometry_snapshot;
     };
 
+    /// A NON-OWNING reference to one held write buffer in `read_plan.bufs`
+    /// (`writer` is owned there by a `unique_ptr`). A put step records these
+    /// instead of moving the writers out, so the shared `bufs` are written in
+    /// place. The raw pointer stays valid while `read_plan` is not rebuilt - and
+    /// every rebuild path drains the put lane first - so a put never outlives its
+    /// views. `range` is the cell's miss range (the lane-overlap key).
+    struct WriterView
+    {
+        CacheWriter * writer = nullptr;
+        ByteRange range;
+    };
+
     /// The background read-ahead machine (`PrefetchJob` grown into a steppable
     /// context). One step today - a pure source fetch of the pre-bounded
     /// aligned gap window - then the `AwaitCollect` barrier; the foreground
@@ -473,14 +485,13 @@ private:
         /// worker (same PHYSICAL node labels). Empty unless `decrypt_ahead` is on
         /// for an encrypted source. `fetched` stays ciphertext for the cache-fill.
         ChainedBuffers plaintext_fetched;
-        /// The put step's inputs (set at retrigger): writers BORROWED from
-        /// `read_plan.bufs` - moved out so the put owns them exclusively, and
-        /// RETURNED home by the reap (`writer_origins` records each one's
-        /// index). A writer commonly spans many windows, so it must come back
-        /// for the next window's fill. `fill_chain` is the assembled window
-        /// (refcounted nodes shared with the served slice).
-        VectorWithMemoryTracking<MissEntry> writers;
-        VectorWithMemoryTracking<size_t> writer_origins;
+        /// The put step's inputs (set at retrigger): NON-OWNING views of the
+        /// writers this put fills (the schedule's fill targets overlapping the
+        /// window). The writers stay in the shared `read_plan.bufs`; the put lane's
+        /// single in-flight slot serializes writes, so referencing them in place is
+        /// race-free and the reap returns nothing. `fill_chain` is the assembled
+        /// window (refcounted nodes shared with the served slice).
+        VectorWithMemoryTracking<WriterView> writer_views;
         ChainedBuffers fill_chain;
         /// SE put-lane: a promote is STRICTLY optional - if the pool rejects its schedule,
         /// the lane skips it (`PromoteSkipped`, writers returned) rather than running it
@@ -644,12 +655,12 @@ private:
     /// schedule-filtered) writer, counted into `bytes_counter`. `interrupt`
     /// (nullable) is polled between writers - the put step's stop point;
     /// remaining writers are left untouched for the caller's abandon path.
-    void pushChainToWriters(VectorWithMemoryTracking<MissEntry> & writers, ByteRange window,
+    void pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
         const ChainedBuffers & chain, Stats::Counter bytes_counter, const std::atomic<bool> * interrupt, Stats & out_stats);
 
     /// Write `chain ∩ writer-range ∩ window` into ONE writer (the body of the
     /// loops above), counted into `bytes_counter`.
-    void writeSliceToWriter(MissEntry & w, ByteRange window, const ChainedBuffers & chain,
+    void writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
         Stats::Counter bytes_counter, Stats & out_stats);
 
     /// Whether the plan schedule designates `(entry, cell)` a fill target for a
@@ -781,14 +792,18 @@ private:
     /// the whole lane (plan rebuild / destruction); `!wait` returns while one is running.
     void sweepPutLane(bool wait);
 
-    /// Apply + reap every lane put whose borrowed writers overlap `window` BEFORE the
-    /// foreground reads/borrows that range, so the writers come home (a consecutive
-    /// same-segment window can reclaim them) and `recreditCommittedPrefixes` sees the grown
-    /// committed prefix instead of re-fetching. Each lane put holds DISJOINT writers (the
-    /// borrow erases them from `read_plan.bufs`), so the overlapping puts can be applied in
-    /// any order: the queued (unstarted) ones run inline on the foreground, the async
-    /// in-flight one is joined.
+    /// Apply + reap every lane put whose target writers overlap `window` BEFORE the
+    /// foreground reads that range, so `recreditCommittedPrefixes` sees the grown committed
+    /// prefix instead of re-fetching the head from the source. Two lane puts may view the
+    /// same writer, so the in-flight (worker) one is JOINED first, then the queued ones run
+    /// inline on the foreground in FIFO order - a shared writer is thus written by at most one
+    /// at a time.
     void flushPutLaneOverlapping(ByteRange window);
+
+    /// Whether a pending or in-flight put already writes `writer` - the post-borrow
+    /// analog of "the writer is on loan". The deferred promote skips a writer a fill
+    /// already covers, so a promote never re-writes a cell a pending fill will fill.
+    bool putLaneClaims(const CacheWriter * writer) const;
 
     /// The deferred promote: borrow the FASTER-tier writers overlapping
     /// `range` that are currently home into a put-only machine fed by the
