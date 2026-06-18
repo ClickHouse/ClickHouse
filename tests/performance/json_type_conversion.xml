@@ -1,0 +1,80 @@
+<test>
+    <settings>
+        <json_use_optimized_type_conversion>0</json_use_optimized_type_conversion>
+    </settings>
+
+    <!-- Dataset A: 3 typed paths, 100 dynamic paths, 100 shared data paths, no spare dynamic slots -->
+    <create_query>
+        CREATE TABLE t_json_perf_a (data JSON(t1 Int64, t2 String, t3 Float64, SKIP dummy, max_dynamic_paths=100))
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <!-- Dataset B: 3 typed paths, 198 dynamic paths, no shared data, 2 spare dynamic slots -->
+    <create_query>
+        CREATE TABLE t_json_perf_b (data JSON(t1 Int64, t2 String, t3 Float64, SKIP dummy, max_dynamic_paths=200))
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_json_perf_a
+        SELECT mapFromArrays(
+            arrayConcat(
+                ['t1', 't2', 't3'],
+                arrayMap(i -> concat('d', toString(i)), range(100)),
+                arrayMap(i -> concat('s', toString(i)), range(100))
+            ),
+            arrayConcat(
+                [toString(number), concat('str_', toString(number)), toString(toFloat64(number) * 1.5)],
+                arrayMap(i -> toString(number * 100 + i), range(100)),
+                arrayMap(i -> toString(number * 200 + i), range(100))
+            )
+        ) FROM numbers(10000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO t_json_perf_b
+        SELECT mapFromArrays(
+            arrayConcat(
+                ['t1', 't2', 't3'],
+                arrayMap(i -> concat('d', toString(i)), range(198))
+            ),
+            arrayConcat(
+                [toString(number), concat('str_', toString(number)), toString(toFloat64(number) * 1.5)],
+                arrayMap(i -> toString(number * 100 + i), range(198))
+            )
+        ) FROM numbers(10000)
+    </fill_query>
+
+    <!-- 1. Identity (remove skip rule) -->
+    <query tag="identity">SELECT data::JSON(t1 Int64, t2 String, t3 Float64, max_dynamic_paths=100) FROM t_json_perf_a FORMAT Null</query>
+
+    <!-- 2. Add typed from dynamic -->
+    <query tag="add_typed_from_dynamic">SELECT data::JSON(t1 Int64, t2 String, t3 Float64, d0 Int64, max_dynamic_paths=100) FROM t_json_perf_a FORMAT Null</query>
+
+    <!-- 3. Add typed from shared data -->
+    <query tag="add_typed_from_shared">SELECT data::JSON(t1 Int64, t2 String, t3 Float64, s0 Int64, max_dynamic_paths=100) FROM t_json_perf_a FORMAT Null</query>
+
+    <!-- 4. Remove typed to dynamic (no shared data, spare slots) -->
+    <query tag="remove_typed_to_dynamic">SELECT data::JSON(t2 String, t3 Float64, max_dynamic_paths=200) FROM t_json_perf_b FORMAT Null</query>
+
+    <!-- 5. Remove typed to dynamic via promotion (frees slot by promoting d0 to typed) -->
+    <query tag="remove_typed_to_dynamic_promo">SELECT data::JSON(t2 String, t3 Float64, d0 Int64, max_dynamic_paths=100) FROM t_json_perf_a FORMAT Null</query>
+
+    <!-- 6. Remove typed to shared data (no spare dynamic slots) -->
+    <query tag="remove_typed_to_shared">SELECT data::JSON(t2 String, t3 Float64, max_dynamic_paths=100) FROM t_json_perf_a FORMAT Null</query>
+
+    <!-- 7. Change typed path type (Int64 -> Int32) -->
+    <query tag="change_typed_path">SELECT data::JSON(t1 Int32, t2 String, t3 Float64, max_dynamic_paths=100) FROM t_json_perf_a FORMAT Null</query>
+
+    <!-- 8. Skip dynamic path -->
+    <query tag="skip_dynamic">SELECT data::JSON(t1 Int64, t2 String, t3 Float64, SKIP d0, max_dynamic_paths=100) FROM t_json_perf_a FORMAT Null</query>
+
+    <!-- 9. Skip shared data entry -->
+    <query tag="skip_shared">SELECT data::JSON(t1 Int64, t2 String, t3 Float64, SKIP s0, max_dynamic_paths=100) FROM t_json_perf_a FORMAT Null</query>
+
+    <!-- 10. Combination: change t1 type + remove t2 + add d0 as typed + skip d1 -->
+    <query tag="combination">SELECT data::JSON(t1 Int32, t3 Float64, d0 Int64, SKIP d1, max_dynamic_paths=100) FROM t_json_perf_a FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_json_perf_a</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_json_perf_b</drop_query>
+</test>
