@@ -571,10 +571,15 @@ ExchangeLookupPtr createExchangeLookup(
             "set it, force `distributed_plan_force_exchange_kind = 'Persisted'`, or enable "
             "`distributed_plan_execute_locally` for in-process testing");
 
-    /// The gate above validates this node's own listener config; the port used to dial a producer
-    /// comes per-stream from exchange_stream_sources, so none is passed here.
+    /// A task from an older initiator (version 1) ships no per-stream ports; fall back to this
+    /// node's configured exchange port to preserve the previous single-port behavior.
+    ExchangeStreamSources sources_with_ports = exchange_stream_sources;
+    for (auto & [stream, address] : sources_with_ports.stream_hosts)
+        if (address.port == 0)
+            address.port = static_cast<UInt16>(streaming_exchange_port);
+
     auto streaming_exchanges = createStreamingExchangeLookup(
-        query_id, ExchangeConnections::instance(), exchange_stream_sources);
+        query_id, ExchangeConnections::instance(), sources_with_ports);
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
     UNUSED(exchange_stream_sources);
