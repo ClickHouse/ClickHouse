@@ -835,11 +835,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 plan.optimize(optimization_settings);
             }
 
-            PrettyNames precomputed_pretty_names;
-
-            if (settings.query_plan_options.pretty)
-                precomputed_pretty_names = QueryPlanFormat::buildPrettyNames(plan);
-
             if (settings.json)
             {
                 if (settings.query_plan_options.distributed)
@@ -862,7 +857,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 single_line = true;
             }
             else
-                plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length], &precomputed_pretty_names);
+                plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
             break;
         }
         case ASTExplainQuery::QueryPipeline:
@@ -1031,6 +1026,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             plan.optimize(optimization_settings);
             planning_ns += watch.elapsed();
 
+            /// Build the pretty-names map now: buildQueryPipeline below moves the ActionsDAGs out of the
+            /// plan steps, so the names must be snapshotted before the pipeline consumes the plan. EXPLAIN
+            /// ANALYZE rejects distributed plans above, so this map covers the whole plan.
             PrettyNames precomputed_pretty_names = QueryPlanFormat::buildPrettyNames(plan);
 
             watch.restart();

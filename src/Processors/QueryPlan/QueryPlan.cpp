@@ -608,6 +608,17 @@ void QueryPlan::explainPlan(
 
     PrettyNames empty_pretty_names;
 
+    /// Pretty rendering needs a names map scoped to this exact plan. Callers that already hold one
+    /// (e.g. EXPLAIN ANALYZE, which must snapshot names before the pipeline consumes the plan) pass it in.
+    /// Otherwise build it here, so self-contained renders such as distributed child plans
+    /// (ReadFromRemote::describeDistributedPlan) don't fall back to empty names.
+    PrettyNames local_pretty_names;
+    if (options.pretty && !precomputed_pretty_names)
+    {
+        local_pretty_names = QueryPlanFormat::buildPrettyNames(*this);
+        precomputed_pretty_names = &local_pretty_names;
+    }
+
     IQueryPlanStep::FormatSettings settings{
         .out = buffer,
         .header_prefix = "",
