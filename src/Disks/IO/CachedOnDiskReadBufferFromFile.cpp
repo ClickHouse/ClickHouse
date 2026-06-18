@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FILE_SIZE;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
@@ -319,16 +320,21 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     {
         info.cache_file_reader = open_cache_file(path);
     }
-    catch (...)
+    catch (const Exception & e)
     {
         /// A fully downloaded regular segment is renamed from `<offset>` to `<offset>_<size>`
         /// (`FileSegment::renameToIncludeSizeInNameUnlocked`) while we may still be reading it —
         /// reads are allowed before the segment is fully downloaded. `getPath` is lock-free, so the
         /// name computed above can become stale if the rename happens right before we open the file,
-        /// and the open fails because the file has already moved to its new name. Recompute the path
-        /// while holding the segment lock — the rename runs under the same lock, so this serializes
-        /// against it and observes the final name — and retry once. If the path is unchanged, the
-        /// failure is unrelated to the rename, so propagate it.
+        /// and the open then fails because the file has already moved to its new name. That race can
+        /// surface only as `FILE_DOESNT_EXIST` (the old name is gone); any other error is unrelated to
+        /// the rename, so propagate it immediately.
+        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+            throw;
+
+        /// Recompute the path while holding the segment lock — the rename runs under the same lock, so
+        /// this serializes against it and observes the final name — and retry once. If the path is
+        /// unchanged, the missing file is not explained by a rename, so propagate it.
         String current_path;
         {
             auto segment_lock = file_segment.lock();
