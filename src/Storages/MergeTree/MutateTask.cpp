@@ -865,8 +865,12 @@ getColumnsForNewDataPart(
                 else
                 {
 
-                    if (was_removed)
-                    { /// DROP COLUMN xxx, RENAME COLUMN yyy TO xxx
+                    if (renamed_columns_to_from.contains(it->name))
+                    {
+                        /// Another column is renamed into this name; take its type from the
+                        /// renamed-from column, not from the same-named source column that is
+                        /// being renamed away (DROP xxx + RENAME yyy TO xxx, or the swap
+                        /// RENAME xxx TO zzz + RENAME yyy TO xxx).
                         auto renamed_from = renamed_columns_to_from.at(it->name);
                         auto maybe_name_and_type = source_columns.tryGetByName(renamed_from);
                         if (!maybe_name_and_type)
