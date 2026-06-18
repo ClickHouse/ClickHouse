@@ -707,7 +707,7 @@ ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
     return plain;
 }
 
-ChainedBuffers ReaderExecutor::decryptFetchedAhead(const ChainedBuffers & cipher, [[maybe_unused]] Stats & timing_stats) const
+ChainedBuffers ReaderExecutor::decryptFetchedAhead([[maybe_unused]] const ChainedBuffers & cipher, [[maybe_unused]] Stats & timing_stats) const
 {
     ChainedBuffers plain;
 #if USE_SSL
