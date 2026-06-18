@@ -745,23 +745,31 @@ void Reader::preparePrewhere()
         if (!actions_settings.has_value())
             actions_settings.emplace();
 
-        auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
-        prewhere_info_patched->need_filter = needs_filter;
         PrewhereExprInfo prewhere_expr_info;
+        bool success = false;
 
-        bool success = tryBuildPrewhereSteps(
-            prewhere_info_patched,
-            *actions_settings,
-            prewhere_expr_info,
-            /*force_short_circuit_execution*/ false);
-
-        /// The reader addresses every cross-step column by its index in `extended_sample_block`, so a
-        /// step that requires a column without a slot there (a shared intermediate the splitter
-        /// promoted to a step boundary) cannot be executed; fall back to a single step.
-        if (success)
+        /// The split produces per-condition filter steps; it only helps when we actually filter
+        /// rows between steps. When needs_filter is false we just compute the prewhere column(s)
+        /// and pass them through, so use the single step below (which also registers the kept
+        /// prewhere output columns; the split branch only registers them while filtering).
+        if (needs_filter)
         {
+            auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
+            prewhere_info_patched->need_filter = needs_filter;
+
+            success = tryBuildPrewhereSteps(
+                prewhere_info_patched,
+                *actions_settings,
+                prewhere_expr_info,
+                /*force_short_circuit_execution*/ false);
+
+            /// The reader addresses every cross-step column by its index in `extended_sample_block`, so a
+            /// step that requires a column without a slot there (a shared intermediate the splitter
+            /// promoted to a step boundary) cannot be executed; fall back to a single step.
             for (const auto & step : prewhere_expr_info.steps)
             {
+                if (!success)
+                    break;
                 for (const auto & col : step->actions->getActionsDAG().getRequiredColumns())
                 {
                     if (!extended_sample_block.has(col.name))
@@ -770,8 +778,6 @@ void Reader::preparePrewhere()
                         break;
                     }
                 }
-                if (!success)
-                    break;
             }
         }
 
@@ -781,8 +787,7 @@ void Reader::preparePrewhere()
             for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
             {
                 auto filter = prewhere_expr_info.steps[i];
-                if (needs_filter)
-                    add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
+                add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
             }
         }
         else
