@@ -21,12 +21,32 @@
     "id" : 4,
     "name" : "ts1",
     "type" : "TIMESTAMP(1) NOT NULL"
+  }, {
+    "id" : 5,
+    "name" : "big_val",
+    "type" : "BIGINT NOT NULL"
+  }, {
+    "id" : 6,
+    "name" : "dec_val",
+    "type" : "DECIMAL(20, 0) NOT NULL"
+  }, {
+    "id" : 7,
+    "name" : "nul_val",
+    "type" : "INT"
+  }, {
+    "id" : 8,
+    "name" : "ts6",
+    "type" : "TIMESTAMP(6) NOT NULL"
+  }, {
+    "id" : 9,
+    "name" : "bin_val",
+    "type" : "BYTES NOT NULL"
   } ],
-  "highestFieldId" : 4,
+  "highestFieldId" : 9,
   "partitionKeys" : [ ],
   "primaryKeys" : [ ],
   "options" : {
     "metadata.stats-store" : "fields-*"
   },
-  "timeMillis" : 1773997001059
+  "timeMillis" : 1781800702275
 }
