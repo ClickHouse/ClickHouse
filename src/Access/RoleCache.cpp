@@ -83,13 +83,6 @@ RoleCache::getEnabledRoles(boost::container::flat_set<UUID> roles, boost::contai
 {
     std::lock_guard lock{mutex};
 
-    /// Lazy (not in the ctor): `changes_notifier` is constructed after the caches in `AccessControl`.
-    if (!batch_subscribed)
-    {
-        batch_subscription = access_control.subscribeForBatchFinished([this] { collectEnabledRolesIfNeeded(); });
-        batch_subscribed = true;
-    }
-
     EnabledRoles::Params params;
     params.current_roles = std::move(roles);
     params.current_roles_with_admin_option = std::move(roles_with_admin_option);
@@ -114,14 +107,12 @@ void RoleCache::collectEnabledRoles(scope_guard * notifications)
     /// `mutex` is already locked.
 
     Stopwatch watch;
-    size_t recalculated_sets = 0;
     for (auto i = enabled_roles_by_params.begin(), e = enabled_roles_by_params.end(); i != e;)
     {
         auto & item = i->second;
         if (auto enabled_roles = item.enabled_roles.lock())
         {
             collectEnabledRoles(*enabled_roles, item.subscriptions_on_roles, notifications);
-            ++recalculated_sets;
             ++i;
         }
         else
@@ -133,9 +124,9 @@ void RoleCache::collectEnabledRoles(scope_guard * notifications)
     const auto elapsed_ms = watch.elapsedMilliseconds();
     /// O(enabled sets * roles), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
-        LOG_WARNING(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", recalculated_sets, elapsed_ms);
+        LOG_WARNING(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", enabled_roles_by_params.size(), elapsed_ms);
     else
-        LOG_DEBUG(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", recalculated_sets, elapsed_ms);
+        LOG_DEBUG(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", enabled_roles_by_params.size(), elapsed_ms);
 }
 
 
@@ -172,6 +163,13 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled_roles, SubscriptionsO
 RolePtr RoleCache::getRole(const UUID & role_id, SubscriptionsOnRoles & subscriptions_on_roles)
 {
     /// `mutex` is already locked.
+
+    /// Lazy (not in the ctor): `changes_notifier` is constructed after the caches in `AccessControl`.
+    if (!batch_subscribed)
+    {
+        batch_subscription = access_control.subscribeForBatchFinished([this] { collectEnabledRolesIfNeeded(); });
+        batch_subscribed = true;
+    }
 
     auto role_from_cache = cache.get(role_id);
     if (role_from_cache)
@@ -218,7 +216,7 @@ void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
     }
 
     /// An enabled role for some users has been changed, we need to recalculate the access rights.
-    need_recalculate = true;
+    need_collect_enabled_roles = true;
 }
 
 
@@ -230,7 +228,7 @@ void RoleCache::roleRemoved(const UUID & role_id)
     cache.remove(role_id);
 
     /// An enabled role for some users has been removed, we need to recalculate the access rights.
-    need_recalculate = true;
+    need_collect_enabled_roles = true;
 }
 
 
@@ -240,11 +238,11 @@ void RoleCache::collectEnabledRolesIfNeeded()
     scope_guard notifications;
 
     std::lock_guard lock{mutex};
-    if (!need_recalculate)
+    if (!need_collect_enabled_roles)
         return;
     /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
     collectEnabledRoles(&notifications); /// collectEnabledRoles() must be called with the `mutex` locked.
-    need_recalculate = false;
+    need_collect_enabled_roles = false;
 }
 
 }

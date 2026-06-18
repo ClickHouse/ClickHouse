@@ -65,7 +65,7 @@ private:
     std::unordered_map<UUID /* quota id */, QuotaInfo> all_quotas;
     bool all_quotas_read = false;
     /// Set by the per-entity handler; the rebuild is coalesced to once per notification batch.
-    bool need_rechoose_quotas = false;
+    bool need_choose_quota = false;
     scope_guard subscription;
     scope_guard batch_subscription;
     std::map<EnabledQuota::Params, std::weak_ptr<EnabledQuota>> enabled_quotas;

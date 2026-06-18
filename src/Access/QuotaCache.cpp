@@ -320,7 +320,7 @@ void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_pt
 
     auto & info = it->second;
     info.setQuota(new_quota, quota_id);
-    need_rechoose_quotas = true;
+    need_choose_quota = true;
 }
 
 
@@ -328,18 +328,18 @@ void QuotaCache::quotaRemoved(const UUID & quota_id)
 {
     std::lock_guard lock{mutex};
     all_quotas.erase(quota_id);
-    need_rechoose_quotas = true;
+    need_choose_quota = true;
 }
 
 
 void QuotaCache::chooseQuotaToConsumeIfNeeded()
 {
     std::lock_guard lock{mutex};
-    if (!need_rechoose_quotas)
+    if (!need_choose_quota)
         return;
     /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
     chooseQuotaToConsume();
-    need_rechoose_quotas = false;
+    need_choose_quota = false;
 }
 
 
@@ -348,7 +348,6 @@ void QuotaCache::chooseQuotaToConsume()
     /// `mutex` is already locked.
 
     Stopwatch watch;
-    size_t rechosen_sets = 0;
     for (auto i = enabled_quotas.begin(), e = enabled_quotas.end(); i != e;)
     {
         auto elem = i->second.lock();
@@ -357,7 +356,6 @@ void QuotaCache::chooseQuotaToConsume()
         else
         {
             chooseQuotaToConsumeFor(*elem, true);
-            ++rechosen_sets;
             ++i;
         }
     }
@@ -365,9 +363,9 @@ void QuotaCache::chooseQuotaToConsume()
     const auto elapsed_ms = watch.elapsedMilliseconds();
     /// O(enabled sets * quotas), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
-        LOG_WARNING(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", rechosen_sets, all_quotas.size(), elapsed_ms);
+        LOG_WARNING(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
     else
-        LOG_DEBUG(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", rechosen_sets, all_quotas.size(), elapsed_ms);
+        LOG_DEBUG(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
 }
 
 void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_client_key_empty)

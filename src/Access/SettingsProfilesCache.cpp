@@ -69,7 +69,7 @@ void SettingsProfilesCache::profileAddedOrChanged(const UUID & profile_id, const
         profiles_by_name[new_profile->getName()] = profile_id;
     }
     profile_infos_cache.clear();
-    need_recalculate = true;
+    need_merge_settings_and_constraints = true;
 }
 
 
@@ -82,18 +82,18 @@ void SettingsProfilesCache::profileRemoved(const UUID & profile_id)
     profiles_by_name.erase(it->second->getName());
     all_profiles.erase(it);
     profile_infos_cache.clear();
-    need_recalculate = true;
+    need_merge_settings_and_constraints = true;
 }
 
 
 void SettingsProfilesCache::mergeSettingsAndConstraintsIfNeeded()
 {
     std::lock_guard lock{mutex};
-    if (!need_recalculate)
+    if (!need_merge_settings_and_constraints)
         return;
     /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
     mergeSettingsAndConstraints();
-    need_recalculate = false;
+    need_merge_settings_and_constraints = false;
 }
 
 
@@ -120,7 +120,6 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
 {
     /// `mutex` is already locked.
     Stopwatch watch;
-    size_t merged_sets = 0;
     for (auto i = enabled_settings.begin(), e = enabled_settings.end(); i != e;)
     {
         auto enabled = i->second.lock();
@@ -129,7 +128,6 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
         else
         {
             mergeSettingsAndConstraintsFor(*enabled);
-            ++merged_sets;
             ++i;
         }
     }
@@ -137,9 +135,9 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
     const auto elapsed_ms = watch.elapsedMilliseconds();
     /// O(enabled sets * profiles), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
-        LOG_WARNING(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", merged_sets, all_profiles.size(), elapsed_ms);
+        LOG_WARNING(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", enabled_settings.size(), all_profiles.size(), elapsed_ms);
     else
-        LOG_DEBUG(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", merged_sets, all_profiles.size(), elapsed_ms);
+        LOG_DEBUG(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", enabled_settings.size(), all_profiles.size(), elapsed_ms);
 }
 
 

@@ -41,7 +41,7 @@ private:
     bool batch_subscribed TSA_GUARDED_BY(mutex) = false;
 
     /// Set by the per-entity handler; the recalculation is coalesced to once per notification batch.
-    bool need_recalculate TSA_GUARDED_BY(mutex) = false;
+    bool need_collect_enabled_roles TSA_GUARDED_BY(mutex) = false;
 
     Poco::AccessExpireCache<UUID, std::pair<RolePtr, std::shared_ptr<scope_guard>>> TSA_GUARDED_BY(mutex) cache;
 
