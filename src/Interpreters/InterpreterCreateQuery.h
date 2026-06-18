@@ -73,11 +73,20 @@ public:
     }
 
     static DataTypePtr getColumnType(
-        const ASTColumnDeclaration & col_decl, LoadingStrictnessLevel mode, bool make_columns_nullable, const Settings & settings);
+        const ASTColumnDeclaration & col_decl,
+        LoadingStrictnessLevel mode,
+        bool make_columns_nullable,
+        const Settings & settings,
+        bool check_nullable_array_setting = true);
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false);
+    static ColumnsDescription getColumnsDescription(
+        const ASTExpressionList & columns,
+        ContextPtr context,
+        LoadingStrictnessLevel mode,
+        bool is_restore_from_backup = false,
+        bool check_nullable_array_setting = true);
     static ConstraintsDescription
     getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 

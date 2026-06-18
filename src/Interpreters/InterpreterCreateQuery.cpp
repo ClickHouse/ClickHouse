@@ -557,9 +557,9 @@ DataTypePtr normalizeInferredColumnTypeForStorage(const DataTypePtr & type, cons
     return type;
 }
 
-void checkNullableArrayIsAllowed(const DataTypePtr & type, const Settings & settings)
+void checkNullableArrayIsAllowed(const DataTypePtr & type, const Settings & settings, bool check_nullable_array_setting)
 {
-    if (isArray(type) && !settings[Setting::allow_experimental_nullable_array_type])
+    if (check_nullable_array_setting && isArray(type) && !settings[Setting::allow_experimental_nullable_array_type])
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Nested type {} cannot be inside Nullable type",
@@ -569,7 +569,11 @@ void checkNullableArrayIsAllowed(const DataTypePtr & type, const Settings & sett
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable, const Settings & settings)
+    const ASTColumnDeclaration & col_decl,
+    const LoadingStrictnessLevel mode,
+    const bool make_columns_nullable,
+    const Settings & settings,
+    bool check_nullable_array_setting)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -580,7 +584,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
-    if (!settings[Setting::allow_experimental_nullable_array_type])
+    if (check_nullable_array_setting && !settings[Setting::allow_experimental_nullable_array_type])
     {
         if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(column_type.get()))
         {
@@ -602,13 +606,13 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
             throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
         if (*col_decl.null_modifier)
         {
-            checkNullableArrayIsAllowed(column_type, settings);
+            checkNullableArrayIsAllowed(column_type, settings, check_nullable_array_setting);
             column_type = makeNullableAllowingArray(column_type);
         }
     }
     else if (make_columns_nullable)
     {
-        checkNullableArrayIsAllowed(column_type, settings);
+        checkNullableArrayIsAllowed(column_type, settings, check_nullable_array_setting);
         column_type = makeNullableAllowingArray(column_type);
     }
     else if (auto default_expr = col_decl.getDefaultExpression();
@@ -623,7 +627,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         }
         else
         {
-            checkNullableArrayIsAllowed(column_type, settings);
+            checkNullableArrayIsAllowed(column_type, settings, check_nullable_array_setting);
             column_type = makeNullableAllowingArray(column_type);
         }
     }
@@ -631,7 +635,11 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+    const ASTExpressionList & columns_ast,
+    ContextPtr context_,
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup,
+    bool check_nullable_array_setting)
 {
     /// First, deduce implicit types.
 
@@ -642,6 +650,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     NamesAndTypesList column_names_and_types;
     bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
+    check_nullable_array_setting
+        = check_nullable_array_setting && !is_restore_from_backup && !isLoadingFromExistingMetadata(mode);
 
     for (const auto & ast : columns_ast.children)
     {
@@ -655,7 +665,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
 
         column_names_and_types.emplace_back(
-            col_decl.name, getColumnType(col_decl, mode, make_columns_nullable, context_->getSettingsRef()));
+            col_decl.name,
+            getColumnType(col_decl, mode, make_columns_nullable, context_->getSettingsRef(), check_nullable_array_setting));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -716,7 +727,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 /// set nullability for case of column declaration w/o type but with default expression
                 if ((col_decl.null_modifier && *col_decl.null_modifier) || make_columns_nullable)
                 {
-                    checkNullableArrayIsAllowed(column.type, context_->getSettingsRef());
+                    checkNullableArrayIsAllowed(column.type, context_->getSettingsRef(), check_nullable_array_setting);
                     column.type = makeNullableAllowingArray(column.type);
                 }
             }
@@ -818,7 +829,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
+            properties.columns = getColumnsDescription(
+                *create.columns_list->columns,
+                getContext(),
+                mode,
+                is_restore_from_backup,
+                !create.attach_short_syntax);
         }
 
         if (create.columns_list->indices)
