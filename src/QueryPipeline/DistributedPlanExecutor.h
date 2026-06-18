@@ -10,6 +10,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -36,7 +37,7 @@ class TaskToHostMap : public boost::noncopyable
 public:
     TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_);
 
-    const std::vector<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
+    const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
     const UnorderedMapWithMemoryTracking<String, WorkerAddress> & getTaskHosts() const { return task_hosts; }
     const UnorderedMapWithMemoryTracking<String, StreamSourceAddress> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
 
@@ -44,7 +45,7 @@ private:
     void fillWorkerAddresses(ContextPtr context);
     void assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan);
 
-    std::vector<WorkerAddress> worker_addresses;
+    VectorWithMemoryTracking<WorkerAddress> worker_addresses;
     UnorderedMapWithMemoryTracking<String, WorkerAddress> task_hosts;
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> exchange_stream_source_hosts;
 };
