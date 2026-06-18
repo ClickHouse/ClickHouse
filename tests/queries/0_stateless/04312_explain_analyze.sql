@@ -2,6 +2,8 @@
 -- we only assert structural invariants
 -- and deterministic row counts via string matching on the `explain` column.
 
+SET enable_analyzer = 1;
+
 SELECT count() > 0
 FROM (EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);
 
@@ -27,3 +29,19 @@ FROM (EXPLAIN ANALYZE
     SELECT t1.a
     FROM (SELECT number AS a FROM numbers(1000)) AS t1
     INNER JOIN (SELECT number AS a FROM numbers(1000)) AS t2 ON t1.a = t2.a);
+
+-- Aggregating: grouping and merging stages are annotated.
+SELECT
+    countIf(explain LIKE '%Actual (grouping)%') >= 1,
+    countIf(explain LIKE '%Actual (merging)%') >= 1
+FROM (EXPLAIN ANALYZE
+    SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);
+
+-- Sorting: per-stream sort and merge-streams stages are annotated.
+SELECT
+    countIf(explain LIKE '%Actual (sorting)%') >= 1,
+    countIf(explain LIKE '%Actual (merge sorted streams)%') >= 1
+FROM (EXPLAIN ANALYZE
+    SELECT number FROM numbers_mt(100000) ORDER BY number % 7, number);
+
+SET enable_materialized_cte = 1;
