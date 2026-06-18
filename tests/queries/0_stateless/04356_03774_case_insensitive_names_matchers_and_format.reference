@@ -6,7 +6,7 @@ Bob
 --- Unqualified COLUMNS("DoubleQuoted") is case-sensitive ---
 Alice
 Bob
-0
+1
 --- Unquoted qualified matcher table name ---
 Alice
 Bob

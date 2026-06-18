@@ -15,8 +15,10 @@ SELECT COLUMNS(FIRSTNAME) FROM TestTable ORDER BY FirstName;
 
 SELECT '--- Unqualified COLUMNS("DoubleQuoted") is case-sensitive ---';
 SELECT COLUMNS("FirstName") FROM TestTable ORDER BY FirstName;
--- A column named lowercase `firstname` does not exist, so quoted COLUMNS("firstname") matches nothing
-SELECT count() FROM (SELECT COLUMNS("firstname") FROM TestTable);
+-- A column named lowercase `firstname` does not exist, so quoted COLUMNS("firstname") expands to
+-- no columns; the inner subquery still streams one row per source row, so a sibling literal
+-- column projects them and lets us observe how many columns matched (0) without ambiguity.
+SELECT 1 AS marker, COLUMNS("firstname") FROM TestTable ORDER BY marker LIMIT 1;
 
 SELECT '--- Unquoted qualified matcher table name ---';
 -- Unquoted `testtable.*` resolves against `TestTable` because the qualifier is case-insensitive
