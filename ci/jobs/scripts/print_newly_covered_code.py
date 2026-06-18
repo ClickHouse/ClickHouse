@@ -167,7 +167,11 @@ def _format_block_preview(rel: str, lines_in_block: list[int], context: int = 2)
 
 if __name__ == "__main__":
     BASE = f"{temp_dir}/base_llvm_coverage.info"
-    CURR = f"{temp_dir}/llvm_coverage.info"
+    # For partial runs (e.g. only stateless tests changed), llvm_coverage_job.py
+    # creates merged_llvm_coverage.info = union(pr.info, master.info) and passes it
+    # via COVERAGE_CURR_INFO so that gained lines are computed against the full
+    # coverage picture, not just the partial run.
+    CURR = os.environ.get("COVERAGE_CURR_INFO", f"{temp_dir}/llvm_coverage.info")
     # Up to 4 extra baselines downloaded by generate_diff_coverage_report.sh.
     # We intersect their zero-sets: a line must be uncovered in ALL of them to
     # pass the filter. More baselines = fewer false positives from run-to-run

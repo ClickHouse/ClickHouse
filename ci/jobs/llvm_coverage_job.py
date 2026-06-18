@@ -318,12 +318,120 @@ if __name__ == "__main__":
 
         results.append(diff_res)
 
-        # Generate report for changed blocks only
-        _print_log = f"{TEMP_DIR}{Utils.normalize_string('Print Uncovered Code')}.log"
-        _diff_inputs_exist = (
+        # --- Classify changed paths by test type and binary impact ---
+        _changed_paths: set[str] = set()
+        _changes_diff = Path(TEMP_DIR) / "changes.diff"
+        if _changes_diff.exists():
+            try:
+                _file_re = re.compile(r"^(?:--- a/|\+\+\+ b/)(.+)$")
+                with open(_changes_diff, encoding="utf-8", errors="replace") as _df:
+                    for _ln in _df:
+                        m = _file_re.match(_ln.rstrip("\n"))
+                        if m:
+                            _path = m.group(1)
+                            if _path != "/dev/null":
+                                _changed_paths.add(_path)
+            except Exception as _e:
+                print(f"Warning: could not parse changes.diff for path detection: {_e}")
+
+        def _is_stateless_test(p: str) -> bool:
+            return p.startswith("tests/queries/")
+
+        def _is_integration_test(p: str) -> bool:
+            return p.startswith("tests/integration/test_")
+
+        def _is_unit_test(p: str) -> bool:
+            return p.startswith("src/") and "/tests/" in p
+
+        def _is_test_path(p: str) -> bool:
+            return (
+                _is_stateless_test(p)
+                or _is_integration_test(p)
+                or _is_unit_test(p)
+                or p.startswith("tests/performance/")
+                or p.startswith("tests/stress/")
+            )
+
+        _NON_BINARY_TOP_LEVEL_FILES = frozenset({
+            "README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
+            "NOTICE", "AUTHORS", "CODE_OF_CONDUCT.md", "SECURITY.md",
+            ".gitignore", ".gitattributes", ".editorconfig",
+            ".dockerignore", ".clang-format", ".clang-tidy",
+        })
+
+        def _is_non_binary_path(p: str) -> bool:
+            if p.startswith("tests/"):
+                return True
+            if p.startswith("src/") and "/tests/" in p:
+                return True
+            if p.startswith("ci/") or p.startswith(".github/"):
+                return True
+            if p.startswith("docs/"):
+                return True
+            if "/" not in p and p in _NON_BINARY_TOP_LEVEL_FILES:
+                return True
+            return False
+
+        _tests_changed = any(_is_test_path(p) for p in _changed_paths)
+        _binary_unchanged = bool(_changed_paths) and all(
+            _is_non_binary_path(p) for p in _changed_paths
+        )
+
+        # Finer-grained: which test types changed?
+        _stateless_changed = any(_is_stateless_test(p) for p in _changed_paths)
+        _integration_changed = any(_is_integration_test(p) for p in _changed_paths)
+        _unit_changed = any(_is_unit_test(p) for p in _changed_paths)
+
+        _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
+        _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
+        _global_stats_available = Path(_base_info).exists() and Path(_curr_info).exists()
+
+        # --- Download extra master baselines for both LBC and newly-covered ---
+        # We download them here, once, shared by both analyses.  The condition is:
+        # either LBC will run (_diff_inputs_exist) or newly-covered will run
+        # (_tests_changed and _binary_unchanged).  Each file is ~530 MB so we
+        # only download them when at least one analysis will actually use them.
+        _diff_inputs_exist_early = (
             Path(TEMP_DIR + "changes.diff").exists()
             and Path(TEMP_DIR + "current.changed.info").exists()
         )
+        if _global_stats_available and (_diff_inputs_exist_early or (_tests_changed and _binary_unchanged)):
+            _first_base = master_track_commits[0] if master_track_commits else base_commit_sha
+            _download_extra_baselines(master_track_commits, _first_base)
+
+        # --- Union step for partial runs ---
+        # When the binary is unchanged and only a subset of test types was run
+        # (e.g. only stateless tests for a stateless-only PR), llvm_coverage.info
+        # reflects only those tests. To compute correct global coverage stats and
+        # find genuinely-new coverage, we merge it with the master baseline:
+        #   merged = union(pr.info, master.info)
+        # This gives "what total coverage looks like when we keep master's coverage
+        # for untouched test types and add the PR's new/changed tests."
+        # gained = covered(merged) \ covered(master)  — exact set of new lines
+        # lost   = covered(master) \ covered(pr)      — scoped to changed files (LBC)
+        _merged_info = _curr_info  # default: use PR's info as-is (full run)
+        if _binary_unchanged and _global_stats_available:
+            _partial = (
+                (_stateless_changed and not _integration_changed and not _unit_changed)
+                or (_integration_changed and not _stateless_changed and not _unit_changed)
+                or (_unit_changed and not _stateless_changed and not _integration_changed)
+            )
+            if _partial:
+                _merged_path = f"{TEMP_DIR}/merged_llvm_coverage.info"
+                rc = Shell.run(
+                    f"lcov -a '{_curr_info}' -a '{_base_info}'"
+                    f" --ignore-errors inconsistent,corrupt,unsupported"
+                    f" -o '{_merged_path}'",
+                    verbose=True,
+                )
+                if rc == 0 and Path(_merged_path).exists():
+                    _merged_info = _merged_path
+                    print(f"Partial run detected (only some test types changed). "
+                          f"Created merged coverage for gain/global stats: {_merged_path}")
+
+        # Generate report for changed blocks only
+        _print_log = f"{TEMP_DIR}{Utils.normalize_string('Print Uncovered Code')}.log"
+        _diff_inputs_exist = _diff_inputs_exist_early
         if _diff_inputs_exist:
             Shell.run(
                 f"python3 ci/jobs/scripts/print_uncovered_code.py 2>&1 | tee {_print_log}",
@@ -381,113 +489,13 @@ if __name__ == "__main__":
             _lbc_lines = print_res.ext.get("lbc_lines", 0)
             _lbc_fns = print_res.ext.get("lbc_fns", 0)
 
-            # Classify the changed paths so we can decide what coverage signal is most
-            # useful. Functional tests (tests/queries/...), integration tests
-            # (tests/integration/...) and unit tests (src/**/tests/...) all shift
-            # coverage even though the production binary may be unchanged, so for a
-            # tests-only PR the per-file diff report is uninformative — we want to
-            # show "which previously-uncovered code did these tests start to cover".
-            _changed_paths: set[str] = set()
-            _changes_diff = Path(TEMP_DIR) / "changes.diff"
-            if _changes_diff.exists():
-                try:
-                    _file_re = re.compile(r"^(?:--- a/|\+\+\+ b/)(.+)$")
-                    with open(_changes_diff, encoding="utf-8", errors="replace") as _df:
-                        for _ln in _df:
-                            m = _file_re.match(_ln.rstrip("\n"))
-                            if m:
-                                _path = m.group(1)
-                                if _path != "/dev/null":
-                                    _changed_paths.add(_path)
-                except Exception as _e:
-                    print(f"Warning: could not parse changes.diff for path detection: {_e}")
+            # _changed_paths, _tests_changed, _binary_unchanged, _global_stats_available,
+            # _stateless_changed, _integration_changed, _unit_changed, and _merged_info
+            # were all computed above (before Print Uncovered Code ran).
 
-            def _is_test_path(p: str) -> bool:
-                # Strict allowlist of paths containing runnable test
-                # definitions. `tests/ci/**`, `tests/integration/helpers/**`,
-                # `tests/clickhouse-test`, `tests/runner` and other
-                # `tests/`-prefixed *infrastructure* are deliberately NOT
-                # tests — counting them as test changes would mis-attribute
-                # coverage-build noise to PRs that only touched helpers.
-                if p.startswith("tests/queries/"):
-                    return True
-                if p.startswith("tests/performance/"):
-                    return True
-                if p.startswith("tests/stress/"):
-                    return True
-                # Integration tests live in tests/integration/test_*/.
-                # tests/integration/helpers/, tests/integration/runner, the
-                # top-level conftest.py, ... are infrastructure.
-                if p.startswith("tests/integration/test_"):
-                    return True
-                # Unit tests: C++ files under src/**/tests/.
-                if p.startswith("src/") and "/tests/" in p:
-                    return True
-                return False
-
-            # Conservative allowlist of paths that *definitely* cannot affect
-            # the compiled ClickHouse binary. Anything not in this set is
-            # assumed to potentially affect the binary, which suppresses the
-            # newly-covered analysis below — exhaustively enumerating
-            # build-affecting inputs (CMakeLists at any depth, *.cmake,
-            # *.h.in, parser/grammar files, codegen drivers, Rust sources,
-            # assembly, contrib/**, ...) is impractical, and missing one
-            # over-attributes coverage transitions to "tests catching up"
-            # when in fact the binary itself changed. Notably, `contrib/**`
-            # is absent from this list, so any contrib change correctly
-            # suppresses the newly-covered claim.
-            _NON_BINARY_TOP_LEVEL_FILES = frozenset({
-                "README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
-                "NOTICE", "AUTHORS", "CODE_OF_CONDUCT.md", "SECURITY.md",
-                ".gitignore", ".gitattributes", ".editorconfig",
-                ".dockerignore", ".clang-format", ".clang-tidy",
-            })
-
-            def _is_non_binary_path(p: str) -> bool:
-                # Everything under tests/ — runnable tests AND infrastructure
-                # (helpers, runners, tests/ci, conftests, jepsen.clickhouse,
-                # ...) — does not link into the production ClickHouse binary.
-                # The test-infrastructure case is intentionally broader than
-                # _is_test_path so changes to helpers don't flip
-                # _binary_unchanged to False, but they also don't flip
-                # _tests_changed to True (so no spurious comment is posted).
-                if p.startswith("tests/"):
-                    return True
-                # Unit tests under src/**/tests/.
-                if p.startswith("src/") and "/tests/" in p:
-                    return True
-                # CI infrastructure and dev tooling.
-                if p.startswith("ci/") or p.startswith(".github/"):
-                    return True
-                # Documentation.
-                if p.startswith("docs/"):
-                    return True
-                # Top-level repo metadata files.
-                if "/" not in p and p in _NON_BINARY_TOP_LEVEL_FILES:
-                    return True
-                return False
-
-            _tests_changed = any(_is_test_path(p) for p in _changed_paths)
-            # The production binary is identical to baseline iff *every*
-            # changed path is on the conservative allowlist above. Anything
-            # outside the allowlist — a `.cmake` file, a CMakeLists.txt, an
-            # unusual codegen input, a Rust source, a `utils/` change that
-            # also rebuilds a tool, a `contrib/` bump, etc. — flips this to
-            # False and suppresses the newly-covered analysis.
-            _binary_unchanged = bool(_changed_paths) and all(
-                _is_non_binary_path(p) for p in _changed_paths
-            )
-
-            _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
-            _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
-            _global_stats_available = Path(_base_info).exists() and Path(_curr_info).exists()
-
-            # Newly-covered analysis: only meaningful when the production binary is
-            # unchanged (so 0->nonzero transitions can be attributed to the test
-            # change) AND at least one test file actually changed (otherwise there
-            # is no reason to expect coverage to differ). This admits PRs that mix
-            # test additions with CI script / config / doc edits, which is the
-            # common shape of a "fix CI" or "add regression test" PR.
+            # Newly-covered analysis: run when the production binary is unchanged and
+            # at least one runnable test changed. Use _merged_info (union of PR run +
+            # master baseline) so partial runs still report all newly-covered lines.
             _nc_info = ""
             _nc_url = ""
             _nc_top_files: list[dict] = []
@@ -496,14 +504,9 @@ if __name__ == "__main__":
                 and _binary_unchanged
                 and _global_stats_available
             ):
-                # Download extra master baselines for cross-validation only when
-                # the newly-covered analysis will actually run. Each file is
-                # ~530 MB, so we defer the downloads to here rather than doing
-                # them unconditionally in generate_diff_coverage_report.sh.
-                # The primary base_llvm_coverage.info was already fetched by the
-                # shell script; we just need the extras (slots 2..N).
-                _first_base = master_track_commits[0] if master_track_commits else base_commit_sha
-                _download_extra_baselines(master_track_commits, _first_base)
+                # Pass the merged info path to print_newly_covered_code.py via env
+                # so it compares the right file against the master baseline.
+                os.environ["COVERAGE_CURR_INFO"] = _merged_info
 
                 _nc_log = f"{TEMP_DIR}{Utils.normalize_string('Newly Covered Code')}.log"
                 Shell.run(

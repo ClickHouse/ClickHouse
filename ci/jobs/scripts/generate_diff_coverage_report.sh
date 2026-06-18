@@ -92,6 +92,23 @@ lcov --extract base_llvm_coverage.info "${patterns[@]}" \
   --quiet \
   -o baseline.changed.info
 
+# Extract the same changed-file slice from each extra master baseline that was
+# downloaded by llvm_coverage_job.py for LBC cross-validation. These small
+# files (one per changed C/C++ file, same patterns as baseline.changed.info)
+# are passed to print_uncovered_code.py which intersects them to avoid
+# false-positive LBC alerts caused by lines that only occasionally fire in
+# background/async code.
+for slot in 2 3 4 5 6; do
+  src="base_llvm_coverage_${slot}.info"
+  if [ -f "$src" ] && [ -s "$src" ]; then
+    lcov --extract "$src" "${patterns[@]}" \
+      --ignore-errors inconsistent,corrupt,empty,unsupported,unused \
+      --quiet \
+      -o "baseline_${slot}.changed.info"
+    echo "Extracted changed-file slice from extra baseline #${slot}."
+  fi
+done
+
 current_sf_count=$(grep -c '^SF:' current.changed.info 2>/dev/null || true)
 baseline_sf_count=$(grep -c '^SF:' baseline.changed.info 2>/dev/null || true)
 

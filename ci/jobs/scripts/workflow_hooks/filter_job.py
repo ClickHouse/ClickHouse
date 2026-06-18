@@ -83,6 +83,48 @@ def _has_keeper_stress_changes(changed_files):
 _info_cache = None
 
 
+def _classify_changed_tests(changed_files):
+    """Return (stateless, integration, unit, binary_unchanged).
+
+    binary_unchanged is True only when every changed path is non-binary
+    (tests/, ci/, docs/, top-level metadata). If any source/cmake/contrib
+    file changed the binary is potentially different.
+    """
+    NON_BINARY_TOP = frozenset({
+        "README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
+        "NOTICE", "AUTHORS", "CODE_OF_CONDUCT.md", "SECURITY.md",
+        ".gitignore", ".gitattributes", ".editorconfig",
+        ".dockerignore", ".clang-format", ".clang-tidy",
+    })
+
+    def _non_binary(p):
+        p = p.removeprefix(".").removeprefix("/")
+        return (
+            p.startswith("tests/")
+            or p.startswith("ci/")
+            or p.startswith(".github/")
+            or p.startswith("docs/")
+            or (p.startswith("src/") and "/tests/" in p)
+            or ("/" not in p and p in NON_BINARY_TOP)
+        )
+
+    stateless = any(
+        f.removeprefix(".").removeprefix("/").startswith("tests/queries/")
+        for f in changed_files
+    )
+    integration = any(
+        f.removeprefix(".").removeprefix("/").startswith("tests/integration/test_")
+        for f in changed_files
+    )
+    unit = any(
+        f.removeprefix(".").removeprefix("/").startswith("src/")
+        and "/tests/" in f
+        for f in changed_files
+    )
+    binary_unchanged = bool(changed_files) and all(_non_binary(f) for f in changed_files)
+    return stateless, integration, unit, binary_unchanged
+
+
 def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
@@ -253,6 +295,37 @@ def should_skip_job(job_name):
         and _info_cache.pr_number  # run all performance jobs on master
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
+
+    # --- Coverage sub-job skipping based on changed test type ---
+    # When only one class of tests changed and the binary is unchanged, skip
+    # the coverage sub-jobs for the other test types. The llvm_coverage_job
+    # (final merge) handles the missing profdata by unioning the partial PR
+    # .info with the master baseline so gained/lost coverage is still correct.
+    # Only skip when the binary is provably unchanged; any source/cmake change
+    # keeps all coverage jobs active.
+    _is_coverage_ft  = "amd_llvm_coverage" in job_name and JobNames.STATELESS in job_name
+    _is_coverage_it  = "amd_llvm_coverage" in job_name and JobNames.INTEGRATION in job_name
+    _is_coverage_ut  = "amd_llvm_coverage" in job_name and JobNames.UNITTEST in job_name
+    if _is_coverage_ft or _is_coverage_it or _is_coverage_ut:
+        cf = _info_cache.get_changed_files() or []
+        _sl, _it, _ut, _bin_unch = _classify_changed_tests(cf)
+        if _bin_unch and (_sl or _it or _ut):
+            # Only one type changed — skip the other two.
+            if _sl and not _it and not _ut:
+                if _is_coverage_it:
+                    return True, "Skipped: only stateless tests changed, integration coverage not needed"
+                if _is_coverage_ut:
+                    return True, "Skipped: only stateless tests changed, unit coverage not needed"
+            elif _it and not _sl and not _ut:
+                if _is_coverage_ft:
+                    return True, "Skipped: only integration tests changed, stateless coverage not needed"
+                if _is_coverage_ut:
+                    return True, "Skipped: only integration tests changed, unit coverage not needed"
+            elif _ut and not _sl and not _it:
+                if _is_coverage_ft:
+                    return True, "Skipped: only unit tests changed, stateless coverage not needed"
+                if _is_coverage_it:
+                    return True, "Skipped: only unit tests changed, integration coverage not needed"
 
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
