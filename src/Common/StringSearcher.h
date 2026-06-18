@@ -8,7 +8,6 @@
 #include <memory>
 
 #include <Common/TargetSpecific.h>
-#include <Common/isValidUTF8.h>
 
 
 #ifdef __AVX2__
@@ -386,55 +385,11 @@ public:
 
 }
 
-/// StringZilla-based implementation (for x86_64_v4 with AVX-512)
-DECLARE_X86_64_V4_SPECIFIC_CODE(
-
-class UTF8CaseInsensitiveSearcherImpl
-{
-private:
-    sz_cptr_t const needle;
-    sz_cptr_t const needle_end;
-    mutable sz_utf8_case_insensitive_needle_metadata_t needle_metadata;
-
-public:
-    UTF8CaseInsensitiveSearcherImpl(const UInt8 * needle_, size_t needle_size)
-        : needle(reinterpret_cast<sz_cptr_t>(needle_))
-        , needle_end(needle + needle_size)
-        , needle_metadata{}
-    {
-    }
-
-    bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
-    {
-        sz_cptr_t pos_cptr = reinterpret_cast<sz_cptr_t>(pos);
-        size_t needle_size = needle_end - needle;
-        sz_ordering_t result = sz_utf8_case_insensitive_order(pos_cptr, needle_size, needle, needle_size);
-        return result == sz_equal_k;
-    }
-
-    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
-    {
-        if (needle == needle_end)
-            return haystack;
-
-        sz_cptr_t haystack_cptr = reinterpret_cast<sz_cptr_t>(haystack);
-        size_t haystack_size = haystack_end - haystack;
-        size_t needle_size = needle_end - needle;
-
-        size_t matched_length = 0;
-        const char * res
-            = sz_utf8_case_insensitive_find(haystack_cptr, haystack_size, needle, needle_size, &needle_metadata, &matched_length);
-
-        if (!res)
-            return haystack_end;
-        return reinterpret_cast<const UInt8 *>(res);
-    }
-};
-
-) // DECLARE_X86_64_V4_SPECIFIC_CODE
-
-#if defined(__aarch64__)
-/// On ARM, use Default (Poco + NEON) implementation
+/// Case-insensitive UTF-8 searcher. The Default impl serves every target (AVX2 on x86, NEON on ARM,
+/// scalar otherwise) and folds one code point at a time via `Poco::Unicode::toLower`, so results are
+/// identical across CPUs. StringZilla is not used here: its UTF-8 case-insensitive routines apply full
+/// Unicode case folding (e.g. `ß` == `ss`, `ﬃ` == `ffi`) and can return matches whose byte length differs
+/// from the needle, which diverges from the one-code-point contract and breaks length-based callers.
 class UTF8CaseInsensitiveStringSearcher final
 {
 private:
@@ -458,66 +413,6 @@ public:
 
     const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
 };
-
-#else
-/// On x86_64: use AVX-512 StringZilla (v4) when the CPU supports it, otherwise the Default impl, which
-/// uses AVX2 at the default x86-64-v3 baseline and a scalar fallback below that. AVX2 is therefore always
-/// used when the build targets it, regardless of multitarget dispatch.
-class UTF8CaseInsensitiveStringSearcher final
-{
-private:
-#if USE_MULTITARGET_CODE
-    /// StringZilla's UTF-8 routines (`sz_utf8_case_insensitive_find` / `sz_utf8_case_insensitive_order`)
-    /// are undefined on invalid UTF-8, but these functions must tolerate an invalid UTF-8 needle and
-    /// treat it as non-matching. The Default (AVX2) searcher honors that contract, so fall back to it
-    /// whenever the needle is not valid UTF-8.
-    const bool use_v4;
-    std::unique_ptr<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl> impl_v4;
-    std::unique_ptr<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl> impl_default;
-
-public:
-    UTF8CaseInsensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
-        : use_v4(isArchSupported(TargetArch::x86_64_v4) && UTF8::isValidUTF8(needle_, needle_size))
-    {
-        if (use_v4)
-            impl_v4 = std::make_unique<TargetSpecific::x86_64_v4::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
-        else
-            impl_default = std::make_unique<TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl>(needle_, needle_size);
-    }
-
-    ALWAYS_INLINE bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const
-    {
-        return use_v4 ? impl_v4->compare(haystack, haystack_end, pos) : impl_default->compare(haystack, haystack_end, pos);
-    }
-
-    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
-    {
-        return use_v4 ? impl_v4->search(haystack, haystack_end) : impl_default->search(haystack, haystack_end);
-    }
-#else
-    /// No multitarget dispatch: Default impl (AVX2 when the baseline targets it, otherwise scalar).
-    TargetSpecific::Default::UTF8CaseInsensitiveSearcherImpl impl;
-
-public:
-    UTF8CaseInsensitiveStringSearcher(const UInt8 * needle_, size_t needle_size)
-        : impl(needle_, needle_size)
-    {
-    }
-
-    ALWAYS_INLINE bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const
-    {
-        return impl.compare(haystack, haystack_end, pos);
-    }
-
-    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
-    {
-        return impl.search(haystack, haystack_end);
-    }
-#endif
-
-    const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
-};
-#endif
 
 /// Use only with short haystacks where cheap initialization is required.
 template <bool CaseInsensitive>
