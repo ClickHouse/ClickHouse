@@ -369,3 +369,76 @@ def test_named_collection_metric_after_config_reload(started_cluster):
 
     finally:
         node2.query("DROP NAMED COLLECTION IF EXISTS nc_reload_test")
+
+
+def test_runtime_config_reload_of_limits(started_cluster):
+    """Runtime reload must affect limit enforcement without dropping existing tables."""
+
+    config_path = "/etc/clickhouse-server/config.d/reload_test.xml"
+    setting_name = "max_table_num_to_throw"
+    initial_limit = 10
+    lower_limit = 6
+    warn_limit = 5
+
+    def _get_server_setting(node, setting_name):
+        return int(node.query(f"SELECT value FROM system.server_settings WHERE name = '{setting_name}'").strip())
+
+    def _get_server_setting_function(node, setting_name):
+        return int(node.query(f"SELECT getServerSetting('{setting_name}')").strip())
+
+    def _create_table(i):
+        node.query(f"CREATE TABLE t_reload_{i} (a Int32) ENGINE = Log")
+
+    def _drop_tables():
+        for i in range(initial_limit + 2):
+            node.query(f"DROP TABLE IF EXISTS t_reload_{i} SYNC")
+
+    def _reload_without_override():
+        node.exec_in_container(["bash", "-c", f"rm -f {config_path}"])
+        node.query("SYSTEM RELOAD CONFIG")
+
+    def _reload_with_limit(limit):
+        node.replace_config(config_path, f"<clickhouse><{setting_name}>{limit}</{setting_name}></clickhouse>")
+        node.query("SYSTEM RELOAD CONFIG")
+
+    try:
+        _drop_tables()
+        _reload_without_override()
+
+        assert _get_server_setting(node, setting_name) == initial_limit
+        assert _get_server_setting_function(node, setting_name) == initial_limit
+
+        for i in range(lower_limit + 1):
+            _create_table(i)
+
+        verify_warning_with_values(node, current_val=lower_limit + 1, warn_val=warn_limit, throw_val=initial_limit)
+
+        _reload_with_limit(lower_limit)
+
+        assert _get_server_setting(node, setting_name) == lower_limit
+        assert _get_server_setting_function(node, setting_name) == lower_limit
+        verify_warning_with_values(node, current_val=lower_limit + 1, warn_val=warn_limit, throw_val=lower_limit)
+
+        assert "TOO_MANY_TABLES" in node.query_and_get_error(
+            f"CREATE TABLE t_reload_{lower_limit + 1} (a Int32) ENGINE = Log"
+        )
+        assert int(node.query(
+            "SELECT count() FROM system.tables WHERE database = currentDatabase() AND startsWith(name, 't_reload_')"
+        )) == lower_limit + 1
+
+        _reload_without_override()
+
+        assert _get_server_setting(node, setting_name) == initial_limit
+        assert _get_server_setting_function(node, setting_name) == initial_limit
+        verify_warning_with_values(node, current_val=lower_limit + 1, warn_val=warn_limit, throw_val=initial_limit)
+
+        for i in range(lower_limit + 1, initial_limit):
+            _create_table(i)
+
+        assert "TOO_MANY_TABLES" in node.query_and_get_error(
+            f"CREATE TABLE t_reload_{initial_limit} (a Int32) ENGINE = Log"
+        )
+
+    finally:
+        _drop_tables()
+        _reload_without_override()
