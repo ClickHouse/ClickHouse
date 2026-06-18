@@ -2143,6 +2143,37 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     }
 }
 
+/// Validate the distributed table settings and propagate the global `distributed_background_insert_*`
+/// defaults to the settings that were not specified in the query. The background `INSERT` queue reads
+/// these table settings directly, so both the `Distributed` and the `Remote`/`RemoteSecure` engines
+/// must run this after `loadFromQuery`; otherwise `ENGINE = Remote(...)` would ignore the global
+/// defaults and accept invalid combinations that `ENGINE = Distributed(...)` rejects.
+static void finalizeDistributedSettings(DistributedSettings & distributed_settings, const ContextPtr & context)
+{
+    if (distributed_settings[DistributedSetting::max_delay_to_insert] < 1)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "max_delay_to_insert cannot be less then 1");
+
+    if (distributed_settings[DistributedSetting::bytes_to_throw_insert] && distributed_settings[DistributedSetting::bytes_to_delay_insert] &&
+        distributed_settings[DistributedSetting::bytes_to_throw_insert] <= distributed_settings[DistributedSetting::bytes_to_delay_insert])
+    {
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "bytes_to_throw_insert cannot be less or equal to bytes_to_delay_insert (since it is handled first)");
+    }
+
+    /// Set default values from the distributed_background_insert_* global context settings.
+    if (!distributed_settings[DistributedSetting::background_insert_batch].changed)
+        distributed_settings[DistributedSetting::background_insert_batch] = context->getSettingsRef()[Setting::distributed_background_insert_batch];
+    if (!distributed_settings[DistributedSetting::background_insert_split_batch_on_failure].changed)
+        distributed_settings[DistributedSetting::background_insert_split_batch_on_failure]
+            = context->getSettingsRef()[Setting::distributed_background_insert_split_batch_on_failure];
+    if (!distributed_settings[DistributedSetting::background_insert_sleep_time_ms].changed)
+        distributed_settings[DistributedSetting::background_insert_sleep_time_ms] = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms];
+    if (!distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms].changed)
+        distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms]
+            = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
+}
+
 void registerStorageDistributed(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory)
 {
@@ -2198,28 +2229,7 @@ void registerStorageDistributed(StorageFactory & factory)
             distributed_settings.loadFromQuery(*args.storage_def);
         }
 
-        if (distributed_settings[DistributedSetting::max_delay_to_insert] < 1)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "max_delay_to_insert cannot be less then 1");
-
-        if (distributed_settings[DistributedSetting::bytes_to_throw_insert] && distributed_settings[DistributedSetting::bytes_to_delay_insert] &&
-            distributed_settings[DistributedSetting::bytes_to_throw_insert] <= distributed_settings[DistributedSetting::bytes_to_delay_insert])
-        {
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "bytes_to_throw_insert cannot be less or equal to bytes_to_delay_insert (since it is handled first)");
-        }
-
-        /// Set default values from the distributed_background_insert_* global context settings.
-        if (!distributed_settings[DistributedSetting::background_insert_batch].changed)
-            distributed_settings[DistributedSetting::background_insert_batch] = context->getSettingsRef()[Setting::distributed_background_insert_batch];
-        if (!distributed_settings[DistributedSetting::background_insert_split_batch_on_failure].changed)
-            distributed_settings[DistributedSetting::background_insert_split_batch_on_failure]
-                = context->getSettingsRef()[Setting::distributed_background_insert_split_batch_on_failure];
-        if (!distributed_settings[DistributedSetting::background_insert_sleep_time_ms].changed)
-            distributed_settings[DistributedSetting::background_insert_sleep_time_ms] = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms];
-        if (!distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms].changed)
-            distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms]
-                = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
+        finalizeDistributedSettings(distributed_settings, context);
 
         return std::make_shared<StorageDistributed>(
             args.table_id,
@@ -2504,6 +2514,8 @@ void registerStorageRemote(StorageFactory & factory)
         if (args.storage_def->settings)
             distributed_settings.loadFromQuery(*args.storage_def);
 
+        finalizeDistributedSettings(distributed_settings, args.getContext());
+
         bool has_local_shard = false;
         for (const auto & shard_info : parsed.cluster->getShardsInfo())
         {
@@ -2601,15 +2613,41 @@ void registerStorageRemote(StorageFactory & factory)
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     };
 
+    const String common_description = R"DOCS_MD(
+The `Remote` and `RemoteSecure` table engines are the persistent counterparts of the [`remote` and `remoteSecure`](/sql-reference/table-functions/remote) table functions.
+They accept the same arguments and let you access remote servers without listing a cluster in the server configuration file: the engine builds a [`Distributed`](/engines/table-engines/special/distributed)-like storage over an ad-hoc cluster created from the supplied addresses on the fly.
+
+Unlike the table functions, the addresses and credentials are stored in the table definition, so the password is hidden in `SHOW CREATE TABLE` and the engine is exposed as `Distributed` in `system.tables.engine`.
+
+The first argument `addresses_expr` is a remote server address or an expression that generates several addresses, in the form `host` or `host:port`.
+The `host` can be a server name or an IPv4/IPv6 address (an IPv6 address must be specified in `[]`).
+The address expression supports globbing patterns such as `{a,b,c}`, `{N..M}` and `{a|b}` to expand into multiple shards and replicas.
+If `db` and `table` are omitted, `system.one` is used.
+
+The remaining arguments are `user` (default: `default`), `password` (default: empty) and a `sharding_key` expression.
+)DOCS_MD";
+
     factory.registerStorage("Remote", [create](const StorageFactory::Arguments & args)
     {
         return create(args, /* secure = */ false);
-    }, features);
+    }, features,
+    Documentation{
+        .description = common_description + R"DOCS_MD(
+`Remote` connects over the plain TCP port (`tcp_port`, `9000` by default) when the port is omitted.
+)DOCS_MD",
+        .syntax = "ENGINE = Remote(addresses_expr[, db, table, user[, password], sharding_key])",
+        .related = {"Distributed"}});
 
     factory.registerStorage("RemoteSecure", [create](const StorageFactory::Arguments & args)
     {
         return create(args, /* secure = */ true);
-    }, features);
+    }, features,
+    Documentation{
+        .description = common_description + R"DOCS_MD(
+`RemoteSecure` connects over a secure TLS connection using the secure TCP port (`tcp_port_secure`, `9440` by default) when the port is omitted.
+)DOCS_MD",
+        .syntax = "ENGINE = RemoteSecure(addresses_expr[, db, table, user[, password], sharding_key])",
+        .related = {"Distributed"}});
 }
 
 bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
