@@ -7081,11 +7081,11 @@ void Context::setApplicationType(ApplicationType type)
         shared->max_partition_size_to_drop = shared->server_settings[ServerSetting::max_partition_size_to_drop];
         shared->max_part_num_to_warn = shared->server_settings[ServerSetting::max_part_num_to_warn];
 #define INITIALIZE_ENTITY_LIMIT_WITH_WARNING(ename, EName, warn_default, warn_setting, warn_setting_name) \
-        shared->max_##ename##_num_to_warn = shared->server_settings.get(warn_setting_name).safeGet<UInt64>();
+    shared->max_##ename##_num_to_warn = shared->server_settings.get(warn_setting_name).safeGet<UInt64>();
         APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(INITIALIZE_ENTITY_LIMIT_WITH_WARNING)
 #undef INITIALIZE_ENTITY_LIMIT_WITH_WARNING
 #define INITIALIZE_ENTITY_LIMIT_WITH_THROW(ename, EName, throw_default, throw_setting, throw_setting_name) \
-        shared->max_##ename##_num_to_throw = shared->server_settings.get(throw_setting_name).safeGet<UInt64>();
+    shared->max_##ename##_num_to_throw = shared->server_settings.get(throw_setting_name).safeGet<UInt64>();
         APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(INITIALIZE_ENTITY_LIMIT_WITH_THROW)
 #undef INITIALIZE_ENTITY_LIMIT_WITH_THROW
     }
