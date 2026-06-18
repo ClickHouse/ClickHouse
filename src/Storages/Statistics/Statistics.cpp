@@ -17,6 +17,7 @@
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
+#include <Storages/Statistics/StatisticsUniqCombined.h>
 #include <Storages/StatisticsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -120,6 +121,16 @@ std::optional<Float64> StatisticsUtils::interpolateLessLinear(
     if (!val_as_float || !min_as_float || !max_as_float)
         return std::nullopt;
     return interpolateLessLinearTyped<Float64>(Field(*val_as_float), Field(*min_as_float), Field(*max_as_float), row_count);
+}
+
+/// Returns the first available uniq-style cardinality estimator (prefers Uniq over UniqCombined).
+static const IStatistics * findUniqStats(const ColumnStatistics::StatsMap & m)
+{
+    if (auto it = m.find(StatisticsType::Uniq); it != m.end())
+        return it->second.get();
+    if (auto it = m.find(StatisticsType::UniqCombined); it != m.end())
+        return it->second.get();
+    return nullptr;
 }
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
@@ -246,10 +257,11 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     if (val.isNaN())
         return 0;
 
-    if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    const IStatistics * uniq_stats = findUniqStats(stats);
+    if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
-        if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
+        if (uniq_stats->estimateCardinality() < 2048)
         {
             return stats.at(StatisticsType::TDigest)->estimateEqual(val);
         }
@@ -260,9 +272,9 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (stats.contains(StatisticsType::Uniq))
+    if (const IStatistics * us = findUniqStats(stats))
     {
-        UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+        UInt64 cardinality = us->estimateCardinality();
         if (cardinality == 0 || rows == 0)
             return 0;
         /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
@@ -299,9 +311,9 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
 
 UInt64 ColumnStatistics::estimateCardinality() const
 {
-    if (stats.contains(StatisticsType::Uniq))
+    if (const IStatistics * us = findUniqStats(stats))
     {
-        return stats.at(StatisticsType::Uniq)->estimateCardinality();
+        return us->estimateCardinality();
     }
     /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
     return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
@@ -361,8 +373,8 @@ Estimate ColumnStatistics::getEstimate() const
     for (const auto & [type, _] : stats)
         info.types.insert(type);
 
-    if (stats.contains(StatisticsType::Uniq))
-        info.estimated_cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+    if (const IStatistics * us = findUniqStats(stats))
+        info.estimated_cardinality = us->estimateCardinality();
 
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
     {
@@ -626,6 +638,9 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
     registerValidator(StatisticsType::Uniq, uniqStatisticsValidator);
     registerCreator(StatisticsType::Uniq, uniqStatisticsCreator);
 
+    registerValidator(StatisticsType::UniqCombined, uniqCombinedStatisticsValidator);
+    registerCreator(StatisticsType::UniqCombined, uniqCombinedStatisticsCreator);
+
 #if USE_DATASKETCHES
     registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);
     registerCreator(StatisticsType::CountMinSketch, countMinSketchStatisticsCreator);
@@ -682,7 +697,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniqcombined'", type);
 
         auto stat_ptr = (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;
@@ -698,7 +713,7 @@ ColumnStatisticsDescription::StatisticsTypeDescMap MergeTreeStatisticsFactory::g
     {
         auto it = validators.find(type);
         if (it == validators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest' and 'uniq'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniqcombined'", type);
 
         auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
         SingleStatisticsDescription desc(type, ast, false);

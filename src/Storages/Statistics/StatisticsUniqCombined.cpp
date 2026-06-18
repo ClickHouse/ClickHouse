@@ -1,4 +1,4 @@
-#include <Storages/Statistics/StatisticsUniq.h>
+#include <Storages/Statistics/StatisticsUniqCombined.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -10,22 +10,26 @@
 namespace DB
 {
 
-StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+/// Use uniqCombined with K=12: Small(16 exact) → HashSet(up to 256) → HLL(~3 KB).
+static constexpr UInt64 UNIQ_COMBINED_PRECISION = 12;
+
+StatisticsUniqCombined::StatisticsUniqCombined(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
     : IStatistics(description)
 {
     arena = std::make_unique<Arena>();
     AggregateFunctionProperties properties;
-    collector = AggregateFunctionFactory::instance().get("uniq", NullsAction::IGNORE_NULLS, {data_type}, Array(), properties);
+    collector = AggregateFunctionFactory::instance().get(
+        "uniqCombined", NullsAction::IGNORE_NULLS, {data_type}, Array{UNIQ_COMBINED_PRECISION}, properties);
     data = arena->alignedAlloc(collector->sizeOfData(), collector->alignOfData());
     collector->create(data);
 }
 
-StatisticsUniq::~StatisticsUniq()
+StatisticsUniqCombined::~StatisticsUniqCombined()
 {
     collector->destroy(data);
 }
 
-void StatisticsUniq::build(const ColumnPtr & column)
+void StatisticsUniqCombined::build(const ColumnPtr & column)
 {
     const IColumn * raw_column_ptr = nullptr;
 
@@ -47,13 +51,13 @@ void StatisticsUniq::build(const ColumnPtr & column)
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
 }
 
-void StatisticsUniq::merge(const StatisticsPtr & other_stats)
+void StatisticsUniqCombined::merge(const StatisticsPtr & other_stats)
 {
-    const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
+    const StatisticsUniqCombined * other = typeid_cast<const StatisticsUniqCombined *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
 }
 
-void StatisticsUniq::serialize(WriteBuffer & buf)
+void StatisticsUniqCombined::serialize(WriteBuffer & buf)
 {
     if (collector->getNestedFunction())
         writeBinary(true, buf);
@@ -62,7 +66,7 @@ void StatisticsUniq::serialize(WriteBuffer & buf)
     collector->serialize(data, buf);
 }
 
-void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsUniqCombined::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
     bool is_null = false;
     readBinary(is_null, buf);
@@ -86,23 +90,23 @@ void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*versi
     collector->deserialize(data, buf);
 }
 
-UInt64 StatisticsUniq::estimateCardinality() const
+UInt64 StatisticsUniqCombined::estimateCardinality() const
 {
     auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
     return column->getUInt(0);
 }
 
-bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+bool uniqCombinedStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
     return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
 }
 
-StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+StatisticsPtr uniqCombinedStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
-    return std::make_shared<StatisticsUniq>(description, data_type);
+    return std::make_shared<StatisticsUniqCombined>(description, data_type);
 }
 
 }
