@@ -587,10 +587,23 @@ def test_kafka_read_consumers_in_parallel(kafka_cluster):
         """
     )
 
+    # Parallel reading of 8 consumers reaches 64 polls in ~8s; sequential reading
+    # is gated by kafka_poll_timeout_ms=1000 to ~1 poll/sec, so it cannot reach 64
+    # polls in under ~64s on any build. Slow builds (sanitizer/coverage/debug)
+    # inflate the parallel path's wall-clock well past 30s under CI batch load, so
+    # use a larger timeout there while staying below the ~64s sequential floor that
+    # would catch a regression to sequential reads.
+    poll_timeout = (
+        60
+        if instance.is_built_with_sanitizer()
+        or instance.is_built_with_llvm_coverage()
+        or instance.is_debug_build()
+        else 30
+    )
     instance.wait_for_log_line(
         f"{kafka_table}.*Polled batch of [0-9]+.*read_consumers_in_parallel",
         repetitions=64,
-        timeout=30,  # we should get 64 polls in ~8 seconds, but when read sequentially it will take more than 64 sec
+        timeout=poll_timeout,
     )
 
     cancel.set()

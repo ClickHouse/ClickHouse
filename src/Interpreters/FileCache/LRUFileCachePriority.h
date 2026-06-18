@@ -1,6 +1,8 @@
 #pragma once
 
+#include <deque>
 #include <list>
+#include <mutex>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
 #include <Common/logger_useful.h>
@@ -44,6 +46,8 @@ public:
         size_t max_elements_,
         const std::string & description_ = "none",
         StatePtr state_ = nullptr);
+
+    ~LRUFileCachePriority() override;
 
     Type getType() const override { return Type::LRU; }
 
@@ -166,6 +170,8 @@ private:
     friend class SLRUFileCachePriority;
     friend class ::FileCacheTest_MoveEvictionPos_Test;
 
+    size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) override;
+
     LRUQueue queue;
     const std::string description;
     LoggerPtr log;
@@ -177,6 +183,16 @@ private:
     /// skipping elements which are likely in non-evictable state.
     LRUQueue::iterator eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     mutable std::mutex eviction_pos_mutex;
+    struct InvalidatedRef
+    {
+        std::weak_ptr<Entry> entry;
+        LRUQueue::iterator iterator;
+    };
+    std::deque<InvalidatedRef> invalidated_refs TSA_GUARDED_BY(invalidated_mutex);
+    mutable std::mutex invalidated_mutex;
+    /// Size of `invalidated_refs`, kept as an atomic so the background cleanup can skip
+    /// this queue without taking `invalidated_mutex` when there is nothing to clean up.
+    std::atomic<size_t> invalidated_count = 0;
     /// Id of the current priority queue.
     /// Used to find its eviction info in collected eviction info map
     /// (which contains eviction info for several priority queues).
@@ -198,6 +214,9 @@ private:
         const size_t * max_elements_ = nullptr) const;
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
+
+    /// Record an entry that invalidate() left in the queue for the background cleanup to remove.
+    void addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it) noexcept;
 
     void iterate(
         IterateFunc func,
@@ -251,6 +270,8 @@ public:
 
     void invalidate() noexcept override;
 
+    void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept override;
+
     void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
     void decrementSize(size_t size) override;
@@ -261,6 +282,8 @@ public:
 
 private:
     bool assertValid() const;
+
+    void invalidateImpl() noexcept;
 
     LRUFileCachePriority * cache_priority{};
 
