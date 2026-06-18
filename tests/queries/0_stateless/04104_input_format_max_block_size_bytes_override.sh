@@ -23,10 +23,21 @@ url="${CLICKHOUSE_URL}&async_insert=0&min_insert_block_size_rows=0&min_insert_bl
 echo -ne '1\n2\n3\n4\n5\n6\n7\n8\n' | \
     ${CLICKHOUSE_CURL} -sS "${url}&query=INSERT+INTO+t_ifmbs_override+FORMAT+CSV" --data-binary @-
 
-# The INSERT over HTTP is synchronous (async_insert=0), so all parts are committed and their
-# NewPart events are recorded before the request returns. SYSTEM FLUSH LOGS is synchronous and
-# makes them queryable.
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS part_log"
+# The query_log/part_log entries are written after the HTTP response is sent, so there is a
+# race between the curl request returning and the rows becoming queryable
+# (https://github.com/ClickHouse/ClickHouse/issues/84364). Flush and poll until the INSERT
+# appears in query_log as QueryFinish; by then all of its NewPart events are flushed too.
+for _ in $(seq 1 60); do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, part_log"
+    finished=$($CLICKHOUSE_CLIENT -q "
+        SELECT count()
+        FROM system.query_log
+        WHERE event_date >= yesterday()
+          AND query_id = '${query_id}'
+          AND type = 'QueryFinish'")
+    [ "$finished" -ge 1 ] && break
+    sleep 0.5
+done
 
 $CLICKHOUSE_CLIENT -q "
     SELECT count()
