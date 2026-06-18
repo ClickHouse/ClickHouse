@@ -692,12 +692,12 @@ Let's examine the output. First let's look at the header.
 
 ```txt
    Query summary:
-     Time:        <total> (planning <planning> · execute <execute>)
+     Time:        <total> (planning <planning> · execution <execute>)
      Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
      Peak memory: <peak>
 ```
 
-- `Time` — total time split into planning (i.e. creation of pla + optimization of plan + pipeline construction) and execution (running the pipeline) phases.
+- `Time` — total time split into planning (i.e. creation of plan + optimization of plan + pipeline construction) and execution (running the pipeline) phases.
 - `Read` — rows and uncompressed bytes read from tables, with throughput - the same numbers the normal query footer reports as "Processed".
 - `Peak memory` — peak memory the query used.
 
