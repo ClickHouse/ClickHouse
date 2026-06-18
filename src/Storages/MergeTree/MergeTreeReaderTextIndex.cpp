@@ -317,24 +317,19 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
             /// intersection of its tokens (a safe upper bound) from the analyzer's per-token cardinalities.
             const auto & all_token_infos = analyzer.getAllTokenInfos();
             const auto & settings = condition_text.getContext()->getSettingsRef();
-            double selectivity_threshold = static_cast<double>(settings[Setting::text_index_hint_max_selectivity]);
-            size_t num_rows_in_part = data_part_info_for_read->getRowCount();
+            const double selectivity_threshold = static_cast<double>(settings[Setting::text_index_hint_max_selectivity]);
+            /// Cardinalities (granule) and num_rows_in_part (part) share scale - a text index has whole-part granularity.
+            const size_t num_rows_in_part = data_part_info_for_read->getRowCount();
 
-            double log_cardinality = 0.0;
-            bool all_tokens_present = (num_rows_in_part > 0);
-            for (const auto & token : search_query->tokens)
-            {
-                auto it = all_token_infos.find(token);
-                if (it == all_token_infos.end())
-                {
-                    all_tokens_present = false;
-                    break;
-                }
-                log_cardinality += std::log(static_cast<double>(it->second->cardinality));
-            }
+            const bool all_tokens_present = ((num_rows_in_part > 0) && std::ranges::all_of(search_query->tokens,
+                    [&](const auto & token) { return all_token_infos.find(token) != all_token_infos.end(); }));
 
             if (all_tokens_present)
             {
+                double log_cardinality = 0.0;
+                for (const auto & token : search_query->tokens)
+                    log_cardinality += std::log(static_cast<double>(all_token_infos.find(token)->second->cardinality));
+
                 log_cardinality -= static_cast<double>(search_query->tokens.size() - 1) * std::log(static_cast<double>(num_rows_in_part));
                 if (std::exp(log_cardinality) > static_cast<double>(num_rows_in_part) * selectivity_threshold)
                     use_fallback[i] = true;
