@@ -46,6 +46,31 @@ def prepare_test():
         node1.query("DROP TABLE IF EXISTS secret ON CLUSTER default")
 
 
+def test_noop_update_does_not_bump_znode(started_cluster):
+    node1.query("GRANT SELECT ON *.* TO test")
+
+    user_id = node1.query("SELECT id FROM system.users WHERE name = 'test'").strip()
+    znode = f"/clickhouse/access/uuid/{user_id}"
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    try:
+        _, stat_before = zk.get(znode)
+
+        # Re-granting an already granted privilege leaves the entity identical, so it
+        # must not write to ZooKeeper (and thus must not refresh the entity cluster-wide).
+        node1.query("GRANT SELECT ON *.* TO test")
+        _, stat_noop = zk.get(znode)
+        assert stat_noop.version == stat_before.version
+
+        # A privilege change that actually modifies the entity must still bump the version.
+        node1.query("GRANT INSERT ON *.* TO test")
+        _, stat_changed = zk.get(znode)
+        assert stat_changed.version > stat_before.version
+    finally:
+        zk.stop()
+        zk.close()
+
+
 def test_initiator_user_in_ddl(started_cluster):
     node1.query("INSERT INTO secret VALUES ('super_secret')")
 

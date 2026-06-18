@@ -389,6 +389,12 @@ bool ZooKeeperReplicator::updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: {} expected to be of type {}",
             toString(id), formatEntityNameWithType(new_entity->getType(), new_entity->getName()), toString(old_entity->getType()));
 
+    /// No-op update: setting the znode would still bump its version and fire the CHANGED watch on
+    /// every replica, which rereads and re-publishes the entity for nothing. Matches the early-out
+    /// in MemoryAccessStorage::updateNoLock.
+    if (*new_entity == *old_entity)
+        return true;
+
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
 
     Coordination::Requests ops;
