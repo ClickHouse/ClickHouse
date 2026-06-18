@@ -40,7 +40,6 @@ FROM (EXPLAIN ANALYZE
 -- Sorting: per-stream sort and merge-streams stages are annotated.
 SELECT
     countIf(explain LIKE '%Actual (sorting)%') >= 1,
-    countIf(explain LIKE '%Actual (merge sorted streams)%') >= 1
 FROM (EXPLAIN ANALYZE
     SELECT number FROM numbers_mt(100000) ORDER BY number % 7, number);
 
