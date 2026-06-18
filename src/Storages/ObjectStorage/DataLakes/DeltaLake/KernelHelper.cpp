@@ -86,12 +86,15 @@ class S3KernelHelper final : public IKernelHelper
 public:
     S3KernelHelper(
         const DB::S3::URI & url_,
-        std::shared_ptr<const DB::S3::Client> client_,
+        DB::ObjectStoragePtr object_storage_,
         const DB::S3::S3AuthSettings & auth_settings)
         : url(url_)
         , table_location(getTableLocation(url_))
-        , client(client_)
+        , object_storage(std::move(object_storage_))
     {
+        /// Resolve the bucket's region once at construction. Region is bucket-bound and
+        /// doesn't rotate; credentials do — fetch the live client every time we need them.
+        auto client = object_storage->getS3StorageClient();
         region = client->getRegion();
         if (region.empty() || region == Aws::Region::AWS_GLOBAL)
             region = client->getRegionForBucket(url.bucket, /* force_detect */true);
@@ -110,7 +113,10 @@ public:
 
     DB::UInt128 getCredentialsFingerprint() const override
     {
-        const auto & credentials = client->getCredentials();
+        /// Re-fetch the live S3 client. `S3ObjectStorage::applyNewSettings` swaps the
+        /// MultiVersion<S3::Client> when catalog / vended credentials rotate; a captured
+        /// snapshot would keep returning the original session.
+        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
 
         SipHash hash;
         hash.update(credentials.GetAWSAccessKeyId());
@@ -141,7 +147,8 @@ public:
             setBuilderOption(builder, name, value);
         };
 
-        const auto & credentials = client->getCredentials();
+        /// Read credentials from the *current* client — see `getCredentialsFingerprint`.
+        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
         auto access_key_id = credentials.GetAWSAccessKeyId();
         auto secret_access_key = credentials.GetAWSSecretKey();
         auto token = credentials.GetSessionToken();
@@ -184,7 +191,7 @@ public:
 private:
     DB::S3::URI url;
     const std::string table_location;
-    const std::shared_ptr<const DB::S3::Client> client;
+    const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log = getLogger("S3KernelHelper");
 
     std::string region;
@@ -446,7 +453,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
             const auto * s3_conf = dynamic_cast<const DB::StorageS3Configuration *>(configuration.get());
             return std::make_shared<DeltaLake::S3KernelHelper>(
                 s3_conf->url,
-                object_storage->getS3StorageClient(),
+                object_storage,
                 s3_conf->getAuthSettings());
         }
 #if USE_AZURE_BLOB_STORAGE
