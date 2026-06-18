@@ -42,7 +42,7 @@ namespace DB
 {
 namespace FailPoints
 {
-    extern const char thread_group_switcher_attach_failure[];
+    extern const char attach_to_group_failure[];
 }
 
 namespace Setting
@@ -374,7 +374,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
         applyGlobalSettings();
         applyQuerySettings();
 
-        fiu_do_on(FailPoints::thread_group_switcher_attach_failure,
+        fiu_do_on(FailPoints::attach_to_group_failure,
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in attachToGroupImpl");
         });

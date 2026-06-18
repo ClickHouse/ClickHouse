@@ -13,7 +13,7 @@ namespace DB
 
 namespace FailPoints
 {
-    extern const char thread_group_switcher_attach_failure[];
+    extern const char attach_to_group_failure[];
 }
 
 /// After a failed ThreadGroupSwitcher construction the thread must be left in the
@@ -27,7 +27,7 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
     auto G1 = std::make_shared<ThreadGroup>(context, 0);
 
     /// Started detached → must end detached after the failed switch.
-    FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_attach_failure);
+    FailPointInjection::enableFailPoint(FailPoints::attach_to_group_failure);
     {
         ThreadGroupSwitcher switcher(G1, ThreadName::REMOTE_FS_READ_THREAD_POOL);
         EXPECT_EQ(getCurrentThreadGroup(), nullptr)
@@ -36,7 +36,7 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
 
     /// Started attached to G0 → must end attached to G0 after the failed switch.
     CurrentThread::attachToGroupIfDetached(G0);
-    FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_attach_failure);
+    FailPointInjection::enableFailPoint(FailPoints::attach_to_group_failure);
     {
         ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
         EXPECT_EQ(getCurrentThreadGroup(), G0)
