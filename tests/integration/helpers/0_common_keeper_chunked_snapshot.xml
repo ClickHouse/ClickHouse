@@ -1,0 +1,8 @@
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <!-- Exercise the chunked snapshot format in integration tests that run keeper embedded on the server. Inert on non-keeper instances. -->
+            <write_snapshot_version>8</write_snapshot_version>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>
