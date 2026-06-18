@@ -903,22 +903,33 @@ def test_show_tables_optimization(started_cluster):
     node.query(f"SHOW TABLES FROM {CATALOG_NAME}", timeout=5)
 
 
-def test_getAllTableNames_triggers_heavyweight_fetch_bug(started_cluster):
+def test_typo_hint_does_not_trigger_heavyweight_fetch(started_cluster):
     """
-    Regression test: DatabaseDataLake did not override getAllTableNames(), so the
-    typo-hint path (IDatabase::getTable -> TableNameHints -> getAllRegisteredNames
-    -> getAllTableNames -> getTablesIterator) triggered a full per-table S3 metadata
-    fetch for every query referencing a non-existent table in a DataLake database.
+    Regression test for the high-memory typo-hint path on a DataLake (Glue) database.
 
-    Assertion strategy: count occurrences of the log line emitted once per table
-    inside DatabaseDataLake::getTablesIterator [DatabaseDataLake.cpp:763].
-    A delta of 0 means the hint path used the lightweight catalog name list instead.
-    Log-counting is preferred over system.events S3GetObject because the Glue test
-    infrastructure has no per-request S3 counter and system.events is noisy under
-    parallel test execution.
+    When a query references a table that does not exist, the UNKNOWN_TABLE error
+    path builds a "maybe you meant ...?" suggestion through
+    TableNameHints -> getAllRegisteredNames -> IDatabase::getAllTableNames. Before
+    this fix DatabaseDataLake did not override getAllTableNames, so the base
+    implementation iterated getTablesIterator and fetched per-table metadata from
+    the catalog (one heavyweight S3 read per table). With many tables this hint
+    lookup alone could exhaust the server's memory. The fix overrides
+    getAllTableNames to return getCatalog()->getTables() (table names only).
 
-    IMPORTANT: if the log message at DatabaseDataLake.cpp:763 is ever rephrased,
-    update the `marker` string below (and in test_show_tables_does_not_trigger_heavyweight_fetch).
+    INSERT resolves its target table through the throwing DatabaseCatalog::getTable
+    overload independently of the analyzer, so it deterministically drives the
+    hint path. show_data_lake_catalogs_in_system_tables=1 is required: otherwise
+    getAllRegisteredNames short-circuits for remote databases and getAllTableNames
+    is never reached, so the override would not be exercised at all.
+
+    Signal: the log line emitted once per table inside
+    DatabaseDataLake::getTablesIterator. Counting it scoped to this namespace
+    makes the measurement exact and immune to other tables in the catalog. A
+    global S3GetObject counter is deliberately NOT used: catalog metadata is
+    cached across queries, so a repeated heavyweight iteration issues no new S3
+    GET requests even though it still walks every table.
+
+    Pre-fix the marker fires once per table (N). With the fix it stays at 0.
     """
     node = started_cluster.instances["node1"]
 
@@ -928,93 +939,43 @@ def test_getAllTableNames_triggers_heavyweight_fetch_bug(started_cluster):
 
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(namespace)
-
-    for i in range(N):
-        tbl = create_table(catalog, namespace, f"{test_ref}_t{i:02d}")
-        tbl.append(generate_arrow_data(1))
-
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-
-    # Log line emitted exactly once per table inside DatabaseDataLake::getTablesIterator
-    # [src/Databases/DataLake/DatabaseDataLake.cpp:763].
-    marker = f"Get table information for table {namespace}."
-    baseline = int(node.count_in_log(marker).strip())
-
-    # Reference a non-existent table. This must raise UNKNOWN_TABLE.
-    # If it does not raise (e.g. setup is broken and the table accidentally exists),
-    # pytest.fail() ensures the test fails loudly rather than silently passing.
     try:
-        node.query(
-            f"SELECT * FROM {CATALOG_NAME}.`{namespace}.does_not_exist`",
+        for i in range(N):
+            tbl = create_table(catalog, namespace, f"{test_ref}_t{i:02d}")
+            tbl.append(generate_arrow_data(1))
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        # Emitted once per table inside DatabaseDataLake::getTablesIterator. If the
+        # message is ever rephrased, update this marker.
+        marker = f"Get table information for table {namespace}."
+        baseline = int(node.count_in_log(marker).strip())
+
+        # Reference a non-existent table; this must raise UNKNOWN_TABLE and on the
+        # way build the typo hint that walks getAllTableNames.
+        error = node.query_and_get_error(
+            f"INSERT INTO {CATALOG_NAME}.`{namespace}.does_not_exist` VALUES (1)",
             settings={"show_data_lake_catalogs_in_system_tables": 1},
         )
-        pytest.fail(
-            "Query against a non-existent DataLake table should have raised "
-            "UNKNOWN_TABLE but succeeded — check test setup."
-        )
-    except Exception as e:
-        err = str(e)
-        assert "UNKNOWN_TABLE" in err or "doesn't exist" in err, (
-            f"Expected UNKNOWN_TABLE error, got unexpected exception: {err}"
+        assert "UNKNOWN_TABLE" in error or "does not exist" in error, (
+            f"Expected an UNKNOWN_TABLE error for a non-existent table, got: {error}"
         )
 
-    fetches = int(node.count_in_log(marker).strip()) - baseline
-
-    # BUG (unpatched master): fetches == N because getAllTableNames falls through to
-    # IDatabase base class, which calls getTablesIterator, loading all N table metadata.
-    # FIXED: fetches == 0 because getAllTableNames uses getCatalog()->getTables() directly.
-    assert fetches == 0, (
-        f"Non-existent-table hint lookup triggered {fetches} heavyweight metadata "
-        f"fetches (expected 0, catalog has {N} tables). "
-        f"DatabaseDataLake.getAllTableNames() is falling through to "
-        f"IDatabase::getAllTableNames() -> getTablesIterator() instead of calling "
-        f"getCatalog()->getTables() directly."
-    )
-
-
-def test_show_tables_does_not_trigger_heavyweight_fetch(started_cluster):
-    """
-    Regression guard for #94467/#97062: SHOW TABLES and SELECT name FROM
-    system.tables must not call getTablesIterator on a DataLake database.
-
-    Separated from test_getAllTableNames_triggers_heavyweight_fetch_bug so that
-    a failure of either path is unambiguous in CI output.
-
-    IMPORTANT: if the log message at DatabaseDataLake.cpp:763 is ever rephrased,
-    update the `marker` string below (and in test_getAllTableNames_triggers_heavyweight_fetch_bug).
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_show_light_{uuid.uuid4().hex[:8]}"
-    namespace = f"{test_ref}_ns"
-    N = 20
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-
-    for i in range(N):
-        tbl = create_table(catalog, namespace, f"{test_ref}_t{i:02d}")
-        tbl.append(generate_arrow_data(1))
-
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-
-    # Log line emitted exactly once per table inside DatabaseDataLake::getTablesIterator
-    # [src/Databases/DataLake/DatabaseDataLake.cpp:763].
-    marker = f"Get table information for table {namespace}."
-    baseline = int(node.count_in_log(marker).strip())
-
-    node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
-    node.query(
-        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
-        f"AND name LIKE '{namespace}%' "
-        f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
-    )
-
-    fetches = int(node.count_in_log(marker).strip()) - baseline
-    assert fetches == 0, (
-        f"SHOW TABLES / SELECT name FROM system.tables triggered {fetches} "
-        f"heavyweight fetches (expected 0). Regression of #94467."
-    )
+        fetches = int(node.count_in_log(marker).strip()) - baseline
+        assert fetches == 0, (
+            f"The typo-hint lookup for a non-existent table triggered {fetches} "
+            f"per-table metadata fetches (expected 0; the namespace has {N} tables). "
+            f"DatabaseDataLake.getAllTableNames is falling through to "
+            f"IDatabase::getAllTableNames -> getTablesIterator instead of using "
+            f"getCatalog()->getTables() directly."
+        )
+    finally:
+        try:
+            for i in range(N):
+                catalog.drop_table(f"{namespace}.{test_ref}_t{i:02d}")
+            catalog.drop_namespace(namespace)
+        except Exception:
+            pass
 
 
 def test_table_without_metadata_location(started_cluster):
