@@ -366,7 +366,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     if (join->getTableJoin().kind() == JoinKind::Paste)
     {
         auto joining = std::make_shared<PasteJoinTransform>(join, inputs, out_header, max_block_size);
-        return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+        auto result = mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+        assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Default);
+        return result;
     }
 
     auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
