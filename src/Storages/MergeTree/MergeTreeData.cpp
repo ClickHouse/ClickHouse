@@ -5204,30 +5204,72 @@ void MergeTreeData::changeSettings(
                     for (const auto & disk : old_storage_policy->getDisks())
                         all_diff_disk_names.erase(disk->getName());
 
+                    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+
+                    auto validate_format_version = [&](const DiskPtr & disk)
+                    {
+                        if (auto buf = disk->readFileIfExists(format_version_path, getReadSettings()))
+                        {
+                            UInt32 current_format_version{0};
+                            readIntText(current_format_version, *buf);
+                            if (!buf->eof())
+                                throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+                            if (current_format_version != format_version.toUnderType())
+                                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                                                "Version file on {} contains version {} expected version is {}.",
+                                                fullPath(disk, format_version_path), current_format_version, format_version.toUnderType());
+                        }
+                    };
+
+                    auto has_parseable_detached_parts = [&](const DiskPtr & disk)
+                    {
+                        const auto detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
+                        if (disk->isDirectoryEmpty(detached_path))
+                            return false;
+
+                        for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
+                        {
+                            if (DetachedPartInfo::parseDetachedPartName(disk, it->name(), format_version).valid_name)
+                                return true;
+                        }
+
+                        return false;
+                    };
+
+                    auto contains_table_data_on_new_disk = [&](const DiskPtr & disk)
+                    {
+                        if (!disk->existsDirectory(relative_data_path))
+                            return false;
+
+                        /// A newly added disk may have only entries ignored by part loading:
+                        /// matching format_version.txt, temporary root directories, and empty/non-part detached entries.
+                        /// Anything parseable as a root or detached part is existing table data.
+                        validate_format_version(disk);
+
+                        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+                        {
+                            const auto name = it->name();
+
+                            if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME
+                                || startsWith(name, "tmp"))
+                                continue;
+
+                            if (name == DETACHED_DIR_NAME)
+                                return has_parseable_detached_parts(disk);
+
+                            if (MergeTreePartInfo::tryParsePartName(name, format_version))
+                                return true;
+                        }
+
+                        return false;
+                    };
+
                     for (const String & disk_name : all_diff_disk_names)
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
 
-                        bool contains_table_data = false;
-                        if (disk->existsDirectory(relative_data_path))
-                        {
-                            for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
-                            {
-                                const auto name = it->name();
-                                if (startsWith(name, "tmp")
-                                    || name == MergeTreeData::FORMAT_VERSION_FILE_NAME
-                                    || name == DETACHED_DIR_NAME)
-                                    continue;
-
-                                if (MergeTreePartInfo::tryParsePartName(name, format_version))
-                                {
-                                    contains_table_data = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (contains_table_data)
+                        if (contains_table_data_on_new_disk(disk))
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
                     }
 

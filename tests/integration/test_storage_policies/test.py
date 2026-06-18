@@ -41,47 +41,75 @@ def test_storage_policy_configuration_change(started_cluster):
     node.start_clickhouse()
 
 
-def test_alter_storage_policy_with_empty_contents(started_cluster):
-    node.query(
-        "CREATE TABLE test_empty_dir (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'disk1_only_policy'"
-    )
-    node.query("INSERT INTO test_empty_dir VALUES (1)")
-
-    disk1_path = "/var/lib/clickhouse1/"
-    data_path = node.query(
-        "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 'test_empty_dir'"
-    ).strip()
-    relative_data_path = data_path.removeprefix(disk1_path)
-
-    disk2_data_path = f"/var/lib/clickhouse2/{relative_data_path}"
-    quoted_disk2_data_path = shlex.quote(disk2_data_path)
-
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"mkdir -p {quoted_disk2_data_path}/detached "
-            f"{quoted_disk2_data_path}/tmp_1_1_0 "
-            f"{quoted_disk2_data_path}/tmp-fetch_1_1_0 && "
-            f"echo 1 > {quoted_disk2_data_path}/format_version.txt",
-        ]
-    )
-
-    node.query("ALTER TABLE test_empty_dir MODIFY SETTING storage_policy = 'test_policy'")
-    assert (
+def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
+    def create_table(table_name):
         node.query(
-            """
-            SELECT count() > 0
-            FROM system.storage_policies
-            WHERE policy_name = (
-                SELECT storage_policy
-                FROM system.tables
-                WHERE database = currentDatabase() AND name = 'test_empty_dir'
-            ) AND has(disks, 'disk2')
-            """
+            f"CREATE TABLE {table_name} (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'disk1_only_policy'"
         )
-        == "1\n"
-    )
-    assert node.query("SELECT * FROM test_empty_dir") == "1\n"
+        node.query(f"INSERT INTO {table_name} VALUES (1)")
 
-    node.query("DROP TABLE test_empty_dir")
+        disk1_path = "/var/lib/clickhouse1/"
+        data_path = node.query(
+            f"SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = '{table_name}'"
+        ).strip()
+        disk2_data_path = f"/var/lib/clickhouse2/{data_path.removeprefix(disk1_path)}"
+        return data_path, disk2_data_path
+
+    def create_ignored_contents(data_path, disk2_data_path):
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"mkdir -p {shlex.quote(disk2_data_path)}/detached "
+                f"{shlex.quote(disk2_data_path)}/detached/not_a_part "
+                f"{shlex.quote(disk2_data_path)}/tmp_1_1_0 "
+                f"{shlex.quote(disk2_data_path)}/tmp-fetch_1_1_0 && "
+                f"cp {shlex.quote(data_path)}/format_version.txt {shlex.quote(disk2_data_path)}/format_version.txt",
+            ]
+        )
+
+    table_name = "test_ignored_contents"
+    data_path, disk2_data_path = create_table(table_name)
+    try:
+        create_ignored_contents(data_path, disk2_data_path)
+        node.query(f"ALTER TABLE {table_name} MODIFY SETTING storage_policy = 'test_policy'")
+        assert node.query("SELECT has(disks, 'disk2') FROM system.storage_policies WHERE policy_name = 'test_policy'") == "1\n"
+        assert node.query(f"SELECT * FROM {table_name}") == "1\n"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+        node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
+
+    table_name = "test_mismatched_format_version"
+    _, disk2_data_path = create_table(table_name)
+    try:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"mkdir -p {shlex.quote(disk2_data_path)} && "
+                f"echo 255 > {shlex.quote(disk2_data_path)}/format_version.txt",
+            ]
+        )
+        assert "Version file" in node.query_and_get_error(
+            f"ALTER TABLE {table_name} MODIFY SETTING storage_policy = 'test_policy'"
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+        node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
+
+    for table_name, part_path in [
+        ("test_valid_root_part", "all_0_0_0"),
+        ("test_valid_detached_part", "detached/all_0_0_0"),
+    ]:
+        data_path, disk2_data_path = create_table(table_name)
+        try:
+            create_ignored_contents(data_path, disk2_data_path)
+            node.exec_in_container(
+                ["bash", "-c", f"mkdir -p {shlex.quote(disk2_data_path)}/{part_path}"]
+            )
+            assert "already contain data" in node.query_and_get_error(
+                f"ALTER TABLE {table_name} MODIFY SETTING storage_policy = 'test_policy'"
+            )
+        finally:
+            node.query(f"DROP TABLE IF EXISTS {table_name}")
+            node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
