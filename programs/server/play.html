@@ -299,10 +299,16 @@
             text-overflow: ellipsis;
         }
 
+        /* Over the active tab's title the cursor indicates inline text editing. */
+        .tab.active .tab-title
+        {
+            cursor: text;
+        }
+
         .tab-title-input
         {
             font: inherit;
-            width: 8rem;
+            min-width: 2ch;
             padding: 0 0.15rem;
             border: 1px solid var(--border-color-selected);
             background: var(--element-background-color);
@@ -3557,6 +3563,25 @@ function startTitleEdit(tab, titleEl) {
     input.className = 'tab-title-input';
     input.value = tab.title;
     titleEl.replaceWith(input);
+
+    /// Grow/shrink the input to fit its text, measuring with a hidden span that copies
+    /// the input's typography so the width is accurate for the proportional tab font.
+    const autosize = () => {
+        const meas = document.createElement('span');
+        const cs = getComputedStyle(input);
+        meas.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;padding:0;';
+        meas.style.fontFamily = cs.fontFamily;
+        meas.style.fontSize = cs.fontSize;
+        meas.style.fontWeight = cs.fontWeight;
+        meas.style.fontStyle = cs.fontStyle;
+        meas.style.letterSpacing = cs.letterSpacing;
+        meas.textContent = input.value || ' ';
+        document.body.appendChild(meas);
+        input.style.width = (meas.offsetWidth + 2) + 'px';
+        meas.remove();
+    };
+    autosize();
+    input.addEventListener('input', autosize);
     input.focus();
     input.select();
 
