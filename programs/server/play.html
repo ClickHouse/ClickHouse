@@ -781,7 +781,7 @@
 
         #run_div
         {
-            margin-top: 0.5rem;
+            margin-top: 0.25rem;
             display: flex;
             align-items: center;
             gap: 1rem;
@@ -3716,6 +3716,22 @@ function renderTabBar() {
 }
 
 document.getElementById('tab-add').addEventListener('click', addTab);
+
+/// Mouse wheel over the tab panel switches tabs: up -> left tab, down -> right tab.
+/// Deltas are accumulated (and normalized for line-mode) so one mouse notch switches one
+/// tab and a trackpad swipe switches once per threshold; switching stops at the ends.
+let wheel_accum = 0;
+tab_bar_elem.addEventListener('wheel', (e) => {
+    if (tabs.length < 2) return; /// nothing to switch; let the page scroll
+    e.preventDefault();
+    wheel_accum += (e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY);
+    if (Math.abs(wheel_accum) < 40) return;
+    const dir = wheel_accum > 0 ? 1 : -1; /// down (+) -> right, up (-) -> left
+    wheel_accum = 0;
+    const idx = tabs.findIndex(t => t.id === activeTabId);
+    const next = idx + dir;
+    if (next >= 0 && next < tabs.length) switchToTab(tabs[next].id);
+}, { passive: false });
 
 /// ----- IndexedDB persistence ----------------------------------------------------
 /// Stores the workspace (tabs, titles, active tab, order and small result snapshots)
