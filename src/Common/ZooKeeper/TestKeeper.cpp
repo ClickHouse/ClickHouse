@@ -626,16 +626,21 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
                     with_data = filtered_list_with_stat_and_data->with_data;
                 }
 
-                const auto is_ephemeral = child_it->second.stat.ephemeralOwner != 0;
-                if (list_request_type == ALL || (is_ephemeral && list_request_type == EPHEMERAL_ONLY)
-                    || (!is_ephemeral && list_request_type == PERSISTENT_ONLY))
+                const bool is_ephemeral = child_it->second.stat.ephemeralOwner != 0;
+                const bool should_return = list_request_type == ALL
+                    || (is_ephemeral && list_request_type == EPHEMERAL_ONLY)
+                    || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
+
+                if (should_return)
+                {
                     response.names.emplace_back(baseName(child_it->first));
 
-                if (with_data)
-                    response.data.emplace_back(child_it->second.data);
+                    if (with_data)
+                        response.data.emplace_back(child_it->second.data);
 
-                if (with_stat)
-                    response.stats.emplace_back(child_it->second.stat);
+                    if (with_stat)
+                        response.stats.emplace_back(child_it->second.stat);
+                }
             }
         }
 
