@@ -120,7 +120,7 @@ public:
     /// Argument initial_mask is used for early exiting the implementation when we do not care about
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
     /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
-    /// partition minmax).
+    /// partition minmax). A key without a bound defaults to (-inf, +inf).
     BoolMask checkInRange(
         size_t used_key_size,
         const FieldRef * left_keys,
