@@ -46,3 +46,19 @@ if (NOT OS_ANDROID)
     endif ()
     add_subdirectory(base/harmful)
 endif ()
+
+# Force the strong glibc-compatibility `memcpy` to always be linked, so it keeps
+# precedence over libllvmlibc's weak `memcpy`. Both are static archives and lld
+# resolves a `memcpy` reference from whichever archive it reaches first; because
+# CMake can place libllvmlibc ahead of libmemcpy, the `weak` attribute alone
+# does not guarantee precedence. `--whole-archive` makes the strong definition
+# unconditionally present, so it wins regardless of archive order. The path is
+# passed via CMAKE_EXE_LINKER_FLAGS (not the memcpy target) for the same reason
+# as compiler-rt: $<LINK_LIBRARY:WHOLE_ARCHIVE,...> does not survive the
+# global-libs INTERFACE_LINK_LIBRARIES indirection. memcpy stays in global-libs
+# (above) for the build-order dependency.
+if (TARGET memcpy)
+    # Literal path (not the target / $<TARGET_FILE:...>) because CMAKE_EXE_LINKER_FLAGS
+    # does not expand generator expressions, same as compiler_rt_link.cmake.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${CMAKE_BINARY_DIR}/base/glibc-compatibility/memcpy/libmemcpy.a -Wl,--no-whole-archive")
+endif ()
