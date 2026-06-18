@@ -3717,16 +3717,20 @@ function renderTabBar() {
 
 document.getElementById('tab-add').addEventListener('click', addTab);
 
-/// Mouse wheel over the tab panel switches tabs: up -> left tab, down -> right tab.
-/// Deltas are accumulated (and normalized for line-mode) so one mouse notch switches one
-/// tab and a trackpad swipe switches once per threshold; switching stops at the ends.
+/// Mouse wheel over the tab panel switches tabs: scrolling up or left -> previous (left)
+/// tab, down or right -> next (right) tab. The dominant axis is used, so both vertical and
+/// horizontal wheels/trackpad gestures work. Deltas are accumulated (and normalized for
+/// line-mode) so one mouse notch switches one tab and a trackpad swipe switches once per
+/// threshold; switching stops at the ends.
 let wheel_accum = 0;
 tab_bar_elem.addEventListener('wheel', (e) => {
     if (tabs.length < 2) return; /// nothing to switch; let the page scroll
     e.preventDefault();
-    wheel_accum += (e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY);
+    const scale = e.deltaMode === 1 ? 16 : 1;
+    const dx = e.deltaX * scale, dy = e.deltaY * scale;
+    wheel_accum += Math.abs(dx) > Math.abs(dy) ? dx : dy;
     if (Math.abs(wheel_accum) < 40) return;
-    const dir = wheel_accum > 0 ? 1 : -1; /// down (+) -> right, up (-) -> left
+    const dir = wheel_accum > 0 ? 1 : -1; /// down/right (+) -> right, up/left (-) -> left
     wheel_accum = 0;
     const idx = tabs.findIndex(t => t.id === activeTabId);
     const next = idx + dir;
