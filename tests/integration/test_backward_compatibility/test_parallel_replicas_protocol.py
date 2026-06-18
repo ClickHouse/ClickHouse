@@ -10,7 +10,7 @@ nodes = [
         main_configs=["configs/clusters.xml"],
         with_zookeeper=True,
         image="clickhouse/clickhouse-server",
-        tag="25.12",  # latest pre-PR8 release: has stream_id (PR=7) but no announcement response
+        tag="24.3",  # earlier versions lead to "Not found column sum(a) in block." exception 🤷
         stay_alive=True,
         use_old_analyzer=False,
         with_installed_binary=True,
@@ -20,6 +20,34 @@ nodes = [
     cluster.add_instance(
         "node2",
         main_configs=["configs/clusters.xml"],
+        with_zookeeper=True,
+        use_old_analyzer=False,
+    )
+]
+
+# Separate cluster for the rolling-upgrade-with-split-topology scenario. 25.12 has
+# parallel-replicas protocol 7 (with `stream_id` support) but not 8 (the new
+# announcement-response packet introduced on this branch), so it's the narrow window
+# where the split-stream topology this branch creates would otherwise raise
+# `Initiator received more initial requests than there are replicas` on the older
+# initiator or get rejected as an unknown stream on the newer one. Kept separate
+# from the 24.3 cluster above so each test exercises exactly one version skew.
+split_topology_nodes = [
+    cluster.add_instance(
+        f"split_node{num}",
+        main_configs=["configs/clusters_split_topology.xml"],
+        with_zookeeper=True,
+        image="clickhouse/clickhouse-server",
+        tag="25.12",
+        stay_alive=True,
+        use_old_analyzer=False,
+        with_installed_binary=True,
+    )
+    for num in range(2)
+] + [
+    cluster.add_instance(
+        "split_node2",
+        main_configs=["configs/clusters_split_topology.xml"],
         with_zookeeper=True,
         use_old_analyzer=False,
     )
@@ -119,56 +147,60 @@ def test_backward_compatability(start_cluster):
             == "99999\n" * 10
         )
 
-    # Split-stream coverage: with parallel_replicas_local_plan = 1 and max_threads > 1 the
-    # initiator splits the in-order read into multiple per-split streams. Verify cross-version
-    # behavior for extra/missing split streams: the initiator may be a newer version that
-    # creates splits the older follower doesn't know about, or vice versa.
     for node in nodes:
+        node.query("drop table t sync")
+
+
+def test_split_topology_rolling_upgrade(start_cluster):
+    # With `parallel_replicas_local_plan = 1` and `max_threads > 1`, this branch's
+    # initiator (and any new follower) splits the in-order read into multiple
+    # `#split_i` streams. The 25.12 peer doesn't know about the
+    # announcement-response packet that authorises each split — without the
+    # version-aware degradation, the older initiator raises
+    # `Initiator received more initial requests than there are replicas` when a
+    # newer follower over-announces, and the newer coordinator throws on an
+    # unknown stream when an older follower under-announces. We exercise both
+    # directions by iterating each node as the initiator.
+    for num in range(len(split_topology_nodes)):
+        node = split_topology_nodes[num]
+        node.query("drop table if exists ts sync")
+        node.query(
+            f"""
+            create table if not exists ts(a UInt64)
+            engine = ReplicatedMergeTree('/test_backward_compatability/test_parallel_replicas_protocol/split_topology/shard0/ts', '{num}')
+            order by (a)
+        """
+        )
+        node.query("insert into ts select number % 100000 from numbers_mt(1000000) ORDER BY ALL")
+        node.query("optimize table ts final")
+
+    split_settings = {
+        "cluster_for_parallel_replicas": "parallel_replicas",
+        "max_parallel_replicas": 3,
+        "allow_experimental_parallel_reading_from_replicas": 1,
+        "parallel_replicas_for_non_replicated_merge_tree": 1,
+        "merge_tree_min_rows_for_concurrent_read": 0,
+        "merge_tree_min_bytes_for_concurrent_read": 0,
+        "merge_tree_min_read_task_size": 1,
+        "optimize_read_in_order": 1,
+        "parallel_replicas_local_plan": 1,
+        "max_threads": 4,
+    }
+
+    for node in split_topology_nodes:
         assert (
             node.query(
-                """
-                select a
-                from t
-                order by a
-                limit 10
-                """,
-                settings={
-                    "cluster_for_parallel_replicas": "parallel_replicas",
-                    "max_parallel_replicas": 3,
-                    "allow_experimental_parallel_reading_from_replicas": 1,
-                    "parallel_replicas_for_non_replicated_merge_tree": 1,
-                    "merge_tree_min_rows_for_concurrent_read": 0,
-                    "merge_tree_min_bytes_for_concurrent_read": 0,
-                    "merge_tree_min_read_task_size": 1,
-                    "optimize_read_in_order": 1,
-                    "parallel_replicas_local_plan": 1,
-                    "max_threads": 4,
-                },
+                "select a from ts order by a limit 10",
+                settings=split_settings,
             )
             == "0\n" * 10
         )
 
-    for node in nodes:
+    for node in split_topology_nodes:
         assert (
             node.query(
-                """
-                select a
-                from t
-                order by a desc
-                limit 10
-                """,
-                settings={
-                    "cluster_for_parallel_replicas": "parallel_replicas",
-                    "max_parallel_replicas": 3,
-                    "allow_experimental_parallel_reading_from_replicas": 1,
-                    "parallel_replicas_for_non_replicated_merge_tree": 1,
-                    "merge_tree_min_rows_for_concurrent_read": 0,
-                    "merge_tree_min_bytes_for_concurrent_read": 0,
-                    "merge_tree_min_read_task_size": 1,
-                    "optimize_read_in_order": 1,
-                    "parallel_replicas_local_plan": 1,
-                    "max_threads": 4,
-                },
+                "select a from ts order by a desc limit 10",
+                settings=split_settings,
             )
             == "99999\n" * 10
         )
@@ -178,32 +210,20 @@ def test_backward_compatability(start_cluster):
     # (number % 100000 over 1e6 rows); under the split-stream bug a newer follower's
     # per-split pools would each read the same parts and inflate the count by
     # `~max_threads`.
-    for node in nodes:
+    for node in split_topology_nodes:
         assert (
             node.query(
                 """
                 select a, count()
-                from t
+                from ts
                 group by a
                 order by a
                 limit 5
                 """,
-                settings={
-                    "cluster_for_parallel_replicas": "parallel_replicas",
-                    "max_parallel_replicas": 3,
-                    "allow_experimental_parallel_reading_from_replicas": 1,
-                    "parallel_replicas_for_non_replicated_merge_tree": 1,
-                    "merge_tree_min_rows_for_concurrent_read": 0,
-                    "merge_tree_min_bytes_for_concurrent_read": 0,
-                    "merge_tree_min_read_task_size": 1,
-                    "optimize_read_in_order": 1,
-                    "optimize_aggregation_in_order": 1,
-                    "parallel_replicas_local_plan": 1,
-                    "max_threads": 4,
-                },
+                settings={**split_settings, "optimize_aggregation_in_order": 1},
             )
             == "0\t10\n1\t10\n2\t10\n3\t10\n4\t10\n"
         )
 
-    for node in nodes:
-        node.query("drop table t sync")
+    for node in split_topology_nodes:
+        node.query("drop table ts sync")
