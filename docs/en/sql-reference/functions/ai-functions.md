@@ -76,9 +76,12 @@ CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc
 -- The stored default is `aiEmbed(doc)`; no collection is captured.
 ```
 
-A `DEFAULT` column is evaluated at `INSERT`, so `allow_experimental_ai_functions` and `ai_function_credentials` must both be set in the inserting session or query:
+Evaluating the expression requires three things: `allow_experimental_ai_functions` and `ai_function_credentials` must be set, and the evaluating user must hold `GRANT NAMED COLLECTION` on the collection (resolving the credentials runs a `NAMED COLLECTION` access check). Any of them missing raises an exception (`SUPPORT_IS_DISABLED`, an empty-credentials error, or `ACCESS_DENIED`).
+
+A `DEFAULT` column is evaluated at `INSERT`, so both settings must be set in the inserting session or query:
 
 ```sql
+GRANT NAMED COLLECTION ON my_ai_credentials TO user;
 SET allow_experimental_ai_functions = 1;
 SET ai_function_credentials = 'my_ai_credentials';
 INSERT INTO t (id, doc) VALUES (1, 'hello');
@@ -95,7 +98,7 @@ To make such tables insertable without setting these per session, set both in a 
 </profiles>
 ```
 
-A `MATERIALIZED` column is computed at `INSERT` like a `DEFAULT` column, and is also recomputed by mutations such as `ALTER TABLE ... MATERIALIZE COLUMN`. Mutations run outside a user session and do not inherit a query's `SETTINGS` clause, but they do inherit settings from a settings profile. Set both `allow_experimental_ai_functions` and `ai_function_credentials` in a settings profile for mutation-driven recomputation to succeed; otherwise it raises an exception.
+A `MATERIALIZED` column is computed at `INSERT` like a `DEFAULT` column, and is also recomputed by mutations such as `ALTER TABLE ... MATERIALIZE COLUMN`. Mutations run outside a user session and do not inherit a query's `SETTINGS` clause, but they do inherit settings from a settings profile. Set both settings in a settings profile, and grant `NAMED COLLECTION` to the table owner, for mutation-driven recomputation to succeed.
 
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 
