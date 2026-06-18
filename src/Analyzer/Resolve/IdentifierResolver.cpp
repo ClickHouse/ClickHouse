@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TableNameHints.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/IdentifierNode.h>
@@ -33,6 +34,7 @@
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
+#include <base/scope_guard.h>
 #include <ranges>
 
 
@@ -376,6 +378,34 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
 
     return {};
+}
+
+std::pair<String, String> IdentifierResolver::tryGetTableNameHint(const Identifier & table_identifier, const ContextPtr & context)
+{
+    size_t parts_size = table_identifier.getPartsSize();
+    if (parts_size < 1 || parts_size > 2)
+        return {};
+
+    String database_name;
+    String table_name;
+    if (table_identifier.isCompound())
+    {
+        database_name = table_identifier[0];
+        table_name = table_identifier[1];
+    }
+    else
+    {
+        table_name = table_identifier[0];
+    }
+
+    /// Resolve the database the same way table resolution does, so the hint search starts from
+    /// the right database (the current one for a bare name) and can fall back to other databases.
+    if (database_name.empty())
+        database_name = context->getCurrentDatabase();
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    TableNameHints hints(database, context);
+    return hints.getHintForTable(table_name);
 }
 
 /// Resolve identifier from compound expression
@@ -1119,13 +1149,19 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
     auto try_resolve_identifier_from_join_tree_node = [&](const QueryTreeNodePtr & join_tree_node, bool may_be_override_by_using_column)
     {
+        /// scope.join_using_columns holds raw pointers to this stack-local map. The pop must run
+        /// even if tryResolveIdentifierFromJoinTreeNode throws: an UNKNOWN_IDENTIFIER from a
+        /// statically-dead if/multiIf branch is caught and swallowed during resolution, and a
+        /// leftover pointer would dangle once this frame unwinds.
+        bool pushed = false;
         if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
+        {
             scope.join_using_columns.push_back(&join_using_column_name_to_column_node);
+            pushed = true;
+        }
+        SCOPE_EXIT({ if (pushed) scope.join_using_columns.pop_back(); });
 
         auto res = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
-
-        if (may_be_override_by_using_column && !join_using_column_name_to_column_node.empty())
-            scope.join_using_columns.pop_back();
 
         return std::move(res.resolved_identifier);
     };
