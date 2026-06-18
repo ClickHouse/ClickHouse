@@ -813,7 +813,7 @@ MergeTreeIndexFormat MergeTreeIndexVectorSpann::getDeserializedFormat(const Merg
     return {0, {}};
 }
 
-MergeTreeIndexPtr spannIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr spannIndexCreator(const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     SpannParams spann_params;
@@ -837,7 +837,7 @@ MergeTreeIndexPtr spannIndexCreator(const IndexDescription & index)
     return std::make_shared<MergeTreeIndexVectorSpann>(index, std::move(spann_params));
 }
 
-void spannIndexValidator(const IndexDescription & index, bool attach)
+void spannIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     if (!attach)
     {
