@@ -278,15 +278,8 @@ public:
 
     IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }
 
-    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context) override
-    {
-        return getTargetTable()->getCheckTaskList(filter, query_context);
-    }
-
-    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override
-    {
-        return getTargetTable()->checkDataNext(check_task_list);
-    }
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
 

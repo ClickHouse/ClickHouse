@@ -305,6 +305,16 @@ void StorageAlias::setMutationCSN(const String & mutation_id, UInt64 csn)
     getTargetTable()->setMutationCSN(mutation_id, csn);
 }
 
+IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context)
+{
+    return getTargetTable(TargetAccess{query_context, AccessType::CHECK})->getCheckTaskList(filter, query_context);
+}
+
+std::optional<CheckResult> StorageAlias::checkDataNext(DataValidationTasksPtr & check_task_list)
+{
+    return getTargetTable()->checkDataNext(check_task_list);
+}
+
 CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
 {
     return getTargetTable()->killPartMoveToShard(task_uuid);
