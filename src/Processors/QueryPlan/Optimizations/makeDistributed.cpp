@@ -56,7 +56,9 @@ static void validateBucketCount(UInt64 bucket_count, const char * setting_name)
             setting_name, bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+/// Defined in optimizeJoin.cpp. The trailing `estimator` argument selects the statistics-backed
+/// estimation path; callers here pass no estimator and rely on the index-analysis fallback.
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, const ConditionSelectivityEstimatorPtr & estimator = nullptr);
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
