@@ -1000,16 +1000,22 @@ static const ActionsDAG::Node * tryRewriteCoalesceCondition(
         return nullptr;
 
     const Field fallback_value = (*fallback->column)[0];
-    bool fallback_is_false = false;
     switch (fallback_value.getType())
     {
-        case Field::Types::UInt64:  fallback_is_false = fallback_value.safeGet<UInt64>() == 0; break;
-        case Field::Types::Int64:   fallback_is_false = fallback_value.safeGet<Int64>() == 0; break;
-        case Field::Types::Float64: fallback_is_false = fallback_value.safeGet<Float64>() == 0.0; break;
+        case Field::Types::UInt64:
+            if (fallback_value.safeGet<UInt64>() != 0)
+                return nullptr;
+            break;
+        case Field::Types::Int64:
+            if (fallback_value.safeGet<Int64>() != 0)
+                return nullptr;
+            break;
+        case Field::Types::Float64:
+            if (fallback_value.safeGet<Float64>() != 0.0)
+                return nullptr;
+            break;
         default: return nullptr;
     }
-    if (!fallback_is_false)
-        return nullptr;
 
     /// The unwrapped predicate replaces the boolean wrapper, so it stays in boolean context.
     return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
