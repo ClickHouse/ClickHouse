@@ -81,16 +81,7 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
     const IColumn * actual_column = actual.column.get();
     const IColumn * expected_column = expected.column.get();
 
-    /// A Sparse column is structurally equal to the full column of the same type it wraps, and every
-    /// consumer can process sparse, so it must compare equal to a non-sparse column even in the
-    /// strict path. Unwrap Sparse on both sides here; Const and Replicated stay strict unless
-    /// allow_materialize.
-    if (const auto * actual_sparse = typeid_cast<const ColumnSparse *>(actual_column))
-        actual_column = &actual_sparse->getValuesColumn();
-    if (const auto * expected_sparse = typeid_cast<const ColumnSparse *>(expected_column))
-        expected_column = &expected_sparse->getValuesColumn();
-
-    /// If we allow to materialize columns, omit Const and Replicated columns too.
+    /// If we allow to materialize columns, omit Const, Replicated and Sparse columns.
     if (allow_materialize)
     {
         actual_column = getActualColumn(actual_column);
@@ -1041,7 +1032,7 @@ String addDummyColumnWithRowCount(Block & block, size_t num_rows)
     {
         if (column.column)
         {
-            chassert(column.column->size() == num_rows);
+            assert(column.column->size() == num_rows);
             has_columns = true;
             break;
         }

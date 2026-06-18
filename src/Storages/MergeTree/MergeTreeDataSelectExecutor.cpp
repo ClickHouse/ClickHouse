@@ -1,12 +1,10 @@
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <unordered_set>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -36,7 +34,6 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -51,7 +48,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
-#include <Common/ThreadPool.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 
@@ -117,13 +113,12 @@ namespace ErrorCodes
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
     extern const int SAMPLING_NOT_SUPPORTED;
-    extern const int ILLEGAL_STREAM;
 }
 
 
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_, ProjectionDescriptionRawPtr projection)
     : data(data_)
-    , data_settings(data.getSettings(projection ? &projection->settings_changes : nullptr))
+    , data_settings(data.getSettings(projection))
     , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
 }
@@ -180,10 +175,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     bool enable_parallel_reading) const
 {
-    if (query_info.isStream() && enable_parallel_reading)
-        throw Exception(ErrorCodes::ILLEGAL_STREAM,
-            "STREAM is not supported with parallel replicas");
-
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
     auto step = readFromParts(
@@ -816,52 +807,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 }
 
 
-/// The minmax skip index reflects the physical rows of a part as they were written, so it goes
-/// stale when a pending or materialized change is not yet merged into the part:
-///  - a lightweight or ordinary delete hides rows, but the minmax still advertises their values;
-///  - a lightweight update / patch part rewrites the indexed column, but the minmax still
-///    advertises the pre-update values;
-///  - an ALTER MODIFY COLUMN changes the indexed column's type, but the minmax still holds bytes
-///    serialized with the old type, which order differently under the new type.
-/// The top-k granule optimization keeps only the globally extreme granules, so a part whose stale
-/// minmax advertises an extreme value can displace and prune a part that holds the live top rows,
-/// yielding wrong (often empty) results. Exclude such parts from candidate selection; they are then
-/// read in full with mutations and patches applied on read, while the optimization stays active for
-/// parts whose top-k index is up to date.
-static bool partHasStaleTopKIndex(
-    const MergeTreeData::DataPartPtr & part,
-    const MergeTreeIndexPtr & top_k_index,
-    const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
-    const ContextPtr & context)
-{
-    /// Materialized lightweight delete: the part carries a _row_exists column.
-    if (part->hasLightweightDelete())
-        return true;
-
-    /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
-    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
-    if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
-    {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
-
-        /// A pending delete hides rows of any value -> the index is stale. This covers both a
-        /// lightweight DELETE (rewritten as an UPDATE of _row_exists) and an ordinary ALTER DELETE
-        /// (which adds nothing to getAllUpdatedColumns(), so the canUseIndex check below misses it).
-        if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
-            return true;
-
-        /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
-        /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
-        /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
-            return true;
-    }
-
-    return false;
-}
-
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
     auto & metadata_snapshot = filter_context.metadata_snapshot;
@@ -1117,8 +1062,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
-            if (perform_top_k_optimization
-                && !partHasStaleTopKIndex(ranges.data_part, skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, mutations_snapshot, context))
+            if (perform_top_k_optimization)
             {
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
@@ -1565,18 +1509,13 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
     if (merge_tree_select_result_ptr)
     {
-        if (!query_info.isStream() && merge_tree_select_result_ptr->parts_with_ranges.empty())
+        if (merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
     /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
     else if (!parts)
-    {
-        if (!query_info.isStream())
-            return {};
-
-        parts = std::make_shared<const RangesInDataParts>();
-    }
-    else if (parts->empty() && !query_info.isStream())
+        return {};
+    else if (parts->empty())
         return {};
 
     return std::make_unique<ReadFromMergeTree>(
@@ -1857,11 +1796,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 ++steps;
 
-                auto result = check_in_range(range, BoolMask());
+                auto result = check_in_range(
+                    range, exact_ranges && range.end == range.begin + 1 ? BoolMask() : BoolMask::consider_only_can_be_true);
                 if (!result.can_be_true)
                     continue;
 
-                if (!result.can_be_false || range.end == range.begin + 1)
+                if (range.end == range.begin + 1)
                 {
                     /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
                     if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
@@ -1881,7 +1821,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 {
                     /// Break the segment and put the result on the stack from right to left.
                     size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
-                    size_t end = 0;
+                    size_t end;
 
                     for (end = range.end; end > range.begin + step; end -= step)
                         ranges_stack.emplace_back(end - step, end);
@@ -1914,7 +1854,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         for (const auto & part_range : part_with_ranges.ranges)
         {
-            MarkRange result_range{};
+            MarkRange result_range;
 
             /// Invariant: !check_in_range(part_range.begin..searched_left).can_be_true
             ///             check_in_range(part_range.begin..searched_right).can_be_true
@@ -2265,12 +2205,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     for (const auto & prev_part : parts)
     {
         const auto & part_or_projection = prev_part.data_part;
-        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-        const auto num_granules = part_or_projection->index_granularity->getMarksCountWithoutFinal();
 
         if (query_status)
             query_status->checkTimeLimit();
 
+        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (part_values && !part_values->contains(part->name))
             continue;
 
@@ -2284,11 +2223,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
                 continue;
         }
 
+        size_t num_granules = part->index_granularity->getMarksCountWithoutFinal();
+
         counters.num_initial_selected_parts += 1;
         counters.num_initial_selected_granules += num_granules;
 
-        /// hyperrectangle must come from the part whose metadata built the condition.
-        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
+                part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
@@ -2331,8 +2272,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         {
             const auto & part_or_projection = prev_part.data_part;
             const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-            size_t num_granules = part_or_projection->index_granularity->getMarksCountWithoutFinal();
-
             if (part_values && !part_values->contains(part->name))
                 continue;
 
@@ -2350,11 +2289,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
                 continue;
 
+            size_t num_granules = part->index_granularity->getMarksCountWithoutFinal();
+
             counters.num_initial_selected_parts += 1;
             counters.num_initial_selected_granules += num_granules;
 
-            /// hyperrectangle must come from the part whose metadata built the condition.
-            if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+            if (minmax_idx_condition
+                && !minmax_idx_condition->checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types)
+                        .can_be_true)
                 continue;
 
             counters.num_parts_after_minmax += 1;
