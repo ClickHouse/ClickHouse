@@ -7921,6 +7921,12 @@ instead of glob listing. 0 means disabled.
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_nullable_tuple_type, false, R"(
+Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
+
+This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
+Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
+)", BETA, enable_nullable_tuple_type) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(
@@ -8095,12 +8101,6 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
 Allow to create database with Engine=MaterializedPostgreSQL(...).
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_nullable_tuple_type, false, R"(
-Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
-
-This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
-Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
 
@@ -8108,7 +8108,7 @@ Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Null
 - `true`: Return `Nullable(Tuple(...))` and use `NULL` for rows where the subcolumn is missing.
 
 This setting controls extracted subcolumn behavior only.
-It does not control whether `Nullable(Tuple(...))` columns can be created in tables; that is controlled by `allow_experimental_nullable_tuple_type`.
+It does not control whether `Nullable(Tuple(...))` columns can be created in tables; that is controlled by `enable_nullable_tuple_type`.
 
 ClickHouse uses the value for this setting loaded at server startup.
 Changes made with `SET` or query-level `SETTINGS` do not change extracted subcolumn behavior.
