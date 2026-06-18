@@ -83,16 +83,22 @@ BlockIO InterpreterUpdateQuery::execute()
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
-    AccessRightsElements required_access;
-    required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
-
+    /// Resolve the target table up front and qualify the query with its database, so the access
+    /// checks and the dispatched ON CLUSTER query all refer to the same database (matching
+    /// InterpreterAlterQuery). Otherwise an unqualified `UPDATE tab ON CLUSTER c ...` would be checked
+    /// against the initiator's database while the remote query could bind to each host's default
+    /// database.
+    ///
     /// The WHERE predicate and the assignment expressions read columns, so they require SELECT on
-    /// those columns (virtual columns excluded, as in a plain SELECT). Computed before any dispatch
-    /// so the initiating user's read access is enforced on every path, including ON CLUSTER, where
-    /// the remote DDL worker may not run as the initiating user.
+    /// those columns (virtual columns excluded, as in a plain SELECT). Computed before any dispatch so
+    /// the initiating user's read access is enforced on every path, including ON CLUSTER, where the
+    /// remote DDL worker may not run as the initiating user.
     AccessRightsElements read_access;
-    if (auto resolved_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
+    auto resolved_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
+    if (resolved_id)
     {
+        update_query.setDatabase(resolved_id.database_name);
+
         if (StoragePtr resolved_table = DatabaseCatalog::instance().tryGetTable(resolved_id, getContext()))
         {
             const auto & metadata = *resolved_table->getInMemoryMetadataPtr(getContext(), false);
@@ -109,6 +115,11 @@ BlockIO InterpreterUpdateQuery::execute()
             read_access.emplace_back(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name);
         }
     }
+
+    /// Built after `setDatabase` so the ALTER_UPDATE requirement uses the same (resolved) database as
+    /// the dispatched query and the read requirements above.
+    AccessRightsElements required_access;
+    required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
 
     if (!update_query.cluster.empty())
     {
