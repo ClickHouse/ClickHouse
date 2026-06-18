@@ -1,3 +1,20 @@
+# test_disk_04303
+5
+5.00 B
+15
+15.00 B
+20
+1.50 KiB
+doesn't exist
+# test_disk_plain_04303
+5
+5.00 B
+15
+15.00 B
+20
+1.50 KiB
+doesn't exist
+# test_disk_plain_rewritable_04303
 5
 5.00 B
 15

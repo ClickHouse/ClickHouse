@@ -59,7 +59,12 @@ private:
 
             const String relative = disk.getRelativeFromRoot(current);
 
-            if (disk.getDisk()->existsFile(relative))
+            if (disk.getDisk()->existsDirectory(relative))
+            {
+                for (const auto & file_name : disk.listAllFilesByPath(current))
+                    stack.push(current.ends_with("/") ? current + file_name : current + "/" + file_name);
+            }
+            else
             {
                 // Wrap getFileSize in try/catch, in case file disappears while traversing.
                 try
@@ -72,14 +77,9 @@ private:
                     if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
                         throw;
                     LOG_WARNING(log, "File '{}' disappeared while traversing, skipping", current);
+                    continue;
                 }
             }
-
-            // On object storage a path can be both a file and a directory (eg, if both
-            // keys `p` and `p/child` exist). So, we need to run listAllFilesByPath
-            // even if existsFile() was true above.
-            for (const auto & file_name : disk.listAllFilesByPath(current))
-                stack.push(current.ends_with("/") ? current + file_name : current + "/" + file_name);
         }
         return total;
     }
