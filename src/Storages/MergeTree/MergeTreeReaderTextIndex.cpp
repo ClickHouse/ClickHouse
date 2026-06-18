@@ -21,6 +21,8 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexReaderTotalMicroseconds;
+    extern const Event TextIndexPositionsDecodeMicroseconds;
+    extern const Event TextIndexPhraseMatchMicroseconds;
 }
 
 namespace DB
@@ -880,14 +882,20 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                 position_lists.reserve(position_offsets.size());
 
                 auto * data_buffer = positions_stream->getDataBuffer();
-                for (auto position_offset : position_offsets)
                 {
-                    positions_stream->seekToMark({position_offset, 0});
-                    auto & positions = position_lists.emplace_back();
-                    TextIndexPositionCodec::decode(*data_buffer, positions);
+                    ProfileEventTimeIncrement<Microseconds> decode_watch(ProfileEvents::TextIndexPositionsDecodeMicroseconds);
+                    for (auto position_offset : position_offsets)
+                    {
+                        positions_stream->seekToMark({position_offset, 0});
+                        auto & positions = position_lists.emplace_back();
+                        TextIndexPositionCodec::decode(*data_buffer, positions);
+                    }
                 }
 
-                matching = TextIndexPhraseSearch::phraseSearch(position_lists);
+                {
+                    ProfileEventTimeIncrement<Microseconds> match_watch(ProfileEvents::TextIndexPhraseMatchMicroseconds);
+                    matching = TextIndexPhraseSearch::phraseSearch(position_lists);
+                }
             }
 
             return std::make_shared<TextIndexPostingsCacheCell>(
