@@ -481,6 +481,7 @@ std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropParti
         const String new_storage_path = components.path_resolver.resolve(new_manifest_path);
         files_for_cleanup.push_back(new_storage_path);
 
+        /// TODO: concurrent writing
         auto buf = object_storage->writeObject(
             StoredObject(new_storage_path),
             WriteMode::Rewrite,
@@ -720,9 +721,6 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, DropPlan plan)
     auto replacements = writeReplacementManifests(state, plan, filename_generator, files_for_cleanup);
     auto list_result  = writeManifestList(state, plan, replacements, filename_generator, files_for_cleanup);
 
-    /// TODO: can be optimized, instead of failing and repeat whole operation, recreate all files
-    /// we can just update summary and keep untouched in manifest list
-    /// e.g. if the previous operation was an APPEND
     committed = commitMetadataJSON(state, filename_generator, list_result.metadata_info);
     if (!committed)
         return false;
@@ -744,6 +742,7 @@ void AlterDropPartitionExecutor::run()
 
     TargetFilePaths targets;
 
+    /// TODO: do not rewrite all files on failed CAS
     for (int attempt = 0; attempt < MAX_TRANSACTION_RETRIES; ++attempt)
     {
         auto state_opt = fetchSnapshotState();
