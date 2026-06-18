@@ -669,6 +669,24 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
     return applicable;
 }
 
+/// True if an equi-join predicate (plain or null-safe equals) connects the two relation sets.
+/// Non-equi predicates (ranges, OR, ...) are filters over a cross product, not a join key, so they
+/// must not count as a connection - otherwise the optimizer may pick a cartesian product as the
+/// cheapest join (its size looks tiny when the inputs have no row estimate).
+static bool hasEquiConnection(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
+{
+    for (const auto * edge : edges)
+    {
+        auto [op, lhs, rhs] = edge->asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        const auto & sources = edge->getSourceRelations();
+        if ((sources & left) && (sources & right))
+            return true;
+    }
+    return false;
+}
+
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 {
     /// Discard any partial state left by an earlier algorithm in the fallback chain
@@ -706,7 +724,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto edges = getApplicableExpressions(left->relations, right->relations);
-                bool connected = !edges.empty()
+                bool connected = hasEquiConnection(edges, left->relations, right->relations)
                     || query_graph.areTransitivelyConnected(left->relations, right->relations);
                 if (!connected && best_plan)
                     continue;
@@ -866,7 +884,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         }
                     }
 
-                    bool connected = !edge.empty()
+                    bool connected = hasEquiConnection(edge, left->relations, right->relations)
                         || query_graph.areTransitivelyConnected(left->relations, right->relations);
 
                     LOG_TEST(log, "Considering join between {} and {}, predicates count: {}, connected: {}",
