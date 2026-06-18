@@ -53,7 +53,7 @@ public:
 
     std::optional<size_t> tryGetFileSize() override;
 
-    std::optional<size_t> getRemoteFileSize() const override;
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
@@ -86,7 +86,7 @@ private:
     off_t read_until_position = 0;
 
     off_t offset = 0;
-    size_t total_size;
+    size_t total_size{};
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;

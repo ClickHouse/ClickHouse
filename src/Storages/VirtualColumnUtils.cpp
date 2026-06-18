@@ -15,6 +15,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -66,13 +67,13 @@ namespace ErrorCodes
 namespace VirtualColumnUtils
 {
 
-void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
+static void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
     for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
-            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
             if (column_set)
             {
                 auto future_set = column_set->getData();
@@ -121,10 +122,7 @@ void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr &
     {
         if (node.type == ActionsDAG::ActionType::COLUMN && !global_in_set_nodes.contains(&node))
         {
-            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
-            if (!column_set)
-                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
-
+            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
             if (column_set)
             {
                 auto future_set = column_set->getData();
@@ -631,8 +629,8 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
                         ? res->result_type->getDefault()
                         : nested_type->getDefault();
-                    auto zero_column = res->result_type->createColumnConst(1, zero_field);
-                    const auto & zero_node = tmp_dag.addColumn({zero_column, res->result_type, "0"});
+                    auto zero_column = res->result_type->createColumnConst(0, zero_field);
+                    const auto & zero_node = tmp_dag.addColumn(std::move(zero_column), res->result_type, "0");
                     auto ne_func = FunctionFactory::instance().get("notEquals", context);
                     res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
                     additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));

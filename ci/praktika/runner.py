@@ -152,6 +152,10 @@ class Runner:
         else:
             print("Read GH Environment from workflow data")
             env = _Environment.from_workflow_data()
+        # Record the KV-data keys inherited from the initial (config) job so the
+        # job's `data` output later carries only what this job itself added (see
+        # _post_run), not the whole inherited bucket duplicated into every job.
+        env.JOB_KV_DATA_BASE_KEYS = list(env.JOB_KV_DATA.keys())
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
@@ -657,11 +661,38 @@ class Runner:
                     result.set_link(link)
 
         # run after post hooks as they might modify workflow kv data
-        job_outputs = env.JOB_KV_DATA
+        # Non-initial jobs inherit the whole JOB_KV_DATA from the initial (config)
+        # job at startup (see _setup_env / _Environment.from_workflow_data). Emit
+        # only the keys this job itself added, so every job's `data` output does
+        # not re-duplicate the inherited bucket into toJson(needs).
+        base_keys = set(env.JOB_KV_DATA_BASE_KEYS or [])
+        job_outputs = {
+            k: v for k, v in env.JOB_KV_DATA.items() if k not in base_keys
+        }
         print(f"Job's output: [{list(job_outputs.keys())}]")
         if is_initial_job:
             output = dataclasses.asdict(env)
             output["pipeline_status"] = "success"
+            # User-authored free text must not be embedded into the job output:
+            # the GitHub Actions runner scans outputs with built-in secret
+            # patterns (e.g. "Bearer <chars>") and silently drops the whole
+            # output on a match, which makes every downstream job skip.
+            # Downstream jobs restore these fields from the event payload in
+            # _Environment.from_workflow_data.
+            output["PR_BODY"] = ""
+            output["PR_TITLE"] = ""
+            output["COMMIT_MESSAGE"] = ""
+            # JOB_KV_DATA carries user-authored strings too (e.g. the
+            # `changed_files`/`changed_integration_tests` paths a PR can name
+            # arbitrarily), so a path matching a secret pattern would suppress
+            # the whole output the same way. The downstream-visible `data`
+            # output only needs `workflow_config` as plain JSON (for the GitHub
+            # Actions `if: fromJson(...).workflow_config` expressions); the rest
+            # is consumed solely by _Environment.from_workflow_data. Encode the
+            # whole bucket as opaque base64 so no raw user text can match a
+            # pattern - base64 is already used for `cache_success_base64` in the
+            # same output, so it is known to pass the masker.
+            output["JOB_KV_DATA"] = Utils.to_base64(json.dumps(env.JOB_KV_DATA))
         else:
             output = job_outputs
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:

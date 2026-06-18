@@ -179,8 +179,8 @@ namespace
 
         std::string_view implCached(uintptr_t addr)
         {
-            typename Map::LookupResult it;
-            bool inserted;
+            typename Map::LookupResult it = nullptr;
+            bool inserted = false;
             map.emplace(addr, it, inserted);
             if (inserted)
                 it->getMapped() = impl(addr);

@@ -7,11 +7,6 @@
 #include <base/types.h>
 #include <IO/S3/Client.h>
 
-namespace DB
-{
-using ObjectAttributes = std::map<std::string, std::string>;
-}
-
 namespace DB::S3
 {
 
