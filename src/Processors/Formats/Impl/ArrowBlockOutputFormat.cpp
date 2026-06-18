@@ -104,6 +104,12 @@ void ArrowBlockOutputFormat::resetFormatterImpl()
 
 void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> & schema)
 {
+    if (format_settings.arrow.row_group_size == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting output_format_arrow_row_group_size must be greater than 0"
+        );
+
     arrow_ostream = std::make_shared<ArrowBufferedOutputStream>(out);
     arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
     arrow::ipc::IpcWriteOptions options = arrow::ipc::IpcWriteOptions::Defaults();
