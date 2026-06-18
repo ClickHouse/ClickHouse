@@ -261,10 +261,4 @@ void SecureStreamSocketImpl::setBlocking(bool flag)
 }
 
 
-void SecureStreamSocketImpl::setBioMethod(const BIO_METHOD * method)
-{
-    _impl.setBioMethod(method);
-}
-
-
 } } // namespace Poco::Net
