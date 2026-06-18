@@ -939,7 +939,15 @@ private:
         switch (op)
         {
             case SumMapOp::Sum:
-                acc += val;
+                if constexpr (is_signed_v<V> && is_integer<V>)
+                {
+                    using U = make_unsigned_t<V>;
+                    acc = static_cast<V>(static_cast<U>(acc) + static_cast<U>(val));
+                }
+                else
+                {
+                    acc += val;
+                }
                 break;
             case SumMapOp::Min:
                 if constexpr (is_floating_point<V>)

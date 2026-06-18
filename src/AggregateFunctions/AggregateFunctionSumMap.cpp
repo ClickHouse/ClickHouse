@@ -39,7 +39,7 @@ namespace
 {
 
 template <typename T>
-static void normalizeDecimalFieldImpl(Field & key)
+void normalizeDecimalFieldImpl(Field & key)
 {
     auto df = key.safeGet<DecimalField<T>>();
     auto v = df.getValue().value;
@@ -48,7 +48,7 @@ static void normalizeDecimalFieldImpl(Field & key)
     key = DecimalField<T>(T(v), s);
 }
 
-static void normalizeFieldDecimal(Field & key)
+void normalizeFieldDecimal(Field & key)
 {
     switch (key.getType())
     {
