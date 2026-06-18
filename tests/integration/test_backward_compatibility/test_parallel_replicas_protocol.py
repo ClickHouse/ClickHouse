@@ -25,20 +25,23 @@ nodes = [
     )
 ]
 
-# Separate cluster for the rolling-upgrade-with-split-topology scenario. 25.12 has
-# parallel-replicas protocol 7 (with `stream_id` support) but not 8 (the new
-# announcement-response packet introduced on this branch), so it's the narrow window
-# where the split-stream topology this branch creates would otherwise raise
-# `Initiator received more initial requests than there are replicas` on the older
-# initiator or get rejected as an unknown stream on the newer one. Kept separate
-# from the 24.3 cluster above so each test exercises exactly one version skew.
+# Separate cluster for the rolling-upgrade-with-split-topology scenario. 26.5 is the
+# first stable release that speaks parallel-replicas protocol 7 (with `stream_id`
+# support) but NOT 8 (the new announcement-response packet introduced on this branch).
+# That's the narrow window the split-stream topology this branch creates has to
+# tolerate: the older initiator raises "more initial requests than there are
+# replicas" when a newer follower over-announces, and the newer coordinator's
+# snapshot-pin / unknown-stream paths must degrade gracefully when an older follower
+# under-announces. Kept separate from the 24.3 cluster above so each test exercises
+# exactly one version skew. (25.12 has PR=5 and is excluded by the existing
+# `RemoteQueryExecutor` disconnect-at-PR<7 gate, which is why it didn't reproduce.)
 split_topology_nodes = [
     cluster.add_instance(
         f"split_node{num}",
         main_configs=["configs/clusters_split_topology.xml"],
         with_zookeeper=True,
         image="clickhouse/clickhouse-server",
-        tag="25.12",
+        tag="26.5",
         stay_alive=True,
         use_old_analyzer=False,
         with_installed_binary=True,
