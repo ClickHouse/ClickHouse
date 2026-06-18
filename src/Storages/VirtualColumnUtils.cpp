@@ -277,34 +277,31 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     return desc;
 }
 
+/// Appends one row to the already-detached mutable columns of `block`. The columns are detached once
+/// by the caller (see `getFilterByPathAndFileIndexes`) so this per-row helper does not pay any
+/// copy-on-write plumbing: it inserts directly through the mutable holders. `block` is used only for
+/// name/type/position lookup; its columns have been moved out into `columns`.
 static void addPathAndFileToVirtualColumns(
-    Block & block,
+    const Block & block,
+    MutableColumns & columns,
     const String & path,
     size_t idx,
     const FormatSettings & format_settings,
     bool parse_hive_columns)
 {
     if (block.has("_path"))
-    {
-        auto & holder = block.getByName("_path").column;
-        auto mutable_column = IColumn::mutate(std::move(holder));
-        mutable_column->insert(path);
-        holder = std::move(mutable_column);
-    }
+        columns[block.getPositionByName("_path")]->insert(path);
 
     if (block.has("_file"))
     {
-        auto pos = path.find_last_of('/');
+        auto slash = path.find_last_of('/');
         String file;
-        if (pos != std::string::npos)
-            file = path.substr(pos + 1);
+        if (slash != std::string::npos)
+            file = path.substr(slash + 1);
         else
             file = path;
 
-        auto & holder = block.getByName("_file").column;
-        auto mutable_column = IColumn::mutate(std::move(holder));
-        mutable_column->insert(file);
-        holder = std::move(mutable_column);
+        columns[block.getPositionByName("_file")]->insert(file);
     }
 
     if (parse_hive_columns)
@@ -315,20 +312,13 @@ static void addPathAndFileToVirtualColumns(
             if (const auto * column = block.findByName(key))
             {
                 ReadBufferFromString buf(value);
-                auto & holder = block.getByName(column->name).column;
-                auto mutable_column = IColumn::mutate(std::move(holder));
-                column->type->getDefaultSerialization()->deserializeWholeText(*mutable_column, buf, format_settings);
-                holder = std::move(mutable_column);
+                column->type->getDefaultSerialization()->deserializeWholeText(
+                    *columns[block.getPositionByName(column->name)], buf, format_settings);
             }
         }
     }
 
-    {
-        auto & holder = block.getByName("_idx").column;
-        auto mutable_column = IColumn::mutate(std::move(holder));
-        mutable_column->insert(idx);
-        holder = std::move(mutable_column);
-    }
+    columns[block.getPositionByName("_idx")]->insert(idx);
 }
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(
@@ -383,15 +373,21 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
     const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty();
 
+    /// Detach all block columns into mutable holders once, append all rows through them, and
+    /// assign them back once. This keeps `IColumn::mutate` (and its recursive subcolumn re-wrapping
+    /// for `LowCardinality` virtuals such as `_path`/`_file`) off the per-row append path.
+    MutableColumns columns = block.mutateColumns();
     for (size_t i = 0; i != paths.size(); ++i)
     {
         addPathAndFileToVirtualColumns(
             block,
+            columns,
             paths[i],
             /* idx */i,
             hive_format_settings,
             parse_hive_columns);
     }
+    block.setColumns(std::move(columns));
 
     filterBlockWithExpression(actions, block);
 
