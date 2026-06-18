@@ -300,8 +300,11 @@ function fuzz
             # SELECT * FROM remote('127.0.0.{1..255}', system, one)
             if grep -F 'TOO_MANY_SIMULTANEOUS_QUERIES' err
             then
-                # Give it some time to cool down
-                clickhouse-client --query "SHOW PROCESSLIST"
+                # Give it some time to cool down. The SHOW PROCESSLIST is only a
+                # diagnostic and runs under `set -e`; if the same overload rejects
+                # it, do not abort the script (that would skip the status.tsv
+                # write below and surface as a missing-status job ERROR).
+                clickhouse-client --query "SHOW PROCESSLIST" ||:
                 sleep 1
             elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
             then
