@@ -76,6 +76,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
@@ -440,20 +441,58 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         }
     }
 
+    if (!source)
+        return nullptr;
+
     /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
     /// They will be decorrelated and executed as part of the outer query instead.
-    if (source && hasCorrelatedExpressions(source->getRootNode()))
+    if (hasCorrelatedExpressions(source->getRootNode()))
         return nullptr;
 
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-    auto prepared_sets_cache = context->getPreparedSetsCache();
 
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
-    if (!plan)
+    /// This is a *speculative* build, run during primary key / skip index analysis so that index
+    /// analysis can use the set. It must not destroy the canonical `source` plan: if the in-place
+    /// pipeline stops without creating the set (e.g. a subquery timeout with `overflow_mode = 'break'`,
+    /// or any early stop that skips `CreatingSetsTransform::generate` and therefore `Set::finishInsert`),
+    /// the set must still be buildable later by `DelayedCreatingSetsStep::makePlansForSets`. Otherwise
+    /// the consumed `source` leaves the set permanently unbuilt and `FunctionIn` throws
+    /// "Not-ready Set is passed as the second argument" when the main pipeline runs.
+    ///
+    /// So run the pipeline against a clone of `source`, leaving the original intact. If a step in the
+    /// plan does not support `clone` (`NOT_IMPLEMENTED`), skip the in-place optimization entirely
+    /// instead of consuming `source`: this is fail-close — losing primary key analysis for such a
+    /// subquery only costs performance, while consuming `source` on this path would resurface the bug.
+    std::unique_ptr<QueryPlan> plan;
+    try
+    {
+        plan = std::make_unique<QueryPlan>(source->clone());
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+            throw;
         return nullptr;
+    }
 
-    set_and_key->set->fillSetElements();
+    /// Do not share this speculative build through `PreparedSetsCache`: if the in-place pipeline stops
+    /// silently, the `CreatingSetsTransform` destructor stores an exception into the cache for this key,
+    /// and the later deferred build would rethrow it via `shared_future::get` instead of rebuilding from
+    /// the preserved `source`. The deferred build still uses the cache.
+    auto creating_set = std::make_unique<CreatingSetStep>(
+        plan->getCurrentHeader(),
+        set_and_key,
+        network_transfer_limits,
+        /*prepared_sets_cache=*/ nullptr);
+    creating_set->setStepDescription("Create set for subquery");
+    plan->addStep(std::move(creating_set));
+
+    /// `Set::fillSetElements` appends to `set_elements` without clearing, and this function may run more
+    /// than once for the same set (different call sites, or a retry after a silent failure that preserved
+    /// `source`). Fill only once, mirroring `FutureSetFromTuple::buildOrderedSetInplace`.
+    if (!set_and_key->set->hasExplicitSetElements())
+        set_and_key->set->fillSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
@@ -467,10 +506,15 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     executor.execute();
 
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
-    /// timeout_overflow_mode set to `break`, no exception is thrown, and the executor just stops executing
-    /// the pipeline without setting `set_and_key->set->is_created` to true.
+    /// `timeout_overflow_mode` set to `break`, no exception is thrown, and the executor just stops executing
+    /// the pipeline without setting `set_and_key->set->is_created` to true. The cloned source above keeps
+    /// `source` intact, so `DelayedCreatingSetsStep::makePlansForSets` can still build the set later.
     if (!set_and_key->set->isCreated())
         return nullptr;
+
+    /// In-place build succeeded; the set is ready and the deferred build will be skipped (it checks
+    /// `isCreated()` / `get()`), so the original `source` plan is no longer needed.
+    source.reset();
 
     logProcessorProfile(context, pipeline.getProcessors());
 
