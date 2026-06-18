@@ -3439,16 +3439,23 @@ async function postMulti(posted_request_num, parsed)
 /// activation cannot apply its state on top of a newer one.
 async function restoreFromHistory(state, token) {
     if (token === undefined) token = request_num;
+    /// The editor (textarea + param inputs) is restored from the top-level query/params.
+    /// The result is rendered from `state.result`, which carries the query/params that
+    /// produced it; for flat history entries (editor == result) it defaults to `state`.
+    const result = state.result || state;
     clear();
-    /// Reset the result-action targets to this tab, so an empty/other tab can't download or
-    /// copy the previously active tab's query/result. Shown again below if a result renders.
+    /// Reset the result-action targets, so an empty/other tab can't download or copy the
+    /// previously active tab's query/result. Shown again below if a result renders. They
+    /// follow the PRODUCING query/params, not the (possibly edited) editor.
     document.getElementById('download-div').style.display = 'none';
     document.getElementById('copy-div').style.display = 'none';
-    last_query_for_download = state.query || '';
-    last_params_for_download = state.params || {};
+    last_query_for_download = result.query || '';
+    last_params_for_download = result.params || {};
     query_area.value = state.query;
     query_area.dispatchEvent(new Event('input'));
-    resultEl.queryText = state.query;
+    /// Graph detection keys off the producing query, so a snapshot still renders as a graph
+    /// even if the editor query was changed without rerunning.
+    resultEl.queryText = result.query ?? state.query;
 
     /// Restore query parameter inputs and their values.
     await updateQueryParams();
@@ -3458,20 +3465,20 @@ async function restoreFromHistory(state, token) {
         setParamValues(state.params);
     }
 
-    if (!state.data) return;
+    if (!result.data) return;
 
     let is_table = false;
     let is_raw = false;
     let is_chart = false;
     let is_error = false;
 
-    let format = state.format;
+    let format = result.format;
 
-    if (!state.ok) {
+    if (!result.ok) {
         is_error = true;
 
         let has_exception = false;
-        for (const line of state.data.split('\n')) {
+        for (const line of result.data.split('\n')) {
             if (line.startsWith(`{"exception":`)) {
                 resultEl.update(JSON.parse(line));
                 has_exception = true;
@@ -3479,7 +3486,7 @@ async function restoreFromHistory(state, token) {
             }
         }
         if (!has_exception) {
-            resultEl.renderError(state.data);
+            resultEl.renderError(result.data);
             logoEl.style.display = 'none';
         }
 
@@ -3487,7 +3494,7 @@ async function restoreFromHistory(state, token) {
         return;
     } else if (format == default_format) {
         is_table = true;
-        let lines = state.data.split('\n');
+        let lines = result.data.split('\n');
         let fragment = document.createDocumentFragment();
 
         for (const line of lines) {
@@ -3499,10 +3506,10 @@ async function restoreFromHistory(state, token) {
     } else if (format == 'JSONCompactColumns') {
         is_chart = true;
         if (token !== request_num) { return; }
-        resultEl.renderChart(JSON.parse(state.data));
+        resultEl.renderChart(JSON.parse(result.data));
     } else {
         is_raw = true;
-        resultEl.updateRaw(state.data);
+        resultEl.updateRaw(result.data);
     }
 
     if (resultEl.isExplainGraph) {
@@ -3521,7 +3528,7 @@ async function restoreFromHistory(state, token) {
     document.getElementById('copy-div').style.display = is_raw ? 'block' : 'none';
 
     if (is_raw) {
-        resultEl.elapsedNs = state.elapsed_ns;
+        resultEl.elapsedNs = result.elapsed_ns;
     }
     elapsed_ns = resultEl.elapsedNs;
 
@@ -3600,10 +3607,9 @@ async function activateTab(id) {
     invalidateInFlight();
     const token = request_num;
 
-    /// Render the stored result (tab.result) but always restore the editor's parameter
-    /// inputs from the live tab.params, which reflects the latest param edits even if they
-    /// happened after the last run (whose snapshot is in tab.result.params).
-    await restoreFromHistory(tab.result ? { ...tab.result, query: tab.query, params: tab.params } : { query: tab.query, params: tab.params, data: null }, token);
+    /// Restore the editor from the live tab.query/tab.params (latest edits), while rendering
+    /// the stored result from tab.result, which keeps its own producing query/params.
+    await restoreFromHistory({ query: tab.query, params: tab.params, result: tab.result }, token);
     if (token !== request_num) return; /// a newer activation/run superseded this one
     /// Always recolor the page (and thus the active tab slab) to this tab's query,
     /// even when there is no result to render (restoreFromHistory skips this otherwise).
@@ -3862,20 +3868,28 @@ function buildHistoryParams(params, tabName) {
     return out;
 }
 
-/// Write a browser-history entry + URL for the given tab and `stateData` (the
-/// history-state shape {query, format, ok, data, elapsed_ns, params}). Does NOT
-/// modify the tab's stored result. `titleForDoc` overrides the document title text.
-function writeHistoryEntry(tab, stateData, titleForDoc) {
+/// Write a browser-history entry + URL derived from the tab. The top-level query/params
+/// are the EDITOR state (also the URL hash and the de-dup key); `result` is the snapshot
+/// that produced the rendered result, carrying its OWN query/params so rendering/download
+/// stay tied to the producing query even if the editor was edited without rerunning.
+/// `titleForDoc` overrides the document title text.
+function writeHistoryEntry(tab, titleForDoc) {
     /// Skip a fresh entry if neither the active tab nor its query changed.
     const cur = history.state;
-    const unchanged = cur && cur.tabId === tab.id && cur.query === stateData.query;
+    const unchanged = cur && cur.tabId === tab.id && cur.query === tab.query;
 
-    const state = { ...stateData, tabId: tab.id, tabName: tab.title };
-    const title = "ClickHouse Query: " + (titleForDoc || stateData.query);
-    const history_params = buildHistoryParams(stateData.params, tab.title);
+    const state = {
+        query: tab.query,
+        params: tab.params,
+        result: tab.result || null,
+        tabId: tab.id,
+        tabName: tab.title,
+    };
+    const title = "ClickHouse Query: " + (titleForDoc || tab.query);
+    const history_params = buildHistoryParams(tab.params, tab.title);
     let history_url = window.location.pathname;
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
-    history_url += '#' + toBase64(stateData.query);
+    history_url += '#' + toBase64(tab.query);
 
     if (!cur || unchanged) {
         history.replaceState(state, title, history_url);
@@ -3883,46 +3897,37 @@ function writeHistoryEntry(tab, stateData, titleForDoc) {
         history.pushState(state, title, history_url);
     }
     document.title = title;
-    tab.lastSavedQuery = stateData.query;
+    tab.lastSavedQuery = tab.query;
     renderTabBar();
     scheduleSave();
 }
 
 /// Called after an actual run: stash the result snapshot on the active tab (this is
 /// what makes the tab "have a result", hence visible in the bar) and record history.
+/// The snapshot records the query/params that produced it.
 function saveHistory(stateData, titleForDoc) {
     const tab = getActiveTab();
     if (!tab) return;
     tab.query = stateData.query;
     tab.result = {
         ran: true,   /// marks a genuine run; the tab bar's visibility keys off this
+        query: stateData.query,      /// the query that produced this result
+        params: stateData.params,    /// the params that produced this result
         format: stateData.format,
         ok: stateData.ok,
         data: stateData.data,
         elapsed_ns: stateData.elapsed_ns,
-        params: stateData.params,
     };
-    /// Carry `ran` in the history entry too, so Back/Forward to a data-less run state
-    /// (large or multi-query results) replaces the result rather than keeping a stale one.
-    writeHistoryEntry(tab, { ...stateData, ran: true }, titleForDoc);
+    writeHistoryEntry(tab, titleForDoc);
 }
 
-/// Record a history entry for the active tab on tab switch / rename, reusing the
-/// tab's existing result (or none). Crucially this does NOT fabricate a result, so a
-/// never-run single tab stays result-less and the tab bar stays hidden.
+/// Record a history entry for the active tab on tab switch / rename. Reuses the tab's
+/// existing result (or none); does NOT fabricate a result, so a never-run single tab
+/// stays result-less and the tab bar stays hidden.
 function syncHistory() {
     const tab = getActiveTab();
     if (!tab) return;
-    const r = tab.result || {};
-    writeHistoryEntry(tab, {
-        query: tab.query,
-        format: r.format ?? null,
-        ok: r.ok ?? true,
-        data: r.data ?? null,
-        elapsed_ns: r.elapsed_ns ?? 0,
-        params: tab.params,
-        ran: !!(tab.result && tab.result.ran),
-    });
+    writeHistoryEntry(tab);
 }
 
 /// Resolve which tab a history state refers to: by stable id, else by name, else
@@ -3947,18 +3952,10 @@ window.onpopstate = function(event) {
     const tab = resolveTabForState(event.state);
     activeTabId = tab.id;
     tab.query = event.state.query;
-    /// Replace the result from the history entry: a "ran" entry (even with data: null for
-    /// large/multi-query results) becomes a result snapshot; a non-run entry clears it. This
-    /// avoids leaving a stale small-result snapshot attached to a different query.
-    tab.result = event.state.ran ? {
-        ran: true,
-        format: event.state.format,
-        ok: event.state.ok,
-        data: event.state.data,
-        elapsed_ns: event.state.elapsed_ns,
-        params: event.state.params,
-    } : null;
     if (event.state.params) tab.params = event.state.params;
+    /// Adopt the entry's result snapshot (its own producing query/params), or clear it.
+    /// This avoids leaving a stale snapshot attached to a different query.
+    tab.result = event.state.result || null;
     restoreFromHistory(event.state, token).then(() => { if (token === request_num) renderTabBar(); });
     scheduleSave();
 };
