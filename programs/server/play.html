@@ -216,6 +216,125 @@
             z-index: 0; /* stacking context so children don't overlap #menu */
         }
 
+        /* Tab bar: sits at the top of #main, bleeding into its padding so the
+           gray/black strip spans the full width. Sticky on the horizontal axis
+           only (like #controls), so it stays at the left edge while a wide table
+           is scrolled horizontally, but scrolls away vertically. */
+        #tab-bar
+        {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.25rem;
+            margin: -0.5rem -0.5rem 0.5rem -0.5rem;
+            padding: 0.35rem 0.5rem 0 0.5rem;
+            background: var(--table-header-color); /* light gray strip */
+            position: sticky;
+            left: 0;
+            z-index: 1;
+        }
+
+        [data-theme="dark"] #tab-bar
+        {
+            background: #000; /* pure black strip */
+        }
+
+        #tabs
+        {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.25rem;
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow-x: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-color) transparent;
+        }
+
+        .tab
+        {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            flex-shrink: 0;
+            max-width: 16rem;
+            padding: 0.25rem 0.5rem;
+            margin-bottom: 0.25rem; /* lifted off the strip bottom, so the strip shows beneath */
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-bottom: none;
+            /* Inactive tabs are tinted by the hash of their own query text, mirroring
+               the page background formula, so different queries get distinct colors. */
+            background: oklch(96% 0.0296 var(--tab-hue, var(--background-color-rotate)));
+        }
+
+        [data-theme="dark"] .tab
+        {
+            background: oklch(15% 0.0296 var(--tab-hue, var(--background-color-rotate)));
+        }
+
+        /* The active tab uses the page background and drops to the bottom of the
+           strip, so it visually merges with the rest of the page below. */
+        .tab.active
+        {
+            background: var(--background-color);
+            color: var(--text-color-active);
+            font-weight: bold;
+            margin-bottom: -1px;
+        }
+
+        .tab-title
+        {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .tab-title-input
+        {
+            font: inherit;
+            width: 8rem;
+            padding: 0 0.15rem;
+            border: 1px solid var(--border-color-selected);
+            background: var(--element-background-color);
+            color: var(--text-color-active);
+        }
+
+        .tab-close
+        {
+            line-height: 1;
+            font-size: 1.1em;
+            padding: 0 0.15rem;
+            color: var(--misc-text-color);
+        }
+
+        .tab-close:hover
+        {
+            color: var(--text-color-active);
+            background: var(--border-color);
+        }
+
+        #tab-add
+        {
+            flex-shrink: 0;
+            align-self: flex-end;
+            margin-bottom: 0.25rem;
+            padding: 0.25rem 0.6rem;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 100%;
+            background: var(--element-background-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+        }
+
+        #tab-add:hover, #tab-add:focus
+        {
+            background: var(--button-color);
+            color: var(--button-text-color);
+        }
+
         .menu-icon
         {
             width: 2.25em;
@@ -903,6 +1022,10 @@
         <div id="terminal-resizer"></div>
     </div>
     <div id="main">
+        <div id="tab-bar" hidden>
+            <div id="tabs"></div>
+            <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
+        </div>
         <form id="controls">
             <div id="inputs">
                 <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
@@ -2305,8 +2428,16 @@ customElements.define('query-result', QueryResultElement);
 /// This is to avoid race conditions.
 let request_num = 0;
 
-/// Save query in history only if it is different.
-let previous_query = '';
+/// Tabs let the user keep several independent queries side by side. Each tab owns its
+/// query text, title, query parameters and the last result snapshot. The connection
+/// settings (url/user/password) are global and shared across all tabs.
+/// We keep a SINGLE editor and a SINGLE result element and swap their content when the
+/// active tab changes, rather than maintaining a DOM tree per tab.
+let tabs = [];           /// array of tab objects; display order == array order
+let activeTabId = null;
+let tabSeq = 0;          /// monotonic counter for synthetic, stable tab ids
+let tabTitleSeq = 0;     /// counter for default titles "Query A", "Query B", ...
+let dbReady = null;      /// Promise<IDBDatabase|null>; null result means persistence is unavailable
 
 /// Start of the last query
 let last_query_start = 0;
@@ -3057,52 +3188,17 @@ async function postSingle(posted_request_num, query, history_query_text)
 
     if (posted_request_num != request_num) { return; }
 
-    /// The query is saved in browser history (in a state JSON object)
-    /// as well as in URL fragment identifier.
-    /// When history_query_text is provided (multi-query "Run selected" with a single query),
-    /// use the full textarea content for history/URL to avoid losing the rest of the editor.
-    const saved_query = history_query_text || query;
-    if (saved_query != previous_query) {
-        const state = {
-            query: saved_query,
-            format: result.format,
-            ok: result.response_ok,
-            data: result.reply.length > 100000 ? null : result.reply,
-            elapsed_ns: elapsed_ns,
-            params: paramValuesSnapshot,
-        };
-        const title = "ClickHouse Query: " + saved_query;
-
-        const user = user_elem.value;
-        const server_address = url_elem.value;
-        const history_params = [];
-        if (user) {
-            history_params.push('user=' + encodeURIComponent(user));
-        }
-        if (run_immediately) {
-            history_params.push('run=1');
-        }
-        if (server_address != location.origin) {
-            history_params.push('url=' + encodeURIComponent(server_address));
-        }
-        for (const [name, value] of Object.entries(paramValuesSnapshot))
-        {
-            history_params.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
-        }
-        let history_url = window.location.pathname;
-        if (history_params.length > 0) {
-            history_url += '?' + history_params.join('&');
-        }
-        history_url += '#' + toBase64(saved_query);
-
-        if (previous_query == '') {
-            history.replaceState(state, title, history_url);
-        } else {
-            history.pushState(state, title, history_url);
-        }
-        document.title = title;
-        previous_query = saved_query;
-    }
+    /// Persist the result snapshot on the active tab and record an entry in browser
+    /// history + the URL. In multi-query "Run selected" mode `history_query_text` carries
+    /// the full editor content so a refresh restores everything, not just the run query.
+    saveHistory({
+        query: history_query_text || query,
+        format: result.format,
+        ok: result.response_ok,
+        data: result.reply.length > 100000 ? null : result.reply,
+        elapsed_ns: elapsed_ns,
+        params: paramValuesSnapshot,
+    });
 }
 
 /// Container for dynamically created result elements in multi-query mode.
@@ -3241,48 +3337,16 @@ async function postMulti(posted_request_num, parsed)
     if (posted_request_num != request_num) return;
 
     /// Save all queries to browser history, using the full textarea content.
-    const all_queries_text = query_area.value;
-    if (all_queries_text != previous_query) {
-        const state = {
-            query: all_queries_text,
-            format: null,
-            ok: !had_error,
-            data: null,
-            elapsed_ns: elapsed_ns,
-            params: paramValuesSnapshot,
-        };
-        const title = "ClickHouse Query: " + parsed[0].query;
-
-        const user = user_elem.value;
-        const server_address = url_elem.value;
-        const history_params = [];
-        if (user) {
-            history_params.push('user=' + encodeURIComponent(user));
-        }
-        if (run_immediately) {
-            history_params.push('run=1');
-        }
-        if (server_address != location.origin) {
-            history_params.push('url=' + encodeURIComponent(server_address));
-        }
-        for (const [name, value] of Object.entries(paramValuesSnapshot))
-        {
-            history_params.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
-        }
-        let history_url = window.location.pathname;
-        if (history_params.length > 0) {
-            history_url += '?' + history_params.join('&');
-        }
-        history_url += '#' + toBase64(all_queries_text);
-
-        if (previous_query == '') {
-            history.replaceState(state, title, history_url);
-        } else {
-            history.pushState(state, title, history_url);
-        }
-        document.title = title;
-        previous_query = all_queries_text;
-    }
+    /// Multi-query results are not serialized (data is null); a refresh restores the
+    /// queries and re-running reproduces the results.
+    saveHistory({
+        query: query_area.value,
+        format: null,
+        ok: !had_error,
+        data: null,
+        elapsed_ns: elapsed_ns,
+        params: paramValuesSnapshot,
+    }, parsed[0].query);
 }
 
 async function restoreFromHistory(state) {
@@ -3364,16 +3428,373 @@ async function restoreFromHistory(state) {
 
     progressEl.updateText(resultEl.rowCount, resultEl.elapsedNs, resultEl.incompleteResult);
     progressEl.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(state.query));
 }
 
 let query_area = document.getElementById('query');
 
 appendTextareaResizer();
 
+/// ===== Tabs =====================================================================
+/// A tab bundles a query, its title, query parameters and a result snapshot.
+/// We keep one editor + one result element and swap content on activation.
+
+const tab_bar_elem = document.getElementById('tab-bar');
+const tabs_elem = document.getElementById('tabs');
+
+/// Generate the next default title: "Query A" .. "Query Z", "Query AA", ...
+/// Skips titles already in use so closing/reopening doesn't produce duplicates.
+function nextDefaultTitle() {
+    const used = new Set(tabs.map(t => t.title));
+    for (;;) {
+        let n = tabTitleSeq++;
+        let letters = '';
+        do { letters = String.fromCharCode(65 + (n % 26)) + letters; n = Math.floor(n / 26) - 1; } while (n >= 0);
+        const title = 'Query ' + letters;
+        if (!used.has(title)) return title;
+    }
+}
+
+function makeTab(title, query) {
+    return {
+        id: 't' + (++tabSeq),
+        title: title || nextDefaultTitle(),
+        query: query || '',
+        params: {},
+        result: null,          /// last result snapshot (history-state shape) or null
+        lastSavedQuery: undefined,
+    };
+}
+
+function getActiveTab() {
+    return tabs.find(t => t.id === activeTabId) || null;
+}
+
+/// Serialize the live editor (query text + parameter values) into the active tab.
+/// The result snapshot is written separately by `saveHistory` after a run.
+function captureActiveTab() {
+    const tab = getActiveTab();
+    if (!tab) return;
+    tab.query = query_area.value;
+    tab.params = getParamValues();
+}
+
+/// Load a tab's content into the editor and re-render its stored result.
+/// Routed through `restoreFromHistory` so the syntax backdrop, params and run
+/// buttons resync (it dispatches an 'input' event), exactly like history navigation.
+async function activateTab(id) {
+    const tab = tabs.find(t => t.id === id);
+    if (!tab) return;
+    activeTabId = id;
+    /// Invalidate any in-flight query from the previous tab and abort its requests,
+    /// so a late response cannot render into the now-active tab.
+    ++request_num;
+    if (controller) controller.abort();
+    for (const ac of multiQueryControllers) ac.abort();
+    multiQueryControllers = [];
+    if (typeof in_flight !== 'undefined' && in_flight) endFlight();
+
+    await restoreFromHistory(tab.result ? { ...tab.result, query: tab.query } : { query: tab.query, params: tab.params, data: null });
+    /// Always recolor the page (and thus the active tab slab) to this tab's query,
+    /// even when there is no result to render (restoreFromHistory skips this otherwise).
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
+    renderTabBar();
+    query_area.focus();
+}
+
+/// Switch tabs in response to a user click: capture the current tab, activate the
+/// target, and push a browser-history entry so Back/Forward moves between tabs.
+async function switchToTab(id) {
+    if (id === activeTabId) return;
+    captureActiveTab();
+    await activateTab(id);
+    syncHistory();
+}
+
+function addTab() {
+    captureActiveTab();
+    const tab = makeTab();
+    tabs.push(tab);
+    activeTabId = tab.id;
+    /// A brand new tab has no result; clear the editor and result area.
+    activateTab(tab.id).then(syncHistory);
+    scheduleSave();
+}
+
+function closeTab(id) {
+    const idx = tabs.findIndex(t => t.id === id);
+    if (idx === -1) return;
+    const wasActive = id === activeTabId;
+    tabs.splice(idx, 1);
+    if (tabs.length === 0) {
+        /// Never leave zero tabs: start a fresh default one.
+        const tab = makeTab();
+        tabs.push(tab);
+        activeTabId = tab.id;
+        activateTab(tab.id).then(syncHistory);
+    } else if (wasActive) {
+        /// Prefer the right neighbour, otherwise the left.
+        const next = tabs[Math.min(idx, tabs.length - 1)];
+        activeTabId = next.id;
+        activateTab(next.id).then(syncHistory);
+    } else {
+        renderTabBar();
+    }
+    scheduleSave();
+}
+
+/// Begin inline editing of the active tab's title.
+function startTitleEdit(tab, titleEl) {
+    const input = document.createElement('input');
+    input.className = 'tab-title-input';
+    input.value = tab.title;
+    titleEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const commit = (save) => {
+        if (done) return;
+        done = true;
+        if (save) {
+            const v = input.value.trim();
+            if (v) tab.title = v;
+        }
+        renderTabBar();
+        syncHistory();
+        scheduleSave();
+    };
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+    });
+    input.addEventListener('blur', () => commit(true));
+}
+
+/// Rebuild the whole tab bar. Cheap (few nodes) so we never diff.
+function renderTabBar() {
+    const active = getActiveTab();
+    /// Hidden when there is a single tab that has never produced a result, so the
+    /// page looks exactly as it did before tabs existed (no layout shift on load).
+    tab_bar_elem.hidden = (tabs.length <= 1 && (!active || !active.result));
+
+    tabs_elem.textContent = '';
+    for (const tab of tabs) {
+        const el = document.createElement('div');
+        el.className = 'tab' + (tab.id === activeTabId ? ' active' : '');
+        el.dataset.id = tab.id;
+        el.tabIndex = 0;
+        el.title = tab.title;
+        /// Inactive tabs are tinted by the hash of their own query text.
+        el.style.setProperty('--tab-hue', queryToColor(tab.query));
+
+        const titleEl = document.createElement('span');
+        titleEl.className = 'tab-title';
+        titleEl.textContent = tab.title;
+        el.appendChild(titleEl);
+
+        const closeEl = document.createElement('span');
+        closeEl.className = 'tab-close';
+        closeEl.title = 'Close';
+        closeEl.textContent = '×';
+        el.appendChild(closeEl);
+
+        el.addEventListener('click', (e) => {
+            if (e.target === closeEl) { e.stopPropagation(); closeTab(tab.id); return; }
+            if (tab.id === activeTabId) {
+                if (e.target === titleEl) startTitleEdit(tab, titleEl);
+            } else {
+                switchToTab(tab.id);
+            }
+        });
+        el.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchToTab(tab.id); }
+        });
+        tabs_elem.appendChild(el);
+    }
+}
+
+document.getElementById('tab-add').addEventListener('click', addTab);
+
+/// ----- IndexedDB persistence ----------------------------------------------------
+/// Stores the workspace (tabs, titles, active tab, order and small result snapshots)
+/// so it survives reloads. Best-effort: any failure degrades to in-memory-only tabs.
+
+const DB_NAME = 'clickhouse-play';
+const TAB_STORE = 'tabs';
+const META_STORE = 'meta';
+
+function openDb() {
+    return new Promise((resolve) => {
+        let req;
+        try {
+            req = indexedDB.open(DB_NAME, 1);
+        } catch (e) {
+            resolve(null);
+            return;
+        }
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(TAB_STORE)) db.createObjectStore(TAB_STORE, { keyPath: 'id' });
+            if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'key' });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+    });
+}
+
+async function loadFromDb() {
+    const db = await dbReady;
+    if (!db) return null;
+    return new Promise((resolve) => {
+        try {
+            const tx = db.transaction([TAB_STORE, META_STORE], 'readonly');
+            const tabsReq = tx.objectStore(TAB_STORE).getAll();
+            const metaReq = tx.objectStore(META_STORE).get('state');
+            tx.oncomplete = () => resolve({ records: tabsReq.result || [], meta: metaReq.result || null });
+            tx.onerror = () => resolve(null);
+        } catch (e) {
+            resolve(null);
+        }
+    });
+}
+
+let save_timer = null;
+function scheduleSave() {
+    if (save_timer) return;
+    save_timer = setTimeout(() => { save_timer = null; persist(); }, 400);
+}
+
+async function persist() {
+    const db = await dbReady;
+    if (!db) return;
+    captureActiveTab();
+    try {
+        const tx = db.transaction([TAB_STORE, META_STORE], 'readwrite');
+        const tabStore = tx.objectStore(TAB_STORE);
+        tabStore.clear();
+        for (const tab of tabs) {
+            tabStore.put({
+                id: tab.id,
+                title: tab.title,
+                query: tab.query,
+                params: tab.params,
+                result: tab.result,
+            });
+        }
+        tx.objectStore(META_STORE).put({
+            key: 'state',
+            activeTabId: activeTabId,
+            tabOrder: tabs.map(t => t.id),
+            tabSeq: tabSeq,
+            tabTitleSeq: tabTitleSeq,
+        });
+    } catch (e) {
+        /// Ignore persistence failures (private mode, quota, etc.).
+    }
+}
+
+/// ----- Browser history + URL ----------------------------------------------------
+
+/// Build the query-string parameters (user/run/url/param_*/tab) shared by history
+/// entries. Connection settings are global; the active tab name is appended so a
+/// shared URL can be reconciled against saved tabs on load.
+function buildHistoryParams(params, tabName) {
+    const out = [];
+    const user = user_elem.value;
+    const server_address = url_elem.value;
+    if (user) out.push('user=' + encodeURIComponent(user));
+    if (run_immediately) out.push('run=1');
+    if (server_address != location.origin) out.push('url=' + encodeURIComponent(server_address));
+    for (const [name, value] of Object.entries(params || {})) {
+        out.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
+    }
+    if (tabName) out.push('tab=' + encodeURIComponent(tabName));
+    return out;
+}
+
+/// Record the active tab's state in browser history and the URL, and stash the
+/// result snapshot on the tab. `stateData` has the history-state shape
+/// {query, format, ok, data, elapsed_ns, params}. `titleForDoc` overrides the
+/// document title text (used by multi-query to show the first query).
+function saveHistory(stateData, titleForDoc) {
+    const tab = getActiveTab();
+    if (!tab) return;
+
+    /// Stash the result snapshot and query on the tab regardless of de-duplication,
+    /// so a later persist() or tab switch carries the freshest data.
+    tab.query = stateData.query;
+    tab.result = {
+        format: stateData.format,
+        ok: stateData.ok,
+        data: stateData.data,
+        elapsed_ns: stateData.elapsed_ns,
+        params: stateData.params,
+    };
+
+    /// Skip writing a new history entry if neither the active tab nor its query changed.
+    const cur = history.state;
+    const unchanged = cur && cur.tabId === tab.id && cur.query === stateData.query;
+
+    const state = { ...stateData, tabId: tab.id, tabName: tab.title };
+    const title = "ClickHouse Query: " + (titleForDoc || stateData.query);
+    const history_params = buildHistoryParams(stateData.params, tab.title);
+    let history_url = window.location.pathname;
+    if (history_params.length > 0) history_url += '?' + history_params.join('&');
+    history_url += '#' + toBase64(stateData.query);
+
+    if (!cur) {
+        history.replaceState(state, title, history_url);
+    } else if (unchanged) {
+        history.replaceState(state, title, history_url);
+    } else {
+        history.pushState(state, title, history_url);
+    }
+    document.title = title;
+    tab.lastSavedQuery = stateData.query;
+    /// A result now exists, so the tab bar becomes visible (per the visibility rule).
+    renderTabBar();
+    scheduleSave();
+}
+
+/// Record a history entry for the active tab without a fresh result (used on tab
+/// switch / rename), reusing the tab's last result snapshot.
+function syncHistory() {
+    const tab = getActiveTab();
+    if (!tab) return;
+    const r = tab.result || {};
+    saveHistory({
+        query: tab.query,
+        format: r.format ?? null,
+        ok: r.ok ?? true,
+        data: r.data ?? null,
+        elapsed_ns: r.elapsed_ns ?? 0,
+        params: tab.params,
+    });
+}
+
+/// Resolve which tab a history state refers to: by stable id, else by name, else
+/// create a new tab carrying that name.
+function resolveTabForState(state) {
+    let tab = state.tabId && tabs.find(t => t.id === state.tabId);
+    if (!tab && state.tabName) tab = tabs.find(t => t.title === state.tabName);
+    if (!tab) {
+        tab = makeTab(state.tabName, state.query);
+        tabs.push(tab);
+    }
+    return tab;
+}
+
 window.onpopstate = function(event) {
     if (!event.state) return;
-    restoreFromHistory(event.state);
+    captureActiveTab();
+    const tab = resolveTabForState(event.state);
+    activeTabId = tab.id;
+    tab.query = event.state.query;
+    tab.result = event.state.data ? { ...event.state } : tab.result;
+    if (event.state.params) tab.params = event.state.params;
+    restoreFromHistory(event.state).then(renderTabBar);
+    scheduleSave();
 };
 
 if (window.location.hash) {
@@ -4379,6 +4800,11 @@ query_area.addEventListener('input', () =>
     /// transparent` from `.has-backdrop`) and the backdrop still showing the
     /// pre-edit contents, so the freshly typed characters would be invisible.
     updateQueryParams();
+
+    /// Keep the active tab and its persisted copy in sync with the editor. The hue of
+    /// the active tab follows the page background, so no per-tab recolor is needed here.
+    const tab = getActiveTab();
+    if (tab) { tab.query = query_area.value; scheduleSave(); }
 });
 
 function setColorTheme(new_theme, update_preference) {
@@ -4412,8 +4838,89 @@ if (theme) {
     });
 }
 
+/// ----- Tab bootstrap & startup reconciliation -----------------------------------
+/// Build the initial in-memory tab from whatever the synchronous load produced (the
+/// URL hash query, if any). A single result-less tab keeps the tab bar hidden, so the
+/// first paint is identical to the pre-tabs UI (no layout shift).
+tabs = [makeTab(undefined, query_area.value)];
+activeTabId = tabs[0].id;
+
+const url_tab_name = current_url.searchParams.get('tab');
+const url_query = query_area.value;          /// already decoded from the hash; may be ''
+/// When the URL carries a query, defer the auto-run until after IndexedDB reconciliation,
+/// so it runs in the right tab (a switch would otherwise abort an in-flight run).
+const defer_run_for_reconcile = run_immediately && !!url_query;
+
+/// Reconcile the freshly loaded URL (query + tab name) against tabs saved in IndexedDB.
+async function reconcileStartup() {
+    const loaded = await loadFromDb();
+    let activated = false;
+
+    if (loaded && loaded.records.length) {
+        /// Order saved tabs by the persisted order, then restore the id/title counters.
+        const order = (loaded.meta && loaded.meta.tabOrder) || [];
+        const byId = new Map(loaded.records.map(r => [r.id, r]));
+        const ordered = [];
+        for (const id of order) if (byId.has(id)) { ordered.push(byId.get(id)); byId.delete(id); }
+        for (const r of byId.values()) ordered.push(r);
+        const savedTabs = ordered.map(r => ({
+            id: r.id, title: r.title, query: r.query || '',
+            params: r.params || {}, result: r.result || null, lastSavedQuery: undefined,
+        }));
+        if (loaded.meta) {
+            tabSeq = Math.max(tabSeq, loaded.meta.tabSeq || 0);
+            tabTitleSeq = Math.max(tabTitleSeq, loaded.meta.tabTitleSeq || 0);
+        }
+
+        tabs = savedTabs;
+        if (!url_query && !url_tab_name) {
+            /// Plain load: restore the saved workspace as-is.
+            activeTabId = (loaded.meta && savedTabs.some(t => t.id === loaded.meta.activeTabId))
+                ? loaded.meta.activeTabId : savedTabs[0].id;
+        } else {
+            const match = url_tab_name ? savedTabs.find(t => t.title === url_tab_name) : null;
+            if (match) {
+                /// Substitute the URL query into the named tab; drop a stale result if it changed.
+                if (match.query !== url_query) { match.query = url_query; match.result = null; }
+                activeTabId = match.id;
+            } else {
+                /// Not found or unnamed URL: open a new tab carrying the name/query.
+                const t = makeTab(url_tab_name || undefined, url_query);
+                tabs.push(t);
+                activeTabId = t.id;
+            }
+        }
+        await activateTab(activeTabId);
+        activated = true;
+    } else if (url_tab_name) {
+        /// No saved tabs but the URL named a tab: adopt the name for the bootstrap tab.
+        const t = getActiveTab();
+        if (t) t.title = url_tab_name;
+        renderTabBar();
+    } else {
+        renderTabBar();
+    }
+
+    if (defer_run_for_reconcile && query_area.value) {
+        /// Apply URL param_* overrides for the active query, then auto-run. Doing it here
+        /// (rather than in the synchronous block) guarantees the run targets the reconciled
+        /// active tab and is never aborted by a tab switch during reconciliation.
+        await updateQueryParams();
+        const urlParamValues = {};
+        for (const param of currentQueryParams) {
+            const value = current_url.searchParams.get('param_' + param.name);
+            if (value !== null) urlParamValues[param.name] = value;
+        }
+        if (Object.keys(urlParamValues).length) setParamValues(urlParamValues);
+        postAll();   /// saves history itself on completion
+    } else if (activated) {
+        syncHistory();   /// reflect the restored active tab in the URL (replaceState)
+    }
+    scheduleSave();
+}
+
 /// Detect query parameters on page load and restore their values from the URL.
-/// If run_immediately is set, run the query after params are ready.
+/// If run_immediately is set (and not deferred for tab reconciliation), run after params are ready.
 if (query_area.value)
 {
     resizeQueryAreaIfSlightlyOverflowing();
@@ -4429,16 +4936,19 @@ if (query_area.value)
             }
         }
         setParamValues(urlParamValues);
-        if (run_immediately)
+        if (run_immediately && !defer_run_for_reconcile)
         {
             postAll();
         }
     });
 }
-else if (run_immediately)
+else if (run_immediately && !defer_run_for_reconcile)
 {
     postAll();
 }
+
+dbReady = openDb();
+reconcileStartup();
 
 document.getElementById('toggle-light').onclick = function() {
     setColorTheme('light', true);
