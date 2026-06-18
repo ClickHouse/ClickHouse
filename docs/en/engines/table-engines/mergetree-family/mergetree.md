@@ -1319,6 +1319,12 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     Syntax: `uniq`
 
+- `UniqCombined`
+
+    A three-phase cardinality estimator (exact small-value set → hash set → HyperLogLog) equivalent to `uniqCombined(12)`. Provides a distinct-value estimate for numeric types, `String`, and `FixedString` (including `Nullable` and `LowCardinality` wrappers).
+
+    Syntax: `uniqcombined`
+
 - `CountMin`
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
@@ -1327,25 +1333,27 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
-|-----------|----------------------------------------------------|------|-----------------------|
-| Basic     | ✔                                                  | ✔    | ✔                     |
-| CountMin  | ✔                                                  | ✔    | ✔                     |
-| MinMax    | ✔                                                  | ✔    | ✗                     |
-| TDigest   | ✔                                                  | ✗    | ✗                     |
-| Uniq      | ✔                                                  | ✔    | ✔                     |
+|               | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
+|---------------|----------------------------------------------------|----- |-----------------------|
+| Basic         | ✔                                                  | ✔    | ✔                     |
+| CountMin      | ✔                                                  | ✔    | ✔                     |
+| MinMax        | ✔                                                  | ✔    | ✗                     |
+| TDigest       | ✔                                                  | ✗    | ✗                     |
+| Uniq          | ✔                                                  | ✔    | ✔                     |
+| UniqCombined  | ✔                                                  | ✔    | ✔                     |
 
 All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
 
 ### Supported operations {#supported-operations}
 
-|           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|-----------|-----------------------|--------------------------------|
-| Basic     | ✗                     | ✔ (numeric columns only)       |
-| CountMin  | ✔                     | ✗                              |
-| MinMax    | ✗                     | ✔ (numeric columns only)       |
-| TDigest   | ✗                     | ✔ (numeric columns only)       |
-| Uniq      | ✔                     | ✗                              |
+|               | Equality filters (==) | Range filters (`>, >=, <, <=`) |
+|---------------|------------------------|---------------------------------|
+| Basic         | ✗                      | ✔ (numeric columns only)        |
+| CountMin      | ✔                      | ✗                               |
+| MinMax        | ✗                      | ✔ (numeric columns only)        |
+| TDigest       | ✗                      | ✔ (numeric columns only)        |
+| Uniq          | ✔                      | ✗                               |
+| UniqCombined  | ✔                      | ✗                               |
 
 For `Basic` on `String` / `FixedString` columns the statistic only records the total
 non-NULL byte length (used to estimate average string length) and the null count;

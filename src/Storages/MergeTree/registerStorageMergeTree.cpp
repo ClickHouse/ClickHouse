@@ -2405,6 +2405,12 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     Syntax: `uniq`
 
+- `UniqCombined`
+
+    A three-phase cardinality estimator (exact small-value set → hash set → HyperLogLog) equivalent to `uniqCombined(12)`. Provides a distinct-value estimate for numeric types, `String`, and `FixedString` (including `Nullable` and `LowCardinality` wrappers).
+
+    Syntax: `uniqcombined`
+
 - `CountMin`
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
@@ -2413,21 +2419,23 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
-|-----------|----------------------------------------------------|-----------------------|
-| CountMin  | ✔                                                  | ✔                     |
-| MinMax    | ✔                                                  | ✗                     |
-| TDigest   | ✔                                                  | ✗                     |
-| Uniq      | ✔                                                  | ✔                     |
+|               | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
+|---------------|----------------------------------------------------|-----------------------|
+| CountMin      | ✔                                                  | ✔                     |
+| MinMax        | ✔                                                  | ✗                     |
+| TDigest       | ✔                                                  | ✗                     |
+| Uniq          | ✔                                                  | ✔                     |
+| UniqCombined  | ✔                                                  | ✔                     |
 
 ### Supported operations {#supported-operations}
 
-|           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|-----------|-----------------------|------------------------------|
-| CountMin  | ✔                     | ✗                            |
-| MinMax    | ✗                     | ✔                            |
-| TDigest   | ✗                     | ✔                            |
-| Uniq      | ✔                     | ✗                            |
+|               | Equality filters (==) | Range filters (`>, >=, <, <=`) |
+|---------------|-----------------------|--------------------------------|
+| CountMin      | ✔                     | ✗                              |
+| MinMax        | ✗                     | ✔                              |
+| TDigest       | ✗                     | ✔                              |
+| Uniq          | ✔                     | ✗                              |
+| UniqCombined  | ✔                     | ✗                              |
 
 ## Column-level settings {#column-level-settings}
 
