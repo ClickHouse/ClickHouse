@@ -9,6 +9,7 @@ from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
     DoubleType,
+    IntegerType,
     NestedField,
     StringType,
 )
@@ -398,4 +399,77 @@ def test_invalid_auth_header_format(started_cluster):
             """
         )
     assert "Invalid auth header format" in str(err.value)
+
+
+def get_credentials_profile_events(node, query_id):
+    node.query("SYSTEM FLUSH LOGS")
+    vended = int(node.query(
+        f"SELECT ProfileEvents['DataLakeRestCatalogCredentialsVended'] "
+        f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    ))
+    hits = int(node.query(
+        f"SELECT ProfileEvents['DataLakeRestCatalogCredentialsCacheHits'] "
+        f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    ))
+    return vended, hits
+
+
+def test_vended_credentials_cache(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    if namespace not in catalog.list_namespaces():
+        catalog.create_namespace(namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    table = catalog.create_table(
+        namespace + (table_name,),
+        schema=schema,
+        properties={"write.metadata.compression-codec": "none"},
+    )
+    table.append(
+        pa.Table.from_pandas(
+            pd.DataFrame({"id": [1], "data": ["x"]}).astype({"id": "int32"})
+        )
+    )
+
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    # Caching enabled (default TTL): the second query reuses cached credentials
+    # and does not ask the catalog to vend them again.
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+
+    qid = f"{test_ref}-cache-1-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, _ = get_credentials_profile_events(node, qid)
+    assert vended >= 1
+
+    qid = f"{test_ref}-cache-2-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    # Caching disabled (TTL = 0): every query asks the catalog to vend credentials.
+    create_clickhouse_iceberg_database(
+        started_cluster, node, db_name,
+        additional_settings={"vended_credentials_cache_ttl": 0},
+    )
+
+    qid = f"{test_ref}-nocache-1-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended >= 1 and hits == 0
+
+    qid = f"{test_ref}-nocache-2-{uuid.uuid4()}"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended >= 1 and hits == 0
 
