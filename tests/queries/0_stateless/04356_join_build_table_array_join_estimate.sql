@@ -17,6 +17,15 @@ SET enable_analyzer = 1;
 SET use_statistics = 0;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
+-- Pin the build-side-choice inputs so the assertion is deterministic under settings
+-- randomization: keep the reorder pass enabled (a randomized limit of 0 would skip it, leaving
+-- the build side correct by construction), do not randomize the row estimates (a non-zero seed
+-- replaces the deliberately-unknown arrayJoin count with random values), and disable the
+-- process-global hash-table-stats cache (it persists across test runs).
+SET query_plan_optimize_join_order_limit = 10;
+SET query_plan_optimize_join_order_randomize = 0;
+SET collect_hash_table_stats_during_joins = 0;
+SET use_hash_table_stats_for_join_reordering = 0;
 
 DROP TABLE IF EXISTS arr_tbl;
 DROP TABLE IF EXISTS big;

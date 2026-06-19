@@ -54,15 +54,23 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
--- Soundness: `small.k != -1` is a predicate on the primary key, but one the index cannot use
--- to prune -- it is true for every row, so no granule is excluded and the row count stays an
--- upper bound rather than an exact estimate (an index pruning a column only yields an exact
--- count when it actually drops granules, e.g. `k < 500`). The predicate is also inferred onto
--- the other side via transitive equi-join predicates, so BOTH inputs are upper-bound-only.
--- Two upper bounds cannot prove which input is smaller (`big`'s true count could be anything
--- below its bound), so the build side must NOT be swapped: `big` stays the build side as
--- written, even though `small` is the smaller table. Guards against an unsound bound-vs-bound swap.
-SELECT * FROM small JOIN big ON small.k = big.k WHERE small.k != -1
+-- Soundness: both inputs carry a residual filter on a NON-key column (`bb_small.s` and
+-- `bb_big.b`), which the primary index cannot use to prune, so each row count is only an upper
+-- bound. The filters are on different columns, so neither is inferred onto the other -- both
+-- sides are upper-bound-only regardless of transitive-predicate inference. Two upper bounds
+-- cannot prove which input is smaller (`bb_big`'s true count could be anything below its bound),
+-- so the build side must NOT be swapped: `bb_big` stays the build side as written, even though
+-- `bb_small` is the smaller table. Guards against an unsound bound-vs-bound swap.
+DROP TABLE IF EXISTS bb_small;
+DROP TABLE IF EXISTS bb_big;
+
+CREATE TABLE bb_small (k Int32, s Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO bb_small SELECT number, number FROM numbers(1000);
+
+CREATE TABLE bb_big (k Int32, b Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO bb_big SELECT number, number FROM numbers(1000000);
+
+SELECT * FROM bb_small JOIN bb_big ON bb_small.k = bb_big.k WHERE bb_small.s < 1000000 AND bb_big.b < 1000000
 SETTINGS log_comment = '04337_join_choose_build_table_both_bounds' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
@@ -254,3 +262,5 @@ DROP TABLE IF EXISTS lhs_small;
 DROP TABLE IF EXISTS offset_child;
 DROP TABLE IF EXISTS lhs_mt;
 DROP TABLE IF EXISTS memt;
+DROP TABLE IF EXISTS bb_small;
+DROP TABLE IF EXISTS bb_big;
