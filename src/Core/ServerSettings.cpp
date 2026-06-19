@@ -1245,6 +1245,9 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, parts_killer_pool_size, 128, R"(
     Threads for cleanup of shared merge tree parts killer threads. Only available in ClickHouse Cloud
     )", 0) \
+    DECLARE(NonZeroUInt64, parts_killer_max_condemned_parts_per_batch, 100000, R"(
+    Maximum number of condemned parts a SharedMergeTree table fetches from Keeper in a single cleanup cycle. Bounding the batch keeps the listing and multi-get within the Keeper operation timeout, so cleanup keeps making progress even when a table has accumulated a very large condemned-parts backlog. Must be greater than zero: a value of `0` would make Keeper return an empty listing every cycle, permanently stalling cleanup. Only available in ClickHouse Cloud
+    )", 0) \
     DECLARE(UInt64, snapshot_cleaner_period, 120, R"(
     Period to completely remove snapshot parts for SharedMergeTree. Only available in ClickHouse Cloud
     )", 0) \
