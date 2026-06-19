@@ -3810,6 +3810,7 @@ async function getQueryUnderCursor() {
     }
 
     const tokens = await tokenize(all_queries);
+    const should_select_query = getQueryBoundaries(tokens, all_queries).length > 1;
 
     const cursor_position = query_area.selectionStart;
     let current_query_start = 0;
@@ -3835,7 +3836,7 @@ async function getQueryUnderCursor() {
             /// do not record it as the last completed query.
             const has_content = current_query_start < offset_before_token;
             if (has_content && current_offset >= cursor_position) {
-                query_area.setSelectionRange(current_query_start, current_offset);
+                if (should_select_query) query_area.setSelectionRange(current_query_start, current_offset);
                 query_area.focus();
                 return all_queries.substring(current_query_start, current_offset);
             }
@@ -3855,14 +3856,14 @@ async function getQueryUnderCursor() {
     /// an empty string. This is what handles the "single query ending in `;`
     /// with the cursor placed after it" case.
     if (current_query_start === current_offset && current_offset === all_queries.length && last_query_end >= 0) {
-        query_area.setSelectionRange(last_query_start, last_query_end);
+        if (should_select_query) query_area.setSelectionRange(last_query_start, last_query_end);
         query_area.focus();
         return all_queries.substring(last_query_start, last_query_end);
     }
 
     /// Cursor is in the last query (no trailing semicolon).
     const tail = all_queries.substring(current_query_start);
-    query_area.setSelectionRange(current_query_start, all_queries.length);
+    if (should_select_query) query_area.setSelectionRange(current_query_start, all_queries.length);
     query_area.focus();
     return tail;
 }
