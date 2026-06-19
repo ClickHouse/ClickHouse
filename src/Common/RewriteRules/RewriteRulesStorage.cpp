@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <charconv>
 #include <filesystem>
 #include <optional>
 #include <Core/Settings.h>
@@ -51,6 +52,30 @@ namespace
     {
         return escapeForFileName(rule_name) + ".sql";
     }
+
+    /// Local storage prefixes each stored rule with a monotonically increasing creation
+    /// order on its own first line: `<order>\n<CREATE query>`. The order makes the load
+    /// order match the creation order deterministically, without depending on the file's
+    /// mtime (coarse granularity, not preserved across backup/restore). The Keeper backend
+    /// does not need this: it orders by the znode `czxid`, a persisted monotonic creation id.
+    constexpr char creation_order_separator = '\n';
+
+    /// Splits the stored `<order>\n<query>` content into the creation order and the query.
+    std::pair<UInt64, std::string> splitCreationOrder(const std::string & content)
+    {
+        const auto pos = content.find(creation_order_separator);
+        if (pos == std::string::npos)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query rule storage entry is missing its creation-order header");
+
+        UInt64 order = 0;
+        const auto * first = content.data();
+        const auto * last = content.data() + pos;
+        const auto result = std::from_chars(first, last, order);
+        if (result.ec != std::errc{} || result.ptr != last)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query rule storage entry has a malformed creation-order header");
+
+        return {order, content.substr(pos + 1)};
+    }
 }
 
 class RewriteRulesStorage::IRewriteRulesStorage
@@ -96,13 +121,14 @@ public:
         if (!fs::exists(root_path))
             return {};
 
-        std::vector<std::pair<fs::path, fs::file_time_type>> entries;
+        std::vector<std::pair<fs::path, UInt64>> entries;
         for (fs::directory_iterator it{root_path}; it != fs::directory_iterator{}; ++it)
         {
             const auto & current_path = it->path();
             if (current_path.extension() == ".sql")
             {
-                entries.emplace_back(current_path, fs::last_write_time(current_path));
+                const auto order = splitCreationOrder(readFileRaw(current_path)).first;
+                entries.emplace_back(current_path, order);
             }
             else
             {
@@ -114,9 +140,9 @@ public:
             }
         }
 
-        /// Sort by file modification time so that the load order matches the creation
-        /// order. `LocalStorage::write` preserves the original mtime on ALTER, so the
-        /// time is effectively a creation timestamp. Tie-break by path for determinism.
+        /// Sort by the persisted creation order so the load order matches the creation order
+        /// deterministically. Tie-break by path for determinism (orders are unique in
+        /// practice, since each `CREATE RULE` takes the next value under the global lock).
         std::sort(entries.begin(), entries.end(),
             [](const auto & a, const auto & b)
             {
@@ -139,17 +165,15 @@ public:
 
     std::string read(const std::string & file_name) const override
     {
-        ReadBufferFromFile in(getPath(file_name));
-        std::string data;
-        readStringUntilEOF(data, in);
-        return data;
+        /// Strip the creation-order header; callers expect the bare `CREATE RULE` query.
+        return splitCreationOrder(readFileRaw(getPath(file_name))).second;
     }
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
         const auto target_path = getPath(file_name);
 
-        std::optional<fs::file_time_type> preserved_mtime;
+        UInt64 creation_order = 0;
         if (fs::exists(target_path))
         {
             if (!replace)
@@ -160,8 +184,9 @@ public:
                     file_name
                 );
             }
-            /// Preserve original mtime so that ALTER does not change the rule's place in creation order.
-            preserved_mtime = fs::last_write_time(target_path);
+            /// `ALTER RULE` keeps the rule's place in creation order, so reuse the order
+            /// already persisted for it.
+            creation_order = splitCreationOrder(readFileRaw(target_path)).first;
         }
         else if (replace)
         {
@@ -172,12 +197,21 @@ public:
                 file_name
             );
         }
+        else
+        {
+            /// `CREATE RULE` takes the next creation order. This runs under the global
+            /// `RewriteRules::mutex` and local storage is not replicated, so reading the
+            /// current maximum and writing the new file cannot race.
+            creation_order = nextCreationOrder();
+        }
 
         fs::create_directories(root_path);
 
+        const auto stored = std::to_string(creation_order) + creation_order_separator + data;
+
         auto tmp_path = getPath(file_name + ".tmp");
-        WriteBufferFromFile out(tmp_path, data.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(data, out);
+        WriteBufferFromFile out(tmp_path, stored.size(), O_WRONLY | O_CREAT | O_EXCL);
+        writeString(stored, out);
 
         out.next();
         if (getContext()->getSettingsRef()[Setting::fsync_metadata])
@@ -185,9 +219,6 @@ public:
         out.close();
 
         fs::rename(tmp_path, target_path);
-
-        if (preserved_mtime)
-            fs::last_write_time(target_path, *preserved_mtime);
     }
 
     void remove(const std::string & file_name) override
@@ -218,6 +249,34 @@ protected:
     }
 
 private:
+    static std::string readFileRaw(const fs::path & path)
+    {
+        ReadBufferFromFile in(path);
+        std::string data;
+        readStringUntilEOF(data, in);
+        return data;
+    }
+
+    /// The next creation order for a new rule: one past the maximum currently persisted, or 0
+    /// when there are none.
+    UInt64 nextCreationOrder() const
+    {
+        UInt64 max_order = 0;
+        bool any = false;
+        if (fs::exists(root_path))
+        {
+            for (fs::directory_iterator it{root_path}; it != fs::directory_iterator{}; ++it)
+            {
+                const auto & current_path = it->path();
+                if (current_path.extension() != ".sql")
+                    continue;
+                max_order = std::max(max_order, splitCreationOrder(readFileRaw(current_path)).first);
+                any = true;
+            }
+        }
+        return any ? max_order + 1 : 0;
+    }
+
     void cleanup()
     {
         std::vector<std::string> files_to_remove;
