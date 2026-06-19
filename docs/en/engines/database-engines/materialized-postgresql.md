@@ -4,7 +4,6 @@ sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 60
 slug: /engines/database-engines/materialized-postgresql
 title: 'MaterializedPostgreSQL'
-doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -56,7 +55,7 @@ SHOW TABLES FROM postgres_db;
 │ table1 │
 └────────┘
 
-SELECT * FROM postgres_db.postgres_table;
+SELECT * FROM postgresql_db.postgres_table;
 ```
 
 ## Dynamically adding new tables to replication {#dynamically-adding-table-to-replication}

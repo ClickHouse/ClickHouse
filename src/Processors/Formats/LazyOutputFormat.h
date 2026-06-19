@@ -41,7 +41,6 @@ public:
     }
 
     bool expectMaterializedColumns() const override { return false; }
-    bool supportsSpecialSerializationKinds() const override { return true; }
 
 protected:
     void consume(Chunk chunk) override

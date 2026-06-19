@@ -45,11 +45,6 @@
 
 using namespace DB;
 
-namespace DB::ErrorCodes
-{
-    extern const int INVALID_SCHEDULER_NODE;
-}
-
 namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;
@@ -72,12 +67,7 @@ public:
         : WorkloadEntityStorageBase(Context::getGlobalContextInstance())
     {}
 
-    std::string_view getName() const override { return "test"; }
-
-    void loadEntities(const Poco::Util::AbstractConfiguration & config) override
-    {
-        WorkloadEntityStorageBase::loadEntities(config);
-    }
+    void loadEntities() override {}
 
     void executeQuery(const String & query)
     {
@@ -192,9 +182,7 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
     explicit ResourceTest(size_t thread_count = 1)
         : ResourceTestManager(thread_count, DoNotInitManager)
     {
-        /// The test owns `storage` on the stack, so pass a non-owning shared_ptr.
-        manager = std::make_shared<WorkloadResourceManager>(
-            std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}));
+        manager = std::make_shared<WorkloadResourceManager>(storage);
     }
 
     void query(const String & query_str)
@@ -332,7 +320,7 @@ TEST(SchedulerWorkloadResourceManager, Fairness)
     auto fairness_diff = [&] (Int64 value)
     {
         Int64 cur_unfairness = unfairness.fetch_add(value, std::memory_order_relaxed) + value;
-        EXPECT_NEAR(static_cast<double>(cur_unfairness), 0, 1);
+        EXPECT_NEAR(cur_unfairness, 0, 1);
     };
 
     constexpr size_t threads_per_queue = 2;
@@ -456,125 +444,6 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
     t.wait(); // Wait for threads to finish before destructing locals
 }
 
-// Regression test: a thread reuses the `ResourceGuard::Request::local()` thread-local instance across requests.
-// After a request fails (queue destroyed), a subsequent request granted on the same thread must not observe the
-// previous request's stale `exception` and spuriously throw `RESOURCE_ACCESS_DENIED`.
-// The failing request uses the `Lock::Defer` path here, so `~ResourceGuard()` runs and brings the request back to
-// the `Finished` state; only the stale `exception` would leak without the fix in `Request::enqueue()`.
-TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDeferRequestIsGranted)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
-    t.query("CREATE WORKLOAD all");
-    t.query("CREATE WORKLOAD production IN all SETTINGS max_io_requests = 1");
-    t.query("CREATE WORKLOAD analytics IN all SETTINGS max_io_requests = 1");
-
-    std::barrier<std::__empty_completion> sync_before_enqueue(2);
-    std::barrier<std::__empty_completion> sync_before_drop(3);
-    std::barrier<std::__empty_completion> sync_after_drop(2);
-
-    // Leader holds the only `production` slot so the worker's request stays queued and is failed by the drop.
-    t.async("production", "res1", [&] (ResourceLink link)
-    {
-        TestGuard g(t, link, 1);
-        sync_before_enqueue.arrive_and_wait();
-        sync_before_drop.arrive_and_wait();
-        sync_after_drop.arrive_and_wait();
-    });
-
-    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
-
-    t.async("production", "res1", [&] (ResourceLink prod_link)
-    {
-        // A healthy resource link in a sibling workload that is not affected by dropping `production`'s queue.
-        ClassifierPtr c_analytics = t.manager->acquire("analytics");
-        ResourceLink analytics_link = c_analytics->get("res1");
-
-        {
-            TestGuard g(t, prod_link, 1, EnqueueOnly);
-            sync_before_drop.arrive_and_wait(); // resource request is enqueued
-            g.waitFailed("is about to be destructed"); // request fails; `~g` finishes it but leaves a stale `exception`
-        }
-
-        // Reuse the thread-local `Request` for a request that is granted: it must not throw.
-        // NOTE: an uncaught exception in this worker thread would be swallowed, so assert explicitly.
-        EXPECT_NO_THROW({
-            ResourceGuard g2(ResourceGuard::Metrics::getIOWrite(), analytics_link, 1, ResourceGuard::Lock::Default);
-            g2.consume(1);
-            g2.unlock(1);
-        });
-    });
-
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
-    t.query("CREATE WORKLOAD child IN production");
-    sync_after_drop.arrive_and_wait();
-
-    t.wait(); // Wait for threads to finish before destructing locals
-}
-
-// Regression test for the `Lock::Default` failure path: when `ResourceGuard`'s constructor throws (the request
-// failed in `enqueue()` or `wait()`), `~ResourceGuard()` does not run, so the reused thread-local `Request` must be
-// restored to the `Finished` state by the constructor itself. Otherwise the next request enqueued on the same thread
-// would hit `chassert(state == Finished)`.
-TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDefaultRequestIsGranted)
-{
-    ResourceTest t;
-
-    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
-    t.query("CREATE WORKLOAD all");
-    t.query("CREATE WORKLOAD production IN all SETTINGS max_io_requests = 1");
-    t.query("CREATE WORKLOAD analytics IN all SETTINGS max_io_requests = 1");
-
-    std::barrier<std::__empty_completion> sync_leader_ready(2);
-    std::barrier<std::__empty_completion> sync_worker_ready(2);
-    std::barrier<std::__empty_completion> sync_after_drop(2);
-
-    // Leader holds the only `production` slot so the worker's request can never be granted before the drop.
-    t.async("production", "res1", [&] (ResourceLink link)
-    {
-        TestGuard g(t, link, 1);
-        sync_leader_ready.arrive_and_wait();
-        sync_after_drop.arrive_and_wait();
-    });
-
-    t.async("production", "res1", [&] (ResourceLink prod_link)
-    {
-        ClassifierPtr c_analytics = t.manager->acquire("analytics");
-        ResourceLink analytics_link = c_analytics->get("res1");
-
-        sync_worker_ready.arrive_and_wait(); // about to enqueue the failing request
-
-        // `Lock::Default` enqueues and waits inside the constructor. The request is failed by the drop (either it is
-        // queued and `wait()` throws `RESOURCE_ACCESS_DENIED`, or the queue is already gone and `enqueue()` throws
-        // `INVALID_SCHEDULER_NODE`); in both cases the constructor throws and `~ResourceGuard()` does not run.
-        try
-        {
-            ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), prod_link, 1, ResourceGuard::Lock::Default);
-            FAIL() << "expected the request on a dropped queue to fail";
-        }
-        catch (const Exception & e)
-        {
-            ASSERT_TRUE(e.code() == ErrorCodes::RESOURCE_ACCESS_DENIED || e.code() == ErrorCodes::INVALID_SCHEDULER_NODE);
-        }
-
-        // Reuse the thread-local `Request` for a request that is granted: it must not abort or throw.
-        // NOTE: an uncaught exception in this worker thread would be swallowed, so assert explicitly.
-        EXPECT_NO_THROW({
-            ResourceGuard g2(ResourceGuard::Metrics::getIOWrite(), analytics_link, 1, ResourceGuard::Lock::Default);
-            g2.consume(1);
-            g2.unlock(1);
-        });
-    });
-
-    sync_leader_ready.arrive_and_wait(); // leader is holding the `production` slot
-    sync_worker_ready.arrive_and_wait(); // worker is about to enqueue its (doomed) request
-    t.query("CREATE WORKLOAD child IN production"); // triggers FifoQueue destruction, failing the worker's request
-    sync_after_drop.arrive_and_wait(); // release the leader
-
-    t.wait(); // Wait for threads to finish before destructing locals
-}
-
 class ThreadMetrics
 {
 public:
@@ -614,7 +483,7 @@ public:
 private:
     UInt64 last_update_ns = 0;
     std::atomic<UInt64> consumed{0};
-    char padding[64] = {}; // to avoid false sharing
+    char padding[64]; // to avoid false sharing
 };
 
 class ThreadMetricsGroup : public boost::noncopyable
@@ -704,7 +573,7 @@ public:
         // then we add quantum for every thread that can run concurrently (according to configure slots limit)
         // then we add quantum for every query because it is allowed to run one extra thread.
         // and finally due to report_ns period, quantum can be extended by 10%
-        return static_cast<UInt64>(burst_sec * 1'000'000'000 + static_cast<double>(max_concurrent_threads + max_concurrent_queries) * (static_cast<double>(quantum_ns) * 1.1));
+        return static_cast<UInt64>(burst_sec * 1'000'000'000 + (max_concurrent_threads + max_concurrent_queries) * (quantum_ns * 1.1));
     }
 
     /// Waits for share of group to stabilize on given value
@@ -811,30 +680,30 @@ public:
                     }
                     if (assertion.max_speed > 0.0)
                     {
-                        double allowed_consumption_ns = assertion.max_speed * (measured_ns - start_ns) + static_cast<double>(assertion.max_burst_ns);
-                        if (static_cast<double>(assertion.consumed_integral_ns) > allowed_consumption_ns)
+                        double allowed_consumption_ns = assertion.max_speed * (measured_ns - start_ns) + assertion.max_burst_ns;
+                        if (assertion.consumed_integral_ns > allowed_consumption_ns)
                         {
-                            DBG_PRINT("Assertion failed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, static_cast<double>(assertion.consumed_integral_ns) / 1'000'000.0);
+                            DBG_PRINT("Assertion failed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, assertion.consumed_integral_ns / 1'000'000.0);
                             GTEST_FAIL();
                         }
                         else
                         {
-                            DBG_PRINT("Assertion passed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, static_cast<double>(assertion.consumed_integral_ns) / 1'000'000.0);
+                            DBG_PRINT("Assertion passed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, assertion.consumed_integral_ns / 1'000'000.0);
                         }
                     }
                 }
 
                 if (max_speed > 0.0)
                 {
-                    double allowed_consumption_ns = max_speed * (measured_ns - start_ns) + static_cast<double>(max_burst_ns);
-                    if (static_cast<double>(total_consumed_integral_ns) > allowed_consumption_ns)
+                    double allowed_consumption_ns = max_speed * (measured_ns - start_ns) + max_burst_ns;
+                    if (total_consumed_integral_ns > allowed_consumption_ns)
                     {
-                        DBG_PRINT("Assertion failed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, static_cast<double>(total_consumed_integral_ns) / 1'000'000.0);
+                        DBG_PRINT("Assertion failed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, total_consumed_integral_ns / 1'000'000.0);
                         GTEST_FAIL();
                     }
                     else
                     {
-                        DBG_PRINT("Assertion passed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, static_cast<double>(total_consumed_integral_ns) / 1'000'000.0);
+                        DBG_PRINT("Assertion passed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, total_consumed_integral_ns / 1'000'000.0);
                     }
                 }
             }
@@ -1054,7 +923,7 @@ struct TestQuery {
             cpu_lease->startConsumption();
         metrics.start(thread_num);
 
-        DB::setThreadName(DB::ThreadName::TEST_SCHEDULER);
+        setThreadName(fmt::format("name.{}", name, thread_num).c_str());
         while (true)
         {
             if (!controlConcurrency(cpu_lease))
@@ -1109,7 +978,7 @@ struct TestQuery {
         master_thread = t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
             [&, type, workload] (ResourceLink master_link, ResourceLink worker_link)
             {
-                setThreadName(ThreadName::TEST_SCHEDULER);
+                setThreadName(workload.c_str());
                 {
                     std::unique_lock in_thread_lock{slots_mutex};
                     slots = allocateCPUSlots(type, master_link, worker_link, workload);
@@ -1417,12 +1286,12 @@ TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
     EXPECT_DOUBLE_EQ(actual_cap, expected_cap);
 }
 
-static auto getAcquired()
+auto getAcquired()
 {
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlAcquired);
 }
 
-static auto getPreempted()
+auto getPreempted()
 {
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
 }
