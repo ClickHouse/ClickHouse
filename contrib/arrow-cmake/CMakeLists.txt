@@ -39,12 +39,12 @@ endif()
 # We require a C++20 compliant compiler
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(ARROW_VERSION "23.0.0")
+set(ARROW_VERSION "23.0.1")
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ARROW_BASE_VERSION "${ARROW_VERSION}")
 
 set(ARROW_VERSION_MAJOR "23")
 set(ARROW_VERSION_MINOR "0")
-set(ARROW_VERSION_PATCH "0")
+set(ARROW_VERSION_PATCH "1")
 
 if(ARROW_VERSION_MAJOR STREQUAL "0")
     # Arrow 0.x.y => SO version is "x", full SO version is "x.y.0"
