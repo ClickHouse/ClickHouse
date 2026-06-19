@@ -44,6 +44,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -78,6 +79,12 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int CANNOT_SCHEDULE_TASK;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_plan_status_check_reenqueue_fault[];
 }
 
 class TaskParameters : public IParameterLookup
@@ -1022,7 +1029,17 @@ protected:
 
         ~TaskTracker()
         {
-            thread_pool.wait();
+            /// wait() joins the status-check threads (needed: it runs while logger/lock/context are
+            /// still alive), but it can rethrow a stored worker exception, which must not escape a
+            /// destructor.
+            try
+            {
+                thread_pool.wait();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
 
         /// Add started task to be tracked
@@ -1152,6 +1169,21 @@ protected:
         }
 
     private:
+        /// Log the in-flight exception, store it as the query's first failure, and request
+        /// cancellation. Called from the worker lambda's catch blocks so a failed status check
+        /// or a failed re-enqueue surfaces through `checkCancelled` instead of escaping the
+        /// thread (which would be rethrown by ~TaskTracker and terminate the server).
+        void recordFailure()
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            {
+                std::lock_guard exception_lock(lock);
+                if (!first_exception)
+                    first_exception = std::current_exception();
+            }
+            *is_cancelled = true;
+        }
+
         void checkCancelled()
         {
             if (query_status)
@@ -1319,13 +1351,8 @@ protected:
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                        {
-                            std::lock_guard exception_lock(lock);
-                            if (!first_exception)
-                                first_exception = std::current_exception();
-                        }
-                        *is_cancelled = true;
+                        /// recordFailure() logs and stores the exception. Ok.
+                        recordFailure();
                     }
                     /// Decrement the in-flight counter before scheduling the next check so
                     /// the next `enqueueGetStatus` is not gated by an already-finished slot.
@@ -1333,7 +1360,22 @@ protected:
                     /// inside `checkStatusFunc` sees a full pipeline, all in-flight checks
                     /// then decrement to zero, and no further check is ever scheduled.
                     --in_flight_request_count;
-                    enqueueGetStatus();
+                    /// The re-enqueue must not escape the worker lambda: scheduleOrThrow can throw
+                    /// (CANNOT_SCHEDULE_TASK on shutdown, MEMORY_LIMIT_EXCEEDED), and an escaping
+                    /// exception is rethrown by thread_pool.wait() in ~TaskTracker.
+                    try
+                    {
+                        fiu_do_on(FailPoints::distributed_plan_status_check_reenqueue_fault,
+                        {
+                            throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected re-enqueue fault");
+                        });
+                        enqueueGetStatus();
+                    }
+                    catch (...)
+                    {
+                        /// recordFailure() logs and stores the exception. Ok.
+                        recordFailure();
+                    }
                 });
             ++in_flight_request_count;
         }
