@@ -15,6 +15,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 
 
@@ -385,17 +386,19 @@ bool CSVFormatReader::readField(
         /// instead of inserting NULL as the default.
         ///
         /// Exception: with `input_format_csv_empty_string_is_not_null`, a missing value of
-        /// `Nullable(String)` should be read as an empty string instead of NULL, so it must
-        /// also fall through to normal deserialization.
+        /// `Nullable(String)` (including its low-cardinality form `LowCardinality(Nullable(String))`)
+        /// should be read as an empty string instead of NULL, so it must also fall through to
+        /// normal deserialization.
         bool keep_empty_value = false;
         if (type->isNullable())
         {
-            const auto & nested_type = removeNullable(type);
-            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get()))
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get()))
                 keep_empty_value = tuple_type->getElements().empty();
-            else if (format_settings.csv.empty_string_is_not_null && isString(nested_type))
-                keep_empty_value = true;
         }
+
+        if (!keep_empty_value && format_settings.csv.empty_string_is_not_null
+            && isNullableOrLowCardinalityNullable(type) && isString(removeLowCardinalityAndNullable(type)))
+            keep_empty_value = true;
 
         if (!keep_empty_value)
         {
