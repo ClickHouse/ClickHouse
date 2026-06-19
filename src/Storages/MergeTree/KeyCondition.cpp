@@ -46,6 +46,8 @@
 #include <algorithm>
 #include <stack>
 
+#include <absl/container/inlined_vector.h>
+
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
@@ -707,6 +709,27 @@ static const std::map<std::string, std::string> inverse_relations =
     {"notEmpty", "empty"},
 };
 
+/// Returns the comparison operator after reversing comparison direction.
+///
+/// This is needed when normalizing `const op key` into `key op const`, and when
+/// pushing a comparison through a monotonic function chain with negative direction.
+/// For example, `a < b` becomes `b > a`, and for decreasing `f`,
+/// `f(a) < f(b)` is checked as `a > b`.
+///
+/// Symmetric operators, such as `equals` and `notEquals`, are returned unchanged.
+/// Returns an empty view for operators that are not order comparisons, such as
+/// `like` and `startsWith`.
+static std::string_view reverseComparisonOperator(std::string_view op)
+{
+    if (op == "equals") return "equals";
+    if (op == "notEquals") return "notEquals";
+    if (op == "less") return "greater";
+    if (op == "greater") return "less";
+    if (op == "lessOrEquals") return "greaterOrEquals";
+    if (op == "greaterOrEquals") return "lessOrEquals";
+    return {};
+}
+
 
 static bool isLogicalOperator(const String & func_name)
 {
@@ -820,17 +843,14 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     if (node.children.size() != 2)
         return nullptr;
 
-    /// `less(const, x)` ≡ `greater(x, const)`; also the allowlist of ops we rewrite at all.
-    auto mirrored_op = [](std::string_view op) -> std::string_view
-    {
-        if (op == "equals") return "equals";
-        if (op == "less") return "greater";
-        if (op == "greater") return "less";
-        if (op == "lessOrEquals") return "greaterOrEquals";
-        if (op == "greaterOrEquals") return "lessOrEquals";
-        return {};
-    };
-    const std::string_view mirrored = mirrored_op(op_name);
+    /// Do not rewrite `notEquals`: if an earlier `coalesce` argument is `NULL`, the branch-wise `OR`
+    /// can produce `NULL` where the original predicate is `false`. For example, `coalesce(NULL, 5) != 5`
+    /// is `false`, but the rewritten form `(NULL != 5) OR (isNull(NULL) AND 5 != 5)` is `NULL`.
+    if (op_name == "notEquals")
+        return nullptr;
+
+    /// `less(const, x)` becomes `greater(x, const)`; also the allowlist of ops we rewrite at all.
+    const std::string_view mirrored = reverseComparisonOperator(op_name);
     if (mirrored.empty())
         return nullptr;
 
@@ -1626,8 +1646,11 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     Field & out_value,
-    DataTypePtr & out_type)
+    DataTypePtr & out_type,
+    bool & out_chain_is_positive)
 {
+    out_chain_is_positive = true;
+
     String expr_name = node.getColumnName();
 
     if (!info.key_subexpr_names.contains(expr_name))
@@ -1636,6 +1659,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (out_value.isNull())
         return false;
 
+    /// Track whether the function chain preserves or reverses comparison order.
+    bool chain_is_positive = true;
     MonotonicFunctionsChain transform_functions;
     auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
         node.getTreeContext().getQueryContext(),
@@ -1644,6 +1669,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         out_key_column_num,
         out_key_column_type,
         transform_functions,
+        chain_is_positive,
         [this](const IFunctionBase & func, const IDataType & type)
         {
             if (!func.hasInformationAboutMonotonicity())
@@ -1679,6 +1705,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 
     out_value = (*transformed_const_column)[0];
     out_type = transformed_const_type;
+    out_chain_is_positive = chain_is_positive;
     return true;
 }
 
@@ -1820,8 +1847,17 @@ static bool applyDeterministicDagToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_type)
 {
-    ColumnPtr input_column = in_column->convertToFullIfNeeded();
-    DataTypePtr input_type = recursiveRemoveLowCardinality(in_type);
+    /// Strip only outer-level wrappers (Const/Replicated/Sparse/LowCardinality), symmetrically with
+    /// `removeLowCardinality` on the type. `convertToFullIfNeeded` must not be used here: it recurses
+    /// into subcolumns and strips inner `LowCardinality`, which `removeLowCardinality` keeps, producing a
+    /// column/type mismatch for inner LC (e.g. `Variant(LowCardinality(String), Int)`) and a `typeid_cast`
+    /// failure in `FunctionCast` wrappers. This mirrors `applyFunctionChainToColumn` above.
+    ColumnPtr input_column = in_column
+        ->convertToFullColumnIfConst()
+        ->convertToFullColumnIfReplicated()
+        ->convertToFullColumnIfSparse()
+        ->convertToFullColumnIfLowCardinality();
+    DataTypePtr input_type = removeLowCardinality(in_type);
 
     /// This is the final check for the output column after DAG execution:
     /// - materialize output column (Const/LowCardinality)
@@ -1829,8 +1865,12 @@ static bool applyDeterministicDagToColumn(
     /// - strip Nullable/LowCardinality wrappers to get the actual column
     auto finalize_output_column_and_type = [&](ColumnPtr & column, DataTypePtr & type) -> bool
     {
-        column = column->convertToFullIfNeeded();
-        type = recursiveRemoveLowCardinality(type);
+        column = column
+            ->convertToFullColumnIfConst()
+            ->convertToFullColumnIfReplicated()
+            ->convertToFullColumnIfSparse()
+            ->convertToFullColumnIfLowCardinality();
+        type = removeLowCardinality(type);
 
         if (column->isNullable())
         {
@@ -2765,6 +2805,14 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     {
         auto function_node = node.toFunctionNode();
 
+        /// A top-level IN atom builds its set via tryPrepareSetIndexForIn, but an IN wrapped in a
+        /// larger expression reaches here as a chain link. Its set is not built for this analysis
+        /// (and GLOBAL IN sets are filled later by ReadFromRemote), so keep all IN operators out of
+        /// the monotonic function chain or pruning would execute them against an unbuilt set
+        /// ("Not-ready Set").
+        if (functionIsInOrGlobalInOperator(function_node.getFunctionName()))
+            return false;
+
         size_t arguments_size = function_node.getArgumentsSize();
         if (arguments_size > 2 || arguments_size == 0)
             return false;
@@ -2851,8 +2899,11 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     MonotonicFunctionsChain & out_functions_chain,
+    bool & out_chain_is_positive,
     std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
 {
+    out_chain_is_positive = true;
+
     const auto & sample_block = info.key_expr->getSampleBlock();
 
     for (const auto & node : info.key_expr->getNodes())
@@ -2901,6 +2952,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
             if (is_valid_chain)
             {
+                bool chain_is_positive = true;
                 while (!chain.empty())
                 {
                     const auto * func = chain.top();
@@ -2911,6 +2963,16 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                     auto func_name = func->function_base->getName();
                     auto func_base = func->function_base;
+
+                    /// If its cumulative monotonicity direction is negative, applying it to the constant
+                    /// reverses range comparisons. For example, with `ORDER BY (intDiv(c0, 5) / -7)`,
+                    /// `c0 < 0` becomes `divide(intDiv(c0, 5), -7) > divide(intDiv(0, 5), -7)`.
+                    ///
+                    /// Directions compose by parity: each non-increasing function reverses the current
+                    /// direction, so two non-increasing functions preserve the original comparison.
+                    auto monotonicity = func_base->getMonotonicityForRange(*func->result_type, Field(), Field());
+                    if (!monotonicity.is_positive)
+                        chain_is_positive = !chain_is_positive;
 
                     ColumnWithTypeAndName const_arg;
                     FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
@@ -2967,6 +3029,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
+                out_chain_is_positive = chain_is_positive;
                 return true;
             }
         }
@@ -3456,6 +3519,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
 
             bool condition_is_relaxed = false;
+            bool constant_chain_is_positive = true;
 
             /// If the table sorting key is `x` and the query predicate is `f(x) <op> const`, we try to analyze `f`.
             /// If `f` is a monotonic function chain, we store the chain and later, in `checkInRange`, apply it to
@@ -3485,7 +3549,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else if (
                 !no_relaxed_atom_functions.contains(func_name)
                 && canConstantBeWrappedByMonotonicFunctions(
-                    key_arg, info, key_column_num, key_expr_type, const_value, const_type))
+                    key_arg, info, key_column_num, key_expr_type, const_value, const_type, constant_chain_is_positive))
             {
                 condition_is_relaxed = true;
             }
@@ -3504,21 +3568,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
-            /// Replace <const> <sign> <data> on to <data> <-sign> <const>
+            /// Replace <const> <sign> <data> on to <data> <-sign> <const>.
+            /// Ops without a meaningful operand reorder (`like`, `startsWith`, `match`, ...)
+            /// return empty from the helper and are rejected.
             if (key_arg_pos == 1)
             {
-                if (func_name == "less")
-                    func_name = "greater";
-                else if (func_name == "greater")
-                    func_name = "less";
-                else if (func_name == "greaterOrEquals")
-                    func_name = "lessOrEquals";
-                else if (func_name == "lessOrEquals")
-                    func_name = "greaterOrEquals";
-                else if (func_name == "like" || func_name == "notLike" ||
-                         func_name == "ilike" || func_name == "notILike" ||
-                         func_name == "startsWith" || func_name == "startsWithUTF8" || func_name == "match")
+                auto reversed = reverseComparisonOperator(func_name);
+                if (reversed.empty())
                     return false;
+                func_name = String(reversed);
             }
 
             key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
@@ -3628,6 +3686,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     func_name = "greaterOrEquals";
 
                 out.relaxed = true;
+            }
+
+            /// `const_value` has already been transformed into the key-expression domain.
+            /// If that transformation reverses order, reverse the comparison operator too.
+            /// Symmetric operators such as `equals` and `notEquals` are unchanged.
+            if (!constant_chain_is_positive)
+            {
+                if (auto reversed = reverseComparisonOperator(func_name); !reversed.empty())
+                    func_name = String(reversed);
             }
         }
         else
@@ -4679,7 +4746,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
     const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
-    std::vector<BoolMask> rpn_stack;
+    absl::InlinedVector<BoolMask, 16> rpn_stack;
 
     auto curve_type = [&](size_t key_column_pos)
     {
