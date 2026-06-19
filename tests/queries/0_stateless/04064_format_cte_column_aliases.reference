@@ -17,7 +17,7 @@ WITH phrase(ph) AS
         SELECT concat(COALESCE(CAST(NULLIF(beer, 0), 'text'), 'no'), ' bottle', caseWithExpression(beer, 1, '', 's'), ' of beer')
         FROM generate_series(99, 0, -1) AS c(beer)
     )
-SELECT concat(ph, ' on the wall, ', ph, '.', '\n', 'Take one down and pass it around, ', LEAD(ph) OVER (), ' on the wall.\n') AS ` `
+SELECT concat(ph, ' on the wall, ', ph, '.', '\n', 'Take one down and pass it around, ', LEAD(ph) OVER (), ' on the wall.\n') AS " "
 FROM phrase
 LIMIT 99
 UNION ALL

@@ -232,6 +232,8 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         && is_materialized == rhs_typed.is_materialized
         && is_recursive_cte == rhs_typed.is_recursive_cte
         && cte_name == rhs_typed.cte_name
+        /// Quoted vs unquoted CTE name is semantic in `standard` mode
+        && cte_name_is_double_quoted == rhs_typed.cte_name_is_double_quoted
         && union_mode == rhs_typed.union_mode;
 }
 
@@ -251,6 +253,7 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
     state.update(cte_name.size());
     state.update(cte_name);
+    state.update(cte_name_is_double_quoted);
 
     state.update(static_cast<size_t>(union_mode));
 }

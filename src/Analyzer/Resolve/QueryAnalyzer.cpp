@@ -4233,10 +4233,36 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     if (scope.isStandardMode())
     {
         std::unordered_set<std::string> case_sensitive_columns;
-        if (query_node)
+        /// For `FROM (SELECT … UNION ALL …) AS t("MyCol")`, QueryTreeBuilder applies the override
+        /// to the first inner QueryNode of the UnionNode rather than the UnionNode itself.
+        /// Drill in to find that inner node when collecting quote info.
+        const QueryNode * override_carrier = query_node;
+        if (!override_carrier && union_node)
         {
-            const auto & override_aliases = query_node->getProjectionAliasesToOverride();
-            const auto & override_is_quoted = query_node->getProjectionAliasesToOverrideIsDoubleQuoted();
+            const QueryTreeNodePtr * current = union_node->getQueries().getNodes().empty()
+                ? nullptr : &union_node->getQueries().getNodes().front();
+            while (current && *current)
+            {
+                if (const auto * inner_query = (*current)->as<QueryNode>())
+                {
+                    override_carrier = inner_query;
+                    break;
+                }
+                if (const auto * inner_union = (*current)->as<UnionNode>())
+                {
+                    const auto & inner_queries = inner_union->getQueries().getNodes();
+                    current = inner_queries.empty() ? nullptr : &inner_queries.front();
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+        if (override_carrier)
+        {
+            const auto & override_aliases = override_carrier->getProjectionAliasesToOverride();
+            const auto & override_is_quoted = override_carrier->getProjectionAliasesToOverrideIsDoubleQuoted();
             for (size_t i = 0; i < override_aliases.size() && i < override_is_quoted.size(); ++i)
                 if (override_is_quoted[i])
                     case_sensitive_columns.insert(override_aliases[i]);

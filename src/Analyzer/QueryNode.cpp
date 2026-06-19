@@ -349,8 +349,15 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
+    /// Quoted vs unquoted CTE and projection-override aliases are semantic in `standard` mode;
+    /// include them in equality / hash so the query-tree cache never deduplicates two nodes
+    /// that resolve differently
     return is_subquery == rhs_typed.is_subquery &&
-        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_materialized == rhs_typed.is_materialized)) &&
+        (options.ignore_cte
+            || (is_cte == rhs_typed.is_cte
+                && cte_name == rhs_typed.cte_name
+                && cte_name_is_double_quoted == rhs_typed.cte_name_is_double_quoted
+                && is_materialized == rhs_typed.is_materialized)) &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -362,6 +369,8 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
+        projection_aliases_to_override == rhs_typed.projection_aliases_to_override &&
+        projection_aliases_to_override_is_double_quoted == rhs_typed.projection_aliases_to_override_is_double_quoted &&
         settings_changes == rhs_typed.settings_changes;
 }
 
@@ -380,6 +389,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(is_cte);
         state.update(cte_name.size());
         state.update(cte_name);
+        state.update(cte_name_is_double_quoted);
     }
 
     state.update(projection_columns.size());
@@ -391,10 +401,15 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         projection_column.type->updateHash(state);
     }
 
-    for (const auto & projection_alias : projection_aliases_to_override)
+    state.update(projection_aliases_to_override.size());
+    for (size_t i = 0; i < projection_aliases_to_override.size(); ++i)
     {
+        const auto & projection_alias = projection_aliases_to_override[i];
         state.update(projection_alias.size());
         state.update(projection_alias);
+        const bool quoted = i < projection_aliases_to_override_is_double_quoted.size()
+            && projection_aliases_to_override_is_double_quoted[i];
+        state.update(quoted);
     }
 
     state.update(is_materialized);

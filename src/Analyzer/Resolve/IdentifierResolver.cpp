@@ -818,11 +818,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const bool standard_mode = table_expression_data.standard_mode;
     /// Full column lookup uses the last-part quote style (the column name itself)
-    const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
+    bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
+    /// But for compound column names, a double-quoted qualifier part must NOT be case-folded
+    /// through `findColumnCaseInsensitive`. E.g. `"data".Name` should not match `Data.Name`
+    /// even though the last part is unquoted. Disable case-insensitive full lookup whenever
+    /// any qualifier part of the trimmed identifier was double-quoted.
+    const size_t identifier_qualifier_parts = identifier.getPartsSize() - identifier_without_column_qualifier.getPartsSize();
+    if (use_case_insensitive && identifier_without_column_qualifier.getPartsSize() > 1)
+    {
+        for (size_t p = identifier_qualifier_parts; p + 1 < identifier.getPartsSize(); ++p)
+        {
+            if (identifier_lookup.isPartDoubleQuoted(p))
+            {
+                use_case_insensitive = false;
+                break;
+            }
+        }
+    }
     /// Subcolumn base lookup keys off the first part of the trimmed identifier (the tuple/struct column),
     /// so `data."Name"` matches an unquoted base column `Data` while the quoted tuple field `Name` stays
     /// case-sensitive (the tuple-field lookup is always exact-match).
-    const size_t identifier_qualifier_parts = identifier.getPartsSize() - identifier_without_column_qualifier.getPartsSize();
     const bool subcolumn_base_case_insensitive = identifier_lookup.isPartCaseInsensitive(identifier_qualifier_parts, standard_mode);
 
     const auto & node_map = table_expression_data.getColumnNodeMap();

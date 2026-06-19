@@ -375,18 +375,24 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     // Apply the override aliases to the projection nodes
     if (aliases)
     {
-        // Collect the aliases into a vector of strings
+        // Collect the aliases into a vector of strings; also remember which were double-quoted
+        // so quoted CTE column aliases like `WITH cte("MyCol") AS (...)` stay case-sensitive
         Names collected_aliases;
+        std::vector<bool> collected_aliases_is_double_quoted;
         auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
         collected_aliases.reserve(override_aliases_children.size());
+        collected_aliases_is_double_quoted.reserve(override_aliases_children.size());
 
         for (const auto & child : override_aliases_children)
         {
             const auto & alias_ast = child->as<ASTIdentifier &>();
             collected_aliases.push_back(alias_ast.name());
+            collected_aliases_is_double_quoted.push_back(
+                alias_ast.getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote);
         }
 
         current_query_tree->setProjectionAliasesToOverride(collected_aliases);
+        current_query_tree->setProjectionAliasesToOverrideIsDoubleQuoted(std::move(collected_aliases_is_double_quoted));
     }
 
     auto prewhere_expression = select_query_typed.prewhere();

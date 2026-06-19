@@ -96,6 +96,11 @@ void ASTIdentifier::setShortName(const String & new_name)
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Quote styles change analyzer semantics in `standard` mode, so include them in the AST hash
+    /// (otherwise `QueryResultCache` could share a cache entry between `"X"` and `X`).
+    hash_state.update(quote_styles.size());
+    for (auto style : quote_styles)
+        hash_state.update(static_cast<uint8_t>(style));
 }
 
 const String & ASTIdentifier::name() const

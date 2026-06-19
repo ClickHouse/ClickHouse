@@ -151,16 +151,34 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name, bool standar
     if (!columns_identifiers_lowercase_set.contains(lowered))
         return false;
 
+    /// Compare per part: unquoted parts match case-insensitively, double-quoted parts must match exactly.
+    /// For example `COLUMNS(data."Name")` matches `Data.Name` (unquoted `data` -> case-insensitive,
+    /// quoted `"Name"` -> exact). Compound column names are split on '.' so per-part comparison stays
+    /// aligned with the user-typed identifier.
+    Identifier column_identifier(column_name);
     for (size_t i = 0; i < columns_identifiers.size(); ++i)
     {
-        bool any_part_quoted = false;
-        if (i < columns_identifiers_quote_styles.size())
-            for (auto style : columns_identifiers_quote_styles[i])
-                if (style == IdentifierQuoteStyle::DoubleQuote)
-                    any_part_quoted = true;
-        if (any_part_quoted)
+        const auto & matcher_parts = columns_identifiers[i].getParts();
+        const auto & column_parts = column_identifier.getParts();
+        if (matcher_parts.size() != column_parts.size())
             continue;
-        if (Poco::icompare(columns_identifiers[i].getFullName(), column_name) == 0)
+
+        const auto & matcher_quotes = i < columns_identifiers_quote_styles.size()
+            ? columns_identifiers_quote_styles[i] : std::vector<IdentifierQuoteStyle>{};
+
+        bool all_parts_match = true;
+        for (size_t p = 0; p < matcher_parts.size(); ++p)
+        {
+            const bool part_quoted = p < matcher_quotes.size() && matcher_quotes[p] == IdentifierQuoteStyle::DoubleQuote;
+            const bool match = part_quoted ? matcher_parts[p] == column_parts[p]
+                                           : Poco::icompare(matcher_parts[p], column_parts[p]) == 0;
+            if (!match)
+            {
+                all_parts_match = false;
+                break;
+            }
+        }
+        if (all_parts_match)
             return true;
     }
     return false;
@@ -195,9 +213,13 @@ void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state,
 bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const MatcherNode &>(rhs);
+    /// Quote styles change resolution rules in `standard` mode (e.g. `COLUMNS("FirstName")` vs
+    /// `COLUMNS(FirstName)`, `"T".*` vs `T.*`), so they must participate in node equality.
     if (matcher_type != rhs_typed.matcher_type ||
         qualified_identifier != rhs_typed.qualified_identifier ||
+        qualified_identifier_quote_styles != rhs_typed.qualified_identifier_quote_styles ||
         columns_identifiers != rhs_typed.columns_identifiers ||
+        columns_identifiers_quote_styles != rhs_typed.columns_identifiers_quote_styles ||
         columns_identifiers_set != rhs_typed.columns_identifiers_set)
         return false;
 
@@ -220,12 +242,26 @@ void MatcherNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) con
     const auto & qualified_identifier_full_name = qualified_identifier.getFullName();
     hash_state.update(qualified_identifier_full_name.size());
     hash_state.update(qualified_identifier_full_name);
+    hash_state.update(qualified_identifier_quote_styles.size());
+    for (auto style : qualified_identifier_quote_styles)
+        hash_state.update(static_cast<uint8_t>(style));
 
-    for (const auto & identifier : columns_identifiers)
+    hash_state.update(columns_identifiers.size());
+    for (size_t i = 0; i < columns_identifiers.size(); ++i)
     {
-        const auto & identifier_full_name = identifier.getFullName();
+        const auto & identifier_full_name = columns_identifiers[i].getFullName();
         hash_state.update(identifier_full_name.size());
         hash_state.update(identifier_full_name);
+        if (i < columns_identifiers_quote_styles.size())
+        {
+            hash_state.update(columns_identifiers_quote_styles[i].size());
+            for (auto style : columns_identifiers_quote_styles[i])
+                hash_state.update(static_cast<uint8_t>(style));
+        }
+        else
+        {
+            hash_state.update(size_t(0));
+        }
     }
 
     if (columns_matcher)

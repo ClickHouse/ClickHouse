@@ -115,6 +115,13 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         if (compare_options.compare_aliases && lhs_node_to_compare->alias != rhs_node_to_compare->alias)
             return false;
 
+        /// Quoted aliases are semantic in `standard` mode (case-sensitive vs case-insensitive);
+        /// otherwise hash/equality would deduplicate `expr AS x` and `expr AS "x"` despite the
+        /// two registering differently in `QueryExpressionsAliasVisitor`.
+        if (compare_options.compare_aliases
+            && lhs_node_to_compare->alias_is_double_quoted != rhs_node_to_compare->alias_is_double_quoted)
+            return false;
+
         const auto & lhs_children = lhs_node_to_compare->children;
         const auto & rhs_children = rhs_node_to_compare->children;
 
@@ -207,6 +214,8 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         {
             hash_state.update(node_to_process->alias.size());
             hash_state.update(node_to_process->alias);
+            /// Quoted vs unquoted alias is semantic in `standard` mode
+            hash_state.update(node_to_process->alias_is_double_quoted);
         }
 
         node_to_process->updateTreeHashImpl(hash_state, compare_options);
