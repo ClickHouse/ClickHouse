@@ -1318,7 +1318,17 @@ void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_
         if (!any_through_materialize)
             continue;
 
-        auto result = node.function->execute(args, node.result_type, 1, true);
+        /// fold is speculative: a function that would not run at runtime (empty rowset, short-circuit)
+        /// must not crash the query at planning, treat any throw as "leave node alone"
+        ColumnPtr result;
+        try
+        {
+            result = node.function->execute(args, node.result_type, 1, true);
+        }
+        catch (...)
+        {
+            continue;
+        }
         const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr;
         if (!column_const)
             continue;

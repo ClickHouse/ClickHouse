@@ -57,6 +57,9 @@ SELECT like('50%off', '50#%off', materialize('#')); -- { serverError ILLEGAL_COL
 -- same guard must catch materialize buried under a function the pass already folded
 SELECT like('50%off', '50#%off', concat(materialize('#'), '')); -- { serverError ILLEGAL_COLUMN }
 
+-- a speculative fold that would throw must leave the query alone, runtime skips it on 0 rows
+SELECT count() FROM numbers(0) WHERE toFloat64(materialize('x86_74')) < 50;
+
 -- planning must not eagerly evaluate the lazy then-branch of `if` -
 -- toFloat64('x86_74') would throw at fold time without the short-circuit guard
 SELECT count() > 0 FROM (
