@@ -89,7 +89,51 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
+-- A stale-high cache must NOT raise the estimate above the current known bound. The cache is
+-- max-like: it shrinks only when a new build drops below half the stored value, so after the table
+-- shrinks the cache can stay above the current size indefinitely. `sc_r` is first built with 100000
+-- rows (cached), then truncated to 600. On the next run its scan upper bound is 600, but the cache
+-- still says 100000. If that stale value were used, `sc_l`'s upper bound (5000) would be below it
+-- and `sc_l` (the larger input) would be swapped onto the build side. With the stale cache ignored
+-- (kept out because it exceeds the current upper bound), the 600-row `sc_r` stays the build side.
+DROP TABLE IF EXISTS sc_l;
+DROP TABLE IF EXISTS sc_r;
+
+CREATE TABLE sc_l (k Int32, v Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO sc_l SELECT number, number FROM numbers(5000);
+
+CREATE TABLE sc_r (k Int32, w Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO sc_r SELECT number, number FROM numbers(100000);
+
+-- Prime the cache with the large historical size (sc_r is the default build side; both inputs are
+-- upper bounds, so no swap).
+SELECT * FROM sc_l JOIN sc_r ON sc_l.k = sc_r.k WHERE sc_l.v != -1 AND sc_r.w != -1
+SETTINGS query_plan_join_swap_table = 'auto' FORMAT Null;
+
+-- Shrink sc_r far below the cached value (600 > 100000 / 2 is false, so the cache stays at 100000).
+TRUNCATE TABLE sc_r;
+INSERT INTO sc_r SELECT number, number FROM numbers(600);
+
+SELECT * FROM sc_l JOIN sc_r ON sc_l.k = sc_r.k WHERE sc_l.v != -1 AND sc_r.w != -1
+SETTINGS query_plan_join_swap_table = 'auto', log_comment = '04357_join_choose_build_table_stale_cache' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The current 600-row `sc_r` must stay the build side; the 5000-row `sc_l` must not be swapped onto
+-- it on the strength of the stale 100000 cache.
+SELECT
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 1 AND 2000, 'ok', format('fail({}): build={}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 4000 AND 6000, 'ok', format('fail({}): probe={}', query_id, ProfileEvents['JoinProbeTableRowCount']))
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+  AND query_kind = 'Select' AND current_database = currentDatabase()
+  AND log_comment = '04357_join_choose_build_table_stale_cache'
+ORDER BY event_time DESC
+LIMIT 1;
+
 DROP TABLE IF EXISTS f;
 DROP TABLE IF EXISTS u;
 DROP TABLE IF EXISTS pf;
 DROP TABLE IF EXISTS cf;
+DROP TABLE IF EXISTS sc_l;
+DROP TABLE IF EXISTS sc_r;
