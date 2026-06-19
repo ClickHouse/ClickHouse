@@ -62,6 +62,8 @@ enable_heavy_build_check_if_needed()
 
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
+add_contrib (ipnsort-cmake ipnsort)
+add_contrib (driftsort-cmake driftsort)
 add_contrib (pocketfft-cmake pocketfft)
 add_contrib (crc32-vpmsum-cmake crc32-vpmsum)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)
@@ -93,7 +95,8 @@ add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
 # parquet/arrow/orc
-add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
+add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
+add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd
 add_contrib (avro-cmake avro) # requires: snappy
 add_contrib (openldap-cmake openldap)
 add_contrib (msgpack-c-cmake msgpack-c)

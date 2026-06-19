@@ -507,16 +507,17 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
             return QueryProcessingStage::WithMergeableStateAfterAggregation;
         }
 
-        /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
-        /// (since in this case queries processed separately and the initiator is just a proxy in this case).
+        /// distributed_group_by_no_merge=1 does not respect distributed_push_down_limit:
+        /// shards process the query independently and the initiator just concatenates.
         ///
-        /// We always return Complete here regardless of to_stage, because with
-        /// distributed_group_by_no_merge=1 each shard processes the full query
-        /// independently and the initiator just concatenates results.
-        /// The caller may request a lower stage (e.g. StorageMerge passes
-        /// WithMergeableState when it wraps multiple tables), but that's fine —
-        /// the caller handles storage_stage > processed_stage correctly.
-        return QueryProcessingStage::Complete;
+        /// Each shard processes to Complete, so report at least Complete. Use max with
+        /// to_stage so a caller asking for a higher stage (WithMergeableStateAfterAggregation
+        /// or WithMergeableStateAfterAggregationAndLimit) is not silently downgraded.
+        /// If a caller asks for a lower stage (e.g. StorageMerge passing WithMergeableState
+        /// for a multi-table merge), `read()` still honors `processed_stage` and sends the
+        /// right query to shards; StorageMerge caps its own advertised stage so this
+        /// Complete does not leak into outer headers.
+        return std::max(to_stage, QueryProcessingStage::Complete);
     }
 
     /// Nested distributed query cannot return Complete stage,
