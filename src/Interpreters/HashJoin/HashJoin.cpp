@@ -739,7 +739,10 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         if (!tmp_stream)
             tmp_stream.emplace(std::make_shared<const Block>(right_sample_block), tmp_data);
 
-        chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
+        /// We don't run parallel_hash for cross join, so the selector covers the whole block.
+        /// A zero-column right block (PREWHERE consumed all right columns) reports rows() == 0,
+        /// while the real row count is carried by the selector.
+        chassert(rows == block.rows() || block.columns() == 0);
         tmp_stream.value()->write(block_to_save);
         return true;
     }
@@ -761,7 +764,10 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
                 || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
         {
-            chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
+            /// We don't run parallel_hash for cross join, so the selector covers the whole block.
+            /// A zero-column right block (PREWHERE consumed all right columns) reports rows() == 0,
+            /// while the real row count is carried by the selector.
+            chassert(rows == block.rows() || block.columns() == 0);
             block_to_save = block_to_save.compress();
             have_compressed = true;
         }

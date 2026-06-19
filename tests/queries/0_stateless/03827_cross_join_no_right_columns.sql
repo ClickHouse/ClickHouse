@@ -19,3 +19,27 @@ SELECT count() FROM t1, t2 PREWHERE a > 0 AND b != '';
 
 DROP TABLE t1;
 DROP TABLE t2;
+
+-- A zero-column right block also reached the cross-join block compression path in
+-- HashJoin::addBlockToJoin, where `chassert(rows == block.rows())` aborted: rows is taken from
+-- the selector (the real row count) but Block::rows() is 0 for a zero-column block. The branch is
+-- entered once getTotalRowCount() crosses the threshold, i.e. from the second right block on, so
+-- the right side must span more than one block (small max_block_size below).
+DROP TABLE IF EXISTS t1_big;
+DROP TABLE IF EXISTS t2_big;
+
+CREATE TABLE t1_big (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t2_big (a UInt64, b String) ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t1_big VALUES (1), (2), (3);
+INSERT INTO t2_big SELECT number, toString(number) FROM numbers(100000);
+
+-- compress by rows
+SELECT count() FROM t1_big, t2_big PREWHERE a >= 0 AND b != ''
+SETTINGS cross_join_min_rows_to_compress = 1, max_block_size = 1000, max_threads = 1;
+-- compress by bytes
+SELECT count() FROM t1_big, t2_big PREWHERE a >= 0 AND b != ''
+SETTINGS cross_join_min_bytes_to_compress = 1, max_block_size = 1000, max_threads = 1;
+
+DROP TABLE t1_big;
+DROP TABLE t2_big;
