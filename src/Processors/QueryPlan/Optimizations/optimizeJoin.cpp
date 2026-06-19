@@ -525,6 +525,14 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
+        /// This legacy path (physical JoinStep -- e.g. USING or non-All strictness joins that do
+        /// not go through JoinStepLogical) only does the original heuristic `lhs < rhs` comparison
+        /// of two point estimates; it has no notion of an upper bound vs an exact lower bound. So
+        /// take `pointEstimate()`, which is empty for an UpperBound input (a residual-filtered
+        /// scan), treating it as unknown here. This intentionally forgoes the sound
+        /// upper-bound-vs-exact swap that `chooseJoinOrder` performs, rather than risk an unsound
+        /// bound-vs-bound comparison in this simpler path. The two paths therefore differ for such
+        /// inputs: `chooseJoinOrder` may swap, the legacy path will not.
         auto lhs_extimation = estimateReadRowsCount(*node.children[0]).pointEstimate();
         auto rhs_extimation = estimateReadRowsCount(*node.children[1]).pointEstimate();
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
