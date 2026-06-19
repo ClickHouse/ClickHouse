@@ -80,6 +80,9 @@ struct RelationStats
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;
+
+    /// See `DPJoinEntry::rowsUpperBound`.
+    std::optional<UInt64> rowsUpperBound() const { return estimated_rows ? estimated_rows : estimated_rows_upper_bound; }
 };
 
 struct QueryGraph

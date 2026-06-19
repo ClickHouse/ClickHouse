@@ -360,7 +360,7 @@ size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_nam
             auto col_it = it->second->column_stats.find(column_name);
             if (col_it != it->second->column_stats.end())
                 return col_it->second.num_distinct_values;
-            return it->second->estimated_rows.value_or(0);
+            return it->second->rowsUpperBound().value_or(0);
         }
         return 0;
     }
@@ -369,7 +369,7 @@ size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_nam
     const auto & col_stats = relation_stat.column_stats;
     if (auto it = col_stats.find(column_name); it != col_stats.end())
         return it->second.num_distinct_values;
-    return relation_stat.estimated_rows.value_or(0);
+    return relation_stat.rowsUpperBound().value_or(0);
 }
 
 double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
@@ -459,11 +459,14 @@ static std::optional<UInt64> estimateJoinCardinality(
     double selectivity,
     JoinKind join_kind = JoinKind::Inner)
 {
-    if (!left->estimated_rows || !right->estimated_rows)
+    /// Use the best available size (exact estimate or upper bound): for cost/cardinality
+    /// purposes a bound is a far better proxy than nothing. Only the build-side swap needs an
+    /// exact lower bound; cost ordering does not (see `chooseJoinOrder`).
+    if (!left->rowsUpperBound() || !right->rowsUpperBound())
         return {};
 
-    double lhs = static_cast<double>(left->estimated_rows.value());
-    double rhs = static_cast<double>(right->estimated_rows.value());
+    double lhs = static_cast<double>(left->rowsUpperBound().value());
+    double rhs = static_cast<double>(right->rowsUpperBound().value());
 
     double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
 
@@ -489,7 +492,7 @@ static double computeJoinCost(
     const std::shared_ptr<DPJoinEntry> & right,
     double selectivity)
 {
-    return left->cost + right->cost + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
+    return left->cost + right->cost + selectivity * static_cast<double>(left->rowsUpperBound().value_or(1)) * static_cast<double>(right->rowsUpperBound().value_or(1));
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
@@ -630,7 +633,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
             for (size_t idx = 0; idx < components.size(); idx++)
             {
                 auto & component = components[idx];
-                UInt64 estimated_rows = component->estimated_rows.value_or(std::numeric_limits<UInt64>::max() - 1);
+                UInt64 estimated_rows = component->rowsUpperBound().value_or(std::numeric_limits<UInt64>::max() - 1);
                 if (estimated_rows < first_best)
                 {
                     std::tie(second_best, best_j) = std::tie(first_best, best_i);
