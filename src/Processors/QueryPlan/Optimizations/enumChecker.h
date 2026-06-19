@@ -96,9 +96,6 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const TUInt S, const TU
     std::vector<JoinActionRef *> edge;
     for (auto & edge_it : applicable_edge)
     {
-        LOG_TEST(
-            logger, "Bitset Rep. left: {}, right: {}, edge: {}", toString(lhs), toString(rhs), toString(edge_it->getSourceRelations()));
-
         if (connects(edge_it, lhs, rhs))
         {
             edge.push_back(edge_it);
@@ -122,6 +119,12 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const TUInt S, const TU
 
     auto selectivity = optimizer.computeSelectivity(edge, lhs, rhs);
     auto plan_cost = computeJoinCost(S1, S2, selectivity);
+
+    LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
+             selectivity,
+             plan_cost,
+             dp_table[S1].estimated_rows.value_or(0),
+             dp_table[S2].estimated_rows.value_or(0));
 
     if (!dp_table.map().contains(S) || plan_cost < dp_table[S].cost)
     {

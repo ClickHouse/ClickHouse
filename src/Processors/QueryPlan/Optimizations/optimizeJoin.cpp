@@ -324,34 +324,12 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
         if (!analyzed_result)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
-        bool is_filtered_by_index = false;
-        UInt64 total_parts = 0;
-        UInt64 total_granules = 0;
-        for (const auto & idx_stat : analyzed_result->index_stats)
-        {
-            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
-            /// Further index_stats are used to estimate amount of filtered data after applying the index.
-            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
-            {
-                total_parts = idx_stat.num_parts_after;
-                total_granules = idx_stat.num_granules_after;
-                continue;
-            }
-
-            is_filtered_by_index = is_filtered_by_index
-                || (total_parts && idx_stat.num_parts_after < total_parts)
-                || (total_granules && idx_stat.num_granules_after < total_granules);
-
-            if (is_filtered_by_index)
-                break;
-        }
-        bool has_filter = filter || reading->getPrewhereInfo();
-
-        /// If any conditions are pushed down to storage but not used in the index,
-        /// we cannot precisely estimate the row count
-        if (has_filter && !is_filtered_by_index)
-            return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
-
+        /// `selected_rows` is the row count after index analysis: when the filter is used by the index it is
+        /// already the reduced count, and when the filter is not used by the index it is the full relation size.
+        /// Previously we returned an unknown (empty) estimate in the latter case because the filter selectivity
+        /// could not be determined precisely. That is harmful for the join-order optimizer: an unknown cardinality
+        /// collapses the cost model (it gets treated as a single row downstream), leading to bad plans. Returning
+        /// the relation size is a safe upper bound that preserves cost signal, so we always return `selected_rows`.
         return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
     }
 
@@ -390,6 +368,7 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
                 const auto kind = join_step->getJoinOperator().kind;
                 est = (kind == JoinKind::Left) ? *lhs
                     : (kind == JoinKind::Right) ? *rhs
+                    : (kind == JoinKind::Cross) ? (*lhs * *rhs)
                     : std::max(*lhs, *rhs); /// Full/Inner/Cross: containment heuristic
             }
         }

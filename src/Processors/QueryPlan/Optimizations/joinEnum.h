@@ -100,7 +100,7 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
         if (edge_sources.count() != 2) // we are only interested in binary predicates for DP initialization
             continue;
 
-        LOG_TEST(log, "Edge contains relations: {}", toString(edge_sources));
+        LOG_TEST(log, "Edge contains relations: {} edge info: {}", toString(edge_sources), edge.dump());
 
         std::vector<UInt> relations;
         // Fill relations with bit positions set in edge_sources
@@ -166,11 +166,12 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::enumerate(TConsumer & consume
         {
             const UInt lhs = s_iter;
             const UInt rhs = (s ^ lhs);
-            LOG_TEST(log, "Enumerating subset S: {}, lhs: {}, rhs: {}", toBinaryString(s), toBinaryString(lhs), toBinaryString(rhs));
 
             // only generate non-symmetric ccps
             if (lhs > rhs)
                 continue;
+
+            LOG_TEST(log, "Enumerating subset S: {}, lhs: {}, rhs: {}", toBinaryString(s), toBinaryString(lhs), toBinaryString(rhs));
 
             if (!(consumer.getDPTable().isConnected(lhs)))
             {
