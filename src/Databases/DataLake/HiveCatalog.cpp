@@ -171,13 +171,16 @@ DB::Names HiveCatalog::getTables() const
     return result;
 }
 
-DB::Names HiveCatalog::getTables(const std::string & namespace_name) const
+DataLake::ICatalog::Namespaces HiveCatalog::getNamespaces() const
 {
-    /// HMS databases are flat — a hint with a `.` cannot map to a single database.
-    /// Fall back to the full-list + in-memory filter for correctness.
-    if (namespace_name.find('.') != std::string::npos)
-        return ICatalog::getTables(namespace_name);
+    /// HMS databases are flat — they cannot contain nested namespaces.
+    DB::Names databases;
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(databases); });
+    return databases;
+}
 
+DB::Names HiveCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
     DB::Names current_tables;
     /// Use the same reconnect/retry wrapper as the unscoped `getTables` path, so a
     /// transient `TTransportException` is retried instead of bubbling up and being

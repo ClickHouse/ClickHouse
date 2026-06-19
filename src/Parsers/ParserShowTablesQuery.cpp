@@ -37,10 +37,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_limit(Keyword::LIMIT);
     ParserStringLiteral like_p(Highlight::string_like);
-    /// Use a compound identifier so `SHOW TABLES FROM <db>.<ns1>.<ns2>` parses
-    /// without requiring backticks. The dotted suffix maps to a DataLake catalog
-    /// namespace and is split out in InterpreterShowTablesQuery (see #105022).
-    ParserCompoundIdentifier name_p(/*table_name_with_optional_uuid*/ false, /*allow_query_parameter*/ true);
+    ParserIdentifier name_p(true);
     ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;

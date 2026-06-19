@@ -3,7 +3,10 @@
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <iterator>
+#include <string_view>
 
 #include <Common/FailPoint.h>
 #include <Poco/URI.h>
@@ -310,19 +313,112 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
-DB::Names ICatalog::getTables(const std::string & namespace_name) const
+namespace
 {
-    /// Default fallback: fetch the entire catalog and filter in memory.
-    /// Catalogs that natively support per-namespace listing override this
-    /// to issue a scoped API call instead.
-    DB::Names result;
-    const std::string prefix = namespace_name + ".";
-    for (auto & full_name : getTables())
+
+/// Returns true if SOME string having `prefix` as a prefix can match the SQL
+/// LIKE `pattern` (`%` = any sequence, `_` = any single char, `\` escapes the
+/// next char). Used to decide whether a namespace `N` (passed as `N + "."`)
+/// could contain a table whose full `N.table` name matches the pattern: once
+/// the whole prefix is consumed we return true, because the unknown table-name
+/// continuation can satisfy whatever pattern remains. Case-sensitive.
+bool likeCanMatchWithPrefix(std::string_view prefix, std::string_view pattern)
+{
+    size_t i = 0;            /// index into prefix
+    size_t j = 0;            /// index into pattern
+    size_t star_j = std::string_view::npos;  /// position of last '%' in pattern
+    size_t star_i = 0;       /// prefix index recorded when last '%' was seen
+
+    while (i < prefix.size())
     {
-        if (full_name.starts_with(prefix))
-            result.push_back(std::move(full_name));
+        if (j < pattern.size())
+        {
+            const char pc = pattern[j];
+            if (pc == '%')
+            {
+                star_j = j;
+                star_i = i;
+                ++j;
+                continue;
+            }
+            if (pc == '_')
+            {
+                ++i;
+                ++j;
+                continue;
+            }
+            if (pc == '\\' && j + 1 < pattern.size())
+            {
+                if (prefix[i] == pattern[j + 1])
+                {
+                    ++i;
+                    j += 2;
+                    continue;
+                }
+            }
+            else if (prefix[i] == pc)
+            {
+                ++i;
+                ++j;
+                continue;
+            }
+        }
+
+        /// Mismatch (or pattern exhausted while the prefix still has characters):
+        /// backtrack to the last '%' and let it swallow one more prefix char.
+        if (star_j != std::string_view::npos)
+        {
+            ++star_i;
+            i = star_i;
+            j = star_j + 1;
+            continue;
+        }
+        return false;
     }
-    return result;
+
+    /// Whole prefix consumed: any remaining pattern can be matched by the
+    /// unknown continuation, so a match is possible.
+    return true;
+}
+
+}
+
+DB::Names ICatalog::getTables(const TableNameFilter & filter) const
+{
+    switch (filter.kind)
+    {
+        case TableNameFilter::Kind::All:
+            return getTables();
+
+        case TableNameFilter::Kind::Equals:
+        {
+            /// `name = 'ns.table'` -> list the single namespace `ns` directly.
+            /// The downstream `system.tables` filter narrows to the exact row.
+            const auto pos = filter.value.rfind('.');
+            if (pos == std::string::npos)
+                return getTables();
+            return listTablesInNamespaceDirect(filter.value.substr(0, pos));
+        }
+
+        case TableNameFilter::Kind::Like:
+        {
+            /// `name LIKE 'pattern'` -> list every namespace that could contain a
+            /// matching table (a table in `N` is named `N.<leaf>`, so test the
+            /// pattern against `N + "."` as a prefix), then list each directly.
+            /// `getNamespaces()` already enumerates nested namespaces, so listing
+            /// each one directly covers the matched subtree without duplicates.
+            DB::Names result;
+            for (const auto & namespace_name : getNamespaces())
+            {
+                if (!likeCanMatchWithPrefix(namespace_name + ".", filter.value))
+                    continue;
+                auto tables = listTablesInNamespaceDirect(namespace_name);
+                std::move(tables.begin(), tables.end(), std::back_inserter(result));
+            }
+            return result;
+        }
+    }
+    return {};
 }
 
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const

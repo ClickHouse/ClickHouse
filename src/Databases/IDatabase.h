@@ -47,16 +47,28 @@ struct LightWeightTableDetails
 };
 
 /// Optional hint passed to getTablesIterator that lets the caller push down
-/// part of the WHERE predicate to the database implementation. The hint is
+/// the `name`-column predicate to the database implementation. The hint is
 /// purely advisory: implementations that ignore it must still return correct
 /// results. Currently used by DataLake catalogs (Iceberg REST, Glue, Unity,
-/// Hive, Paimon REST) to fetch tables from a single namespace instead of
+/// Hive, Paimon REST) to restrict which namespaces are listed instead of
 /// enumerating every table in the catalog.
 struct TablesFilter
 {
-    /// Namespace prefix (dot-separated, without trailing dot), as extracted
-    /// from `name = 'ns.table'` or `name LIKE 'ns.%'` predicates.
-    std::optional<String> namespace_hint;
+    /// How the `name` column is constrained by the query predicate. `Equals`
+    /// (`name = 'ns.table'`) and `Like` (`name LIKE 'ns.%'`) let the catalog
+    /// narrow the set of namespaces it lists; `None` means no usable predicate.
+    enum class Kind
+    {
+        None,
+        Equals,
+        Like,
+    };
+
+    Kind kind = Kind::None;
+
+    /// For `Equals`: the full literal value (e.g. `ns.table`).
+    /// For `Like`:   the full LIKE pattern (e.g. `ns.%`). Unused for `None`.
+    String pattern;
 };
 
 class IDatabaseTablesIterator

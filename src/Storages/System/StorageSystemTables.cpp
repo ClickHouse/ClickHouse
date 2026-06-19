@@ -68,50 +68,14 @@ std::optional<String> tryReadConstString(const ActionsDAG::Node * node)
     return field.safeGet<String>();
 }
 
-/// LIKE patterns use `%` and `_` as wildcards, and `\\` as an escape character.
-/// Return the longest literal prefix that contains no unescaped wildcards.
-/// Escaped characters (`\%`, `\_`, `\\`, etc.) are folded into the literal.
-std::optional<String> getLiteralPrefixOfLikePattern(const String & pattern)
-{
-    String literal;
-    literal.reserve(pattern.size());
-    for (size_t i = 0; i < pattern.size(); ++i)
-    {
-        char c = pattern[i];
-        if (c == '%' || c == '_')
-            return literal;
-        if (c == '\\')
-        {
-            /// A trailing backslash isn't a valid LIKE pattern; treat it as
-            /// the end of the safely-extractable literal.
-            if (i + 1 >= pattern.size())
-                return literal;
-            literal += pattern[i + 1];
-            ++i;
-            continue;
-        }
-        literal += c;
-    }
-    return literal;
-}
-
-/// Given a literal string of the form `<ns1>.<ns2>...<nsk>.<rest>` (or just `<ns1>...<nsk>.`),
-/// return the namespace path `<ns1>.<ns2>...<nsk>` (everything before the last `.`).
-/// Returns nullopt if there is no `.` in the literal.
-std::optional<String> namespacePrefixBeforeLastDot(const String & literal)
-{
-    auto pos = literal.rfind('.');
-    if (pos == std::string::npos)
-        return {};
-    return literal.substr(0, pos);
-}
-
-/// Walk the predicate DAG looking for top-level conjuncts of the form
-/// `name = 'ns.table'` or `name LIKE 'ns.%'` and extract the most
-/// specific (longest) namespace prefix that is guaranteed to bound the
-/// matched rows. Only case-sensitive LIKE is considered — `ilike` and
-/// patterns with escapes are skipped to avoid false negatives.
-std::optional<String> extractNamespaceHint(const ActionsDAG::Node * predicate)
+/// Walk the predicate DAG looking for a top-level conjunct that constrains the
+/// `name` column as `name = 'ns.table'` or `name LIKE 'ns.%'`. The matched
+/// predicate lets DataLake catalogs restrict which namespaces they list. Only
+/// case-sensitive LIKE is considered — `ilike` is skipped. `Equals` is preferred
+/// over `Like` when both are present (it is more selective). Since the result is
+/// only an advisory hint and the full predicate is re-applied afterwards, any
+/// single matching conjunct is a valid choice.
+TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
 {
     if (!predicate)
         return {};
@@ -134,7 +98,7 @@ std::optional<String> extractNamespaceHint(const ActionsDAG::Node * predicate)
         conjuncts.push_back(node);
     }
 
-    std::optional<String> result;
+    TablesFilter like_filter;
     for (const auto * conjunct : conjuncts)
     {
         while (conjunct->type == ActionsDAG::ActionType::ALIAS && !conjunct->children.empty())
@@ -150,44 +114,36 @@ std::optional<String> extractNamespaceHint(const ActionsDAG::Node * predicate)
         const auto * lhs = conjunct->children[0];
         const auto * rhs = conjunct->children[1];
 
-        bool lhs_is_name = (lhs->type == ActionsDAG::ActionType::INPUT && lhs->result_name == "name");
-        bool rhs_is_name = (rhs->type == ActionsDAG::ActionType::INPUT && rhs->result_name == "name");
+        const bool lhs_is_name = (lhs->type == ActionsDAG::ActionType::INPUT && lhs->result_name == "name");
+        const bool rhs_is_name = (rhs->type == ActionsDAG::ActionType::INPUT && rhs->result_name == "name");
         if (!lhs_is_name && !rhs_is_name)
             continue;
 
-        std::optional<String> hint;
         if (fn_name == "equals")
         {
             /// `equals` is symmetric, so the literal may be on either side.
+            /// Prefer it immediately: it is the most selective predicate.
             if (auto literal = tryReadConstString(lhs_is_name ? rhs : lhs))
-                hint = namespacePrefixBeforeLastDot(*literal);
+                return {TablesFilter::Kind::Equals, std::move(*literal)};
         }
         else if (fn_name == "like")
         {
             /// `like` is NOT symmetric: only `name LIKE 'pattern'` constrains
             /// `name` by the literal pattern. In the reversed form
             /// `'literal' LIKE name`, `name` is the pattern and the literal is the
-            /// subject, so deriving a namespace from the literal would wrongly
-            /// narrow the catalog request (e.g. `'a.b' LIKE name` can match rows
-            /// whose name is a pattern like `%.%`). Accept only the former.
-            if (lhs_is_name)
+            /// subject, so forwarding the literal would wrongly narrow the catalog
+            /// request (e.g. `'a.b' LIKE name` can match rows whose name is a
+            /// pattern like `%.%`). Accept only the former, and keep the first such
+            /// pattern in case no `equals` conjunct is found.
+            if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
             {
                 if (auto literal = tryReadConstString(rhs))
-                {
-                    if (auto literal_prefix = getLiteralPrefixOfLikePattern(*literal))
-                        hint = namespacePrefixBeforeLastDot(*literal_prefix);
-                }
+                    like_filter = {TablesFilter::Kind::Like, std::move(*literal)};
             }
-        }
-
-        if (hint && !hint->empty())
-        {
-            if (!result || hint->size() > result->size())
-                result = std::move(hint);
         }
     }
 
-    return result;
+    return like_filter;
 }
 
 }
@@ -229,7 +185,7 @@ ColumnPtr getFilteredTables(
 
     TablesFilter tables_filter;
     if (dag)
-        tables_filter.namespace_hint = extractNamespaceHint(dag->getOutputs().at(0));
+        tables_filter = extractTableNameFilter(dag->getOutputs().at(0));
 
     if (dag)
     {
@@ -1205,7 +1161,7 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context))
-        tables_filter.namespace_hint = extractNamespaceHint(dag->getOutputs().at(0));
+        tables_filter = extractTableNameFilter(dag->getOutputs().at(0));
 }
 
 void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

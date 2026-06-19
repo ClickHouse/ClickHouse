@@ -675,49 +675,22 @@ DB::Names RestCatalog::getTables() const
     return tables;
 }
 
-DB::Names RestCatalog::getTables(const std::string & namespace_name) const
+RestCatalog::Namespaces RestCatalog::getNamespaces() const
 {
-    /// Scoped variant used by SHOW TABLES / system.tables namespace push-down.
-    /// Walk the sub-tree rooted at `namespace_name` (the namespace itself, plus all
-    /// descendants) and aggregate tables from each level. Avoids the full-catalog
-    /// scan that `getTables()` does when the caller only needs tables under a
-    /// specific namespace prefix.
-    if (namespace_name.empty())
-        return getTables();
+    /// Enumerate the whole namespace tree (every node at every level). Used by
+    /// the `getTables(const TableNameFilter &)` namespace push-down.
+    Namespaces namespaces;
+    getNamespacesRecursive(
+        /* base_namespace */"", /// Empty base namespace means starting from root.
+        namespaces,
+        /* stop_condition */{},
+        /* execute_func */{});
+    return namespaces;
+}
 
-    auto & pool = getContext()->getIcebergCatalogThreadpool();
-    DB::Names tables;
-    std::mutex mutex;
-
-    {
-        DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
-
-        auto execute_for_each_namespace = [&](const std::string & current_namespace)
-        {
-            runner.enqueueAndKeepTrack(
-            [=, &tables, &mutex, this]
-            {
-                auto tables_in_namespace = listTablesInNamespace(current_namespace);
-                std::lock_guard lock(mutex);
-                std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
-            });
-        };
-
-        /// Query the requested namespace itself first.
-        execute_for_each_namespace(namespace_name);
-
-        /// Then walk every sub-namespace below it.
-        Namespaces namespaces;
-        getNamespacesRecursive(
-            namespace_name,
-            namespaces,
-            /* stop_condition */{},
-            /* execute_func */execute_for_each_namespace);
-
-        runner.waitForAllToFinishAndRethrowFirstError();
-    }
-
-    return tables;
+DB::Names RestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    return listTablesInNamespace(namespace_name);
 }
 
 void RestCatalog::getNamespacesRecursive(
@@ -728,7 +701,7 @@ void RestCatalog::getNamespacesRecursive(
 {
     checkStackSize();
 
-    auto namespaces = getNamespaces(base_namespace);
+    auto namespaces = listChildNamespaces(base_namespace);
     result.reserve(result.size() + namespaces.size());
     result.insert(result.end(), namespaces.begin(), namespaces.end());
 
@@ -762,7 +735,7 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
     return {{"parent", parent_param}};
 }
 
-RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_namespace) const
+RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & base_namespace) const
 {
     Poco::URI::QueryParameters base_params;
     if (!base_namespace.empty())
@@ -895,7 +868,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         /// just burns O(pages) REST calls per parent namespace without ever
         /// contributing to the result. Treat the first page as terminal by
         /// leaving `next_page_token` empty (already cleared at function entry)
-        /// so the outer `getNamespaces` loop returns immediately.
+        /// so the outer `listChildNamespaces` loop returns immediately.
         const bool biglake_drops_all_entries
             = getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
             && !base_namespace.empty();

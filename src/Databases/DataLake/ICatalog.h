@@ -122,6 +122,31 @@ private:
 };
 
 
+/// Describes how the `name` column of `system.tables` is constrained by the
+/// query, so the catalog can restrict which namespaces it lists. Translated
+/// from `DB::TablesFilter` by `DatabaseDataLake` (keeps `ICatalog` free of any
+/// dependency on the database layer).
+struct TableNameFilter
+{
+    /// The three cases partition every query:
+    /// - Equals — name = 'ns.table' → one namespace, listed directly.
+    /// - Like   — name LIKE 'ns.%'  → matched namespaces, each listed directly.
+    /// - All    — everything else   → full catalog scan (the fallback that
+    ///            guarantees correctness when we can't prune).
+    enum class Kind
+    {
+        All,
+        Equals,
+        Like,
+    };
+
+    Kind kind = Kind::All;
+    /// For `Equals`: the full literal value (e.g. `ns.table`).
+    /// For `Like`:   the full LIKE pattern (e.g. `ns.%`). Unused for `All`.
+    std::string value;
+};
+
+
 struct CatalogSettings
 {
     String storage_endpoint;
@@ -155,12 +180,18 @@ public:
     /// Contains full namespaces in names.
     virtual DB::Names getTables() const = 0;
 
-    /// Fetch the table-name list scoped to a single namespace (dot-separated path,
-    /// e.g. "ns1.ns2"). Returned names are still fully-qualified, just like
-    /// `getTables`. The default implementation falls back to the full list and
-    /// filters in memory; catalogs that support per-namespace listing should
-    /// override this to call the scoped catalog API directly.
-    virtual DB::Names getTables(const std::string & namespace_name) const;
+    /// Enumerate every namespace in the catalog as full dot-separated paths.
+    /// Hierarchical catalogs (Iceberg REST, Paimon REST) return every node at
+    /// every level; flat catalogs (Glue, Unity, Hive) return their single-level
+    /// names.
+    virtual Namespaces getNamespaces() const = 0;
+
+    /// Fetch the table-name list, optionally restricted by a `name`-column
+    /// predicate (see `TableNameFilter`). Returned names are fully-qualified
+    /// `namespace.table` paths, same as `getTables()`. The generic default
+    /// implementation builds the set of namespaces selected by the filter and
+    /// lists the tables directly in each; catalogs normally do not override it.
+    virtual DB::Names getTables(const TableNameFilter & filter) const;
 
     /// Check that a table exists in a given namespace.
     virtual bool existsTable(
@@ -220,6 +251,12 @@ public:
     }
 
 protected:
+    /// List the tables that live DIRECTLY in `namespace_name` (no descent into
+    /// sub-namespaces). Returns fully-qualified `namespace.table` names. Used by
+    /// the `getTables(const TableNameFilter &)` default implementation, which
+    /// already enumerates nested namespaces via `getNamespaces()`.
+    virtual DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const = 0;
+
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".
     const std::string warehouse;

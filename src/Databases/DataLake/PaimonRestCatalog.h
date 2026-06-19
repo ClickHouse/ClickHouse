@@ -87,7 +87,7 @@ public:
 
     DB::Names getTables() const override;
 
-    DB::Names getTables(const std::string & namespace_name) const override;
+    Namespaces getNamespaces() const override;
 
     bool existsTable(const String & database_name, const String & table_name) const override;
 
@@ -131,6 +131,8 @@ private:
     void forEachDatabase(DB::Strings & databases, StopCondition stop_condition = {}, ExecuteFunc execute_func = {}) const;
 
     void forEachTables(const String & database, DB::Names & tables, StopCondition stop_condition = {}, ExecuteFunc execute_func = {}) const;
+
+    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
     Poco::JSON::Object::Ptr requestRest(
         const String & endpoint,

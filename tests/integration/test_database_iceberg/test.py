@@ -292,8 +292,8 @@ def escape_like_literal(s):
     # Escape SQL LIKE wildcards (`%`, `_`) and the escape character so the value
     # is matched literally. ClickHouse keeps the backslash for LIKE convenience,
     # so a single backslash in the query text is enough (no SQL-literal
-    # double-escaping needed). This mirrors the `escapeForLikeLiteral` the
-    # `SHOW TABLES` rewrite applies to the namespace path.
+    # double-escaping needed). Used to bind the namespace path exactly in a
+    # `name LIKE '<ns>.%'` predicate.
     return re.sub(r"([\\%_])", r"\\\1", s)
 
 
@@ -373,8 +373,7 @@ def test_namespace_filter_pushdown(started_cluster):
     # Case-sensitive LIKE pushdown. The namespace contains a literal `_`, which is
     # a single-character wildcard in LIKE, so it must be escaped (`\_`) to bind the
     # namespace exactly. Without the escape the pattern could also match sibling
-    # namespaces, so the push-down would (correctly) fall back to a full-catalog
-    # scan — this is the same escaping the `SHOW TABLES` rewrite applies on its own.
+    # namespaces, so the push-down would (correctly) fetch them too.
     assert_scoped(
         f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name LIKE '{escape_like_literal(namespace_1)}.%' ORDER BY name "
         "SETTINGS show_data_lake_catalogs_in_system_tables = true",
@@ -387,22 +386,6 @@ def test_namespace_filter_pushdown(started_cluster):
         f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name = '{one_table}' ORDER BY name "
         "SETTINGS show_data_lake_catalogs_in_system_tables = true",
         one_table,
-    )
-
-    # `SHOW TABLES FROM <catalog>.<ns>` rewrites to the same tightened predicate
-    # as the equivalent `SELECT ... LIKE '<ns>.%'` form. Result names are still
-    # fully qualified with the namespace path, just like the SELECT variant.
-    assert_scoped(
-        f"SHOW TABLES FROM `{CATALOG_NAME}.{namespace_1}`",
-        expected_ns1,
-    )
-
-    # SHOW TABLES FROM ... LIKE 'foo': the LIKE pattern is anchored to the namespace,
-    # so it matches `<ns>.<foo>` rather than only `<foo>`.
-    one_table_short = namespace_1_tables[0]
-    assert_scoped(
-        f"SHOW TABLES FROM `{CATALOG_NAME}.{namespace_1}` LIKE '{one_table_short}'",
-        f"{namespace_1}.{one_table_short}",
     )
 
 

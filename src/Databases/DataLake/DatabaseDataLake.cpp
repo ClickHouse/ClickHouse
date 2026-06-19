@@ -122,6 +122,28 @@ namespace FailPoints
     extern const char datalake_try_get_table_return_nullptr[];
 }
 
+namespace
+{
+
+/// Translate the database-layer `TablesFilter` (extracted from the query's
+/// `name`-column predicate) into the catalog-layer `TableNameFilter`, so the
+/// catalog can restrict which namespaces it lists.
+DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_filter)
+{
+    switch (tables_filter.kind)
+    {
+        case TablesFilter::Kind::None:
+            return {DataLake::TableNameFilter::Kind::All, {}};
+        case TablesFilter::Kind::Equals:
+            return {DataLake::TableNameFilter::Kind::Equals, tables_filter.pattern};
+        case TablesFilter::Kind::Like:
+            return {DataLake::TableNameFilter::Kind::Like, tables_filter.pattern};
+    }
+    return {DataLake::TableNameFilter::Kind::All, {}};
+}
+
+}
+
 DatabaseDataLake::DatabaseDataLake(
     const std::string & database_name_,
     const std::string & url_,
@@ -772,10 +794,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
     /// It must not fail on case of some datalake error.
     try
     {
-        if (tables_filter.namespace_hint && !tables_filter.namespace_hint->empty())
-            iceberg_tables = getCatalog()->getTables(*tables_filter.namespace_hint);
-        else
-            iceberg_tables = getCatalog()->getTables();
+        iceberg_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
@@ -878,10 +897,7 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     /// It must not fail on case of some datalake error.
     try
     {
-        if (tables_filter.namespace_hint && !tables_filter.namespace_hint->empty())
-            iceberg_tables = getCatalog()->getTables(*tables_filter.namespace_hint);
-        else
-            iceberg_tables = getCatalog()->getTables();
+        iceberg_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
