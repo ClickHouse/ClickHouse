@@ -2344,10 +2344,14 @@ class QueryResultElement extends HTMLElement
         return QueryResultElement._loadUplotPromise;
     }
 
-    async renderGraph()
+    /// `isValid` (optional) is checked right after the async Viz load and before any DOM
+    /// mutation, so a tab switch during the first (slow) load cannot let this stale render
+    /// paint into the now-active tab's shared result element.
+    async renderGraph(isValid)
     {
         this._clearElement(this._dataTable);
         const viz = await this._getViz();
+        if (isValid && !isValid()) return;
         const svg = viz.renderSVGElement(this._explain_graph);
         this._graph.replaceChildren(svg);
         this._graph.style.display = 'block';
@@ -2450,9 +2454,13 @@ class QueryResultElement extends HTMLElement
         };
     }
 
-    async renderChart(json)
+    /// `isValid` (optional) is checked right after the async uPlot load and before any DOM
+    /// mutation, so a tab switch during the first (slow) load cannot let this stale render
+    /// paint into the now-active tab's shared result element.
+    async renderChart(json, isValid)
     {
         await this._loadUplot();
+        if (isValid && !isValid()) return;
 
         if (this._uplot)
         {
@@ -3179,7 +3187,9 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             is_chart = true;
             reply = await response.text();
             if (posted_request_num != request_num) { return { cancelled: true }; }
-            targetResultEl.renderChart(JSON.parse(reply));
+            /// Await the chart render and let it bail inside (after the uPlot load, before
+            /// touching the DOM) if a tab switch superseded this request meanwhile.
+            await targetResultEl.renderChart(JSON.parse(reply), () => posted_request_num === request_num);
         } else {
             is_raw = true;
             const reader = response.body.getReader();
@@ -3213,7 +3223,9 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     }
 
     if (targetResultEl.isExplainGraph) {
-        await targetResultEl.renderGraph();
+        /// Bail inside renderGraph (after the Viz load, before mutating the DOM) if a tab
+        /// switch superseded this request during the load.
+        await targetResultEl.renderGraph(() => posted_request_num === request_num);
     } else {
         if (targetResultEl._extremes['min'] && targetResultEl._extremes['max']) targetResultEl.renderExtremes();
         if (is_table) targetResultEl.renderTotals();
@@ -3508,10 +3520,10 @@ async function restoreFromHistory(state, token) {
     } else if (format == 'JSONCompactColumns') {
         is_chart = true;
         if (token !== request_num) { return; }
-        /// renderChart awaits the uPlot loader on first use; await it and re-check the
-        /// token so a tab switch during that load can't let this stale render mutate the
-        /// now-active tab's result element.
-        await resultEl.renderChart(JSON.parse(result.data));
+        /// renderChart awaits the uPlot loader on first use; the predicate makes it bail
+        /// inside (right after the load, before mutating the DOM) if a tab switch superseded
+        /// this activation, and we re-check here too.
+        await resultEl.renderChart(JSON.parse(result.data), () => token === request_num);
         if (token !== request_num) { return; }
     } else {
         is_raw = true;
@@ -3519,7 +3531,7 @@ async function restoreFromHistory(state, token) {
     }
 
     if (resultEl.isExplainGraph) {
-        await resultEl.renderGraph();
+        await resultEl.renderGraph(() => token === request_num);
         if (token !== request_num) return;
     } else {
         if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
