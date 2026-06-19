@@ -272,6 +272,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "aiClassify",
     "aiExtract",
     "aiTranslate",
+    "aiEmbed",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -1158,7 +1159,7 @@ thread_local FunctionsStressTestThread constinit * current_stress_thread = nullp
 
 struct FunctionsStressTestThread
 {
-    size_t thread_idx;
+    size_t thread_idx{};
     std::thread thread;
     std::condition_variable thread_stop_cv;
     std::atomic<bool> thread_should_stop {false};
@@ -1452,6 +1453,10 @@ struct FunctionsStressTestThread
             }
         }
 
+        /// We mutate `context->setCurrentQueryId()` per iteration but never refresh
+        /// `ThreadStatus::query_id`, so detach before destroying `thread_status` to
+        /// keep the destructor's id-vs-context invariant happy.
+        CurrentThread::detachFromGroupIfNotDetached();
         thread_status.reset(); // must be done from this thread
 
         {
@@ -1560,16 +1565,26 @@ struct FunctionsStressTestThread
 
         if (constraints.integer_at_most.has_value())
         {
-            /// res = if(res > limit, 0, res)
+            /// res = if(abs(res) > limit, 0, res)
+            /// abs() is applied so that large negative values are clamped too: a large negative value is
+            /// just as dangerous as a large positive one (e.g. a large negative arrayResize size pads the
+            /// array from the front), and the one-sided `res > limit` check would let it through.
             /// (0 instead of limit or random just because it's less code)
             /// (why not use min2? because it always returns Float64)
 
-            ColumnsWithTypeAndName args {res};
-            args.emplace_back(ColumnConst::create(ColumnUInt64::create(1, *constraints.integer_at_most), options.rows_per_batch), std::make_shared<DataTypeUInt64>(), "limit");
             ColumnWithTypeAndName mask;
             try
             {
-                /// mask = greater(res, limit)
+                /// comparand = abs(res)
+                auto abs_func = FunctionFactory::instance().get("abs", context)->build({res});
+                ColumnWithTypeAndName comparand;
+                comparand.type = abs_func->getResultType();
+                comparand.column = abs_func->execute({res}, comparand.type, options.rows_per_batch, false);
+                comparand.name = "abs";
+
+                /// mask = greater(abs(res), limit)
+                ColumnsWithTypeAndName args {comparand};
+                args.emplace_back(ColumnConst::create(ColumnUInt64::create(1, *constraints.integer_at_most), options.rows_per_batch), std::make_shared<DataTypeUInt64>(), "limit");
                 auto func = FunctionFactory::instance().get("greater", context)->build(args);
                 mask.type = func->getResultType();
                 mask.column = func->execute(args, mask.type, options.rows_per_batch, false);
@@ -1586,7 +1601,7 @@ struct FunctionsStressTestThread
             if (mask.column)
             {
                 /// res = if(mask, 0, res)
-                args = {
+                ColumnsWithTypeAndName args = {
                     mask,
                     ColumnWithTypeAndName(res.type->createColumnConstWithDefaultValue(options.rows_per_batch), res.type, "zero"),
                     res};
@@ -2227,6 +2242,7 @@ struct FunctionsStressTestThread
 
 extern "C" {
 #pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 void __tsan_on_report(void * /*report*/) // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 {

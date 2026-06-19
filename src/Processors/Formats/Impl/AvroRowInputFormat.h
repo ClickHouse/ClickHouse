@@ -76,7 +76,7 @@ private:
         enum Type {Noop, Deserialize, Skip, Record, Union, Nested};
         Type type;
         /// Deserialize
-        int target_column_idx;
+        int target_column_idx{};
         DeserializeFn deserialize_fn;
         /// Skip
         SkipFn skip_fn;
@@ -216,7 +216,7 @@ private:
     FormatSettings format_settings;
 };
 
-class AvroSchemaReader : public ISchemaReader
+class AvroSchemaReader final : public ISchemaReader
 {
 public:
     AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);

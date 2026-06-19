@@ -30,7 +30,7 @@ namespace
 {
 
 /// Joins an array of type serializable to string into one string via a separator.
-class FunctionArrayStringConcat : public IFunction
+class FunctionArrayStringConcat final : public IFunction
 {
 private:
     static void executeInternal(

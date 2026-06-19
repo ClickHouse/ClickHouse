@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesTagsToGroup([('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...)
 /// returns a group assigned to the specified set of tags.
-class FunctionTimeSeriesTagsToGroup : public IFunction
+class FunctionTimeSeriesTagsToGroup final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesTagsToGroup";
