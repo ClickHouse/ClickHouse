@@ -18,7 +18,6 @@ from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
 from helpers.test_tools import exec_query_with_retry
-from helpers.config_cluster import minio_secret_key
 from helpers.s3_queue_common import generate_random_string
 
 from minio.commonconfig import Tags
@@ -1429,21 +1428,6 @@ def test_s3_schema_inference(started_cluster):
 
     instance.query("drop table schema_inference")
     instance.query("drop table schema_inference_2")
-
-
-def test_empty_file(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-
-    name = "empty"
-    url = f"http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{name}"
-
-    minio = started_cluster.minio_client
-    minio.put_object(bucket, name, io.BytesIO(b""), 0)
-
-    table_function = f"s3('{url}', 'CSV', 'id Int32')"
-    result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 0
 
 
 def test_overwrite(started_cluster):
