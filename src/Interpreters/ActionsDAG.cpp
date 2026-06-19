@@ -898,6 +898,26 @@ const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
     return node;
 }
 
+/// `Node::isDeterministic` is shallow, walk the subtree so `toDate(now())` doesn't look deterministic
+bool isSubtreeDeterministic(const ActionsDAG::Node * node)
+{
+    std::unordered_set<const ActionsDAG::Node *> seen;
+    std::vector<const ActionsDAG::Node *> stack;
+    stack.push_back(node);
+    while (!stack.empty())
+    {
+        const auto * n = stack.back();
+        stack.pop_back();
+        if (!n || !seen.insert(n).second)
+            continue;
+        if (!n->isDeterministic())
+            return false;
+        for (const auto * c : n->children)
+            stack.push_back(c);
+    }
+    return true;
+}
+
 std::optional<Resolved> resolveConstThroughMaterialize(const ActionsDAG::Node * node)
 {
     bool through_materialize = false;
@@ -912,7 +932,7 @@ std::optional<Resolved> resolveConstThroughMaterialize(const ActionsDAG::Node * 
         node = skipAliases(node->children.front());
     }
     if (node && node->column && isColumnConst(*node->column))
-        return Resolved{node->column, node->isDeterministic(), through_materialize};
+        return Resolved{node->column, isSubtreeDeterministic(node), through_materialize};
     return std::nullopt;
 }
 
