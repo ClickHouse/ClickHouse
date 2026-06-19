@@ -212,6 +212,9 @@ The location and capacity of the disk cache are configured via [server configura
 </query_cache>
 ```
 
+The `max_disk_size_in_bytes` and `max_disk_entries` limits are applied immediately on configuration reload, but `disk` and `path` are
+only read at server startup and require a server restart to take effect.
+
 Column `type` in system table [system.query_cache](system-tables/query_cache.md) shows whether an entry is stored in `Memory` or on
 `Disk`. By default `SYSTEM DROP QUERY CACHE` clears both. To clear only one tier, use `SYSTEM DROP QUERY CACHE TYPE 'Memory'` or
 `SYSTEM DROP QUERY CACHE TYPE 'Disk'`.

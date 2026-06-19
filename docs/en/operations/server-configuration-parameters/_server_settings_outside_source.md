@@ -1400,7 +1400,7 @@ The following settings are available:
 | `max_disk_entries` | The maximum number of `SELECT` query results stored in the on-disk cache.              | `10240`       |
 
 :::note
-- Changed settings take effect immediately.
+- Changes to the size and count limits (`max_entries`, `max_entry_size_in_bytes`, `max_entry_size_in_rows`, `max_size_in_bytes`, `max_disk_size_in_bytes`, `max_disk_entries`) take effect immediately on configuration reload. The `disk` and `path` settings, however, are only read at server startup and require a server restart to take effect.
 - Data for the in-memory query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size_in_bytes` or disable the query cache altogether.
 - Query results can additionally be cached on disk so that they survive a restart and so that the cache can grow beyond the available memory. See [Caching to disk](/operations/query-cache#caching-to-disk) for details.
 :::
