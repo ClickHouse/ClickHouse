@@ -134,13 +134,21 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                 dispatcher->onCommit(request_for_session);
         });
 
-    if (keeper_context->getCoordinationSettings()[CoordinationSetting::use_new_dispatcher])
-        dispatcher = std::make_unique<KeeperRequestDispatcher>(server.get());
-    else
-        dispatcher_old = std::make_unique<KeeperRequestDispatcherOld>(server.get());
+    bool new_dispatcher_response_thread_started = false;
 
     try
     {
+        if (keeper_context->getCoordinationSettings()[CoordinationSetting::use_new_dispatcher])
+        {
+            dispatcher = std::make_unique<KeeperRequestDispatcher>(server.get());
+            dispatcher->startupResponseThread();
+            new_dispatcher_response_thread_started = true;
+        }
+        else
+        {
+            dispatcher_old = std::make_unique<KeeperRequestDispatcherOld>(server.get());
+        }
+
         LOG_DEBUG(log, "Waiting server to initialize");
         server->startup(config, server_config->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
@@ -154,15 +162,19 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         {
             LOG_INFO(log, "Starting Keeper asynchronously, server will accept connections to Keeper when it will be ready");
         }
+
+        if (dispatcher)
+            dispatcher->startupDispatchThread(); // after `server->startup` to avoid using `raft_instance` before it exists
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        if (new_dispatcher_response_thread_started && dispatcher)
+            dispatcher->shutdown(/*closed_all_connections=*/false);
+
         throw;
     }
-
-    if (dispatcher)
-        dispatcher->startup(); // after server->startup to avoid race on raft_instance
 
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
@@ -272,6 +284,11 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
 void KeeperDispatcher::sessionCleanerTask()
 {
     const auto & shutdown_called = keeper_context->isShutdownCalled();
+    /// TODO: Avoid spamming repeated Close requests for all sessions every
+    ///       dead_session_check_period_ms if leader is stuck. Maybe keep a set of recently started
+    ///       Close requests here, and don't produce a new request if it's been less than e.g.
+    ///       operation_timeout_ms (20x longer than dead_session_check_period_ms by default) since
+    ///       the previous attempt.
     while (true)
     {
         if (shutdown_called)
