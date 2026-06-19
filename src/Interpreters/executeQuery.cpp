@@ -1769,11 +1769,21 @@ static BlockIO executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
+                        /// EXPLAIN ANALYZE executes the inner SELECT, so it must be charged against
+                        /// the select-query quota just like a normal SELECT. Other EXPLAIN kinds do not
+                        /// execute the inner query and stay counted as generic queries only.
+                        const auto * explain_query = out_ast->as<ASTExplainQuery>();
+                        const bool is_explain_analyze = explain_query && explain_query->getKind() == ASTExplainQuery::Analyze;
+                        const bool charge_as_select = query_plan
+                            || out_ast->as<ASTSelectQuery>()
+                            || out_ast->as<ASTSelectWithUnionQuery>()
+                            || is_explain_analyze;
+
                         if (quota->isKeyedByNormalizedQueryHash())
                         {
                             /// For NORMALIZED_QUERY_HASH keyed quotas, track all resources
                             /// against per-hash intervals instead of shared session intervals.
-                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                            if (charge_as_select)
                                 quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
                             else if (out_ast->as<ASTInsertQuery>())
                                 quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
@@ -1782,7 +1792,7 @@ static BlockIO executeQueryImpl(
                         }
                         else
                         {
-                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                            if (charge_as_select)
                                 quota->used(QuotaType::QUERY_SELECTS, 1);
                             else if (out_ast->as<ASTInsertQuery>())
                                 quota->used(QuotaType::QUERY_INSERTS, 1);
