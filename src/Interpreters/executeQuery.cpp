@@ -1448,6 +1448,14 @@ static BlockIO executeQueryImpl(
                     "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
         }
 
+        /// Interpret the query's `SETTINGS` clause as early as possible, before any logic that depends
+        /// on settings (in particular the automatic `ON CLUSTER` fill decision below) and before the
+        /// corresponding interpreter runs. Otherwise the logic here would read only the profile/session
+        /// values, so a feature like the automatic `ON CLUSTER` fill could not be enabled or disabled
+        /// per query via `SETTINGS allow_experimental_automatic_fill_on_cluster_mode = ...`.
+        if (out_ast)
+            InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
         if (settings[Setting::allow_experimental_automatic_fill_on_cluster_mode]
             && !settings[Setting::cluster_for_automatic_fill_mode].toString().empty()
             && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
@@ -1690,9 +1698,8 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
-            /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
-            /// to allow settings to take effect.
-            InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+            /// Query-level `SETTINGS` were already applied above (before the automatic `ON CLUSTER`
+            /// fill decision), so they are in effect here and for the corresponding interpreter.
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             if (settings[Setting::enforce_strict_identifier_format])
