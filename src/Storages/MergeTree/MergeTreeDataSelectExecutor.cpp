@@ -101,6 +101,7 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
+    extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
@@ -128,6 +129,25 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
 {
 }
 
+/// Maps each primary-key column position to the slot of the matching column in a part's partition
+/// minmax index (nullopt when the primary-key column is not a partition-minmax column).
+static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
+    const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings)
+{
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto minmax_names = MergeTreeData::getMinMaxColumns(
+        metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
+
+    std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
+    for (size_t i = 0; i < primary_key.column_names.size(); ++i)
+    {
+        auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
+        if (it != minmax_names.end())
+            mapping[i] = static_cast<size_t>(it - minmax_names.begin());
+    }
+    return mapping;
+}
+
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     const RangesInDataParts & parts,
     const StorageMetadataPtr & metadata_snapshot,
@@ -140,10 +160,15 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     /// We will find out how many rows we would have read without sampling.
     LOG_DEBUG(log, "Preliminary index scan with condition: {}", key_condition.toString());
 
+    std::vector<std::optional<size_t>> pk_to_minmax_slot;
+    if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts.empty())
+        pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
+    const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
+
     MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, log);
+        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, pk_to_minmax_slot_ptr, settings, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
@@ -987,6 +1012,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto [limits, leaf_limits] = getRowLimits(settings, query_info);
         std::atomic<size_t> total_rows{0};
 
+        /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
+        std::vector<std::optional<size_t>> pk_to_minmax_slot;
+        if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts_with_ranges.empty())
+            pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(
+                metadata_snapshot, parts_with_ranges.front().data_part->storage.getSettings());
+        const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
+
         auto process_part = [&](size_t part_index)
         {
             if (query_status)
@@ -1010,6 +1042,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     part_offset_condition,
                     total_offset_condition,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
+                    pk_to_minmax_slot_ptr,
                     settings,
                     log);
 
@@ -1647,6 +1680,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
     MarkRanges * exact_ranges,
+    const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
     LoggerPtr log)
 {
@@ -1726,6 +1760,31 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
+    /// For index columns that are also covered by the part's partition minmax index, use a minmax bounds
+    /// instead of (-inf, +inf).
+    /// Partition minmax index is always store in value-ascending order, so we do not need to consider reverse_flags here.
+    Hyperrectangle index_bounds;
+    index_bounds.reserve(used_key_size);
+    for (size_t i = 0; i < used_key_size; ++i)
+        index_bounds.push_back(createTypeAwareWholeUniverse(key_types[i]));
+
+    /// pk_to_minmax_slot maps each PK column to its slot in the part's partition-minmax index.
+    if (pk_to_minmax_slot)
+    {
+        auto minmax_index = part->getMinMaxIndex();
+        if (minmax_index && minmax_index->initialized)
+        {
+            const auto & hyperrectangle = minmax_index->hyperrectangle;
+            for (size_t i = 0; i < used_key_size; ++i)
+            {
+                const auto slot = (*pk_to_minmax_slot)[i];
+                if (slot)
+                    index_bounds[i] = hyperrectangle[*slot];
+            }
+        }
+    }
+
+
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
         = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
@@ -1745,9 +1804,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     if ((*index_columns)[i].column)
                         create_field_ref(range.begin, i, left);
                     else
-                        left = NEGATIVE_INFINITY;
+                        left = index_bounds[i].left;
 
-                    right = POSITIVE_INFINITY;
+                    right = index_bounds[i].right;
                 }
             }
             else
@@ -1763,13 +1822,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                     else
                     {
-                        /// If the PK column was not loaded in memory - exclude it from the analysis.
-                        left = NEGATIVE_INFINITY;
-                        right = POSITIVE_INFINITY;
+                        left = index_bounds[i].left;
+                        right = index_bounds[i].right;
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
+            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
         };
 
         auto check_part_offset_condition = [&]()
