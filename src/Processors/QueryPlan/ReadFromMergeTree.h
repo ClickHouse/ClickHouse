@@ -585,6 +585,9 @@ private:
     /// and merge-dedups it, trimming boundary granules by the borders, instead of slicing marks.
     std::vector<RangesInDataPartsDescription> distributed_read_layers;
     std::vector<std::vector<Field>> distributed_read_borders;
+    /// Which layer/bucket this distributed-read worker is assigned (index into `distributed_read_layers`
+    /// and `distributed_read_borders`); set from the bucket_id task parameter.
+    size_t distributed_read_layer_index = 0;
 };
 /// Filter the mark ranges for a single part's worth of ranges for a specific bucket.
 /// `effective_bucket_index` is updated in-place so that consecutive calls across multiple parts

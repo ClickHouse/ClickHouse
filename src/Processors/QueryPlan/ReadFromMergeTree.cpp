@@ -1678,6 +1678,39 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), columns_to_restore);
     }
 
+    if (!distributed_read_layers.empty())
+    {
+        /// Distributed parallel FINAL: this worker's parts are exactly one global PK-range layer
+        /// (selected by bucket_id). Read it in order and merge-dedup it, trimming the boundary granules
+        /// to the layer's two-sided range. No re-split -- parallelism is across buckets, one layer each.
+        Pipe pipe = read(
+            std::move(parts_with_ranges), index_build_context, column_names, ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache);
+        pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
+                                { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
+
+        const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+        auto in_reverse_order = deriveReverseOrder(primary_key, storage_snapshot->metadata->getSortingKey());
+        if (!in_reverse_order)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Distributed FINAL got primary-key-range layers for a table whose primary key cannot be range-split");
+        addLayerRangeFilterToPipe(pipe, primary_key, distributed_read_borders, distributed_read_layer_index, *in_reverse_order, context);
+
+        if (!out_projection)
+            out_projection = createProjection(pipe.getHeader());
+
+        Names sort_columns = storage_snapshot->metadata->getSortingKeyColumns();
+        std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+        SortDescription sort_description;
+        sort_description.compile_sort_description = settings[Setting::compile_sort_description];
+        sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
+        sort_description.reserve(sort_columns.size());
+        for (size_t i = 0; i < sort_columns.size(); ++i)
+            sort_description.emplace_back(sort_columns[i], (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1);
+
+        addMergingFinal(pipe, sort_description, data.merging_params, storage_snapshot->metadata, block_size.max_block_size_rows, enable_vertical_final);
+        return pipe;
+    }
+
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
@@ -3467,47 +3500,79 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     logPredicateStatistics(result);
 
-    /// Filter ranges by 'bucket_id' parameter so that each distributed worker reads only its slice of the parts.
+    /// Select this distributed worker's slice of the parts by the 'bucket_id' task parameter.
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
-        /// Bucket over the coordinator-selected parts in a fixed order, so every worker partitions the
-        /// same ordered list (replicas can have different local part layouts). A missing part is a
-        /// retryable error rather than a silently divergent read.
-        if (!distributed_read_part_names.empty())
+        const size_t bucket_id = parse<UInt64>(settings.parameter_lookup->getParameter("bucket_id").safeGet<String>());
+
+        if (!distributed_read_layers.empty())
         {
+            /// Parallel FINAL: read exactly this bucket's PK-range layer, whose marks the coordinator
+            /// computed over the global part set, matched to local parts by name. A missing part is a
+            /// retryable error rather than a silently divergent read.
             std::unordered_map<String, RangesInDataPart> parts_by_name;
             for (auto & part : result.parts_with_ranges)
-                parts_by_name.emplace(part.data_part->name, std::move(part));
+                parts_by_name.emplace(part.data_part->info.getPartNameV1(), std::move(part));
 
-            RangesInDataParts coordinator_parts;
-            coordinator_parts.reserve(distributed_read_part_names.size());
-            for (const auto & part_name : distributed_read_part_names)
+            if (bucket_id >= distributed_read_layers.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Distributed FINAL read: bucket {} is out of range of {} layers", bucket_id, distributed_read_layers.size());
+            const auto & layer = distributed_read_layers[bucket_id];
+            RangesInDataParts layer_parts;
+            layer_parts.reserve(layer.size());
+            for (const auto & part_desc : layer)
             {
-                auto it = parts_by_name.find(part_name);
+                auto it = parts_by_name.find(part_desc.info.getPartNameV1());
                 if (it == parts_by_name.end())
                     throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
                         "Distributed read: part {} selected by the coordinator is not available on this replica "
-                        "(diverged by merge or replication lag); retry the query", part_name);
-                coordinator_parts.push_back(std::move(it->second));
+                        "(diverged by merge or replication lag); retry the query", part_desc.info.getPartNameV1());
+                RangesInDataPart part = std::move(it->second);
+                part.ranges = part_desc.ranges;
+                layer_parts.push_back(std::move(part));
             }
-            result.parts_with_ranges = std::move(coordinator_parts);
+            result.parts_with_ranges = std::move(layer_parts);
+            distributed_read_layer_index = bucket_id;
         }
-
-        const size_t bucket_id = parse<UInt64>(settings.parameter_lookup->getParameter("bucket_id").safeGet<String>());
-        const size_t total_buckets = settings.parameter_lookup->getParameter("total_buckets").safeGet<UInt64>();
-
-        size_t effective_bucket_index = bucket_id;
-        RangesInDataParts filtered_parts;
-        for (const auto & part : result.parts_with_ranges)
+        else
         {
-            auto filtered_part = part;
-            filtered_part.ranges = filterMarkRangesForBucket(part.ranges, effective_bucket_index, total_buckets);
-            if (!filtered_part.ranges.empty())
-                filtered_parts.push_back(std::move(filtered_part));
-        }
-        result.parts_with_ranges = std::move(filtered_parts);
+            /// Mark-offset bucketing over the coordinator-selected parts in a fixed order, so every
+            /// worker partitions the same ordered list (replicas can have different local part layouts).
+            if (!distributed_read_part_names.empty())
+            {
+                std::unordered_map<String, RangesInDataPart> parts_by_name;
+                for (auto & part : result.parts_with_ranges)
+                    parts_by_name.emplace(part.data_part->name, std::move(part));
 
-        /// Cannot cache PREWHERE results when ranges are filtered by bucket_id.
+                RangesInDataParts coordinator_parts;
+                coordinator_parts.reserve(distributed_read_part_names.size());
+                for (const auto & part_name : distributed_read_part_names)
+                {
+                    auto it = parts_by_name.find(part_name);
+                    if (it == parts_by_name.end())
+                        throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                            "Distributed read: part {} selected by the coordinator is not available on this replica "
+                            "(diverged by merge or replication lag); retry the query", part_name);
+                    coordinator_parts.push_back(std::move(it->second));
+                }
+                result.parts_with_ranges = std::move(coordinator_parts);
+            }
+
+            const size_t total_buckets = settings.parameter_lookup->getParameter("total_buckets").safeGet<UInt64>();
+
+            size_t effective_bucket_index = bucket_id;
+            RangesInDataParts filtered_parts;
+            for (const auto & part : result.parts_with_ranges)
+            {
+                auto filtered_part = part;
+                filtered_part.ranges = filterMarkRangesForBucket(part.ranges, effective_bucket_index, total_buckets);
+                if (!filtered_part.ranges.empty())
+                    filtered_parts.push_back(std::move(filtered_part));
+            }
+            result.parts_with_ranges = std::move(filtered_parts);
+        }
+
+        /// Cannot cache PREWHERE results when ranges are pinned/filtered per bucket.
         reader_settings.use_query_condition_cache = false;
     }
 
