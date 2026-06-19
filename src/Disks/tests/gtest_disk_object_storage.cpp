@@ -144,7 +144,7 @@ public:
     static void SetUpTestSuite()
     {
         DB::ServerUUID::setRandomForUnitTests();
-        DB::getIOThreadPool().initialize(16, 0, 16);
+        DB::getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
 
         setUpConfig(config_path);
         DB::ConfigProcessor config_processor(config_path, true, true);
