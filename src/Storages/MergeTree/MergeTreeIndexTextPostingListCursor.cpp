@@ -527,7 +527,7 @@ inline void padDenseRange(UInt8 * __restrict out, size_t count)
             ++out[i];
 }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
 DECLARE_X86_64_V3_SPECIFIC_CODE(
 /// Check whether a byte range contains no zero bytes (i.e., all positions are already set).
 /// Uses 256-bit (AVX2) loads with 4x loop unrolling for the hot path (128 bytes/iter).
@@ -568,7 +568,7 @@ bool hasNoZeros(const UInt8 * data, size_t count)
     if (count == 0)
         return true;
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
         return TargetSpecific::x86_64_v3::hasNoZeros(data, count);
 #endif
@@ -1007,7 +1007,7 @@ void intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursorPtr> & cu
 /// First cursor sets bits (linearOr), remaining cursors increment counters (linearAnd),
 /// then a final pass converts count == n into 1, everything else into 0.
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
 DECLARE_X86_64_V3_SPECIFIC_CODE(
 void finalizeCounters(UInt8 * out, size_t num_rows, UInt8 target)
 {
@@ -1029,7 +1029,7 @@ void finalizeCounters(UInt8 * out, size_t num_rows, UInt8 target)
 
 void finalizeCounters(UInt8 * out, size_t num_rows, UInt8 target)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         TargetSpecific::x86_64_v3::finalizeCounters(out, num_rows, target);

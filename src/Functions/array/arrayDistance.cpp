@@ -10,7 +10,7 @@
 
 #include <cmath>
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
 
@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
 /// Widen 16 packed `BFloat16` to `Float32` without AVX512-BF16: a `BFloat16` is the upper 16 bits of the
 /// corresponding `Float32`, so zero-extend each 16-bit value to 32 bits and shift it into the high half.
 /// Uses only AVX-512F/BW, so it runs on all `x86-64-v4` CPUs (not just AVX512-BF16 ones), and it is faster
@@ -92,7 +92,7 @@ struct L2Distance
         state.sum += other_state.sum;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     template <typename ResultType>
     X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
         const ResultType * __restrict data_x,
@@ -272,7 +272,7 @@ struct CosineDistance
         state.y_squared += other_state.y_squared;
     }
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     template <typename ResultType>
     X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
         const ResultType * __restrict data_x,
@@ -473,7 +473,7 @@ void executeDistance(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         return executeDistanceImpl_x86_64_v4<Kernel, ResultType>(data_x, data_y, offsets, result, row_count, params);
     if (isArchSupported(TargetArch::x86_64_v3))
@@ -547,7 +547,7 @@ void executeDistanceMixed(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if constexpr (is_common_mixed_pair<LeftType, RightType>)
     {
         if (isArchSupported(TargetArch::x86_64_v4))
@@ -624,7 +624,7 @@ void executeDistanceConst(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         return executeDistanceConstImpl_x86_64_v4<Kernel, ResultType>(data_x, array_size, data_y, offsets, result, row_count, params);
     if (isArchSupported(TargetArch::x86_64_v3))
@@ -695,7 +695,7 @@ void executeDistanceConstMixed(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
     if constexpr (is_common_mixed_pair<LeftType, RightType>)
     {
         if (isArchSupported(TargetArch::x86_64_v4))
@@ -913,7 +913,7 @@ private:
 
         /// Hand-written AVX-512 intrinsics for L2/Cosine with Float32/Float64/BFloat16.
         /// These outperform compiler auto-vectorization for these specific kernels.
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         if constexpr (std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
         {
             if constexpr ((std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)

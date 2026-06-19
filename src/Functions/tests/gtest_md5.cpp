@@ -131,7 +131,7 @@ struct ScalarMD5Trait
     }
 };
 
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_X86_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
 
 struct AVX2MD5Trait
 {
@@ -203,7 +203,7 @@ protected:
 
 using MD5Implementations = ::testing::Types<
     ScalarMD5Trait
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_X86_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
     ,
     AVX2MD5Trait,
     AVX512MD5Trait

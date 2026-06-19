@@ -294,7 +294,7 @@ private:
         /// available, else the baseline variant), keeping the load stream continuous across rows. The kernel
         /// widens each element to `ResultType` internally, so `BFloat16` (-> Float32) and integers (-> Float64)
         /// take the same vectorized path as `Float32`/`Float64` (see `normBatchImpl`).
-#if USE_MULTITARGET_CODE
+#if USE_X86_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
             normBatchImpl_x86_64_v4<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
         else
