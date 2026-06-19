@@ -21,7 +21,11 @@ WHERE (t, name) IN (
     ('Dictionary Source', 'file'),
     ('Aggregate Function Combinator', 'If'),
     ('Data Skipping Index', 'minmax'),
-    ('Disk Type', 'local'))
+    ('Disk Type', 'local'),
+    ('Setting', 'max_threads'),
+    ('MergeTree Setting', 'index_granularity'),
+    ('Server Setting', 'max_server_memory_usage'),
+    ('Format', 'CSV'))
 ORDER BY t, name;
 
 -- The documentation of a function is rendered as Markdown assembled from the structured parts.
@@ -42,3 +46,9 @@ SELECT description FROM system.documentation WHERE type = 'Table Function' AND n
 -- It is a help surface: entities without documentation (in particular, internal functions) are not exposed,
 -- so there are no rows with an empty description.
 SELECT count() FROM system.documentation WHERE description = '';
+
+-- The documentation of a setting is its (Markdown) description.
+SELECT description != '' FROM system.documentation WHERE type = 'Setting' AND name = 'max_threads';
+
+-- Obsolete settings carry only a placeholder description and are not exposed on the help surface.
+SELECT count() FROM system.documentation WHERE type = 'Setting' AND description = 'Obsolete setting, does nothing.';

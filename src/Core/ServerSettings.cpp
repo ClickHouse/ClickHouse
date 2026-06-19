@@ -1789,6 +1789,24 @@ void ServerSettings::set(std::string_view name, const Field & value)
     impl->set(name, value);
 }
 
+std::vector<std::string_view> ServerSettings::getAllRegisteredNames() const
+{
+    std::vector<std::string_view> setting_names;
+    for (const auto & setting : impl->all())
+        setting_names.emplace_back(setting.getName());
+    return setting_names;
+}
+
+std::string_view ServerSettings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
+}
+
+SettingsTierType ServerSettings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
+}
+
 void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     impl->loadSettingsFromConfig(config);

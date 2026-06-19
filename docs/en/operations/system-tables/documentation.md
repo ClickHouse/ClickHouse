@@ -29,6 +29,12 @@ The following kinds of entities are collected (the value of the `type` column is
 - Aggregate function combinators (`Aggregate Function Combinator`)
 - Data skipping index types (`Data Skipping Index`)
 - Disk types (`Disk Type`)
+- Settings (`Setting`)
+- MergeTree settings (`MergeTree Setting`)
+- Server settings (`Server Setting`)
+- Formats (`Format`)
+
+For settings, the documentation is the setting's description; obsolete settings are not exposed.
 
 ## Columns {#columns}
 
@@ -75,3 +81,7 @@ ORDER BY count() DESC;
 - [`system.database_engines`](/operations/system-tables/database_engines) — Database engines.
 - [`system.data_type_families`](/operations/system-tables/data_type_families) — Data types.
 - [`system.disk_types`](/operations/system-tables/disk_types) — Disk types.
+- [`system.settings`](/operations/system-tables/settings) — Settings.
+- [`system.merge_tree_settings`](/operations/system-tables/merge_tree_settings) — MergeTree settings.
+- [`system.server_settings`](/operations/system-tables/server_settings) — Server settings.
+- [`system.formats`](/operations/system-tables/formats) — Formats.

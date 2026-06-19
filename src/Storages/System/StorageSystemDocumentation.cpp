@@ -6,6 +6,9 @@
 #include <Common/Documentation.h>
 #include <Common/FunctionDocumentation.h>
 #include <Core/Field.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <Core/SettingsTierType.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -13,8 +16,10 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Disks/DiskFactory.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -41,6 +46,10 @@ enum class EntityType : int8_t
     AggregateFunctionCombinator = 9,
     DataSkippingIndex = 10,
     DiskType = 11,
+    Setting = 12,
+    MergeTreeSetting = 13,
+    ServerSetting = 14,
+    Format = 15,
 };
 
 std::vector<std::pair<String, Int8>> getTypeEnumValues()
@@ -57,6 +66,10 @@ std::vector<std::pair<String, Int8>> getTypeEnumValues()
         {"Aggregate Function Combinator", static_cast<Int8>(EntityType::AggregateFunctionCombinator)},
         {"Data Skipping Index", static_cast<Int8>(EntityType::DataSkippingIndex)},
         {"Disk Type", static_cast<Int8>(EntityType::DiskType)},
+        {"Setting", static_cast<Int8>(EntityType::Setting)},
+        {"MergeTree Setting", static_cast<Int8>(EntityType::MergeTreeSetting)},
+        {"Server Setting", static_cast<Int8>(EntityType::ServerSetting)},
+        {"Format", static_cast<Int8>(EntityType::Format)},
     };
 }
 
@@ -201,6 +214,44 @@ void addDocumentedWithAliases(MutableColumns & res_columns, EntityType type, con
     }
 }
 
+/// The documentation of a setting is its description (already authored as Markdown), with a note appended
+/// for the settings that are not yet generally available.
+String renderSettingDoc(std::string_view description, SettingsTierType tier)
+{
+    String result = boost::algorithm::trim_copy(String(description));
+
+    std::string_view tier_note;
+    if (tier == SettingsTierType::EXPERIMENTAL)
+        tier_note = "**Tier:** Experimental";
+    else if (tier == SettingsTierType::BETA)
+        tier_note = "**Tier:** Beta";
+
+    if (!tier_note.empty())
+    {
+        if (!result.empty())
+            result += "\n\n";
+        result += tier_note;
+    }
+
+    return result;
+}
+
+/// For the settings collections (`Settings`, `MergeTreeSettings`, `ServerSettings`), which expose the name,
+/// description and tier of every registered setting.
+template <typename SettingsCollection>
+void addSettingsLike(MutableColumns & res_columns, EntityType type, const SettingsCollection & settings)
+{
+    for (const auto & name : settings.getAllRegisteredNames())
+    {
+        /// Obsolete settings carry the placeholder description "Obsolete setting, does nothing." and have
+        /// no documentation value on a help surface, so they are not exposed.
+        const auto tier = settings.getTier(name);
+        if (tier == SettingsTierType::OBSOLETE)
+            continue;
+        addRow(res_columns, type, String(name), renderSettingDoc(settings.getDescription(name), tier));
+    }
+}
+
 }
 
 ColumnsDescription StorageSystemDocumentation::getColumnsDescription()
@@ -257,6 +308,17 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
 
     addDocumented(res_columns, EntityType::DataSkippingIndex, MergeTreeIndexFactory::instance());
     addDocumented(res_columns, EntityType::DiskType, DiskFactory::instance());
+
+    addSettingsLike(res_columns, EntityType::Setting, Settings{});
+    addSettingsLike(res_columns, EntityType::MergeTreeSetting, MergeTreeSettings{});
+    addSettingsLike(res_columns, EntityType::ServerSetting, ServerSettings{});
+
+    /// The format dictionary is keyed by the lower-cased name; `creators.name` carries the original case.
+    for (const auto & name_and_creators : FormatFactory::instance().getAllFormats())
+    {
+        const auto & creators = name_and_creators.second;
+        addRow(res_columns, EntityType::Format, creators.name, renderDoc(creators.documentation));
+    }
 }
 
 }
