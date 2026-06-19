@@ -388,10 +388,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         {
             /// `LIMIT n WITH TIES` emits every row whose sort key ties with the boundary row, so
             /// the result is NOT bounded by `limit` -- only by the child row count (e.g. `LIMIT 1
-            /// WITH TIES` over all-equal rows returns them all). Do not cap; demote a point estimate
-            /// to an upper bound (the child count still bounds it from above); an existing upper
-            /// bound or unknown is left as is.
-            if (estimated.estimated_rows_kind == RowCountKind::Exact || estimated.estimated_rows_kind == RowCountKind::Estimate)
+            /// WITH TIES` over all-equal rows returns them all). Do not cap. An exact child count is
+            /// a true ceiling on the result, so demote it to an upper bound. A heuristic estimate is
+            /// NOT a guaranteed child count (it can undercount), so it must stay a heuristic rather
+            /// than become a fake ceiling; an existing upper bound or unknown is left as is.
+            if (estimated.estimated_rows_kind == RowCountKind::Exact)
                 estimated.estimated_rows_kind = RowCountKind::UpperBound;
         }
         else if (estimated.estimated_rows)
