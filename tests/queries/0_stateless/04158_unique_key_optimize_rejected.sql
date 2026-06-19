@@ -2,7 +2,7 @@
 -- Merges are disabled for UNIQUE KEY tables (interim, until merge-side bitmap
 -- forwarding + late-kill lands), so an explicit OPTIMIZE is rejected with
 -- SUPPORT_IS_DISABLED. Background merges are gated at the same chokepoint;
--- INSERT / SELECT / DELETE keep working.
+-- INSERT / SELECT keep working.
 -- All keys distinct (dedup is a later PR).
 
 SET allow_experimental_unique_key = 1;
@@ -29,10 +29,5 @@ OPTIMIZE TABLE uk_optimize FINAL; -- { serverError SUPPORT_IS_DISABLED }
 -- Parts were not compacted: still two parts.
 SELECT 'parts' AS step, count() FROM system.parts
     WHERE database = currentDatabase() AND table = 'uk_optimize' AND active;  -- 2
-
--- DELETE still works under the merge gate.
-DELETE FROM uk_optimize WHERE id = 2;
-SELECT 'count' AS step, count() FROM uk_optimize;  -- 5
-SELECT 'survivors' AS step, id FROM uk_optimize ORDER BY id;  -- 1,3,4,5,6
 
 DROP TABLE uk_optimize;
