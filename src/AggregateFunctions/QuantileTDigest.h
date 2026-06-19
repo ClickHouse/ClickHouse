@@ -530,7 +530,9 @@ private:
     static ResultType checkOverflow(Value val)
     {
         ResultType result;
-        if (accurate::convertNumeric(val, result))
+        /// strict=false: range check only. A fractional quantile is truncated to an
+        /// integer ResultType (as getManyImpl does), not rejected for being non-integer.
+        if (accurate::convertNumeric<Value, ResultType, false>(val, result))
             return result;
         throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
     }
