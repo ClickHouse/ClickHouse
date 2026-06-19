@@ -985,7 +985,8 @@ struct ToStartOfSecondImpl
         if (fractional_with_sign < 0)
             fractional_with_sign += scale_multiplier;
 
-        return datetime64 - fractional_with_sign;
+        /// Use unsigned arithmetic to avoid signed overflow UB for inputs near `INT64_MIN`.
+        return static_cast<DateTime64>(static_cast<UInt64>(datetime64) - static_cast<UInt64>(fractional_with_sign));
     }
 
     static Time64 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl &)
@@ -996,7 +997,8 @@ struct ToStartOfSecondImpl
         if (fractional_with_sign < 0)
             fractional_with_sign += scale_multiplier;
 
-        return time64 - fractional_with_sign;
+        /// Use unsigned arithmetic to avoid signed overflow UB for inputs near `INT64_MIN`.
+        return static_cast<Time64>(static_cast<UInt64>(time64) - static_cast<UInt64>(fractional_with_sign));
     }
 
     static UInt32 execute(UInt32, const DateLUTImpl &)
@@ -1046,9 +1048,10 @@ struct ToStartOfMillisecondImpl
             = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000);
 
         if (droppable_part_with_sign < 0)
-            droppable_part_with_sign += scale_multiplier;
+            droppable_part_with_sign += scale_multiplier / 1000;
 
-        return datetime64 - droppable_part_with_sign;
+        /// Use unsigned arithmetic to avoid signed overflow UB for inputs near `INT64_MIN`.
+        return static_cast<DateTime64>(static_cast<UInt64>(datetime64) - static_cast<UInt64>(droppable_part_with_sign));
     }
 
     static Time64 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl &)
@@ -1068,9 +1071,10 @@ struct ToStartOfMillisecondImpl
             = DecimalUtils::getFractionalPartWithScaleMultiplier<Time64, true>(time64, scale_multiplier / 1000);
 
         if (droppable_part_with_sign < 0)
-            droppable_part_with_sign += scale_multiplier;
+            droppable_part_with_sign += scale_multiplier / 1000;
 
-        return time64 - droppable_part_with_sign;
+        /// Use unsigned arithmetic to avoid signed overflow UB for inputs near `INT64_MIN`.
+        return static_cast<Time64>(static_cast<UInt64>(time64) - static_cast<UInt64>(droppable_part_with_sign));
     }
 
     static UInt32 execute(UInt32, const DateLUTImpl &)
@@ -1116,9 +1120,10 @@ struct ToStartOfMicrosecondImpl
             = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000000);
 
         if (droppable_part_with_sign < 0)
-            droppable_part_with_sign += scale_multiplier;
+            droppable_part_with_sign += scale_multiplier / 1000000;
 
-        return datetime64 - droppable_part_with_sign;
+        /// Use unsigned arithmetic to avoid signed overflow UB for inputs near `INT64_MIN`.
+        return static_cast<DateTime64>(static_cast<UInt64>(datetime64) - static_cast<UInt64>(droppable_part_with_sign));
     }
 
     static Time64 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl &)
@@ -1139,9 +1144,10 @@ struct ToStartOfMicrosecondImpl
             = DecimalUtils::getFractionalPartWithScaleMultiplier<Time64, true>(time64, scale_multiplier / 1000000);
 
         if (droppable_part_with_sign < 0)
-            droppable_part_with_sign += scale_multiplier;
+            droppable_part_with_sign += scale_multiplier / 1000000;
 
-        return time64 - droppable_part_with_sign;
+        /// Use unsigned arithmetic to avoid signed overflow UB for inputs near `INT64_MIN`.
+        return static_cast<Time64>(static_cast<UInt64>(time64) - static_cast<UInt64>(droppable_part_with_sign));
     }
 
     static UInt32 execute(UInt32, const DateLUTImpl &)
