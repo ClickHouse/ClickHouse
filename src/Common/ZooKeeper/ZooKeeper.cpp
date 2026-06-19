@@ -2112,14 +2112,20 @@ Coordination::RequestPtr makeListRequest(const std::string & path, Coordination:
 {
     auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
     request->path = path;
-    request->list_request_type = list_request_type;
     request->watch_callback = watch;
     request->has_watch = static_cast<bool>(watch);
+
+    if (list_request_type != Coordination::ListRequestType::ALL)
+        request->list_request_type = list_request_type;
+
     return request;
 }
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, bool with_stat, bool with_data, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
+    if (!with_stat && !with_data)
+        return makeListRequest(path, list_request_type, watch);
+
     auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
     request->path = path;
     request->list_request_type = list_request_type;
