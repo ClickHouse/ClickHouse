@@ -553,25 +553,15 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
             return;
 
-        if (read_from_merge_tree_step->isQueryWithFinal() &&
-            read_from_merge_tree_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-        {
-            /// Round-robin mark-range bucketing would split rows sharing a sort key across buckets and
-            /// break FINAL dedup. Split the read into primary-key-range layers instead (each layer
-            /// deduplicated independently, then concatenated). Fall back to a serial read when the data
-            /// cannot be range-split (SAMPLE, unsafe or mixed-order primary key, or a single layer) or a
-            /// per-partition split would need more layers than the bucket-count limit allows.
-            const size_t layer_count = read_from_merge_tree_step->setupDistributedFinalLayers(
-                bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
-            if (layer_count == 0)
-                return;
-            bucket_count = layer_count;
-        }
-        else
-        {
-            /// Move read step to a new node and set it to distributed read
-            read_from_merge_tree_step->setDistributedRead(bucket_count);
-        }
+        /// The coordinator computes each bucket's authoritative marks: contiguous mark slices for a plain
+        /// read, primary-key-range layers for FINAL (one merge per layer, so rows sharing a sort key are
+        /// not split across buckets). Fall back to a serial read when a FINAL read cannot be range-split
+        /// (SAMPLE, unsafe or mixed-order primary key, a single layer) or the split exceeds the bucket limit.
+        const size_t actual_buckets = read_from_merge_tree_step->setupDistributedReadBuckets(
+            bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
+        if (actual_buckets == 0)
+            return;
+        bucket_count = actual_buckets;
     }
     else if (read_from_object_storage_step)
     {
@@ -1039,7 +1029,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             {
                 /// No children, this means that this is a leaf step.
 
-                auto populate_shards = [&](std::vector<String> shards_for_read, std::vector<String> final_layers = {})
+                auto populate_shards = [&](std::vector<String> shards_for_read, std::vector<String> read_buckets = {})
                 {
                     for (size_t bucket = 0; bucket < shards_for_read.size(); ++bucket)
                     {
@@ -1048,10 +1038,10 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                         task.parameters.parameters["bucket_id"] = Field(shard_id);
                         task.parameters.parameters["bucket_description"] = Field(shards_for_read[bucket]);
                         task.parameters.parameters["total_buckets"] = Field(shards_for_read.size());
-                        /// A layered FINAL read ships this bucket's PK-range layer (marks + borders) here,
-                        /// so each worker receives only its own layer rather than all of them in the step.
-                        if (!final_layers.empty())
-                            task.parameters.parameters["final_layer"] = Field(final_layers[bucket]);
+                        /// A MergeTree distributed read ships this bucket's authoritative marks (and, for a
+                        /// FINAL merge layer, its borders + index) here, so the worker reads exactly its slice.
+                        if (!read_buckets.empty())
+                            task.parameters.parameters["read_bucket"] = Field(read_buckets[bucket]);
                         frame.list_of_shards[shard_id] = std::move(task);
                     }
                 };
@@ -1073,15 +1063,16 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 {
                     auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get());
 
-                    /// For a layered parallel FINAL read, ship each bucket its own PK-range layer as a task param.
-                    std::vector<String> final_layers;
+                    /// Ship each MergeTree bucket its authoritative marks as a task parameter (object-storage
+                    /// reads carry no per-bucket marks and keep using only bucket_id/total_buckets).
+                    std::vector<String> read_buckets;
                     if (auto * read_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get()))
-                        final_layers = read_merge_tree_step->serializeDistributedFinalLayers();
+                        read_buckets = read_merge_tree_step->serializeDistributedReadBuckets();
 
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(frame.node->step));
 
-                    populate_shards(std::move(shards_for_read), std::move(final_layers));
+                    populate_shards(std::move(shards_for_read), std::move(read_buckets));
                 }
             }
 

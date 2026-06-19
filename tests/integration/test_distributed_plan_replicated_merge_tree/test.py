@@ -329,9 +329,11 @@ def test_final_parallel_read(started_cluster, exchange_kind):
 def test_final_missing_part_on_worker_errors(started_cluster):
     """The parallel FINAL read ships each worker the marks (by part name) of its primary-key-range layer.
     A layer spans every part, so a worker replica missing a coordinator-selected part (replication lag)
-    cannot read its layer and must raise NO_SUCH_DATA_PART instead of silently dropping rows.
+    cannot read its layer and the query must fail closed instead of silently dropping rows.
 
-    Stop fetches on node2/node3 and add a new overlapping part only on the coordinator (node1)."""
+    Stop fetches on node2/node3 and add a new overlapping part only on the coordinator (node1). Every layer
+    references the new part, so both lagging workers raise NO_SUCH_DATA_PART at once; the initiator surfaces
+    either that error directly or a cancellation triggered by it -- both prove no rows were dropped."""
     table = "final_lagging"
     for node in NODES:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
@@ -366,7 +368,10 @@ def test_final_missing_part_on_worker_errors(started_cluster):
         )
         with pytest.raises(QueryRuntimeException) as exc:
             INITIATOR.query(f"SELECT count(), sum(v) FROM {table} FINAL SETTINGS {settings}")
-        assert "is not available on this replica" in str(exc.value)
+        # Fail-closed: the missing part surfaces directly, or as a cancellation when another worker's
+        # identical failure reaches the initiator first. Both mean the read did not return a short result.
+        message = str(exc.value)
+        assert "is not available on this replica" in message or "QUERY_WAS_CANCELLED" in message
     finally:
         node2.query(f"SYSTEM START FETCHES {table}")
         node3.query(f"SYSTEM START FETCHES {table}")

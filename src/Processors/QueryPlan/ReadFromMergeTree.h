@@ -407,19 +407,15 @@ public:
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
     /// In distributed query plan, this step will be executed in a distributed manner - shards will be read in parallel.
     void setDistributedRead(size_t bucket_count);
-    /// Parts (by name) every worker buckets over, so the partition is identical across replicas.
-    void setDistributedReadParts(Names part_names);
-    /// For a FINAL read, splits the analyzed parts into around `max_layers` primary-key-range layers and
-    /// records them for a distributed parallel FINAL. When FINAL does not merge across partitions the
-    /// split is done per partition so a layer never merges keys from different partitions. Returns the
-    /// number of layers, or 0 (read serially) when the data cannot be range-split (SAMPLE, unsafe or
-    /// mixed-order primary key, or a single layer) or the per-partition split exceeds `max_total_layers`.
-    size_t setupDistributedFinalLayers(size_t max_layers, size_t max_total_layers);
-    /// Serializes each PK-range layer (its marks + the borders) into a per-bucket blob to ship as the
-    /// `final_layer` task parameter; empty unless this is a layered FINAL read.
-    std::vector<String> serializeDistributedFinalLayers() const;
-    /// Marks this (deserialized, worker) read as a layered FINAL read; the layer arrives via the parameter.
-    void setDistributedReadLayered(bool layered_) { distributed_read_layered = layered_; }
+    /// Splits the analyzed marks into up to `target_buckets` distributed-read buckets and records them. A
+    /// non-FINAL read is sliced into contiguous mark-balanced buckets; a FINAL read is split into
+    /// primary-key-range layers (one merge per layer, per partition when FINAL does not merge across
+    /// partitions). Returns the bucket count, or 0 (read serially) when a FINAL read cannot be range-split
+    /// (SAMPLE, unsafe or mixed-order primary key, a single layer) or the split exceeds `max_total_buckets`.
+    size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
+    /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
+    /// per-bucket blob shipped as the `read_bucket` task parameter; empty unless this is a distributed read.
+    std::vector<String> serializeDistributedReadBuckets() const;
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
 
@@ -596,27 +592,20 @@ private:
 
     std::optional<TopKFilterInfo> top_k_filter_info;
     ProjectionIndexReadDescription projection_index_read_desc;
-    /// This is set when this step is part of a distributed query plan and it will be executed in a distributed manner.
-    /// "bucket_id" task parameter will be used to determine what part of the data to read.
+    /// Set when this step is part of a distributed query plan executed in a distributed manner. Each
+    /// worker reads the single bucket described by its `read_bucket` task parameter.
     size_t distributed_read_bucket_count = 0;
-    /// Coordinator-selected parts a distributed-read worker buckets over. Empty otherwise.
-    Names distributed_read_part_names;
     /// Per-bucket marks for a distributed read. On the initiator (producer) this holds every bucket; each
-    /// is serialized into the `final_layer` task parameter (not into the shared step). On a worker it
-    /// stays empty; the worker fills `distributed_read_borders` / `distributed_read_layer_index` from its
-    /// own `final_layer` parameter and reads that single bucket's marks.
+    /// is serialized into its own `read_bucket` task parameter (not into the shared step). On a worker it
+    /// stays empty; the worker fills the members below from its own `read_bucket` parameter and reads that
+    /// bucket's marks.
     std::vector<DistributedReadBucket> distributed_read_buckets;
+    /// Worker-side state for the one bucket this worker reads, filled from its `read_bucket` parameter.
+    /// `distributed_read_needs_merge` selects a FINAL merge of the layer (trimmed to the borders at the
+    /// index); otherwise the marks are read without a merge.
+    bool distributed_read_needs_merge = false;
     std::vector<std::vector<Field>> distributed_read_borders;
     size_t distributed_read_layer_index = 0;
-    /// True on a worker handling a layered FINAL read (set from the serialized flag); the layer arrives
-    /// as the `final_layer` task parameter rather than in the step.
-    bool distributed_read_layered = false;
 };
-/// Filter the mark ranges for a single part's worth of ranges for a specific bucket.
-/// `effective_bucket_index` is updated in-place so that consecutive calls across multiple parts
-/// maintain even distribution — small ranges that cannot be split do not all fall into bucket 0.
-/// NOTE: For distributed queries on full replicas, all reader nodes must receive the same
-///       `parts_with_ranges` list so that `effective_bucket_index` advances identically.
-MarkRanges filterMarkRangesForBucket(const MarkRanges & ranges, size_t & effective_bucket_index, size_t total_buckets);
 
 }
