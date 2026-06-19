@@ -323,6 +323,12 @@ void LimitByTransform::transform(Chunk & chunk)
         }
     }
 
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
     /// No row from this chunk survived `LIMIT BY`.
     if (output_slices.empty())
         return;
