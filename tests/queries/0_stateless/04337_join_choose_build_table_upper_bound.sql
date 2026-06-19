@@ -42,11 +42,14 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
--- Soundness: a filter on the join key is inferred to BOTH sides (transitive equi-join
--- predicates), so neither input has an exact estimate -- only an upper bound. Two upper bounds
--- cannot prove which input is smaller (`big`'s true count could be anything below its bound),
--- so the build side must NOT be swapped: `big` stays the build side as written, even though
--- `small` is the smaller table. This guards against an unsound swap on bound-vs-bound.
+-- Soundness: `small.k != -1` is a predicate on the primary key, but one the index cannot use
+-- to prune -- it is true for every row, so no granule is excluded and the row count stays an
+-- upper bound rather than an exact estimate (an index pruning a column only yields an exact
+-- count when it actually drops granules, e.g. `k < 500`). The predicate is also inferred onto
+-- the other side via transitive equi-join predicates, so BOTH inputs are upper-bound-only.
+-- Two upper bounds cannot prove which input is smaller (`big`'s true count could be anything
+-- below its bound), so the build side must NOT be swapped: `big` stays the build side as
+-- written, even though `small` is the smaller table. Guards against an unsound bound-vs-bound swap.
 SELECT * FROM small JOIN big ON small.k = big.k WHERE small.k != -1
 SETTINGS log_comment = '04337_join_choose_build_table_both_bounds' FORMAT Null;
 
