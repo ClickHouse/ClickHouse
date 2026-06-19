@@ -177,6 +177,40 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
+-- Soundness: `LIMIT n OFFSET m` emits `child <= m ? 0 : min(child - m, n)` rows, so the OFFSET
+-- must be accounted for. Here the right subquery skips past its whole 100-row child
+-- (`OFFSET 1000`), emitting 0 rows -- not the `min(100, 10) = 10` an offset-blind estimate would
+-- report as exact. The left input is a residual-filtered 50-row table (upper bound 50). Were the
+-- right side over-estimated as an exact 10, the 50-row left input would be swapped onto the build
+-- side (50 > the right's true 0); with OFFSET accounted for, the empty right subquery stays the
+-- build side.
+DROP TABLE IF EXISTS lhs_small;
+DROP TABLE IF EXISTS offset_child;
+
+CREATE TABLE lhs_small (k Int32, v Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO lhs_small SELECT number, number FROM numbers(50);
+
+CREATE TABLE offset_child (k Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO offset_child SELECT number FROM numbers(100);
+
+SELECT * FROM lhs_small JOIN (SELECT k FROM offset_child LIMIT 10 OFFSET 1000) AS r ON lhs_small.k = r.k
+WHERE lhs_small.v != -1
+SETTINGS log_comment = '04337_join_choose_build_table_limit_offset' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The empty right subquery (0 rows) must stay the build side; the 50-row left input must not be
+-- swapped onto it. (The join result is empty, so probe-side counters may be 0 too.)
+SELECT
+    if(ProfileEvents['JoinBuildTableRowCount'] < 25, 'ok', format('fail({}): build={}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinResultRowCount'] = 0, 'ok', format('fail({}): result={}', query_id, ProfileEvents['JoinResultRowCount']))
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+  AND query_kind = 'Select' AND current_database = currentDatabase()
+  AND log_comment = '04337_join_choose_build_table_limit_offset'
+ORDER BY event_time DESC
+LIMIT 1;
+
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;
 DROP TABLE IF EXISTS lhs_big;
@@ -185,3 +219,5 @@ DROP TABLE IF EXISTS tied;
 DROP TABLE IF EXISTS rhs_exact;
 DROP TABLE IF EXISTS lhs_filtered;
 DROP TABLE IF EXISTS big_agg;
+DROP TABLE IF EXISTS lhs_small;
+DROP TABLE IF EXISTS offset_child;

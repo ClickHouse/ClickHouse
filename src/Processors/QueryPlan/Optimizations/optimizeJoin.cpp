@@ -373,32 +373,35 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
         auto estimated = estimateReadRowsCount(*node.children.front(), filter);
-        auto limit = limit_step->getLimit();
-        bool child_is_point = estimated.estimated_rows_kind == RowCountKind::Exact
-            || estimated.estimated_rows_kind == RowCountKind::Estimate;
+        UInt64 limit = limit_step->getLimit();
+        UInt64 offset = limit_step->getOffset();
+        /// Rows emitted by `LIMIT limit OFFSET offset` for a child of `v` rows:
+        /// skip `offset`, then take up to `limit` -- so 0 if the child is fully skipped.
+        auto apply_limit_offset = [&](UInt64 v) { return v <= offset ? UInt64(0) : std::min<UInt64>(v - offset, limit); };
         if (limit_step->withTies())
         {
             /// `LIMIT n WITH TIES` emits every row whose sort key ties with the boundary row, so
             /// the result is NOT bounded by `limit` -- only by the child row count (e.g. `LIMIT 1
-            /// WITH TIES` over all-equal rows returns them all). Do not cap by `limit`; demote a
-            /// point estimate to an upper bound (the actual count is between `limit` and the child
-            /// count); an existing upper bound or unknown is left as is.
-            if (child_is_point)
+            /// WITH TIES` over all-equal rows returns them all). Do not cap; demote a point estimate
+            /// to an upper bound (the child count still bounds it from above); an existing upper
+            /// bound or unknown is left as is.
+            if (estimated.estimated_rows_kind == RowCountKind::Exact || estimated.estimated_rows_kind == RowCountKind::Estimate)
                 estimated.estimated_rows_kind = RowCountKind::UpperBound;
         }
-        else if (child_is_point)
+        else if (estimated.estimated_rows)
         {
-            /// Point estimate: the LIMIT caps it. A capped exact stays exact; a capped heuristic
-            /// stays a heuristic (kind is unchanged).
-            if (estimated.estimated_rows > limit)
-                estimated.estimated_rows = limit;
+            /// A known child value (exact, heuristic or upper bound): the output is
+            /// `apply_limit_offset(value)`. For an exact child this is the exact output (OFFSET can
+            /// push it to 0); a heuristic stays a heuristic and an upper bound stays an upper bound
+            /// (the result is still a valid ceiling). The kind is unchanged.
+            estimated.estimated_rows = apply_limit_offset(*estimated.estimated_rows);
         }
         else
         {
-            /// No point estimate (a bare upper bound or unknown child): `limit` only bounds the
-            /// result from above, so report it as an upper bound rather than an exact estimate the
-            /// build-side choice would trust as a lower bound. See `chooseJoinOrder`.
-            estimated.estimated_rows = std::min<UInt64>(estimated.estimated_rows.value_or(limit), limit);
+            /// Unknown child: the output cannot exceed `limit`, so report it as an upper bound
+            /// rather than an exact estimate the build-side choice would trust as a lower bound.
+            /// See `chooseJoinOrder`.
+            estimated.estimated_rows = limit;
             estimated.estimated_rows_kind = RowCountKind::UpperBound;
         }
         return estimated;
