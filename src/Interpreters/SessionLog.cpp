@@ -175,9 +175,11 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             "The list of subjects (Common Name and Subject Alternative Names) of the TLS client certificate presented on the connection, in the form 'CN:...' / 'SAN:...'. Empty if no certificate was presented."},
         {"certificate_serial", lc_string_datatype, "Serial number of the TLS client certificate. Empty if no certificate was presented."},
         {"certificate_issuer", lc_string_datatype, "Issuer of the TLS client certificate. Empty if no certificate was presented."},
-        {"certificate_not_before", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+        /// DateTime64(0) (not DateTime) because X.509 validity times can fall outside the 1970..2106 range
+        /// representable by DateTime (UInt32 epoch seconds), e.g. the "no expiration" value 99991231235959Z.
+        {"certificate_not_before", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(0, "UTC")),
             "Time from which the TLS client certificate is valid. NULL if no certificate was presented."},
-        {"certificate_not_after", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+        {"certificate_not_after", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(0, "UTC")),
             "Time after which the TLS client certificate expires. NULL if no certificate was presented."},
     };
 }
@@ -241,8 +243,10 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(certificate_issuer.data(), certificate_issuer.length());
     if (has_certificate)
     {
-        columns[i++]->insert(certificate_not_before);
-        columns[i++]->insert(certificate_not_after);
+        /// The DateTime64(0) columns store seconds since epoch as Int64, so the full X.509 validity
+        /// range is preserved without the silent UInt32 narrowing that a DateTime column would do.
+        columns[i++]->insert(DecimalField<DateTime64>(certificate_not_before, 0));
+        columns[i++]->insert(DecimalField<DateTime64>(certificate_not_after, 0));
     }
     else
     {
