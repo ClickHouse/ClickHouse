@@ -46,7 +46,7 @@ namespace DB
   * Then index granule is written in the following way:
   * 1. Posting lists are dumped in blocks of size 'posting_list_block_size'.
   * 2. Offsets in the file to the posting list blocks along with min-max range of the block for each token are saved.
-  * 3. Posting lists are encoded with the configured posting list codec ('none' saves them as Roaring Bitmaps).
+  * 3. Posting lists are encoded with the configured posting list codec ('none' (raw Roaring Bitmaps), 'bitpacking').
   * 4. If the cardinality of the posting list is less than a threshold it is embedded into the dictionary.
   * 5. Dictionary blocks are dumped, and the offset in the dictionary file to the block is saved into the sparse index.
   *
@@ -70,9 +70,9 @@ namespace DB
   *
   * If size of posting list is less than a threshold, it is serialized as raw values encoded as VarUInts.
   * Otherwise, the posting list is split into segments of `posting_list_block_size` row ids and
-  * serialized via the configured `IPostingListCodec`. The default codec (`none`) writes each segment
-  * as a portable Roaring Bitmap with a leading VarUInt size; the `bitpacking` codec uses a compact
-  * bit-packed format with its own segment header.
+  * serialized via the configured `IPostingListCodec`.
+  *  - the `none` codec writes each segment as a portable Roaring Bitmap with a leading VarUInt size
+  *  - the `bitpacking` codec uses a compact bit-packed format with its own segment header.
   */
 
 using PostingListCodecPtr = std::unique_ptr<IPostingListCodec>;
@@ -88,40 +88,15 @@ struct MergeTreeIndexTextParams
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
 
-/// A struct for building a posting list during the index build.
-///
-/// The first inline_capacity row ids are stored inline in the hash map cell. It avoids
-/// any heap allocation for infrequent tokens (the majority for large vocabularies) and
-/// keeps their whole hot path within the single cache line loaded by the token lookup.
-///
-/// More frequent tokens spill to Overflow, where row ids are collected as raw values
-/// into a vector. Every time the vector reaches `IPostingListAccumulator::append_granularity`
-/// row ids, it is appended to an accumulator that encodes them into the codec's in-memory
-/// form, splitting them into segments of `posting_list_block_size` row ids. It bounds
-/// the memory usage of the builder, because raw values are stored only for a small
-/// tail of the posting list.
-///
-/// The two states share storage in a variant. This keeps the builder within 56 bytes,
-/// so that a hash map cell fits in one cache line, and the vector of a spilled token
-/// is appended to without leaving the cell's cache line.
-///
-/// The builder is stored by value in the hash map, so it must stay trivially relocatable
-/// (the hash table moves cells with memcpy on resize): Overflow holds only pointers
-/// to the heap, so moving a cell with memcpy is safe.
-///
-/// Values are added in non-descending order; duplicates are skipped
-/// (they are checked against the last added value).
+/// Builds one token's posting list during the index build.
+/// Up to inline_capacity row ids live inline (no heap allocation for the many rare tokens).
+/// Frequent tokens spill to Overflow, whose raw values flush to an encoder every `append_granularity` row ids.
 struct PostingListBuilder
 {
 public:
     /// The maximal capacity that keeps the variant (with its index) within 56 bytes.
     static constexpr size_t inline_capacity = 11;
 
-    /// Row ids stored inline while the token has no more than inline_capacity of them.
-    /// No default member initializers: they are parsed in the complete-class context of the
-    /// outer class, which would make the variant's default constructor (which requires Inline
-    /// to be default-constructible) unavailable within PostingListBuilder itself.
-    /// The default constructor of the variant value-initializes Inline, so `size` is zeroed.
     struct Inline
     {
         std::array<UInt32, inline_capacity> values;
@@ -129,46 +104,39 @@ public:
     };
 
     /// Heap part of the builder for tokens with more than inline_capacity row ids.
-    struct Overflow
+    struct Large
     {
-        /// Raw row ids of the current (possibly incomplete) segment. Contains all row ids
-        /// of the token (including the inline ones) until the first segment flush.
+        Large(std::array<UInt32, inline_capacity> values_, UInt32 added_value_, const IPostingListCodec & codec);
+
+        /// The last added row id. Used to skip duplicates.
+        UInt32 last_value = 0;
+        /// Raw row ids of the current (possibly incomplete) segment.
         PODArray<UInt32, 64> values;
         /// Full segments encoded into the codec's in-memory form.
-        /// Created when the posting list outgrows one segment.
-        std::unique_ptr<IPostingListAccumulator> accumulator;
-        /// The last added row id. Used to skip duplicates, because `values` is cleared on flush.
-        UInt32 last_value = 0;
+        std::unique_ptr<IPostingListEncoder> encoder;
+
+        void flush(size_t segment_size, size_t min_flush_size);
     };
 
     PostingListBuilder() = default;
+
     /// The builder is constructed with the first value of a token (in place in the map).
     explicit PostingListBuilder(UInt32 first_value);
 
     /// Adds a value to the inline array or to the overflow vector.
-    /// If the overflow vector reaches the append granularity, it is flushed into the accumulator.
-    void add(UInt32 value, const IPostingListCodec * codec, size_t segment_size);
+    void add(UInt32 value, const IPostingListCodec & codec, size_t segment_size);
 
-    size_t size() const;
-    bool hasAccumulator() const;
+    bool hasLarge() const { return std::holds_alternative<Large>(state); }
+    bool hasInline() const { return std::holds_alternative<Inline>(state); }
 
-    /// Returns all collected row ids as a contiguous span.
-    /// Valid only until the first segment flush (see hasAccumulator).
-    std::span<const UInt32> getRawValues() const;
-
-    /// Flushes the remaining row ids into the accumulator and returns it for finalization.
-    IPostingListAccumulator & flushToAccumulator(const IPostingListCodec * codec, size_t segment_size);
+    Large & getLarge() { return std::get<Large>(state); }
+    Inline & getInline() { return std::get<Inline>(state); }
 
     /// Heap memory held by the builder (the builder itself is accounted in the map buffer).
     size_t memoryUsageBytes() const;
 
 private:
-    /// Moves the inline values into the overflow and adds the new value to it. Cold path.
-    void spillToOverflow(UInt32 value);
-    /// Appends the buffered raw values to the accumulator (created on the first flush). Cold path.
-    void flushBuffered(const IPostingListCodec * codec, size_t segment_size);
-
-    std::variant<Inline, Overflow> state;
+    std::variant<Inline, Large> state;
 };
 
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
@@ -297,8 +265,9 @@ struct TextIndexSerialization
         FrontCodedStrings = 1
     };
 
-    static TokenPostingsInfo serializePostings(
-        PostingListBuilder & postings,
+    static void serializePostingsAndTokenInfo(
+        PostingListBuilder && postings,
+        MergeTreeIndexWriterStream & dictionary_stream,
         MergeTreeIndexWriterStream & postings_stream,
         const MergeTreeIndexTextParams & params,
         PostingsSerialization & postings_serialization);
@@ -312,7 +281,6 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    /// Writes row ids as raw VarUInts (used for embedded and other small posting lists).
     static void serializeRawPostings(std::span<const UInt32> row_ids, WriteBuffer & ostr);
     static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr);
 

@@ -12,11 +12,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static_assert(IPostingListAccumulator::append_granularity % BLOCK_SIZE == 0,
+static_assert(IPostingListEncoder::append_granularity % BLOCK_SIZE == 0,
     "append_granularity must be a multiple of the physical block size of the bitpacking codec");
 
 /// Previous appends must not have left a partial block in the open segment
-/// (see the contract in IPostingListAccumulator::append_granularity).
+/// (see the contract in IPostingListEncoder::append_granularity).
 void PostingListCodecBitpackingImpl::append(std::span<const UInt32> row_ids, size_t segment_size)
 {
     chassert(!row_ids.empty());
@@ -231,21 +231,25 @@ size_t PostingListCodecBitpacking::getSegmentSize(size_t posting_list_block_size
     return (posting_list_block_size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
 }
 
-void PostingListAccumulatorBitpacking::finalize(WriteBuffer & out, TokenPostingsInfo & info)
+std::unique_ptr<IPostingListEncoder> PostingListCodecBitpacking::createEncoder() const
+{
+    return std::make_unique<PostingListEncoderBitpacking>();
+}
+
+void PostingListEncoderBitpacking::finalize(WriteBuffer & out, TokenPostingsInfo & info)
 {
     using enum PostingsSerialization::Flags;
 
     impl.encode(out, info);
 
     info.header |= IsCompressed;
-    /// Bitpacking appends a per-block Index Section after each segment,
-    /// enabling binary search inside PostingListCursor for lazy posting list evaluation.
     info.header |= HasBlockIndex;
+
     if (info.offsets.size() == 1)
         info.header |= SingleBlock;
 }
 
-void PostingListAccumulatorNone::append(std::span<const UInt32> row_ids, size_t segment_size)
+void PostingListEncoderNone::append(std::span<const UInt32> row_ids, size_t segment_size)
 {
     chassert(!row_ids.empty());
     total_row_ids += row_ids.size();
@@ -259,11 +263,11 @@ void PostingListAccumulatorNone::append(std::span<const UInt32> row_ids, size_t 
         rows_in_current_segment += chunk.size();
 
         if (rows_in_current_segment == segment_size)
-            sealSegment();
+            finishSegment();
     }
 }
 
-void PostingListAccumulatorNone::sealSegment()
+void PostingListEncoderNone::finishSegment()
 {
     /// Reduces the in-memory and serialized size of the bitmap by using run containers.
     current_segment.runOptimize();
@@ -272,10 +276,10 @@ void PostingListAccumulatorNone::sealSegment()
     rows_in_current_segment = 0;
 }
 
-void PostingListAccumulatorNone::finalize(WriteBuffer & out, TokenPostingsInfo & info)
+void PostingListEncoderNone::finalize(WriteBuffer & out, TokenPostingsInfo & info)
 {
     if (rows_in_current_segment != 0)
-        sealSegment();
+        finishSegment();
 
     /// Local buffer freed after this call: a per-accumulator member would keep one buffer
     /// alive per token until the whole granule is serialized, inflating peak memory.
@@ -298,12 +302,17 @@ void PostingListAccumulatorNone::finalize(WriteBuffer & out, TokenPostingsInfo &
         info.header |= PostingsSerialization::Flags::SingleBlock;
 }
 
-size_t PostingListAccumulatorNone::memoryUsageBytes() const
+size_t PostingListEncoderNone::memoryUsageBytes() const
 {
     size_t result = current_segment.getSizeInBytes();
     for (const auto & segment : segments)
         result += segment.getSizeInBytes();
     return result;
+}
+
+std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder() const
+{
+    return std::make_unique<PostingListEncoderNone>();
 }
 
 void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings) const

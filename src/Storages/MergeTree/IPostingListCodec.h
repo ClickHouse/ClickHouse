@@ -18,7 +18,7 @@ class ReadBuffer;
 class WriteBuffer;
 using PostingList = roaring::Roaring;
 
-/// IPostingListAccumulator accumulates a posting list encoded into the codec's
+/// IPostingListEncoder accumulates a posting list encoded into the codec's
 /// in-memory form and serializes it at the end.
 ///
 /// During the text index build, row ids of each token are collected as raw values into
@@ -26,7 +26,7 @@ using PostingList = roaring::Roaring;
 /// The accumulator splits the appended row ids into segments of the segment size
 /// (`posting_list_block_size` row ids); therefore all segments, except possibly the
 /// last one, contain exactly the segment size of row ids.
-class IPostingListAccumulator
+class IPostingListEncoder
 {
 public:
     /// Every `append`, except the final one before `finalize`, must contain a multiple
@@ -34,7 +34,7 @@ public:
     /// (bitpacking) never produce a partial block in the middle of a segment.
     static constexpr size_t append_granularity = 128;
 
-    virtual ~IPostingListAccumulator() = default;
+    virtual ~IPostingListEncoder() = default;
 
     /// Encodes a batch of sorted unique row ids (increasing across calls) into the
     /// codec's in-memory form, appending to the open segment. Each time the open
@@ -79,7 +79,7 @@ public:
     virtual size_t getSegmentSize(size_t posting_list_block_size) const { return posting_list_block_size; }
 
     /// Creates an accumulator that encodes segments of row ids into this codec's format.
-    virtual std::unique_ptr<IPostingListAccumulator> createAccumulator() const = 0;
+    virtual std::unique_ptr<IPostingListEncoder> createEncoder() const = 0;
 
     /// Reads a single encoded segment of a posting list, decodes it, and appends it to `postings`.
     virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;

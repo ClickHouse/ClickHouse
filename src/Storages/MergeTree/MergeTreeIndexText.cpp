@@ -811,37 +811,6 @@ void serializeTokensFrontCoding(
     }
 }
 
-/// Sets header flags and writes the postings for tokens small enough to be stored
-/// as raw VarUInts (embedded into the dictionary block or in a single raw block).
-/// Returns true if the posting list was handled.
-bool trySerializeSmallPostings(std::span<const UInt32> row_ids, TokenPostingsInfo & info, MergeTreeIndexWriterStream & postings_stream)
-{
-    using enum PostingsSerialization::Flags;
-
-    /// Tiny posting lists are embedded into the dictionary block (and written
-    /// later with it as raw VarUInts) to avoid additional random reads from disk.
-    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
-    {
-        info.header |= RawPostings;
-        info.header |= EmbeddedPostings;
-        return true;
-    }
-
-    /// Small posting lists are serialized as raw VarUInts. The minimal size of a serialized
-    /// Roaring Bitmap is around 48 bytes, so VarUInt encoding is cheaper for low cardinalities.
-    if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
-    {
-        info.header |= RawPostings;
-        info.header |= SingleBlock;
-        info.offsets.emplace_back(postings_stream.plain_hashing.count());
-        info.ranges.emplace_back(row_ids.front(), row_ids.back());
-        TextIndexSerialization::serializeRawPostings(row_ids, postings_stream.plain_hashing);
-        return true;
-    }
-
-    return false;
-}
-
 template <typename TokenGetter>
 void serializeTokensImpl(
     const TokenGetter & token_getter,
@@ -867,27 +836,80 @@ void serializeTokensImpl(
 
 }
 
-TokenPostingsInfo TextIndexSerialization::serializePostings(
-    PostingListBuilder & postings,
+void TextIndexSerialization::serializePostingsAndTokenInfo(
+    PostingListBuilder && postings,
+    MergeTreeIndexWriterStream & dictionary_stream,
     MergeTreeIndexWriterStream & postings_stream,
     const MergeTreeIndexTextParams & params,
     PostingsSerialization & postings_serialization)
 {
-    TokenPostingsInfo info;
-    info.cardinality = static_cast<UInt32>(postings.size());
+    using enum PostingsSerialization::Flags;
 
-    /// If nothing was flushed during the build, the whole posting list
-    /// is still collected as raw values and may qualify for the raw formats.
-    if (!postings.hasAccumulator() && trySerializeSmallPostings(postings.getRawValues(), info, postings_stream))
-        return info;
-
-    /// Flush the remaining row ids and write the encoded segments.
-    /// The accumulator fills per-segment metadata and header flags in `info`.
     const auto * codec = postings_serialization.getPostingListCodec();
     chassert(codec);
     size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
-    postings.flushToAccumulator(codec, segment_size).finalize(postings_stream.plain_hashing, info);
-    return info;
+
+    TokenPostingsInfo info;
+    std::span<const UInt32> raw_values;
+
+    if (postings.hasInline())
+    {
+        const auto & inline_state = postings.getInline();
+        info.cardinality = inline_state.size;
+        raw_values = {inline_state.values.data(), inline_state.size};
+    }
+    else
+    {
+        auto & large = postings.getLarge();
+
+        /// If the encoder is not empty, we need to flush all values.
+        /// Otherwise, we need to flush only for non raw postings
+        size_t min_flush_size = large.encoder->cardinality() > 0 ? 0 : MAX_CARDINALITY_FOR_RAW_POSTINGS + 1;
+        large.flush(segment_size, min_flush_size);
+
+        if (large.values.empty())
+        {
+            info.cardinality = static_cast<UInt32>(large.encoder->cardinality());
+        }
+        else
+        {
+            info.cardinality = static_cast<UInt32>(large.values.size());
+            raw_values = {large.values.data(), info.cardinality};
+        }
+    }
+
+    /// Tiny posting lists are embedded into the dictionary block
+    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    {
+        chassert(raw_values.size() == info.cardinality);
+        info.header |= RawPostings;
+        info.header |= EmbeddedPostings;
+
+        TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, info);
+        TextIndexSerialization::serializeRawPostings(raw_values, dictionary_stream.compressed_hashing);
+        return;
+    }
+
+    /// Small posting lists are serialized as raw VarUInts.
+    if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+    {
+        chassert(raw_values.size() == info.cardinality);
+        info.header |= RawPostings;
+        info.header |= SingleBlock;
+
+        info.offsets.emplace_back(postings_stream.plain_hashing.count());
+        info.ranges.emplace_back(raw_values.front(), raw_values.back());
+
+        TextIndexSerialization::serializeRawPostings(raw_values, postings_stream.plain_hashing);
+        TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, info);
+        return;
+    }
+
+    chassert(postings.hasLarge());
+    auto & large = postings.getLarge();
+    large.flush(segment_size, IPostingListEncoder::append_granularity);
+    large.encoder->finalize(postings_stream.plain_hashing, info);
+    TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, info);
 }
 
 TokenPostingsInfo TextIndexSerialization::serializePostings(
@@ -896,39 +918,38 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     const MergeTreeIndexTextParams & params,
     PostingsSerialization & postings_serialization)
 {
+    using enum PostingsSerialization::Flags;
+
     TokenPostingsInfo info;
     info.cardinality = static_cast<UInt32>(postings.cardinality());
 
+    PaddedPODArray<UInt32> values(info.cardinality);
+    postings.toUint32Array(values.data());
+
+    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    {
+        info.header |= RawPostings;
+        info.header |= EmbeddedPostings;
+        return info;
+    }
+
     if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
     {
-        std::array<UInt32, MAX_CARDINALITY_FOR_RAW_POSTINGS> values{};
-        postings.toUint32Array(values.data());
-
-        if (trySerializeSmallPostings({values.data(), info.cardinality}, info, postings_stream))
-            return info;
+        info.header |= RawPostings;
+        info.header |= SingleBlock;
+        info.offsets.emplace_back(postings_stream.plain_hashing.count());
+        info.ranges.emplace_back(values.front(), values.back());
+        TextIndexSerialization::serializeRawPostings(values, postings_stream.plain_hashing);
+        return info;
     }
 
     const auto * codec = postings_serialization.getPostingListCodec();
     chassert(codec);
-
-    /// Extract row ids from the bitmap in fixed-size batches to avoid
-    /// materializing the whole posting list as raw values.
     size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
-    auto accumulator = codec->createAccumulator();
 
-    static constexpr size_t batch_size = 64 * IPostingListAccumulator::append_granularity;
-    std::vector<UInt32> batch(std::min<size_t>(info.cardinality, batch_size));
-    roaring::api::roaring_uint32_iterator_t it;
-    roaring_iterator_init(&postings.roaring, &it);
-
-    while (size_t num_read = roaring::api::roaring_uint32_iterator_read(&it, batch.data(), static_cast<UInt32>(batch.size())))
-    {
-        accumulator->append({batch.data(), num_read}, segment_size);
-        if (num_read < batch.size())
-            break;
-    }
-
-    accumulator->finalize(postings_stream.plain_hashing, info);
+    auto encoder = codec->createEncoder();
+    encoder->append(values, segment_size);
+    encoder->finalize(postings_stream.plain_hashing, info);
     return info;
 }
 
@@ -1229,12 +1250,12 @@ DictionarySparseIndex serializeTokensAndPostings(
 
         for (size_t i = block_begin; i < block_end; ++i)
         {
-            auto & postings = *tokens_and_postings[i].second;
-            auto token_info = TextIndexSerialization::serializePostings(postings, postings_stream, params, postings_serialization);
-            TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
-
-            if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-                TextIndexSerialization::serializeRawPostings(postings.getRawValues(), dictionary_stream.compressed_hashing);
+            TextIndexSerialization::serializePostingsAndTokenInfo(
+                std::move(*tokens_and_postings[i].second),
+                dictionary_stream,
+                postings_stream,
+                params,
+                postings_serialization);
         }
     }
 
@@ -1308,13 +1329,14 @@ PostingListBuilder::PostingListBuilder(UInt32 first_value)
     inline_state.size = 1;
 }
 
-void PostingListBuilder::add(UInt32 value, const IPostingListCodec * codec, size_t segment_size)
+void PostingListBuilder::add(UInt32 value, const IPostingListCodec & codec, size_t segment_size)
 {
     if (auto * inline_state = std::get_if<Inline>(&state))
     {
         /// Values are added in non-descending order.
         chassert(inline_state->size != 0);
         chassert(value >= inline_state->values[inline_state->size - 1]);
+
         if (value == inline_state->values[inline_state->size - 1])
             return;
 
@@ -1324,91 +1346,44 @@ void PostingListBuilder::add(UInt32 value, const IPostingListCodec * codec, size
             return;
         }
 
-        spillToOverflow(value);
+        state.emplace<Large>(inline_state->values, value, codec);
         return;
     }
 
-    /// The state is never valueless: the switch to Overflow in spillToOverflow is noexcept.
-    auto * overflow = std::get_if<Overflow>(&state);
-    chassert(overflow);
+    auto & large = std::get<Large>(state);
+    chassert(value >= large.last_value);
 
-    chassert(value >= overflow->last_value);
-    if (value == overflow->last_value)
+    if (value == large.last_value)
         return;
 
-    overflow->last_value = value;
-    overflow->values.push_back(value);
-
-    if (overflow->values.size() >= IPostingListAccumulator::append_granularity)
-        flushBuffered(codec, segment_size);
-}
-
-void PostingListBuilder::spillToOverflow(UInt32 value)
-{
-    /// Both states share the storage of the variant, so copy the inline values out first.
-    const auto inline_copy = std::get<Inline>(state).values;
-
-    auto & overflow = state.emplace<Overflow>();
-    overflow.values.insert(inline_copy.begin(), inline_copy.end());
-    overflow.values.push_back(value);
-    overflow.last_value = value;
-}
-
-size_t PostingListBuilder::size() const
-{
-    if (const auto * inline_state = std::get_if<Inline>(&state))
-        return inline_state->size;
-
-    const auto & overflow = std::get<Overflow>(state);
-    return overflow.values.size() + (overflow.accumulator ? overflow.accumulator->cardinality() : 0);
-}
-
-bool PostingListBuilder::hasAccumulator() const
-{
-    const auto * overflow = std::get_if<Overflow>(&state);
-    return overflow && overflow->accumulator != nullptr;
-}
-
-std::span<const UInt32> PostingListBuilder::getRawValues() const
-{
-    if (const auto * inline_state = std::get_if<Inline>(&state))
-        return {inline_state->values.data(), inline_state->size};
-
-    const auto & overflow = std::get<Overflow>(state);
-    chassert(!overflow.accumulator);
-    return {overflow.values.data(), overflow.values.size()};
+    large.last_value = value;
+    large.values.push_back(value);
+    large.flush(segment_size, IPostingListEncoder::append_granularity);
 }
 
 size_t PostingListBuilder::memoryUsageBytes() const
 {
-    const auto * overflow = std::get_if<Overflow>(&state);
-    if (!overflow)
+    const auto * large = std::get_if<Large>(&state);
+    if (!large)
         return 0;
 
-    return overflow->values.allocated_bytes() + (overflow->accumulator ? overflow->accumulator->memoryUsageBytes() : 0);
+    return large->values.allocated_bytes() + (large->encoder ? large->encoder->memoryUsageBytes() : 0);
 }
 
-void PostingListBuilder::flushBuffered(const IPostingListCodec * codec, size_t segment_size)
+PostingListBuilder::Large::Large(std::array<UInt32, inline_capacity> values_, UInt32 added_value_, const IPostingListCodec & codec)
+    : last_value(added_value_), encoder(codec.createEncoder())
 {
-    chassert(codec);
-    auto & overflow = std::get<Overflow>(state);
-
-    if (!overflow.accumulator)
-        overflow.accumulator = codec->createAccumulator();
-
-    overflow.accumulator->append({overflow.values.data(), overflow.values.size()}, segment_size);
-    overflow.values.clear();
+    values.insert(values_.begin(), values_.end());
+    values.push_back(added_value_);
 }
 
-IPostingListAccumulator & PostingListBuilder::flushToAccumulator(const IPostingListCodec * codec, size_t segment_size)
+void PostingListBuilder::Large::flush(size_t segment_size, size_t min_flush_size)
 {
-    auto & overflow = std::get<Overflow>(state);
-
-    if (!overflow.values.empty())
-        flushBuffered(codec, segment_size);
-
-    chassert(overflow.accumulator);
-    return *overflow.accumulator;
+    if (values.size() >= min_flush_size)
+    {
+        encoder->append({values.data(), values.size()}, segment_size);
+        values.clear();
+    }
 }
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
@@ -1430,7 +1405,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             if (inserted)
                 new (&it->getMapped()) PostingListBuilder(static_cast<UInt32>(current_row));
             else
-                it->getMapped().add(static_cast<UInt32>(current_row), posting_list_codec, segment_size);
+                it->getMapped().add(static_cast<UInt32>(current_row), *posting_list_codec, segment_size);
 
             ++num_processed_tokens;
             return false;

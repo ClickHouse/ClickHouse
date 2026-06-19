@@ -186,7 +186,7 @@ private:
 /// Accumulator for the Bitpacking codec.
 /// Wraps PostingListCodecBitpackingImpl, which encodes each added segment into
 /// bit-packed blocks held in memory; the compressed bytes are flushed on `finalize`.
-class PostingListAccumulatorBitpacking final : public IPostingListAccumulator
+class PostingListEncoderBitpacking final : public IPostingListEncoder
 {
 public:
     void append(std::span<const UInt32> row_ids, size_t segment_size) override { impl.append(row_ids, segment_size); }
@@ -209,7 +209,7 @@ private:
 /// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
 ///
 /// Assumes that input row ids are strictly increasing.
-class PostingListCodecBitpacking : public  IPostingListCodec
+class PostingListCodecBitpacking : public IPostingListCodec
 {
 public:
     static const char * getName() { return "bitpacking"; }
@@ -219,19 +219,16 @@ public:
     /// Normalizes the requested segment size to a multiple of BLOCK_SIZE, because the SIMD
     /// bit-packing implementation expects block-aligned sizes for efficient processing.
     size_t getSegmentSize(size_t posting_list_block_size) const override;
+    std::unique_ptr<IPostingListEncoder> createEncoder() const override;
 
-    std::unique_ptr<IPostingListAccumulator> createAccumulator() const override
-    {
-        return std::make_unique<PostingListAccumulatorBitpacking>();
-    }
-
+    void encode(WriteBuffer & out, TokenPostingsInfo & info, const IPostingListEncoder & encoder) const;
     void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
 /// Accumulator for the None codec.
 /// Each added segment is stored as a Roaring bitmap and serialized on `finalize`
 /// as a portable Roaring bitmap prefixed by its size in bytes.
-class PostingListAccumulatorNone final : public IPostingListAccumulator
+class PostingListEncoderNone final : public IPostingListEncoder
 {
 public:
     void append(std::span<const UInt32> row_ids, size_t segment_size) override;
@@ -241,8 +238,7 @@ public:
     size_t memoryUsageBytes() const override;
 
 private:
-    /// Seals the open segment and starts a new one.
-    void sealSegment();
+    void finishSegment();
 
     PostingList current_segment;
     std::vector<PostingList> segments;
@@ -259,11 +255,7 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    std::unique_ptr<IPostingListAccumulator> createAccumulator() const override
-    {
-        return std::make_unique<PostingListAccumulatorNone>();
-    }
-
+    std::unique_ptr<IPostingListEncoder> createEncoder() const override;
     void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
