@@ -994,7 +994,11 @@ void StorageDistributed::read(
         /// (the unresolved FunctionGrouping throws on execution, even with 0 rows).
         auto query_tree_for_ast = query_tree_distributed->clone();
         removeGroupingFunctionSpecializations(query_tree_for_ast);
-        modified_query_info.setQuery(queryNodeToDistributedSelectQuery(query_tree_for_ast));
+        /// On the analyzer path this AST is unused (ClusterProxy::executeQuery's analyzer branch clones
+        /// query_tree, and SelectStreamFactory::createForShard rebuilds the shard AST from the tree; only
+        /// the legacy path / an explicit getQuery() consumer would need it). Defer the expensive
+        /// queryNodeToDistributedSelectQuery (toAST rebuild + recursive alias dedup) until first access.
+        modified_query_info.setLazyQuery([query_tree_for_ast] { return queryNodeToDistributedSelectQuery(query_tree_for_ast); });
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
 
