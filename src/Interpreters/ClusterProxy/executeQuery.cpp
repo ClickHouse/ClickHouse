@@ -1,6 +1,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Columns/ColumnConst.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -104,6 +105,11 @@ namespace ErrorCodes
     extern const int UNEXPECTED_CLUSTER;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+    extern const char parallel_replicas_force_local_replica_inactive[];
 }
 
 namespace ClusterProxy
@@ -669,11 +675,9 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
 
     if (!is_active.empty())
     {
-        /// The local replica is the initiator - it is running this query, so it is online by definition even
-        /// if its `active` znode is transiently missing. Force it active so liveness never filters it out;
-        /// otherwise `findLocalReplicaIndexAndUpdatePools` below would fail with INCONSISTENT_CLUSTER_DEFINITION
-        /// and a query that used to run would start erroring. Match the same way that function identifies it.
+        /// Identify the local replica the same way `findLocalReplicaIndexAndUpdatePools` does (host name + port).
         const auto & addresses = cluster->getShardsAddresses().at(0);
+        std::optional<size_t> local_replica_index;
         for (size_t i = 0; i < is_active.size() && i < addresses.size(); ++i)
         {
             const auto & address = addresses[i];
@@ -683,8 +687,26 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
                 [&](const Cluster::Address & local_addr)
                 { return local_addr.host_name == address.host_name && local_addr.port == address.port; });
             if (is_local_replica)
-                is_active[i] = true;
+            {
+                local_replica_index = i;
+                break;
+            }
         }
+
+        /// Test-only: simulate a transient window where the initiator's own `active` znode is momentarily
+        /// missing, so liveness reports the local replica as inactive. The forcing below must still keep it;
+        /// otherwise the local replica is filtered out and `findLocalReplicaIndexAndUpdatePools` throws
+        /// INCONSISTENT_CLUSTER_DEFINITION, turning a query that used to run into an error.
+        fiu_do_on(FailPoints::parallel_replicas_force_local_replica_inactive,
+        {
+            if (local_replica_index)
+                is_active[*local_replica_index] = false;
+        });
+
+        /// The local replica is the initiator - it is running this query, so it is online by definition even
+        /// if its `active` znode is transiently missing. Force it active so liveness never filters it out.
+        if (local_replica_index)
+            is_active[*local_replica_index] = true;
     }
 
     size_t available_replicas = shard.getAllNodeCount();
