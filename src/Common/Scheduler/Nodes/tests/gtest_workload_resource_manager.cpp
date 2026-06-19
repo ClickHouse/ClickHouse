@@ -1847,7 +1847,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingLazySetMaxClampedB
         bool got_one_more = waitFor([&] {
             while (auto slot = lease->tryAcquire())
                 workers.push_back(std::move(slot));
-            return workers.size() >= 1;
+            return !workers.empty();
         });
         ASSERT_TRUE(got_one_more);
 
