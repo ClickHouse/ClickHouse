@@ -3275,9 +3275,11 @@ async function postSingle(posted_request_num, query, history_query_text)
 
     /// Persist the result snapshot on the active tab and record an entry in browser
     /// history + the URL. In multi-query "Run selected" mode `history_query_text` carries
-    /// the full editor content so a refresh restores everything, not just the run query.
+    /// the full editor content (the editor text + URL), while `resultQuery` is the single
+    /// statement that actually produced this result (used for rendering and downloads).
     saveHistory({
         query: history_query_text || query,
+        resultQuery: query,
         format: result.format,
         ok: result.response_ok,
         data: result.reply.length > 100000 ? null : result.reply,
@@ -3506,7 +3508,11 @@ async function restoreFromHistory(state, token) {
     } else if (format == 'JSONCompactColumns') {
         is_chart = true;
         if (token !== request_num) { return; }
-        resultEl.renderChart(JSON.parse(result.data));
+        /// renderChart awaits the uPlot loader on first use; await it and re-check the
+        /// token so a tab switch during that load can't let this stale render mutate the
+        /// now-active tab's result element.
+        await resultEl.renderChart(JSON.parse(result.data));
+        if (token !== request_num) { return; }
     } else {
         is_raw = true;
         resultEl.updateRaw(result.data);
@@ -3859,9 +3865,10 @@ function buildHistoryParams(params, tabName) {
     if (run_immediately) out.push('run=1');
     if (server_address != location.origin) out.push('url=' + encodeURIComponent(server_address));
     for (const [name, value] of Object.entries(params || {})) {
-        /// Skip empty values: an unset parameter should not pollute the URL, and a stale
-        /// empty `param_x=` must not later override a non-empty value saved on the tab.
-        if (value === '' || value === undefined || value === null) continue;
+        /// Serialize every parameter, including empty strings: an empty value is valid for a
+        /// String parameter and must be distinguishable from "absent" on load (read back with
+        /// URLSearchParams.get, which returns '' for present-empty and null for absent).
+        if (value === undefined || value === null) continue;
         out.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
     }
     if (tabName) out.push('tab=' + encodeURIComponent(tabName));
@@ -3911,7 +3918,9 @@ function saveHistory(stateData, titleForDoc) {
     tab.query = stateData.query;
     tab.result = {
         ran: true,   /// marks a genuine run; the tab bar's visibility keys off this
-        query: stateData.query,      /// the query that produced this result
+        /// The single statement that produced this result (in multi-query mode it differs
+        /// from the editor text in tab.query); used for rendering/graph-detection/downloads.
+        query: stateData.resultQuery ?? stateData.query,
         params: stateData.params,    /// the params that produced this result
         format: stateData.format,
         ok: stateData.ok,
@@ -4941,7 +4950,7 @@ async function updateQueryParams()
         {
             input.value = oldValues[param.name];
         }
-        input.addEventListener('input', function()
+        input.addEventListener('input', function(e)
         {
             /// Resize to fit the value, clamped between 10em and 20em.
             this.style.width = '10em';
@@ -4949,10 +4958,15 @@ async function updateQueryParams()
             {
                 this.style.width = Math.min(this.scrollWidth, this.clientWidth * 2) + 'px';
             }
-            /// Parameters are tab-owned: persist edited values into the active tab too, not
-            /// just the query text, so a reload without switching/running keeps them.
+            /// Only react to genuine user edits: `updateQueryParams` (on query edits) and
+            /// `setParamValues` (on restore) dispatch synthetic input events for the resize
+            /// above, and syncing on those would spam history / fight the restore.
+            if (!e.isTrusted) return;
+            /// Parameters are tab-owned: persist edited values into the active tab, and keep
+            /// the URL/history entry in sync (replaceState, since the query is unchanged) so a
+            /// reload's URL params are never stale relative to the saved tab.
             const tab = getActiveTab();
-            if (tab) { tab.params = getParamValues(); scheduleSave(); }
+            if (tab) { tab.params = getParamValues(); syncHistory(); }
         });
         wrapper.appendChild(input);
 
