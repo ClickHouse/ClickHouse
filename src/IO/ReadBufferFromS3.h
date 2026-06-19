@@ -31,10 +31,8 @@ private:
     String bucket;
     String key;
     String version_id;
-    /// ETag captured when the object was discovered for this read (from the LIST for a glob, or a
-    /// HEAD at read setup). When non-empty, every GET response ETag is checked against it; a
-    /// mismatch means the object was overwritten in place during the read and we throw instead of
-    /// returning bytes stitched from two generations.
+    /// ETag observed at read setup; each GET response ETag is checked against it to catch an
+    /// in-place overwrite mid-read (instead of stitching two object generations). Empty ⇒ skip.
     String expected_etag;
     const S3::S3RequestSettings request_settings;
 

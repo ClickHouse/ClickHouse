@@ -28,9 +28,8 @@ struct StoredObject
     /// NOTE: the type must stay uint64_t — MetadataStorageFromDisk removal log serializes it as UInt64 LE.
     uint64_t bytes_size = UnknownSize;
 
-    /// ETag captured when the object was listed/headed. When set, the read path rejects any GET
-    /// whose response ETag differs, so a concurrent in-place overwrite is detected instead of
-    /// silently stitching bytes from two object generations. Empty ⇒ no validation.
+    /// ETag from when the object was listed/headed; the read path rejects a GET whose ETag differs,
+    /// catching an in-place overwrite mid-read. Empty ⇒ no validation.
     String etag;
 
     explicit StoredObject(

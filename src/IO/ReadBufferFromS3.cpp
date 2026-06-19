@@ -609,19 +609,12 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
         auto result = outcome.GetResultWithOwnership();
 
         String response_etag = result.GetETag();
-        /// Test-only: deterministically force an ETag mismatch to exercise the validation path
-        /// (the setting gate and the ETag propagated through StorageObjectStorageSource) without a
-        /// real concurrent overwrite.
+        /// Test-only: force an ETag mismatch to exercise the validation path deterministically.
         fiu_do_on(FailPoints::s3_read_inject_etag_mismatch, { response_etag = "<injected-etag-mismatch>"; });
 
-        /// A single file read fans out into many independent ranged GETs (Parquet footer,
-        /// column chunks, prefetch, per-cache-segment downloads). Each GET fetches the
-        /// then-current object, so if the object is overwritten in place between GETs we would
-        /// otherwise stitch bytes from two generations and surface it as a confusing checksum /
-        /// parse failure. Reject the read instead when the ETag drifts from the one at read setup.
-        /// Skip for pinned-version reads (?versionId=): that generation is immutable, so there is no
-        /// tearing to detect, and expected_etag (a HEAD of the *current* version) would otherwise
-        /// spuriously mismatch the pinned version's ETag.
+        /// One file read issues many ranged GETs; if the object is overwritten between them we would
+        /// stitch bytes from two generations, so reject on ETag drift. Skip pinned-version reads
+        /// (?versionId=): immutable, and expected_etag (the current version's HEAD) would falsely mismatch.
         if (version_id.empty() && !expected_etag.empty() && response_etag != expected_etag)
             throw Exception(
                 ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
