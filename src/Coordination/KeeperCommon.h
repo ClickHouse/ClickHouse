@@ -2,7 +2,9 @@
 
 #include <Common/Logger.h>
 
+#include <cstdint>
 #include <functional>
+#include <string_view>
 
 
 namespace Coordination
@@ -14,7 +16,10 @@ using ZooKeeperRequestPtr = std::shared_ptr<ZooKeeperRequest>;
 struct ZooKeeperResponse;
 using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
 
+struct Stat;
+
 }
+
 namespace DB
 {
 
@@ -85,5 +90,48 @@ void moveFileBetweenDisks(
 /// It is valid to always return false - that just makes the queue bloat prevention less effective;
 /// if you do return true, you *must* call KeeperDispatcher::onResponseDeallocated later.
 using ZooKeeperResponseCallback = std::function<bool(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
+
+/// Metadata that must be stored for each znode, + data ptr and cached digest.
+/// (Despite having many fields, this struct is not a kitchen sink, it doesn't have anything
+///  unnecessary and is trying to be small.)
+struct KeeperNodeStats
+{
+    uint32_t data_size = 0;
+    uint32_t acl_id = 0;
+    int32_t version = 0;
+    uint32_t num_children_and_is_ephemeral = 0;
+
+    int64_t czxid = 0;
+    int64_t mzxid = 0;
+    int64_t pzxid = 0;
+
+    int64_t ctime = 0;
+    int64_t mtime = 0;
+
+    int32_t cversion = 0;
+    int32_t aversion = 0;
+
+    int64_t ephemeral_owner_or_seq_num = 0;
+
+    int32_t getNumChildren() const { return num_children_and_is_ephemeral >> 1; }
+    bool isEphemeral() const { return (num_children_and_is_ephemeral & 1) != 0; }
+
+    void setNumChildrenAndIsEphemeral(uint32_t num_children, bool is_ephemeral);
+
+    void increaseNumChildren();
+    void decreaseNumChildren();
+
+    int64_t getEphemeralOwner() const { return isEphemeral() ? ephemeral_owner_or_seq_num : 0; }
+    int64_t getSeqNum() const { return isEphemeral() ? 0 : ephemeral_owner_or_seq_num; }
+
+    void setEphemeralOwner(int64_t ephemeral_owner);
+    void setSeqNum(int64_t seq_num);
+    void increaseSeqNum();
+
+    uint64_t calculateDigest(std::string_view path, std::string_view data) const;
+
+    void copyStats(const Coordination::Stat & stat);
+    void setResponseStat(Coordination::Stat & response_stat) const;
+};
 
 }
