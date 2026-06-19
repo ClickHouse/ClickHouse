@@ -660,8 +660,8 @@ size_t SchemaConverter::addVariantPrimitiveColumnAt(
     bool output_nullable,
     bool preserve_unexpanded_nullable)
 {
-    chassert(isPrimitiveNode(element));
-    chassert(element.__isset.type && element.type == parq::Type::BYTE_ARRAY);
+    if (!isPrimitiveNode(element) || !element.__isset.type || element.type != parq::Type::BYTE_ARRAY)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT` column {}: primitive payload must be `BYTE_ARRAY`", name);
 
     /// If any ancestor (including the VARIANT group itself) is OPTIONAL, the leaf
     /// must also be nullable — rows where the whole VARIANT is absent need to

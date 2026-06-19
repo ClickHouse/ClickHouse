@@ -684,7 +684,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
                     /// discriminators, so shared_variant_local_discr and the cached references stay valid.
                     if (addNewVariant(type, type_name))
                     {
-                        auto local_discr = variant_col.localDiscriminatorByGlobal(variant_info.variant_name_to_discriminator[type_name]);
+                        local_discr = variant_col.localDiscriminatorByGlobal(variant_info.variant_name_to_discriminator[type_name]);
                         auto & variant = variant_col.getVariantByLocalDiscriminator(local_discr);
                         getVariantSerialization(type, type_name)->deserializeBinary(variant, buf, getFormatSettings());
                         local_discriminators[prev_size + i] = local_discr;
