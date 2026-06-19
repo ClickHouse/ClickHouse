@@ -3273,24 +3273,6 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         if (token_iterator->isEnd())
             return false;
 
-        /// Check for unclosed opening parentheses -- these clearly need continuation.
-        /// Only trigger on unclosed opens, not excess closing brackets (which are syntax errors).
-        {
-            Tokens paren_tokens(begin, end, 0, true);
-            UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(paren_tokens));
-            bool has_unclosed_open = false;
-            for (const auto & token : unmatched)
-            {
-                if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
-                {
-                    has_unclosed_open = true;
-                    break;
-                }
-            }
-            if (has_unclosed_open)
-                return true;
-        }
-
         /// Parse statements one by one. The buffer needs continuation only if its
         /// last statement is incomplete because the parser reached the end of
         /// input. Earlier complete statements must not be committed (and executed,
@@ -3302,11 +3284,26 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             if (token_iterator->isEnd())
                 return false;
 
+            const char * statement_begin = token_iterator->begin;
+
             ASTPtr ast;
             Expected expected;
             if (!parser->parse(token_iterator, ast, expected))
             {
-                /// Continuation only if the failure is at the end of input.
+                /// The statement does not parse. Check for an unclosed opening
+                /// bracket -- these clearly need continuation (and may make the
+                /// parser stop before the end of input). The check is done only
+                /// here, after a failed parse, and over the current statement's
+                /// text, so it does not apply SQL bracket rules to the inline data
+                /// of a successfully parsed INSERT. Only opens trigger it; an
+                /// excess closing bracket is a real syntax error.
+                Tokens statement_tokens(statement_begin, end, 0, true);
+                UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(statement_tokens));
+                for (const auto & token : unmatched)
+                    if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
+                        return true;
+
+                /// Otherwise continuation only if the failure is at the end of input.
                 return token_iterator.max().type == TokenType::EndOfStream;
             }
 
@@ -3320,7 +3317,7 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             return false;
         }
     }
-    catch (...)
+    catch (...) /// Ok: on any error the line is committed and processQueryText reports it.
     {
         return false;
     }
