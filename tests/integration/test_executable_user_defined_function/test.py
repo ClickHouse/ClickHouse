@@ -296,6 +296,10 @@ def test_executable_function_parameter_python(started_cluster):
         == "Parameter 2 key 1\n"
     )
 
+    assert node.query_and_get_error(
+        "SELECT test_function_invalid_parameter_name_python(2)(toUInt64(1))"
+    )
+
 
 def test_executable_function_always_error_python(started_cluster):
     skip_test_msan(node)
