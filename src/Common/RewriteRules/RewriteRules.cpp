@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <Core/Settings.h>
 #include <Common/FieldVisitorToString.h>
@@ -119,6 +120,58 @@ namespace
         return {};
     }
 
+    /// Collects the declared type of every `{name:Type}` placeholder reachable from `ast`,
+    /// keyed by name (whitespace-trimmed). The source template rejects duplicate names
+    /// elsewhere, so its names are unique; for the result template the first occurrence is
+    /// recorded, which is enough to detect a type that disagrees with the source.
+    void collectQueryParameterTypes(const ASTPtr & ast, std::unordered_map<String, String> & types)
+    {
+        if (!ast)
+            return;
+        if (const auto * query_parameter = ast->as<ASTQueryParameter>())
+        {
+            auto type = query_parameter->type;
+            trimLeft(type);
+            trimRight(type);
+            types.emplace(query_parameter->name, type);
+        }
+        for (const auto & child : ast->children)
+            collectQueryParameterTypes(child, types);
+    }
+
+    struct ParameterTypeMismatch
+    {
+        String name;
+        String result_type;
+        String source_type;
+    };
+
+    /// Returns the first result placeholder whose declared type disagrees with the type the
+    /// same-named placeholder uses in the source template. Substitution binds captures by
+    /// name and ignores the result-side type, so a mismatching type would let, say, a
+    /// `String` capture land in an `{x:Int}` position, producing an AST that fails at
+    /// execution time. Only names present in the source are compared (unknown names are
+    /// rejected separately).
+    std::optional<ParameterTypeMismatch> findResultParameterTypeMismatch(
+        const ASTPtr & ast, const std::unordered_map<String, String> & source_types)
+    {
+        if (!ast)
+            return {};
+        if (const auto * query_parameter = ast->as<ASTQueryParameter>())
+        {
+            auto type = query_parameter->type;
+            trimLeft(type);
+            trimRight(type);
+            auto it = source_types.find(query_parameter->name);
+            if (it != source_types.end() && it->second != type)
+                return ParameterTypeMismatch{query_parameter->name, type, it->second};
+        }
+        for (const auto & child : ast->children)
+            if (auto found = findResultParameterTypeMismatch(child, source_types))
+                return found;
+        return {};
+    }
+
     /// Validates a rule's source/result templates at DDL time so that invalid rule
     /// metadata is rejected on `CREATE RULE` / `ALTER RULE` instead of turning into
     /// runtime exceptions for every matching query later on.
@@ -190,6 +243,20 @@ namespace
                     "Rewrite rule `{}` references query parameter `{}` in its result template "
                     "that is not captured by its source template",
                     query.rule_name, name);
+
+        /// A placeholder reused in the result template must declare the same type as in the
+        /// source template. Matching captures by name and ignores the result-side type, so a
+        /// disagreeing type (e.g. source `{x:String}`, result `{x:Int}`) would substitute a
+        /// captured string literal into an `{x:Int}` position, producing an AST that fails at
+        /// execution time. Reject such mismatches up front.
+        std::unordered_map<String, String> source_types;
+        collectQueryParameterTypes(query.source_query, source_types);
+        if (auto mismatch = findResultParameterTypeMismatch(query.resulting_query, source_types))
+            throw Exception(
+                ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
+                "Rewrite rule `{}` uses query parameter `{}` with type `{}` in its result template "
+                "but type `{}` in its source template; a placeholder must use the same type in both",
+                query.rule_name, mismatch->name, mismatch->result_type, mismatch->source_type);
     }
 }
 

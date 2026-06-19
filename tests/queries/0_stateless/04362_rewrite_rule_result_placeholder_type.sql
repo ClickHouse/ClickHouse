@@ -15,6 +15,11 @@ CREATE RULE rule_result_bad_type AS (SELECT {x:String}) REWRITE TO (SELECT {x:UI
 -- be rejected rather than substituting a captured literal into a table-identifier position.
 CREATE RULE rule_result_identifier AS (SELECT {t:String}) REWRITE TO (SELECT * FROM {t:Identifier}); -- { serverError REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE }
 
+-- A placeholder reused in the result with a different (but individually supported) type than
+-- the source is rejected: substitution binds the capture by name and ignores the result-side
+-- type, so the captured String literal would land in the `{x:Int}` position.
+CREATE RULE rule_result_type_mismatch AS (SELECT {x:String}) REWRITE TO (SELECT number FROM numbers({x:Int})); -- { serverError REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE }
+
 -- The same validation applies to ALTER RULE.
 CREATE RULE rule_result_alter AS (SELECT {x:String}) REWRITE TO (SELECT {x:String});
 ALTER RULE rule_result_alter AS (SELECT {x:String}) REWRITE TO (SELECT {x:UInt64}); -- { serverError REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE }
