@@ -386,6 +386,8 @@ namespace FailPoints
     extern const char mergetree_load_unexpected_parts_inject_schedule_failure[];
     extern const char mergetree_load_unexpected_parts_inject_worker_nonretryable_exception[];
     extern const char mergetree_load_unexpected_parts_inject_worker_retryable_exception[];
+    extern const char mergetree_load_outdated_parts_pause_in_worker_retryable_catch[];
+    extern const char mergetree_load_outdated_parts_pause_before_cancel_check[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -3096,24 +3098,33 @@ try
     ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_OUTDATED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
+    /// Set when the loading task is canceled (server shutdown / table drop) while dispatching. The runner is
+    /// drained AFTER the loop, never under outdated_data_parts_mutex: a worker that hit a retryable error
+    /// requeues its part under that same mutex (see the catch below), so waiting for the runner while holding
+    /// it would deadlock (and the canceling thread is itself waiting for this task via deactivate()).
+    bool loading_canceled = false;
+    size_t num_parts_left_unloaded = 0;
+    /// Only used to gate the pre-cancel-check pause failpoint so a worker is scheduled before the loop parks.
+    bool any_part_scheduled = false;
     while (true)
     {
         ThreadFuzzer::maybeInjectSleep();
         PartLoadingTree::NodePtr part;
+
+        /// Park the dispatch loop here (after at least one worker was scheduled) so a test can set the cancel
+        /// flag and resume the loop with a retrying worker still in flight, deterministically exercising the
+        /// cancellation path while that worker is about to take outdated_data_parts_mutex. No-op when disabled.
+        if (any_part_scheduled)
+            FailPointInjection::pauseFailPoint(FailPoints::mergetree_load_outdated_parts_pause_before_cancel_check);
 
         {
             std::lock_guard lock(outdated_data_parts_mutex);
 
             if (is_async && outdated_data_parts_loading_canceled)
             {
-                /// Wait for every scheduled task
-                /// In case of any exception it will be re-thrown and server will be terminated.
-                runner.waitForAllToFinishAndRethrowFirstError();
-
-                LOG_DEBUG(log,
-                    "Stopped loading outdated data parts because task was canceled. "
-                    "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
-                return;
+                loading_canceled = true;
+                num_parts_left_unloaded = outdated_unloaded_data_parts.size();
+                break;
             }
 
             /// A part was requeued after a retryable error. Stop dispatching new parts: the failed and the
@@ -3216,6 +3227,10 @@ try
                         data_parts_indexes.erase(it);
                 }
 
+                /// Park a retrying worker just before it takes outdated_data_parts_mutex so a test can hold it
+                /// in flight while the dispatch loop observes cancellation, exercising the lock-ordering boundary.
+                FailPointInjection::pauseFailPoint(FailPoints::mergetree_load_outdated_parts_pause_in_worker_retryable_catch);
+
                 std::lock_guard lock(outdated_data_parts_mutex);
                 outdated_unloaded_data_parts.push_back(my_part);
                 retryable_error_while_loading = true;
@@ -3230,6 +3245,7 @@ try
             });
 
             runner.enqueueAndKeepTrack(std::move(load_outdated_part), Priority{});
+            any_part_scheduled = true;
         }
         catch (...)
         {
@@ -3246,7 +3262,20 @@ try
         }
     }
 
+    /// Drain the scheduled workers here, outside outdated_data_parts_mutex (a worker that hit a retryable
+    /// error takes that mutex to requeue its part, so draining under it would deadlock). A worker that let a
+    /// non-retryable error escape rethrows it from here, so the function-level catch terminates the server.
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    if (loading_canceled)
+    {
+        /// The task is being canceled (server shutdown / table drop) and deactivated by another thread; do
+        /// not mark loading finished or reschedule. The drain above already joined the in-flight workers.
+        LOG_DEBUG(log,
+            "Stopped loading outdated data parts because task was canceled. "
+            "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), num_parts_left_unloaded);
+        return;
+    }
 
     if (retryable_error_while_loading)
     {

@@ -1,8 +1,10 @@
+import concurrent.futures
 import os
 import time
 
 import pytest
 
+from helpers.client import QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -52,6 +54,14 @@ UNEXPECTED_WORKER_NONRETRYABLE_FAILPOINT = (
 UNEXPECTED_WORKER_RETRYABLE_FAILPOINT = (
     "mergetree_load_unexpected_parts_inject_worker_retryable_exception"
 )
+# Pauseable failpoints used to choreograph the cancellation-vs-requeue lock-ordering test below. The first
+# parks a worker in its retryable catch just before it takes outdated_data_parts_mutex; the second parks the
+# dispatch loop (after a worker was scheduled) just before it checks the cancel flag under that same mutex.
+# Together they let the test hold a retrying worker in flight while the loader enters the cancellation path.
+WORKER_RETRYABLE_CATCH_PAUSE = (
+    "mergetree_load_outdated_parts_pause_in_worker_retryable_catch"
+)
+BEFORE_CANCEL_CHECK_PAUSE = "mergetree_load_outdated_parts_pause_before_cancel_check"
 
 # Every retryable interrupt in loadOutdatedDataParts logs this single line, regardless of which of the
 # three failpoints fired. loadUnexpectedDataParts logs its own line.
@@ -619,3 +629,83 @@ def test_retryable_schedule_failure_while_loading_unexpected_parts_reschedules()
     assert node.query(f"SELECT count() FROM {table}").strip() == "3000"
 
     node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_cancellation_while_worker_requeues_does_not_deadlock():
+    # A retrying worker requeues its part by taking outdated_data_parts_mutex. The dispatch loop's
+    # cancellation branch must NOT wait for the runner workers while holding that same mutex: a worker
+    # blocked on the mutex would never finish, the loader would wait for it forever, and the thread that
+    # canceled (server shutdown / table drop, via deactivate()) would wait for the loader -> shutdown/drop
+    # hangs. The fix drains the runner after the dispatch loop, outside the mutex. This test pins a worker
+    # in its retryable catch (just before it locks the mutex) and the loop just before its cancel check,
+    # then cancels via DROP and resumes both; the DROP must complete instead of hanging.
+    table = "t_outdated_cancel"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (a UInt64, b String) ENGINE = MergeTree ORDER BY a
+        SETTINGS old_parts_lifetime = 600, merge_tree_clear_old_parts_interval_seconds = 600
+        """
+    )
+    # Several outdated parts so the dispatch loop schedules a worker and then loops again (where it parks).
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000)")
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000, 1000)")
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(2000, 1000)")
+    node.query(f"OPTIMIZE TABLE {table} FINAL")
+
+    # The worker hits a retryable error (so it reaches the requeue path that takes outdated_data_parts_mutex)
+    # and pauses just before locking it. The dispatch loop pauses just before the cancel check (also under
+    # that mutex) once a worker has been scheduled.
+    node.query(f"SYSTEM ENABLE FAILPOINT {WORKER_FAILPOINT}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {WORKER_RETRYABLE_CATCH_PAUSE}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_CANCEL_CHECK_PAUSE}")
+
+    node.query(f"DETACH TABLE {table}")
+    node.query(f"ATTACH TABLE {table}")
+
+    # Wait until both the worker (in its retryable catch) and the dispatch loop (before the cancel check)
+    # have parked. After this the worker holds no lock and the loop holds no lock; both are about to take
+    # outdated_data_parts_mutex.
+    node.query(f"SYSTEM WAIT FAILPOINT {WORKER_RETRYABLE_CATCH_PAUSE} PAUSE", timeout=60)
+    node.query(f"SYSTEM WAIT FAILPOINT {BEFORE_CANCEL_CHECK_PAUSE} PAUSE", timeout=60)
+
+    # Cancel the loading task the same way shutdown/drop does. DROP calls shutdown() ->
+    # stopOutdatedAndUnexpectedDataPartsLoadingTask() which sets the cancel flag and then deactivate()s the
+    # task (waiting for this in-flight loader run). Run it async: pre-fix it deadlocks and never returns. Do
+    # not use `with` here: on the deadlock path the DROP thread never returns, and the executor's exit would
+    # block forever joining it, so shut down with wait=False on every exit.
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        drop = executor.submit(lambda: node.query(f"DROP TABLE {table}", timeout=120))
+
+        # Give the DROP a moment to set the cancel flag and block in deactivate() waiting for the loader.
+        time.sleep(3)
+
+        # Resume the dispatch loop FIRST: it takes the mutex, sees the cancel flag, and (pre-fix) waits for
+        # the runner while still holding the mutex; (post-fix) breaks out and drains after releasing it. The
+        # worker is still parked, so the loop's mutex acquisition is uncontended here.
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_CANCEL_CHECK_PAUSE}")
+        # Give the (resumed) loop time to reach the cancel branch and, pre-fix, block in
+        # waitForAllToFinish while holding the mutex. Without this the worker could win the mutex first,
+        # requeue, and finish before the loop waits, hiding the pre-fix deadlock (false pass on the buggy
+        # binary). The worker stays parked until the disable below, so this ordering is deterministic.
+        time.sleep(3)
+        # Resume the worker: it now tries to take the mutex to requeue its part. Pre-fix the loop holds the
+        # mutex and waits for this worker -> deadlock; post-fix the loop already released the mutex.
+        node.query(f"SYSTEM DISABLE FAILPOINT {WORKER_RETRYABLE_CATCH_PAUSE}")
+
+        try:
+            drop.result(timeout=90)
+        except (concurrent.futures.TimeoutError, QueryTimeoutExceedException) as e:
+            raise AssertionError(
+                "DROP TABLE hung: cancellation deadlocked with the worker requeue path "
+                "(the loader waited for the runner while holding outdated_data_parts_mutex)"
+            ) from e
+    finally:
+        executor.shutdown(wait=False)
+
+    # The server is still responsive (it never deadlocked its background pool / shutdown path).
+    assert node.query("SELECT 1").strip() == "1"
+
+    node.query(f"SYSTEM DISABLE FAILPOINT {WORKER_FAILPOINT}")
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
