@@ -13,8 +13,6 @@
 namespace DB
 {
 
-constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -24,21 +22,35 @@ namespace ErrorCodes
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
-    const std::string & extension)
+    const std::string & extension,
+    const IDataPartStorage * storage)
 {
     if (checksums.files.contains(path_prefix + extension))
         return true;
 
     /// Also check for hashed version of the filename
     auto hash = sipHash128String(path_prefix);
-    return checksums.files.contains(hash + extension);
+    if (checksums.files.contains(hash + extension))
+        return true;
+
+    /// Packed substreams: not listed in checksums.txt as individual entries, but the
+    /// storage overlay reports their existence via the skp_idx.packed index.
+    if (storage && checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
+    {
+        if (storage->existsFile(path_prefix + extension))
+            return true;
+        if (storage->existsFile(hash + extension))
+            return true;
+    }
+
+    return false;
 }
 
 String getIndexFileName(const String & index_name, bool escape_filename)
 {
     if (escape_filename)
-        return escapeForFileName(INDEX_FILE_PREFIX + index_name);
-    return INDEX_FILE_PREFIX + index_name;
+        return escapeForFileName(String(SKIP_INDEX_FILE_PREFIX) + index_name);
+    return String(SKIP_INDEX_FILE_PREFIX) + index_name;
 }
 
 String IMergeTreeIndex::getFileName() const
@@ -51,9 +63,12 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx"))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /*unknown*/, {}};

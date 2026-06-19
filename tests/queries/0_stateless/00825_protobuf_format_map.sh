@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-flaky-check
-# no-flaky-check: random map_serialization_version=with_buckets reorders Map keys, but this PR only changed the table SETTINGS line
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SCHEMADIR=$CURDIR/format_schemas
@@ -16,7 +15,8 @@ DROP TABLE IF EXISTS map_protobuf_00825;
 CREATE TABLE map_protobuf_00825
 (
   a Map(String, UInt32)
-) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
+) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version_for_zero_level_parts='basic', map_serialization_version='basic', optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO map_protobuf_00825 VALUES ({'x':5, 'y':7}), ({'z':11}), ({'temp':0}), ({'':0});
 
