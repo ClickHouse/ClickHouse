@@ -114,6 +114,7 @@ Settings:
 - `oneline` – Print the query in one line. Default: `0`.
 - `run_query_tree_passes` – Run query tree passes before dumping the query tree. Default: `0`.
 - `query_tree_passes` – If `run_query_tree_passes` is set, specifies how many passes to run. Without specifying `query_tree_passes` it runs all the passes.
+- `single_record` – Return the reformatted query as a single multi-line record instead of one record per line. Default: `0`.
 
 Examples:
 
