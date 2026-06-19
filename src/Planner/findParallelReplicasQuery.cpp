@@ -1,4 +1,5 @@
 #include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
@@ -212,7 +213,7 @@ public:
         }
     }
 
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    std::unordered_map<const IQueryTreeNode *, ColumnSourceNodePtr> replacement_map;
 };
 
 static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const ContextPtr & context)

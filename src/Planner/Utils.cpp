@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Planner/Utils.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -515,11 +516,11 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const QueryTreeNodePtr & query_node,
-    const QueryTreeNodes & table_nodes,
+    const std::vector<ColumnSourceNodePtr> & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map)
 {
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    std::unordered_map<const IQueryTreeNode *, ColumnSourceNodePtr> replacement_map;
 
     for (const auto & table_expression : table_nodes)
     {
@@ -563,7 +564,7 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 }
 
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
+        const ColumnSourceNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter)
 {
@@ -602,7 +603,7 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
 }
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
-        const QueryTreeNodePtr & table_expression,
+        const ColumnSourceNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter)
 {

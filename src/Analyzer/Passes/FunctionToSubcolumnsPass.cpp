@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -51,7 +52,7 @@ namespace
 struct ColumnContext
 {
     NameAndTypePair column;
-    QueryTreeNodePtr column_source;
+    ColumnSourceNodePtr column_source;
     ContextPtr context;
 };
 

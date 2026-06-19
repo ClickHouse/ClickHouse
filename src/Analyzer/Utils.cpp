@@ -1,5 +1,7 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Core/Field.h>
 #include <Core/Settings.h>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -52,6 +54,7 @@
 
 #include <Core/Streaming/CursorTree_fwd.h>
 
+#include <memory>
 #include <ranges>
 
 namespace DB
@@ -598,9 +601,9 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
     return result;
 }
 
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join, bool recursive)
+std::vector<ColumnSourceNodePtr> extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join, bool recursive)
 {
-    QueryTreeNodes result;
+    std::vector<ColumnSourceNodePtr> result;
 
     std::deque<QueryTreeNodePtr> nodes_to_process;
     nodes_to_process.push_back(join_tree_node);
@@ -614,27 +617,21 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
 
         switch (node_type)
         {
-            case QueryTreeNodeType::IDENTIFIER:
+            case QueryTreeNodeType::TABLE:
             {
-                /** An unresolved identifier can appear in a join tree if the query tree
-                  * was not fully resolved (e.g. a subquery inside an unresolved table function
-                  * argument). Treat it like a leaf table expression.
-                  */
-                result.push_back(std::move(node_to_process));
+                result.push_back(static_pointer_cast<TableNode>(std::move(node_to_process)));
                 break;
             }
-            case QueryTreeNodeType::TABLE:
-                [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
-                result.push_back(std::move(node_to_process));
+                result.push_back(static_pointer_cast<TableFunctionNode>(std::move(node_to_process)));
                 break;
             }
             case QueryTreeNodeType::QUERY:
             {
                 if (recursive)
                     nodes_to_process.push_back(node_to_process->as<QueryNode>()->getJoinTree());
-                result.push_back(std::move(node_to_process));
+                result.push_back(static_pointer_cast<QueryNode>(std::move(node_to_process)));
                 break;
             }
             case QueryTreeNodeType::UNION:
@@ -644,7 +641,7 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
                     for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
                         nodes_to_process.push_back(union_node);
                 }
-                result.push_back(std::move(node_to_process));
+                result.push_back(static_pointer_cast<UnionNode>(std::move(node_to_process)));
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
@@ -652,7 +649,7 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
                 auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
                 nodes_to_process.push_front(array_join_node.getTableExpression());
                 if (add_array_join)
-                    result.push_back(std::move(node_to_process));
+                    result.push_back(static_pointer_cast<ArrayJoinNode>(std::move(node_to_process)));
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
@@ -680,6 +677,36 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
     }
 
     return result;
+}
+
+static ColumnSourceNodePtr getTypedTableExpression(const QueryTreeNodePtr & join_tree_node)
+{
+    auto node_type = join_tree_node->getNodeType();
+
+    switch (node_type)
+    {
+        case QueryTreeNodeType::TABLE:
+            return static_pointer_cast<TableNode>(join_tree_node);
+        case QueryTreeNodeType::TABLE_FUNCTION:
+            return static_pointer_cast<TableFunctionNode>(join_tree_node);
+        case QueryTreeNodeType::QUERY:
+            return static_pointer_cast<QueryNode>(join_tree_node);
+        case QueryTreeNodeType::UNION:
+            return static_pointer_cast<UnionNode>(join_tree_node);
+        case QueryTreeNodeType::ARRAY_JOIN:
+            return static_pointer_cast<ArrayJoinNode>(join_tree_node);
+        case QueryTreeNodeType::CROSS_JOIN:
+            return static_pointer_cast<CrossJoinNode>(join_tree_node);
+        case QueryTreeNodeType::JOIN:
+            return static_pointer_cast<JoinNode>(join_tree_node);
+        default:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected node type for table expression. "
+                            "Expected table, table function, query, union, join or array join. Actual {}",
+                            join_tree_node->getNodeTypeName());
+        }
+    }
 }
 
 QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node)
@@ -745,46 +772,55 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
 namespace
 {
 
-void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, QueryTreeNodes & result)
+void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, std::vector<ColumnSourceNodePtr> & result)
 {
     auto node_type = join_tree_node->getNodeType();
 
     switch (node_type)
     {
         case QueryTreeNodeType::TABLE:
-            [[fallthrough]];
+        {
+            result.push_back(std::static_pointer_cast<TableNode>(join_tree_node));
+            break;
+        }
         case QueryTreeNodeType::QUERY:
-            [[fallthrough]];
+        {
+            result.push_back(std::static_pointer_cast<QueryNode>(join_tree_node));
+            break;
+        }
         case QueryTreeNodeType::UNION:
-            [[fallthrough]];
+        {
+            result.push_back(std::static_pointer_cast<UnionNode>(join_tree_node));
+            break;
+        }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            result.push_back(join_tree_node);
+            result.push_back(std::static_pointer_cast<TableFunctionNode>(join_tree_node));
             break;
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
-            auto & array_join_node = join_tree_node->as<ArrayJoinNode &>();
-            buildTableExpressionsStackImpl(array_join_node.getTableExpression(), result);
-            result.push_back(join_tree_node);
+            auto array_join_node = std::static_pointer_cast<ArrayJoinNode>(join_tree_node);
+            buildTableExpressionsStackImpl(array_join_node->getTableExpression(), result);
+            result.push_back(std::move(array_join_node));
             break;
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
-            auto & cross_join_node = join_tree_node->as<CrossJoinNode &>();
+            auto cross_join_node = std::static_pointer_cast<CrossJoinNode>(join_tree_node);
 
-            for (const auto & expr : cross_join_node.getTableExpressions())
+            for (const auto & expr : cross_join_node->getTableExpressions())
                 buildTableExpressionsStackImpl(expr, result);
 
-            result.push_back(join_tree_node);
+            result.push_back(std::move(cross_join_node));
             break;
         }
         case QueryTreeNodeType::JOIN:
         {
-            auto & join_node = join_tree_node->as<JoinNode &>();
-            buildTableExpressionsStackImpl(join_node.getLeftTableExpression(), result);
-            buildTableExpressionsStackImpl(join_node.getRightTableExpression(), result);
-            result.push_back(join_tree_node);
+            auto join_node = std::static_pointer_cast<JoinNode>(join_tree_node);
+            buildTableExpressionsStackImpl(join_node->getLeftTableExpression(), result);
+            buildTableExpressionsStackImpl(join_node->getRightTableExpression(), result);
+            result.push_back(std::move(join_node));
             break;
         }
         default:
@@ -798,9 +834,9 @@ void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, Que
 
 }
 
-QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node)
+std::vector<ColumnSourceNodePtr> buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node)
 {
-    QueryTreeNodes result;
+    std::vector<ColumnSourceNodePtr> result;
     buildTableExpressionsStackImpl(join_tree_node, result);
 
     return result;
@@ -1015,7 +1051,7 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
     function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 }
 
-std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
+std::pair<ColumnSourceNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
 {
     if (const auto * column = node->as<ColumnNode>())
     {
@@ -1027,7 +1063,7 @@ std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & n
 
     if (const auto * func = node->as<FunctionNode>())
     {
-        QueryTreeNodePtr source = nullptr;
+        ColumnSourceNodePtr source = nullptr;
         const auto & args = func->getArguments().getNodes();
         for (const auto & arg : args)
         {
@@ -1080,7 +1116,7 @@ QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes 
     subquery_projection_nodes.reserve(projection_columns.size());
 
     for (const auto & column : projection_columns)
-        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
+        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, getTypedTableExpression(table_expression)));
 
     if (subquery_projection_nodes.empty())
     {

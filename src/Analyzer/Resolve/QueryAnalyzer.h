@@ -121,9 +121,9 @@ public:
     explicit QueryAnalyzer(bool only_analyze_);
     ~QueryAnalyzer();
 
-    void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
+    void resolve(QueryTreeNodePtr & node, const ColumnSourceNodePtr & table_expression, ContextPtr context);
 
-    void resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
+    void resolveConstantExpression(QueryTreeNodePtr & node, const ColumnSourceNodePtr & table_expression, ContextPtr context);
 
 private:
     /// Utility functions
@@ -226,7 +226,7 @@ private:
     using QueryTreeNodesWithNames = std::vector<std::pair<QueryTreeNodePtr, std::string>>;
 
     QueryTreeNodesWithNames getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
-        const QueryTreeNodePtr & table_expression_node,
+        const ColumnSourceNodePtr & table_expression_node,
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
@@ -285,7 +285,7 @@ private:
 
     void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
-    void inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const;
+    const IColumnSourceNode * inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const;
 
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
 

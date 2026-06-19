@@ -98,7 +98,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 
 /// Extract table, table function, query, union from join tree.
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
+std::vector<ColumnSourceNodePtr> extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
 
 /// Extract left table expression from join tree.
 QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
@@ -113,7 +113,7 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
   * 4. t2
   * 5. t1
   */
-QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
+std::vector<ColumnSourceNodePtr> buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
@@ -160,7 +160,7 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
 /// Returns single source of expression node.
 /// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
 /// Second element of pair is true if there is at most one source, false if there are multiple sources.
-std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
+std::pair<ColumnSourceNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
 
 /// Update mutable context for subquery execution
 void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);

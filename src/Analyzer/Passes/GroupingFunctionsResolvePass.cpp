@@ -147,7 +147,7 @@ public:
 
         if (add_grouping_set_column)
         {
-            QueryTreeNodeWeakPtr column_source;
+            ColumnSourceNodeWeakPtr column_source;
             auto grouping_set_column = NameAndTypePair{"__grouping_set", std::make_shared<DataTypeUInt64>()};
             auto grouping_set_argument_column = std::make_shared<ColumnNode>(std::move(grouping_set_column), std::move(column_source));
             function_arguments.insert(function_arguments.begin(), std::move(grouping_set_argument_column));

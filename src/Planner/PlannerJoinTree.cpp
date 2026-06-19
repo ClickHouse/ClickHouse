@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Planner/PlannerJoinTree.h>
 
@@ -829,7 +830,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
         auto table_expression_query_info = select_query_info;
-        table_expression_query_info.table_expression = table_expression;
+
+        if (table_node)
+            table_expression_query_info.table_expression = static_pointer_cast<TableNode>(table_expression);
+        else
+            table_expression_query_info.table_expression = static_pointer_cast<TableFunctionNode>(table_expression);
+
         if (const auto & filter_actions = table_expression_data.getFilterActions())
             table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
 

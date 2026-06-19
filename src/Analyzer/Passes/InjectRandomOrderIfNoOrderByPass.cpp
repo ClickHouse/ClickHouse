@@ -52,7 +52,7 @@ static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr cont
     auto new_root = std::make_shared<QueryNode>(Context::createCopy(context));
     new_root->getJoinTree() = query_root;
     NameAndTypePair column{unique_column_name, subquery_projection_columns[0].type};
-    new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(column, query_root));
+    new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(column, new_root));
     new_root->resolveProjectionColumns({column});
     addRandomOrderBy(new_root->getOrderBy(), context);
 

@@ -86,7 +86,7 @@ public:
         friend ConstraintsDescription;
     };
 
-    QueryTreeData getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const;
+    QueryTreeData getQueryTreeData(const ContextPtr & context, const ColumnSourceNodePtr & table_node) const;
 
 private:
     std::vector<std::vector<CNFQueryAtomicFormula>> buildConstraintData() const;

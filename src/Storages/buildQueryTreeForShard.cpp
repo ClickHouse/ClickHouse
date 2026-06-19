@@ -1,3 +1,4 @@
+#include <Analyzer/IColumnSourceNode.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -69,6 +70,7 @@ public:
     {
         NameSet column_names;
         NamesAndTypes columns;
+        ColumnSourceNodePtr source;
 
         void addColumn(NameAndTypePair column)
         {
@@ -80,7 +82,7 @@ public:
         }
     };
 
-    const std::unordered_map<QueryTreeNodePtr, Columns> & getColumnSourceToColumns() const
+    const std::unordered_map<const IQueryTreeNode *, Columns> & getColumnSourceToColumns() const
     {
         return column_source_to_columns;
     }
@@ -95,18 +97,19 @@ public:
         if (!column_source)
             return;
 
-        auto it = column_source_to_columns.find(column_source);
+        auto it = column_source_to_columns.find(column_source.get());
         if (it == column_source_to_columns.end())
         {
-            auto [insert_it, _] = column_source_to_columns.emplace(column_source, Columns());
+            auto [insert_it, _] = column_source_to_columns.emplace(column_source.get(), Columns());
             it = insert_it;
+            it->second.source = std::move(column_source);
         }
 
         it->second.addColumn(column_node->getColumn());
     }
 
 private:
-    std::unordered_map<QueryTreeNodePtr, Columns> column_source_to_columns;
+    std::unordered_map<const IQueryTreeNode *, Columns> column_source_to_columns;
 };
 
 /** Visitor that rewrites IN and JOINs in query and all subqueries according to distributed_product_mode and
@@ -137,7 +140,7 @@ public:
         size_t subquery_depth = 0;
     };
 
-    const std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> & getReplacementMap() const
+    const std::unordered_map<const IQueryTreeNode *, ColumnSourceNodePtr> & getReplacementMap() const
     {
         return replacement_map;
     }
@@ -262,7 +265,7 @@ private:
     }
 
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    std::unordered_map<const IQueryTreeNode *, ColumnSourceNodePtr> replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
@@ -511,7 +514,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
 QueryTreeNodePtr getSubqueryFromTableExpression(
     const QueryTreeNodePtr & join_table_expression,
-    const std::unordered_map<QueryTreeNodePtr, CollectColumnSourceToColumnsVisitor::Columns> & column_source_to_columns,
+    const std::unordered_map<const IQueryTreeNode *, CollectColumnSourceToColumnsVisitor::Columns> & column_source_to_columns,
     const ContextPtr & context)
 {
     auto join_table_expression_node_type = join_table_expression->getNodeType();
@@ -523,7 +526,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     }
     else if (join_table_expression_node_type == QueryTreeNodeType::TABLE || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
     {
-        auto columns_it = column_source_to_columns.find(join_table_expression);
+        auto columns_it = column_source_to_columns.find(join_table_expression.get());
         const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
         subquery_node = buildSubqueryToReadColumnsFromTableExpression(columns, join_table_expression, context);
     }
@@ -542,14 +545,14 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
             auto current = nodes_to_visit.back();
             nodes_to_visit.pop_back();
 
-            auto columns_it = column_source_to_columns.find(current);
+            auto columns_it = column_source_to_columns.find(current.get());
             if (columns_it != column_source_to_columns.end())
             {
                 for (const auto & col : columns_it->second.columns)
                 {
                     if (seen_column_names.insert(col.name).second)
                     {
-                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, current));
+                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, columns_it->second.source));
                         projection_columns.push_back(col);
                     }
                 }
@@ -668,7 +671,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            QueryTreeNodePtr replacement_table_expression;
+            TableNodePtr replacement_table_expression;
             auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
             if (!temporary_table_expression_node)
             {
@@ -690,7 +693,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
             else
             {
-                replacement_table_expression = temporary_table_expression_node->clone();
+                replacement_table_expression = static_pointer_cast<TableNode>(temporary_table_expression_node->clone());
             }
 
             replacement_map.emplace(in_function_subquery_node.get(), replacement_table_expression);

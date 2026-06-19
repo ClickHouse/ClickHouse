@@ -4,6 +4,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
@@ -944,7 +945,7 @@ namespace
 class ApplyAliasColumnExpressionsVisitor : public InDepthQueryTreeVisitor<ApplyAliasColumnExpressionsVisitor>
 {
 public:
-    explicit ApplyAliasColumnExpressionsVisitor(QueryTreeNodePtr replacement_table_expression_)
+    explicit ApplyAliasColumnExpressionsVisitor(ColumnSourceNodePtr replacement_table_expression_)
         : replacement_table_expression(replacement_table_expression_)
     {}
 
@@ -974,13 +975,13 @@ public:
         }
     }
 private:
-    QueryTreeNodePtr replacement_table_expression;
+    ColumnSourceNodePtr replacement_table_expression;
 };
 
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
-    QueryTreeNodePtr original_table_expression,
-    QueryTreeNodePtr replacement_table_expression,
+    ColumnSourceNodePtr original_table_expression,
+    ColumnSourceNodePtr replacement_table_expression,
     const ContextPtr & context,
     const Names & required_column_names)
 {

@@ -20,10 +20,12 @@ namespace ErrorCodes
 namespace
 {
 
-ColumnSourceId extractColumnSourceId(const QueryTreeNodePtr & source, const NameAndTypePair & column)
+/// Validate that the source is a column source node and return it typed. The id snapshot is taken
+/// from the returned node by the callers (it stays valid after the source itself is destroyed).
+ColumnSourceNodePtr toColumnSourceNode(const QueryTreeNodePtr & source, const NameAndTypePair & column)
 {
     if (!source)
-        return INVALID_COLUMN_SOURCE_ID;
+        return nullptr;
 
     if (!source->isColumnSource())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -32,7 +34,7 @@ ColumnSourceId extractColumnSourceId(const QueryTreeNodePtr & source, const Name
             column.type->getName(),
             source->getNodeTypeName());
 
-    return static_cast<const IColumnSourceNode &>(*source).getColumnSourceId();
+    return std::static_pointer_cast<IColumnSourceNode>(source);
 }
 
 }
@@ -40,26 +42,29 @@ ColumnSourceId extractColumnSourceId(const QueryTreeNodePtr & source, const Name
 ColumnNode::ColumnNode(
     NameAndTypePair column_,
     QueryTreeNodePtr expression_node_,
-    QueryTreeNodeWeakPtr column_source_
+    ColumnSourceNodeWeakPtr column_source_
 )
     : IQueryTreeNode(children_size)
     , column(std::move(column_))
     , column_source(std::move(column_source_))
 {
     children[expression_child_index] = std::move(expression_node_);
-    column_source_id = extractColumnSourceId(column_source.lock(), column);
+    auto source = column_source.lock();
+    column_source_id = source ? source->getColumnSourceId() : INVALID_COLUMN_SOURCE_ID;
 }
+
+ColumnNode::~ColumnNode() = default;
 
 ColumnNode::ColumnNode(
     NameAndTypePair column_,
-    QueryTreeNodeWeakPtr column_source_
+    ColumnSourceNodeWeakPtr column_source_
 )
     : ColumnNode(std::move(column_), nullptr /*expression_node*/, std::move(column_source_))
 {}
 
 ColumnNode::ColumnNode(
     NameAndTypePair column_,
-    QueryTreeNodeWeakPtr column_source_,
+    ColumnSourceNodeWeakPtr column_source_,
     ColumnSourceId column_source_id_
 )
     : IQueryTreeNode(children_size)
@@ -69,23 +74,24 @@ ColumnNode::ColumnNode(
 {
 }
 
-void ColumnNode::setColumnSource(const QueryTreeNodePtr & source)
+void ColumnNode::setColumnSource(const ColumnSourceNodePtr & source)
 {
     column_source = source;
-    column_source_id = extractColumnSourceId(source, column);
+    column_source_id = source ? source->getColumnSourceId() : INVALID_COLUMN_SOURCE_ID;
 }
 
-void ColumnNode::remapColumnSourceAfterClone(const ReplacementMap & old_pointer_to_new_pointer)
+void ColumnNode::remapColumnSourceAfterClone(const std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> & old_pointer_to_new_pointer)
 {
     auto it = old_pointer_to_new_pointer.find(column_source.lock().get());
     if (it == old_pointer_to_new_pointer.end())
         return;
 
-    column_source = it->second;
-    column_source_id = extractColumnSourceId(it->second, column);
+    auto typed_source = toColumnSourceNode(it->second, column);
+    column_source_id = typed_source ? typed_source->getColumnSourceId() : INVALID_COLUMN_SOURCE_ID;
+    column_source = typed_source;
 }
 
-QueryTreeNodePtr ColumnNode::getColumnSource() const
+ColumnSourceNodePtr ColumnNode::getColumnSource() const
 {
     auto lock = column_source.lock();
     if (!lock)
@@ -97,7 +103,7 @@ QueryTreeNodePtr ColumnNode::getColumnSource() const
     return lock;
 }
 
-QueryTreeNodePtr ColumnNode::getColumnSourceOrNull() const
+ColumnSourceNodePtr ColumnNode::getColumnSourceOrNull() const
 {
     return column_source.lock();
 }

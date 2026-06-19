@@ -232,7 +232,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     for (const auto & column : header.getIndexByName())
         fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type), /*after_column=*/ "", /*first=*/false, /*add_subcolumns=*/false);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+    auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);

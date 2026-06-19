@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 
 #include <Storages/IStorage.h>
@@ -40,7 +41,7 @@ public:
             applyFinalIfNeeded(table_expression);
     }
 private:
-    static void applyFinalIfNeeded(QueryTreeNodePtr & node)
+    static void applyFinalIfNeeded(ColumnSourceNodePtr & node)
     {
         auto * table_node = node->as<TableNode>();
         auto * table_function_node = node->as<TableFunctionNode>();

@@ -184,7 +184,7 @@ std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomsById(const Co
     return result;
 }
 
-ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const
+ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(const ContextPtr & context, const ColumnSourceNodePtr & table_node) const
 {
     QueryTreeData data;
     std::vector<Analyzer::CNFAtomicFormula> atomic_constraints_data;

@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -328,7 +329,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
     return result;
 }
 
-void addIndexConstraint(Analyzer::CNF & cnf, const QueryTreeNodes & table_expressions, const ContextPtr & context)
+void addIndexConstraint(Analyzer::CNF & cnf, const std::vector<ColumnSourceNodePtr> & table_expressions, const ContextPtr & context)
 {
     for (const auto & table_expression : table_expressions)
     {
@@ -583,7 +584,7 @@ void bruteForce(
     }
 }
 
-void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expressions, const ContextPtr & context)
+void substituteColumns(QueryNode & query_node, const std::vector<ColumnSourceNodePtr> & table_expressions, const ContextPtr & context)
 {
     static constexpr UInt64 COLUMN_PENALTY = 10 * 1024 * 1024;
     static constexpr Int64 INDEX_PRICE = -1'000'000'000'000'000'000;
@@ -676,7 +677,7 @@ void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expr
     }
 }
 
-void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_expressions, const ContextPtr & context)
+void optimizeWithConstraints(Analyzer::CNF & cnf, const std::vector<ColumnSourceNodePtr> & table_expressions, const ContextPtr & context)
 {
     cnf.pullNotOutFunctions(context);
 
@@ -714,7 +715,7 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
         addIndexConstraint(cnf, table_expressions, context);
 }
 
-void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressions, const ContextPtr & context)
+void optimizeNode(QueryTreeNodePtr & node, const std::vector<ColumnSourceNodePtr> & table_expressions, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
 

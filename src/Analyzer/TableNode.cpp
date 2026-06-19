@@ -79,7 +79,7 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
 
 TableNode::TableNode(
     const std::string & cte_name_,
-    QueryTreeNodePtr materialized_cte_subquery_,
+    ColumnSourceNodePtr materialized_cte_subquery_,
     const ContextPtr & context_)
     : TableNode(
         std::make_shared<StorageDummy>(

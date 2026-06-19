@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 
@@ -45,7 +46,7 @@ public:
     /// Creates StorageDummy as a placeholder; call finalizeMaterializedCTE after resolving the subquery.
     explicit TableNode(
         const std::string & cte_name_,
-        QueryTreeNodePtr materialized_cte_subquery_,
+        ColumnSourceNodePtr materialized_cte_subquery_,
         const ContextPtr & context_);
 
     /// Replace the placeholder storage with the real StorageMemory from the temporary table holder.

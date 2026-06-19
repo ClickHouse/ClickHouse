@@ -1174,7 +1174,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             for (auto & column : columns_to_select)
             {
-                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, in_second_argument));
+                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, static_pointer_cast<TableFunctionNode>(in_second_argument)));
                 projection_columns.emplace_back(column.name, column.type);
             }
 
@@ -1211,7 +1211,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     auto replacement_table_expression_table_node = table_expression_table_node->clone();
                     replacement_table_expression_table_node->as<TableNode &>().updateStorage(storage, scope.context);
-                    in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression_table_node));
+                    in_second_argument = in_second_argument->cloneAndReplace(static_pointer_cast<TableNode>(table_expression), std::static_pointer_cast<TableNode>(replacement_table_expression_table_node));
                 }
             }
 
@@ -1731,7 +1731,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 const auto & argument_type = function_data_type_argument_types[i];
                 auto column_name_and_type = NameAndTypePair{lambda_argument_names[i], argument_type};
-                lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), lambda_to_resolve));
+                lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), static_pointer_cast<LambdaNode>(lambda_to_resolve)));
             }
 
             lambda_projection_names = resolveLambda(lambda_argument, lambda_to_resolve, lambda_arguments, lambda_scope);

@@ -66,9 +66,10 @@ class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
 using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
-using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
 
 class IColumnSourceNode;
+using ColumnSourceNodePtr = std::shared_ptr<IColumnSourceNode>;
+using ColumnSourceNodeWeakPtr = std::weak_ptr<IColumnSourceNode>;
 
 /** Id of a column source instance (a node derived from IColumnSourceNode), unique within the process.
   * Value 0 is reserved for "no source". Ids are not deterministic between runs and must never appear
@@ -210,13 +211,13 @@ public:
       * If node to clone is key in replacement map, then instead of clone it
       * use value node from replacement map.
       */
-    using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
+    using ReplacementMap = std::unordered_map<const IQueryTreeNode *, ColumnSourceNodePtr>;
     QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
 
     /** Get a deep copy of the query tree.
       * If node to clone is node to replace, then instead of clone it use replacement node.
       */
-    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const;
+    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, ColumnSourceNodePtr replacement_node) const;
 
     /// Returns true if node has alias, false otherwise
     bool hasAlias() const

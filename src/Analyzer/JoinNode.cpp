@@ -224,13 +224,13 @@ void JoinNode::crossToInner(const QueryTreeNodePtr & join_expression_)
 
 
 CrossJoinNode::CrossJoinNode(QueryTreeNodePtr table_expression)
-    : IQueryTreeNode(1)
+    : IColumnSourceNode(1)
 {
     children = {std::move(table_expression)};
 }
 
 CrossJoinNode::CrossJoinNode(QueryTreeNodes table_expressions, JoinTypes join_types_)
-    : IQueryTreeNode(table_expressions.size())
+    : IColumnSourceNode(table_expressions.size())
     , join_types(std::move(join_types_))
 {
     children = std::move(table_expressions);

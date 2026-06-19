@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
+#include <Analyzer/IColumnSourceNode.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>

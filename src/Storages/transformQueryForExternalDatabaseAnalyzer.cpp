@@ -56,9 +56,9 @@ public:
 
 }
 
-ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression)
+ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const ColumnSourceNodePtr & table_expression)
 {
-    auto replacement_table_expression = table_expression->clone();
+    auto replacement_table_expression = dynamic_pointer_cast<IColumnSourceNode>(table_expression->clone());
     auto new_tree = query_tree->cloneAndReplace(table_expression, replacement_table_expression);
 
     PrepareForExternalDatabaseVisitor visitor;

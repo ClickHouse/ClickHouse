@@ -1,4 +1,7 @@
+#include <Analyzer/IColumnSourceNode.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/UnionNode.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
@@ -1133,7 +1136,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     const auto & from_join_node = table_expression_node->as<const JoinNode &>();
     JoinKind join_kind = from_join_node.getKind();
 
-    bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression_node.get());
+    bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(&from_join_node);
     std::unordered_map<std::string, ColumnNodePtr> join_using_column_name_to_column_node;
 
     if (scope.allow_resolve_from_using && !join_node_in_resolve_process && from_join_node.isUsingJoinExpression())
@@ -1605,7 +1608,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
     const auto & from_array_join_node = table_expression_node->as<const ArrayJoinNode &>();
     auto resolve_result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpression(), scope);
 
-    if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
+    if (scope.table_expressions_in_resolve_process.contains(&from_array_join_node) || !identifier_lookup.isExpressionLookup())
         return resolve_result;
 
     const auto & array_join_column_expressions = from_array_join_node.getJoinExpressions();
@@ -1693,7 +1696,17 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTreeNode
               * SELECT subquery.b AS value FROM (SELECT value, 1 AS b) AS subquery;
               * TODO: This can be supported
               */
-            if (scope.table_expressions_in_resolve_process.contains(join_tree_node.get()))
+            const IColumnSourceNode * ptr = nullptr;
+            if (const auto * table_node = join_tree_node->as<TableNode>())
+                ptr = table_node;
+            if (const auto * table_function_node = join_tree_node->as<TableFunctionNode>())
+                ptr = table_function_node;
+            if (const auto * query_node = join_tree_node->as<QueryNode>())
+                ptr = query_node;
+            if (const auto * union_node = join_tree_node->as<UnionNode>())
+                ptr = union_node;
+
+            if (scope.table_expressions_in_resolve_process.contains(ptr))
                 return {};
 
             return tryResolveIdentifierFromTableExpression(identifier_lookup, join_tree_node, scope);

@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/StorageDistributed.h>
 
 #include <Databases/IDatabase.h>
@@ -878,7 +879,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     else if (auto * query_info_table_function_node = query_info.table_expression->as<TableFunctionNode>())
         table_expression_modifiers = query_info_table_function_node->getTableExpressionModifiers();
 
-    QueryTreeNodePtr replacement_table_expression;
+    ColumnSourceNodePtr replacement_table_expression;
 
     if (remote_table_function)
     {

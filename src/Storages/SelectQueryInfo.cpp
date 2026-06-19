@@ -2,6 +2,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Analyzer/IColumnSourceNode.h>
 
 namespace DB
 {
@@ -29,7 +30,8 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (planner_context)
     {
-        auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
+        QueryTreeNodePtr ptr = table_expression;
+        auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(ptr);
         for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
         {
             /// ALIAS columns cannot be used in the filter expression without being calculated in ActionsDAG,

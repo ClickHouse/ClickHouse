@@ -164,7 +164,7 @@ struct IdentifierResolveScope
     ExpressionsStack expressions_in_resolve_process_stack;
 
     /// Table expressions in resolve process
-    std::unordered_set<const IQueryTreeNode *> table_expressions_in_resolve_process;
+    std::unordered_set<const IColumnSourceNode *> table_expressions_in_resolve_process;
 
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
