@@ -64,3 +64,17 @@ SELECT count() > 0 FROM generateRandom('x Array(UInt32)', 42, 10, 20) LIMIT 1;
 
 -- Verify generate_random_max_json_dynamic_keys setting: 0 means no dynamic paths.
 SELECT count() > 0 FROM generateRandom('x JSON', 42, 10, 5) LIMIT 5 SETTINGS generate_random_max_json_dynamic_keys = 0;
+
+-- Verify serialization: render values through FORMAT Null (catches crashes during text serialization).
+SELECT x FROM generateRandom('x JSON(a UInt32, b String)', 1, 5, 3) LIMIT 2 FORMAT Null;
+SELECT x FROM generateRandom('x Dynamic', 1, 5, 3) LIMIT 5 FORMAT Null;
+SELECT x FROM generateRandom('x Variant(UInt64, String)', 1, 5, 3) LIMIT 5 FORMAT Null;
+SELECT x FROM generateRandom('x Time', 1, 10, 5) LIMIT 5 FORMAT Null;
+SELECT x FROM generateRandom('x Time64(3)', 1, 10, 5) LIMIT 5 FORMAT Null;
+
+-- Verify column types are correct for the new fixed-size types.
+SELECT toTypeName(x) FROM generateRandom('x BFloat16', 1, 5, 3) LIMIT 1;
+SELECT toTypeName(x) FROM generateRandom('x Time', 1, 5, 3) LIMIT 1;
+SELECT toTypeName(x) FROM generateRandom('x Time64(3)', 1, 5, 3) LIMIT 1;
+SELECT toTypeName(x) FROM generateRandom('x Dynamic', 1, 5, 3) LIMIT 1;
+SELECT toTypeName(x) FROM generateRandom('x Variant(UInt64, String)', 1, 5, 3) LIMIT 1;
