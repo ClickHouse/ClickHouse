@@ -4,10 +4,12 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/Serializations/SerializationDynamicHelpers.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -19,6 +21,8 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+
+#include <array>
 
 namespace DB
 {
@@ -40,6 +44,30 @@ const FormatSettings & getFormatSettings()
     return settings;
 }
 
+bool mappingCollapsesDiscriminators(const VectorWithMemoryTracking<ColumnVariant::Discriminator> & discriminators_mapping)
+{
+    std::array<bool, ColumnVariant::MAX_NESTED_COLUMNS + 1> seen = {};
+    for (auto discriminator : discriminators_mapping)
+    {
+        if (seen[discriminator])
+            return true;
+
+        seen[discriminator] = true;
+    }
+
+    return false;
+}
+
+bool canMergeTypeIntoExistingDynamicVariant(const DataTypePtr & existing_type, const DataTypePtr & inserted_type)
+{
+    return areDynamicSubcolumnTypesCompatible(existing_type, inserted_type);
+}
+
+bool canStoreTypedValueInExistingDynamicVariant(const DataTypePtr & existing_type, const DataTypePtr & inserted_type)
+{
+    return areDynamicStorageTypesCompatible(existing_type, inserted_type);
+}
+
 }
 
 /// Shared variant will contain String values but we cannot use usual String type
@@ -58,23 +86,35 @@ ColumnDynamic::ColumnDynamic(size_t max_dynamic_types_) : max_dynamic_types(max_
 }
 
 ColumnDynamic::ColumnDynamic(
-    MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_)
+    MutableColumnPtr variant_column_,
+    const DataTypePtr & variant_type_,
+    size_t max_dynamic_types_,
+    size_t global_max_dynamic_types_,
+    const StatisticsPtr & statistics_,
+    bool dynamic_structure_is_fixed_)
     : variant_column(std::move(variant_column_))
     , variant_column_ptr(assert_cast<ColumnVariant *>(variant_column.get()))
     , max_dynamic_types(max_dynamic_types_)
     , global_max_dynamic_types(global_max_dynamic_types_)
+    , dynamic_structure_is_fixed(dynamic_structure_is_fixed_)
     , statistics(statistics_)
 {
     createVariantInfo(variant_type_);
 }
 
 ColumnDynamic::ColumnDynamic(
-    MutableColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_)
+    MutableColumnPtr variant_column_,
+    const VariantInfo & variant_info_,
+    size_t max_dynamic_types_,
+    size_t global_max_dynamic_types_,
+    const StatisticsPtr & statistics_,
+    bool dynamic_structure_is_fixed_)
     : variant_column(std::move(variant_column_))
     , variant_column_ptr(assert_cast<ColumnVariant *>(variant_column.get()))
     , variant_info(variant_info_)
     , max_dynamic_types(max_dynamic_types_)
     , global_max_dynamic_types(global_max_dynamic_types_)
+    , dynamic_structure_is_fixed(dynamic_structure_is_fixed_)
     , statistics(statistics_)
 {
 }
@@ -190,38 +230,66 @@ VectorWithMemoryTracking<ColumnVariant::Discriminator> * ColumnDynamic::combineV
         return nullptr;
 
     const DataTypes & other_variants = assert_cast<const DataTypeVariant &>(*other_variant_info.variant_type).getVariants();
+    const DataTypes & current_variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
 
-    size_t num_new_variants = 0;
+    DataTypes result_variants = current_variants;
+    Names result_variant_names = variant_info.variant_names;
+    VectorWithMemoryTracking<String> other_to_target_variant_names;
+    other_to_target_variant_names.reserve(other_variants.size());
     for (size_t i = 0; i != other_variants.size(); ++i)
     {
-        if (!variant_info.variant_name_to_discriminator.contains(other_variant_info.variant_names[i]))
-            ++num_new_variants;
+        const auto & other_variant_name = other_variant_info.variant_names[i];
+
+        if (variant_info.variant_name_to_discriminator.contains(other_variant_name))
+        {
+            other_to_target_variant_names.push_back(other_variant_name);
+            continue;
+        }
+
+        std::optional<size_t> compatible_variant_index;
+        for (size_t j = 0; j != result_variants.size(); ++j)
+        {
+            if (result_variant_names[j] == getSharedVariantTypeName())
+                continue;
+
+            if (canStoreTypedValueInExistingDynamicVariant(result_variants[j], other_variants[i]))
+            {
+                compatible_variant_index = j;
+                break;
+            }
+        }
+
+        if (compatible_variant_index)
+        {
+            other_to_target_variant_names.push_back(result_variant_names[*compatible_variant_index]);
+            continue;
+        }
+
+        other_to_target_variant_names.push_back(other_variant_name);
+        result_variants.push_back(other_variants[i]);
+        result_variant_names.push_back(other_variant_name);
     }
 
     /// If we have new variants we need to update current variant info and extend Variant column
-    if (num_new_variants)
+    if (result_variants.size() != current_variants.size())
     {
-        const DataTypes & current_variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-
         /// We cannot combine Variants if total number of variants exceeds max_dynamic_types.
-        if (!canAddNewVariants(num_new_variants))
+        if (!canAddNewVariants(result_variants.size() - current_variants.size()))
         {
             /// Remember that we cannot combine our variant with this one, so we will not try to do it again.
             variants_with_failed_combination.insert(other_variant_info.variant_name);
             return nullptr;
         }
 
-        DataTypes all_variants = current_variants;
-        all_variants.insert(all_variants.end(), other_variants.begin(), other_variants.end());
-        auto new_variant_type = std::make_shared<DataTypeVariant>(all_variants);
+        auto new_variant_type = std::make_shared<DataTypeVariant>(result_variants);
         updateVariantInfoAndExpandVariantColumn(new_variant_type);
     }
 
     /// Create a global discriminators mapping for other variant.
     VectorWithMemoryTracking<ColumnVariant::Discriminator> other_to_new_discriminators;
     other_to_new_discriminators.reserve(other_variants.size());
-    for (size_t i = 0; i != other_variants.size(); ++i)
-        other_to_new_discriminators.push_back(variant_info.variant_name_to_discriminator[other_variant_info.variant_names[i]]);
+    for (const auto & target_variant_name : other_to_target_variant_names)
+        other_to_new_discriminators.push_back(variant_info.variant_name_to_discriminator.at(target_variant_name));
 
     /// Save mapping to cache to not calculate it again for the same Variants.
     auto [it, _] = variant_mappings_cache.emplace(other_variant_info.variant_name, std::move(other_to_new_discriminators));
@@ -238,10 +306,16 @@ void ColumnDynamic::insert(const Field & x)
 
     auto & variant_col = getVariantColumn();
     auto shared_variant_discr = getSharedVariantDiscriminator();
+    auto field_data_type = applyVisitor(FieldToDataType(), x);
+    auto field_data_type_name = field_data_type->getName();
+    const bool inserted_type_requires_exact_storage = typeid_cast<const DataTypeObject *>(field_data_type.get());
+    const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
     /// Check if we can insert field into existing variants and avoid Variant extension.
     for (ColumnVariant::Discriminator i = 0; i != variant_col.getNumVariants(); ++i)
     {
-        if (i != shared_variant_discr && variant_col.getVariantByGlobalDiscriminator(i).tryInsert(x))
+        if (i != shared_variant_discr
+            && (!inserted_type_requires_exact_storage || canStoreTypedValueInExistingDynamicVariant(variants[i], field_data_type))
+            && variant_col.getVariantByGlobalDiscriminator(i).tryInsert(x))
         {
             variant_col.getLocalDiscriminators().push_back(variant_col.localDiscriminatorByGlobal(i));
             variant_col.getOffsets().push_back(variant_col.getVariantByGlobalDiscriminator(i).size() - 1);
@@ -250,8 +324,6 @@ void ColumnDynamic::insert(const Field & x)
     }
 
     /// If we cannot insert field into current variant column, extend it with new variant for this field from its type.
-    auto field_data_type = applyVisitor(FieldToDataType(), x);
-    auto field_data_type_name = field_data_type->getName();
     if (addNewVariant(field_data_type, field_data_type_name))
     {
         /// Insert this field into newly added variant.
@@ -283,6 +355,55 @@ bool ColumnDynamic::tryInsert(const Field & x)
     /// We can insert any value into Dynamic column.
     insert(x);
     return true;
+}
+
+std::optional<ColumnVariant::Discriminator> ColumnDynamic::findVariantDiscriminatorForType(const DataTypePtr & type, bool require_storage_compatible) const
+{
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type);
+    if (auto discr = variant_type.tryGetVariantDiscriminator(type->getName()))
+        return discr;
+
+    auto shared_variant_discr = variant_type.tryGetVariantDiscriminator(ColumnDynamic::getSharedVariantTypeName());
+    const auto & variants = variant_type.getVariants();
+    for (ColumnVariant::Discriminator discr = 0; discr != variants.size(); ++discr)
+    {
+        if (shared_variant_discr && discr == *shared_variant_discr)
+            continue;
+
+        const bool can_use_variant = require_storage_compatible
+            ? canStoreTypedValueInExistingDynamicVariant(variants[discr], type)
+            : canMergeTypeIntoExistingDynamicVariant(variants[discr], type);
+        if (can_use_variant)
+            return discr;
+    }
+
+    return std::nullopt;
+}
+
+void ColumnDynamic::insertValueIntoVariantFrom(ColumnVariant::Discriminator discriminator, const IColumn & src, size_t n)
+{
+    getVariantColumn().insertIntoVariantFrom(discriminator, src, n);
+}
+
+void ColumnDynamic::insertTypedValueFrom(const IColumn & src, const DataTypePtr & type, size_t n)
+{
+    if (!type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert typed value into `ColumnDynamic` without data type");
+
+    const auto type_name = type->getName();
+    if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ true))
+    {
+        insertValueIntoVariantFrom(*discr, src, n);
+        return;
+    }
+
+    if (!addNewVariant(type, type_name))
+    {
+        insertValueIntoSharedVariant(src, type, type_name, n);
+        return;
+    }
+
+    getVariantColumn().insertIntoVariantFrom(variant_info.variant_name_to_discriminator.at(type_name), src, n);
 }
 
 Field ColumnDynamic::operator[](size_t n) const
@@ -365,16 +486,38 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
         /// Check if we have this variant and deserialize value into variant from shared variant data.
-        if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
-            variant_col.deserializeBinaryIntoVariant(it->second, getVariantSerialization(type, type_name), buf, getFormatSettings());
-        /// Try to add a new variant if there are available slots.
-        else if (addNewVariant(type, type_name))
-            variant_col.deserializeBinaryIntoVariant(variant_info.variant_name_to_discriminator[type_name], getVariantSerialization(type, type_name), buf, getFormatSettings());
-        /// Otherwise just insert it into our shared variant.
+        if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ false))
+        {
+            if (variant_info.variant_names[*discr] == type_name)
+            {
+                variant_col.deserializeBinaryIntoVariant(*discr, getVariantSerialization(type, type_name), buf, getFormatSettings());
+            }
+            else
+            {
+                auto tmp_column = type->createColumn();
+                getVariantSerialization(type, type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
+                insertValueIntoVariantFrom(*discr, *tmp_column, 0);
+            }
+        }
+        /// Otherwise deserialize the value and insert it through the typed value path.
         else
-            variant_col.insertIntoVariantFrom(getSharedVariantDiscriminator(), src_shared_variant, src_offset);
+        {
+            auto tmp_column = type->createColumn();
+            getVariantSerialization(type, type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
+            insertTypedValueFrom(*tmp_column, type, 0);
+        }
 
         return;
+    }
+
+    if (src_global_discr != ColumnVariant::NULL_DISCRIMINATOR)
+    {
+        auto variant_type = assert_cast<const DataTypeVariant &>(*dynamic_src.variant_info.variant_type).getVariants()[src_global_discr];
+        if (auto discr = findVariantDiscriminatorForType(variant_type, /*require_storage_compatible=*/ true))
+        {
+            insertValueIntoVariantFrom(*discr, src_variant_col.getVariantByGlobalDiscriminator(src_global_discr), src_offset);
+            return;
+        }
     }
 
     /// If variants are different, we need to extend our variant with new variants.
@@ -424,6 +567,36 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
     auto & variant_col = getVariantColumn();
 
+    if (!dynamic_structure_is_fixed && getSharedVariant().empty() && max_dynamic_types < global_max_dynamic_types)
+        max_dynamic_types = global_max_dynamic_types;
+
+    auto tryInsertSharedVariantValueIntoExistingVariant = [&](std::string_view value, ColumnVariant::Discriminator & local_discr, size_t & offset)
+    {
+        ReadBufferFromMemory buf(value);
+        auto type = decodeDataType(buf);
+        auto type_name = type->getName();
+
+        auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ false);
+        if (!discr)
+            return false;
+
+        local_discr = variant_col.localDiscriminatorByGlobal(*discr);
+        auto & variant = variant_col.getVariantByLocalDiscriminator(local_discr);
+        if (variant_info.variant_names[*discr] == type_name)
+        {
+            getVariantSerialization(type, type_name)->deserializeBinary(variant, buf, getFormatSettings());
+        }
+        else
+        {
+            auto tmp_column = type->createColumn();
+            getVariantSerialization(type, type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
+            variant.insertFrom(*tmp_column, 0);
+        }
+
+        offset = variant.size() - 1;
+        return true;
+    };
+
     /// Same variants: copy the Variant range directly. Skip this fast path when the source has values in
     /// its shared variant and we still have room, so those types get promoted to regular variants in the
     /// combine path below instead of ending up in both storages.
@@ -435,8 +608,34 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     }
 
     /// If variants are different, we need to extend our variant with new variants.
+    const auto & src_variants = assert_cast<const DataTypeVariant &>(*dynamic_src.variant_info.variant_type).getVariants();
+    bool has_compatible_new_variant = false;
+    for (size_t i = 0; i != src_variants.size(); ++i)
+    {
+        if (!variant_info.variant_name_to_discriminator.contains(dynamic_src.variant_info.variant_names[i])
+            && findVariantDiscriminatorForType(src_variants[i], /*require_storage_compatible=*/ true))
+        {
+            has_compatible_new_variant = true;
+            break;
+        }
+    }
+
+    if (has_compatible_new_variant)
+    {
+        for (size_t i = start; i != start + length; ++i)
+            insertFrom(src_, i);
+        return;
+    }
+
     if (auto * global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
     {
+        if (mappingCollapsesDiscriminators(*global_discriminators_mapping))
+        {
+            for (size_t i = start; i != start + length; ++i)
+                insertFrom(src_, i);
+            return;
+        }
+
         size_t prev_size = variant_col.size();
         auto shared_variant_discr = getSharedVariantDiscriminator();
         variant_col.insertRangeFrom(*dynamic_src.variant_column, start, length, *global_discriminators_mapping, shared_variant_discr);
@@ -467,37 +666,37 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
             {
                 chassert(local_discriminators[prev_size + i] == shared_variant_local_discr);
                 auto value = src_shared_variant.getDataAt(src_offsets[start + i]);
-                ReadBufferFromMemory buf(value);
-                auto type = decodeDataType(buf);
-                auto type_name = type->getName();
-                /// Check if we have variant with this type. In this case we should extract
-                /// the value from src shared variant and insert it into this variant.
-                if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
+                ColumnVariant::Discriminator local_discr = shared_variant_local_discr;
+                size_t offset = 0;
+                if (tryInsertSharedVariantValueIntoExistingVariant(value, local_discr, offset))
                 {
-                    auto local_discr = variant_col.localDiscriminatorByGlobal(it->second);
-                    auto & variant = variant_col.getVariantByLocalDiscriminator(local_discr);
-                    getVariantSerialization(type, type_name)->deserializeBinary(variant, buf, getFormatSettings());
                     /// Local discriminators were already filled in ColumnVariant::insertRangeFrom and this row should contain
                     /// shared_variant_local_discr. Change it to local discriminator of the found variant and update offsets.
                     local_discriminators[prev_size + i] = local_discr;
-                    offsets[prev_size + i] = variant.size() - 1;
+                    offsets[prev_size + i] = offset;
                 }
-                /// Try to add a new variant if there are available slots. addNewVariant only reassigns global
-                /// discriminators, so shared_variant_local_discr and the cached references stay valid.
-                else if (addNewVariant(type, type_name))
-                {
-                    auto local_discr = variant_col.localDiscriminatorByGlobal(variant_info.variant_name_to_discriminator[type_name]);
-                    auto & variant = variant_col.getVariantByLocalDiscriminator(local_discr);
-                    getVariantSerialization(type, type_name)->deserializeBinary(variant, buf, getFormatSettings());
-                    local_discriminators[prev_size + i] = local_discr;
-                    offsets[prev_size + i] = variant.size() - 1;
-                }
-                /// Otherwise, insert this value into shared variant.
                 else
                 {
-                    shared_variant.insertData(value.data(), value.size());
-                    /// Update variant offset.
-                    offsets[prev_size + i] = shared_variant.size() - 1;
+                    ReadBufferFromMemory buf(value);
+                    auto type = decodeDataType(buf);
+                    auto type_name = type->getName();
+                    /// Try to add a new variant if there are available slots. addNewVariant only reassigns global
+                    /// discriminators, so shared_variant_local_discr and the cached references stay valid.
+                    if (addNewVariant(type, type_name))
+                    {
+                        auto local_discr = variant_col.localDiscriminatorByGlobal(variant_info.variant_name_to_discriminator[type_name]);
+                        auto & variant = variant_col.getVariantByLocalDiscriminator(local_discr);
+                        getVariantSerialization(type, type_name)->deserializeBinary(variant, buf, getFormatSettings());
+                        local_discriminators[prev_size + i] = local_discr;
+                        offsets[prev_size + i] = variant.size() - 1;
+                    }
+                    /// Otherwise, insert this value into shared variant.
+                    else
+                    {
+                        shared_variant.insertData(value.data(), value.size());
+                        /// Update variant offset.
+                        offsets[prev_size + i] = shared_variant.size() - 1;
+                    }
                 }
             }
         }
@@ -508,7 +707,6 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     /// We cannot combine 2 Variant types as total number of variants exceeds the limit.
     /// In this case we will add most frequent variants and insert them as usual,
     /// all other variants will be inserted into shared variant.
-    const auto & src_variants = assert_cast<const DataTypeVariant &>(*dynamic_src.variant_info.variant_type).getVariants();
     /// Mapping from global discriminators of src_variant to the new variant we will create.
     VectorWithMemoryTracking<ColumnVariant::Discriminator> other_to_new_discriminators;
     other_to_new_discriminators.reserve(dynamic_src.variant_info.variant_names.size());
@@ -594,17 +792,12 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
             if (src_local_discr == src_shared_variant_local_discr)
             {
                 auto value = src_shared_variant.getDataAt(src_offset);
-                ReadBufferFromMemory buf(value);
-                auto type = decodeDataType(buf);
-                auto type_name = type->getName();
-                /// Check if we have variant with this type. In this case we should extract
-                /// the value from src shared variant and insert it into this variant.
-                if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
+                ColumnVariant::Discriminator local_discr = shared_variant_local_discr;
+                size_t offset = 0;
+                if (tryInsertSharedVariantValueIntoExistingVariant(value, local_discr, offset))
                 {
-                    auto local_discr = variant_col.localDiscriminatorByGlobal(it->second);
-                    getVariantSerialization(type, type_name)->deserializeBinary(*variant_columns[local_discr], buf, getFormatSettings());
                     local_discriminators.push_back(local_discr);
-                    offsets.push_back(variant_columns[local_discr]->size() - 1);
+                    offsets.push_back(offset);
                 }
                 /// Otherwise, insert this value into shared variant.
                 else
@@ -676,13 +869,13 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
         /// Check if we have this variant and deserialize value into variant from shared variant data.
-        if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
+        if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ false))
         {
             /// Deserialize value into temporary column and use it in insertManyIntoVariantFrom.
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
             getVariantSerialization(type, type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
-            variant_col.insertManyIntoVariantFrom(it->second, *tmp_column, 0, length);
+            variant_col.insertManyIntoVariantFrom(*discr, *tmp_column, 0, length);
         }
         /// Try to add a new variant if there are available slots.
         else if (addNewVariant(type, type_name))
@@ -699,6 +892,16 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
         }
 
         return;
+    }
+
+    if (src_global_discr != ColumnVariant::NULL_DISCRIMINATOR)
+    {
+        auto variant_type = assert_cast<const DataTypeVariant &>(*dynamic_src.variant_info.variant_type).getVariants()[src_global_discr];
+        if (auto discr = findVariantDiscriminatorForType(variant_type, /*require_storage_compatible=*/ true))
+        {
+            variant_col.insertManyIntoVariantFrom(*discr, src_variant_col.getVariantByGlobalDiscriminator(src_global_discr), src_offset, length);
+            return;
+        }
     }
 
     /// If variants are different, we need to extend our variant with new variants.
@@ -1053,9 +1256,21 @@ ColumnPtr ColumnDynamic::compress(bool force_compression) const
     ColumnPtr variant_compressed = variant_column_ptr->compress(force_compression);
     size_t byte_size = variant_compressed->byteSize();
     return ColumnCompressed::create(size(), byte_size,
-        [my_variant_compressed = std::move(variant_compressed), my_variant_info = variant_info, my_max_dynamic_types = max_dynamic_types, my_global_max_dynamic_types = global_max_dynamic_types, my_statistics = statistics]() mutable
+        [
+            my_variant_compressed = std::move(variant_compressed),
+            my_variant_info = variant_info,
+            my_max_dynamic_types = max_dynamic_types,
+            my_global_max_dynamic_types = global_max_dynamic_types,
+            my_dynamic_structure_is_fixed = dynamic_structure_is_fixed,
+            my_statistics = statistics]() mutable
         {
-            return ColumnDynamic::create(my_variant_compressed->decompress(), my_variant_info, my_max_dynamic_types, my_global_max_dynamic_types, my_statistics);
+            return ColumnDynamic::create(
+                my_variant_compressed->decompress(),
+                my_variant_info,
+                my_max_dynamic_types,
+                my_global_max_dynamic_types,
+                my_statistics,
+                my_dynamic_structure_is_fixed);
         });
 }
 
@@ -1404,6 +1619,7 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
     /// to extend selected variants on inserts into this column during merges.
     /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
+    dynamic_structure_is_fixed = true;
 
     /// Now we have the resulting Variant that will be used in all merged columns.
     /// Variants can also contain Dynamic columns inside, we should collect
@@ -1442,6 +1658,7 @@ void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
     /// to extend selected variants on inserts into this column.
     /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
+    dynamic_structure_is_fixed = true;
 
     /// Run `takeExactDynamicStructureFrom` recursively for variants.
     const auto & source_variant_column = source_dynamic.getVariantColumn();
@@ -1457,6 +1674,7 @@ void ColumnDynamic::fixDynamicStructure()
     /// to extend selected variants on inserts into this column.
     /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
+    dynamic_structure_is_fixed = true;
     getVariantColumn().fixDynamicStructure();
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 namespace DB
 {
@@ -18,16 +19,40 @@ private:
     /// subcolumn dynamic_element_name = 'Tuple(a UInt32)' and nested_subcolumn = 'a'.
     /// Needed to extract nested subcolumn from values in shared variant.
     String nested_subcolumn;
+    SerializationInfoSettings serialization_info_settings;
     bool is_null_map_subcolumn;
 
-    SerializationDynamicElement(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_ = false)
-        : SerializationWrapper(nested_), shared_variant_serialization(shared_variant_serialization_), dynamic_element_name(dynamic_element_name_), nested_subcolumn(nested_subcolumn_), is_null_map_subcolumn(is_null_map_subcolumn_)
+    SerializationDynamicElement(
+        const SerializationPtr & nested_,
+        const SerializationPtr & shared_variant_serialization_,
+        const String & dynamic_element_name_,
+        const String & nested_subcolumn_,
+        const SerializationInfoSettings & serialization_info_settings_,
+        bool is_null_map_subcolumn_ = false)
+        : SerializationWrapper(nested_)
+        , shared_variant_serialization(shared_variant_serialization_)
+        , dynamic_element_name(dynamic_element_name_)
+        , nested_subcolumn(nested_subcolumn_)
+        , serialization_info_settings(serialization_info_settings_)
+        , is_null_map_subcolumn(is_null_map_subcolumn_)
     {
     }
 
 public:
-    static UInt128 getHash(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_);
-    static SerializationPtr create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_ = false);
+    static UInt128 getHash(
+        const SerializationPtr & nested_,
+        const SerializationPtr & shared_variant_serialization_,
+        const String & dynamic_element_name_,
+        const String & nested_subcolumn_,
+        const SerializationInfoSettings & serialization_info_settings_,
+        bool is_null_map_subcolumn_);
+    static SerializationPtr create(
+        const SerializationPtr & nested_,
+        const SerializationPtr & shared_variant_serialization_,
+        const String & dynamic_element_name_,
+        const String & nested_subcolumn_,
+        const SerializationInfoSettings & serialization_info_settings_,
+        bool is_null_map_subcolumn_ = false);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return SerializationWrapper::supportsPooling() && shared_variant_serialization->supportsPooling(); }
 

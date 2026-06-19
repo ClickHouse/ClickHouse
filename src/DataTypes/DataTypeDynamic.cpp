@@ -1,10 +1,12 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
+#include <DataTypes/Serializations/SerializationDynamicHelpers.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
@@ -904,7 +906,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(subcolumn_serialization);
     res->type = subcolumn_type;
     std::optional<ColumnVariant::Discriminator> discriminator;
-    ColumnPtr null_map_for_variant_from_shared_variant;
+    ColumnPtr null_map_for_extracted_values;
     if (data.column)
     {
         /// If column was provided, we should extract subcolumn from Dynamic column.
@@ -912,7 +914,8 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         const auto & variant_info = dynamic_column.getVariantInfo();
         const auto & variant_column = dynamic_column.getVariantColumn();
         const auto & shared_variant = dynamic_column.getSharedVariant();
-        /// Check if provided Dynamic column has subcolumn of this type.
+        /// Check if provided Dynamic column has the exact subcolumn type. In this case MergeTree
+        /// can read the specific variant substream without opening unrelated dynamic substreams.
         String subcolumn_type_name = subcolumn_type->getName();
         auto it = variant_info.variant_name_to_discriminator.find(subcolumn_type_name);
         if (it != variant_info.variant_name_to_discriminator.end())
@@ -920,26 +923,52 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
             discriminator = it->second;
             res->column = variant_column.getVariantPtrByGlobalDiscriminator(*discriminator);
         }
-        /// Otherwise if there is data in shared variant try to find requested type there.
-        else if (!shared_variant.empty())
+        /// Otherwise, check if provided Dynamic column has compatible variants of this type.
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type);
+        const auto & variants = variant_type.getVariants();
+        auto shared_variant_global_discr = dynamic_column.getSharedVariantDiscriminator();
+        auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_global_discr);
+        std::vector<UInt8> compatible_local_discriminators(variants.size());
+        bool has_compatible_variant = false;
+        if (!discriminator)
+        {
+            for (ColumnVariant::Discriminator discr = 0; discr != variants.size(); ++discr)
+            {
+                if (discr == shared_variant_global_discr)
+                    continue;
+
+                if (areDynamicSubcolumnTypesCompatible(variants[discr], subcolumn_type))
+                {
+                    compatible_local_discriminators[variant_column.localDiscriminatorByGlobal(discr)] = 1;
+                    has_compatible_variant = true;
+                }
+            }
+        }
+
+        if (!discriminator && (has_compatible_variant || !shared_variant.empty()))
         {
             /// Create null map for resulting subcolumn to make it Nullable.
             auto null_map_column = ColumnUInt8::create();
             NullMap & null_map = assert_cast<ColumnUInt8 &>(*null_map_column).getData();
             null_map.reserve(variant_column.size());
             auto subcolumn = subcolumn_type->createColumn();
-            auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(dynamic_column.getSharedVariantDiscriminator());
             const auto & local_discriminators = variant_column.getLocalDiscriminators();
             const auto & offsets = variant_column.getOffsets();
             const FormatSettings format_settings;
             for (size_t i = 0; i != local_discriminators.size(); ++i)
             {
-                if (local_discriminators[i] == shared_variant_local_discr)
+                auto local_discr = local_discriminators[i];
+                if (local_discr != ColumnVariant::NULL_DISCRIMINATOR && compatible_local_discriminators[local_discr])
+                {
+                    subcolumn->insertFrom(variant_column.getVariantByLocalDiscriminator(local_discr), offsets[i]);
+                    null_map.push_back(static_cast<UInt8>(0));
+                }
+                else if (local_discr == shared_variant_local_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
                     ReadBufferFromMemory buf(value);
                     auto type = decodeDataType(buf);
-                    if (type->getName() == subcolumn_type_name)
+                    if (areDynamicSubcolumnTypesCompatible(type, subcolumn_type))
                     {
                         subcolumn_serialization->deserializeBinary(*subcolumn, buf, format_settings);
                         null_map.push_back(static_cast<UInt8>(0));
@@ -956,7 +985,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
             }
 
             res->column = std::move(subcolumn);
-            null_map_for_variant_from_shared_variant = std::move(null_map_column);
+            null_map_for_extracted_values = std::move(null_map_column);
         }
     }
 
@@ -992,6 +1021,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         dynamic_serialization.createSerializationForType(ColumnDynamic::getSharedVariantDataType()),
         subcolumn_type->getName(),
         String(subcolumn_nested_name),
+        dynamic_serialization.getSerializationInfoSettings(),
         is_null_map_subcolumn);
     /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
     bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
@@ -1000,8 +1030,8 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
 
     if (data.column)
     {
-        /// Check if provided Dynamic column has subcolumn of this type. In this case we should use VariantSubcolumnCreator/VariantNullMapSubcolumnCreator to
-        /// create full subcolumn from variant according to discriminators.
+        /// Check if provided Dynamic column has subcolumn of this type. In this case we should use
+        /// VariantSubcolumnCreator/VariantNullMapSubcolumnCreator to create full subcolumn from variant according to discriminators.
         if (discriminator)
         {
             const auto & variant_column = assert_cast<const ColumnDynamic &>(*data.column).getVariantColumn();
@@ -1021,18 +1051,18 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                     make_subcolumn_nullable);
             res->column = creator->create(res->column);
         }
-        /// Check if requested type was extracted from shared variant. In this case we should use
-        /// VariantSubcolumnCreator to create full subcolumn from variant according to created null map.
-        else if (null_map_for_variant_from_shared_variant)
+        /// Check if requested type was extracted from Dynamic variants. In this case we should use
+        /// VariantSubcolumnCreator to create full subcolumn from the created null map.
+        else if (null_map_for_extracted_values)
         {
             if (is_null_map_subcolumn)
             {
-                res->column = null_map_for_variant_from_shared_variant;
+                res->column = null_map_for_extracted_values;
             }
             else
             {
                 SerializationVariantElement::VariantSubcolumnCreator creator(
-                    null_map_for_variant_from_shared_variant, "", 0, 0, make_subcolumn_nullable, null_map_for_variant_from_shared_variant);
+                    null_map_for_extracted_values, "", 0, 0, make_subcolumn_nullable, null_map_for_extracted_values);
                 res->column = creator.create(res->column);
             }
         }
