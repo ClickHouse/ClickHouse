@@ -1,7 +1,5 @@
 #pragma once
 
-#include <functional>
-
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
@@ -88,12 +86,6 @@ public:
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
-
-    /// True if any of the underlying tables matches `predicate`.
-    /// Used by the planner to decide whether filter analysis must be run when
-    /// a `Merge` wraps tables that would otherwise trigger it (`Distributed`,
-    /// `View`, `ObjectStorageCluster`, etc.) at the top level.
-    bool hasChildTable(std::function<bool(const StoragePtr &)> predicate) const;
 
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,
@@ -188,16 +180,12 @@ public:
     const StorageListWithLocks & getSelectedTables();
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans() override;
-
-    /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
-    /// plans are returned as `nullptr` so that callers can pair tables with their plans.
-    std::vector<QueryPlan *> getAllChildPlans();
 
     void addFilter(FilterDAGInfo filter);
 

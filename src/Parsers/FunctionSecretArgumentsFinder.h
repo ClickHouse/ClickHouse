@@ -7,7 +7,6 @@
 #include <base/defines.h>
 #include <boost/algorithm/string/predicate.hpp>
 
-#include <algorithm>
 
 namespace DB
 {
@@ -83,14 +82,9 @@ protected:
             result.start = index;
             result.are_named = argument_is_named;
         }
+        chassert(index >= result.start); /// We always check arguments consecutively
         chassert(result.replacement.empty()); /// We shouldn't use replacement with masking other arguments
-        /// Widen the masked range to cover `index`. Arguments are normally marked consecutively in
-        /// increasing order, but a malformed query can mix the named secret form (`key = ...`) with the
-        /// positional form and ask to mask an earlier index after a later one. Masking is best-effort
-        /// over arbitrary user input, so it must widen the range rather than assert on the order.
-        size_t end = std::max(result.start + result.count, index + 1);
-        result.start = std::min(result.start, index);
-        result.count = end - result.start;
+        result.count = index + 1 - result.start;
         if (!argument_is_named)
             result.are_named = false;
     }
@@ -109,17 +103,16 @@ protected:
             findMongoDBSecretArguments();
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
-                 (function->name() == "deltaLake") || (function->name() == "deltaLakeS3") || (function->name() == "hudi") ||
-                 (function->name() == "iceberg") || (function->name() == "gcs") || (function->name() == "icebergS3") ||
-                 (function->name() == "paimon") || (function->name() == "paimonS3"))
+                 (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
+                 (function->name() == "gcs") || (function->name() == "icebergS3") || (function->name() == "paimon") ||
+                 (function->name() == "paimonS3"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
         }
         else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
                  (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
-                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster") ||
-                 (function ->name() == "paimonCluster") || (function ->name() == "paimonS3Cluster"))
+                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster"))
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
@@ -130,8 +123,7 @@ protected:
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") ||
-                 (function->name() == "deltaLakeAzureCluster") || (function->name() == "paimonAzureCluster"))
+        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") || (function->name() == "deltaLakeAzureCluster"))
         {
             /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);
@@ -147,11 +139,6 @@ protected:
         {
             /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
             findEncryptionFunctionSecretArguments();
-        }
-        else if (boost::iequals(function->name(), "HMAC"))
-        {
-            /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
-            findHMACSecretArguments();
         }
         else if (function->name() == "url")
         {
@@ -619,18 +606,6 @@ protected:
         /// encrypt('mode', 'plaintext', 'key' [, iv, aad]) -> encrypt('mode', '[HIDDEN]')
         result.start = 1;
         result.count = function->arguments->size() - 1;
-    }
-
-    void findHMACSecretArguments()
-    {
-        if (function->arguments->size() < 3)
-            return;
-
-        /// We hide the key argument and any following for the case of mistyping or using extra arguments by mistake:
-        /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
-        /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
-        result.start = 2;
-        result.count = function->arguments->size() - 2;
     }
 
     void findTableEngineSecretArguments()
