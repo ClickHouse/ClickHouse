@@ -2367,6 +2367,11 @@ struct ToRelativeWeekNumImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToRelativeWeekNumExtendedImpl : ToRelativeWeekNumImpl<ResultPrecision::Extended>
+{
+    static constexpr auto name = "toRelativeWeekNumExtended";
+};
+
 template <ResultPrecision precision_>
 struct ToRelativeDayNumImpl
 {
@@ -2397,6 +2402,11 @@ struct ToRelativeDayNumImpl
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+};
+
+struct ToRelativeDayNumExtendedImpl : ToRelativeDayNumImpl<ResultPrecision::Extended>
+{
+    static constexpr auto name = "toRelativeDayNumExtended";
 };
 
 template <ResultPrecision precision_>
@@ -2437,6 +2447,11 @@ struct ToRelativeHourNumImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToRelativeHourNumExtendedImpl : ToRelativeHourNumImpl<ResultPrecision::Extended>
+{
+    static constexpr auto name = "toRelativeHourNumExtended";
+};
+
 template <ResultPrecision precision_>
 struct ToRelativeMinuteNumImpl
 {
@@ -2469,6 +2484,11 @@ struct ToRelativeMinuteNumImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToRelativeMinuteNumExtendedImpl : ToRelativeMinuteNumImpl<ResultPrecision::Extended>
+{
+    static constexpr auto name = "toRelativeMinuteNumExtended";
+};
+
 template <ResultPrecision precision_>
 struct ToRelativeSecondNumImpl
 {
@@ -2489,13 +2509,21 @@ struct ToRelativeSecondNumImpl
         else
             return static_cast<UInt32>(time_zone.fromDayNum(ExtendedDayNum(d)));
     }
-    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static auto execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return static_cast<Int64>(time_zone.fromDayNum(DayNum(d)));
+        else
+            return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+};
+
+struct ToRelativeSecondNumExtendedImpl : ToRelativeSecondNumImpl<ResultPrecision::Extended>
+{
+    static constexpr auto name = "toRelativeSecondNumExtended";
 };
 
 template <Int64 scale_multiplier>
