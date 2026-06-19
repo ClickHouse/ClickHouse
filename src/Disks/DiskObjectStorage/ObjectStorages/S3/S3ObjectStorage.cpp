@@ -720,6 +720,17 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::tryGetS3StorageClient()
 {
     return client.get();
 }
+
+bool S3ObjectStorage::tryRefreshCredentialsViaCallback()
+{
+    if (!credentials_refresh_callback)
+        return false;
+    auto new_client = credentials_refresh_callback();
+    if (!new_client)
+        return false;
+    client.set(std::move(new_client));
+    return true;
+}
 }
 
 #endif

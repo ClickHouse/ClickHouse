@@ -133,6 +133,11 @@ public:
         return fp;
     }
 
+    bool refreshCredentials() override
+    {
+        return object_storage->tryRefreshCredentialsViaCallback();
+    }
+
     ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(

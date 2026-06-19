@@ -49,6 +49,12 @@ public:
 
     /// Hash of current credentials; override for providers with rotating sessions.
     virtual DB::UInt128 getCredentialsFingerprint() const { return {}; }
+
+    /// Invokes the underlying ObjectStorage's catalog-vended credentials refresh callback
+    /// (Glue / Unity / REST). Returns true if a refresh happened. Used by the kernel's
+    /// `ExpiredToken` recovery path — the kernel's Rust object_store can't refresh on its
+    /// own, and vended creds are static in the C++ client until this callback fires.
+    virtual bool refreshCredentials() { return false; }
 };
 
 using KernelHelperPtr = std::shared_ptr<IKernelHelper>;
