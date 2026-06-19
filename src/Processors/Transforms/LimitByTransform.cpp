@@ -458,6 +458,12 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     /// keys this is a no-op (nothing to remember).
     rememberLastGroupingKey(normalized_grouping_key_columns, row_count - 1);
 
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
     /// No row from this chunk survived.
     if (output_slices.empty())
         return;
