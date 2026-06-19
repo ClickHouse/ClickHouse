@@ -14,11 +14,14 @@ _tpcds_output=$(jq -e -r '
 readarray -t _tpcds_lines <<< "$_tpcds_output"
 SETTINGS+=("${_tpcds_lines[@]}")
 
-# Disk spill for GROUP BY and joins. Kept here (not in settings.json) on purpose:
-# tests/performance/tpcds.xml reads the same settings.json and must stay in-memory.
+# Spill GROUP BY and joins above 2 GiB: caps peak memory for the heaviest TPC-DS
+# queries (q10/q69 ~4 GiB at SF1) under the sanitizer per-test budget. A low
+# threshold makes external aggregation/join dominate wall time on instrumented
+# builds. Kept here, not in settings.json: tests/performance/tpc{ds,h}.xml read
+# the same settings.json and must stay in-memory.
 SETTINGS+=(
-    --max_bytes_before_external_group_by 314572800
-    --max_bytes_before_external_join 314572800
+    --max_bytes_before_external_group_by 2147483648
+    --max_bytes_before_external_join 2147483648
 )
 
 # Plan/result test, not a perf test: spilling to disk starts slowly, so the test-env
