@@ -836,6 +836,18 @@ String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const Planner
     auto node_clone = node->clone();
     InlineAliasColumnsForNamingVisitor visitor;
     visitor.visit(node_clone);
+
+    /// `buildQueryTreeForShard` performs one more naming-relevant rewrite after inlining ALIAS columns:
+    /// `ReplaceLongConstWithScalarVisitor` turns over-threshold constants into `__getScalar('<hash>')` calls
+    /// (controlled by `optimize_const_name_size`). Mirror it here with the same guard so the computed action
+    /// name matches the shard header for duplicate constant ALIAS expressions that exceed the threshold.
+    const auto max_const_name_size = planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
+    if (max_const_name_size >= 0)
+    {
+        ReplaceLongConstWithScalarVisitor scalar_visitor(planner_context.getQueryContext(), max_const_name_size);
+        scalar_visitor.visit(node_clone);
+    }
+
     return calculateActionNodeName(node_clone, planner_context, /*use_column_identifier_as_action_node_name=*/true);
 }
 

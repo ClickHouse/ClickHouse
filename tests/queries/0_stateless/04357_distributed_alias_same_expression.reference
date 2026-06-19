@@ -61,3 +61,6 @@ second_hop single replica
 1999-03-29 01:15:33.000	x	x
 second_hop parallel replicas
 1999-03-29 01:15:33.000	x	x
+300	300
+1
+300	300	2

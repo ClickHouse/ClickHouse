@@ -159,3 +159,29 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_pa
 
 DROP TABLE ph_dist;
 DROP TABLE ph_local;
+
+-- Duplicate ALIAS columns whose expression is an over-threshold constant. The shard rewrites such
+-- constants into `__getScalar('<hash>')` (see ReplaceLongConstWithScalarVisitor, controlled by
+-- `optimize_const_name_size`, default 256), so the collapsed shard column is named after the scalar,
+-- not after the literal. The reconstruction must account for that rewrite.
+DROP TABLE IF EXISTS loc_longlit;
+DROP TABLE IF EXISTS dist_longlit;
+
+CREATE TABLE loc_longlit
+(
+    dt DateTime,
+    x UInt8,
+    a1 String ALIAS repeat('y', 300),
+    a2 String ALIAS repeat('y', 300)
+)
+ENGINE = MergeTree ORDER BY dt;
+CREATE TABLE dist_longlit AS loc_longlit
+ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), loc_longlit, rand());
+INSERT INTO loc_longlit (dt, x) VALUES ('2024-01-01 00:00:00', 7);
+
+SELECT length(a1), length(a2) FROM dist_longlit ORDER BY dt DESC LIMIT 1;
+SELECT a1 = a2 FROM dist_longlit ORDER BY dt DESC LIMIT 1;
+SELECT length(a1) AS l, length(a2) AS m, count() AS c FROM dist_longlit GROUP BY a1, a2 ORDER BY l;
+
+DROP TABLE dist_longlit;
+DROP TABLE loc_longlit;
