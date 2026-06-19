@@ -669,6 +669,9 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
                 if (!skip_manifest_paths.contains(manifest_path))
                     writer.write(datum);
             });
+
+        writer.close();
+        buf->finalize();
     }
 
     return ManifestListWriteResult{new_snapshot, metadata_info};
