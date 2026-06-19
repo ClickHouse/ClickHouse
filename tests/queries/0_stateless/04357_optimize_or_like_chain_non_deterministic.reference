@@ -3,7 +3,7 @@ FROM
 (
     SELECT 1 AS x
 )
-WHERE (toString(rand()) LIKE \'%1%\') OR (toString(rand()) LIKE \'%2%\')
+WHERE or(like(toString(rand()), \'%1%\'), like(toString(rand()), \'%2%\'))
 SETTINGS enable_analyzer = 0
 QUERY id: 0
   PROJECTION COLUMNS
@@ -43,7 +43,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT s
 FROM t_or_like_chain_nondet
-WHERE multiSearchAny(s, [\'a\', \'b\']) OR false
+WHERE or(multiSearchAny(s, [\'a\', \'b\']), false)
 SETTINGS enable_analyzer = 0
 QUERY id: 0
   PROJECTION COLUMNS
