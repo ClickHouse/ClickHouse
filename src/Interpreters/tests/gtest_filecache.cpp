@@ -2409,6 +2409,63 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
         });
         return total;
     };
+    auto dim_value_for_labels = [](const std::string & name, ::DimensionalMetrics::Labels expected_labels, ::DimensionalMetrics::LabelValues expected_label_values)
+    {
+        bool found_family = false;
+        bool found_metric = false;
+        double value = 0;
+        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
+        {
+            if (f.getName() != name)
+                return;
+
+            found_family = true;
+            EXPECT_EQ(f.getLabels(), expected_labels);
+            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues & label_values, const ::DimensionalMetrics::Metric & m)
+            {
+                if (label_values == expected_label_values)
+                {
+                    found_metric = true;
+                    value += m.get();
+                }
+            });
+        });
+
+        EXPECT_TRUE(found_family) << "Missing dimensional metric family " << name;
+        EXPECT_TRUE(found_metric) << "Missing dimensional metric row " << name;
+        return value;
+    };
+    auto hist_observations_for_labels = [](const std::string & name, ::HistogramMetrics::Labels expected_labels, ::HistogramMetrics::LabelValues expected_label_values)
+    {
+        bool found_family = false;
+        bool found_metric = false;
+        uint64_t total = 0;
+        ::HistogramMetrics::Factory::instance().forEachFamily([&](::HistogramMetrics::MetricFamily & f)
+        {
+            if (f.getName() != name)
+                return;
+
+            found_family = true;
+            EXPECT_EQ(f.getLabels(), expected_labels);
+            const auto & buckets = f.getBuckets();
+            f.forEachMetric([&](const ::HistogramMetrics::LabelValues & label_values, const ::HistogramMetrics::Metric & m)
+            {
+                if (label_values == expected_label_values)
+                {
+                    found_metric = true;
+                    for (size_t i = 0; i <= buckets.size(); ++i)
+                        total += m.getCounter(i);
+                }
+            });
+        });
+
+        EXPECT_TRUE(found_family) << "Missing histogram metric family " << name;
+        EXPECT_TRUE(found_metric) << "Missing histogram metric row " << name;
+        return total;
+    };
+
+    const FileCacheOriginInfo origin("eviction_metrics_test_user", 0);
+    const auto & user_id = origin.user_id;
 
     auto run_workload = [&](const std::string & cache_name, bool expose, bool per_user)
     {
@@ -2429,11 +2486,14 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
         /// max_size=40, max_elements=6; 8 segments of size 5 forces evictions.
         for (size_t i = 0; i < 8; ++i)
         {
-            auto holder = cache.getOrSet(key, i * 10, 5, static_cast<size_t>(-1), {}, 0, FileCache::getCommonOrigin());
+            auto holder = cache.getOrSet(key, i * 10, 5, static_cast<size_t>(-1), {}, 0, origin);
             ASSERT_EQ(holder->size(), 1u);
             download(*holder->begin());
         }
     };
+
+    const std::string aggregate_cache_name = "cache_with_eviction_metrics";
+    const std::string per_user_cache_name = "cache_with_eviction_metrics_per_user";
 
     const auto evictions_off_before = sum_dim("filesystem_cache_evictions_total");
     const auto by_user_off_before = sum_dim("filesystem_cache_evictions_by_user_total");
@@ -2446,17 +2506,25 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
     const auto hits_before = sum_hist("filesystem_cache_evicted_segment_hits");
     const auto size_before = sum_hist("filesystem_cache_evicted_segment_size_bytes");
     const auto by_user_before = sum_dim("filesystem_cache_evictions_by_user_total");
-    run_workload("eviction_metrics_aggregate", /*expose=*/true, /*per_user=*/false);
+    run_workload(aggregate_cache_name, /*expose=*/true, /*per_user=*/false);
     const auto evictions_delta = sum_dim("filesystem_cache_evictions_total") - evictions_before;
     EXPECT_GT(evictions_delta, 0.0);
     EXPECT_GT(sum_dim("filesystem_cache_evicted_bytes_total") - bytes_before, 0.0);
     EXPECT_EQ(static_cast<uint64_t>(evictions_delta), sum_hist("filesystem_cache_evicted_segment_hits") - hits_before);
     EXPECT_EQ(static_cast<uint64_t>(evictions_delta), sum_hist("filesystem_cache_evicted_segment_size_bytes") - size_before);
     EXPECT_EQ(sum_dim("filesystem_cache_evictions_by_user_total"), by_user_before);
+    EXPECT_GT(dim_value_for_labels("filesystem_cache_evictions_total", {"cache_name"}, {aggregate_cache_name}), 0.0);
+    EXPECT_GT(dim_value_for_labels("filesystem_cache_evicted_bytes_total", {"cache_name"}, {aggregate_cache_name}), 0.0);
+    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_hits", {"cache_name"}, {aggregate_cache_name}), 0u);
+    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_size_bytes", {"cache_name"}, {aggregate_cache_name}), 0u);
 
     const auto by_user_pre = sum_dim("filesystem_cache_evictions_by_user_total");
-    run_workload("eviction_metrics_per_user", /*expose=*/true, /*per_user=*/true);
+    run_workload(per_user_cache_name, /*expose=*/true, /*per_user=*/true);
     EXPECT_GT(sum_dim("filesystem_cache_evictions_by_user_total") - by_user_pre, 0.0);
+    EXPECT_GT(dim_value_for_labels("filesystem_cache_evictions_by_user_total", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0.0);
+    EXPECT_GT(dim_value_for_labels("filesystem_cache_evicted_bytes_by_user_total", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0.0);
+    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_hits_by_user", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0u);
+    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_size_bytes_by_user", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0u);
 }
 
 TEST_F(FileCacheTest, EvictionMetricsRuntimeToggle)
