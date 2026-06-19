@@ -577,11 +577,12 @@ TEST_F(ReaderExecutorMetric, WarmSequential)
     EXPECT_GT(live.cache_reads, 0u) << "served from cache";
 }
 
-/// Alternating cached/cold segments, full scan. Live: the long connection reopens to
-/// span each cold run and is abandoned at every cached hole, plus reach-bounded reopens
-/// within a run -> R + I (the warm-regression mechanism). Stateless: no reused connection
-/// to abandon -> I=0, but one short-lived connection per window -> higher R. Same
-/// fragmentation, opposite cost shape.
+/// Alternating cached/cold segments, full scan. Each cold segment is its own contiguous
+/// cold run, so the long connection opens once per cold segment, bounds at the next cached
+/// segment (`boundedReach` clamps the reach at the next wide cached run), and drains
+/// cleanly there -> one reach-bounded GET per cold run, no over-run into a cached hole.
+/// Stateless: one short-lived connection per window -> higher R. Neither mode leaves an
+/// incomplete connection.
 TEST_F(ReaderExecutorMetric, Checkerboard)
 {
     ReadList even;
@@ -589,8 +590,8 @@ TEST_F(ReaderExecutorMetric, Checkerboard)
         even.emplace_back(s * SEGMENT, SEGMENT);
     auto [live, stateless] = runMatrix("checkerboard", even, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 33u) << "live: reach-bounded GETs, not coalesced across cached holes";
-    EXPECT_EQ(live.incomplete, 15u) << "live: a connection drains to its reach bound and reopens cleanly; only a cold run whose connection over-runs into the next WIDE cached segment is dropped there (the plan-window lookahead cannot foresee a run past the extent)";
+    EXPECT_EQ(live.requests, N_SEGMENTS / 2) << "live: one reach-bounded GET per cold segment";
+    EXPECT_EQ(live.incomplete, 0u) << "live: each connection drains at the next cached segment, no over-run";
     EXPECT_EQ(live.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window, no reuse";
@@ -663,15 +664,15 @@ TEST_F(ReaderExecutorMetric, MidSegmentOverRead)
     }
 }
 
-/// First half warm, second half cold, full sequential scan. The contiguous suffix
-/// miss runs to EOF; the long connection coalesces it but reopens (reach-bounded) a
-/// few times and drains cleanly at EOF -> no incomplete.
+/// First half warm, second half cold, full sequential scan. The contiguous cold suffix
+/// runs to EOF as one coalesced connection that drains cleanly at EOF -> a single GET,
+/// no incomplete.
 TEST_F(ReaderExecutorMetric, PrefixHitSuffixMiss)
 {
     constexpr size_t half = FILE_SIZE / 2;
     auto [live, stateless] = runMatrix("prefix_hit", {{0, half}}, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 7u) << "live: the cold suffix coalesces into a few reach-bounded GETs";
+    EXPECT_EQ(live.requests, 1u) << "live: the contiguous cold suffix coalesces into one GET";
     EXPECT_EQ(live.incomplete, 0u) << "the miss runs to EOF and drains cleanly";
     EXPECT_EQ(live.over_read, 0u);
     EXPECT_EQ(stateless.incomplete, 0u);
@@ -694,9 +695,9 @@ TEST_F(ReaderExecutorMetric, SuffixHitPrefixMiss)
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
 
-/// All warm except one interior segment. The single miss's connection reopens
-/// (reach-bounded) within the cold segment and the last one is broken by the
-/// following hit -> a few GETs, one incomplete connection.
+/// All warm except one interior segment. The single cold segment is one contiguous run:
+/// the connection opens for it, bounds at the following cached segment, and drains cleanly
+/// there -> one GET, no incomplete.
 TEST_F(ReaderExecutorMetric, InteriorHole)
 {
     constexpr size_t hole = 3;   /// interior cold segment index
@@ -704,8 +705,8 @@ TEST_F(ReaderExecutorMetric, InteriorHole)
         {{0, hole * SEGMENT}, {(hole + 1) * SEGMENT, FILE_SIZE - (hole + 1) * SEGMENT}},
         {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 3u);
-    EXPECT_EQ(live.incomplete, 1u) << "live: the cold segment's last connection is broken by the following hit";
+    EXPECT_EQ(live.requests, 1u) << "live: one GET for the single interior cold segment";
+    EXPECT_EQ(live.incomplete, 0u) << "live: the connection drains at the following cached segment";
     EXPECT_EQ(live.over_read, 0u);
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
@@ -761,9 +762,10 @@ TEST_F(ReaderExecutorMetric, RandomPartialSequences)
 }
 
 /// Mostly-warm cache with a few scattered cold segments — the realistic production
-/// state (~98% warm). Each cold segment is a miss-run (reach-bounded reopens) abandoned
-/// at the next (warm) segment -> R/I from connection churn at the holes. Low
-/// fragmentation, unlike the checkerboard worst case.
+/// state (~98% warm). Each cold segment is its own contiguous cold run: one connection
+/// per cold segment, bound at and drained cleanly at the following warm segment -> one
+/// GET per cold segment, no connection churn. Low fragmentation, unlike the checkerboard
+/// worst case.
 TEST_F(ReaderExecutorMetric, SparseScatteredCold)
 {
     /// Warm every segment except 4 scattered cold ones (each followed by a warm segment).
@@ -780,8 +782,8 @@ TEST_F(ReaderExecutorMetric, SparseScatteredCold)
         warm_ranges.emplace_back(prev * SEGMENT, (N_SEGMENTS - prev) * SEGMENT);
     auto [live, stateless] = runMatrix("sparse_cold", warm_ranges, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 9u) << "live: reach-bounded GETs across the scattered cold segments";
-    EXPECT_EQ(live.incomplete, 4u) << "live: a connection drains to its bound and reopens cleanly; the residual is the cold segments whose connection over-runs into the following warm segment";
+    EXPECT_EQ(live.requests, cold.size()) << "live: one GET per scattered cold segment";
+    EXPECT_EQ(live.incomplete, 0u) << "live: each connection drains at the following cached segment";
     EXPECT_EQ(live.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
