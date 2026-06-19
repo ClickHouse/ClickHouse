@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <Common/scope_guard_safe.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/getMultipleKeysFromConfig.h>
@@ -42,8 +43,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -78,6 +79,12 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int CANNOT_SCHEDULE_TASK;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_plan_status_check_reenqueue_fault[];
 }
 
 class TaskParameters : public IParameterLookup
@@ -250,7 +257,13 @@ public:
         std::lock_guard lock(mutex);
         auto & element = exchanges_by_query_id[query_id][exchange_id];
         if (!element)
+        {
             element = std::make_shared<InMemoryExchange>(exchange_id);
+            /// A task built concurrently with the cancellation may look up its exchange after
+            /// cancelQuery already ran; hand it out pre-cancelled so its reads do not block forever.
+            if (cancelled_queries.contains(query_id))
+                element->cancel();
+        }
         return element;
     }
 
@@ -260,6 +273,7 @@ public:
     void cancelQuery(const String & query_id)
     {
         std::lock_guard lock(mutex);
+        cancelled_queries.insert(query_id);
         auto it = exchanges_by_query_id.find(query_id);
         if (it == exchanges_by_query_id.end())
             return;
@@ -272,6 +286,7 @@ public:
     {
         std::lock_guard lock(mutex);
         exchanges_by_query_id.erase(query_id);
+        cancelled_queries.erase(query_id);
     }
 
     static std::shared_ptr<InMemoryExchanges> instance()
@@ -284,6 +299,7 @@ private:
     using InMemoryExchangeMap = UnorderedMapWithMemoryTracking<String, InMemoryExchangePtr>;
 
     UnorderedMapWithMemoryTracking<String, InMemoryExchangeMap> exchanges_by_query_id TSA_GUARDED_BY(mutex);
+    UnorderedSetWithMemoryTracking<String> cancelled_queries TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 
@@ -350,6 +366,13 @@ private:
         {
             return exchange->getChunk();
         }
+
+        /// Wake a generate() blocked in getChunk; pipeline cancellation alone cannot interrupt it.
+        void onCancel() noexcept override
+        {
+            exchange->cancel();
+        }
+
     private:
         InMemoryExchangePtr exchange;
     };
@@ -650,7 +673,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 
-    ASTPtr ast_stub = make_intrusive<ASTSelectQuery>(); /// FIXME: this is only used to populate query_kind
+    /// No AST: this fragment is built from a serialized query plan, not parsed. The query-log
+    /// helpers below treat a null AST as QueryKind::Select, which is correct here.
+    const ASTPtr no_ast;
     UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
 
     auto query_log_elem = logQueryStart(
@@ -658,7 +683,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         context,
         /*query_for_logging*/ task.task_id,
         query_plan_hash,
-        ast_stub, pipeline,
+        no_ast, pipeline,
         /*interpreter*/ nullptr,
         /*internal*/ false,
         /*database*/ "",
@@ -688,12 +713,12 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
             executor.setCancelCallback(is_cancelled, 100);
         executor.execute();
 
-        logQueryFinish(query_log_elem, context, ast_stub, std::move(pipeline), false,
+        logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
             query_span, QueryResultCacheUsage::None, false);
     }
     catch (...)
     {
-        logQueryException(query_log_elem, context, execute_task_watch, ast_stub, query_span, false, true);
+        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, true);
         throw;
     }
 }
@@ -746,18 +771,23 @@ public:
     {
     }
 
+    ~DistributedQueryPlanExecutorLocal() override
+    {
+        /// Guarantee no task thread outlives the executor even on a teardown path that did not reach
+        /// the driver's cleanup() (e.g. an exception during the run). The threads are always joined,
+        /// never detached, so the std::thread members below are never destroyed while joinable.
+        cleanup();
+    }
+
     void cleanup() override
     {
-        /// Cancel the query's in-memory exchanges before waiting for the detached task threads, or a
-        /// task stuck in InMemoryExchange::getChunk never returns. The exchanges are not removed here:
-        /// the result reader still drains final_result after the driver finishes; removal happens when
-        /// the query pipeline is destroyed (see makeInMemoryExchangesCleaner).
+        /// Cancel the query's in-memory exchanges before joining the task threads, or a task stuck in
+        /// InMemoryExchange::getChunk never returns. The exchanges are not removed here: the result
+        /// reader still drains final_result after the driver finishes; removal happens when the query
+        /// pipeline is destroyed (see makeInMemoryExchangesCleaner).
         InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id));
 
-        for (auto & [_, tasks] : stage_tasks)
-            for (auto & task : tasks)
-                if (task.valid())
-                    task.wait();
+        joinAllThreads();
         stage_tasks.clear();
     }
 
@@ -770,16 +800,16 @@ protected:
         return new_context;
     }
 
-    std::future<void> startTask(const DistributedQueryTaskDescription & task_description)
+    std::future<void> startTask(const DistributedQueryTaskDescription & task_description, VectorWithMemoryTracking<std::thread> & threads)
     {
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        std::thread([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, is_cancelled = this->is_cancelled]() mutable
+        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, is_cancelled = this->is_cancelled]() mutable
         {
             ThreadStatus thread_status;
             /// The task attaches its own query context and thread group inside executeTask (matching
-            /// the worker path), so this thread is intentionally left detached from the initiator group.
+            /// the worker path), so this thread is intentionally not attached to the initiator group.
 
             try
             {
@@ -790,7 +820,7 @@ protected:
             {
                 promise.set_exception(std::current_exception());
             }
-        }).detach();
+        });
 
         return future;
     }
@@ -798,7 +828,9 @@ protected:
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
         VectorWithMemoryTracking<std::shared_future<void>> started_tasks;
+        VectorWithMemoryTracking<std::thread> started_threads;
         started_tasks.reserve(stage.tasks.size());
+        started_threads.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
@@ -806,10 +838,11 @@ protected:
         for (const auto & task : stage.tasks)
         {
             task_description.task = task;
-            started_tasks.emplace_back(startTask(task_description).share());
+            started_tasks.emplace_back(startTask(task_description, started_threads).share());
         }
 
         stage_tasks[stage_name] = std::move(started_tasks);
+        stage_threads[stage_name] = std::move(started_threads);
     }
 
     bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
@@ -834,6 +867,11 @@ protected:
             }
         }
 
+        /// All task futures of this stage are ready, so its threads are finishing right after fulfilling
+        /// their promises. Join them now to release their resources promptly instead of holding the
+        /// thread handles until cleanup().
+        joinStageThreads(stage_name);
+
         auto tasks = std::move(started_tasks);
         started_tasks.clear();
 
@@ -854,7 +892,30 @@ private:
                     task.get();
     }
 
+    /// Join and drop the threads of a single stage. Call only when the stage's task futures are ready.
+    void joinStageThreads(const String & stage_name)
+    {
+        auto it = stage_threads.find(stage_name);
+        if (it == stage_threads.end())
+            return;
+        for (auto & thread : it->second)
+            if (thread.joinable())
+                thread.join();
+        stage_threads.erase(it);
+    }
+
+    /// Join every task thread not already joined by waitForStage (e.g. for a cancelled or failed stage).
+    void joinAllThreads()
+    {
+        for (auto & [_, threads] : stage_threads)
+            for (auto & thread : threads)
+                if (thread.joinable())
+                    thread.join();
+        stage_threads.clear();
+    }
+
     UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<std::shared_future<void>>> stage_tasks;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<std::thread>> stage_threads;
 };
 
 
@@ -968,7 +1029,17 @@ protected:
 
         ~TaskTracker()
         {
-            thread_pool.wait();
+            /// wait() joins the status-check threads (needed: it runs while logger/lock/context are
+            /// still alive), but it can rethrow a stored worker exception, which must not escape a
+            /// destructor.
+            try
+            {
+                thread_pool.wait();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
 
         /// Add started task to be tracked
@@ -1098,6 +1169,21 @@ protected:
         }
 
     private:
+        /// Log the in-flight exception, store it as the query's first failure, and request
+        /// cancellation. Called from the worker lambda's catch blocks so a failed status check
+        /// or a failed re-enqueue surfaces through `checkCancelled` instead of escaping the
+        /// thread (which would be rethrown by ~TaskTracker and terminate the server).
+        void recordFailure()
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            {
+                std::lock_guard exception_lock(lock);
+                if (!first_exception)
+                    first_exception = std::current_exception();
+            }
+            *is_cancelled = true;
+        }
+
         void checkCancelled()
         {
             if (query_status)
@@ -1265,13 +1351,8 @@ protected:
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                        {
-                            std::lock_guard exception_lock(lock);
-                            if (!first_exception)
-                                first_exception = std::current_exception();
-                        }
-                        *is_cancelled = true;
+                        /// recordFailure() logs and stores the exception. Ok.
+                        recordFailure();
                     }
                     /// Decrement the in-flight counter before scheduling the next check so
                     /// the next `enqueueGetStatus` is not gated by an already-finished slot.
@@ -1279,7 +1360,22 @@ protected:
                     /// inside `checkStatusFunc` sees a full pipeline, all in-flight checks
                     /// then decrement to zero, and no further check is ever scheduled.
                     --in_flight_request_count;
-                    enqueueGetStatus();
+                    /// The re-enqueue must not escape the worker lambda: scheduleOrThrow can throw
+                    /// (CANNOT_SCHEDULE_TASK on shutdown, MEMORY_LIMIT_EXCEEDED), and an escaping
+                    /// exception is rethrown by thread_pool.wait() in ~TaskTracker.
+                    try
+                    {
+                        fiu_do_on(FailPoints::distributed_plan_status_check_reenqueue_fault,
+                        {
+                            throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected re-enqueue fault");
+                        });
+                        enqueueGetStatus();
+                    }
+                    catch (...)
+                    {
+                        /// recordFailure() logs and stores the exception. Ok.
+                        recordFailure();
+                    }
                 });
             ++in_flight_request_count;
         }
@@ -1440,8 +1536,13 @@ void DistributedQueryPlanExecutor::startStageWithDependencies(const String & sta
             }
         }
 
+        /// Wait in bounded steps so cancellation interrupts the wait. The caller holds the
+        /// source's executor mutex, so blocking here unboundedly would also block onCancel.
         for (const auto & dependency : dependencies_to_wait)
-            waitForStage(dependency, std::nullopt);
+        {
+            while (!waitForStage(dependency, /*timeout_ms=*/ 100))
+                checkCancelled();
+        }
     }
 
     const auto & stage = distributed_query_plan.stages.at(stage_name);
@@ -1518,6 +1619,11 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
         executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, is_cancelled);
 
     return executor;
+}
+
+void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id)
+{
+    InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id));
 }
 
 }

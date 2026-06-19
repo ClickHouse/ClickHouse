@@ -9,6 +9,8 @@
 -- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.
 SET max_rows_to_group_by = 0;
 
+SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
+
 DROP TABLE IF EXISTS t_shuffle_join_left;
 DROP TABLE IF EXISTS t_shuffle_join_right;
 
