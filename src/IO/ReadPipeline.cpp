@@ -442,6 +442,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
 
     ReaderExecutor::Options executor_options;
     executor_options.window_size = settings.reader_executor_window_size;
+    executor_options.lookahead_window = settings.reader_executor_lookahead_window;
     executor_options.min_bytes_for_seek = min_bytes_for_seek;
     executor_options.block_size = settings.reader_executor_block_size;
     executor_options.log_file_path = std::move(log_file_path);

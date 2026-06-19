@@ -769,6 +769,8 @@ Drain bound for the experimental `ReaderExecutor`: a long source connection drop
 Reuse a bounded long source connection across windows in the experimental `ReaderExecutor`. A long connection is one whose range exceeds the current read window; when disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
     DECLARE(Bool, reader_executor_decrypt_ahead, false, R"(
 Decrypt prefetched bytes on the read-ahead worker thread in the experimental `ReaderExecutor`, ahead of serving, instead of at the serve boundary on the query thread. Only the prefetch path is affected; cache hits and synchronous reads still decrypt on serve. Applies only to encrypted sources.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_lookahead_window, 16777216, R"(
+Flat residency-lookup look-ahead (bytes) for the experimental `ReaderExecutor` warm-read path. Once a read is detected as sequential, the residency plan and its held cache readers are built this far ahead, decoupled from the per-mark-range read-until bound, so readers are reused across mark ranges instead of rebuilt per range. Larger cuts plan rebuilds but pins more resident cache segments.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 

@@ -263,6 +263,7 @@ ReaderExecutor::ReaderExecutor(
     , max_tail_for_drain(options.max_tail_for_drain)
     , decrypt_ahead(options.decrypt_ahead)
     , plan_look_ahead_window(std::max(options.plan_look_ahead_window, options.window_size))
+    , lookahead_window(options.lookahead_window)
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<FetchMachineRunner>(prefetch_pool) : nullptr)
     , cache_filler_pool(std::move(options.cache_filler_pool))
@@ -286,6 +287,13 @@ ReaderExecutor::ReaderExecutor(
     ContinuityTracker::Options continuity_options;
     continuity_options.near_gap = min_bytes_for_seek;
     continuity_tracker = ContinuityTracker(continuity_options);
+
+    /// The cache-read (served-pattern) estimator drives the residency lookup span.
+    /// `near_gap == 0`: unlike the source estimator it must NOT bridge gaps - a hole
+    /// in the served pattern breaks the held-reader run.
+    ContinuityTracker::Options lookup_options;
+    lookup_options.near_gap = 0;
+    lookup_continuity = ContinuityTracker(lookup_options);
 }
 
 ReaderExecutor::ReaderExecutor(
@@ -456,7 +464,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         if (!machine
             && (!read_plan.geometry()
                 || position_phys < read_plan.geometry()->plan_start
-                || position_phys + window_size > read_plan.geometry()->plan_end))
+                || (position_phys + window_size > read_plan.geometry()->plan_end && !planReachesEnd())))
         {
             observeAndSchedule(position_phys);
             shadowReconstructCursor();
@@ -474,6 +482,10 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     stats.add(Stats::RequestedBytes, chain.range().size);
     position += chain.range().size;
+    /// Feed the served range (physical) to the cache-read estimator; its
+    /// `predictedReach` sizes the next residency lookup span (`boundedPlanSpan`).
+    if (chain.range().size)
+        lookup_continuity.onServe(position_phys, chain.range().size);
 #if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: the window is a prefix of (or equals) the cursor step
     if (read_plan.geometry() && !read_plan.schedule.steps.empty() && !chain.empty() && !reached_eof
         && read_plan.cursor < read_plan.schedule.steps.size())
@@ -530,6 +542,7 @@ void ReaderExecutor::seek(size_t new_position)
     /// Feed the seek to the continuity estimator and rewind the plan-feed watermark,
     /// so the post-seek plan re-feeds its predicted reads from here.
     continuity_tracker.onSeek(new_physical);
+    lookup_continuity.onSeek(new_physical);
     continuity_fed_end = new_physical;
 
     /// A seek away from the current frontier strands the in-flight fill segment;
@@ -2733,7 +2746,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
 
     /// TRIM: the plan span, bounded to the file end and the read extent. An empty
     /// span (the start already at/past a bound) publishes an empty plan.
-    const ByteRange plan_range = boundedPlanSpan(physical_start);
+    const ByteRange plan_range = boundedPlanSpan(physical_start, geom->pressure_level);
     if (plan_range.size == 0)
     {
         ReadPlan empty;
@@ -2852,7 +2865,13 @@ void ReaderExecutor::feedScheduleToContinuity(const PlanSchedule & schedule)
     }
 }
 
-ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
+bool ReaderExecutor::planReachesEnd() const
+{
+    return read_plan.geometry() && !offset_map.hasUnknownSize()
+        && read_plan.geometry()->plan_end >= offset_map.totalSize();
+}
+
+ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start, MemoryPressureLevel level) const
 {
     size_t want = plan_look_ahead_window;
 
@@ -2876,14 +2895,32 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
         want = window_size;
     }
 
-    /// Clamp to the advertised read extent so the plan never pins segments past the
-    /// region the reader will actually consume.
+    /// Decouple the residency LOOKUP span from the read-until bound. The held cache
+    /// readers/view should live across mark ranges, not be rebuilt each time
+    /// `read_extent_end` advances (per-mark-range churn that defeats reader reuse and
+    /// is the warm-cache coordination cost). Cover at least the advertised extent (so
+    /// the current task is served), then extend up to the cache-read continuity
+    /// prediction (`lookup_continuity`), capped above by the look-ahead window / object
+    /// end. Serving and fetching stay bounded by `read_extent_end` (`clampToExtent` /
+    /// a machine's `extent_snapshot`), so a larger lookup only holds resident hit
+    /// segments it will stream while the read continues; a non-continuous read keeps
+    /// `predictedReach` small, so the span falls back to the extent.
     if (read_extent_end)
     {
         const size_t physical_extent_end = *read_extent_end + data_start_offset;
         if (physical_start >= physical_extent_end)
             return ByteRange{physical_start, 0};
-        want = std::min(want, physical_extent_end - physical_start);
+        const size_t extent_span = physical_extent_end - physical_start;
+        /// Sequential (the run has already covered this extent): the read is streaming, so
+        /// jump FLAT to the look-ahead cap - `predictedReach` only gates the decision, it does
+        /// NOT size the span (sizing by it tracks the cursor and ramps too slowly to clear the
+        /// rebuild margin). The cap is `lookahead_window`, halved per memory-pressure step and
+        /// floored at `window_size`, so the held readers pin less under pressure. Not yet
+        /// sequential: stay at the current extent (one mark range), as before.
+        const size_t cap = std::max<size_t>(window_size, lookahead_window >> static_cast<unsigned>(level));
+        const bool sequential = lookup_continuity.predictedReach() >= extent_span;
+        const size_t reach = sequential ? cap : extent_span;
+        want = std::min(want, std::max(extent_span, reach));
     }
 
     return ByteRange{physical_start, want};

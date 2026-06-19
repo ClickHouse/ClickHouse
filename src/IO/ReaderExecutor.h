@@ -79,6 +79,10 @@ public:
         String log_file_path;
         size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
         size_t plan_look_ahead_window = DEFAULT_PLAN_LOOK_AHEAD;
+        /// Flat residency-lookup look-ahead once a read is detected sequential
+        /// (`reader_executor_lookahead_window`); decouples the held cache readers
+        /// from the per-mark-range read-until bound.
+        size_t lookahead_window = 16 * 1024 * 1024;
         /// Decrypt prefetched bytes on the read-ahead worker instead of at the serve
         /// boundary (encrypted sources, prefetch path only). See `decryptFetchedAhead`.
         bool decrypt_ahead = false;
@@ -873,7 +877,14 @@ private:
     /// `physical_start`, clamped to the physical file end and the advertised
     /// read extent. Empty when the start sits at/past a bound. The single
     /// place the plan is bounded.
-    ByteRange boundedPlanSpan(size_t physical_start) const;
+    ByteRange boundedPlanSpan(size_t physical_start, MemoryPressureLevel level) const;
+
+    /// Whether the current plan already extends to the source end (known size). A
+    /// margin-driven replan then only rebuilds the identical plan (and recreates the
+    /// held cache readers), so the serve path suppresses it and streams within the
+    /// held plan to EOF. Unknown-size sources learn EOF via a short read and keep
+    /// replanning.
+    bool planReachesEnd() const;
 
     /// Translate ONE tier's `planResidencyView` into its 1:1
     /// `GeometryEntry`/`BufEntry`. `extractResidentRuns` records the tier's
@@ -952,6 +963,9 @@ private:
     bool served_window_is_plaintext = false;
     /// Look-ahead span for plan-then-stream; raised to at least `window_size`.
     size_t plan_look_ahead_window;
+    /// Flat continuity look-ahead for the residency lookup span (`boundedPlanSpan`),
+    /// from `reader_executor_lookahead_window`.
+    size_t lookahead_window;
 
     /// Cursor state.
     size_t position = 0;
@@ -1034,6 +1048,15 @@ private:
     /// Highest physical offset already fed to `continuity_tracker` from a plan, so
     /// overlapping re-plans never double-feed. Reset to the target on seek.
     size_t continuity_fed_end = 0;
+
+    /// A SECOND estimator, fed every SERVED range (the cache-read / consumer pattern,
+    /// hits included) and every seek - distinct from the source estimator above.
+    /// Constructed with `near_gap == 0` (strict contiguity): a hole in the served
+    /// pattern is a real discontinuity for the held cache readers, not a bridgeable
+    /// connection gap. `predictedReach` sizes the residency lookup span
+    /// (`boundedPlanSpan`) so the held `DiskCacheReader`s live across mark ranges
+    /// instead of being rebuilt per `read_extent_end` advance.
+    ContinuityTracker lookup_continuity;
 
     /// Logging / transient accounting.
     std::shared_ptr<ReaderExecutorLog> reader_executor_log;
