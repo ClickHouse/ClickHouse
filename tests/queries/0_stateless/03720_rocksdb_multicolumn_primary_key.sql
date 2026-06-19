@@ -348,6 +348,16 @@ ORDER BY l.val;
 SELECT COUNT(*) FROM 03720_join_str_left AS l
 LEFT JOIN 03720_join_str_right AS r ON l.k1 = r.k1 AND l.k2 = r.k2;
 
+-- A non-equi ON conjunct (l.k2 != r.k2) becomes a residual/mixed filter. Under join_use_nulls,
+-- the right key reaches the saved join block as Nullable while the residual filter expression
+-- references it as non-Nullable, which used to abort in HashJoin::buildAdditionalFilter.
+SELECT l.k1, l.k2, r.k1, r.k2 FROM 03720_join_str_left AS l
+LEFT JOIN 03720_join_str_right AS r ON l.k1 = r.k1 AND l.k2 != r.k2
+ORDER BY l.k1, l.k2 SETTINGS join_use_nulls = 1;
+
+SELECT COUNT(DISTINCT *) FROM 03720_join_str_left AS l
+LEFT JOIN 03720_join_str_right AS r ON l.k1 = r.k1 AND l.k2 != r.k2 SETTINGS join_use_nulls = 1;
+
 DROP TABLE 03720_join_str_left;
 DROP TABLE 03720_join_str_right;
 

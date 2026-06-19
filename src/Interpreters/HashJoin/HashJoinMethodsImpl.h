@@ -865,7 +865,17 @@ static ColumnPtr buildAdditionalFilter(
                 for (const auto & selected_row : selected_rows)
                 {
                     const auto [src_col, row_pos] = getBlockColumnAndRow(selected_row, rhs_pos_it->second);
-                    col->insertFrom(*src_col, row_pos);
+                    /// The destination column type comes from the residual filter expression's required
+                    /// columns, which reference the raw (non-promoted) right-table inputs. The saved
+                    /// right block, however, may carry join-output nullability (join_use_nulls + outer
+                    /// join). Reconcile the two nullability representations, like the sibling join-output
+                    /// builders do (AddedColumns::buildJoinGetOutput, AddedColumns::checkColumns).
+                    if (auto * nullable_dest = typeid_cast<ColumnNullable *>(col.get()); nullable_dest && !src_col->isNullable())
+                        nullable_dest->insertFromNotNullable(*src_col, row_pos);
+                    else if (!col->isNullable() && src_col->isNullable())
+                        col->insertFrom(assert_cast<const ColumnNullable &>(*src_col).getNestedColumn(), row_pos);
+                    else
+                        col->insertFrom(*src_col, row_pos);
                 }
                 required_columns[pos].column = std::move(col);
                 ++rhs_pos_it;
