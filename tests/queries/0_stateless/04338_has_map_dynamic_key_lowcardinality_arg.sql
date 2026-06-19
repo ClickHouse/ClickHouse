@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- 'has' over a Map with a Dynamic key and a LowCardinality lookup argument used to
 -- crash (SIGSEGV in release / type-mismatch assertion in debug) because executeMap()
 -- reached executeGeneric() without stripping LowCardinality from the lookup column.
