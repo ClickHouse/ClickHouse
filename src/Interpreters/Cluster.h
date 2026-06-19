@@ -105,7 +105,7 @@ public:
         * <node>
         *     <host>example01-01-1</host>
         *     <port>9000</port>
-        *     <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure>, <bind_host> if needed -->
+        *     <!-- <user>, <password>, <default_database>, <compression>, <priority>, <secure>, <bind_host> if needed -->
         * </node>
         * ...
         * or in <shard> and inside in <replica> elements:
@@ -113,7 +113,8 @@ public:
         *     <replica>
         *         <host>example01-01-1</host>
         *         <port>9000</port>
-        *         <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure>, <bind_host> if needed -->
+        *         <!-- <user>, <password>, <default_database>, <compression>, <priority>, <secure>, <bind_host> if needed -->
+        *         <!-- <skip_distributed_ddl>1</skip_distributed_ddl> to exclude this replica from ON CLUSTER DDL queries -->
         *    </replica>
         * </shard>
         */
@@ -141,6 +142,10 @@ public:
         /// The locality can be auto-reinitialized by reloading cluster config if DNSCacheUpdater is enabled
         bool is_local = false;
         bool user_specified = false;
+        /// If true, this replica is excluded from ON CLUSTER DDL queries.
+        /// Useful when multiple replicas share the same host (e.g. localhost) to avoid
+        /// duplicate DDL execution.
+        bool skip_distributed_ddl = false;
 
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
