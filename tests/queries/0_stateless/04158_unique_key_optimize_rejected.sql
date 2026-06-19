@@ -25,6 +25,9 @@ INSERT INTO uk_optimize VALUES (4, 'd'), (5, 'e'), (6, 'f');
 -- Two parts present; OPTIMIZE (and OPTIMIZE FINAL) must be rejected, not merge them.
 OPTIMIZE TABLE uk_optimize; -- { serverError SUPPORT_IS_DISABLED }
 OPTIMIZE TABLE uk_optimize FINAL; -- { serverError SUPPORT_IS_DISABLED }
+-- DRY RUN PARTS bypasses StorageMergeTree::optimize and runs a real merge task;
+-- it must be rejected at the MergeTreeData chokepoint as well.
+OPTIMIZE TABLE uk_optimize DRY RUN PARTS 'all_1_1_0', 'all_2_2_0'; -- { serverError SUPPORT_IS_DISABLED }
 
 -- Parts were not compacted: still two parts.
 SELECT 'parts' AS step, count() FROM system.parts

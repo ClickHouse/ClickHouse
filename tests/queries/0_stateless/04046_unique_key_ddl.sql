@@ -124,14 +124,16 @@ SET enable_streaming_queries = 1;
 SELECT * FROM uk_t STREAM; -- { serverError NOT_IMPLEMENTED }
 SET enable_streaming_queries = 0;
 
--- 10c. Reading via a projection on a unique-key table -> error (fail-closed).
+-- 10c. A unique-key table that also carries a projection must never read
+-- through the projection part (that would bypass the delete-bitmap filter).
 -- CREATE/ALTER reject the combination, but ATTACH (and other secondary-create
--- paths) still load existing metadata; a table that carries both a UNIQUE KEY
--- and a projection must never read through the projection part, which would
--- bypass the delete-bitmap filter. ATTACH (with an explicit UUID, required for
--- the Atomic database engine) builds that combination so the read-path guard
--- (canUseProjectionForReadingStep) can be exercised. The UUID is derived from
--- the test number to avoid collisions (cf. 01601_detach_permanently).
+-- paths) still load existing metadata. The read-path optimizer
+-- (canUseProjectionForReadingStep) declines the projection so reads fall back
+-- to the correctly-filtered base table; a genuine projection-part read is
+-- hard-rejected downstream (MergeTreeDataSelectExecutor, exercised in 10d).
+-- ATTACH (with an explicit UUID, required for the Atomic database engine)
+-- builds the combination. The UUID is derived from the test number to avoid
+-- collisions (cf. 01601_detach_permanently).
 DROP TABLE IF EXISTS uk_t_attach_proj SYNC;
 ATTACH TABLE uk_t_attach_proj UUID '00000000-0000-0000-0000-000000004046'
 (id UInt64, user_id UInt32, PROJECTION p (SELECT user_id, count() GROUP BY user_id))
@@ -140,9 +142,14 @@ UNIQUE KEY (id)
 ORDER BY (id, user_id);
 -- Need parts for the projection optimizer to consider the projection.
 INSERT INTO uk_t_attach_proj VALUES (1, 10), (2, 10), (3, 20);
--- An aggregating query is what the projection optimizer would route through the
--- projection part; the guard throws instead.
-SELECT user_id, count() FROM uk_t_attach_proj GROUP BY user_id; -- { serverError NOT_IMPLEMENTED }
+-- Plain base-table reads still work: the projection is declined, not the read.
+SELECT id, user_id FROM uk_t_attach_proj ORDER BY id;
+-- An aggregating query the optimizer would route through the projection falls
+-- back to the (delete-bitmap-filtered) base table and succeeds, rather than
+-- failing the read.
+SET optimize_use_projections = 1;
+SELECT user_id, count() FROM uk_t_attach_proj GROUP BY user_id ORDER BY user_id;
+SET optimize_use_projections = 0;
 -- 10d. The mergeTreeProjection table function reads the projection part directly,
 -- bypassing the optimizer guard. The MergeTreeDataSelectExecutor chokepoint still
 -- fails closed for a UNIQUE KEY parent.
