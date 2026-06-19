@@ -1,12 +1,13 @@
 #include <Coordination/KeeperChunkedSnapshot.h>
 
 #include <Common/Exception.h>
+#include <Common/LoggingFormatStringHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteHelpers.h>
 
 #include <cstring>
-#include <fmt/format.h>
+#include <expected>
 
 namespace DB
 {
@@ -38,31 +39,38 @@ void packChunkedSnapshotFooter(std::span<const SnapshotChunkDescriptor> chunks, 
 namespace
 {
 
-std::vector<SnapshotChunkDescriptor> parseChunkedSnapshotImpl(SeekableReadBuffer & in, bool check_version)
+struct ParseError
+{
+    PreformattedMessage message;
+    int error_code;
+};
+
+template <typename... Args>
+[[nodiscard]] std::unexpected<ParseError> makeParseError(int code, FormatStringHelper<Args...> fmt, Args &&... args)
+{
+    return std::unexpected(ParseError{PreformattedMessage::create(std::move(fmt), std::forward<Args>(args)...), code});
+}
+
+using ParseResult = std::expected<std::vector<SnapshotChunkDescriptor>, ParseError>;
+
+ParseResult parseChunkedSnapshotImpl(SeekableReadBuffer & in, bool check_version)
 {
     const size_t header_size = chunkedSnapshotHeaderSize();
 
     char magic[4];
     in.readStrict(magic, 4);
     if (memcmp(magic, KEEPER_CHUNKED_SNAPSHOT_MAGIC.data(), 4) != 0)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot front header has wrong magic bytes");
+        return makeParseError(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot front header has wrong magic bytes");
 
     uint8_t version = 0;
     readBinary(version, in);
     if (check_version && version != KEEPER_CHUNKED_SNAPSHOT_VERSION)
-        throw Exception(
-            ErrorCodes::UNKNOWN_FORMAT_VERSION,
-            "Chunked snapshot has unexpected version {}, expected {}",
-            version,
-            KEEPER_CHUNKED_SNAPSHOT_VERSION);
+        return makeParseError(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Chunked snapshot has unexpected version {}, expected {}", version, KEEPER_CHUNKED_SNAPSHOT_VERSION);
 
     uint64_t chunk_count = 0;
     readBinary(chunk_count, in);
     if (chunk_count < KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT)
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "Chunked snapshot chunk_count below the minimum of {} (need METADATA + >=1 NODES)",
-            KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT);
+        return makeParseError(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot chunk_count below the minimum of {} (need METADATA + >=1 NODES)", KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT);
 
     const size_t footer_size = chunkedSnapshotFooterSize(chunk_count);
     const uint64_t footer_offset = static_cast<uint64_t>(in.seek(-static_cast<off_t>(footer_size), SEEK_END));
@@ -81,31 +89,25 @@ std::vector<SnapshotChunkDescriptor> parseChunkedSnapshotImpl(SeekableReadBuffer
         readBinary(d.node_count, in);
 
         if (type_raw > static_cast<uint8_t>(SnapshotChunkType::NODES))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot footer has an unknown chunk_type");
+            return makeParseError(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot footer has an unknown chunk_type");
         d.type = static_cast<SnapshotChunkType>(type_raw);
 
         if (i == 0 && d.type != SnapshotChunkType::METADATA)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot chunk ordering invalid (expected METADATA, then NODES...)");
+            return makeParseError(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot chunk ordering invalid (expected METADATA, then NODES...)");
         if (i > 0 && d.type != SnapshotChunkType::NODES)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot chunk ordering invalid (expected METADATA, then NODES...)");
+            return makeParseError(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot chunk ordering invalid (expected METADATA, then NODES...)");
 
         if (d.compressed_offset > footer_offset || d.compressed_size > footer_offset - d.compressed_offset)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Chunked snapshot chunk offset/size out of bounds (overlaps the front header, a previous chunk, or the footer)");
+            return makeParseError(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot chunk offset/size out of bounds (overlaps the front header, a previous chunk, or the footer)");
         if (d.compressed_offset < prev_end)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Chunked snapshot chunk offset/size out of bounds (overlaps the front header, a previous chunk, or the footer)");
+            return makeParseError(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot chunk offset/size out of bounds (overlaps the front header, a previous chunk, or the footer)");
 
         prev_end = d.compressed_offset + d.compressed_size;
         chunks.push_back(d);
     }
 
     if (prev_end != footer_offset)
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "Chunked snapshot last chunk does not end exactly where the footer begins (trailing gap / wrong footer provenance)");
+        return makeParseError(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot last chunk does not end exactly where the footer begins (trailing gap / wrong footer provenance)");
 
     return chunks;
 }
@@ -116,8 +118,7 @@ bool isChunkedSnapshot(SeekableReadBuffer & in) noexcept
 {
     try
     {
-        parseChunkedSnapshotImpl(in, /*check_version=*/false);
-        return true;
+        return parseChunkedSnapshotImpl(in, /*check_version=*/false).has_value();
     }
     catch (...)
     {
@@ -127,7 +128,10 @@ bool isChunkedSnapshot(SeekableReadBuffer & in) noexcept
 
 std::vector<SnapshotChunkDescriptor> parseAndValidateChunkedSnapshot(SeekableReadBuffer & in)
 {
-    return parseChunkedSnapshotImpl(in, /*check_version=*/true);
+    auto result = parseChunkedSnapshotImpl(in, /*check_version=*/true);
+    if (!result)
+        throw Exception(std::move(result.error().message), result.error().error_code);
+    return std::move(*result);
 }
 
 }
