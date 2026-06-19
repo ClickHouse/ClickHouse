@@ -13,19 +13,27 @@
 -- clause, since they are represented differently in the plan (an expression action vs a
 -- dedicated `ArrayJoinStep`).
 
+-- Build-side-choice determinism. `query_plan_join_swap_table = 'auto'` is under test, and
+-- clickhouse-test randomizes several settings that change which table is built; pin them so the
+-- assertions are stable. Keep this block identical in 04337 and 04356.
+--  * enable_analyzer -- the build-side choice lives in the logical join optimizer;
+--  * use_statistics -- off, else a statistics estimator replaces the metadata row counts;
+--  * query_plan_optimize_join_order_limit -- a randomized 0 disables the reorder pass (where the
+--    swap lives), leaving the tables in their written order;
+--  * query_plan_optimize_join_order_randomize -- a non-zero seed replaces the estimates with
+--    random values;
+--  * collect/use hash-table stats -- a process-global cache that persists across test runs;
+--  * enable_join_transitive_predicates -- changes which residual filters are inferred across keys;
+--  * enable_join_runtime_filters -- off, to keep the plans simple.
 SET enable_analyzer = 1;
-SET use_statistics = 0;
 SET query_plan_join_swap_table = 'auto';
-SET enable_join_runtime_filters = 0;
--- Pin the build-side-choice inputs so the assertion is deterministic under settings
--- randomization: keep the reorder pass enabled (a randomized limit of 0 would skip it, leaving
--- the build side correct by construction), do not randomize the row estimates (a non-zero seed
--- replaces the deliberately-unknown arrayJoin count with random values), and disable the
--- process-global hash-table-stats cache (it persists across test runs).
+SET use_statistics = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
 SET collect_hash_table_stats_during_joins = 0;
 SET use_hash_table_stats_for_join_reordering = 0;
+SET enable_join_transitive_predicates = 1;
+SET enable_join_runtime_filters = 0;
 
 DROP TABLE IF EXISTS arr_tbl;
 DROP TABLE IF EXISTS big;

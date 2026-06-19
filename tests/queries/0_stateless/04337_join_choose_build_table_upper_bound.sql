@@ -10,22 +10,27 @@
 -- is known, while `big` (1000000 rows) has an exact estimate. Even though `small` is written
 -- first (probe by default), it must be swapped to the build side because 1000 < 1000000.
 
+-- Build-side-choice determinism. `query_plan_join_swap_table = 'auto'` is under test, and
+-- clickhouse-test randomizes several settings that change which table is built; pin them so the
+-- assertions are stable. Keep this block identical in 04337 and 04356.
+--  * enable_analyzer -- the build-side choice lives in the logical join optimizer;
+--  * use_statistics -- off, else a statistics estimator replaces the metadata row counts;
+--  * query_plan_optimize_join_order_limit -- a randomized 0 disables the reorder pass (where the
+--    swap lives), leaving the tables in their written order;
+--  * query_plan_optimize_join_order_randomize -- a non-zero seed replaces the estimates with
+--    random values;
+--  * collect/use hash-table stats -- a process-global cache that persists across test runs;
+--  * enable_join_transitive_predicates -- changes which residual filters are inferred across keys;
+--  * enable_join_runtime_filters -- off, to keep the plans simple.
 SET enable_analyzer = 1;
-SET use_statistics = 0;
 SET query_plan_join_swap_table = 'auto';
-SET enable_join_runtime_filters = 0;
--- These cases verify the metadata/upper-bound based build-side choice deterministically, so:
---  * disable the runtime hash-table-size cache -- it is process-global and persists across test
---    runs (e.g. `--test-runs`), which would otherwise make the chosen build side depend on run
---    order;
---  * disable join-order randomization -- a non-zero seed replaces the row estimates with random
---    values, intentionally randomizing the build side;
---  * keep the join-order optimization enabled (the build-side choice lives in that pass) -- a
---    randomized limit of 0 would disable it and leave the tables in their written order.
+SET use_statistics = 0;
+SET query_plan_optimize_join_order_limit = 10;
+SET query_plan_optimize_join_order_randomize = 0;
 SET collect_hash_table_stats_during_joins = 0;
 SET use_hash_table_stats_for_join_reordering = 0;
-SET query_plan_optimize_join_order_randomize = 0;
-SET query_plan_optimize_join_order_limit = 10;
+SET enable_join_transitive_predicates = 1;
+SET enable_join_runtime_filters = 0;
 
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;
