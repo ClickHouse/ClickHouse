@@ -211,6 +211,37 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
+-- Soundness: a `Memory` engine does not apply a pushed-down filter while the optimizer estimates,
+-- so its `totalRows` is the pre-filter size. `(SELECT k FROM memt WHERE k = 0)` returns ~1 row,
+-- not the whole table. Were that pre-filter size treated as an exact estimate, the residual-
+-- filtered 20000-row left input would be swapped onto the build side over the ~1-row right side.
+DROP TABLE IF EXISTS lhs_mt;
+DROP TABLE IF EXISTS memt;
+
+CREATE TABLE lhs_mt (k Int32, v Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO lhs_mt SELECT number, number FROM numbers(20000);
+
+CREATE TABLE memt (k Int32) ENGINE = Memory;
+INSERT INTO memt SELECT number FROM numbers(1000000);
+
+SELECT * FROM lhs_mt JOIN (SELECT k FROM memt WHERE k = 0) AS r ON lhs_mt.k = r.k
+WHERE lhs_mt.v != -1
+SETTINGS log_comment = '04337_join_choose_build_table_memory_filter' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The filtered memory subquery (~1 row) must stay the build side; the 20000-row left input must
+-- not be swapped onto it.
+SELECT
+    if(ProfileEvents['JoinBuildTableRowCount'] < 100, 'ok', format('fail({}): build={}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinResultRowCount'] = 1, 'ok', format('fail({}): result={}', query_id, ProfileEvents['JoinResultRowCount']))
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+  AND query_kind = 'Select' AND current_database = currentDatabase()
+  AND log_comment = '04337_join_choose_build_table_memory_filter'
+ORDER BY event_time DESC
+LIMIT 1;
+
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;
 DROP TABLE IF EXISTS lhs_big;
@@ -221,3 +252,5 @@ DROP TABLE IF EXISTS lhs_filtered;
 DROP TABLE IF EXISTS big_agg;
 DROP TABLE IF EXISTS lhs_small;
 DROP TABLE IF EXISTS offset_child;
+DROP TABLE IF EXISTS lhs_mt;
+DROP TABLE IF EXISTS memt;

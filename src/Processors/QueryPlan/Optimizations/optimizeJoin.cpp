@@ -359,7 +359,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .estimated_rows_kind = RowCountKind::Exact, .table_name = table_display_name};
+        /// `totalRows` is the pre-filter table size. A pushed-down predicate (from a `FilterStep`)
+        /// is not applied here, so with a filter the total is only an upper bound on the rows that
+        /// pass; it is the exact count only when there is no filter.
+        return RelationStats{
+            .estimated_rows = estimated_rows,
+            .estimated_rows_kind = filter ? RowCountKind::UpperBound : RowCountKind::Exact,
+            .table_name = table_display_name};
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
@@ -1178,7 +1184,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// side is a trustworthy lower bound -- i.e. an exact count. Otherwise the right value
             /// may itself be a heuristic over-estimate (e.g. an NDV-less aggregation reported as
             /// its input row count), and `upperBound(left) < rhs` would not prove `left < right`.
-            bool swap_on_sizes;
+            bool swap_on_sizes = false;
             if (optimization_settings.join_swap_table.has_value())
                 swap_on_sizes = optimization_settings.join_swap_table.value();
             else if (lhs_estimation)
