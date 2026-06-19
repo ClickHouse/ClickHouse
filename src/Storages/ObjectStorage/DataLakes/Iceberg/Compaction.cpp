@@ -585,7 +585,7 @@ static void writeMetadataFiles(
     }
 
     {
-        std::string json_representation = stringifyJson(metadata_object, 4);
+        std::string json_representation = stringifyJSON(metadata_object, 4);
 
         auto buffer_metadata = object_storage->writeObject(
             StoredObject(path_resolver.resolve(generated_metadata_info.path)),
