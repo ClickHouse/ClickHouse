@@ -398,7 +398,26 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         if (!replxx_last_is_delimiter && !multiline && query_needs_continuation)
         {
             replxx::Replxx::State state(rx.get_state());
-            if (query_needs_continuation(state.text()))
+            std::string_view text(state.text());
+
+            /// Do not preempt the explicit trailing line-extender (e.g. `\`):
+            /// let `readLine` commit and strip it as before. `readLine` checks the
+            /// extender on the right-trimmed line, so mirror that here.
+            std::string_view trimmed = text;
+            if (size_t last = trimmed.find_last_not_of(" \t\v\f\r\n"); last != std::string_view::npos)
+                trimmed = trimmed.substr(0, last + 1);
+            else
+                trimmed = {};
+
+            bool ends_with_extender = false;
+            for (const char * extender : extenders)
+                if (trimmed.ends_with(extender))
+                {
+                    ends_with_extender = true;
+                    break;
+                }
+
+            if (!ends_with_extender && query_needs_continuation(std::string(text)))
                 return rx.invoke(Replxx::ACTION::NEW_LINE, code);
         }
 

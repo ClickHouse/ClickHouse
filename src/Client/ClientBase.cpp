@@ -3237,12 +3237,11 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         if (trimmed.empty())
             return false;
 
-        /// An explicit statement terminator means "submit now", even if the
-        /// statement is otherwise incomplete (this is how the user forces an
-        /// incomplete query to be submitted to see its syntax error). Checked
-        /// here, independently of the highlighter, because with `--highlight 0`
-        /// `ReplxxLineReader` never sets its delimiter flag.
-        if (trimmed.ends_with(";") || trimmed.ends_with("\\G"))
+        /// A trailing `\G` vertical-output delimiter means "submit now" (it is not
+        /// a regular token, so it is matched on the raw text). The `;` terminator
+        /// is handled below, after tokenization, so it is still recognized when
+        /// followed by a comment.
+        if (trimmed.ends_with("\\G"))
             return false;
 
         const auto & settings = client_context->getSettingsRef();
@@ -3272,6 +3271,25 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// If there are no significant tokens, no continuation needed.
         if (token_iterator->isEnd())
             return false;
+
+        /// An explicit `;` terminator means "submit now", even if the statement is
+        /// otherwise incomplete (this is how the user forces an incomplete query to
+        /// be submitted to see its syntax error). The last significant token is
+        /// inspected, so the terminator is recognized even when followed by a
+        /// comment, and independently of the highlighter (with `--highlight 0`
+        /// `ReplxxLineReader` never sets its delimiter flag). Comments and
+        /// whitespace are skipped because `tokens` was built with skip_insignificant.
+        {
+            TokenIterator terminator_it(tokens);
+            TokenType last_significant_type = TokenType::Whitespace;
+            while (terminator_it->type != TokenType::EndOfStream)
+            {
+                last_significant_type = terminator_it->type;
+                ++terminator_it;
+            }
+            if (last_significant_type == TokenType::Semicolon)
+                return false;
+        }
 
         /// Parse statements one by one. The buffer needs continuation only if its
         /// last statement is incomplete because the parser reached the end of
