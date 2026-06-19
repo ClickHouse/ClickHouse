@@ -13,6 +13,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -306,6 +307,9 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table_.get()))
             if (mv->hasInnerTable())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move MaterializedView with inner table to other database");
+        if (const auto * ts = dynamic_cast<const StorageTimeSeries *>(table_.get()))
+            if (ts->hasInnerTables())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move TimeSeries table with inner tables to other database");
     };
 
     String table_data_path;

@@ -93,17 +93,22 @@ def unique(request):
 
 
 def check_expected_result_polling(expected, query, instance=instance, timeout=DEFAULT_TIMEOUT_SEC):
+    # Fail only if consumption from RabbitMQ stalls, i.e. there is no progress for `timeout`
+    # seconds. As long as the result keeps increasing, consumption is still in progress, so we
+    # keep waiting regardless of how long the whole consumption takes. This matters for heavy
+    # tests (e.g. consuming many large messages on a slow remote-disk configuration): a fixed
+    # deadline would abandon a test that is still steadily consuming.
     deadline = time.monotonic() + timeout
     prev_result = 0
     result = None
     while time.monotonic() < deadline:
         result = int(instance.query(query))
-        # In case it's consuming successfully from RabbitMQ in latest iteration, extend the deadline
-        if result > prev_result:
-            deadline += 1
-        prev_result = result
         if result == expected:
             break
+        # Progress was made since the previous iteration: reset the no-progress deadline.
+        if result > prev_result:
+            deadline = time.monotonic() + timeout
+        prev_result = result
         logging.debug(f"Result: {result} / {expected}. Now {time.monotonic()}, deadline {deadline}")
         time.sleep(1)
     else:
