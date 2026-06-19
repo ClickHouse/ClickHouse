@@ -125,7 +125,7 @@ struct QueryRunnerJob
 
 /// Used to cancel the remote queries and unblock the dispatcher's workers on shutdown.
 /// Cancelling is required because otherwise server shutdown would be blocked on
-/// queries being executed on other clusters - arbitrarily long. 
+/// queries being executed on other clusters - arbitrarily long.
 class RemoteQueryExecutorRegistry
 {
 public:
