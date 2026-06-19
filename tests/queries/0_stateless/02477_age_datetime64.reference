@@ -115,4 +115,4 @@ SELECT age('day', materialize(toDate('2015-08-18', 'UTC')), materialize(toDateTi
 set session_timezone = 'UTC';
 SELECT age('second', toDateTime(1157339245694594829, 6, 'UTC'), toDate('2015-08-18'))
 
--8973935999
+-251962444799
