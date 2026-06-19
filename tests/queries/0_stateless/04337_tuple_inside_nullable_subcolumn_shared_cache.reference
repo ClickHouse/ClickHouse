@@ -7,7 +7,7 @@ SET allow_experimental_nullable_tuple_type = 1;
 -- Wide part, one row per granule.
 DROP TABLE IF EXISTS t_shared_cache_wide;
 CREATE TABLE t_shared_cache_wide (x Tuple(a Nullable(Tuple(b Nullable(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, optimize_row_order_if_no_order_by = 0;
 INSERT INTO t_shared_cache_wide SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4);
 SELECT x.a, x.a.b FROM t_shared_cache_wide;
 (0)	0
@@ -33,7 +33,7 @@ DROP TABLE t_shared_cache_wide;
 -- Compact part.
 DROP TABLE IF EXISTS t_shared_cache_compact;
 CREATE TABLE t_shared_cache_compact (x Tuple(a Nullable(Tuple(b Nullable(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000;
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000, optimize_row_order_if_no_order_by = 0;
 INSERT INTO t_shared_cache_compact SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4);
 SELECT x.a, x.a.b FROM t_shared_cache_compact;
 (0)	0
