@@ -17,7 +17,15 @@ for i in $(seq -w 1 40); do
     $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${base}/data_${i}.csv', 'test', 'testtest', 'CSV', 'x UInt64') SELECT ${i} SETTINGS s3_truncate_on_insert=1;"
 done
 
-q="SELECT count(), uniqExact(_path), sum(sipHash64(_path)) FROM s3('${base}/*.csv', 'test', 'testtest', 'CSV', 'x UInt64') SETTINGS s3_list_object_keys_size=7"
+# Match the files by an anchored glob (`data_??.csv`) rather than `*.csv`. Under the stress query fuzzer
+# the directory can also hold sibling objects with mutated, non-UTF-8 names (e.g. `data\xef\xbf\xbd.csv`)
+# produced from this test's harvested path literal; with `*.csv` the listing returns those and the read
+# of their bodies fails with `No such key`, even with `s3_list_object_parallelism = 1` (i.e. unrelated to
+# the feature under test). The anchored glob narrows the listing prefix to `.../04340/data_` and the regexp
+# to the exact file shape, so a fuzzer artifact in the shared bucket is never listed or read and cannot
+# derail this listing test. It still lists every `data_NN.csv` (truncated at `s3_list_object_keys_size`),
+# which is what we compare between serial and parallel listing.
+q="SELECT count(), uniqExact(_path), sum(sipHash64(_path)) FROM s3('${base}/data_??.csv', 'test', 'testtest', 'CSV', 'x UInt64') SETTINGS s3_list_object_keys_size=7"
 
 serial=$($CLICKHOUSE_CLIENT -q "${q}, s3_list_object_parallelism=1")
 parallel=$($CLICKHOUSE_CLIENT -q "${q}, s3_list_object_parallelism=8")
