@@ -918,6 +918,27 @@ bool isSubtreeDeterministic(const ActionsDAG::Node * node)
     return true;
 }
 
+/// walk a folded node's subtree, an earlier fold can hide a materialize behind a plain const
+bool subtreeContainsMaterialize(const ActionsDAG::Node * node)
+{
+    std::unordered_set<const ActionsDAG::Node *> seen;
+    std::vector<const ActionsDAG::Node *> stack{node};
+    while (!stack.empty())
+    {
+        const auto * n = stack.back();
+        stack.pop_back();
+        if (!n || !seen.insert(n).second)
+            continue;
+        if (n->type == ActionsDAG::ActionType::FUNCTION
+            && n->function_base
+            && n->function_base->getName() == "materialize")
+            return true;
+        for (const auto * c : n->children)
+            stack.push_back(c);
+    }
+    return false;
+}
+
 std::optional<Resolved> resolveConstThroughMaterialize(const ActionsDAG::Node * node)
 {
     bool through_materialize = false;
@@ -932,7 +953,11 @@ std::optional<Resolved> resolveConstThroughMaterialize(const ActionsDAG::Node * 
         node = skipAliases(node->children.front());
     }
     if (node && node->column && isColumnConst(*node->column))
+    {
+        if (!through_materialize && subtreeContainsMaterialize(node))
+            through_materialize = true;
         return Resolved{node->column, isSubtreeDeterministic(node), through_materialize};
+    }
     return std::nullopt;
 }
 

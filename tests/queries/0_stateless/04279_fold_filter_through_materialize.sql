@@ -54,6 +54,9 @@ SELECT isConstant(y) FROM (SELECT materialize(1) = 1 AS y FROM numbers(1)) WHERE
 -- like()'s ESCAPE arg must stay non-Const-foldable through materialize - runtime still raises
 SELECT like('50%off', '50#%off', materialize('#')); -- { serverError ILLEGAL_COLUMN }
 
+-- same guard must catch materialize buried under a function the pass already folded
+SELECT like('50%off', '50#%off', concat(materialize('#'), '')); -- { serverError ILLEGAL_COLUMN }
+
 -- planning must not eagerly evaluate the lazy then-branch of `if` -
 -- toFloat64('x86_74') would throw at fold time without the short-circuit guard
 SELECT count() > 0 FROM (
