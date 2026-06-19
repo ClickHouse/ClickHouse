@@ -1,12 +1,4 @@
-#include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AlterDropPartitionExecutor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h>
-#include <base/defines.h>
-#include <base/scope_guard.h>
-#include <DataFile.hh>
-#include <GenericDatum.hh>
-#include <Types.hh>
-#include <Poco/JSON/Array.h>
 
 #if USE_AVRO
 
@@ -19,6 +11,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
@@ -32,11 +25,20 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/logger_useful.h>
 
+#include <base/defines.h>
+#include <base/scope_guard.h>
+
+#include <DataFile.hh>
+#include <GenericDatum.hh>
+#include <Types.hh>
+
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/JSON/Array.h>
 
 #include <limits>
 #include <set>
 #include <memory>
+#include <string>
 
 namespace DB
 {
@@ -45,7 +47,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int INVALID_PARTITION_VALUE;
-extern const int LIMIT_EXCEEDED;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
