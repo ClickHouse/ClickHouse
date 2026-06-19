@@ -1,4 +1,5 @@
 #include <Common/DateLUTImpl.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -144,6 +145,11 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric IsServerShuttingDown;
 }
 
 namespace DB
@@ -2317,10 +2323,32 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
     auto logger = getLogger("ASTFuzzer");
 
+    /// The fuzzer runs as a query finish callback, after the outer query's pipeline executor
+    /// has stopped enforcing limits. Without these checks the outer query keeps spawning fuzzed
+    /// queries while ignoring its own deadline, a KILL, or server shutdown, so it lingers in the
+    /// processlist and can trip the stress test hung check.
+    /// Some fuzzable queries (e.g. SHOW PROCESSLIST) are not inserted into the ProcessList, so
+    /// the deadline/KILL check via checkTimeLimitSoft is unavailable; the shutdown metric still
+    /// stops the loop in that case.
+    QueryStatusPtr process_list_element = context->getProcessListElement();
+
     ASTPtr base_ast = ast;
 
     for (size_t i = 0; i < num_runs; ++i)
     {
+        if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
+        {
+            LOG_TRACE(logger, "Stopping AST fuzzer: the server is shutting down");
+            break;
+        }
+
+        /// checkTimeLimitSoft returns false without throwing on a KILL or the outer deadline.
+        if (process_list_element && !process_list_element->checkTimeLimitSoft())
+        {
+            LOG_TRACE(logger, "Stopping AST fuzzer: outer query was killed or timed out");
+            break;
+        }
+
         ASTPtr fuzzed_ast;
         NameToNameMap fuzzed_query_params;
         {
