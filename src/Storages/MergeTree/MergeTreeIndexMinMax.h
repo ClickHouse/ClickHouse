@@ -87,10 +87,7 @@ public:
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
-    MergeTreeIndexFormat getDeserializedFormat(
-        const MergeTreeDataPartChecksums & checksums,
-        const std::string & path_prefix,
-        const IDataPartStorage * storage) const override;
+    MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override; /// NOLINT
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules

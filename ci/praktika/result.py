@@ -89,7 +89,6 @@ class Result(MetaClasses.Serializable):
         SETTING_VALUE = "setting"
         FLAKY = "flaky"
         REPRODUCIBLE = "reproducible"
-        LOG_CHECK = "log_check"
 
     # Default hints rendered as a hover tooltip in json.html.
     # Looked up automatically when set_label is called without an explicit hint.
@@ -104,7 +103,6 @@ class Result(MetaClasses.Serializable):
         Label.SETTING_VALUE: "Failure caused by a specific randomized setting value",
         Label.FLAKY: "Failure is reproducible in less than 100% of reruns",
         Label.REPRODUCIBLE: "Failure is reproducible in 100% of reruns",
-        Label.LOG_CHECK: "Server-log / runner health check, not a test case (excluded from bugfix-validation inversion)",
     }
 
     name: str
@@ -730,12 +728,7 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def from_gtest_run(
-        cls,
-        unit_tests_path,
-        name="",
-        with_log=False,
-        command_launcher="",
-        gtest_filter="",
+        cls, unit_tests_path, name="", with_log=False, command_launcher=""
     ):
         """
         Runs gtest and generates praktika Result from results
@@ -744,16 +737,10 @@ class Result(MetaClasses.Serializable):
         If it's a job itself job.name will be taken as name by default
         :param with_log: whether to log gtest output into separate file
         :param command_prefix: prefix to add to gtest command
-        :param gtest_filter: gtest filter expression (passed as --gtest_filter)
         :return: Result
         """
 
-        if not name:
-            name = Info().job_name
-
         command = f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
-        if gtest_filter:
-            command += f" --gtest_filter='{gtest_filter}'"
         if command_launcher:
             command = f"{command_launcher} {command}"
 
@@ -764,88 +751,14 @@ class Result(MetaClasses.Serializable):
                 f"chmod +x {unit_tests_path}",
                 command,
             ],
-            with_log=True,
         )
-        binary_failed = not result.is_ok()
+        is_error = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
         result.set_status(status).set_results(results).set_info(info)
-        if binary_failed and result.is_ok():
-            # gtest cases all passed but binary run exited non-zero — e.g. sanitizer
-            # assertion triggered after the test body returned. This is a test failure,
-            # not an infrastructure error.
+        if is_error and result.is_ok():
+            # test cases can be OK but gtest binary run failed, for instance due to sanitizer error
             result.set_info("gtest binary run has non-zero exit code - see logs")
-            result.set_status(Result.Status.FAIL)
-        if result.is_error():
-            # gtest.json is missing — the binary was killed before it could write results
-            # (e.g. by a sanitizer, OOM, an uncaught exception, or a logical error). Note: gdb
-            # returns 0 even when the inferior exits with a non-zero code, so we can't rely on
-            # binary_failed here.
-            #
-            # gtest prints "[ RUN      ] Suite.Test" before each test and a closing
-            # "[       OK ]"/"[  FAILED  ]" line after it. When the binary dies mid-test, the last
-            # "[ RUN      ]" line has no closing line and names the test that was running at the
-            # moment of the crash. Recover that name so the report shows the real test (instead of
-            # the gtest filter expression, e.g. "-FunctionsStress"), and scan only the lines after
-            # it for the crash message, so an unrelated error logged earlier by a test that
-            # finished normally (e.g. a deliberately-thrown-and-caught exception) is not mistaken
-            # for the cause.
-            # Covers sanitizer reports ("SUMMARY:"), ClickHouse logical errors, uncaught
-            # exceptions ("libc++abi:"/"terminate called") and fatal signals.
-            _ERROR_PREFIXES = (
-                "SUMMARY:",
-                "Logical error:",
-                "Code: ",
-                "Signal description:",
-                "libc++abi:",
-                "terminate called",
-            )
-            _ERROR_SUBSTRINGS = ("received signal SIG",)
-            crashed_test = ""
-            crash_info = ""
-            # Some gtests (e.g. the function property fuzzer, gtest_functions_stress) log the
-            # offending call as a runnable SQL query right before crashing, via
-            # logCurrentOperation: "(while executing: SELECT f(...);)". Surface it next to the
-            # error so the report shows a copy-pasteable repro instead of just the message.
-            repro_info = ""
-            _REPRO_MAX_LEN = 8192
-            if result.files:
-                log_content = Shell.get_output(f"cat {result.files[0]}", verbose=False)
-                log_lines = log_content.splitlines()
-                # Index of the last test that started running. Everything before it belongs to
-                # tests that already finished, so the crash output must come after it. If no
-                # "[ RUN      ]" marker exists (the binary failed before any test ran), -1 makes
-                # the scan below cover the whole log.
-                last_run_idx = -1
-                for idx, line in enumerate(log_lines):
-                    if not line.startswith("[ RUN"):
-                        continue
-                    bracket_end = line.find("]")
-                    if bracket_end == -1:
-                        continue
-                    last_run_idx = idx
-                    crashed_test = line[bracket_end + 1 :].strip()
-                for line in log_lines[last_run_idx + 1 :]:
-                    if not crash_info and (
-                        any(line.startswith(p) for p in _ERROR_PREFIXES)
-                        or any(s in line for s in _ERROR_SUBSTRINGS)
-                    ):
-                        crash_info = line.strip()
-                    if not repro_info and line.startswith("(while ") and "SELECT " in line:
-                        repro_info = line
-                        if len(repro_info) > _REPRO_MAX_LEN:
-                            repro_info = repro_info[:_REPRO_MAX_LEN] + " ... (truncated, see log)"
-                    if crash_info and repro_info:
-                        break
-            crash_info = "\n".join(p for p in (crash_info, repro_info) if p)
-            result.info = crash_info or info
-            # Synthesize a failed sub-result so the job summary is not empty. Prefer the test that
-            # was running when the binary died; fall back to the filter expression only when the
-            # log had no "[ RUN      ]" marker at all.
-            crashed_test = crashed_test or gtest_filter.rstrip(".*") or "unknown"
-            result.set_results(
-                [Result(name=crashed_test, status=Result.Status.FAIL, info=crash_info or info)]
-            )
-            result.set_status(Result.Status.FAIL)
+            result.set_status(Result.Status.ERROR)
         return result
 
     @classmethod
@@ -1680,14 +1593,12 @@ class ResultTranslator:
             List[Result]: A list of Result objects representing individual test cases
         """
         name = "pytest"
-        sw = Utils.Stopwatch()
         if not os.path.isfile(pytest_report_file):
             print(f"ERROR: Pytest report file {pytest_report_file} not found")
             return Result.create_from(
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Pytest report file {pytest_report_file} not found",
-                stopwatch=sw,
             )
 
         # Track test cases by their node_id, and also track failures by phase
@@ -2067,7 +1978,7 @@ class ResultTranslator:
                     elif "teardown" in failures:
                         test_results[node_id].status = failures["teardown"]
 
-            R = Result.create_from(name=name, results=list(test_results.values()), stopwatch=sw)
+            R = Result.create_from(name=name, results=list(test_results.values()))
 
             if session_exitstatus == 0:
                 # pytest exit code 0 means all tests passed or xfailed (from pytest's perspective).
@@ -2108,5 +2019,4 @@ class ResultTranslator:
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Failed to parse pytest jsonl: {e}, {traceback.print_exc()}",
-                stopwatch=sw,
             )

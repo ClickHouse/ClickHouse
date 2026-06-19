@@ -7,20 +7,11 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <Core/Defines.h>
 
-
-namespace ProfileEvents
-{
-    extern const Event RowPolicyCacheRecalculations;
-    extern const Event RowPolicyCacheRecalculationMicroseconds;
-}
 
 namespace DB
 {
@@ -54,7 +45,7 @@ namespace
 
             if (result)
             {
-                bool value = false;
+                bool value;
                 if (tryGetLiteralBool(result.get(), value) && value)
                     result = nullptr; /// The condition is always true, no need to check it.
             }
@@ -157,8 +148,6 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
                 rowPolicyRemoved(id);
         });
 
-    batch_subscription = access_control.subscribeForBatchFinished([this] { mixFiltersIfNeeded(); });
-
     for (const UUID & id : access_control.findAll<RowPolicy>())
     {
         auto policy = access_control.tryRead<RowPolicy>(id);
@@ -186,7 +175,7 @@ void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPo
 
     auto & info = it->second;
     info.setPolicy(new_policy);
-    need_mix_filters = true;
+    mixFilters();
 }
 
 
@@ -194,26 +183,13 @@ void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
 {
     std::lock_guard lock{mutex};
     all_policies.erase(policy_id);
-    need_mix_filters = true;
-}
-
-
-void RowPolicyCache::mixFiltersIfNeeded()
-{
-    std::lock_guard lock{mutex};
-    if (!need_mix_filters)
-        return;
-    /// Clear the flag only after a successful rebuild, so a throwing mixFilters() is retried next batch.
     mixFilters();
-    need_mix_filters = false;
 }
 
 
 void RowPolicyCache::mixFilters()
 {
     /// `mutex` is already locked.
-    ProfileEvents::increment(ProfileEvents::RowPolicyCacheRecalculations);
-    Stopwatch watch;
     for (auto i = enabled_row_policies.begin(), e = enabled_row_policies.end(); i != e;)
     {
         auto elem = i->second.lock();
@@ -225,14 +201,6 @@ void RowPolicyCache::mixFilters()
             ++i;
         }
     }
-
-    const auto elapsed_ms = watch.elapsedMilliseconds();
-    ProfileEvents::increment(ProfileEvents::RowPolicyCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
-    /// O(enabled sets * policies), under `mutex` that the ContextAccess build path also takes.
-    if (elapsed_ms >= 1000)
-        LOG_WARNING(getLogger("RowPolicyCache"), "Re-mixed row policy filters for {} enabled set(s) over {} policies in {} ms", enabled_row_policies.size(), all_policies.size(), elapsed_ms);
-    else
-        LOG_DEBUG(getLogger("RowPolicyCache"), "Re-mixed row policy filters for {} enabled set(s) over {} policies in {} ms", enabled_row_policies.size(), all_policies.size(), elapsed_ms);
 }
 
 
