@@ -307,11 +307,11 @@ void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
     size_t nested_begin = offsetAt(begin);
     size_t nested_end = offsetAt(end);
     getData().updateHashWithValueRange(nested_begin, nested_end, hash);
-    /// Relative offsets as raw bytes, see ColumnString::updateHashWithValueRange.
+    /// Relative offsets, see ColumnString::updateHashWithValueRange.
     for (size_t i = begin; i < end; ++i)
     {
         UInt64 relative_offset = getOffsets()[i] - nested_begin;
-        hash.update(reinterpret_cast<const char *>(&relative_offset), sizeof(relative_offset));
+        hash.update(relative_offset);
     }
 }
 
