@@ -226,7 +226,8 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
 void checkRewriteRuleTemplateLimits(const ASTPtr & source_query, const ASTPtr & resulting_query, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    std::function<void(const ASTPtr &)> check = [&](const ASTPtr & ast)
+
+    auto check_limits = [&](const ASTPtr & ast)
     {
         if (!ast)
             return;
@@ -234,26 +235,47 @@ void checkRewriteRuleTemplateLimits(const ASTPtr & source_query, const ASTPtr & 
             ast->checkDepth(settings[Setting::max_ast_depth]);
         if (settings[Setting::max_ast_elements])
             ast->checkSize(settings[Setting::max_ast_elements]);
+    };
 
-        /// A template can itself be a `CREATE RULE` / `ALTER RULE` whose own source and
-        /// result templates are stored outside `IAST::children`, so the `checkDepth` /
-        /// `checkSize` walk above never reaches them. Descend into nested rule DDL
-        /// templates explicitly, otherwise an oversized or very deep inner template
-        /// (e.g. `CREATE RULE outer AS (CREATE RULE inner AS (SELECT <huge>) REWRITE TO
-        /// (SELECT 1)) REWRITE TO (SELECT 1)`) would bypass the limits and be persisted.
+    /// `checkDepth` / `checkSize` walk only `IAST::children`. A `CREATE RULE` / `ALTER RULE`
+    /// keeps its own source and result templates outside `children`, so the generic walk
+    /// never reaches them — even when the rule DDL is nested below a wrapper, e.g.
+    /// `EXPLAIN AST CREATE RULE inner AS (SELECT <huge>) REWRITE TO (SELECT 1)`. Walk the
+    /// whole template tree, and whenever a nested rule DDL node is found, check its template
+    /// fields explicitly (recursing into them, since they may contain further nested rule
+    /// DDL). Otherwise an oversized or very deep inner template would bypass the limits and
+    /// be persisted.
+    std::function<void(const ASTPtr &)> check_nested_rule_templates = [&](const ASTPtr & ast)
+    {
+        if (!ast)
+            return;
+        const ASTPtr * nested_source = nullptr;
+        const ASTPtr * nested_result = nullptr;
         if (const auto * create_rule = ast->as<ASTCreateRewriteRuleQuery>())
         {
-            check(create_rule->source_query);
-            check(create_rule->resulting_query);
+            nested_source = &create_rule->source_query;
+            nested_result = &create_rule->resulting_query;
         }
         else if (const auto * alter_rule = ast->as<ASTAlterRewriteRuleQuery>())
         {
-            check(alter_rule->source_query);
-            check(alter_rule->resulting_query);
+            nested_source = &alter_rule->source_query;
+            nested_result = &alter_rule->resulting_query;
         }
+        if (nested_source)
+        {
+            check_limits(*nested_source);
+            check_limits(*nested_result);
+            check_nested_rule_templates(*nested_source);
+            check_nested_rule_templates(*nested_result);
+        }
+        for (const auto & child : ast->children)
+            check_nested_rule_templates(child);
     };
-    check(source_query);
-    check(resulting_query);
+
+    check_limits(source_query);
+    check_limits(resulting_query);
+    check_nested_rule_templates(source_query);
+    check_nested_rule_templates(resulting_query);
 }
 
 
