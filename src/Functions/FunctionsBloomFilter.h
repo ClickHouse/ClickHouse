@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/AggregateFunctionGroupBloomFilterData.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -17,6 +18,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
@@ -85,12 +87,13 @@ public:
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         DataTypes arg_data_types = aggr_type->getArgumentsDataTypes();
         const DataTypePtr & value_type = arg_data_types[0];
+        DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
 
         ColumnsWithTypeAndName casted_arguments = arguments;
-        casted_arguments[1].column = castColumn(arguments[1], value_type);
-        casted_arguments[1].type = value_type;
+        casted_arguments[1].column = castColumn(arguments[1], dispatch_value_type);
+        casted_arguments[1].type = dispatch_value_type;
 
-        WhichDataType which(value_type);
+        WhichDataType which(dispatch_value_type);
 
         // Integer types
         if (which.isUInt8())
@@ -156,6 +159,31 @@ public:
     }
 
 private:
+    static size_t getBloomFilterDataOffset(const ColumnAggregateFunction & bloom_col)
+    {
+        AggregateFunctionPtr function = bloom_col.getAggregateFunction();
+        AggregateFunctionPtr nested_function = function->getNestedFunction();
+        if (!nested_function)
+            return 0;
+
+        /// Nullable aggregate function wrappers keep a small prefix before the nested state.
+        /// The nested groupBloomFilter state starts after that prefix.
+        size_t function_size = function->sizeOfData();
+        size_t nested_function_size = nested_function->sizeOfData();
+        if (function_size < nested_function_size)
+            return 0;
+
+        return function_size - nested_function_size;
+    }
+
+    static const AggregateFunctionGroupBloomFilterData & getBloomFilterData(
+        const ColumnAggregateFunction & bloom_col,
+        size_t row,
+        size_t data_offset)
+    {
+        return *reinterpret_cast<const AggregateFunctionGroupBloomFilterData *>(bloom_col.getData()[row] + data_offset);
+    }
+
     template <typename T>
     void executeNumericType(
         const ColumnsWithTypeAndName & arguments,
@@ -177,6 +205,20 @@ private:
             bloom_col = typeid_cast<const ColumnAggregateFunction *>(arguments[0].column.get());
         }
 
+        if (bloom_is_const)
+        {
+            if (!bloom_col_const)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} must be a Bloom filter state column, got {}",
+                    getName(), arguments[0].column->getName());
+        }
+        else if (!bloom_col)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a Bloom filter state column, got {}",
+                getName(), arguments[0].column->getName());
+        }
+
         /// Second argument: value to check
         const ColumnVector<T> * value_col = nullptr;
         T value_const{};
@@ -192,11 +234,18 @@ private:
             value_col = checkAndGetColumn<ColumnVector<T>>(arguments[1].column.get());
         }
 
+        if (!value_is_const && !value_col)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be a column of type {}, got {}",
+                getName(), arguments[1].type->getName(), arguments[1].column->getName());
+
+        const size_t bloom_data_offset = getBloomFilterDataOffset(bloom_is_const ? *bloom_col_const : *bloom_col);
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const AggregateFunctionGroupBloomFilterData & bloom_data = bloom_is_const
-                ? *reinterpret_cast<const AggregateFunctionGroupBloomFilterData *>(bloom_col_const->getData()[0])
-                : *reinterpret_cast<const AggregateFunctionGroupBloomFilterData *>(bloom_col->getData()[i]);
+                ? getBloomFilterData(*bloom_col_const, 0, bloom_data_offset)
+                : getBloomFilterData(*bloom_col, i, bloom_data_offset);
 
             T value = value_is_const ? value_const : value_col->getData()[i];
 
@@ -224,11 +273,27 @@ private:
             bloom_col = typeid_cast<const ColumnAggregateFunction *>(arguments[0].column.get());
         }
 
+        if (bloom_is_const)
+        {
+            if (!bloom_col_const)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} must be a Bloom filter state column, got {}",
+                    getName(), arguments[0].column->getName());
+        }
+        else if (!bloom_col)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a Bloom filter state column, got {}",
+                getName(), arguments[0].column->getName());
+        }
+
+        const size_t bloom_data_offset = getBloomFilterDataOffset(bloom_is_const ? *bloom_col_const : *bloom_col);
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const AggregateFunctionGroupBloomFilterData & bloom_data = bloom_is_const
-                ? *reinterpret_cast<const AggregateFunctionGroupBloomFilterData *>(bloom_col_const->getData()[0])
-                : *reinterpret_cast<const AggregateFunctionGroupBloomFilterData *>(bloom_col->getData()[i]);
+                ? getBloomFilterData(*bloom_col_const, 0, bloom_data_offset)
+                : getBloomFilterData(*bloom_col, i, bloom_data_offset);
 
             std::string_view value = arguments[1].column->getDataAt(i);
             vec_to[i] = bloom_data.contains(value.data(), value.size()) ? 1 : 0;
@@ -256,6 +321,20 @@ private:
             bloom_col = typeid_cast<const ColumnAggregateFunction *>(arguments[0].column.get());
         }
 
+        if (bloom_is_const)
+        {
+            if (!bloom_col_const)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} must be a Bloom filter state column, got {}",
+                    getName(), arguments[0].column->getName());
+        }
+        else if (!bloom_col)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a Bloom filter state column, got {}",
+                getName(), arguments[0].column->getName());
+        }
+
         /// Second argument: value to check
         const ColumnDecimal<T> * value_col = nullptr;
         T value_const{};
@@ -271,11 +350,18 @@ private:
             value_col = checkAndGetColumn<ColumnDecimal<T>>(arguments[1].column.get());
         }
 
+        if (!value_is_const && !value_col)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be a column of type {}, got {}",
+                getName(), arguments[1].type->getName(), arguments[1].column->getName());
+
+        const size_t bloom_data_offset = getBloomFilterDataOffset(bloom_is_const ? *bloom_col_const : *bloom_col);
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const AggregateFunctionGroupBloomFilterData & bloom_data = bloom_is_const
-                ? *reinterpret_cast<const AggregateFunctionGroupBloomFilterData *>(bloom_col_const->getData()[0])
-                : *reinterpret_cast<const AggregateFunctionGroupBloomFilterData *>(bloom_col->getData()[i]);
+                ? getBloomFilterData(*bloom_col_const, 0, bloom_data_offset)
+                : getBloomFilterData(*bloom_col, i, bloom_data_offset);
 
             T value = value_is_const ? value_const : value_col->getData()[i];
 
