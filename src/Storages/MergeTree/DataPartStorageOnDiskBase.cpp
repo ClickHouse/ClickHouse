@@ -44,6 +44,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char mergetree_part_cleanup_inject_pre_move_retryable_exception[];
+    extern const char mergetree_part_cleanup_inject_move_retryable_exception[];
 }
 
 std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
@@ -700,12 +701,25 @@ void DataPartStorageOnDiskBase::rename(
     executeWriteOperation([&](auto & disk)
     {
         disk.setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
-        /// The move below makes the original path disappear; signal it before the call so a caller that
-        /// catches a failure from moveDirectory still sees the directory as moved (it may have partially
-        /// moved). Everything above this point left the original path intact.
+
+        /// Models a retryable error thrown by moveDirectory itself (e.g. a local fs::rename ENOSPC/EIO, or
+        /// an object-storage metadata write failure). moveDirectory is all-or-nothing - the local disk uses
+        /// an atomic rename and the object-storage disk rolls the metadata transaction back on failure - so
+        /// a throw here leaves the source path intact, which is safe to retry. The signal below must stay
+        /// unset until moveDirectory actually returns.
+        if (out_directory_was_moved != nullptr)
+            fiu_do_on(FailPoints::mergetree_part_cleanup_inject_move_retryable_exception,
+            {
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure while moving the directory of part {}", from);
+            });
+
+        disk.moveDirectory(from, to);
+
+        /// Signal the move only after moveDirectory returned: that is the point at which the original path
+        /// is provably gone. A retryable error from the move leaves the source intact (safe to requeue);
+        /// only past this line must the loader fail fast rather than reload a vanished path.
         if (out_directory_was_moved != nullptr)
             *out_directory_was_moved = true;
-        disk.moveDirectory(from, to);
 
         /// Only after moveDirectory() since before the directory does not exist.
         SyncGuardPtr to_sync_guard;
@@ -826,12 +840,23 @@ void DataPartStorageOnDiskBase::remove(
 
         try
         {
-            /// The move makes the original path disappear; signal it before the call so a caller that
-            /// catches a failure from moveDirectory still treats the directory as moved (it may have
-            /// partially moved). Everything above this point left the original path intact.
+            /// Models a retryable error thrown by moveDirectory itself (e.g. a local fs::rename ENOSPC/EIO,
+            /// or an object-storage metadata write failure). moveDirectory is all-or-nothing - the local
+            /// disk uses an atomic rename and the object-storage disk rolls the metadata transaction back on
+            /// failure - so a throw here leaves the source path intact, which is safe to retry. The signal
+            /// below must stay unset until moveDirectory actually returns.
+            if (out_directory_was_moved != nullptr)
+                fiu_do_on(FailPoints::mergetree_part_cleanup_inject_move_retryable_exception,
+                {
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure while moving the directory of part {}", part_dir);
+                });
+
+            disk->moveDirectory(from, to);
+            /// Signal the move only after moveDirectory returned: that is the point at which the original
+            /// path is provably gone. A retryable error from the move leaves the source intact (safe to
+            /// requeue); only past this line must the loader fail fast rather than reload a vanished path.
             if (out_directory_was_moved != nullptr)
                 *out_directory_was_moved = true;
-            disk->moveDirectory(from, to);
             /// NOTE: we intentionally don't update part_dir here because it would cause a data race
             /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).
             /// The part is being removed anyway, so the path doesn't need to be updated.

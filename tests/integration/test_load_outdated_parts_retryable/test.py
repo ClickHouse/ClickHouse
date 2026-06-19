@@ -39,6 +39,12 @@ UNEXPECTED_POST_CLEANUP_MOVE_FAILPOINT = (
 PART_CLEANUP_PRE_MOVE_FAILPOINT = (
     "mergetree_part_cleanup_inject_pre_move_retryable_exception"
 )
+# Fire a retryable error from moveDirectory ITSELF (e.g. a local fs::rename ENOSPC/EIO, or an object-storage
+# metadata write failure). moveDirectory is all-or-nothing - the local disk uses an atomic rename and the
+# object-storage disk rolls its metadata transaction back on failure - so the source directory is left intact
+# even though the move failed. That is still safe to retry, so the loader MUST requeue, NOT fail fast. This is
+# the regression for raising the moved flag before moveDirectory returned (the original path was still there).
+PART_CLEANUP_MOVE_FAILPOINT = "mergetree_part_cleanup_inject_move_retryable_exception"
 # loadUnexpectedDataParts schedules one worker per unexpected part. A retryable error while scheduling a
 # later worker (CANNOT_SCHEDULE_TASK) must reschedule the task (pure scheduling pressure) WITHOUT dropping
 # an error already stored by an earlier worker. These two failpoints reproduce that race: the first makes
@@ -432,6 +438,60 @@ def test_retryable_exception_before_outdated_cleanup_move_reschedules():
     assert node.query("SELECT count() FROM t_outdated_premove").strip() == "3000"
 
     node.query("DROP TABLE t_outdated_premove SYNC")
+
+
+def test_retryable_exception_from_outdated_cleanup_move_reschedules():
+    # The directory-moving cleanup step (renameToDetached for broken parts) can fail INSIDE moveDirectory
+    # itself - e.g. a local fs::rename returning ENOSPC/EIO, or an object-storage metadata write failure.
+    # moveDirectory is all-or-nothing (atomic local rename; rolled-back object-storage metadata transaction),
+    # so such a failure leaves the original directory in place and is safe to retry. The loader must requeue
+    # and reschedule, NOT fail fast. This pins the fix that raises the moved flag only AFTER moveDirectory
+    # returns: a regression that signals the move before the call would convert this transient, recoverable
+    # error into a CORRUPTED_DATA terminate.
+    node.query("DROP TABLE IF EXISTS t_outdated_movefail SYNC")
+    node.query(
+        """
+        CREATE TABLE t_outdated_movefail (a UInt64, b String) ENGINE = MergeTree ORDER BY a
+        SETTINGS old_parts_lifetime = 600, merge_tree_clear_old_parts_interval_seconds = 600
+        """
+    )
+    node.query("INSERT INTO t_outdated_movefail SELECT number, toString(number) FROM numbers(1000)")
+    node.query("INSERT INTO t_outdated_movefail SELECT number, toString(number) FROM numbers(1000, 1000)")
+    node.query("INSERT INTO t_outdated_movefail SELECT number, toString(number) FROM numbers(2000, 1000)")
+    node.query("OPTIMIZE TABLE t_outdated_movefail FINAL")
+
+    data_path = node.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE name = 't_outdated_movefail'"
+    ).strip()
+    # Corrupt one inactive (outdated) part so the loader marks it broken and routes it through the
+    # directory-moving renameToDetached cleanup step (where the move failpoint fires).
+    outdated_part = node.query(
+        "SELECT name FROM system.parts WHERE table = 't_outdated_movefail' AND active = 0 ORDER BY name LIMIT 1"
+    ).strip()
+    assert outdated_part
+    node.exec_in_container(
+        ["mv", f"{data_path}/{outdated_part}/columns.txt", f"{data_path}/{outdated_part}/columns.txt.bak"]
+    )
+
+    interrupts_before = int(node.count_in_log(OUTDATED_INTERRUPT_LOG))
+
+    # Inject a retryable error from moveDirectory itself. The source directory is intact (the move did not
+    # change it), so the loader must reschedule (log the interrupt line) and keep the server alive, NOT
+    # terminate.
+    node.query(f"SYSTEM ENABLE FAILPOINT {PART_CLEANUP_MOVE_FAILPOINT}")
+    node.query("DETACH TABLE t_outdated_movefail")
+    node.query("ATTACH TABLE t_outdated_movefail")
+
+    # The interrupt line must grow (the part was requeued and the task rescheduled); the server stays up.
+    wait_for_log_count_above(node, OUTDATED_INTERRUPT_LOG, interrupts_before)
+    assert node.query("SELECT 1").strip() == "1"
+
+    # Clear the transient condition; the same background task finishes the (still-present) part.
+    node.query(f"SYSTEM DISABLE FAILPOINT {PART_CLEANUP_MOVE_FAILPOINT}")
+    node.query("SYSTEM WAIT LOADING PARTS t_outdated_movefail", timeout=60)
+    assert node.query("SELECT count() FROM t_outdated_movefail").strip() == "3000"
+
+    node.query("DROP TABLE t_outdated_movefail SYNC")
 
 
 def test_retryable_exception_before_unexpected_cleanup_move_reschedules():
