@@ -36,7 +36,7 @@ fuzzJSON({ named_collection [, option=value [,..]] | json_str[, random_seed] })
 
 ## Returned value {#returned_value}
 
-A table object with a a single column containing perturbed JSON strings.
+A table object with a single column containing perturbed JSON strings.
 
 ## Usage Example {#usage-example}
 
