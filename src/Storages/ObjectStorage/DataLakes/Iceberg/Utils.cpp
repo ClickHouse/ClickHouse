@@ -1047,7 +1047,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
-    return {new_metadata_file_content, stringifyJson(new_metadata_file_content, 4)};
+    return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
 }
 
 /**

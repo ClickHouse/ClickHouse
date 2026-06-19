@@ -530,7 +530,7 @@ std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropParti
 namespace
 {
     /// Hide some boilerplate of working with poco's json objects
-    struct MetadataJsonView
+    struct MetadataJSONView
     {
         Poco::JSON::Object::Ptr metadata;
 
@@ -551,7 +551,7 @@ namespace
         }
     };
 
-    struct SnapshotJsonView
+    struct SnapshotJSONView
     {
         Poco::JSON::Object::Ptr snapshot;
         const Iceberg::IcebergPathResolver & path_resolver;
@@ -623,7 +623,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
             DBMS_DEFAULT_BUFFER_SIZE,
             context->getWriteSettings());
 
-        auto schema = avro::compileJsonSchemaFromString(manifest_list_v2_schema); // NOLINT
+        auto schema = compileAvroSchema(manifest_list_v2_schema);
         auto writer = [&]() mutable -> avro::DataFileWriter<avro::GenericDatum> {
             auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(*buf);
             return avro::DataFileWriter<avro::GenericDatum>(std::move(adapter), schema);
@@ -651,9 +651,9 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
             writer.write(entry_datum);
         }
 
-        auto parent_snapshot = MetadataJsonView{.metadata = state.metadata_object}.findSnapshot(parent_snapshot_id);
+        auto parent_snapshot = MetadataJSONView{.metadata = state.metadata_object}.findSnapshot(parent_snapshot_id);
         chassert(parent_snapshot);
-        auto parent_manifest_list_path = SnapshotJsonView{parent_snapshot, components.path_resolver}.getManifestPathResolved();
+        auto parent_manifest_list_path = SnapshotJSONView{parent_snapshot, components.path_resolver}.getManifestPathResolved();
 
         forEachAvroEntry(
             parent_manifest_list_path,
@@ -677,7 +677,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
 bool AlterDropPartitionExecutor::commitMetadataJSON(
     SnapshotState & state, FileNamesGenerator & filename_generator, const GeneratedMetadataFileWithInfo & metadata_info)
 {
-    std::string json_representation = stringifyJson(state.metadata_object, 4);
+    std::string json_representation = stringifyJSON(state.metadata_object, 4);
 
     fiu_do_on(FailPoints::iceberg_writes_cleanup, { throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled"); });
 
