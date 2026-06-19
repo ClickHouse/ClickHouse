@@ -331,7 +331,7 @@ Supported range of values: \[0000-01-01 00:00:00, 9999-12-31 23:59:59.999999999\
 
 The number of digits after the decimal point depends on the precision parameter.
 
-Note: The full range above is available for precisions up to 7. Because ticks are stored in an `Int64`, higher precisions cover a narrower range: with precision 8 the maximum value is around `2861-12-31`, and with the maximum precision of 9 digits (nanoseconds) the supported range is `1677-09-21 00:12:44` to `2262-04-11 23:47:16` in UTC.
+Note: The full range above is available for precisions up to 7. Because ticks are stored in an `Int64`, higher precisions cover a narrower range: with precision 8 the maximum value is around `4892-10-07`, and with the maximum precision of 9 digits (nanoseconds) the supported range is `1677-09-21 00:12:44` to `2262-04-11 23:47:16` in UTC.
 
 ## Examples {#examples}
 
