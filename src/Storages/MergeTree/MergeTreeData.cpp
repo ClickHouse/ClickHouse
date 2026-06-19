@@ -276,6 +276,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts;
     extern const MergeTreeSettingsUInt64 min_bytes_for_wide_part;
+    extern const MergeTreeSettingsUInt64 min_bytes_for_full_part_storage;
+    extern const MergeTreeSettingsUInt64 min_rows_for_full_part_storage;
+    extern const MergeTreeSettingsUInt32 min_level_for_full_part_storage;
     extern const MergeTreeSettingsUInt64 min_bytes_to_rebalance_partition_over_jbod;
     extern const MergeTreeSettingsUInt64 min_delay_to_insert_ms;
     extern const MergeTreeSettingsUInt64 min_delay_to_mutate_ms;
@@ -5093,13 +5096,17 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
 
-    return {part_type, PartStorageType::Full};
+    auto storage_type = PartStorageType::Full;
+    if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_full_part_storage], (*settings)[MergeTreeSetting::min_rows_for_full_part_storage], (*settings)[MergeTreeSetting::min_level_for_full_part_storage]))
+        storage_type = PartStorageType::Packed;
+
+    return {part_type, storage_type};
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
-    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const
+    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, bool part_may_exist_on_disk) const
 {
-    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_);
+    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, part_may_exist_on_disk);
 }
 
 void MergeTreeData::changeSettings(

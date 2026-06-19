@@ -1834,10 +1834,36 @@ void PartMergerWriter::createBuildTextIndexesTask()
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
 {
+    const auto & projection = *ctx->projections_to_build[projection_idx];
+
+    /// When mutations like CLEAR COLUMN do not include all columns in the pipeline output,
+    /// projections that depend on those columns still need to be rebuilt (e.g., for non-full
+    /// part storage). Add any missing required columns with default values so that projection
+    /// calculation does not fail with "Not found column in block".
+    Block block_for_projection;
+    bool added_missing_columns = false;
+    for (const auto & col_name : projection.required_columns)
+    {
+        if (!block.has(col_name))
+        {
+            if (!added_missing_columns)
+            {
+                block_for_projection = block;
+                added_missing_columns = true;
+            }
+            auto column_desc = ctx->metadata_snapshot->getColumns().getPhysical(col_name);
+            block_for_projection.insert(
+                {column_desc.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst(),
+                 column_desc.type,
+                 col_name});
+        }
+    }
+    const Block & projection_input = added_missing_columns ? block_for_projection : block;
+
     Chunk squashed_chunk;
     {
         ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-        Block block_to_squash = ctx->projections_to_build[projection_idx]->calculate(block, starting_offset, ctx->context);
+        Block block_to_squash = projection.calculate(projection_input, starting_offset, ctx->context);
 
         /// Everything is deleted by lightweight delete
         if (block_to_squash.rows() == 0)
