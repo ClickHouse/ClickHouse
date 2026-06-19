@@ -805,4 +805,184 @@ TEST(IOTestAwsS3Client, WrongSigningRegionBadRequest)
     }
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
+}
+
+namespace
+{
+
+/// Mock S3 endpoint that serves a fixed body and a fixed ETag for every GET, simulating an object
+/// whose current generation (ETag) differs from the one captured at listing time.
+class FixedETagHandler : public Poco::Net::HTTPRequestHandler
+{
+public:
+    FixedETagHandler(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
+    void handleRequest(Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response) override
+    {
+        response.set("ETag", etag);
+        response.setContentType("application/octet-stream");
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+        response.setContentLength(static_cast<std::streamsize>(body.size()));
+        auto & os = response.send();
+        os << body;
+        os.flush();
+    }
+private:
+    std::string body;
+    std::string etag;
+};
+
+class FixedETagHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+{
+public:
+    FixedETagHandlerFactory(std::string body_, std::string etag_) : body(std::move(body_)), etag(std::move(etag_)) {}
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+    {
+        return new FixedETagHandler(body, etag);
+    }
+private:
+    std::string body;
+    std::string etag;
+};
+
+class FixedETagServer
+{
+public:
+    FixedETagServer(std::string body, std::string etag)
+        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , server(std::make_unique<Poco::Net::HTTPServer>(
+              new FixedETagHandlerFactory(std::move(body), std::move(etag)),
+              *server_socket, new Poco::Net::HTTPServerParams()))
+    {
+        server->start();
+    }
+    std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+private:
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+};
+
+std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
+{
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "us-east-1",
+        remote_host_filter,
+        /* s3_max_redirects= */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error= */ true,
+        /* s3_slow_all_threads_after_retryable_error= */ true,
+        /* enable_s3_requests_logging= */ false,
+        /* for_disk_s3= */ false,
+        /* opt_disk_name= */ {},
+        /* request_throttler= */ {},
+        uri.uri.getScheme());
+    client_configuration.endpointOverride = uri.endpoint;
+
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = false,
+    };
+    return DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        "ACCESS_KEY_ID",
+        "SECRET_ACCESS_KEY",
+        /* server_side_encryption_customer_key_base64= */ "",
+        {},
+        {},
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false});
+}
+
+DB::ReadBufferFromS3 makeReadBuffer(
+    std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri, size_t file_size, const String & expected_etag,
+    const String & version_id = "")
+{
+    DB::ReadSettings read_settings;
+    DB::S3::S3RequestSettings request_settings;
+    request_settings[DB::S3RequestSetting::max_single_read_retries] = 3;
+    return DB::ReadBufferFromS3(
+        std::move(client),
+        uri.bucket,
+        uri.key,
+        version_id,
+        request_settings,
+        read_settings,
+        /* use_external_buffer= */ false,
+        /* offset= */ 0,
+        /* read_until_position= */ 0,
+        /* restricted_seek= */ false,
+        /* file_size= */ std::optional<size_t>(file_size),
+        /* credentials_refresh_callback= */ [] { return nullptr; },
+        /* blob_storage_log= */ {},
+        /* expected_etag= */ expected_etag);
+}
+
+}
+
+/// The object's ETag changed between listing and reading (an in-place overwrite). The read must
+/// fail with S3_OBJECT_CHANGED_DURING_READ instead of returning bytes from the wrong generation.
+TEST(IOTestAwsS3Client, ReadDetectsObjectReplacedDuringRead)
+{
+    const std::string body(128, 'x');
+    FixedETagServer server(body, "\"etag-after-overwrite\"");
+    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-at-listing\"");
+
+    String content;
+    try
+    {
+        DB::readStringUntilEOF(content, read_buffer);
+        FAIL() << "Expected S3_OBJECT_CHANGED_DURING_READ, but the read succeeded";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::S3_OBJECT_CHANGED_DURING_READ) << e.message();
+    }
+}
+
+/// When the ETag matches the listed one (no concurrent overwrite) the read proceeds normally.
+TEST(IOTestAwsS3Client, ReadAcceptsMatchingETag)
+{
+    const std::string body(128, 'x');
+    FixedETagServer server(body, "\"etag-stable\"");
+    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    auto read_buffer = makeReadBuffer(client, uri, body.size(), /* expected_etag= */ "\"etag-stable\"");
+
+    String content;
+    DB::readStringUntilEOF(content, read_buffer);
+    EXPECT_EQ(content, body);
+}
+
+/// For an explicit pinned-version read (?versionId=), the requested generation is immutable, so the
+/// ETag check must be skipped even when the (current-version) expected ETag differs from the GET's.
+/// Otherwise a versioned read would spuriously fail with S3_OBJECT_CHANGED_DURING_READ.
+TEST(IOTestAwsS3Client, ReadSkipsETagCheckForVersionedRead)
+{
+    const std::string body(128, 'x');
+    FixedETagServer server(body, "\"etag-of-requested-version\"");
+    DB::S3::URI uri(server.getUrl() + "/bucket/live/data.parquet");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    /// expected_etag is the *current* version's etag (differs from the requested version's), but a
+    /// version_id is pinned, so validation must be skipped and the read must succeed.
+    auto read_buffer = makeReadBuffer(
+        client, uri, body.size(), /* expected_etag= */ "\"etag-of-current-version\"", /* version_id= */ "some-version-id");
+
+    String content;
+    DB::readStringUntilEOF(content, read_buffer);
+    EXPECT_EQ(content, body);
+}
+
 #endif

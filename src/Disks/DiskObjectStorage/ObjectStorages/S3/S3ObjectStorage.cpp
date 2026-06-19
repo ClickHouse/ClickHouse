@@ -254,7 +254,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         restrict_seek,
         object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
         credentials_refresh_callback,
-        std::move(blob_storage_log));
+        std::move(blob_storage_log),
+        object.etag);
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT

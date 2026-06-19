@@ -92,6 +92,7 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 namespace ErrorCodes
@@ -1131,7 +1132,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
     /// 3. object etag as a cache key for parquet metadata caching
-    if (!object_info.metadata)
+    /// 4. object etag to detect concurrent in-place overwrite during the read (see below)
+    /// Some iterators (e.g. s3Cluster with skip_object_metadata) hand out a present-but-empty
+    /// metadata placeholder; fetch the real metadata so read-time ETag validation has an etag.
+    if (!object_info.metadata
+        || (settings[Setting::s3_validate_etag_on_read] && object_info.metadata->etag.empty()
+            && object_storage->getType() == ObjectStorageType::S3))
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
 
     if (use_page_cache && object_info.metadata->etag.empty())
@@ -1197,6 +1203,15 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// `system.distributed_cache_log.filename`). Use the object path so the DC log
     /// shows a useful name rather than an empty string.
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), object_size);
+
+    /// Pin the read to the object generation observed here at read setup (etag from the LIST that
+    /// enumerated this object, or a HEAD): the read path rejects any GET whose ETag differs, so a
+    /// concurrent in-place overwrite is reported as `S3_OBJECT_CHANGED_DURING_READ` rather than
+    /// silently producing torn (cross-generation) data and a checksum/parse error. For s3Cluster
+    /// reads this etag is the worker's own setup generation (listing metadata is not propagated).
+    if (settings[Setting::s3_validate_etag_on_read] && object_info.metadata.has_value())
+        stored_object.etag = object_info.metadata->etag;
+
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache

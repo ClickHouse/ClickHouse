@@ -31,6 +31,11 @@ private:
     String bucket;
     String key;
     String version_id;
+    /// ETag captured when the object was discovered for this read (from the LIST for a glob, or a
+    /// HEAD at read setup). When non-empty, every GET response ETag is checked against it; a
+    /// mismatch means the object was overwritten in place during the read and we throw instead of
+    /// returning bytes stitched from two generations.
+    String expected_etag;
     const S3::S3RequestSettings request_settings;
 
     /// These variables are atomic because they can be used for `logging only`
@@ -61,7 +66,8 @@ public:
         bool restricted_seek_ = false,
         std::optional<size_t> file_size = std::nullopt,
         const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;},
-        BlobStorageLogWriterPtr blob_storage_log_ = {}
+        BlobStorageLogWriterPtr blob_storage_log_ = {},
+        const String & expected_etag_ = {}
         );
 
     ~ReadBufferFromS3() override = default;
