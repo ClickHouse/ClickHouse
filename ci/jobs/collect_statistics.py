@@ -8,7 +8,6 @@ from ci.praktika.result import Result
 from ci.praktika.s3 import S3
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
-from ci.praktika.settings import Settings
 
 # Job collects overall CI statistics per each job
 

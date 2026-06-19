@@ -18,7 +18,6 @@ from pyspark.sql import Row
 from pyspark.sql.types import StructType, StructField, DateType, StringType
 from pyspark.sql.utils import AnalysisException
 from datetime import date
-import uuid
 
 from helpers.test_tools import TSV
 

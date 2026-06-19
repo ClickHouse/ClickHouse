@@ -4,7 +4,17 @@
 #include <Access/AccessControl.h>
 #include <boost/container/flat_set.hpp>
 #include <base/FnTraits.h>
+#include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event RoleCacheRecalculations;
+    extern const Event RoleCacheRecalculationMicroseconds;
+}
 
 namespace DB
 {
@@ -79,6 +89,7 @@ std::shared_ptr<const EnabledRoles>
 RoleCache::getEnabledRoles(boost::container::flat_set<UUID> roles, boost::container::flat_set<UUID> roles_with_admin_option)
 {
     std::lock_guard lock{mutex};
+
     EnabledRoles::Params params;
     params.current_roles = std::move(roles);
     params.current_roles_with_admin_option = std::move(roles_with_admin_option);
@@ -102,6 +113,8 @@ void RoleCache::collectEnabledRoles(scope_guard * notifications)
 {
     /// `mutex` is already locked.
 
+    ProfileEvents::increment(ProfileEvents::RoleCacheRecalculations);
+    Stopwatch watch;
     for (auto i = enabled_roles_by_params.begin(), e = enabled_roles_by_params.end(); i != e;)
     {
         auto & item = i->second;
@@ -115,6 +128,14 @@ void RoleCache::collectEnabledRoles(scope_guard * notifications)
             i = enabled_roles_by_params.erase(i);
         }
     }
+
+    const auto elapsed_ms = watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::RoleCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
+    /// O(enabled sets * roles), under `mutex` that the ContextAccess build path also takes.
+    if (elapsed_ms >= 1000)
+        LOG_WARNING(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", enabled_roles_by_params.size(), elapsed_ms);
+    else
+        LOG_DEBUG(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", enabled_roles_by_params.size(), elapsed_ms);
 }
 
 
@@ -152,6 +173,13 @@ RolePtr RoleCache::getRole(const UUID & role_id, SubscriptionsOnRoles & subscrip
 {
     /// `mutex` is already locked.
 
+    /// Lazy (not in the ctor): `changes_notifier` is constructed after the caches in `AccessControl`.
+    if (!batch_subscribed)
+    {
+        batch_subscription = access_control.subscribeForBatchFinished([this] { collectEnabledRolesIfNeeded(); });
+        batch_subscribed = true;
+    }
+
     auto role_from_cache = cache.get(role_id);
     if (role_from_cache)
     {
@@ -186,9 +214,6 @@ RolePtr RoleCache::getRole(const UUID & role_id, SubscriptionsOnRoles & subscrip
 
 void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
 {
-    /// Declared before `lock` to send notifications after the mutex will be unlocked.
-    scope_guard notifications;
-
     std::lock_guard lock{mutex};
 
     auto role_from_cache = cache.get(role_id);
@@ -200,22 +225,33 @@ void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
     }
 
     /// An enabled role for some users has been changed, we need to recalculate the access rights.
-    collectEnabledRoles(&notifications); /// collectEnabledRoles() must be called with the `mutex` locked.
+    need_collect_enabled_roles = true;
 }
 
 
 void RoleCache::roleRemoved(const UUID & role_id)
 {
-    /// Declared before `lock` to send notifications after the mutex will be unlocked.
-    scope_guard notifications;
-
     std::lock_guard lock{mutex};
 
     /// If a cache entry with the role has expired already, that remove() will do nothing.
     cache.remove(role_id);
 
     /// An enabled role for some users has been removed, we need to recalculate the access rights.
+    need_collect_enabled_roles = true;
+}
+
+
+void RoleCache::collectEnabledRolesIfNeeded()
+{
+    /// Declared before `lock` to send notifications after the mutex will be unlocked.
+    scope_guard notifications;
+
+    std::lock_guard lock{mutex};
+    if (!need_collect_enabled_roles)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
     collectEnabledRoles(&notifications); /// collectEnabledRoles() must be called with the `mutex` locked.
+    need_collect_enabled_roles = false;
 }
 
 }

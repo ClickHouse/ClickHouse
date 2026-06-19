@@ -38,3 +38,35 @@ required-version = 26
 [tool.pylint.SIMILARITIES]
 # due to SQL
 min-similarity-lines=1000
+
+[tool.ruff]
+line-length = 200
+target-version = "py312"
+extend-exclude = [
+    "contrib",
+    "build",
+    "build_*",
+    "tmp",
+    # Generated protobuf bindings (top-level names defined dynamically).
+    "**/*_pb2.py",
+    "**/*_pb2_grpc.py",
+]
+
+[tool.ruff.lint]
+# Start narrow: only rules that catch real bugs with low false-positive rate.
+# Each rule below was hand-picked because every hit was either a genuine bug
+# or an obviously dead reference (e.g. PR #105159: undefined name in an f-string
+# only evaluated on a diagnostic branch, masking the real failure).
+#
+# Stylistic / unused-name rules (F401, F541, F841, F403, F405) are intentionally
+# off for now — they need a separate cleanup pass and would drown out the
+# bug-class signal.
+select = [
+    "F402",  # import-shadowed-by-loop-var
+    "F522",  # string-format-extra-named-arg
+    "F523",  # string-format-extra-positional-arg
+    "F601",  # multi-value-repeated-key-literal
+    "F632",  # is-literal  (e.g. `x is "foo"`, always False under CPython)
+    "F811",  # redefined-while-unused  (duplicate function/import definitions)
+    "F821",  # undefined-name  (the PR #105159 class)
+]

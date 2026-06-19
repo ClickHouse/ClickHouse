@@ -512,16 +512,16 @@ TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecomm
     auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
     state_machine->pre_commit(2, create_entry->get_buf());
 
-    const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
-    ASSERT_TRUE(uncommitted_state.nodes.contains(node_path));
+    const auto & storage = state_machine->getStorageUnsafe();
+    ASSERT_TRUE(storage.uncommitted_state.nodes.contains(node_path));
 
     // commit log entries
     state_machine->commit(1, auth_entry->get_buf());
     state_machine->commit(2, create_entry->get_buf());
 
-    auto node = uncommitted_state.getNode(node_path);
+    const auto * node = storage.uncommitted_state.getNode(node_path).get();
     ASSERT_NE(node, nullptr);
-    auto acls = uncommitted_state.getACLs(node_path);
+    auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
     EXPECT_EQ(acls[0].id, digest);
@@ -625,8 +625,8 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto set_entry_without_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(9, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl)->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl)->getData() == "modified");
+        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl).get()->getData() == "notmodified");
+        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl).get()->getData() == "modified");
 
         state_machine->rollback(9, set_entry_without_acl->get_buf());
         state_machine->rollback(8, set_entry_with_acl->get_buf());
@@ -642,8 +642,8 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         set_entry_without_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(9, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl)->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl)->getData() == "modified");
+        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl).get()->getData() == "notmodified");
+        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl).get()->getData() == "modified");
 
         state_machine->commit(8, set_entry_with_acl->get_buf());
         state_machine->commit(9, set_entry_without_acl->get_buf());
@@ -682,8 +682,8 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto set_entry_without_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(14, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl)->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl)->getData() == "modified");
+        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl).get()->getData() == "notmodified");
+        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl).get()->getData() == "modified");
 
         state_machine->rollback(14, set_entry_without_acl->get_buf());
         state_machine->rollback(13, set_entry_with_acl->get_buf());
@@ -699,8 +699,8 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         set_entry_without_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(14, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl)->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl)->getData() == "modified");
+        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl).get()->getData() == "notmodified");
+        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl).get()->getData() == "modified");
 
         state_machine->commit(13, set_entry_with_acl->get_buf());
         state_machine->commit(14, set_entry_without_acl->get_buf());
@@ -816,11 +816,11 @@ TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitte
     state_machine->commit(2, create_entry->get_buf());
     state_machine->commit(3, set_acl_entry->get_buf());
 
-    const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
-    auto node = uncommitted_state.getNode(node_path);
+    const auto & storage = state_machine->getStorageUnsafe();
+    const auto * node = storage.uncommitted_state.getNode(node_path).get();
 
     ASSERT_NE(node, nullptr);
-    auto acls = uncommitted_state.getACLs(node_path);
+    auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
     EXPECT_EQ(acls[0].id, digest);

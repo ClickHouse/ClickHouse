@@ -877,8 +877,9 @@ def main():
             )
             and not FORCE_MERGE
         ):
+            pr_status = status_map[CheckStatuses.PR]
             raise Exception(
-                f"Status for {commit_status_data.context} is not completed: {commit_status_data.state} - cannot proceed"
+                f"Status for {pr_status.context} is not completed: {pr_status.state} - cannot proceed"
             )
     else:
         status_map = {}

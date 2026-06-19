@@ -23,7 +23,7 @@ from threading import Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
-T = TypeVar("T", bound="Serializable")
+T = TypeVar("T", bound="Serializable")  # noqa: F821  # forward ref to MetaClasses.Serializable below
 
 
 class MetaClasses:

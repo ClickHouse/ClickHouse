@@ -184,6 +184,7 @@ namespace
             in.readStrict(node.data.get(), node.stats.data_size);
         }
 
+        bool add_usage = true;
         if (version >= SnapshotVersion::V7)
         {
             readBinary(node.acl_id, in);
@@ -223,10 +224,14 @@ namespace
             }
 
             if (!cleanup_acl)
+            {
                 node.acl_id = acl_map.convertACLs(acls);
+                add_usage = false;
+            }
         }
 
-        acl_map.addUsage(node.acl_id);
+        if (add_usage)
+            acl_map.addUsage(node.acl_id);
 
         if (version < SnapshotVersion::V6)
         {
@@ -584,6 +589,10 @@ void KeeperStorageSnapshot<Storage>::deserialize(
 
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }
+
+    /// The snapshot's ACL map may contain ACLs that are not referenced by any node, e.g. ACLs
+    /// that were referenced only by uncommitted nodes.
+    storage.acl_map.removeUnusedACLs();
 
     if constexpr (use_rocksdb)
     {

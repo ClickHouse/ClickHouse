@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+from subprocess import PIPE
 import psutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed

@@ -115,7 +115,7 @@ public:
     /// Sessions credentials
     Storage::SessionAndAuth session_and_auth;
     /// ACLs cache for better performance. Without we cannot deserialize storage.
-    std::unordered_map<ACLId, Coordination::ACLs> acl_map;
+    std::vector<std::pair<ACLId, Coordination::ACLs>> acl_map;
     /// Cluster config from snapshot, can be empty
     ClusterConfigPtr cluster_config;
     /// Last committed ZXID

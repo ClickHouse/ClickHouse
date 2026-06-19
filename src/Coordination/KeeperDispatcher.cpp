@@ -284,6 +284,11 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
 void KeeperDispatcher::sessionCleanerTask()
 {
     const auto & shutdown_called = keeper_context->isShutdownCalled();
+    /// TODO: Avoid spamming repeated Close requests for all sessions every
+    ///       dead_session_check_period_ms if leader is stuck. Maybe keep a set of recently started
+    ///       Close requests here, and don't produce a new request if it's been less than e.g.
+    ///       operation_timeout_ms (20x longer than dead_session_check_period_ms by default) since
+    ///       the previous attempt.
     while (true)
     {
         if (shutdown_called)

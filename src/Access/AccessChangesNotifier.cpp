@@ -83,17 +83,33 @@ scope_guard AccessChangesNotifier::subscribeForChanges(const std::vector<UUID> &
     return subscriptions;
 }
 
+scope_guard AccessChangesNotifier::subscribeForBatchFinished(const OnBatchFinishedHandler & handler)
+{
+    std::lock_guard lock{handlers->mutex};
+    auto & list = handlers->on_batch_finished;
+    list.push_back(handler);
+    auto handler_it = std::prev(list.end());
+
+    return [my_handlers = handlers, handler_it]
+    {
+        std::lock_guard lock2{my_handlers->mutex};
+        my_handlers->on_batch_finished.erase(handler_it);
+    };
+}
+
 void AccessChangesNotifier::sendNotifications()
 {
     /// Only one thread can send notification at any time.
     std::lock_guard sending_notifications_lock{sending_notifications};
 
+    bool sent_any = false;
     std::unique_lock queue_lock{queue_mutex};
     while (!queue.empty())
     {
         auto event = std::move(queue.front());
         queue.pop();
         queue_lock.unlock();
+        sent_any = true;
 
         std::vector<OnChangedHandler> current_handlers;
         {
@@ -117,6 +133,30 @@ void AccessChangesNotifier::sendNotifications()
         }
 
         queue_lock.lock();
+    }
+    queue_lock.unlock();
+
+    if (!sent_any)
+        return;
+
+    /// Queue drained (e.g. a full refresh); run the coalesced per-batch work. Copied out so handlers
+    /// run without `handlers->mutex` held.
+    std::vector<OnBatchFinishedHandler> batch_finished_handlers;
+    {
+        std::lock_guard handlers_lock{handlers->mutex};
+        boost::range::copy(handlers->on_batch_finished, std::back_inserter(batch_finished_handlers));
+    }
+
+    for (const auto & handler : batch_finished_handlers)
+    {
+        try
+        {
+            handler();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 }
 

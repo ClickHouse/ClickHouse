@@ -848,7 +848,7 @@ def test_cluster_select(started_cluster):
         )
         assert len(cluster_secondary_queries) == 1
 
-    assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
+    assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines": 1, "enable_parallel_replicas": 2, "cluster_for_parallel_replicas": "cluster_simple"}) == 'pablo\n'
 
 
 def test_used_storages_in_query_log(started_cluster):
@@ -1141,7 +1141,7 @@ def test_gcs(started_cluster):
         node.query(
             f"""
             CREATE DATABASE {CATALOG_NAME}
-            ENGINE = DataLakeCatalog('{BASE_URL_DOCKER}', 'gcs', 'dummy')
+            ENGINE = DataLakeCatalog('{BASE_URL}', 'gcs', 'dummy')
             SETTINGS
                 catalog_type = 'rest',
                 warehouse = 'demo',

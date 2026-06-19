@@ -149,10 +149,10 @@ class Issue:
             "job_pattern": r"Job pattern:\s*([^\n]*)",
         }
 
-        for field, pattern in patterns.items():
+        for field_name, pattern in patterns.items():
             match = re.search(pattern, body, re.IGNORECASE)
             if match:
-                fields[field] = match.group(1).strip()
+                fields[field_name] = match.group(1).strip()
 
         flags_match = re.search(
             r"^Failure flags:[ \t]*(.*)$", body, re.IGNORECASE | re.MULTILINE

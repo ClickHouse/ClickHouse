@@ -186,7 +186,7 @@ def test_allow_feature_tier_in_mergetree_settings_with_old_compatibility(start_c
 
     output, error = instance.query_and_get_answer_with_error(basic_merge_tree_query)
     assert output == ""
-    assert error is ""
+    assert error == ""
 
     # Go back
     instance.replace_in_config(feature_tier_path, "1", "0")
