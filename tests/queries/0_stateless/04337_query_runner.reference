@@ -1,35 +1,39 @@
 validation
-plain queries
+dispatch, batch survives failing and resultful queries, database routing, settings, logging
 1
 2
-failing and resultful queries do not affect the batch
 3
-database column routes the query
-3
-4
-per-query settings and query_log
-1	1
-local query exception is logged
-1	1
+logged internal failure	1	1
 sql security
 CREATE TABLE default.query_runner_definer\n(\n    `query` String,\n    `database` String,\n    `settings` Map(String, String),\n    `delay_microseconds` UInt64\n)\nENGINE = QueryRunner\nSETTINGS mode = \'synchronous\', threads = 2, max_queue_size = 100\nDEFINER = user_04337 SQL SECURITY DEFINER
-definer and invoker without grants on the target
-0
-definer and invoker with grants on the target
-1
-2
+no grants	0
+with grants	2
 sql security none
-3
-definer and none require grants, no alter escape
+none runs without grants	3
+no alter escape
+identity
+invoker currentUser	user_04337
+invoker log	1	1	1
+definer log	1	1	1
+roles: definer uses its default roles, invoker uses the inserter enabled roles
+role rows	2
 cluster
-100
-source side internal, destination side initial
-1	1
-cluster query exception is received and logged
-1	1
+cluster routes	100
+cluster source-internal dest-initial	1	1
+cluster attribution	1	1	1
+cluster exception logged	1	1
+cluster multi-db routing
+cluster multi-db	1	1	1	2
 asynchronous is the default mode
-1
-sql security none allowed with grant
-created
-definer is protected from drop while in use
-user dropped after definer table removed
+async rows 1
+none created with grant
+cluster cancel on detach
+cluster query started 1
+detached
+cluster query gone 1
+cluster query cancelled	1	1	1
+cluster cancel no source terminal	0
+delay wait wakeup on detach
+delay workers unblocked
+definer is protected from drop while in use, droppable after
+definer dependency follows a table rename

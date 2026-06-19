@@ -235,6 +235,8 @@ public:
 
     bool isFinished() const { return finished; }
 
+    bool isCancelled() const { return was_cancelled; }
+
 private:
     RemoteQueryExecutor(
         const String & query_,

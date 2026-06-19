@@ -4,13 +4,11 @@ SELECT number FROM numbers(3) SETTINGS discard_query_result = 1;
 SELECT 'select with discard disabled';
 SELECT number FROM numbers(3) SETTINGS discard_query_result = 0;
 
-SELECT 'empty result with discard enabled';
+SELECT 'empty result, totals and extremes with discard enabled';
 SELECT * FROM (SELECT 1) WHERE 0 SETTINGS discard_query_result = 1;
-
-SELECT 'totals and extremes with discard enabled';
 SELECT number % 2 AS k, count() AS c FROM numbers(10) GROUP BY k WITH TOTALS ORDER BY k SETTINGS discard_query_result = 1, extremes = 1;
 
-SELECT 'exception with discard enabled';
+SELECT 'exception still propagates';
 SELECT throwIf(1) SETTINGS discard_query_result = 1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SELECT 'the header is still sent';
@@ -18,13 +16,9 @@ SELECT number FROM numbers(3) FORMAT TSVWithNames SETTINGS discard_query_result 
 
 DROP TABLE IF EXISTS t_04336_discard_query_result;
 CREATE TABLE t_04336_discard_query_result (n UInt64) ENGINE = MergeTree ORDER BY n;
-
 INSERT INTO t_04336_discard_query_result SETTINGS discard_query_result = 1 VALUES (42);
 
-SELECT 'insert with discard enabled';
-SELECT n FROM t_04336_discard_query_result;
-
-SELECT 'the setting is not propagated to remote subqueries that feed the initiator';
+SELECT 'insert with discard enabled, and the setting is not propagated to remote subqueries feeding the initiator';
 INSERT INTO t_04336_discard_query_result SETTINGS discard_query_result = 1 SELECT n + 1 FROM remote('127.0.0.2', currentDatabase(), t_04336_discard_query_result);
 SELECT n FROM t_04336_discard_query_result ORDER BY n;
 

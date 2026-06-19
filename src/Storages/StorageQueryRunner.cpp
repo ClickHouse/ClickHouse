@@ -445,7 +445,8 @@ private:
             throw;
         }
 
-        logClusterQuery(job, job_context, query_start_time, QueryLogElementType::QUERY_FINISH, watch.elapsedMilliseconds());
+        if (!executor->isCancelled())
+            logClusterQuery(job, job_context, query_start_time, QueryLogElementType::QUERY_FINISH, watch.elapsedMilliseconds());
     }
 
     void logClusterQuery(
