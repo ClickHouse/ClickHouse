@@ -959,6 +959,11 @@ private:
     /// came from decrypt-ahead bytes and is already plaintext, so the serve
     /// boundary must NOT run `decryptWindow` on it.
     bool served_window_is_plaintext = false;
+    /// Set per `readNextWindow` (reset before the serve): the window just served came
+    /// from a resident cache HIT (not a source/miss read). Only hit serves feed
+    /// `lookup_continuity`, so the residency look-ahead extends on cache-read continuity,
+    /// never on a cold/source run.
+    bool served_window_is_hit = false;
     /// Look-ahead span for plan-then-stream; raised to at least `window_size`.
     size_t plan_look_ahead_window;
     /// Flat continuity look-ahead for the residency lookup span (`boundedPlanSpan`),

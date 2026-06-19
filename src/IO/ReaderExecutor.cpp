@@ -474,13 +474,16 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// Reset before the serve; `interpretStep` sets it only when it serves a window of
     /// decrypt-ahead bytes (already plaintext), so the boundary below skips decryption.
     served_window_is_plaintext = false;
+    served_window_is_hit = false;
     chain = interpretStep(position_phys, to_read);
 
     stats.add(Stats::RequestedBytes, chain.range().size);
     position += chain.range().size;
-    /// Feed the served range (physical) to the cache-read estimator; its
-    /// `predictedReach` sizes the next residency lookup span (`boundedPlanSpan`).
-    if (chain.range().size)
+    /// Feed the served range to the cache-read estimator ONLY on a cache HIT: it sizes the
+    /// residency look-ahead (held cache readers), so it must track the cache-read pattern,
+    /// not source/miss serves - feeding it on a cold source run would make that run look
+    /// "sequential" and wrongly extend the look-ahead, prefetching past the read-until bound.
+    if (chain.range().size && served_window_is_hit)
         lookup_continuity.onServe(position_phys, chain.range().size);
     advanceCursor();
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
@@ -2649,9 +2652,10 @@ ChainedBuffers ReaderExecutor::interpretStep(size_t position_phys, size_t to_rea
         return handleExtentOrReplan(position_phys, to_read);
 
     const auto & step = read_plan.schedule.steps[read_plan.cursor];
-    return step.require_retrieve.has_value()
-        ? serveRetrieveStep(step, *step.require_retrieve, position_phys, to_read)
-        : serveHitStep(step, position_phys, to_read);
+    if (step.require_retrieve.has_value())
+        return serveRetrieveStep(step, *step.require_retrieve, position_phys, to_read);
+    served_window_is_hit = true;
+    return serveHitStep(step, position_phys, to_read);
 }
 
 void ReaderExecutor::observeAndSchedule(size_t physical_start)
