@@ -33,10 +33,15 @@ path = sys.argv[2]
 with open(path, "rb") as f:
     if fmt == "ArrowStream":
         reader = ipc.open_stream(f)
+        batch_sizes = [batch.num_rows for batch in reader]
     else:
         reader = ipc.open_file(f)
+        batch_sizes = [
+            reader.get_batch(i).num_rows
+            for i in range(reader.num_record_batches)
+        ]
 
-    print(fmt, [batch.num_rows for batch in reader])
+print(fmt, batch_sizes)
 PY
 }
 
