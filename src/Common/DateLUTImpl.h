@@ -260,6 +260,14 @@ private:
     static constexpr Time min_representable_time = -62167219200;   /// 0000-01-01 00:00:00 UTC
     static constexpr Time max_representable_time = 253402300799;   /// 9999-12-31 23:59:59 UTC
 
+    /// std::chrono::system_clock::from_time_t can overflow for extreme Int64 inputs, so the cctz escape paths
+    /// bound the UTC timestamp to this window before constructing a time point. It is wider than the
+    /// representable calendar by more than a whole-day timezone offset, so that a local civil value at the
+    /// [0000, 9999] boundary (whose UTC instant can lie just outside the representable window) survives the
+    /// conversion; the local result is clamped to the representable calendar after the timezone conversion.
+    static constexpr Time min_chrono_safe_time = min_representable_time - 2 * 86400;
+    static constexpr Time max_chrono_safe_time = max_representable_time + 2 * 86400;
+
     /// Whether a value cannot be represented by the lookup table and needs the cctz escape path.
     /// Only Time (timestamp) and ExtendedDayNum (signed day number) can fall outside of the LUT;
     /// DateTime (UInt32), Date (DayNum/UInt16) and LUTIndex always fit, so they never take the escape path.
@@ -395,6 +403,16 @@ private:
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         chassert(divisor > 0);
 
+        /// Checked before the fast path below: the "whole number of hours" property holds during the epoch,
+        /// but historical (pre-1900) offsets can have a sub-hour component (e.g. Moscow's +2:30:17 LMT), so the
+        /// fast path would round to a UTC boundary instead of the local one for out-of-range values.
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(x)))
+            {
+                const Time date = outOfRangeValues(x).date;
+                return static_cast<DateOrTime>(date + (static_cast<Time>(x) - date) / divisor * divisor);
+            }
+
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {
             if (x >= 0) [[likely]]
@@ -405,11 +423,7 @@ private:
             return static_cast<DateOrTime>((x + 1 - divisor) / divisor * divisor);
         }
 
-        Time date;
-        if constexpr (may_be_out_of_lut_range<DateOrTime>)
-            date = unlikely(isOutOfLUTRange(x)) ? outOfRangeValues(x).date : find(x).date;
-        else
-            date = find(x).date;
+        const Time date = find(x).date;
         Time res = date + (x - date) / divisor * divisor;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {
@@ -1081,7 +1095,15 @@ public:
                 Int32 cycles = 0;
                 const ExtendedDayNum shifted = shiftIntoLUTRange(toDayNum(v), cycles);
                 YearWeek yw = toYearWeek(shifted, week_mode);
-                yw.first = static_cast<UInt16>(yw.first - cycles * 400);
+                /// The ISO week-year can fall just outside the representable [0000, 9999] range at the
+                /// boundaries (e.g. 0000-01-01 is a Saturday belonging to week-year -1, and 9999-12-31 can
+                /// belong to week-year 10000); clamp it so the UInt16 YYYYWW result does not wrap around.
+                Int32 adjusted_year = static_cast<Int32>(yw.first) - cycles * 400;
+                if (adjusted_year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
+                    adjusted_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
+                else if (adjusted_year > DATE_LUT_MAX_REPRESENTABLE_YEAR)
+                    adjusted_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
+                yw.first = static_cast<UInt16>(adjusted_year);
                 return yw;
             }
 
@@ -1392,7 +1414,11 @@ public:
         if constexpr (std::is_same_v<Date, ExtendedDayNum>)
             if (unlikely(isOutOfLUTRange(d)))
             {
-                const Int64 rounded_day_num = static_cast<Int64>(d.toUnderType()) / static_cast<Int64>(days) * static_cast<Int64>(days);
+                /// Floor division towards -inf: truncating division would round a pre-epoch day number
+                /// towards zero, i.e. forward in time, past the start of the interval.
+                const Int64 day_num = static_cast<Int64>(d.toUnderType());
+                const Int64 idays = static_cast<Int64>(days);
+                const Int64 rounded_day_num = day_num >= 0 ? day_num / idays * idays : (day_num + 1 - idays) / idays * idays;
                 return dateOfDayIndex(rounded_day_num + daynum_offset_epoch);
             }
 
@@ -1466,6 +1492,16 @@ public:
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
         Int64 divisor = 60 * minutes;
+
+        /// Checked before the fast path below: historical (pre-1900) offsets can have a sub-minute component,
+        /// so for out-of-range values the fast path would round to a UTC boundary instead of the local one.
+        if constexpr (may_be_out_of_lut_range<DateOrTime>)
+            if (unlikely(isOutOfLUTRange(t)))
+            {
+                const Time date = outOfRangeValues(t).date;
+                return static_cast<DateOrTime>(date + (static_cast<Time>(t) - date) / divisor * divisor);
+            }
+
         if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
         {
             if (t >= 0) [[likely]]
@@ -1473,11 +1509,7 @@ public:
             return static_cast<DateOrTime>((t + 1 - divisor) / divisor * divisor);
         }
 
-        Time date;
-        if constexpr (may_be_out_of_lut_range<DateOrTime>)
-            date = unlikely(isOutOfLUTRange(t)) ? outOfRangeValues(t).date : find(t).date;
-        else
-            date = find(t).date;
+        const Time date = find(t).date;
         Time res = date + (t - date) / divisor * divisor;
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
         {

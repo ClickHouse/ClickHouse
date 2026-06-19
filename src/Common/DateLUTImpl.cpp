@@ -241,7 +241,9 @@ int daysInCivilMonth(Int64 year, int month)
 
 Int64 DateLUTImpl::findDayIndexOutOfRange(Time t) const
 {
-    /// The local calendar day of the time point, clamped to the representable [0000, 9999] window.
+    /// Bound the timestamp before constructing the time point to avoid chrono overflow on extreme inputs
+    /// (e.g. fromUnixTimestamp64 with a huge argument); the local day is clamped to [0000, 9999] afterwards.
+    t = std::clamp(t, min_chrono_safe_time, max_chrono_safe_time);
     const cctz::civil_second cs = cctz::convert(std::chrono::system_clock::from_time_t(t), *cctz_time_zone);
     return std::clamp(dayIndexOfCivilDay(cctz::civil_day{cs}), min_representable_day_index, max_representable_day_index);
 }
@@ -273,7 +275,10 @@ DateLUTImpl::Values DateLUTImpl::valuesForOutOfRangeDayIndex(Int64 day_index) co
 
 DateLUTImpl::DateTimeComponents DateLUTImpl::toDateTimeComponentsOutOfRange(Time t) const
 {
-    t = std::clamp(t, min_representable_time, max_representable_time);
+    /// Only bound enough to avoid chrono overflow; the local civil result is clamped to a valid year below.
+    /// Clamping the UTC timestamp to the representable window here would shift valid local boundary values
+    /// (e.g. for a positive-offset zone, local 0000-01-01 00:00:00 maps to a UTC instant before the window).
+    t = std::clamp(t, min_chrono_safe_time, max_chrono_safe_time);
     cctz::civil_second cs = cctz::convert(std::chrono::system_clock::from_time_t(t), *cctz_time_zone);
 
     /// A non-zero UTC offset can push the local year just past the representable window; clamp it to a valid 4-digit year.
@@ -296,7 +301,8 @@ DateLUTImpl::Time DateLUTImpl::toTimeOutOfRange(Time t) const
 {
     /// Local time of day in seconds (counted from local midnight), shifted to be relative to the start of the epoch,
     /// exactly as the in-range toTime does (which returns the time of day starting at 1970-01-01 00:00:00 local time).
-    t = std::clamp(t, min_representable_time, max_representable_time);
+    /// Bound only enough to avoid chrono overflow, so local boundary values keep their correct time of day.
+    t = std::clamp(t, min_chrono_safe_time, max_chrono_safe_time);
     const cctz::time_zone & tz = *cctz_time_zone;
     const auto tp = std::chrono::system_clock::from_time_t(t);
     const cctz::civil_second cs = cctz::convert(tp, tz);
@@ -315,6 +321,7 @@ DateLUTImpl::Time DateLUTImpl::timezoneOffsetOutOfRange(Time t) const
 DateLUTImpl::Time DateLUTImpl::addDaysOutOfRange(Time t, Int64 delta) const
 {
     /// Keep the same wall-clock time of day, but on the day that is `delta` days away.
+    t = std::clamp(t, min_chrono_safe_time, max_chrono_safe_time);
     const cctz::time_zone & tz = *cctz_time_zone;
     const cctz::civil_second cs = cctz::convert(std::chrono::system_clock::from_time_t(t), tz);
     const cctz::civil_day target_day = cctz::civil_day{cs} + delta;
@@ -324,6 +331,7 @@ DateLUTImpl::Time DateLUTImpl::addDaysOutOfRange(Time t, Int64 delta) const
 
 DateLUTImpl::Time DateLUTImpl::addMonthsOutOfRange(Time t, Int64 delta) const
 {
+    t = std::clamp(t, min_chrono_safe_time, max_chrono_safe_time);
     const cctz::time_zone & tz = *cctz_time_zone;
     const cctz::civil_second cs = cctz::convert(std::chrono::system_clock::from_time_t(t), tz);
 
@@ -340,6 +348,7 @@ DateLUTImpl::Time DateLUTImpl::addMonthsOutOfRange(Time t, Int64 delta) const
 
 DateLUTImpl::Time DateLUTImpl::addYearsOutOfRange(Time t, Int64 delta) const
 {
+    t = std::clamp(t, min_chrono_safe_time, max_chrono_safe_time);
     const cctz::time_zone & tz = *cctz_time_zone;
     const cctz::civil_second cs = cctz::convert(std::chrono::system_clock::from_time_t(t), tz);
 
