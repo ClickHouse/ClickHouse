@@ -207,6 +207,22 @@ struct PatternInfo
                 return false;
         return true;
     }
+
+    /// Returns true if no regexp contains an embedded NUL byte. Used to gate the combined-`match`
+    /// fallback only. RE2's required-substring optimization truncates a lone regexp at the first NUL
+    /// (so the original `match(s, 'a\0b')` already behaves like `match(s, 'a')`), but the combined
+    /// `(p1)|(p2)|...` alternation built by `getCombinedRegexp` does not get truncated, so it would
+    /// match a different (narrower) set than the original per-branch chain. When any pattern has an
+    /// embedded NUL we keep the originals instead. `multiMatchAny` needs no such guard: it truncates
+    /// at the first NUL exactly as the original per-branch `match` does and preserves results; the
+    /// byte-oriented `multiSearchAny*` substring path is length-aware and preserving as well.
+    [[maybe_unused]] bool allRegexpsHaveNoEmbeddedNul() const
+    {
+        for (const auto & p : patterns)
+            if (p.regexp.find('\0') != String::npos)
+                return false;
+        return true;
+    }
 };
 
 }
@@ -391,11 +407,15 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                         /// than `match` with alternation in RE2 because it can leverage
                         /// Vectorscan/Hyperscan. We pre-check `max_hyperscan_regexp_length`,
                         /// `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`,
-                        /// so a query that previously worked as `OR LIKE` cannot be turned into a
-                        /// `BAD_ARGUMENTS` / `HYPERSCAN_CANNOT_SCAN_TEXT` failure by this rewrite.
+                        /// and that all patterns are valid UTF-8, so a query that previously worked as
+                        /// `OR LIKE` cannot be turned into a `BAD_ARGUMENTS` / `HYPERSCAN_CANNOT_SCAN_TEXT`
+                        /// failure. An embedded NUL needs no guard here: `multiMatchAny` truncates a
+                        /// pattern at the first NUL exactly as the original per-branch `match` does, so
+                        /// results are preserved — only the combined-`match` fallback below differs.
                         match_fn = makeASTFunction("multiMatchAny", key_data.identifier, make_intrusive<ASTLiteral>(Field{info.getRegexps()}));
                     }
-                    else if (info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
+                    else if (info.allRegexpsHaveNoEmbeddedNul()
+                        && info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
                     {
                         /// Fall back to `match` with combined alternation when Vectorscan is not
                         /// compiled in, `allow_hyperscan` is off, the patterns would be rejected
@@ -405,13 +425,20 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                         /// `)` and `|` overhead added by `getCombinedRegexp`, so
                         /// `max_hyperscan_regexp_total_length` is a strict upper bound on the
                         /// emitted regexp and we cannot blow up RE2 compile limits here.
+                        /// `allRegexpsHaveNoEmbeddedNul` excludes patterns with an embedded NUL: RE2
+                        /// truncates a lone pattern at the first NUL but not the `(p1)|(p2)|...`
+                        /// alternation, so the combined `match` would match a different (narrower) set
+                        /// than the original chain. Such groups fall through to the `else` below and
+                        /// keep the originals, so results are preserved regardless of `allow_hyperscan`.
                         match_fn = makeASTFunction("match", key_data.identifier, make_intrusive<ASTLiteral>(Field{info.getCombinedRegexp()}));
                     }
                     else
                     {
-                        /// Patterns exceed the configured hyperscan size limits. Skip the rewrite
-                        /// for this key — keep the original `OR LIKE` branches so the query remains
-                        /// executable and so we don't build an unbounded combined regexp.
+                        /// Patterns exceed the configured hyperscan size limits, or contain an embedded
+                        /// NUL that the combined alternation cannot reproduce faithfully. Skip the
+                        /// rewrite for this key — keep the original `OR LIKE` branches so the query
+                        /// remains executable, we don't build an unbounded combined regexp, and the
+                        /// result is preserved.
                         slot = std::move(key_data.originals);
                         continue;
                     }

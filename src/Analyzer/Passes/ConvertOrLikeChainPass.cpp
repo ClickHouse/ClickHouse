@@ -227,6 +227,24 @@ struct PatternInfo
                 return false;
         return true;
     }
+
+    /// Returns true if no regexp contains an embedded NUL byte. Used to gate the combined-`match`
+    /// fallback only. RE2's required-substring optimization truncates a lone regexp at the first NUL
+    /// (so the original `match(s, 'a\0b')` already behaves like `match(s, 'a')`), but the combined
+    /// `(p1)|(p2)|...` alternation built by `getCombinedRegexp` does not get truncated, so it would
+    /// match a *different* (narrower) set than the original per-branch chain. When any pattern has an
+    /// embedded NUL we therefore keep the originals instead of emitting the combined `match`.
+    /// `multiMatchAny` needs no such guard: Vectorscan compiles each expression as a NUL-terminated C
+    /// string, so it truncates at the first NUL exactly as the original per-branch `match` does, and
+    /// preserves results. The byte-oriented `multiSearchAny*` substring path is length-aware and
+    /// preserving as well.
+    bool allRegexpsHaveNoEmbeddedNul() const
+    {
+        for (const auto & p : patterns)
+            if (p.regexp.find('\0') != String::npos)
+                return false;
+        return true;
+    }
 };
 
 class ConvertOrLikeChainVisitor : public InDepthQueryTreeVisitorWithContext<ConvertOrLikeChainVisitor>
@@ -446,14 +464,18 @@ public:
                     /// at execution time, and compiles patterns as UTF-8, so we pre-check those guards
                     /// and that all patterns are valid UTF-8; that way the rewrite cannot turn a
                     /// previously-working query into a `BAD_ARGUMENTS` / `CANNOT_COMPILE_REGEXP` /
-                    /// `HYPERSCAN_CANNOT_SCAN_TEXT` failure.
+                    /// `HYPERSCAN_CANNOT_SCAN_TEXT` failure. An embedded NUL needs no guard here:
+                    /// `multiMatchAny` truncates a pattern at the first NUL exactly as the original
+                    /// per-branch `match` does (both compile through a NUL-terminated path), so results
+                    /// are preserved — only the combined-`match` fallback below differs (see there).
                     match_function = std::make_shared<FunctionNode>("multiMatchAny");
                     match_function->getArguments().getNodes().push_back(key_data.key);
                     match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getRegexps()}));
                     auto resolver = FunctionFactory::instance().get("multiMatchAny", context);
                     match_function->resolveAsFunction(resolver);
                 }
-                else if (info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
+                else if (info.allRegexpsHaveNoEmbeddedNul()
+                    && info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
                 {
                     /// Fall back to `match` with combined alternation when Hyperscan is disabled, the
                     /// patterns would be rejected as expensive, or some pattern is not valid UTF-8
@@ -461,6 +483,12 @@ public:
                     /// accounts for the `(`, `)` and `|` overhead added by `getCombinedRegexp` so
                     /// `max_hyperscan_regexp_total_length` is a strict upper bound on the emitted
                     /// regexp, and we cannot blow up RE2 compile limits here.
+                    /// `allRegexpsHaveNoEmbeddedNul` excludes patterns with an embedded NUL: RE2's
+                    /// required-substring optimization truncates a lone pattern at the first NUL, but the
+                    /// `(p1)|(p2)|...` alternation does not, so the combined `match` would match a
+                    /// *different* (narrower) set than the original per-branch `match`/`LIKE` chain. When
+                    /// any pattern has an embedded NUL we leave `match_function` null and keep the
+                    /// originals, so the result is preserved regardless of `allow_hyperscan` or the build.
                     match_function = std::make_shared<FunctionNode>("match");
                     match_function->getArguments().getNodes().push_back(key_data.key);
                     match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getCombinedRegexp()}));
@@ -477,10 +505,12 @@ public:
 
             if (!match_function)
             {
-                /// Patterns exceed the configured hyperscan size limits. We cannot emit
-                /// `multiMatchAny` (would throw at runtime), and emitting a single combined `match`
-                /// would build an unbounded regexp that can blow up RE2 compile limits. Keep the
-                /// original `OR LIKE` branches so the query remains executable.
+                /// We reach here when patterns exceed the configured hyperscan size limits, or contain
+                /// an embedded NUL that the combined alternation cannot reproduce faithfully. We cannot
+                /// emit `multiMatchAny` (would throw at runtime / change results), and emitting a single
+                /// combined `match` would build an unbounded regexp that can blow up RE2 compile limits
+                /// or change results for embedded NUL. Keep the original `OR LIKE` branches so the query
+                /// remains executable and the result is preserved.
                 slot = std::move(key_data.originals);
                 continue;
             }
