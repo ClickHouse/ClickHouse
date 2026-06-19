@@ -1,0 +1,12 @@
+-- colliding param 'format', value starting with a quote
+\'abc
+-- colliding param 'database', value starting with a quote
+\'xyz
+-- colliding param 'filter', value starting with a quote
+\'a > 0
+-- colliding param 'format', ordinary value still works
+JSONEachRow
+-- non-colliding custom param, value starting with a quote still works
+\'hello
+-- non-colliding custom param, ordinary value still works
+default

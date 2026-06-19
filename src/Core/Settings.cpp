@@ -8884,16 +8884,22 @@ NameToNameMap Settings::toNameToNameMap() const
     /// This is used to convert the `Settings` packet that the TCP protocol carries query
     /// parameters in (see `Connection::sendQuery`) into a name→value map. The client side calls
     /// `params.set(name, value)` for each query parameter, which produces a `SettingFieldCustom`
-    /// for undeclared names (whose `toString()` already SQL-quotes the value, e.g. `'default'`)
-    /// but a typed field for declared settings (whose `toString()` returns the raw value).
-    /// Accept both formats: if the string starts with `'` treat it as SQL-quoted, otherwise use
-    /// it as-is.
+    /// for undeclared names (whose `toString()` SQL-quotes the value, e.g. `'default'`) but a typed
+    /// field for declared settings (whose `toString()` returns the raw value).
+    ///
+    /// Branch on `isCustom()` — the exact per-entry type — rather than guessing from the first byte:
+    /// a query parameter whose name collides with a real setting (e.g. `format` / `database` /
+    /// `filter` / `select`) is stored as a typed field, and its raw value may legitimately start with
+    /// `'` (e.g. `--param_format="'abc"`). The old "starts with a quote → SQL-quoted" heuristic would
+    /// then call `readQuoted` on a value that is not a complete SQL-quoted string, corrupting it or
+    /// throwing `CANNOT_PARSE_QUOTED_STRING`. Custom entries are SQL-unquoted; typed entries are
+    /// copied as-is.
     NameToNameMap query_parameters;
     for (const auto & param : *impl)
     {
         std::string value_string = param.getValueString();
         std::string value;
-        if (!value_string.empty() && value_string.front() == '\'')
+        if (param.isCustom())
         {
             ReadBufferFromOwnString buf(value_string);
             readQuoted(value, buf);
