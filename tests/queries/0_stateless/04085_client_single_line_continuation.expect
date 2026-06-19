@@ -50,5 +50,14 @@ send -- "SELECT;\r"
 expect "Syntax error"
 expect ":) "
 
+# Ctrl+C while editing a continued (incomplete) query discards it without
+# submitting; the client returns to a fresh prompt and still accepts new queries.
+send -- "SELECT\r"
+send -- "\x03"
+expect ":) "
+send -- "SELECT 99\r"
+expect "│ 99 │"
+expect ":) "
+
 send -- "\4"
 expect eof
