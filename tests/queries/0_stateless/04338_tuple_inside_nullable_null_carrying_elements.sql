@@ -16,7 +16,7 @@ SELECT if(number % 2, NULL, tuple(toString(number))::Tuple(s LowCardinality(Null
 -- Wide part, one row per granule.
 DROP TABLE IF EXISTS t_null_carrying_wide;
 CREATE TABLE t_null_carrying_wide (tup Nullable(Tuple(a Dynamic, v Variant(UInt64), s LowCardinality(Nullable(String)))))
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, optimize_row_order_if_no_order_by = 0;
 INSERT INTO t_null_carrying_wide SELECT number % 2 ? NULL : tuple(number::Dynamic, number, toString(number)) FROM numbers(4);
 SELECT tup.a, tup.v, tup.s, isNull(tup.a), isNull(tup.v), isNull(tup.s) FROM t_null_carrying_wide;
 SELECT tup, tup.a, tup.v, tup.s FROM t_null_carrying_wide;
@@ -29,7 +29,7 @@ DROP TABLE t_null_carrying_wide;
 -- Compact part.
 DROP TABLE IF EXISTS t_null_carrying_compact;
 CREATE TABLE t_null_carrying_compact (tup Nullable(Tuple(a Dynamic, v Variant(UInt64), s LowCardinality(Nullable(String)))))
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000, optimize_row_order_if_no_order_by = 0;
 INSERT INTO t_null_carrying_compact SELECT number % 2 ? NULL : tuple(number::Dynamic, number, toString(number)) FROM numbers(4);
 SELECT tup.a, tup.v, tup.s, isNull(tup.a), isNull(tup.v), isNull(tup.s) FROM t_null_carrying_compact;
 SELECT tup, tup.a, tup.v, tup.s FROM t_null_carrying_compact;
@@ -50,7 +50,7 @@ DROP TABLE t_null_carrying_mem;
 -- keeps its type and rows where the outer tuple is NULL read as default values.
 DROP TABLE IF EXISTS t_lc_plain;
 CREATE TABLE t_lc_plain (tup Nullable(Tuple(p LowCardinality(String)))) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, optimize_row_order_if_no_order_by = 0;
 INSERT INTO t_lc_plain VALUES (('a')), (NULL), (('b')), (NULL);
 SELECT toTypeName(tup.p), tup, tup.p, isNull(tup) FROM t_lc_plain;
 DROP TABLE t_lc_plain;
