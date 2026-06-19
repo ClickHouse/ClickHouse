@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 
 #include <Processors/ConcatProcessor.h>
+#include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -257,6 +258,10 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
             if (limit_max_threads && max_threads)
                 last_pipeline->limitMaxThreads(max_threads);
+
+            for (const auto & processor : last_pipeline->getProcessors())
+                if (!processor->getQueryPlanStep())
+                    processor->setQueryPlanStep(frame.node->step.get());
 
             stack.pop();
         }
