@@ -48,3 +48,17 @@ SELECT count() FROM numbers(100) WHERE isConstant(materialize('online'));
 
 SELECT count() FROM numbers(10) WHERE materialize(now()) > toDateTime('1970-01-01');
 
+-- surviving non-filter outputs must not be folded - y must still look non-Const downstream
+SELECT isConstant(y) FROM (SELECT materialize(1) = 1 AS y FROM numbers(1)) WHERE materialize(1) = 1;
+
+-- like()'s ESCAPE arg must stay non-Const-foldable through materialize - runtime still raises
+SELECT like('50%off', '50#%off', materialize('#')); -- { serverError ILLEGAL_COLUMN }
+
+-- lazy branches of short-circuit if must not be folded at planning time - toFloat64('x86_74')
+-- would throw but runtime never evaluates the then-branch when cond is false
+SELECT count() FROM numbers(1)
+WHERE if(equals(materialize('abc'), 'aws.lambda.duration'),
+         toFloat64(materialize('x86_74')) < 50,
+         0)
+SETTINGS short_circuit_function_evaluation = 'enable';
+
