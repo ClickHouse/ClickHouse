@@ -53,5 +53,43 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
+-- The cached size may also anchor the upper-bound-driven swap on the OPPOSITE side: a residual-
+-- filtered left input (only an upper bound) can be swapped onto the build side when the right
+-- input's size is known from the cache. `pf` is filtered to an upper bound of 1000; `cf` is
+-- residual-filtered too (so without the cache it is only an upper bound), but a first build
+-- records its 1000000-row size in the cache. With that cached size on the right, `pf`'s upper
+-- bound (1000) is below it, so `pf` is swapped onto the build side. (A purely-derived estimate on
+-- the right would NOT anchor this -- see the aggregation case in 04337.)
+DROP TABLE IF EXISTS pf;
+DROP TABLE IF EXISTS cf;
+
+CREATE TABLE pf (k Int32, v Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO pf SELECT number, number FROM numbers(1000);
+
+CREATE TABLE cf (k Int32, w Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO cf SELECT number, number FROM numbers(1000000);
+
+-- Prime the cache: build `cf` (the default right side; both inputs are upper bounds, so no swap).
+SELECT * FROM pf JOIN cf ON pf.k = cf.k WHERE pf.v != -1 AND cf.w != -1
+SETTINGS query_plan_join_swap_table = 'auto' FORMAT Null;
+
+-- Now `cf` is Cached; `pf`'s upper bound (1000) < cached `cf` (1000000), so `pf` is swapped to build.
+SELECT * FROM pf JOIN cf ON pf.k = cf.k WHERE pf.v != -1 AND cf.w != -1
+SETTINGS query_plan_join_swap_table = 'auto', log_comment = '04357_join_choose_build_table_cached_anchor' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 900 AND 1100, 'ok', format('fail({}): build={}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 900000 AND 1100000, 'ok', format('fail({}): probe={}', query_id, ProfileEvents['JoinProbeTableRowCount']))
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+  AND query_kind = 'Select' AND current_database = currentDatabase()
+  AND log_comment = '04357_join_choose_build_table_cached_anchor'
+ORDER BY event_time DESC
+LIMIT 1;
+
 DROP TABLE IF EXISTS f;
 DROP TABLE IF EXISTS u;
+DROP TABLE IF EXISTS pf;
+DROP TABLE IF EXISTS cf;

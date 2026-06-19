@@ -699,6 +699,7 @@ static String dumpRowCountForLogs(const RelationStats & stats)
         case RowCountKind::Exact:      return fmt::format("{} (exact)", stats.estimated_rows.value());
         case RowCountKind::UpperBound: return fmt::format("<= {}", stats.estimated_rows.value());
         case RowCountKind::Estimate:   return fmt::format("{} (est)", stats.estimated_rows.value());
+        case RowCountKind::Cached:     return fmt::format("{} (cached)", stats.estimated_rows.value());
         case RowCountKind::Unknown:    return "unknown";
     }
 }
@@ -791,14 +792,14 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     {
         /// The cached size comes from `HashTablesStatistics`, a process-global cache that keeps a
         /// max-like value: it tracks growth immediately but only shrinks when a new size drops
-        /// below half of the stored one. So it can be stale and is neither an exact count nor a
-        /// guaranteed bound on the current size. Combine it with any prior point estimate and mark
-        /// the result a heuristic, so the upper-bound-driven swap won't trust it as a lower bound
-        /// (see `chooseJoinOrder`). An already-exact leaf stays exact: the min only tightens it and
-        /// remains a valid lower bound.
+        /// below half of the stored one. It is a real measurement of a previous build, not a
+        /// guaranteed bound -- but it is the value the optimizer already relies on for join
+        /// reordering, so mark it `Cached`: the upper-bound swap accepts it on the opposite side
+        /// (see `chooseJoinOrder`), unlike a purely-derived `Estimate`. An already-exact leaf stays
+        /// exact: the min only tightens it and remains a valid lower bound.
         stats.estimated_rows = std::min<UInt64>(stats.pointEstimate().value_or(MAX_ROWS), num_rows_from_cache.value());
         if (stats.estimated_rows_kind != RowCountKind::Exact)
-            stats.estimated_rows_kind = RowCountKind::Estimate;
+            stats.estimated_rows_kind = RowCountKind::Cached;
     }
 
     if (!label.empty())
@@ -1198,10 +1199,12 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// `lhs < rhs` (both are best-effort estimates).
             ///
             /// When the left input has only an upper bound (a residual filter defeated its exact
-            /// estimate, see `estimateReadRowsCount`), the comparison is only sound if the right
-            /// side is a trustworthy lower bound -- i.e. an exact count. Otherwise the right value
-            /// may itself be a heuristic over-estimate (e.g. an NDV-less aggregation reported as
-            /// its input row count), and `upperBound(left) < rhs` would not prove `left < right`.
+            /// estimate, see `estimateReadRowsCount`), `upperBound(left) < rhs` only implies
+            /// `left < right` if `rhs` does not exceed the true right size. So the right side must
+            /// be either Exact (a true lower bound) or Cached (a measured prior build size the
+            /// optimizer already trusts for reordering). A purely-derived Estimate is excluded --
+            /// it may be a wild over-estimate (e.g. an NDV-less aggregation reporting its input row
+            /// count), which would wrongly move a larger input onto the build side.
             bool swap_on_sizes = false;
             if (optimization_settings.join_swap_table.has_value())
                 swap_on_sizes = optimization_settings.join_swap_table.value();
@@ -1211,7 +1214,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             else
                 swap_on_sizes = entry->join_method == JoinMethod::Hash
                     && entry->left->estimated_rows_kind == RowCountKind::UpperBound
-                    && entry->right->estimated_rows_kind == RowCountKind::Exact
+                    && canAnchorUpperBoundSwap(entry->right->estimated_rows_kind)
                     && entry->left->estimated_rows.value() < entry->right->estimated_rows.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);

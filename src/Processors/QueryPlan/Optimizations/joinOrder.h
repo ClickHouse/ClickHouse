@@ -33,16 +33,31 @@ enum class RowCountKind : UInt8
     /// leaves only the scanned-row count, or `LIMIT [WITH TIES]` over an inexact child).
     UpperBound,
     /// A heuristic estimate with no guarantee in either direction (NDV-based aggregation result,
-    /// join cardinality, the max-like hash-table-stats cache). Usable for cost/ordering but never
-    /// as proof of relative size for the swap.
+    /// join cardinality, statistics estimator). Usable for cost/ordering but never as proof of
+    /// relative size for the swap.
     Estimate,
+    /// A measured row count from the runtime hash-table-stats cache (`HashTablesStatistics`): the
+    /// actual number of rows a previous execution fed into this build. It is not a guaranteed
+    /// bound (the cache is max-like and can be stale), but it is a real measurement the optimizer
+    /// already relies on for join reordering (`use_hash_table_stats_for_join_reordering`), so the
+    /// upper-bound swap accepts it on the opposite side -- unlike the purely-derived `Estimate`.
+    Cached,
 };
 
-/// The row count only when it is a point estimate (exact or heuristic), i.e. not a bare upper
-/// bound. This is what the heuristic `lhs < rhs` swap comparison and result reporting use.
+/// The row count only when it is a point estimate (exact, heuristic or measured), i.e. not a bare
+/// upper bound. This is what the heuristic `lhs < rhs` swap comparison and result reporting use.
 inline std::optional<UInt64> pointEstimate(std::optional<UInt64> rows, RowCountKind kind)
 {
-    return (kind == RowCountKind::Exact || kind == RowCountKind::Estimate) ? rows : std::nullopt;
+    return (kind == RowCountKind::Exact || kind == RowCountKind::Estimate || kind == RowCountKind::Cached) ? rows : std::nullopt;
+}
+
+/// Whether a right-side value may anchor an upper-bound-driven swap (`upperBound(left) < this`).
+/// Exact is a true lower bound; Cached is a measured size the optimizer already trusts for
+/// reordering (see `RowCountKind::Cached`). A derived `Estimate` may be wildly off (e.g. an
+/// NDV-less aggregation reporting its input row count), so it is excluded.
+inline bool canAnchorUpperBoundSwap(RowCountKind kind)
+{
+    return kind == RowCountKind::Exact || kind == RowCountKind::Cached;
 }
 
 struct DPJoinEntry
