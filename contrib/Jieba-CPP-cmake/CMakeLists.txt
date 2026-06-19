@@ -3,7 +3,7 @@
 # The submodule ships its own standalone CMakeLists.txt for independent
 # development; ClickHouse ignores that and builds the sources directly here,
 # using its in-tree dependencies (abseil/darts-clone/zstd) instead of the
-# submodule's find_package/FetchContent logic.
+# dependency-discovery logic in the submodule's own build files.
 
 set(JIEBA_DIR "${ClickHouse_SOURCE_DIR}/contrib/Jieba-CPP")
 
