@@ -828,7 +828,22 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->settings)
         {
             if (args.mode <= LoadingStrictnessLevel::CREATE)
+            {
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
+
+                /// Validate that every `storage_policy` specified in the query refers to an existing policy.
+                /// A query may set `storage_policy` more than once (e.g. `storage_policy = 'nonexistent',
+                /// storage_policy = 'default'`): only the last value takes effect, but all of them are persisted
+                /// in the table metadata and would make the server fail to load the table on the next restart.
+                /// Validating each occurrence here rejects such tables at creation time. This must run after the
+                /// constraints check so that a forbidden `storage_policy` change reports the constraint violation
+                /// rather than leaking whether a policy exists.
+                for (const auto & change : args.storage_def->settings->changes)
+                {
+                    if (change.name == "storage_policy")
+                        args.getLocalContext()->getStoragePolicy(change.value.safeGet<String>());
+                }
+            }
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
 

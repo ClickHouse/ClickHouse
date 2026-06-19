@@ -2324,14 +2324,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                     found_disk_setting = true;
                 }
                 else if (name == "storage_policy")
-                {
                     found_storage_policy_setting = true;
-                    if (!is_loading_from_existing_metadata)
-                    {
-                        auto policy_name = value.safeGet<String>();
-                        context->getStoragePolicy(policy_name);
-                    }
-                }
                 else if (name == "table_disk")
                     table_disk = value.safeGet<bool>();
 
