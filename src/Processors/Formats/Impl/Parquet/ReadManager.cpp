@@ -635,29 +635,22 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
 
     if (!tasks.empty())
     {
-        LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} scheduling {} tasks in {} batches",
-                  magic_enum::enum_name(stage_idx), tasks.size(), std::min(tasks.size(), limits.parsing_threads) + 1);
-
-        /// Group tiny tasks into batches to reduce scheduling overhead.
+        /// Group tasks into batches to reduce scheduling overhead while preserving
+        /// parallelism for small row-group workloads.
         /// TODO [parquet]: Try removing this (along with cost_estimate_bytes field).
+        const size_t task_count = tasks.size();
+        const size_t total_estimated_bytes = size_t(diff.by_stage[size_t(stage_idx)]);
+        const size_t target_batches = std::max<size_t>(1, std::min(task_count, limits.parsing_threads));
+
+        LOG_TEST(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} scheduling {} tasks in {} batches",
+                  magic_enum::enum_name(stage_idx), task_count, target_batches);
+
         std::vector<std::function<void()>> funcs;
-        funcs.reserve(std::min(tasks.size(), limits.parsing_threads) + 1);
-        size_t bytes_per_batch = size_t(diff.by_stage[size_t(stage_idx)]) / limits.parsing_threads;
-        size_t tasks_per_batch = tasks.size() / limits.parsing_threads;
-        size_t i = 0;
-        while (i < tasks.size())
+        funcs.reserve(target_batches);
+
+        auto make_batch_task = [this, _shutdown = shutdown](std::vector<Task> batch)
         {
-            size_t bytes = 0;
-            size_t n = 0;
-            std::vector<Task> batch;
-            while (i < tasks.size() && bytes <= bytes_per_batch && n <= tasks_per_batch)
-            {
-                batch.push_back(tasks[i]);
-                bytes += tasks[i].cost_estimate_bytes;
-                n += 1;
-                ++i;
-            }
-            funcs.push_back([this, _batch = std::move(batch), _shutdown = shutdown]
+            return [this, _batch = std::move(batch), _shutdown]
             {
                 std::shared_lock shutdown_lock(*_shutdown, std::try_to_lock);
                 if (!shutdown_lock.owns_lock())
@@ -670,10 +663,30 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
                     /// - In abnormal destruction (~ReadManager), nobody checks the counter.
                     return;
                 runBatchOfTasks(_batch);
-            });
+            };
+        };
+
+        const size_t bytes_per_batch = std::max<size_t>(1, (total_estimated_bytes + target_batches - 1) / target_batches);
+        const size_t tasks_per_batch = std::max<size_t>(1, (task_count + target_batches - 1) / target_batches);
+
+        size_t i = 0;
+        while (i < tasks.size())
+        {
+            size_t bytes = 0;
+            size_t n = 0;
+            std::vector<Task> batch;
+            batch.reserve(tasks_per_batch);
+            while (i < tasks.size() && n < tasks_per_batch && (bytes < bytes_per_batch || batch.empty()))
+            {
+                batch.push_back(tasks[i]);
+                bytes += tasks[i].cost_estimate_bytes;
+                n += 1;
+                ++i;
+            }
+            funcs.push_back(make_batch_task(std::move(batch)));
         }
         stage.batches_in_progress.fetch_add(funcs.size(), std::memory_order_relaxed);
-        ProfileEvents::increment(ProfileEvents::ParquetDecodingTasks, tasks.size());
+        ProfileEvents::increment(ProfileEvents::ParquetDecodingTasks, task_count);
         ProfileEvents::increment(ProfileEvents::ParquetDecodingTaskBatches, funcs.size());
         parser_shared_resources->parsing_runner.bulkSchedule(std::move(funcs));
     }
@@ -721,6 +734,8 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(task.column_idx);
                 if (row_subgroup.filter.rows_pass == 0)
                     break;
+
+                const auto & column_info = reader.primitive_columns.at(task.column_idx);
                 reader.determinePagesToPrefetch(column, row_subgroup, row_group, prefetches);
 
                 /// Side note: would be nice to avoid reading the dictionary if all dictionary-encoded
@@ -738,7 +753,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                     prefetches.push_back(&column.data_pages_prefetch);
                 }
 
-                double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
+                double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, column_info);
                 size_t column_memory = static_cast<size_t>(bytes_per_row * static_cast<double>(row_subgroup.filter.rows_pass));
                 subchunk.column_and_offsets_memory = MemoryUsageToken(column_memory, &diff);
                 break;
@@ -924,6 +939,11 @@ void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff &
 {
     row_subgroup.filter.clear(&diff);
     row_subgroup.output.clear();
+    row_subgroup.formed_output_columns.clear();
+    row_subgroup.formed_parsed_object_source_columns.clear();
+    row_subgroup.variant_metadata_states.clear();
+    row_subgroup.variant_source_states.clear();
+    row_subgroup.variant_outputs_remaining.clear();
     for (ColumnSubchunk & col : row_subgroup.columns)
         col.column_and_offsets_memory.reset(&diff);
 }
@@ -1091,7 +1111,8 @@ ReadManager::ReadResult ReadManager::read()
     RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
     RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
     chassert(row_subgroup.stage == ReadStage::Deliver);
-    Columns output_columns(reader.sample_block->columns());
+    const Block & output_header = *reader.sample_block;
+    Columns output_columns(output_header.columns());
     for (size_t i = 0; i < output_columns.size(); ++i)
         output_columns[i] = std::move(reader.getOrFormOutputColumn(row_subgroup, i));
     Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);

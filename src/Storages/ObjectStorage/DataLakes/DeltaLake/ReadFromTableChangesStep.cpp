@@ -72,7 +72,10 @@ void ReadFromDeltaLakeTableChangesStep::applyFilters(ActionDAGNodes added_filter
 void ReadFromDeltaLakeTableChangesStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     query_info.prewhere_info = prewhere_info_value;
-    output_header = std::make_shared<const Block>(header);
+    output_header = std::make_shared<const Block>(SourceStepWithFilter::applyPrewhereActions(
+        header,
+        query_info.row_level_filter,
+        query_info.prewhere_info));
 }
 
 void ReadFromDeltaLakeTableChangesStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

@@ -10,20 +10,25 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnVariant.h>
 #include <Core/Block.h>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/NestedUtils.h>
+#include <IO/ReadHelpers.h>
+#include <Processors/Formats/Impl/Parquet/VariantUtils.h>
 
 /// This file deals with schema conversion and with repetition and definition levels.
 
@@ -70,6 +75,127 @@ namespace DB::Parquet
 
 namespace
 {
+
+struct DeclaredVariantObjectNode
+{
+    std::map<String, DeclaredVariantObjectNode, std::less<>> children;
+    DataTypePtr value_type;
+};
+
+String appendParquetPath(const String & path, std::string_view child)
+{
+    return appendVariantMetadataPath(path, child);
+}
+
+bool insertDeclaredVariantObjectPath(DeclaredVariantObjectNode & root, std::string_view path, const DataTypePtr & type)
+{
+    auto [head, tail] = Nested::splitName(path);
+    String key = unescapeDotInJSONKey(String(head));
+    DeclaredVariantObjectNode & child = root.children[key];
+    if (tail.empty())
+    {
+        if (!child.children.empty())
+            return false;
+
+        child.value_type = type;
+        return true;
+    }
+
+    if (child.value_type)
+        return false;
+
+    return insertDeclaredVariantObjectPath(child, tail, type);
+}
+
+DataTypePtr getDeclaredVariantShreddedTypeForParquetWriteImpl(const DataTypePtr & type);
+
+DataTypePtr buildDeclaredVariantObjectType(const DeclaredVariantObjectNode & root)
+{
+    if (root.children.empty())
+        return getDeclaredVariantShreddedTypeForParquetWriteImpl(root.value_type);
+
+    if (root.value_type)
+        return nullptr;
+
+    DataTypes field_types;
+    Names field_names;
+    for (const auto & [field_name, child_node] : root.children)
+    {
+        DataTypePtr child_type = buildDeclaredVariantObjectType(child_node);
+        if (!child_type)
+            continue;
+
+        field_names.push_back(field_name);
+        field_types.push_back(makeVariantWrappedTypedValueType(child_type));
+    }
+
+    if (field_types.empty())
+        return nullptr;
+
+    return std::make_shared<DataTypeTuple>(field_types, field_names);
+}
+
+DataTypePtr getDeclaredVariantShreddedTypeForParquetWriteImpl(const DataTypePtr & type)
+{
+    DataTypePtr normalized_type = unwrapVariantTypeHint(type);
+    if (!normalized_type)
+        return nullptr;
+
+    if (typeid_cast<const DataTypeDynamic *>(normalized_type.get()))
+        return nullptr;
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(normalized_type.get()))
+    {
+        DataTypePtr child_type = getDeclaredVariantShreddedTypeForParquetWriteImpl(array_type->getNestedType());
+        if (!child_type)
+            return nullptr;
+
+        return std::make_shared<DataTypeArray>(makeVariantWrappedTypedValueType(child_type));
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_type.get()))
+    {
+        if (!tuple_type->hasExplicitNames())
+            return nullptr;
+
+        DataTypes field_types;
+        Names field_names;
+        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+        {
+            DataTypePtr child_type = getDeclaredVariantShreddedTypeForParquetWriteImpl(tuple_type->getElement(i));
+            if (!child_type)
+                continue;
+
+            field_names.push_back(tuple_type->getNameByPosition(i + 1));
+            field_types.push_back(makeVariantWrappedTypedValueType(child_type));
+        }
+
+        if (field_types.empty())
+            return nullptr;
+
+        return std::make_shared<DataTypeTuple>(field_types, field_names);
+    }
+
+    if (const auto * object_type = typeid_cast<const DataTypeObject *>(normalized_type.get()))
+    {
+        if (object_type->getSchemaFormat() != DataTypeObject::SchemaFormat::JSON)
+            return nullptr;
+
+        DeclaredVariantObjectNode root;
+        for (const auto & [path, path_type] : object_type->getTypedPaths())
+        {
+            if (!insertDeclaredVariantObjectPath(root, path, path_type))
+                return nullptr;
+        }
+
+        return buildDeclaredVariantObjectType(root);
+    }
+
+    if (typeid_cast<const DataTypeMap *>(normalized_type.get()))
+        return nullptr;
+
+    return normalized_type;
+}
 
 void assertNoDefOverflow(ColumnChunkWriteState & s)
 {
@@ -229,11 +355,23 @@ parq::CompressionCodec::type compressionMethodToParquet(CompressionMethod c)
 
 /// Depth-first traversal of the schema tree for this column.
 void prepareColumnRecursive(
-    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids);
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
+    VariantWrapperPaths * out_variant_wrapper_paths,
+    bool inside_variant = false, bool variant_binary_payload = false);
+
+void analyzeVariantColumnTypesRecursive(
+    ColumnPtr column,
+    DataTypePtr type,
+    const WriteOptions & options,
+    const FormatSettings & format_settings,
+    VariantWriteAnalysisMap & out_variant_analysis,
+    const String & path);
 
 void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::string & name,
-    const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id)
+    const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id,
+    bool variant_binary_payload = false)
 {
     /// Add physical column info.
     auto & state = states.emplace_back();
@@ -241,6 +379,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
     state.type = type;
     state.compression = options.compression;
     state.compression_level = options.compression_level;
+    state.use_binary_string_annotation = variant_binary_payload;
 
     state.column_chunk.__isset.meta_data = true;
     state.column_chunk.meta_data.__set_path_in_schema({name});
@@ -437,7 +576,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             {
                 fixed_string(assert_cast<const DataTypeFixedString &>(*type).getN());
             }
-            else if (options.output_string_as_string)
+            else if (options.output_string_as_string && !state.use_binary_string_annotation)
             {
                 parq::LogicalType t;
                 t.__set_STRING({});
@@ -483,9 +622,124 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
     }
 }
 
+void prepareColumnVariant(
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id,
+    const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
+    VariantWrapperPaths * out_variant_wrapper_paths)
+{
+    DataTypePtr shredded_type;
+    if (variant_type_hints)
+    {
+        auto it = variant_type_hints->find(path);
+        if (it != variant_type_hints->end())
+            shredded_type = it->second;
+    }
+
+    if (!shredded_type)
+    {
+        DataTypePtr declared_shredded_type = getDeclaredVariantShreddedTypeForParquetWrite(type);
+        if (declared_shredded_type
+            && (column->empty() || !variantWriteRequiresFileLevelAnalysis(type, options.output_json_as_variant)))
+        {
+            shredded_type = declared_shredded_type;
+        }
+    }
+
+    /// Inference and encoding are combined in a single call: when
+    /// shredded_type is null and out_variant_type_hints is requested, the
+    /// function infers the type from the data and uses it for encoding in
+    /// one pass.
+    DataTypePtr inferred_shredded_type;
+    PreparedVariantColumns prepared = prepareVariantColumnsForWrite(
+        column, type, format_settings, shredded_type,
+        (!shredded_type && out_variant_type_hints) ? &inferred_shredded_type : nullptr);
+
+    if (inferred_shredded_type)
+    {
+        shredded_type = inferred_shredded_type;
+        (*out_variant_type_hints)[path] = shredded_type;
+    }
+
+    auto & root_schema = schemas.emplace_back();
+    root_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
+    root_schema.__set_name(name);
+    root_schema.__set_num_children(shredded_type ? 3 : 2);
+    if (field_id)
+        root_schema.__set_field_id(static_cast<Int32>(*field_id));
+
+    parq::VariantType variant_type;
+    variant_type.__set_specification_version(1);
+    parq::LogicalType logical_type;
+    logical_type.__set_VARIANT(variant_type);
+    root_schema.__set_logicalType(logical_type);
+
+    size_t child_states_begin = states.size();
+
+    prepareColumnRecursive(
+        prepared.metadata_column,
+        prepared.metadata_type,
+        "metadata",
+        options,
+        format_settings,
+        states,
+        schemas,
+        std::nullopt,
+        nullptr,
+        nullptr,
+        appendParquetPath(path, "metadata"),
+        appendParquetPath(schema_path, "metadata"),
+        out_variant_wrapper_paths,
+        true,
+        true);
+
+    prepareColumnRecursive(
+        prepared.value_column,
+        prepared.value_type,
+        "value",
+        options,
+        format_settings,
+        states,
+        schemas,
+        std::nullopt,
+        nullptr,
+        nullptr,
+        appendParquetPath(path, "value"),
+        appendParquetPath(schema_path, "value"),
+        out_variant_wrapper_paths,
+        true,
+        true);
+
+    if (shredded_type)
+    {
+        prepareColumnRecursive(
+            prepared.typed_value_column,
+            prepared.typed_value_type,
+            "typed_value",
+            options,
+            format_settings,
+            states,
+            schemas,
+            std::nullopt,
+            nullptr,
+            nullptr,
+            appendParquetPath(path, "typed_value"),
+            appendParquetPath(schema_path, "typed_value"),
+            out_variant_wrapper_paths,
+            true,
+            false);
+    }
+
+    for (size_t i = child_states_begin; i < states.size(); ++i)
+        states[i].column_chunk.meta_data.path_in_schema.insert(states[i].column_chunk.meta_data.path_in_schema.begin(), name);
+}
+
 void prepareColumnNullable(
-    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & field_ids)
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & field_ids,
+    const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
+    VariantWrapperPaths * out_variant_wrapper_paths,
+    bool inside_variant, bool variant_binary_payload)
 {
     const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
     ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
@@ -494,9 +748,26 @@ void prepareColumnNullable(
 
     size_t child_states_begin = states.size();
     size_t child_schema_idx = schemas.size();
+    VariantWrapperPaths nested_variant_wrapper_paths;
 
-    prepareColumnRecursive(nested_column, nested_type, name, options, states, schemas, field_ids);
+    prepareColumnRecursive(
+        nested_column,
+        nested_type,
+        name,
+        options,
+        format_settings,
+        states,
+        schemas,
+        field_ids,
+        variant_type_hints,
+        out_variant_type_hints,
+        path,
+        schema_path,
+        out_variant_wrapper_paths ? &nested_variant_wrapper_paths : nullptr,
+        inside_variant,
+        variant_binary_payload);
 
+    bool inserted_nullable_wrapper = false;
     if (schemas[child_schema_idx].repetition_type == parq::FieldRepetitionType::REQUIRED)
     {
         /// Normal case: the column inside Nullable is a primitive type (not Nullable/Array/Map).
@@ -513,10 +784,35 @@ void prepareColumnNullable(
         schema.__set_repetition_type(parq::FieldRepetitionType::OPTIONAL);
         schema.__set_name("nullable");
         schema.__set_num_children(1);
+        inserted_nullable_wrapper = true;
         for (size_t i = child_states_begin; i < states.size(); ++i)
         {
-            Strings & path = states[i].column_chunk.meta_data.path_in_schema;
-            path.insert(path.begin(), schema.name + ".");
+            Strings & state_schema_path = states[i].column_chunk.meta_data.path_in_schema;
+            state_schema_path.insert(state_schema_path.begin(), schema.name + ".");
+        }
+    }
+
+    if (out_variant_wrapper_paths)
+    {
+        if (inserted_nullable_wrapper)
+        {
+            String nullable_schema_path = appendParquetPath(schema_path, "nullable");
+            String child_prefix = schema_path + '\x1f';
+            for (const auto & nested_path : nested_variant_wrapper_paths)
+            {
+                if (nested_path == schema_path)
+                {
+                    out_variant_wrapper_paths->insert(nullable_schema_path);
+                    continue;
+                }
+
+                if (nested_path.starts_with(child_prefix))
+                    out_variant_wrapper_paths->insert(nullable_schema_path + nested_path.substr(schema_path.size()));
+            }
+        }
+        else
+        {
+            out_variant_wrapper_paths->insert(nested_variant_wrapper_paths.begin(), nested_variant_wrapper_paths.end());
         }
     }
 
@@ -545,8 +841,11 @@ std::optional<std::unordered_map<String, Int64>> buildSubFieldIds(
 }
 
 void prepareColumnTuple(
-    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
+    VariantWrapperPaths * out_variant_wrapper_paths,
+    bool inside_variant, bool variant_binary_payload)
 {
     const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
@@ -571,21 +870,56 @@ void prepareColumnTuple(
 
     size_t child_states_begin = states.size();
 
+    std::optional<VariantWrapperLayout> wrapper_layout;
+    if (inside_variant)
+    {
+        wrapper_layout = tryGetVariantWrapperLayout(type);
+        if (wrapper_layout && wrapper_layout->typed_value_pos.has_value() && out_variant_wrapper_paths)
+            out_variant_wrapper_paths->insert(schema_path);
+    }
+
     auto sub_field_ids = buildSubFieldIds(column_field_ids, name);
     for (size_t i = 0; i < num_elements; ++i)
-        prepareColumnRecursive(column_tuple->getColumnPtr(i), type_tuple->getElement(i), type_tuple->getNameByPosition(i + 1), options, states, schemas, sub_field_ids);
+    {
+        bool child_inside_variant = inside_variant;
+        bool child_variant_binary_payload = variant_binary_payload;
+        if (wrapper_layout && wrapper_layout->typed_value_pos.has_value() && wrapper_layout->value_pos == i)
+            child_variant_binary_payload = true;
+        else if (wrapper_layout && wrapper_layout->typed_value_pos.has_value() && *wrapper_layout->typed_value_pos == i)
+            child_inside_variant = true;
+
+        prepareColumnRecursive(
+            column_tuple->getColumnPtr(i),
+            type_tuple->getElement(i),
+            type_tuple->getNameByPosition(i + 1),
+            options,
+            format_settings,
+            states,
+            schemas,
+            sub_field_ids,
+            variant_type_hints,
+            out_variant_type_hints,
+            appendParquetPath(path, type_tuple->getNameByPosition(i + 1)),
+            appendParquetPath(schema_path, type_tuple->getNameByPosition(i + 1)),
+            out_variant_wrapper_paths,
+            child_inside_variant,
+            child_variant_binary_payload);
+    }
 
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
-        Strings & path = states[i].column_chunk.meta_data.path_in_schema;
+        Strings & state_schema_path = states[i].column_chunk.meta_data.path_in_schema;
         /// O(nesting_depth^2), but who cares.
-        path.insert(path.begin(), name);
+        state_schema_path.insert(state_schema_path.begin(), name);
     }
 }
 
 void prepareColumnArray(
-    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
+    VariantWrapperPaths * out_variant_wrapper_paths,
+    bool inside_variant, bool variant_binary_payload)
 {
     const auto * column_array = assert_cast<const ColumnArray *>(column.get());
     ColumnPtr nested_column = column_array->getDataPtr();
@@ -626,21 +960,39 @@ void prepareColumnArray(
     size_t child_states_begin = states.size();
 
     /// Recurse.
-    prepareColumnRecursive(nested_column, nested_type, "element", options, states, schemas, buildSubFieldIds(column_field_ids, name));
+    prepareColumnRecursive(
+        nested_column,
+        nested_type,
+        "element",
+        options,
+        format_settings,
+        states,
+        schemas,
+        buildSubFieldIds(column_field_ids, name),
+        variant_type_hints,
+        out_variant_type_hints,
+        appendParquetPath(path, "element"),
+        appendParquetPath(appendParquetPath(schema_path, "list"), "element"),
+        out_variant_wrapper_paths,
+        inside_variant,
+        variant_binary_payload);
 
     /// Update repetition+definition levels and fully-qualified column names (x -> myarray.list.x).
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
-        Strings & path = states[i].column_chunk.meta_data.path_in_schema;
-        path.insert(path.begin(), path_prefix.begin(), path_prefix.end());
+        Strings & state_schema_path = states[i].column_chunk.meta_data.path_in_schema;
+        state_schema_path.insert(state_schema_path.begin(), path_prefix.begin(), path_prefix.end());
 
         updateRepDefLevelsForArray(states[i], offsets);
     }
 }
 
 void prepareColumnMap(
-    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
+    VariantWrapperPaths * out_variant_wrapper_paths,
+    bool inside_variant, bool variant_binary_payload)
 {
     const auto * column_map = assert_cast<const ColumnMap *>(column.get());
     const auto * column_array = &column_map->getNestedColumn();
@@ -680,14 +1032,44 @@ void prepareColumnMap(
     size_t child_states_begin = states.size();
     auto child_field_ids = buildSubFieldIds(column_field_ids, name);
     const auto * column_tuple_typed = assert_cast<const ColumnTuple *>(column_tuple.get());
-    prepareColumnRecursive(column_tuple_typed->getColumnPtr(0), map_type->getKeyType(), "key", options, states, schemas, child_field_ids);
-    prepareColumnRecursive(column_tuple_typed->getColumnPtr(1), map_type->getValueType(), "value", options, states, schemas, child_field_ids);
+    prepareColumnRecursive(
+        column_tuple_typed->getColumnPtr(0),
+        map_type->getKeyType(),
+        "key",
+        options,
+        format_settings,
+        states,
+        schemas,
+        child_field_ids,
+        variant_type_hints,
+        out_variant_type_hints,
+        appendParquetPath(appendParquetPath(path, "key_value"), "key"),
+        appendParquetPath(appendParquetPath(schema_path, "key_value"), "key"),
+        out_variant_wrapper_paths,
+        inside_variant,
+        variant_binary_payload);
+    prepareColumnRecursive(
+        column_tuple_typed->getColumnPtr(1),
+        map_type->getValueType(),
+        "value",
+        options,
+        format_settings,
+        states,
+        schemas,
+        child_field_ids,
+        variant_type_hints,
+        out_variant_type_hints,
+        appendParquetPath(appendParquetPath(path, "key_value"), "value"),
+        appendParquetPath(appendParquetPath(schema_path, "key_value"), "value"),
+        out_variant_wrapper_paths,
+        inside_variant,
+        variant_binary_payload);
 
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
-        Strings & path = states[i].column_chunk.meta_data.path_in_schema;
-        path.insert(path.begin(), "key_value");
-        path.insert(path.begin(), name);
+        Strings & state_schema_path = states[i].column_chunk.meta_data.path_in_schema;
+        state_schema_path.insert(state_schema_path.begin(), "key_value");
+        state_schema_path.insert(state_schema_path.begin(), name);
 
         updateRepDefLevelsForArray(states[i], offsets);
     }
@@ -761,8 +1143,11 @@ void validateIcebergFieldIds(
 }
 
 void prepareColumnRecursive(
-    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
+    VariantWrapperPaths * out_variant_wrapper_paths,
+    bool inside_variant, bool variant_binary_payload)
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
     /// parquet dictionary-encoding.
@@ -770,30 +1155,184 @@ void prepareColumnRecursive(
 
     switch (type->getTypeId())
     {
-        case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas, column_field_ids); break;
-        case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas, column_field_ids); break;
-        case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas, column_field_ids); break;
-        case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas, column_field_ids); break;
+        case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, inside_variant, variant_binary_payload); break;
+        case TypeIndex::Array: prepareColumnArray(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, inside_variant, variant_binary_payload); break;
+        case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, inside_variant, variant_binary_payload); break;
+        case TypeIndex::Map: prepareColumnMap(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, inside_variant, variant_binary_payload); break;
+        case TypeIndex::Object:
+        {
+            const auto * object_type = typeid_cast<const DataTypeObject *>(type.get());
+            if (options.output_json_as_variant
+                && object_type
+                && object_type->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON)
+            {
+                prepareColumnVariant(column, type, name, options, format_settings, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths);
+            }
+            else
+            {
+                preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_binary_payload);
+            }
+            break;
+        }
+        case TypeIndex::Dynamic:
+            prepareColumnVariant(column, type, name, options, format_settings, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths);
+            break;
         case TypeIndex::LowCardinality:
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
             if (nested_type->isNullable())
                 prepareColumnNullable(
-                    column->convertToFullColumnIfLowCardinality(), nested_type, name, options, states, schemas, column_field_ids);
+                    column->convertToFullColumnIfLowCardinality(), nested_type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, inside_variant, variant_binary_payload);
             else
                 /// Use nested data type, but keep ColumnLowCardinality. The encoder can deal with it.
-                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_binary_payload);
             break;
         }
         default:
-            preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+            preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_binary_payload);
+            break;
+    }
+}
+
+void analyzeVariantColumnTypesRecursive(
+    ColumnPtr column,
+    DataTypePtr type,
+    const WriteOptions & options,
+    const FormatSettings & format_settings,
+    VariantWriteAnalysisMap & out_variant_analysis,
+    const String & path)
+{
+    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+        {
+            const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
+            auto nested_type = assert_cast<const DataTypeNullable &>(*type).getNestedType();
+            analyzeVariantColumnTypesRecursive(column_nullable->getNestedColumnPtr(), nested_type, options, format_settings, out_variant_analysis, path);
+            break;
+        }
+        case TypeIndex::Array:
+        {
+            const auto * column_array = assert_cast<const ColumnArray *>(column.get());
+            auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+            analyzeVariantColumnTypesRecursive(column_array->getDataPtr(), nested_type, options, format_settings, out_variant_analysis, appendParquetPath(path, "element"));
+            break;
+        }
+        case TypeIndex::Tuple:
+        {
+            const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
+            const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
+            for (size_t i = 0; i < type_tuple->getElements().size(); ++i)
+            {
+                analyzeVariantColumnTypesRecursive(
+                    column_tuple->getColumnPtr(i),
+                    type_tuple->getElement(i),
+                    options,
+                    format_settings,
+                    out_variant_analysis,
+                    appendParquetPath(path, type_tuple->getNameByPosition(i + 1)));
+            }
+            break;
+        }
+        case TypeIndex::Map:
+        {
+            const auto * column_map = assert_cast<const ColumnMap *>(column.get());
+            const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
+            DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(map_type->getKeyValueTypes(), Strings{"key", "value"});
+            analyzeVariantColumnTypesRecursive(
+                column_map->getNestedColumn().getDataPtr(),
+                tuple_type,
+                options,
+                format_settings,
+                out_variant_analysis,
+                appendParquetPath(path, "key_value"));
+            break;
+        }
+        case TypeIndex::Object:
+        {
+            const auto * object_type = typeid_cast<const DataTypeObject *>(type.get());
+            if (options.output_json_as_variant && object_type && object_type->getSchemaFormat() == DataTypeObject::SchemaFormat::JSON)
+                analyzeVariantColumnForWrite(*column, type, format_settings, out_variant_analysis[path]);
+            break;
+        }
+        case TypeIndex::Dynamic:
+            analyzeVariantColumnForWrite(*column, type, format_settings, out_variant_analysis[path]);
+            break;
+        case TypeIndex::LowCardinality:
+        {
+            auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+            analyzeVariantColumnTypesRecursive(column->convertToFullColumnIfLowCardinality(), nested_type, options, format_settings, out_variant_analysis, path);
+            break;
+        }
+        default:
             break;
     }
 }
 
 }
 
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
+DataTypePtr getDeclaredVariantShreddedTypeForParquetWrite(const DataTypePtr & type)
+{
+    return getDeclaredVariantShreddedTypeForParquetWriteImpl(type);
+}
+
+bool variantWriteRequiresFileLevelAnalysis(const DataTypePtr & type, bool output_json_as_variant)
+{
+    DataTypePtr normalized_type = unwrapVariantTypeHint(type);
+    if (!normalized_type)
+        return false;
+
+    if (typeid_cast<const DataTypeDynamic *>(normalized_type.get()))
+        return true;
+
+    if (const auto * object_type = typeid_cast<const DataTypeObject *>(normalized_type.get()))
+    {
+        if (!output_json_as_variant || object_type->getSchemaFormat() != DataTypeObject::SchemaFormat::JSON)
+            return false;
+
+        if (object_type->getMaxDynamicPaths() > 0)
+            return true;
+
+        for (const auto & [_, path_type] : object_type->getTypedPaths())
+        {
+            if (variantWriteRequiresFileLevelAnalysis(path_type, output_json_as_variant))
+                return true;
+        }
+
+        return false;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(normalized_type.get()))
+        return variantWriteRequiresFileLevelAnalysis(array_type->getNestedType(), output_json_as_variant);
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_type.get()))
+    {
+        for (const auto & element : tuple_type->getElements())
+        {
+            if (variantWriteRequiresFileLevelAnalysis(element, output_json_as_variant))
+                return true;
+        }
+
+        return false;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(normalized_type.get()))
+    {
+        return variantWriteRequiresFileLevelAnalysis(map_type->getKeyType(), output_json_as_variant)
+            || variantWriteRequiresFileLevelAnalysis(map_type->getValueType(), output_json_as_variant);
+    }
+
+    return false;
+}
+
+SchemaElements convertSchema(
+    const Block & sample,
+    const WriteOptions & options,
+    const FormatSettings & format_settings,
+    const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    VariantWrapperPaths * out_variant_wrapper_paths)
 {
     SchemaElements schema;
     auto & root = schema.emplace_back();
@@ -808,7 +1347,7 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
         if (column_field_ids)
             validateIcebergFieldIds(c.type, c.name, *column_field_ids);
 
-        prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema, column_field_ids);
+        prepareColumnForWrite(c.column, c.type, c.name, options, format_settings, nullptr, &schema, column_field_ids, nullptr, nullptr, out_variant_wrapper_paths);
     }
 
     return schema;
@@ -899,8 +1438,9 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 }
 
 void prepareColumnForWrite(
-    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, VariantWrapperPaths * out_variant_wrapper_paths)
 {
     if (column->empty() && out_columns_to_write != nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column passed to Parquet encoder");
@@ -909,7 +1449,7 @@ void prepareColumnForWrite(
     SchemaElements schemas;
     if (options.write_geometadata)
         prepareGeoColumn(column, type);
-    prepareColumnRecursive(column, type, name, options, states, schemas, column_field_ids);
+    prepareColumnRecursive(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, name, name, out_variant_wrapper_paths);
 
     if (out_columns_to_write)
         for (auto & s : states)
@@ -919,6 +1459,20 @@ void prepareColumnForWrite(
 
     if (column->empty())
         states.clear();
+}
+
+void analyzeVariantColumnTypesForWrite(
+    ColumnPtr column,
+    DataTypePtr type,
+    const WriteOptions & options,
+    const FormatSettings & format_settings,
+    VariantWriteAnalysisMap & out_variant_analysis,
+    const String & path)
+{
+    if (column->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column passed to `Parquet` `VARIANT` analyzer");
+
+    analyzeVariantColumnTypesRecursive(std::move(column), std::move(type), options, format_settings, out_variant_analysis, path);
 }
 
 }

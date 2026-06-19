@@ -370,7 +370,7 @@ struct FormatSettings
         bool output_datetime_as_uint32 = false;
         bool output_date_as_uint16 = false;
         bool output_enum_as_byte_array = false;
-
+        bool output_json_as_variant = false;
         bool parallel_encoding = true;
         bool write_page_index = false;
         bool write_bloom_filter = false;

@@ -2,10 +2,14 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Processors/Formats/Impl/Parquet/VariantWrite.h>
 #include <generated/parquet_types.h>
 #include <Common/PODArray.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -25,6 +29,7 @@ struct WriteOptions
     bool output_datetime_as_uint32 = false;
     bool output_date_as_uint16 = false;
     bool output_enum_as_byte_array = false;
+    bool output_json_as_variant = false;
 
     /// Note: the meaning of some compression methods here is different from
     /// wrapReadBufferWithCompressionMethod:
@@ -96,6 +101,7 @@ struct ColumnChunkWriteState
     int compression_level = 3;
     Int64 datetime_multiplier = 1; // for converting e.g. seconds to milliseconds
     bool is_bool = false; // bool vs UInt8 have the same column type but are encoded differently
+    bool use_binary_string_annotation = false; // write BYTE_ARRAY without UTF8/STRING logical annotation
 
     /// Repetition and definition levels. Produced by prepareColumnForWrite().
     /// def is empty iff max_def == 0, which means no arrays or nullables.
@@ -135,6 +141,12 @@ struct FileWriteState
 
 using SchemaElements = std::vector<parq::SchemaElement>;
 using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
+using VariantWriteTypeHints = std::unordered_map<std::string, DataTypePtr>;
+using VariantWriteAnalysisMap = std::unordered_map<std::string, VariantWriteAnalysisEntry>;
+using VariantWrapperPaths = std::unordered_set<String>;
+
+DataTypePtr getDeclaredVariantShreddedTypeForParquetWrite(const DataTypePtr & type);
+bool variantWriteRequiresFileLevelAnalysis(const DataTypePtr & type, bool output_json_as_variant);
 
 /// Parquet file consists of row groups, which consist of column chunks.
 ///
@@ -168,11 +180,28 @@ using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 /// Parquet schema is a tree of SchemaElements, flattened into a list in depth-first order.
 /// Leaf nodes correspond to physical columns of primitive types. Inner nodes describe logical
 /// groupings of those columns, e.g. tuples or structs.
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids);
+SchemaElements convertSchema(
+    const Block & sample,
+    const WriteOptions & options,
+    const FormatSettings & format_settings,
+    const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    VariantWrapperPaths * out_variant_wrapper_paths = nullptr);
 
 void prepareColumnForWrite(
-    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt);
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr,
+    const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt,
+    const VariantWriteTypeHints * variant_type_hints = nullptr,
+    VariantWriteTypeHints * out_variant_type_hints = nullptr,
+    VariantWrapperPaths * out_variant_wrapper_paths = nullptr);
+
+void analyzeVariantColumnTypesForWrite(
+    ColumnPtr column,
+    DataTypePtr type,
+    const WriteOptions & options,
+    const FormatSettings & format_settings,
+    VariantWriteAnalysisMap & out_variant_analysis,
+    const String & path);
 
 void writeFileHeader(FileWriteState & file, WriteBuffer & out);
 
@@ -195,6 +224,7 @@ void writeFileFooter(FileWriteState & file,
     SchemaElements schema,
     const WriteOptions & options,
     WriteBuffer & out,
-    const Block & header);
+    const Block & header,
+    const VariantWrapperPaths & variant_wrapper_paths = {});
 
 }

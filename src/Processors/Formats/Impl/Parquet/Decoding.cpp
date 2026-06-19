@@ -1,6 +1,8 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/UUIDUtils.h>
 
 #include <base/arithmeticOverflow.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Common/FloatUtils.h>
 
@@ -73,10 +75,26 @@ struct BitPackedRLEDecoder : public PageDecoder
     }
     void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
     {
-        (void)filter;
-        (void)filter_offset;
         auto & out = assert_cast<ColumnVector<T> &>(col).getData();
-        decodeArray(num_values, out);
+        if (!filter)
+        {
+            decodeArray(num_values, out);
+            return;
+        }
+
+        size_t pass_count = 0;
+        for (size_t i = 0; i < num_values; ++i)
+            pass_count += filter[filter_offset + i];
+
+        if (pass_count == 0)
+        {
+            skip(num_values);
+            return;
+        }
+
+        size_t start = out.size();
+        out.resize(start + pass_count);
+        decodeFiltered(num_values, &out[start], filter, filter_offset);
     }
     void decodeArray(size_t num_values, PaddedPODArray<T> & out)
     {
@@ -179,6 +197,74 @@ struct BitPackedRLEDecoder : public PageDecoder
                 if (!run_length)
                     data += run_bytes;
             }
+        }
+    }
+
+    void decodeFiltered(size_t num_values, T * out, const UInt8 * filter, size_t filter_offset)
+    {
+        if (bit_width == 0)
+        {
+            for (size_t i = 0; i < num_values; ++i)
+            {
+                if (filter[filter_offset + i])
+                {
+                    *out = 0;
+                    ++out;
+                }
+            }
+
+            return;
+        }
+
+        const T value_mask = T((1ul << bit_width) - 1);
+        size_t filter_pos = filter_offset;
+
+        while (num_values)
+        {
+            if (run_length == 0)
+                startRun();
+
+            size_t n = std::min(run_length, num_values);
+            run_length -= n;
+            num_values -= n;
+
+            if (run_is_rle)
+            {
+                const T v = val;
+                for (size_t i = 0; i < n; ++i)
+                {
+                    if (filter[filter_pos + i])
+                    {
+                        *out = v;
+                        ++out;
+                    }
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < n; ++i)
+                {
+                    size_t x = 0;
+                    memcpy(&x, data + (bit_idx >> 3), 8);
+                    x = (x >> (bit_idx & 7)) & value_mask;
+
+                    if (x >= limit)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
+
+                    if (filter[filter_pos + i])
+                    {
+                        *out = static_cast<T>(x);
+                        ++out;
+                    }
+
+                    bit_idx += bit_width;
+                }
+
+                if (!run_length)
+                    data += run_bytes;
+            }
+
+            filter_pos += n;
         }
     }
 };
@@ -1278,6 +1364,53 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
     }
 }
 
+void Dictionary::insertIndexesIntoLowCardinalityColumn(const ColumnUInt32 & indexes_col, ColumnLowCardinality & out)
+{
+    if (mode == Mode::StringPlain && !col)
+    {
+        auto keys = ColumnString::create();
+        keys->reserve(count);
+        for (size_t idx = 0; idx < count; ++idx)
+        {
+            size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
+            size_t len = offsets[idx] - start;
+            keys->insertData(data.data() + start, len);
+        }
+        col = std::move(keys);
+    }
+
+    switch (mode)
+    {
+        case Mode::StringPlain:
+        case Mode::Column:
+            out.insertRangeFromDictionaryEncodedColumn(*col, indexes_col);
+            break;
+        case Mode::FixedSize:
+        {
+            if (!col)
+            {
+                auto keys = out.getDictionary().getNestedColumn()->cloneEmpty();
+                keys->reserve(count);
+
+                auto dictionary_indexes = ColumnUInt32::create();
+                auto & dictionary_indexes_data = dictionary_indexes->getData();
+                dictionary_indexes_data.resize(count);
+                for (size_t idx = 0; idx < count; ++idx)
+                    dictionary_indexes_data[idx] = static_cast<UInt32>(idx);
+
+                index(*dictionary_indexes, *keys);
+                col = std::move(keys);
+            }
+
+            out.insertRangeFromDictionaryEncodedColumn(*col, indexes_col);
+            break;
+        }
+        case Mode::Uninitialized:
+            chassert(false);
+            break;
+    }
+}
+
 void memcpyIntoColumn(const char * data, size_t num_values, size_t value_size, IColumn & col)
 {
     auto to = col.insertRawUninitialized(num_values);
@@ -1415,7 +1548,7 @@ void FloatConverter<T>::convertField(std::span<const char> data, bool /*is_max*/
     if (data.size() != input_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in float statistics: {} != {}", data.size(), input_size);
 
-    T x;
+    T x = 0;
     memcpy(&x, data.data(), sizeof(x));
 
     /// parquet.thrift says:
@@ -1448,26 +1581,6 @@ void Float16Converter::convertColumn(std::span<const char> data, size_t num_valu
         memcpy(&x, data.data() + i * 2, 2);
         out_data.push_back(convertFloat16ToFloat32(x));
     }
-}
-
-static inline UUID decodeParquetUUID(const char * data)
-{
-    UUID res;
-    std::memcpy(&res, data, 16);
-    auto * bytes = reinterpret_cast<uint8_t *>(&res);
-
-    // Parquet demands Big-Endian (network byte order) for UUIDs
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        std::reverse(bytes, bytes + 8);
-        std::reverse(bytes + 8, bytes + 16);
-    }
-    else
-    {
-        std::swap_ranges(bytes, bytes + 8, bytes + 8);
-    }
-
-    return res;
 }
 
 void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const

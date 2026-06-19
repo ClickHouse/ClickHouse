@@ -2,6 +2,8 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -26,6 +28,168 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_parsing_to_custom_serialization;
+}
+
+namespace
+{
+
+bool containsCustomNamedType(const IDataType * type)
+{
+    if (!type)
+        return false;
+
+    bool result = type->hasCustomName();
+    type->forEachChild([&](const IDataType & child)
+    {
+        result |= child.hasCustomName();
+    });
+    return result;
+}
+
+void addRequiredColumnsToHeader(Block & header, const ActionsDAG & dag)
+{
+    for (const auto & col : dag.getRequiredColumns())
+    {
+        if (header.has(col.name))
+            continue;
+
+        header.insert({col.type, col.name});
+    }
+}
+
+bool canExtractColumnFromFormatHeader(const Block & format_header, const NameAndTypePair & column)
+{
+    return format_header.has(column.name) || format_header.has(column.getNameInStorage());
+}
+
+void addRetainedActionInputs(
+    Block & header,
+    const Block & header_before_actions,
+    const ActionsDAG & dag,
+    const NameSet & requested_input_names,
+    const std::optional<String> & removed_column_name,
+    bool retain_subcolumn_inputs)
+{
+    for (const auto & col : dag.getRequiredColumns())
+    {
+        const bool is_requested_input = requested_input_names.contains(col.name);
+        const bool is_retained_subcolumn_input = retain_subcolumn_inputs && !Nested::splitName(col.name).second.empty();
+        if (!is_requested_input && !is_retained_subcolumn_input)
+            continue;
+        if (removed_column_name && col.name == *removed_column_name && !is_retained_subcolumn_input)
+            continue;
+        if (header.has(col.name))
+            continue;
+
+        header.insert(header_before_actions.getByName(col.name));
+    }
+}
+
+Block applyRowLevelFilterHeaderActions(
+    Block header,
+    const FilterDAGInfoPtr & row_level_filter,
+    const NameSet & requested_input_names)
+{
+    addRequiredColumnsToHeader(header, row_level_filter->actions);
+    const Block header_before_actions = header;
+    header = SourceStepWithFilter::applyPrewhereActions(std::move(header), row_level_filter, nullptr);
+    addRetainedActionInputs(
+        header,
+        header_before_actions,
+        row_level_filter->actions,
+        requested_input_names,
+        row_level_filter->do_remove_column ? std::optional<String>{row_level_filter->column_name} : std::nullopt,
+        false);
+
+    return header;
+}
+
+Block applyPrewhereHeaderActions(
+    Block header,
+    const PrewhereInfoPtr & prewhere_info,
+    const NameSet & requested_input_names)
+{
+    addRequiredColumnsToHeader(header, prewhere_info->prewhere_actions);
+    const Block header_before_actions = header;
+    header = SourceStepWithFilter::applyPrewhereActions(std::move(header), nullptr, prewhere_info);
+    addRetainedActionInputs(
+        header,
+        header_before_actions,
+        prewhere_info->prewhere_actions,
+        requested_input_names,
+        prewhere_info->remove_prewhere_column ? std::optional<String>{prewhere_info->prewhere_column_name} : std::nullopt,
+        true);
+
+    return header;
+}
+
+void addInternalFilterInputColumns(Block & filter_input_header, const Block & format_header, const ActionsDAG & dag)
+{
+    for (const auto & col : dag.getRequiredColumns())
+    {
+        if (format_header.has(col.name) || filter_input_header.has(col.name))
+            continue;
+
+        filter_input_header.insert({col.type, col.name});
+    }
+}
+
+NameSet getRemovedFilterColumns(const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
+{
+    NameSet result;
+    if (row_level_filter && row_level_filter->do_remove_column)
+        result.insert(row_level_filter->column_name);
+    if (prewhere_info && prewhere_info->remove_prewhere_column)
+        result.insert(prewhere_info->prewhere_column_name);
+    return result;
+}
+
+void addRetainedFilterOutputs(
+    NamesAndTypesList & requested_columns,
+    const Block & format_header,
+    const ActionsDAG & dag,
+    const std::optional<String> & removed_output_name)
+{
+    for (const auto * output : dag.getOutputs())
+    {
+        if (removed_output_name && output->result_name == *removed_output_name)
+            continue;
+        if (requested_columns.contains(output->result_name))
+            continue;
+
+        const auto & column = format_header.getByName(output->result_name);
+        requested_columns.emplace_back(column.name, column.type);
+    }
+}
+
+Block buildSourceHeader(
+    const NamesAndTypesList & requested_columns,
+    const NamesAndTypesList & hive_partition_columns,
+    const NamesAndTypesList & requested_virtual_columns)
+{
+    Block source_header;
+    for (const auto & column : requested_columns)
+        source_header.insert({column.type->createColumn(), column.type, column.name});
+    for (const auto & column : hive_partition_columns)
+        source_header.insert({column.type->createColumn(), column.type, column.name});
+    for (const auto & column : requested_virtual_columns)
+        source_header.insert({column.type->createColumn(), column.type, column.name});
+    return source_header;
+}
+
+ColumnsDescription buildColumnsDescriptionAfterPrewhere(const ReadFromFormatInfo & info, const Block & format_header)
+{
+    ColumnsDescription result;
+    for (const auto & col : format_header)
+    {
+        if (info.format_header.has(col.name))
+            result.add(info.columns_description.get(col.name));
+        else
+            result.add(ColumnDescription(col.name, col.type));
+    }
+    return result;
+}
+
 }
 
 ReadFromFormatInfo prepareReadingFromFormat(
@@ -127,12 +291,9 @@ ReadFromFormatInfo prepareReadingFromFormat(
 Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
 {
     /// Format can read tuple element subcolumns, e.g. `t.x` or `t.a.x`.
+    /// Some formats can also read fixed `JSON` / `Dynamic` subcolumns directly.
     /// But we still need to do some processing on the set of requested columns:
-    ///  * If a non-tuple-element subcolumn is requested, request the whole column.
-    ///    E.g. if the type of `t` is Object, `t.x` is a dynamic subcolumn, and we should
-    ///    request the whole `t` instead. Reading a subset of dynamic subcolumns is
-    ///    currently not supported by any format parser (though we might want to add it in
-    ///    future for parquet variant columns).
+    ///  * If a subcolumn isn't one of these supported cases, request the whole parent column.
     ///  * Don't request tuple element if the whole tuple is also requested.
     ///    E.g. `SELECT t, t.x` should just read `t`.
 
@@ -140,12 +301,14 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
     {
         ISerialization::SubstreamPath path;
         String name;
+        String name_in_storage;
         DataTypePtr type;
+        DataTypePtr type_in_storage;
         bool is_duplicate = false;
     };
 
     std::vector<SubcolumnInfo> columns_info(requested_columns.size());
-    std::unordered_map<String, size_t> name_to_idx;
+    std::unordered_map<String, size_t> parent_read_by_storage_name;
     size_t idx = 0;
     for (const auto & column_to_read : requested_columns)
     {
@@ -159,64 +322,99 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         ///  is a dynamic subcolumn.)
         auto & column_info = columns_info[idx];
         bool found_full_path = false;
+        column_info.name_in_storage = column_to_read.getNameInStorage();
         column_info.type = column_to_read.getTypeInStorage();
+        column_info.type_in_storage = column_to_read.getTypeInStorage();
 
         if (column_to_read.isSubcolumn())
         {
             /// Do subcolumn lookup similar to getColumnFromBlock.
 
             auto type = column_to_read.getTypeInStorage();
-            auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
             auto subcolumn_name = column_to_read.getSubcolumnName();
-
-            ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
+            if (!type->hasCustomName())
             {
-                if (found_full_path)
-                    return;
+                auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
 
-                for (size_t i = 0; i < subpath.size(); ++i)
+                ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
                 {
-                    /// Allow `a.x` where `a` is array of tuples.
-                    if (subpath[i].type == ISerialization::Substream::ArrayElements)
-                        continue;
-
-                    if (subpath[i].type != ISerialization::Substream::TupleElement)
-                        break;
-
-                    if (subpath[i].visited)
-                        continue;
-                    subpath[i].visited = true;
-                    size_t prefix_len = i + 1;
-                    if (prefix_len <= column_info.path.size())
-                        continue;
-
-                    auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
-                    if (name == subcolumn_name)
-                        found_full_path = true;
-                    else if (!subcolumn_name.starts_with(name + "."))
-                        continue;
-
-                    column_info.path.insert(column_info.path.end(), subpath.begin() + column_info.path.size(), subpath.begin() + prefix_len);
                     if (found_full_path)
-                        break;
-                }
-            };
+                        return;
 
-            ISerialization::EnumerateStreamsSettings settings;
-            settings.position_independent_encoding = false;
-            settings.enumerate_dynamic_streams = false;
-            data.serialization->enumerateStreams(settings, callback_with_data, data);
+                    for (size_t i = 0; i < subpath.size(); ++i)
+                    {
+                        /// Allow `a.x` where `a` is array of tuples.
+                        if (subpath[i].type == ISerialization::Substream::ArrayElements)
+                            continue;
+
+                        if (subpath[i].type != ISerialization::Substream::TupleElement)
+                            break;
+
+                        if (subpath[i].visited)
+                            continue;
+                        subpath[i].visited = true;
+                        size_t prefix_len = i + 1;
+                        if (prefix_len <= column_info.path.size())
+                            continue;
+
+                        auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
+                        if (containsCustomNamedType(subpath[i].data.type.get()))
+                            continue;
+
+                        if (name == subcolumn_name)
+                            found_full_path = true;
+                        else if (!subcolumn_name.starts_with(name + "."))
+                            continue;
+
+                        column_info.path.insert(column_info.path.end(), subpath.begin() + column_info.path.size(), subpath.begin() + prefix_len);
+                        if (found_full_path)
+                            break;
+                    }
+                };
+
+                ISerialization::EnumerateStreamsSettings settings;
+                settings.position_independent_encoding = false;
+                settings.enumerate_dynamic_streams = false;
+                data.serialization->enumerateStreams(settings, callback_with_data, data);
+            }
 
             if (!column_info.path.empty())
                 column_info.type = ISerialization::createFromPath(column_info.path, column_info.path.size()).type;
+            else if (const auto * object_type = typeid_cast<const DataTypeObject *>(column_to_read.getTypeInStorage().get()))
+            {
+                if (object_type->getTypedPaths().contains(column_to_read.getSubcolumnName()))
+                    column_info.name = column_to_read.name;
+            }
         }
 
-        column_info.name = column_to_read.getNameInStorage();
+        if (column_info.name.empty())
+            column_info.name = column_info.name_in_storage;
+
         if (!column_info.path.empty())
         {
             column_info.name += '.';
             column_info.name += ISerialization::getSubcolumnNameForStream(column_info.path);
         }
+
+        if (column_info.name == column_info.name_in_storage)
+            parent_read_by_storage_name.emplace(column_info.name_in_storage, idx);
+    }
+
+    for (auto & column_info : columns_info)
+    {
+        auto it = parent_read_by_storage_name.find(column_info.name_in_storage);
+        if (it == parent_read_by_storage_name.end() || column_info.name == column_info.name_in_storage)
+            continue;
+
+        column_info.path.clear();
+        column_info.name = column_info.name_in_storage;
+        column_info.type = column_info.type_in_storage;
+    }
+
+    std::unordered_map<String, size_t> name_to_idx;
+    for (idx = 0; idx < columns_info.size(); ++idx)
+    {
+        auto & column_info = columns_info[idx];
         bool emplaced = name_to_idx.emplace(column_info.name, idx).second;
         column_info.is_duplicate = !emplaced;
     }
@@ -244,7 +442,8 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
             if (it != name_to_idx.end())
             {
                 const auto & ancestor_info = columns_info[it->second];
-                column_to_read.setDelimiterAndTypeInStorage(ancestor_name, ancestor_info.type);
+                const auto & ancestor_type_in_storage = ancestor_name == column_to_read.name ? column_to_read.type : ancestor_info.type;
+                column_to_read.setDelimiterAndTypeInStorage(ancestor_name, ancestor_type_in_storage);
                 ancestor_requested = true;
                 break;
             }
@@ -252,7 +451,8 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         if (ancestor_requested)
             continue;
 
-        column_to_read.setDelimiterAndTypeInStorage(column_info.name, column_info.type);
+        const auto & type_in_storage = column_info.name == column_to_read.name ? column_to_read.type : column_info.type;
+        column_to_read.setDelimiterAndTypeInStorage(column_info.name, type_in_storage);
         if (!column_info.is_duplicate)
             new_columns_to_read.push_back(column_info.name);
     }
@@ -262,48 +462,108 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
     ///  supports_tuple_elements also support empty list of columns.)
 }
 
-ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
+NameSet getSupportedPrewhereColumnsForFormat(
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
+    const String & format_name,
+    const std::optional<FormatSettings> & format_settings,
+    const NamesAndTypesList & exclude)
+{
+    NameSet names = metadata_snapshot->getColumnsWithoutDefaultExpressions(exclude);
+
+    /// Direct subcolumn reads in the file-like `PREWHERE` path are currently a `Parquet` reader feature.
+    if (format_name != "Parquet"
+        || !FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, context, format_settings))
+        return names;
+
+    const auto exclude_map = exclude.getNameToTypeMap();
+    const auto columns_with_subcolumns = metadata_snapshot->columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
+    for (const auto & column : columns_with_subcolumns)
+    {
+        if (!column.isSubcolumn())
+            continue;
+
+        const auto name_in_storage = column.getNameInStorage();
+        const auto * column_in_storage = metadata_snapshot->columns.tryGet(name_in_storage);
+        if (!column_in_storage || column_in_storage->default_desc.expression || exclude_map.contains(name_in_storage))
+            continue;
+
+        NamesAndTypesList requested_column{column};
+        filterTupleColumnsToRead(requested_column);
+        const auto & readable_column = requested_column.front();
+        if (readable_column.getNameInStorage() != name_in_storage)
+            names.insert(column.name);
+    }
+
+    return names;
+}
+
+ReadFromFormatInfo updateFormatPrewhereInfo(
+    const ReadFromFormatInfo & info,
+    const FilterDAGInfoPtr & row_level_filter,
+    const PrewhereInfoPtr & prewhere_info)
 {
     chassert(prewhere_info || row_level_filter);
 
     if (info.prewhere_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "updateFormatPrewhereInfo called more than once");
 
-    ReadFromFormatInfo new_info;
+    ReadFromFormatInfo new_info = info;
     new_info.prewhere_info = prewhere_info;
     new_info.row_level_filter = row_level_filter;
 
-    /// Removes columns that are only used as prewhere input.
-    /// Adds prewhere outputs (the actual prewhere filter column is only added if
-    /// !remove_prewhere_column; but there may also be subexpressions computed by prewhere
-    /// expression and preserved for use further down the query pipeline).
-    /// If row_level_filter was already applied in a previous call, don't re-apply it;
-    /// only apply the new prewhere_info on top.
-    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(
-        info.format_header, info.row_level_filter ? nullptr : row_level_filter, prewhere_info);
+    /// `ActionsDAG::updateHeader` removes columns used as inputs unless they are outputs.
+    /// Keep requested input columns explicitly and put filter-only inputs into
+    /// `format_filter_input_header`.
+    Block format_header = info.format_header;
+    const NameSet requested_input_names = info.requested_columns.getNameSet();
+    const FilterDAGInfoPtr row_level_filter_to_apply = row_level_filter && !info.row_level_filter ? row_level_filter : nullptr;
 
-    /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
-    /// don't need to replace subcolumns with their nested columns etc.
-    new_info.source_header = new_info.format_header;
-
-    new_info.requested_virtual_columns = info.requested_virtual_columns;
-    for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
-        new_info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
-
-    for (const auto & col : new_info.format_header)
+    if (row_level_filter_to_apply)
+        format_header = applyRowLevelFilterHeaderActions(std::move(format_header), row_level_filter_to_apply, requested_input_names);
+    if (prewhere_info)
     {
-        new_info.requested_columns.emplace_back(col.name, col.type);
-        if (info.format_header.has(col.name))
-        {
-            /// Column read from file.
-            new_info.columns_description.add(info.columns_description.get(col.name));
-        }
-        else
-        {
-            /// Column produced by prewhere expression.
-            new_info.columns_description.add(ColumnDescription(col.name, col.type));
-        }
+        /// `Parquet` can defer `PREWHERE` on `VARIANT` subcolumns until after chunk delivery.
+        /// Those inputs must stay in `format_header`, because `format_filter_input_header` is not delivered in that chunk.
+        format_header = applyPrewhereHeaderActions(std::move(format_header), prewhere_info, requested_input_names);
     }
+    new_info.format_header = std::move(format_header);
+
+    new_info.format_filter_input_header = {};
+    if (row_level_filter)
+        addInternalFilterInputColumns(new_info.format_filter_input_header, new_info.format_header, row_level_filter->actions);
+    if (prewhere_info)
+        addInternalFilterInputColumns(new_info.format_filter_input_header, new_info.format_header, prewhere_info->prewhere_actions);
+
+    const auto removed_filter_columns = getRemovedFilterColumns(row_level_filter, prewhere_info);
+    new_info.requested_columns = {};
+    for (const auto & column : info.requested_columns)
+    {
+        if (removed_filter_columns.contains(column.name))
+            continue;
+        if (canExtractColumnFromFormatHeader(new_info.format_header, column))
+            new_info.requested_columns.push_back(column);
+    }
+
+    if (row_level_filter)
+        addRetainedFilterOutputs(
+            new_info.requested_columns,
+            new_info.format_header,
+            row_level_filter->actions,
+            row_level_filter->do_remove_column ? std::optional<String>{row_level_filter->column_name} : std::nullopt);
+
+    if (prewhere_info)
+        addRetainedFilterOutputs(
+            new_info.requested_columns,
+            new_info.format_header,
+            prewhere_info->prewhere_actions,
+            prewhere_info->remove_prewhere_column ? std::optional<String>{prewhere_info->prewhere_column_name} : std::nullopt);
+
+    new_info.source_header = buildSourceHeader(
+        new_info.requested_columns,
+        new_info.hive_partition_columns_to_read_from_file_path,
+        new_info.requested_virtual_columns);
+    new_info.columns_description = buildColumnsDescriptionAfterPrewhere(info, new_info.format_header);
 
     return new_info;
 }
@@ -340,6 +600,7 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
     format_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
+    format_filter_input_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
     writeStringBinary(columns_description.toString(false), ctx.out);
     requested_columns.writeTextWithNamesInStorage(ctx.out);
     requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
@@ -373,6 +634,14 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     {
         ColumnWithTypeAndName elem(name_and_type.type, name_and_type.name);
         result.format_header.insert(elem);
+    }
+
+    NamesAndTypesList format_filter_input_header_names_and_type;
+    format_filter_input_header_names_and_type.readTextWithNamesInStorage(ctx.in);
+    for (const auto & name_and_type : format_filter_input_header_names_and_type)
+    {
+        ColumnWithTypeAndName elem(name_and_type.type, name_and_type.name);
+        result.format_filter_input_header.insert(elem);
     }
 
     std::string columns_desc;
