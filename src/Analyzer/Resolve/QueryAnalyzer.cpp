@@ -1244,7 +1244,17 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
      * 1. SELECT dummy + 1 AS dummy
      * 2. SELECT avg(a) OVER () AS a, id FROM test
      */
-    if (scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part) != nullptr)
+    const auto find_in_flight_alias = [&]() -> QueryTreeNodePtr
+    {
+        /// Standard-mode unquoted lookups must also match an in-flight unquoted alias of any case.
+        if (use_case_insensitive)
+        {
+            if (auto ci = scope.expressions_in_resolve_process_stack.getExpressionWithAliasCaseInsensitive(identifier_bind_part))
+                return ci;
+        }
+        return scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part);
+    };
+    if (find_in_flight_alias() != nullptr)
     {
         /* This is an important fallback in the identifier resolution. In the case of transitive aliases,
          * we may end up in the situation when we try to resolve the same expression, but it's not a cycle.
@@ -3051,6 +3061,11 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected IDENTIFIER or COLUMN as lambda argument, got {}", lambda_node->dumpTree());
         const auto & lambda_argument_name = lambda_argument_identifier ? lambda_argument_identifier->getIdentifier().getFullName()
                                                                        : lambda_argument_column->getColumnName();
+        /// Track quote style so a quoted lambda argument stays case-sensitive in standard mode.
+        const bool lambda_argument_is_double_quoted = lambda_argument_identifier
+            ? (!lambda_argument_identifier->getQuoteStyles().empty()
+               && lambda_argument_identifier->getQuoteStyles().front() == IdentifierQuoteStyle::DoubleQuote)
+            : false;
 
         bool has_expression_node = scope.aliases.alias_name_to_expression_node.contains(lambda_argument_name);
         bool has_alias_node = scope.aliases.alias_name_to_lambda_node.contains(lambda_argument_name);
@@ -3064,7 +3079,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
                 scope.scope_node->formatASTForErrorMessage());
         }
 
-        scope.addExpressionArgument(lambda_argument_name, lambda_arguments[i]);
+        scope.addExpressionArgument(lambda_argument_name, lambda_arguments[i], lambda_argument_is_double_quoted);
         lambda_new_arguments_nodes.push_back(lambda_arguments[i]);
     }
 
@@ -3314,15 +3329,25 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                   * which is a much more helpful error message.
                   * Example: SELECT number AS num, num * 1 AS num FROM numbers(10)
                   */
-                if (scope.expressions_in_resolve_process_stack.getExpressionWithAlias(unresolved_identifier.getFullName()) != nullptr)
+                const bool standard_mode = scope.isStandardMode();
+                const bool unresolved_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
+                auto in_flight_alias = scope.expressions_in_resolve_process_stack.getExpressionWithAlias(unresolved_identifier.getFullName());
+                if (!in_flight_alias && unresolved_case_insensitive)
+                    in_flight_alias = scope.expressions_in_resolve_process_stack.getExpressionWithAliasCaseInsensitive(unresolved_identifier.getFullName());
+                if (in_flight_alias != nullptr)
                 {
+                    const auto & unresolved_full_name = unresolved_identifier.getFullName();
                     for (const auto & node_with_duplicated_alias : scope.aliases.nodes_with_duplicated_aliases)
                     {
-                        if (node_with_duplicated_alias->getAlias() == unresolved_identifier.getFullName())
+                        const auto & dup_alias = node_with_duplicated_alias->getAlias();
+                        bool matches = dup_alias == unresolved_full_name;
+                        if (!matches && unresolved_case_insensitive && !node_with_duplicated_alias->isAliasDoubleQuoted())
+                            matches = Poco::icompare(dup_alias, unresolved_full_name) == 0;
+                        if (matches)
                         {
                             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                                 "Multiple expressions with the same alias {}. In scope {}",
-                                backQuote(unresolved_identifier.getFullName()),
+                                backQuote(unresolved_full_name),
                                 scope.scope_node->formatASTForErrorMessage());
                         }
                     }
@@ -4939,6 +4964,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     for (auto & array_join_expression : array_join_nodes)
     {
         auto array_join_expression_alias = array_join_expression->getAlias();
+        const bool array_join_expression_alias_is_double_quoted = array_join_expression->isAliasDoubleQuoted();
 
         std::string identifier_full_name;
 
@@ -5034,6 +5060,8 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
             NameAndTypePair array_join_column(array_join_column_name, result_type);
             auto array_join_column_node = std::make_shared<ColumnNode>(std::move(array_join_column), expression, array_join_node);
             array_join_column_node->setAlias(array_join_expression_alias);
+            /// Preserve case-sensitivity of `ARRAY JOIN ... AS "X"` so later lookups know to match it case-sensitively.
+            array_join_column_node->setAliasIsDoubleQuoted(array_join_expression_alias_is_double_quoted);
             array_join_column_expressions.push_back(std::move(array_join_column_node));
         };
 
@@ -5437,6 +5465,11 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (!result_left_table_expression)
             {
                 IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
+                /// Preserve per-part double-quoting from `USING ("Key")` so case-sensitivity matches `standard` mode.
+                const auto & using_quote_styles = identifier_node->getQuoteStyles();
+                identifier_lookup.is_part_double_quoted.reserve(using_quote_styles.size());
+                for (auto style : using_quote_styles)
+                    identifier_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
                 result_left_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope).resolved_identifier;
             }
 
@@ -5499,6 +5532,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             /// See 03449_join_using_allow_alias.sql and the comment in JoinNode.cpp
             const auto & right_name = identifier_node->hasAlias() ? identifier_node->getAlias() : identifier_full_name;
             IdentifierLookup identifier_lookup{Identifier(right_name), IdentifierLookupContext::EXPRESSION};
+            /// Preserve case-sensitivity: if the right name comes from the alias `USING (a AS "B")`, use the alias quote;
+            /// otherwise reuse the identifier's last-part quote style (the column name on the right).
+            const bool right_part_double_quoted = identifier_node->hasAlias()
+                ? identifier_node->isAliasDoubleQuoted()
+                : (!identifier_node->getQuoteStyles().empty()
+                   && identifier_node->getQuoteStyles().back() == IdentifierQuoteStyle::DoubleQuote);
+            identifier_lookup.is_part_double_quoted.push_back(right_part_double_quoted);
             auto result_right_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getRightTableExpression(), scope).resolved_identifier;
             if (!result_right_table_expression)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
@@ -6432,7 +6472,11 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                 auto & query_node = queries_nodes[i];
 
                 IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(query_node, &scope /*parent_scope*/);
-                subquery_scope.addExpressionArgument(union_node_typed.getCTEName(), recursive_cte_table_node);
+                /// A recursive CTE defined as `WITH "X" AS (...)` stays case-sensitive in standard mode.
+                subquery_scope.addExpressionArgument(
+                    union_node_typed.getCTEName(),
+                    recursive_cte_table_node,
+                    union_node_typed.isCTENameDoubleQuoted());
 
                 auto query_node_type = query_node->getNodeType();
                 if (query_node_type == QueryTreeNodeType::QUERY)

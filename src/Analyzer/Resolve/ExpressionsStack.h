@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ranges>
+#include <Poco/String.h>
 #include <IO/Operators.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/FunctionNode.h>
@@ -94,6 +95,28 @@ public:
             return {};
 
         return expression_it->second.front();
+    }
+
+    /// SQL-standard mode: an unquoted lookup must also see an in-flight unquoted alias of any case.
+    /// Quoted aliases stay case-sensitive — they are matched only by `getExpressionWithAlias`.
+    QueryTreeNodePtr getExpressionWithAliasCaseInsensitive(const std::string & alias) const
+    {
+        for (const auto & [name, exprs] : alias_name_to_expressions)
+        {
+            if (exprs.empty())
+                continue;
+            const auto & expr = exprs.front();
+            if (expr->isAliasDoubleQuoted())
+                continue;
+            if (Poco::icompare(name, alias) == 0)
+                return expr;
+        }
+        return {};
+    }
+
+    bool hasExpressionWithAliasCaseInsensitive(const std::string & alias) const
+    {
+        return getExpressionWithAliasCaseInsensitive(alias) != nullptr;
     }
 
     bool has(const IQueryTreeNode * node) const

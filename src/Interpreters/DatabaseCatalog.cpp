@@ -914,6 +914,13 @@ String DatabaseCatalog::tryResolveDatabaseNameCaseInsensitive(std::string_view d
 
     if (it->second.size() > 1)
     {
+        /// `information_schema` and `INFORMATION_SCHEMA` are built-in aliases of the same logical schema.
+        /// Treat their case-only collision as non-ambiguous and canonicalize to the lowercase form.
+        if (it->second.size() == 2
+            && it->second.contains(INFORMATION_SCHEMA)
+            && it->second.contains(INFORMATION_SCHEMA_UPPERCASE))
+            return INFORMATION_SCHEMA;
+
         throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
             "Database name '{}' is ambiguous: matches multiple databases with different cases: {}",
             database_name, fmt::join(it->second, ", "));

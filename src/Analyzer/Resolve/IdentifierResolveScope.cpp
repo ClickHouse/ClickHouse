@@ -132,10 +132,13 @@ void IdentifierResolveScope::popExpressionNode()
     expressions_in_resolve_process_stack.pop();
 }
 
-void IdentifierResolveScope::addExpressionArgument(const std::string & name, QueryTreeNodePtr node)
+void IdentifierResolveScope::addExpressionArgument(const std::string & name, QueryTreeNodePtr node, bool is_double_quoted)
 {
     expression_argument_name_to_node.emplace(name, std::move(node));
-    lowercase_expression_arg_to_names[Poco::toLower(name)].push_back(name);
+    /// Quoted lambda arguments / quoted recursive-CTE self-references stay case-sensitive in standard mode.
+    /// Keep them out of the lowercase index so an unquoted lookup cannot match them.
+    if (!is_double_quoted)
+        lowercase_expression_arg_to_names[Poco::toLower(name)].push_back(name);
 }
 
 bool IdentifierResolveScope::isStandardMode() const
@@ -265,7 +268,14 @@ bool IdentifierResolveScope::canCacheIdentifier(
     /// Match on the first identifier component, mirroring alias binding in
     /// tryResolveIdentifierFromAliases: a compound lookup like `value.a` binds to an
     /// in-flight alias named `value`, so it must be excluded from the cache as well.
-    if (expressions_in_resolve_process_stack.hasExpressionWithAlias(lookup.identifier.front()))
+    const auto & first_part = lookup.identifier.front();
+    if (expressions_in_resolve_process_stack.hasExpressionWithAlias(first_part))
+        return false;
+    /// Standard-mode unquoted lookups must also avoid the cache when an in-flight unquoted alias
+    /// of any case matches — otherwise a cached result from a case-insensitive prior lookup
+    /// can cause transitive aliases to resolve incorrectly.
+    if (isStandardMode() && !lookup.isPartDoubleQuoted(0)
+        && expressions_in_resolve_process_stack.hasExpressionWithAliasCaseInsensitive(first_part))
         return false;
 
     return true;

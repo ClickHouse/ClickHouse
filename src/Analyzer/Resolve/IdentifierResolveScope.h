@@ -234,8 +234,9 @@ struct IdentifierResolveScope
 
     void popExpressionNode();
 
-    /// Add an expression argument *with case-insensitive index*
-    void addExpressionArgument(const std::string & name, QueryTreeNodePtr node);
+    /// Add an expression argument. The lowercase index is populated only when `is_double_quoted` is
+    /// false — quoted lambda arguments stay case-sensitive in standard mode.
+    void addExpressionArgument(const std::string & name, QueryTreeNodePtr node, bool is_double_quoted = false);
 
     /// can do optional case-insensitive lookup, in this case throws exception if multiple matches exist
     std::unordered_map<std::string, QueryTreeNodePtr>::iterator

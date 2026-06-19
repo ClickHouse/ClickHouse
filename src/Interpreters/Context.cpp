@@ -2569,20 +2569,34 @@ String Context::tryResolveExternalTableNameCaseInsensitive(const String & table_
     if (isGlobalContext())
         return {};
 
-    SharedLockGuard lock(mutex);
-    /// External tables are typically session-scoped and few in number, so a linear scan is fine here
-    String resolved;
-    for (const auto & [name, _] : external_tables_mapping)
+    /// Mirror `resolveStorageIDImpl`: walk current → query_context → session_context so that a
+    /// temporary table registered higher up the chain (most common: session_context) is reachable
+    /// from a query_context that has no temp tables of its own.
+    auto scan_one = [&](const Context * ctx, String & resolved)
     {
-        if (Poco::icompare(name, table_name) == 0)
+        SharedLockGuard lock(ctx->mutex);
+        for (const auto & [name, _] : ctx->external_tables_mapping)
         {
-            if (!resolved.empty())
-                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                    "Temporary table '{}' is ambiguous: matches multiple temporary tables with different cases: '{}' and '{}'",
-                    table_name, resolved, name);
-            resolved = name;
+            if (Poco::icompare(name, table_name) == 0)
+            {
+                if (!resolved.empty() && resolved != name)
+                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "Temporary table '{}' is ambiguous: matches multiple temporary tables with different cases: '{}' and '{}'",
+                        table_name, resolved, name);
+                resolved = name;
+            }
         }
-    }
+    };
+
+    String resolved;
+    scan_one(this, resolved);
+
+    if (auto query_context_ptr = query_context.lock(); query_context_ptr && query_context_ptr.get() != this)
+        scan_one(query_context_ptr.get(), resolved);
+
+    if (auto session_context_ptr = session_context.lock(); session_context_ptr && session_context_ptr.get() != this)
+        scan_one(session_context_ptr.get(), resolved);
+
     return resolved;
 }
 

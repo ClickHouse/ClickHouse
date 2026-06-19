@@ -626,13 +626,23 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
         return {};
 
     const bool standard_mode = scope.isStandardMode();
-    const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
-
     const auto & identifier = identifier_lookup.identifier;
     auto identifier_full_name = identifier.getFullName();
 
+    /// Whole-name column match is case-insensitive only if every part of the lookup is unquoted —
+    /// a single double-quoted part anywhere in the identifier pins the lookup to case-sensitive.
+    bool full_name_case_insensitive = standard_mode;
+    for (size_t p = 0, n = identifier.getPartsSize(); p < n && full_name_case_insensitive; ++p)
+    {
+        if (identifier_lookup.isPartDoubleQuoted(p))
+            full_name_case_insensitive = false;
+    }
+    /// Subcolumn base keys off the first part of the lookup (the tuple/struct column); the suffix is
+    /// matched exact-string inside `tryGetSubcolumnType`, so its case-sensitivity follows that path.
+    const bool subcolumn_base_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
+
     const auto & node_map = scope.table_expression_data_for_alias_resolution->getColumnNodeMap();
-    if (use_case_insensitive)
+    if (full_name_case_insensitive)
     {
         auto it = scope.table_expression_data_for_alias_resolution->findColumnCaseInsensitive(
             identifier_full_name, scope.scope_node->formatASTForErrorMessage());
@@ -648,7 +658,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(
-            identifier_full_name, use_case_insensitive, scope.scope_node->formatASTForErrorMessage()))
+            identifier_full_name, subcolumn_base_case_insensitive, scope.scope_node->formatASTForErrorMessage()))
     {
         /// Don't read subcolumn of aliases directly, only using getSubcolumn,
         /// because aliases don't have real subcolumns, they should be extracted
@@ -1843,7 +1853,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
         return resolve_result;
 
     const bool standard_mode = scope.isStandardMode();
-    const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
+    /// The match is against the *first* part of the lookup identifier (the alias name), so use the first-part flag.
+    /// If the ARRAY JOIN expression had a quoted alias (`ARRAY JOIN arr AS "X"`), that alias stays case-sensitive
+    /// in standard mode regardless of the lookup's quoting.
+    const bool lookup_first_part_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
     const auto & array_join_column_expressions = from_array_join_node.getJoinExpressions();
     const auto & array_join_column_expressions_nodes = array_join_column_expressions.getNodes();
@@ -1863,7 +1876,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
             ? array_join_column_expression_typed.getAlias()
             : array_join_column_expression_typed.getColumnName();
 
-        if (auto prefix_size = getCompoundIdentifierPrefixSize(identifier_lookup.identifier, alias_or_name, use_case_insensitive))
+        const bool alias_pinned_case_sensitive
+            = array_join_column_expression_typed.hasAlias() && array_join_column_expression_typed.isAliasDoubleQuoted();
+        const bool match_case_insensitive = lookup_first_part_case_insensitive && !alias_pinned_case_sensitive;
+
+        if (auto prefix_size = getCompoundIdentifierPrefixSize(identifier_lookup.identifier, alias_or_name, match_case_insensitive))
             identifier_view.popFirst(*prefix_size);
         else
             continue;

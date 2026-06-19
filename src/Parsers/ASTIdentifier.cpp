@@ -262,10 +262,19 @@ String ASTTableIdentifier::getDatabaseName() const
 
 ASTPtr ASTTableIdentifier::getTable() const
 {
+    /// Carry the per-part quote style of the table-name slot onto the returned identifier so
+    /// downstream consumers preserve case-sensitivity in `standard` mode.
+    auto with_table_quote = [&](boost::intrusive_ptr<ASTIdentifier> id, size_t part) -> ASTPtr
+    {
+        auto style = getQuoteStyleAt(part);
+        if (style != IdentifierQuoteStyle::None)
+            id->setQuoteStyles({style});
+        return id;
+    };
     if (name_parts.size() == 2)
     {
         if (!name_parts[1].empty())
-            return make_intrusive<ASTIdentifier>(name_parts[1]);
+            return with_table_quote(make_intrusive<ASTIdentifier>(name_parts[1]), 1);
 
         if (name_parts[0].empty())
             return make_intrusive<ASTIdentifier>("", children[1]->clone());
@@ -275,7 +284,7 @@ ASTPtr ASTTableIdentifier::getTable() const
     {
         if (name_parts[0].empty())
             return make_intrusive<ASTIdentifier>("", children[0]->clone());
-        return make_intrusive<ASTIdentifier>(name_parts[0]);
+        return with_table_quote(make_intrusive<ASTIdentifier>(name_parts[0]), 0);
     }
     return {};
 }
@@ -286,7 +295,11 @@ ASTPtr ASTTableIdentifier::getDatabase() const
     {
         if (name_parts[0].empty())
             return make_intrusive<ASTIdentifier>("", children[0]->clone());
-        return make_intrusive<ASTIdentifier>(name_parts[0]);
+        auto id = make_intrusive<ASTIdentifier>(name_parts[0]);
+        auto style = getQuoteStyleAt(0);
+        if (style != IdentifierQuoteStyle::None)
+            id->setQuoteStyles({style});
+        return id;
     }
     return {};
 }
@@ -296,6 +309,9 @@ void ASTTableIdentifier::resetTable(const String & database_name, const String &
     auto identifier = make_intrusive<ASTTableIdentifier>(database_name, table_name);
     full_name.swap(identifier->full_name);
     name_parts.swap(identifier->name_parts);
+    /// Clear stale per-part quote styles — the new `name_parts` come from caller strings that were
+    /// not user-quoted; leaving the old `quote_styles` would misalign with the new parts.
+    quote_styles.clear();
     uuid = identifier->uuid;
 }
 
