@@ -6,10 +6,21 @@
 1
 1
 0
--- fine_grained granularity via factory syntax
+-- granularity via factory syntax
 0
 1
 1
--- needle tokenization matches the tokenizer (hasAnyTokens with String needle is tokenized)
+-- a String needle is tokenized with the same tokenizer
 1
 -- tokensForLikePattern rejects chinese (declared unsupported in the function doc)
+-- other functions on a chinese text index
+-- hasAllTokens / hasAnyTokens match segmented words
+1
+2
+-- hasToken uses splitByNonAlpha: a CJK sub-word is never a whole token, so 0 rows
+0
+0
+-- has (equals) matches the whole value only
+2
+-- match (regexp) is independent of tokenization
+2

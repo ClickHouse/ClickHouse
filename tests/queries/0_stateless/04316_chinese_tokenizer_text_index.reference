@@ -6,5 +6,12 @@
 0
 -- the chinese text index is applicable for the predicate
 2
+-- results agree across use_skip_indexes x query_plan_direct_read_from_text_index
+2
+2
+2
+1
+1
+1
 -- fine_grained emits overlapping sub-tokens such as 大学
 1

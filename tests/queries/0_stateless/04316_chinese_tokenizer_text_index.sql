@@ -38,6 +38,16 @@ SELECT count() FROM tab WHERE hasAllTokens(doc, ['不存在']);
 SELECT '-- the chinese text index is applicable for the predicate';
 SELECT id FROM tab WHERE hasAllTokens(doc, ['北京邮电大学']) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
+SELECT '-- results agree across use_skip_indexes x query_plan_direct_read_from_text_index';
+-- Use the explicit 3-argument form so the needle is always tokenized with `chinese`,
+-- independently of whether the index is consulted; all three combinations must agree.
+SELECT id FROM tab WHERE hasAllTokens(doc, ['北京邮电大学'], 'chinese') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE hasAllTokens(doc, ['北京邮电大学'], 'chinese') ORDER BY id SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT id FROM tab WHERE hasAllTokens(doc, ['北京邮电大学'], 'chinese') ORDER BY id SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['大厦'], 'chinese') ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['大厦'], 'chinese') ORDER BY id SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['大厦'], 'chinese') ORDER BY id SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
 DROP TABLE tab;
 
 -- The fine_grained granularity is also accepted as a text index tokenizer argument.

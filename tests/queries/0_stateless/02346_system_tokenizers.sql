@@ -1,5 +1,6 @@
--- The `chinese` tokenizer is only available in builds with jieba (USE_JIEBA), so it is
--- excluded here to keep this test fasttest-compatible. Its registration is checked
--- separately in `04266_chinese_tokenizer_registered`.
+-- Tags: no-fasttest
+-- no-fasttest: the `chinese` tokenizer is only built with jieba (cppjieba), which is not
+-- available in the fast test build, so this test (which lists all tokenizers including
+-- `chinese`) is excluded there.
 
-SELECT * FROM system.tokenizers WHERE name != 'chinese' ORDER BY ALL;
+SELECT * FROM system.tokenizers ORDER BY ALL;
