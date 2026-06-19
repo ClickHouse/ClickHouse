@@ -51,4 +51,13 @@ SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), ex
     WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') >= 1;
 
+-- Set-index (`IN`) path over the same explicit monotonic wrapper: the chain is applied through
+-- `MergeTreeSetIndex::checkInRange`, which keeps the column's raw LowCardinality runtime type.
+-- Assert the pruner still runs (Statistics prunes 1/2) instead of throwing `Bad cast`.
+SELECT '-- explicit CAST over LowCardinality statistics column (IN / set-index path)';
+WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') IN (1)) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
+SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') IN (1))
+    WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') IN (1);
+
 DROP TABLE stid_1499_6033;
