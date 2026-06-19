@@ -34,6 +34,13 @@ struct DPJoinEntry
     /// the primary index cannot use — the metadata row count then bounds the rows from above).
     /// Used only for the build-side choice; see `chooseJoinOrder`.
     std::optional<UInt64> estimated_rows_upper_bound = {};
+    /// Whether `estimated_rows` is a guaranteed exact count (e.g. an unfiltered table size or a
+    /// cached actual build size) rather than a heuristic estimate (NDV-based aggregation result,
+    /// join cardinality, ...). An exact count is also a valid lower bound, which the build-side
+    /// choice requires before trusting it against the other side's upper bound; see
+    /// `chooseJoinOrder`. Heuristic estimates stay in `estimated_rows` for cost/order purposes
+    /// but must not be used as proof of relative size.
+    bool estimated_rows_exact = false;
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     /// Best known upper bound on the row count: the exact estimate if present, otherwise the
@@ -48,7 +55,7 @@ struct DPJoinEntry
     int relation_id = -1;
 
     /// Constructor for a leaf node (base relation)
-    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {}, std::optional<UInt64> rows_upper_bound = {});
+    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {}, std::optional<UInt64> rows_upper_bound = {}, bool rows_exact = false);
 
     /// Constructor for a join node
     DPJoinEntry(DPJoinEntryPtr lhs,
@@ -68,6 +75,8 @@ struct RelationStats
     std::optional<UInt64> estimated_rows = {};
     /// See `DPJoinEntry::estimated_rows_upper_bound`.
     std::optional<UInt64> estimated_rows_upper_bound = {};
+    /// See `DPJoinEntry::estimated_rows_exact`.
+    bool estimated_rows_exact = false;
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;

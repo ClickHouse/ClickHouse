@@ -14,6 +14,11 @@ SET enable_analyzer = 1;
 SET use_statistics = 0;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
+-- These cases verify the metadata/upper-bound based build-side choice deterministically, so
+-- disable the runtime hash-table-size cache: it is process-global and persists across test runs
+-- (e.g. `--test-runs`), which would otherwise make the chosen build side depend on run order.
+SET collect_hash_table_stats_during_joins = 0;
+SET use_hash_table_stats_for_join_reordering = 0;
 
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;

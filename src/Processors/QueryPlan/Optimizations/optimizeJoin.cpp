@@ -344,7 +344,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (has_filter)
             return RelationStats{.estimated_rows = {}, .estimated_rows_upper_bound = analyzed_result->selected_rows, .table_name = table_display_name};
 
-        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
+        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .estimated_rows_exact = true, .table_name = table_display_name};
     }
 
     if (typeid_cast<const ReadFromObjectStorageStep *>(step))
@@ -354,7 +354,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
+        return RelationStats{.estimated_rows = estimated_rows, .estimated_rows_exact = true, .table_name = table_display_name};
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
@@ -380,6 +380,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             {
                 estimated.estimated_rows_upper_bound = estimated.estimated_rows;
                 estimated.estimated_rows.reset();
+                estimated.estimated_rows_exact = false;
             }
         }
         else if (estimated.estimated_rows)
@@ -748,7 +749,13 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
+    {
+        /// A cached size is the actual number of rows a previous execution fed into this hash
+        /// table, so treat it as an exact count -- trustworthy as a lower bound for the
+        /// build-side choice (see `chooseJoinOrder`).
         stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
+        stats.estimated_rows_exact = true;
+    }
 
     if (!label.empty())
         stats.table_name = label;
@@ -1141,19 +1148,26 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             auto lhs_estimation = entry->left->estimated_rows;
             auto rhs_estimation = entry->right->estimated_rows;
 
-            /// We flip the join to move the smaller input to the build (right) side. To decide
-            /// that the left input is the smaller one, an upper bound on the left combined with a
-            /// trustworthy (exact) estimate on the right is enough: if even the left's ceiling is
-            /// below the right's exact count, the left is provably smaller. This lets us still
-            /// pick a build side when one input carries a residual filter that defeats its exact
-            /// estimate but leaves a known upper bound (see `estimateReadRowsCount`). When neither
-            /// input is upper-bounded this reduces to the plain `lhs < rhs` comparison.
-            auto lhs_upper_bound = entry->left->rowsUpperBound();
-
-            bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
-                ? optimization_settings.join_swap_table.value()
-                : entry->join_method == JoinMethod::Hash && lhs_upper_bound && rhs_estimation
-                    && lhs_upper_bound.value() < rhs_estimation.value();
+            /// We flip the join to move the smaller input to the build (right) side.
+            ///
+            /// When the left input has a point estimate we keep the original heuristic comparison
+            /// `lhs < rhs` (both are best-effort estimates).
+            ///
+            /// When the left input has only an upper bound (a residual filter defeated its exact
+            /// estimate, see `estimateReadRowsCount`), the comparison is only sound if the right
+            /// side is a trustworthy lower bound -- i.e. an exact count. Otherwise the right value
+            /// may itself be a heuristic over-estimate (e.g. an NDV-less aggregation reported as
+            /// its input row count), and `upperBound(left) < rhs` would not prove `left < right`.
+            bool swap_on_sizes;
+            if (optimization_settings.join_swap_table.has_value())
+                swap_on_sizes = optimization_settings.join_swap_table.value();
+            else if (lhs_estimation)
+                swap_on_sizes = entry->join_method == JoinMethod::Hash && rhs_estimation
+                    && lhs_estimation.value() < rhs_estimation.value();
+            else
+                swap_on_sizes = entry->join_method == JoinMethod::Hash
+                    && entry->left->estimated_rows_upper_bound && rhs_estimation && entry->right->estimated_rows_exact
+                    && entry->left->estimated_rows_upper_bound.value() < rhs_estimation.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 

@@ -37,11 +37,12 @@ namespace ErrorCodes
     extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_, std::optional<UInt64> rows_upper_bound)
+DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_, std::optional<UInt64> rows_upper_bound, bool rows_exact)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
     , estimated_rows_upper_bound(rows_upper_bound)
+    , estimated_rows_exact(rows_exact)
     , column_stats(std::move(column_stats_))
     , relation_id(static_cast<int>(id))
 {
@@ -566,7 +567,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats, rel.estimated_rows_upper_bound));
+        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats, rel.estimated_rows_upper_bound, rel.estimated_rows_exact));
     }
 
     std::vector<JoinActionRef *> applied_edge;
@@ -703,7 +704,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     for (size_t i = 0; i < total_relations_count; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats, rel.estimated_rows_upper_bound);
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats, rel.estimated_rows_upper_bound, rel.estimated_rows_exact);
         components[1][entry->relations] = entry;
         dp_table[entry->relations] = entry;
     }
