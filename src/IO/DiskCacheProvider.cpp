@@ -125,12 +125,18 @@ void preadSegmentNode(
     result.append(ChainedBufferNode{
         std::move(buf), 0, overlap_size, overlap_start + object_file_offset});
 
+    /// A reader reused from the slot is already kept warm by the slot, so
+    /// re-anchoring it every window is a redundant locked `CacheBase` insert (plus
+    /// the `path` key copy). Anchor only freshly opened readers: the anchor cache
+    /// earns its keep across DIFFERENT segment paths / the `readBigAt` fan-out,
+    /// where the single slot cannot.
+    const bool reused_from_slot = from_slot;
     if (stream_slot)
     {
         stream_slot->checkin(path, reader, offset_in_file + overlap_size);
         from_slot = false;  /// disarm: the reader is handed back, no longer checked out
     }
-    if (anchors)
+    if (anchors && !reused_from_slot)
         anchors->set(path, reader);
 }
 
