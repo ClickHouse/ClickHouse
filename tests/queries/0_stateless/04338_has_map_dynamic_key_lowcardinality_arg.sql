@@ -15,3 +15,22 @@ CREATE TABLE t_04338 (m Map(Dynamic, String), k LowCardinality(String)) ENGINE =
 INSERT INTO t_04338 VALUES (map('x'::Dynamic, 'p'), 'x'), (map('y'::Dynamic, 'q'), 'z');
 SELECT k, has(m, k) FROM t_04338 ORDER BY k;
 DROP TABLE t_04338;
+
+SET allow_suspicious_low_cardinality_types = 1;
+
+-- LowCardinality(Nullable(T)) needle: the null map must be honoured on the Map path.
+-- has(m, k) must agree with the plain array path has(mapKeys(m), k) for every row.
+SELECT has(map(NULL::Dynamic, 1), CAST(NULL, 'LowCardinality(Nullable(String))'));
+SELECT has(mapKeys(map(NULL::Dynamic, 1)), CAST(NULL, 'LowCardinality(Nullable(String))'));
+
+DROP TABLE IF EXISTS t_04338_nullable;
+CREATE TABLE t_04338_nullable (m Map(Dynamic, UInt8), k LowCardinality(Nullable(String))) ENGINE = Memory;
+INSERT INTO t_04338_nullable VALUES
+    (map('a'::Dynamic, 1), 'a'),
+    (map('a'::Dynamic, 1), 'b'),
+    (map('a'::Dynamic, 1), NULL),
+    (map(NULL::Dynamic, 1), NULL),
+    (map(NULL::Dynamic, 1), 'a');
+SELECT k, has(m, k) AS map_path, has(mapKeys(m), k) AS array_path
+FROM t_04338_nullable ORDER BY k, map_path;
+DROP TABLE t_04338_nullable;
