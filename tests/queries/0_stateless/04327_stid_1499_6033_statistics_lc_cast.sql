@@ -61,3 +61,19 @@ SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), ex
 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') IN (1);
 
 DROP TABLE stid_1499_6033;
+
+-- Primary-key range pruning over a LowCardinality key with an executing monotonic cast chain.
+-- `markRangesFromPKRange` keeps the raw LowCardinality index column, and `applyFunction` runs the
+-- stored chain on it; assert the chain executes (no `Bad cast`) and prunes/keeps parts correctly
+-- under `force_primary_key`. A Float64 source forces actual chain application (integer->integer
+-- casts short-circuit before `applyFunction`).
+SELECT '-- executing CAST chain over LowCardinality primary key (force_primary_key)';
+DROP TABLE IF EXISTS stid_1499_6033_pk;
+CREATE TABLE stid_1499_6033_pk (k LowCardinality(Float64)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8;
+-- Part 1: k in [0, 7], Part 2: k in [100, 107].
+INSERT INTO stid_1499_6033_pk SELECT number FROM numbers(8);
+INSERT INTO stid_1499_6033_pk SELECT number + 100 FROM numbers(8);
+SELECT count() FROM stid_1499_6033_pk WHERE CAST(k, 'Bool') = true SETTINGS force_primary_key = 1;
+SELECT count() FROM stid_1499_6033_pk WHERE CAST(k, 'Int64') >= 100 SETTINGS force_primary_key = 1;
+SELECT count() FROM stid_1499_6033_pk WHERE toFloat32(k) >= 50 SETTINGS force_primary_key = 1;
+DROP TABLE stid_1499_6033_pk;
