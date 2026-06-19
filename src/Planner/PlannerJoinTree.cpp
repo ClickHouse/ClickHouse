@@ -9,6 +9,7 @@
 #include <Common/scope_guard_safe.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -1605,12 +1606,27 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
     }
 
+    /// Collect constants the storage actually returned, so the chain keeps them flowing (a shard must
+    /// deliver every constant the initiator expects). ALIAS columns are excluded — re-creatable from
+    /// their expression, propagated to the shard via AST (header is already renamed to identifiers).
+    NameSet source_constants;
+    for (const auto & column : query_plan.getCurrentHeader()->getColumnsWithTypeAndName())
+    {
+        if (!column.column || !isColumnConst(*column.column))
+            continue;
+        const auto * original_name = table_expression_data.getColumnNameOrNull(column.name);
+        if (original_name && table_expression_data.hasAliasColumn(*original_name))
+            continue;
+        source_constants.insert(column.name);
+    }
+
     return JoinTreeQueryPlan{
         .query_plan = std::move(query_plan),
         .stage = till_stage,
         .used_row_policies = std::move(used_row_policies),
         .useful_sets = std::move(useful_sets),
         .query_node_to_plan_step_mapping = std::move(query_node_to_plan_step_mapping),
+        .source_constants = std::move(source_constants),
     };
 }
 
@@ -1641,12 +1657,17 @@ JoinTreeQueryPlan joinPlansWithStep(
     const auto & r_mapping = right_join_tree_query_plan.query_node_to_plan_step_mapping;
     result_mapping.insert(r_mapping.begin(), r_mapping.end());
 
+    auto result_source_constants = std::move(left_join_tree_query_plan.source_constants);
+    for (const auto & source_constant : right_join_tree_query_plan.source_constants)
+        result_source_constants.insert(source_constant);
+
     return JoinTreeQueryPlan{
         .query_plan = std::move(result_plan),
         .stage = QueryProcessingStage::FetchColumns,
         .used_row_policies = std::move(result_used_row_policies),
         .useful_sets = std::move(result_useful_sets),
         .query_node_to_plan_step_mapping = std::move(result_mapping),
+        .source_constants = std::move(result_source_constants),
     };
 }
 
@@ -1921,6 +1942,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
         .used_row_policies = std::move(join_tree_query_plan.used_row_policies),
         .useful_sets = std::move(join_tree_query_plan.useful_sets),
         .query_node_to_plan_step_mapping = std::move(join_tree_query_plan.query_node_to_plan_step_mapping),
+        .source_constants = std::move(join_tree_query_plan.source_constants),
     };
 }
 
