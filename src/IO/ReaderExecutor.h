@@ -436,6 +436,12 @@ private:
         /// yet launched/exhausted; advanced by `maybeLaunchAhead`. Reset on re-plan.
         size_t launch_frontier = 0;
 
+        /// True iff `schedule.retrieves` contains a `Source::Remote` job. When false
+        /// the plan is served entirely from cache tiers, so there is no source
+        /// connection to open and `maybeLaunchAhead` skips its prefetch bookkeeping
+        /// (after its look-ahead re-plan, which still discovers cold beyond the plan).
+        bool has_remote_retrieves = false;
+
     private:
         friend class ReaderExecutor;  /// `observeAndSchedule` is the sole writer.
         std::shared_ptr<const CoverageMap> geometry_snapshot;

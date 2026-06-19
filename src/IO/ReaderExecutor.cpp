@@ -2502,6 +2502,11 @@ void ReaderExecutor::maybeLaunchAhead()
         observeAndSchedule(position_phys);
         reconstructCursor();
     }
+    /// Fully cache-served plan: the look-ahead re-plan above has already pulled any
+    /// upcoming cold region into the plan, so if there is still no `Source::Remote`
+    /// retrieve there is nothing to prefetch - skip the rest of the bookkeeping.
+    if (!read_plan.has_remote_retrieves)
+        return;
     if (effectivePrefetchWindowSize(read_plan.geometry()->pressure_level) == 0)
         return;  /// read-ahead suppressed under High/Critical memory pressure
 
@@ -2785,6 +2790,12 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// Feed this plan's predicted source reads into the continuity estimator so its
     /// reach prediction (which sizes long source connections) stays current.
     feedScheduleToContinuity(read_plan.schedule);
+
+    /// A plan with no `Source::Remote` retrieve is served entirely from cache; the
+    /// prefetch look-ahead has nothing to launch.
+    read_plan.has_remote_retrieves = std::any_of(
+        read_plan.schedule.retrieves.begin(), read_plan.schedule.retrieves.end(),
+        [](const auto & r) { return r.source == PlanSchedule::Source::Remote; });
 
     /// Allocate the per-job status sidecar 1:1 with the schedule's jobs. The
     /// schedule-driven processing loop branches on these phases instead of
