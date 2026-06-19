@@ -707,7 +707,7 @@ Now let's look at the new lines that appear in the query plan.
 Actual: rows <in> → <out> (<selectivity>%) · time <t> (<share>%) · <bytes_in> → <bytes_out> · parallelism <avg>/<max>
 ```
 
-- `rows <in> → <out>` — rows that entered and left the step; (<selectivity>%) shows how much the step filtered (`out/in`) or expanded the data, it is hidden when input rows equals output rows and when input rows equals `0`.
+- `rows <in> → <out>` — rows that entered and left the step; (`<selectivity>`%) shows how much the step filtered (`out/in`) or expanded the data, it is hidden when input rows equals output rows and when input rows equals `0`.
 - `time <t> (<share>%)` — wall-clock time the step was active, and its share of  query execution time (i.e. without build time). Note shares can add up to more than 100% because steps run concurrently.
 - `<bytes_in> → <bytes_out>` — uncompressed in-memory bytes flowing through the step (omitted when both are zero).
 - `parallelism <avg>/<max>` — average number of CPU threads working within this step at once, out of the maximum it could use. A value near max means the step was well parallelized; near 1 means it ran mostly serially.
