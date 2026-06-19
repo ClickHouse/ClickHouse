@@ -31,6 +31,28 @@ static constexpr auto nanosecond_multiplier = 1'000'000'000;
 
 static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
+/// If true, widens output type from:
+///          date -> date32  or  datetime -> datetime64
+/// (whichever the function returns), so Date32/DateTime64 input keeps its range.
+template <typename Transform>
+constexpr bool widensDate32AndDateTime64Input()
+{
+    if constexpr (requires { Transform::widen_date32_and_datetime64_input; })
+        return Transform::widen_date32_and_datetime64_input;
+    return false;
+}
+
+/// If true, also widens output type for Date input, from:
+///          date -> date32       (round-up funcs: toLastDayOf*)
+///          date -> datetime64   (toStartOfDay)
+template <typename Transform>
+constexpr bool widensDateInput()
+{
+    if constexpr (requires { Transform::widen_date_input; })
+        return Transform::widen_date_input;
+    return false;
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_CONVERT_TYPE;
