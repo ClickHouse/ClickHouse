@@ -57,7 +57,13 @@ endif ()
 # as compiler-rt: $<LINK_LIBRARY:WHOLE_ARCHIVE,...> does not survive the
 # global-libs INTERFACE_LINK_LIBRARIES indirection. memcpy stays in global-libs
 # (above) for the build-order dependency.
-if (TARGET memcpy)
+#
+# Not under sanitizers: there, compiler_rt_link.cmake already force-links the
+# sanitizer runtime's own `memcpy` interceptor with `--whole-archive`. Adding a
+# second `--whole-archive` `memcpy` lets the custom one defeat the interceptor,
+# bypassing the sanitizer's shadow-memory handling and segfaulting (the binary's
+# perf does not matter under sanitizers, so the interceptor must win).
+if (TARGET memcpy AND NOT SANITIZE)
     # Literal path (not the target / $<TARGET_FILE:...>) because CMAKE_EXE_LINKER_FLAGS
     # does not expand generator expressions, same as compiler_rt_link.cmake.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${CMAKE_BINARY_DIR}/base/glibc-compatibility/memcpy/libmemcpy.a -Wl,--no-whole-archive")
