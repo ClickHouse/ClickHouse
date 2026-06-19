@@ -53,14 +53,14 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
--- A Cached size must NOT anchor the upper-bound swap, because it is process-global and can be
+-- A cached size must NOT anchor the upper-bound swap, because it is process-global and can be
 -- stale-high relative to the CURRENT data even when it does not exceed the scan upper bound. Here
 -- `tag = 1` matches all 1000000 rows on the first run, so the cache records 1000000; the data then
 -- changes so `tag = 1` matches a single row, while the scan upper bound is still 1000000 (so the
 -- earlier `cache <= upper_bound` guard does not catch it). If that cached 1000000 anchored the
 -- swap, the residual-filtered 1000-row left input would be moved onto the build side over a right
--- side that now emits 1 row. Since only an Exact count anchors (not Cached), the tiny right side
--- stays the build.
+-- side that now emits 1 row. Since only an Exact count anchors (a cached size is a heuristic
+-- estimate), the tiny right side stays the build.
 DROP TABLE IF EXISTS sl;
 DROP TABLE IF EXISTS sr;
 

@@ -705,7 +705,6 @@ static String dumpRowCountForLogs(const RelationStats & stats)
         case RowCountKind::Exact:      return fmt::format("{} (exact)", stats.estimated_rows.value());
         case RowCountKind::UpperBound: return fmt::format("<= {}", stats.estimated_rows.value());
         case RowCountKind::Estimate:   return fmt::format("{} (est)", stats.estimated_rows.value());
-        case RowCountKind::Cached:     return fmt::format("{} (cached)", stats.estimated_rows.value());
         case RowCountKind::Unknown:    return "unknown";
     }
 }
@@ -805,15 +804,15 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         /// already know:
         ///  * an exact leaf stays exact -- the min only tightens it and remains a valid lower bound;
         ///  * otherwise the cache is used only when it is at or below the prior value (an upper
-        ///    bound, or a heuristic), tagged `Cached` so logs show its origin. A stale-high cache is
-        ///    ignored: the known upper bound is kept (and stays UpperBound).
+        ///    bound, or a heuristic), as an Estimate. A stale-high cache is ignored: the known upper
+        ///    bound is kept (and stays UpperBound).
         const UInt64 cached_rows = num_rows_from_cache.value();
         if (stats.estimated_rows_kind == RowCountKind::Exact)
             stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value(), cached_rows);
         else if (cached_rows <= stats.estimated_rows.value_or(MAX_ROWS))
         {
             stats.estimated_rows = cached_rows;
-            stats.estimated_rows_kind = RowCountKind::Cached;
+            stats.estimated_rows_kind = RowCountKind::Estimate;
         }
     }
 
