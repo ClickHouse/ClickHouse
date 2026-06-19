@@ -137,6 +137,22 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoints that drop the connection for the first N requests (armed via /set-flaky),
+        # used to test that transient network failures are retried like the url table function.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_flaky AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/flaky', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_embed_flaky AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_flaky', "
+            f"model = 'test-embed-model', "
+            f"api_key = 'test-key'"
+        )
 
         instance.query("CREATE TABLE test_input (x String) ENGINE = Memory")
         instance.query(
@@ -641,3 +657,62 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     # value due to a quota cut, matching the documented `AIRowsSkipped` semantics.
     assert int(events["rows_processed"]) == 1
     assert int(events["rows_skipped"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# Retry on transient network errors (like the url table function)
+# ---------------------------------------------------------------------------
+
+
+def set_flaky(count):
+    """Arm the mock's flaky endpoints to fail their next `count` requests with a dropped
+    connection (a transient network error). `count=0` disarms them."""
+    instance.exec_in_container(
+        ["curl", "-s", f"http://localhost:{MOCK_PORT}/set-flaky?count={count}"]
+    )
+
+
+def test_generate_retries_on_network_error(started_cluster):
+    """A transient network failure (connection dropped without a response) is retried, matching
+    the url table function. With enough retries the call recovers and ultimately succeeds."""
+    set_flaky(2)
+    qid = unique_query_id("gen_retry_net")
+    result = instance.query(
+        "SELECT aiGenerate('ai_flaky', 'recover me')",
+        settings={**AI_SETTINGS, "ai_function_max_retries": 5},
+        query_id=qid,
+    )
+    assert result.strip() == "recover me"
+    events = get_profile_events(qid)
+    # 2 failed attempts + 1 successful attempt for the single row.
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 1
+
+
+def test_generate_network_error_not_retried_when_disabled(started_cluster):
+    """With `ai_function_max_retries = 0`, a network failure is surfaced rather than retried."""
+    set_flaky(10)
+    try:
+        error = instance.query_and_get_error(
+            "SELECT aiGenerate('ai_flaky', 'no retry')",
+            settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        )
+        assert error  # a network/IO error is raised instead of a result
+    finally:
+        set_flaky(0)
+
+
+def test_embed_retries_on_network_error(started_cluster):
+    """The embedding path retries transient network failures too."""
+    set_flaky(2)
+    qid = unique_query_id("embed_retry_net")
+    result = instance.query(
+        "SELECT aiEmbed('ai_embed_flaky', 'hello')",
+        settings={**AI_SETTINGS, "ai_function_max_retries": 5},
+        query_id=qid,
+    )
+    vec = parse_embedding(result)
+    assert len(vec) == 4  # DEFAULT_EMBED_DIM in mock server
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 1

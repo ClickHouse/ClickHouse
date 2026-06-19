@@ -3,6 +3,9 @@
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/NetException.h>
+#include <Poco/Net/NetException.h>
+#include <exception>
 #include <thread>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -113,6 +116,44 @@ UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 att
     for (UInt64 i = 0; i < attempt && delay_ms < max_retry_delay_ms; ++i)
         delay_ms = std::min(delay_ms * 2, max_retry_delay_ms);
     return delay_ms;
+}
+
+bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
+{
+    /// Classify the active exception by type, the same way the `url` table function does in
+    /// `ReadWriteBufferFromHTTP::doWithRetries`. Catch order matters: more derived types first.
+    try
+    {
+        std::rethrow_exception(eptr);
+    }
+    catch (const NetException &)
+    {
+        /// ClickHouse-level network error (e.g. a DNS failure raised by the HTTP connection pool).
+        return true;
+    }
+    catch (const Exception & e)
+    {
+        /// A non-2xx response relayed from the provider (rate limiting, server errors, etc.).
+        return e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        /// Low-level connection failure: connection refused/reset, TLS connect failure, or a host
+        /// that advertises an unreachable address (e.g. an `AAAA` record on a network without IPv6
+        /// routing). Retrying can land on a working address or a recovered endpoint.
+        return true;
+    }
+    catch (const Poco::TimeoutException &)
+    {
+        /// Connect or receive timeout.
+        return true;
+    }
+    catch (...)
+    {
+        /// Argument/usage errors (malformed responses, bad configuration, JSON parse failures, …)
+        /// are deterministic — retrying would only repeat the same failure.
+        return false;
+    }
 }
 
 FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
@@ -249,21 +290,16 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 success = true;
                 break;
             }
-            catch (const Exception & e)
+            catch (...)
             {
-                if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                /// Retry transient failures (network errors, provider-side HTTP errors) like the
+                /// `url` table function does; deterministic errors are surfaced immediately.
+                if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
                     continue;
                 }
 
-                if (!throw_on_error)
-                    break;
-
-                throw;
-            }
-            catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
-            {
                 if (!throw_on_error)
                     break;
 
