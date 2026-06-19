@@ -229,6 +229,18 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
 
     if (columns)
     {
+        if (s.align_column_types && !s.one_line)
+        {
+            for (const auto & column : columns->children)
+            {
+                if (const auto * col = column->as<ASTColumnDeclaration>())
+                    /// Quoted length = raw name length + 2 backticks.
+                    /// Valid SQL identifiers consist of [A-Za-z0-9_] only, so no escape
+                    /// expansion occurs inside the backticks and this formula is exact.
+                    frame.column_name_max_width = std::max(frame.column_name_max_width, col->name.size() + 2);
+            }
+        }
+
         for (const auto & column : columns->children)
         {
             auto elem = make_intrusive<ASTColumnsElement>();
