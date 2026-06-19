@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -1294,7 +1295,9 @@ namespace
         nested_write_buffer = static_cast<WriteBufferFromVector<PODArray<char>> *>(write_buffer.get());
         if (output_compression_method != CompressionMethod::None)
         {
-            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), output_compression_method, output_compression_level);
+            write_buffer = wrapWriteBufferWithCompressionMethod(
+                std::move(write_buffer), output_compression_method, output_compression_level,
+                /*zstd_window_log=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
             compressing_write_buffer = write_buffer.get();
         }
 
@@ -1620,7 +1623,9 @@ namespace
         if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
+        buf = wrapWriteBufferWithCompressionMethod(
+            std::move(buf), output_compression_method, output_compression_level,
+            /*zstd_window_log=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
         auto format = query_context->getOutputFormat(output_format, *buf, totals);
         format->write(materializeBlock(totals));
         format->finalize();
@@ -1638,7 +1643,9 @@ namespace
         if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
+        buf = wrapWriteBufferWithCompressionMethod(
+            std::move(buf), output_compression_method, output_compression_level,
+            /*zstd_window_log=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
         auto format = query_context->getOutputFormat(output_format, *buf, extremes);
         format->write(materializeBlock(extremes));
         format->finalize();
