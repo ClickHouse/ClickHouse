@@ -1,6 +1,6 @@
 #include <Processors/Formats/Impl/OpenMetricsTextRowInputFormat.h>
 
-#include <base/arithmeticOverflow.h>
+#include <Processors/Formats/Impl/OpenMetricsText.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -36,12 +36,13 @@ extern const int INCORRECT_DATA;
 
 namespace
 {
-constexpr auto FORMAT_NAME = "OpenMetrics";
-
-[[noreturn]] void throwIncorrect(std::string_view what, std::string_view line)
-{
-    throw Exception(ErrorCodes::INCORRECT_DATA, "{} in OpenMetrics line: {}", what, line);
-}
+using OpenMetricsText::FORMAT_NAME;
+using OpenMetricsText::throwIncorrect;
+using OpenMetricsText::isValidName;
+using OpenMetricsText::readQuotedLabelValue;
+using OpenMetricsText::isStrictRealNumberToken;
+using OpenMetricsText::secondsTokenToMillis;
+using OpenMetricsText::hasMultipleSampleKinds;
 
 void skipAsciiSpaces(std::string_view s, size_t & pos)
 {
@@ -56,55 +57,6 @@ std::string_view readToken(std::string_view s, size_t & pos)
     while (pos < s.size() && s[pos] != ' ' && s[pos] != '\t')
         ++pos;
     return s.substr(start, pos - start);
-}
-
-/// `[a-zA-Z_:][a-zA-Z0-9_:]*` if allow_colon (metric names), else `[a-zA-Z_][a-zA-Z0-9_]*` (label names).
-bool isValidName(std::string_view name, bool allow_colon)
-{
-    const auto ok = [allow_colon](char c, bool first)
-    {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_')
-            return true;
-        if (allow_colon && c == ':')
-            return true;
-        return !first && c >= '0' && c <= '9';
-    };
-    if (name.empty() || !ok(name[0], /*first=*/true))
-        return false;
-    for (size_t i = 1; i < name.size(); ++i)
-        if (!ok(name[i], /*first=*/false))
-            return false;
-    return true;
-}
-
-/// `pos` at opening `"`. Decodes `\\`, `\"`, `\n`; rejects other escape sequences.
-bool readQuotedString(std::string_view s, size_t & pos, String & out)
-{
-    if (pos >= s.size() || s[pos] != '"')
-        return false;
-    ++pos;
-    out.clear();
-    while (pos < s.size())
-    {
-        const char c = s[pos++];
-        if (c == '"')
-            return true;
-        if (c != '\\')
-        {
-            out.push_back(c);
-            continue;
-        }
-        if (pos >= s.size())
-            return false;
-        switch (s[pos++])
-        {
-            case '\\': out.push_back('\\'); break;
-            case '"':  out.push_back('"');  break;
-            case 'n':  out.push_back('\n'); break;
-            default: return false;
-        }
-    }
-    return false;
 }
 
 /// `pos` at `{`. Validates label names (no `:`), rejects duplicates, throws on malformed input.
@@ -129,7 +81,7 @@ void parseLabelSet(std::string_view s, size_t & pos, std::map<String, String> & 
         ++pos;
 
         String value;
-        if (!readQuotedString(s, pos, value))
+        if (!readQuotedLabelValue(s, pos, value))
             throwIncorrect("Invalid label set", line);
 
         auto [it, inserted] = labels.emplace(String(key), std::move(value));
@@ -171,72 +123,13 @@ void parseMetricDescriptor(std::string_view s, size_t & pos, String & stem, std:
         throwIncorrect("Whitespace between metric name and label set is not allowed", line);
 }
 
-/// `tryReadFloatText` accepts tokens like `.` and `1e+` that OpenMetrics `realnumber` forbids.
-bool isStrictOpenMetricsRealNumberToken(std::string_view token)
-{
-    if (token.empty())
-        return false;
-
-    size_t i = 0;
-    if (token[i] == '+' || token[i] == '-')
-    {
-        ++i;
-        if (i >= token.size())
-            return false;
-    }
-
-    bool has_digit = false;
-    if (token[i] >= '0' && token[i] <= '9')
-    {
-        has_digit = true;
-        while (i < token.size() && token[i] >= '0' && token[i] <= '9')
-            ++i;
-    }
-
-    if (i < token.size() && token[i] == '.')
-    {
-        ++i;
-        while (i < token.size() && token[i] >= '0' && token[i] <= '9')
-        {
-            has_digit = true;
-            ++i;
-        }
-    }
-
-    if (!has_digit)
-        return false;
-
-    if (i < token.size() && (token[i] == 'e' || token[i] == 'E'))
-    {
-        ++i;
-        if (i >= token.size())
-            return false;
-        if (token[i] == '+' || token[i] == '-')
-        {
-            ++i;
-            if (i >= token.size())
-                return false;
-        }
-        bool exp_digit = false;
-        while (i < token.size() && token[i] >= '0' && token[i] <= '9')
-        {
-            exp_digit = true;
-            ++i;
-        }
-        if (!exp_digit)
-            return false;
-    }
-
-    return i == token.size();
-}
-
 /// `realnumber` per OpenMetrics ABNF: optional sign + digits + optional fractional / exponent; rejects NaN/Inf.
 Float64 parseRealNumber(std::string_view token, const String & line)
 {
     if (token == "NaN" || token == "+Inf" || token == "Inf" || token == "-Inf")
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
 
-    if (!isStrictOpenMetricsRealNumberToken(token))
+    if (!isStrictRealNumberToken(token))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
 
     Float64 v = 0;
@@ -246,98 +139,6 @@ Float64 parseRealNumber(std::string_view token, const String & line)
     return v;
 }
 
-/// Convert an OpenMetrics `realnumber` timestamp token (epoch seconds, possibly fractional) to
-/// the Prometheus-compatible millisecond representation stored in the `timestamp` column.
-///
-/// The conversion is `seconds * 1000`. For the integer and decimal forms (no exponent) the math
-/// is done exactly in unsigned 64-bit arithmetic, so the token grammar emitted by
-/// `OpenMetricsTextOutputFormat::write` round-trips back to the same `Int64` ms value — including
-/// the boundaries `Int64::min` (`-9223372036854775.808`) and `Int64::max` (`9223372036854775.807`).
-/// The exponent form is rare and never produced by the writer; it falls back to a `Float64`
-/// multiplication with a strict `(-2^63, 2^63)` range guard to avoid undefined casts at the
-/// boundary that `Float64` cannot distinguish from one ULP outside the range.
-Int64 secondsTokenToMillis(std::string_view token, Float64 ts_value, const String & line)
-{
-    const bool has_exp = token.find('e') != std::string_view::npos || token.find('E') != std::string_view::npos;
-
-    if (has_exp)
-    {
-        const Float64 ms_f = ts_value * 1000.0;
-        const Float64 upper = std::ldexp(1.0, 63);
-        if (!(ms_f > -upper && ms_f < upper))
-            throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-        return static_cast<Int64>(ms_f);
-    }
-
-    /// Strip optional sign once; `parseRealNumber` already accepted the token, so the body
-    /// below is `[digits]` or `[digits].[digits]` with at least one digit overall.
-    std::string_view body = token;
-    bool neg = false;
-    if (!body.empty() && (body.front() == '+' || body.front() == '-'))
-    {
-        neg = body.front() == '-';
-        body.remove_prefix(1);
-    }
-
-    const size_t dot_pos = body.find('.');
-    const std::string_view int_part = (dot_pos == std::string_view::npos) ? body : body.substr(0, dot_pos);
-    const std::string_view frac_part = (dot_pos == std::string_view::npos) ? std::string_view{} : body.substr(dot_pos + 1);
-
-    UInt64 abs_seconds = 0;
-    for (char c : int_part)
-    {
-        if (c < '0' || c > '9')
-            throwIncorrect("Invalid timestamp token", line);
-        UInt64 next = abs_seconds * 10u + static_cast<UInt64>(c - '0');
-        if (next < abs_seconds)
-            throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-        abs_seconds = next;
-    }
-
-    /// Pack the first three fractional digits into ms; anything beyond is sub-millisecond and
-    /// silently truncated (still validated as digits). The writer never emits >3 frac digits,
-    /// so this loses no information on round-trip.
-    UInt64 abs_frac_ms = 0;
-    size_t taken = 0;
-    for (char c : frac_part)
-    {
-        if (c < '0' || c > '9')
-            throwIncorrect("Invalid timestamp token", line);
-        if (taken < 3)
-        {
-            abs_frac_ms = abs_frac_ms * 10u + static_cast<UInt64>(c - '0');
-            ++taken;
-        }
-    }
-    while (taken < 3)
-    {
-        abs_frac_ms *= 10u;
-        ++taken;
-    }
-
-    UInt64 abs_ms_high = 0;
-    if (common::mulOverflow(abs_seconds, static_cast<UInt64>(1000u), abs_ms_high))
-        throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-    UInt64 abs_total = abs_ms_high + abs_frac_ms;
-    if (abs_total < abs_ms_high)
-        throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-
-    constexpr UInt64 INT64_MIN_ABS = static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1u;
-    constexpr UInt64 INT64_MAX_ABS = static_cast<UInt64>(std::numeric_limits<Int64>::max());
-
-    if (neg)
-    {
-        if (abs_total > INT64_MIN_ABS)
-            throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-        if (abs_total == INT64_MIN_ABS)
-            return std::numeric_limits<Int64>::min();
-        return -static_cast<Int64>(abs_total);
-    }
-    if (abs_total > INT64_MAX_ABS)
-        throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-    return static_cast<Int64>(abs_total);
-}
-
 /// OpenMetrics `number`: real number, NaN, ±Inf. Requires full-token consumption.
 Float64 parseSampleValue(std::string_view token)
 {
@@ -345,7 +146,7 @@ Float64 parseSampleValue(std::string_view token)
     if (token == "+Inf" || token == "Inf") return std::numeric_limits<double>::infinity();
     if (token == "-Inf")                   return -std::numeric_limits<double>::infinity();
 
-    if (!isStrictOpenMetricsRealNumberToken(token))
+    if (!isStrictRealNumberToken(token))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse float value '{}' in OpenMetrics format", token);
 
     Float64 v = 0;
@@ -621,26 +422,12 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         if (has_ts)
             parsed_timestamp_ms = secondsTokenToMillis(ts_token, ts_value, line);
 
-        /// Resolve logical metric name by folding `_bucket`/`_sum`/`_count` siblings into the
-        /// `# TYPE` family they belong to. The rules are type-specific because the OpenMetrics /
-        /// Prometheus exposition contracts differ:
-        ///   * `_bucket` only exists for `histogram` families (summaries use `{quantile=...}` +
-        ///     `_sum`/`_count`). A `<base>_bucket{le=...}` line under a `# TYPE <base> summary`
-        ///     header therefore stays as its own metric (`logical_name = stem`) and the `le`
-        ///     label is preserved — folding it into the summary would silently misattribute it.
-        ///   * `_sum` and `_count` are shared by `histogram` and `summary` families.
-        /// When the suffix is folded, the parser synthesizes the empty marker label
-        /// (`labels[sum] = ""` / `labels[count] = ""`) used internally and by `FORMAT Prometheus`.
-        /// A user-provided label of the same name with a non-empty value would lose that value,
-        /// so collisions are rejected instead of silently overwritten.
-        struct SuffixRule { std::string_view suffix; std::string_view synth_label; bool histogram_only; };
-        static constexpr std::array<SuffixRule, 3> rules = {{
-            {"_bucket", "",      true},
-            {"_sum",    "sum",   false},
-            {"_count",  "count", false},
-        }};
+        /// Fold `_bucket`/`_sum`/`_count` siblings into their `# TYPE` family (see SUFFIX_RULES for
+        /// the type-specific contract). Folding a suffix synthesizes the empty marker label
+        /// (`labels[sum]=""` / `labels[count]=""`); a pre-existing non-empty label of that name is a
+        /// collision and is rejected rather than silently overwritten.
         String logical_name = stem;
-        for (const auto & r : rules)
+        for (const auto & r : OpenMetricsText::SUFFIX_RULES)
         {
             if (!stem.ends_with(r.suffix) || stem.size() <= r.suffix.size())
                 continue;
@@ -676,32 +463,12 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         const auto meta_it = family_meta.find(logical_name);
         const FamilyMeta & fm = (meta_it == family_meta.end()) ? empty_meta : meta_it->second;
 
-        if (fm.type == "histogram" || fm.type == "summary")
-        {
-            size_t sample_kinds = 0;
-            if (fm.type == "histogram")
-            {
-                if (labels.contains("le"))
-                    ++sample_kinds;
-            }
-            else if (labels.contains("quantile"))
-            {
-                ++sample_kinds;
-            }
-
-            for (const char * marker : {"sum", "count"})
-            {
-                if (auto it = labels.find(marker); it != labels.end() && it->second.empty())
-                    ++sample_kinds;
-            }
-
-            if (sample_kinds > 1)
-                throwIncorrect(
-                    fmt::format(
-                        "Sample for family '{}' with type '{}' cannot combine multiple histogram/summary sample kinds in labels",
-                        logical_name, fm.type),
-                    line);
-        }
+        if (hasMultipleSampleKinds(fm.type, labels))
+            throwIncorrect(
+                fmt::format(
+                    "Sample for family '{}' with type '{}' cannot combine multiple histogram/summary sample kinds in labels",
+                    logical_name, fm.type),
+                line);
 
         ext.read_columns.assign(columns.size(), 0);
 

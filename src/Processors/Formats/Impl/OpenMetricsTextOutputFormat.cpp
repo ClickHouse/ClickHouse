@@ -1,8 +1,12 @@
 #include <Processors/Formats/Impl/OpenMetricsTextOutputFormat.h>
 
+#include <Processors/Formats/Impl/OpenMetricsText.h>
+
 #include <algorithm>
+#include <map>
 #include <optional>
 #include <type_traits>
+#include <utility>
 
 #include <base/sort.h>
 
@@ -41,7 +45,15 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr auto FORMAT_NAME = "OpenMetrics";
+using OpenMetricsText::FORMAT_NAME;
+using OpenMetricsText::isValidMetricName;
+using OpenMetricsText::isValidLabelName;
+using OpenMetricsText::isEmptyMarker;
+using OpenMetricsText::hasMultipleSampleKinds;
+using OpenMetricsText::histogramSeriesLabels;
+using OpenMetricsText::validateLabelValue;
+using OpenMetricsText::writeQuotedLabelValue;
+using OpenMetricsText::millisToSecondsString;
 
 bool isDataTypeMapString(const DataTypePtr & type)
 {
@@ -60,39 +72,6 @@ bool isInt64OrNullableInt64(const DataTypePtr & type)
         ? assert_cast<const DataTypeNullable *>(type.get())->getNestedType()
         : type;
     return WhichDataType(nested).isInt64();
-}
-
-/// The ClickHouse `timestamp` column is Prometheus-compatible milliseconds. OpenMetrics text
-/// expects epoch seconds (`realnumber`), so format the int64 value as `<seconds>.<3-digit-ms>`
-/// with trailing-zero stripping; the trailing `.` is dropped when the fractional part is zero.
-/// Examples: `1520879607789 -> "1520879607.789"`, `1520879607000 -> "1520879607"`,
-/// `-500 -> "-0.5"`, `0 -> "0"`, `Int64::min -> "-9223372036854775.808"`.
-String formatTimestampMsAsSeconds(Int64 ms)
-{
-    /// `-(Int64::min)` overflows int64, so compute the magnitude in unsigned arithmetic.
-    const bool neg = ms < 0;
-    const UInt64 abs_ms = neg
-        ? (static_cast<UInt64>(-(ms + 1)) + 1u)
-        : static_cast<UInt64>(ms);
-
-    const UInt64 seconds = abs_ms / 1000;
-    const UInt64 frac = abs_ms % 1000;
-
-    String out;
-    if (neg)
-        out.push_back('-');
-    out += std::to_string(seconds);
-    if (frac == 0)
-        return out;
-
-    out.push_back('.');
-    out.push_back(static_cast<char>('0' + (frac / 100) % 10));
-    out.push_back(static_cast<char>('0' + (frac / 10) % 10));
-    out.push_back(static_cast<char>('0' + frac % 10));
-    /// `frac > 0` guarantees at least one non-zero digit, so the `.` is never the last char.
-    while (out.back() == '0')
-        out.pop_back();
-    return out;
 }
 
 template <typename ResType>
@@ -129,29 +108,9 @@ Float64 tryParseFloat(const String & s)
     return t;
 }
 
-/// `[a-zA-Z_:][a-zA-Z0-9_:]*` if allow_colon (metric names), else `[a-zA-Z_][a-zA-Z0-9_]*` (label names).
-/// Matches the input parser's `isValidName` in `OpenMetricsTextRowInputFormat.cpp`.
-bool isValidOpenMetricsName(std::string_view name, bool allow_colon)
-{
-    const auto ok = [allow_colon](char c, bool first)
-    {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_')
-            return true;
-        if (allow_colon && c == ':')
-            return true;
-        return !first && c >= '0' && c <= '9';
-    };
-    if (name.empty() || !ok(name[0], /*first=*/true))
-        return false;
-    for (size_t i = 1; i < name.size(); ++i)
-        if (!ok(name[i], /*first=*/false))
-            return false;
-    return true;
-}
-
 void validateOpenMetricsMetricName(const String & name)
 {
-    if (!isValidOpenMetricsName(name, /*allow_colon=*/true))
+    if (!isValidMetricName(name))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid metric name '{}' for output format '{}'",
@@ -160,90 +119,11 @@ void validateOpenMetricsMetricName(const String & name)
 
 void validateOpenMetricsLabelName(const String & name)
 {
-    if (!isValidOpenMetricsName(name, /*allow_colon=*/false))
+    if (!isValidLabelName(name))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid label name '{}' for output format '{}'",
             name, FORMAT_NAME);
-}
-
-/// Empty `sum`/`count` label values are internal suffix markers for histogram/summary rows.
-bool isEmptyMarkerLabel(const std::map<String, String> & labels, const char * key)
-{
-    if (auto it = labels.find(key); it != labels.end() && it->second.empty())
-        return true;
-    return false;
-}
-
-/// Histogram/summary rows must represent exactly one sample kind: bucket (`le`) or quantile
-/// (`quantile`), or `_sum` / `_count` (empty marker labels) — not a combination.
-void validateBucketFamilyRowLabels(const String & metric_type, const std::map<String, String> & labels)
-{
-    if (metric_type != "histogram" && metric_type != "summary")
-        return;
-
-    size_t sample_kinds = 0;
-    if (metric_type == "histogram")
-    {
-        if (labels.contains("le"))
-            ++sample_kinds;
-    }
-    else if (labels.contains("quantile"))
-    {
-        ++sample_kinds;
-    }
-
-    if (isEmptyMarkerLabel(labels, "sum"))
-        ++sample_kinds;
-    if (isEmptyMarkerLabel(labels, "count"))
-        ++sample_kinds;
-
-    if (sample_kinds > 1)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Row for output format '{}' cannot combine multiple histogram/summary sample kinds in labels",
-            FORMAT_NAME);
-}
-
-/// OpenMetrics label values only permit `\\`, `\"`, and `\n` escapes (matching the input
-/// parser's `readQuotedString`). Generic `writeDoubleQuotedString` also emits `\t`, `\r`,
-/// `\0`, etc., which our reader rejects and strict consumers can reject too.
-void validateOpenMetricsLabelValue(std::string_view s)
-{
-    for (char c : s)
-    {
-        if (c == '\\' || c == '"' || c == '\n')
-            continue;
-        if (static_cast<unsigned char>(c) < 32)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Label value for output format '{}' contains unsupported control character U+{:04X}",
-                FORMAT_NAME, static_cast<unsigned char>(c));
-    }
-}
-
-void writeOpenMetricsQuotedLabelValue(std::string_view s, WriteBuffer & buf)
-{
-    validateOpenMetricsLabelValue(s);
-    writeChar('"', buf);
-    for (char c : s)
-    {
-        switch (c)
-        {
-            case '\\':
-                writeCString("\\\\", buf);
-                break;
-            case '"':
-                writeCString("\\\"", buf);
-                break;
-            case '\n':
-                writeCString("\\n", buf);
-                break;
-            default:
-                writeChar(c, buf);
-        }
-    }
-    writeChar('"', buf);
 }
 
 template <typename Container>
@@ -271,23 +151,6 @@ void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Container &
                     it->first, FORMAT_NAME);
         }
     }
-}
-
-/// Histogram series identity: all labels except bucket/meta markers (`le`, empty `count`, empty `sum`).
-std::map<String, String> histogramSeriesLabels(const std::map<String, String> & labels)
-{
-    std::map<String, String> series;
-    for (const auto & [key, value] : labels)
-    {
-        if (key == "le")
-            continue;
-        if (key == "count" && value.empty())
-            continue;
-        if (key == "sum" && value.empty())
-            continue;
-        series[key] = value;
-    }
-    return series;
 }
 
 }
@@ -328,15 +191,6 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
 {
     String bucket_label = metric.type == "histogram" ? "le" : "quantile";
 
-    /// `sum`/`count` are only suffix markers when present with the empty value (the documented
-    /// table contract). A real label literally named `sum` or `count` with a non-empty value is
-    /// not a marker and must not be sorted to the tail of the family.
-    auto is_empty_marker = [](const std::map<String, String> & labels, const String & key)
-    {
-        auto it = labels.find(key);
-        return it != labels.end() && it->second.empty();
-    };
-
     if (metric.type == "histogram")
     {
         struct SeriesState
@@ -347,13 +201,16 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
             std::optional<CurrentMetric::RowValue> inf_bucket_row;
         };
 
-        std::map<std::map<String, String>, SeriesState> series_states;
+        /// Synthesis is per (series, timestamp): a histogram series sampled at several timestamps
+        /// must get its `+Inf`/`_count` counterpart at each timestamp independently, so the
+        /// timestamp is part of the key. A series-only key would cross-match different timestamps
+        /// (e.g. a `_count` at t1 and a `+Inf` at t2 would wrongly suppress synthesis for both).
+        std::map<std::pair<std::map<String, String>, String>, SeriesState> series_states;
         for (const auto & val : metric.values)
         {
-            const auto series = histogramSeriesLabels(val.labels);
-            auto & state = series_states[series];
+            auto & state = series_states[std::pair{histogramSeriesLabels(val.labels), val.timestamp}];
 
-            if (is_empty_marker(val.labels, "count"))
+            if (isEmptyMarker(val.labels, "count"))
             {
                 state.has_count_marker = true;
                 state.count_marker_row = val;
@@ -365,8 +222,9 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
             }
         }
 
-        for (const auto & [series, state] : series_states)
+        for (const auto & [key, state] : series_states)
         {
+            const auto & series = key.first;
             if (state.has_count_marker && !state.has_inf_bucket && state.count_marker_row)
             {
                 auto synthetic = *state.count_marker_row;
@@ -385,14 +243,14 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
     }
 
     ::sort(metric.values.begin(), metric.values.end(),
-        [&bucket_label, &is_empty_marker](const auto & lhs, const auto & rhs)
+        [&bucket_label](const auto & lhs, const auto & rhs)
         {
-            bool lhs_sum = is_empty_marker(lhs.labels, "sum");
-            bool lhs_count = is_empty_marker(lhs.labels, "count");
+            bool lhs_sum = isEmptyMarker(lhs.labels, "sum");
+            bool lhs_count = isEmptyMarker(lhs.labels, "count");
             bool lhs_meta = lhs_sum || lhs_count;
 
-            bool rhs_sum = is_empty_marker(rhs.labels, "sum");
-            bool rhs_count = is_empty_marker(rhs.labels, "count");
+            bool rhs_sum = isEmptyMarker(rhs.labels, "sum");
+            bool rhs_count = isEmptyMarker(rhs.labels, "count");
             bool rhs_meta = rhs_sum || rhs_count;
 
             if (lhs_sum && rhs_count)
@@ -430,7 +288,11 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
     if (current_metric.type == "histogram" || current_metric.type == "summary")
     {
         for (const auto & val : current_metric.values)
-            validateBucketFamilyRowLabels(current_metric.type, val.labels);
+            if (hasMultipleSampleKinds(current_metric.type, val.labels))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Row for output format '{}' cannot combine multiple histogram/summary sample kinds in labels",
+                    FORMAT_NAME);
     }
 
     auto write_attribute = [this](const char * marker, const String & value)
@@ -455,7 +317,7 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
     for (auto & val : current_metric.values)
     {
         for (const auto & [label_name, label_value] : val.labels)
-            validateOpenMetricsLabelValue(label_value);
+            validateLabelValue(label_value);
 
         writeString(current_metric.name, out);
 
@@ -501,7 +363,7 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
                 is_first = false;
                 writeString(name, out);
                 writeChar('=', out);
-                writeOpenMetricsQuotedLabelValue(value, out);
+                writeQuotedLabelValue(value, out);
             }
             writeChar('}', out);
         }
@@ -585,7 +447,7 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
         const Int64 ms = ts_col.isNullable()
             ? assert_cast<const ColumnNullable &>(ts_col).getNestedColumn().getInt(row_num)
             : ts_col.getInt(row_num);
-        row.timestamp = formatTimestampMsAsSeconds(ms);
+        row.timestamp = millisToSecondsString(ms);
     }
 
     if (labels)

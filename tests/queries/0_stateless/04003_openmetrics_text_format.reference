@@ -93,3 +93,17 @@ req_count{job="web"} 20
 m{k="a\nb"} 1
 
 # EOF
+# TYPE lat histogram
+lat_bucket{le="+Inf"} 9 2
+lat_bucket{le="+Inf"} 7 1
+lat_count 7 1
+lat_count 9 2
+
+# EOF
+# TYPE lat2 histogram
+lat2_bucket{le="+Inf"} 3 1
+lat2_bucket{le="+Inf"} 5 2
+lat2_count 3 1
+lat2_count 5 2
+
+# EOF

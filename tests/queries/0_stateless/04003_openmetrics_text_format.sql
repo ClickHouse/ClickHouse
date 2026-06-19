@@ -1,86 +1,43 @@
--- ============================================================================
--- FORMAT OpenMetrics: output round-trip / sample shapes / metadata.
--- The `timestamp` column stays Prometheus-compatible milliseconds; the writer
--- divides by 1000 to emit OpenMetrics seconds and the reader multiplies back.
--- ============================================================================
+-- FORMAT OpenMetrics output/input round-trip. The `timestamp` column is Prometheus-compatible
+-- milliseconds; the writer divides by 1000 to emit OpenMetrics seconds and the reader multiplies back.
 
-SELECT 'http_requests_total' AS name, 1. AS value, '' AS help, '' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics;
-
--- Output: 100 ms in the ClickHouse column emits as `0.1` seconds in OpenMetrics text.
-SELECT 'http_requests_total' AS name, 2. AS value, 'Total number of HTTP requests' AS help, 'counter' AS type, map('method', 'GET', 'status', '200') AS labels, CAST(100 AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics;
-
--- Output: ms-to-seconds boundary cases (trailing-zero stripping; negative-zero seconds; INT64_MIN).
+-- Output: minimal counter; 100 ms -> `0.1` seconds; ms-to-seconds boundary cases (trailing-zero strip, INT64_MIN).
+SELECT 'http_requests_total' AS name, 1. AS value, '' AS help, '' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+SELECT 'http_requests_total' AS name, 2. AS value, 'Total number of HTTP requests' AS help, 'counter' AS type, map('method', 'GET', 'status', '200') AS labels, CAST(100 AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
 SELECT 'a' AS name, 1.0 AS value, CAST(1520879607789 AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
 SELECT 'b' AS name, 2.0 AS value, CAST(1520879607000 AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
 SELECT 'c' AS name, 3.0 AS value, CAST(-500 AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
 SELECT 'd' AS name, 4.0 AS value, CAST(0 AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
--- INT64_MIN written via bit math to avoid the literal being parsed as `-(UInt64{2^63})`.
+-- INT64_MIN via bit math (avoid the literal parsing as `-(UInt64{2^63})`).
 SELECT 'e' AS name, 5.0 AS value, CAST(bitShiftLeft(toInt64(1), 63) AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
 
--- Zero-row result still terminates the OpenMetrics stream with `# EOF`.
+-- Zero-row result still terminates the stream with `# EOF`.
 SELECT 'm' AS name, 1.0 AS value WHERE 0 FORMAT OpenMetrics;
 
--- Output schema validation: `timestamp` must be `Int64` (or `Nullable(Int64)`); other numeric
--- types are rejected so the ms-as-seconds contract is unambiguous at the column level. The
--- output format is instantiated client-side under `FORMAT`, so the rejection is a `clientError`.
-SELECT name, value, CAST(timestamp AS Float64) AS timestamp
-FROM (SELECT 'm' AS name, 1.0 AS value, 0 AS timestamp)
-FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
-SELECT name, value, CAST(timestamp AS UInt32) AS timestamp
-FROM (SELECT 'm' AS name, 1.0 AS value, 0 AS timestamp)
-FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+-- Output schema: `timestamp` must be Int64 / Nullable(Int64); other numeric types are rejected (clientError under FORMAT).
+SELECT name, value, CAST(timestamp AS Float64) AS timestamp FROM (SELECT 'm' AS name, 1.0 AS value, 0 AS timestamp) FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT name, value, CAST(timestamp AS UInt32) AS timestamp FROM (SELECT 'm' AS name, 1.0 AS value, 0 AS timestamp) FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 
+-- ===== Input parsing and validation =====
 
--- ============================================================================
--- FORMAT OpenMetrics: input parsing and validation.
--- ============================================================================
-
--- Input: OpenMetrics timestamp tokens are epoch seconds; reader multiplies by 1000
--- before storing in the ClickHouse `Nullable(Int64)` column (fractional ms preserved).
--- `999` seconds -> 999000 ms; `42` is the sample value.
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String',
+-- Timestamp tokens are epoch seconds; reader multiplies by 1000 (fractional ms preserved). `999`s -> 999000 ms.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String',
 $$
 # HELP demo_jobs_processed_total Number of completed batch jobs
 # TYPE demo_jobs_processed_total counter
 # UNIT demo_jobs_processed_total seconds
 demo_jobs_processed_total 42 999
 # EOF
-$$
-)
-FORMAT TSV;
+$$) FORMAT TSV;
 
--- Tab is valid whitespace between metric descriptor and value (OpenMetrics / Prometheus text).
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String',
-    concat('ingress_http_requests_total', char(9), '7', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
+-- Tab is valid whitespace between metric descriptor and value.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String', concat('ingress_http_requests_total', char(9), '7', char(10), '# EOF', char(10))) FORMAT TSV;
 
--- Escaped newline and quote inside label value (\\n, \", \\ per exposition format).
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String',
-    concat('demo_log_lines_total{k="a', char(92), 'n', 'b"} 1', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
+-- Escaped newline / quote / backslash inside a label value (\n, \", \\).
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String', concat('demo_log_lines_total{k="a', char(92), 'n', 'b"} 1', char(10), '# EOF', char(10))) FORMAT TSV;
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String', concat('demo_error_messages_total{k="a', char(92), '"', 'b"} 1', char(10), '# EOF', char(10))) FORMAT TSV;
 
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String',
-    concat('demo_error_messages_total{k="a', char(92), '"', 'b"} 1', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
-
--- Reject trailing garbage after sample value / timestamp (no silent truncation).
+-- Reject trailing garbage after the value / timestamp (no silent truncation).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 abc', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 2 extra', char(10))); -- { serverError INCORRECT_DATA }
 
@@ -90,66 +47,27 @@ SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 # {b
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 #{trace_id="x"} 0.5', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 # {trace_id="x"}0.5', char(10))); -- { serverError INCORRECT_DATA }
 
--- Reject malformed `number` / `realnumber` tokens (`tryReadFloatText` alone accepts `.` and `1e+`).
+-- Reject malformed number / realnumber tokens (`tryReadFloatText` alone accepts `.` and `1e+`).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m . 1', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 1e+', char(10))); -- { serverError INCORRECT_DATA }
 
--- Valid exemplar suffix is accepted (labels are not ingested into the row schema).
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64',
-    concat('demo_http_requests_total 1 # {trace_id="abc"} 0.5', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
-
--- Exemplar may include an optional timestamp after exemplar value.
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64',
-    concat('foo_bucket{le="10"} 17 # {trace_id="x"} 9.8 1520879607.789', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
+-- Valid exemplar suffix is accepted (labels not ingested); an optional exemplar timestamp is allowed.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('demo_http_requests_total 1 # {trace_id="abc"} 0.5', char(10), '# EOF', char(10))) FORMAT TSV;
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('foo_bucket{le="10"} 17 # {trace_id="x"} 9.8 1520879607.789', char(10), '# EOF', char(10))) FORMAT TSV;
 
 -- Reject whitespace between metric name and `{labels}`.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('metric {job="x"} 1', char(10))); -- { serverError INCORRECT_DATA }
 
--- Input: OpenMetrics realnumber timestamp tokens (`+2`, fractional `1520879607.789`).
--- Stored value is `token_seconds * 1000` ms.
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 +2', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
+-- realnumber timestamp tokens (`+2`, fractional `1520879607.789`); stored ms = token_seconds * 1000.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 +2', char(10), '# EOF', char(10))) FORMAT TSV;
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 1520879607.789', char(10), '# EOF', char(10))) FORMAT TSV;
+-- Decimal token below 1 second (`-.5`) preserves the sign as `-500` ms.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -.5', char(10), '# EOF', char(10))) FORMAT TSV;
 
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 1520879607.789', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
-
--- Input: decimal token below 1 second (e.g. `-.5`) preserves negative sign as `-500` ms.
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 -.5', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
-
--- Reject empty metric name and duplicate label keys (invalid exposition text).
+-- Reject empty metric name, duplicate label keys, missing descriptor/value separator, and malformed label names.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('{k="v"} 1', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{a="1",a="2"} 1', char(10))); -- { serverError INCORRECT_DATA }
-
--- Descriptor and value must be separated by ASCII whitespace (no `m{job="x"}1`).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{job="x"}1', char(10))); -- { serverError INCORRECT_DATA }
-
--- Reject malformed label names (empty key, whitespace in key, `:` in key).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{="v"} 1', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{a ="v"} 1', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{trace:id="x"} 1', char(10))); -- { serverError INCORRECT_DATA }
@@ -157,249 +75,115 @@ SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{trace:
 -- Reject non-finite timestamp tokens even when the schema has no timestamp column.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 NaN', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 +Inf', char(10))); -- { serverError INCORRECT_DATA }
-
--- `unit` must be String for OpenMetrics output schema validation.
+-- `unit` must be String for the output schema.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, unit UInt8', concat('x 1', char(10))); -- { serverError BAD_ARGUMENTS }
-
--- Reject malformed float sample tokens (no partial parse, e.g. 1abc must not become 1).
+-- Reject a malformed float sample (no partial parse, e.g. `1abc` must not become `1`).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1abc', char(10))); -- { serverError INCORRECT_DATA }
-
--- Reject trailing payload after logical end (# EOF).
+-- Reject payload after `# EOF`, non-whitespace on the `# EOF` line, and a `-`-only timestamp token.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('# EOF', char(10), 'm 1', char(10))); -- { serverError INCORRECT_DATA }
-
--- Reject non-whitespace on the same line after `# EOF` (not a valid logical terminator).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('# EOF trailing', char(10))); -- { serverError INCORRECT_DATA }
-
--- Reject malformed timestamp token (`-` without digits) even when the schema has no timestamp column.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 -', char(10))); -- { serverError INCORRECT_DATA }
 
--- Reject incompatible declared column types (validated up front like Prometheus output format).
+-- Reject incompatible declared column types (validated up front; avoids release assert_cast UB).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, help UInt64', concat('x 1', char(10))); -- { serverError BAD_ARGUMENTS }
-
--- Schema must match insertion column types (non-nullable Float64; String not FixedString) — avoid release assert_cast UB.
 SELECT * FROM format(OpenMetrics, 'name String, value Nullable(Float64)', concat('x 1', char(10))); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM format(OpenMetrics, 'name FixedString(16), value Float64', concat('x 1', char(10))); -- { serverError BAD_ARGUMENTS }
 
--- Do not fold `..._sum` / `..._count` into the base name unless # TYPE is histogram or summary (counter/gauge can legitimately use those suffixes).
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String',
-    concat('# HELP http_requests_total help\n', '# TYPE http_requests_total counter\n', 'http_requests_total_sum 1\n', '# EOF\n')
-)
-FORMAT TSV;
+-- `_sum` / `_count` fold into the base name only for histogram/summary (counter/gauge keep the suffix).
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String', concat('# HELP http_requests_total help\n', '# TYPE http_requests_total counter\n', 'http_requests_total_sum 1\n', '# EOF\n')) FORMAT TSV;
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String', concat('# HELP http_request_duration_seconds help\n', '# TYPE http_request_duration_seconds histogram\n', 'http_request_duration_seconds_sum 5\n', '# EOF\n')) FORMAT TSV;
 
--- Histogram/summary `_sum` still maps to the family with synthetic `sum` label.
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String',
-    concat('# HELP http_request_duration_seconds help\n', '# TYPE http_request_duration_seconds histogram\n', 'http_request_duration_seconds_sum 5\n', '# EOF\n')
-)
-FORMAT TSV;
-
--- `# TYPE` must not treat trailing spaces as part of the type token (histogram/summary normalization).
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String',
-    concat('# HELP rpc_duration_seconds help\n', '# TYPE rpc_duration_seconds histogram   \n', 'rpc_duration_seconds_bucket{le="0.5"} 3\n', '# EOF\n')
-)
-FORMAT TSV;
--- Reject non-whitespace after the `# TYPE` type token (do not silently truncate metadata).
+-- `# TYPE` ignores trailing spaces on the type token; reject non-whitespace after it.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, help String, type String, labels Map(String, String), timestamp Nullable(Int64), unit String', concat('# HELP rpc_duration_seconds help\n', '# TYPE rpc_duration_seconds histogram   \n', 'rpc_duration_seconds_bucket{le="0.5"} 3\n', '# EOF\n')) FORMAT TSV;
 SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram garbage', char(10), 'h_bucket{le="1"} 2', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 
--- Range guards (token is seconds, stored as `seconds * 1000` ms):
--- Largest in-range integer seconds (INT64_MAX / 1000) is accepted; +1 second overflows Int64 ms.
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 9223372036854775', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
+-- Range guards (token seconds, stored seconds*1000 ms): INT64_MAX/1000 ok; +1s overflows; huge float tokens rejected.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775', char(10), '# EOF', char(10))) FORMAT TSV;
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854776', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854776', char(10))); -- { serverError INCORRECT_DATA }
--- Float-shaped tokens that obviously overflow Int64 ms after the *1000 conversion are also rejected.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 1e20', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -1e20', char(10))); -- { serverError INCORRECT_DATA }
 
--- Exact boundary round-trip: the decimal tokens that `FORMAT OpenMetrics` emits for `Int64::min`
--- and `Int64::max` must parse back to the same ms values. The parser uses exact integer/decimal
--- arithmetic so the `(seconds * 1000) + frac_ms` packs without `Float64` precision loss.
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 9223372036854775.807', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 -9223372036854775.808', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
--- One ms past the boundary on either side must throw.
+-- Exact boundary round-trip for the tokens emitted at Int64::min / Int64::max ms (exact integer/decimal math).
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775.807', char(10), '# EOF', char(10))) FORMAT TSV;
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854775.808', char(10), '# EOF', char(10))) FORMAT TSV;
+-- One ms past the boundary on either side throws.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775.808', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854775.809', char(10))); -- { serverError INCORRECT_DATA }
 -- Sub-millisecond fractional digits beyond the third are truncated, not rejected.
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 1.7895', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 1.7895', char(10), '# EOF', char(10))) FORMAT TSV;
 
--- `markFormatSupportsSubsetOfColumns` contract: the parser still reads `name`/`value` from
--- every line, but only inserts the columns the query actually selected. Each query below uses
--- the same single-line input and exercises a different non-full-column projection.
-SELECT name
-FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10)))
-FORMAT TSV;
-SELECT value
-FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10)))
-FORMAT TSV;
-SELECT timestamp
-FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10)))
-FORMAT TSV;
-SELECT labels
-FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10)))
-FORMAT TSV;
+-- `markFormatSupportsSubsetOfColumns`: the parser always reads name/value but inserts only the selected columns.
+SELECT name FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10))) FORMAT TSV;
+SELECT value FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10))) FORMAT TSV;
+SELECT timestamp FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10))) FORMAT TSV;
+SELECT labels FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10))) FORMAT TSV;
 
--- ----------------------------------------------------------------------------
--- Type-specific suffix folding.
---   * `_bucket` belongs only to `histogram` families. Under `# TYPE x summary`
---     a sibling `x_bucket{le=...}` line must stay as its own metric named
---     `x_bucket`, with `le` preserved as a normal label.
---   * `_sum` and `_count` are shared by `histogram` and `summary` families.
---   * Collisions between the synthesized empty marker label and a user-provided
---     non-empty `sum`/`count` label are rejected as `INCORRECT_DATA` instead of
---     silently overwriting the user value.
--- ----------------------------------------------------------------------------
--- `_bucket` under summary does NOT fold; `le` stays as a normal label.
-SELECT name, value, labels, type
-FROM format(
-    OpenMetrics,
-    concat('# TYPE x summary', char(10), 'x_bucket{le="0.5"} 3', char(10), '# EOF', char(10))
-)
-ORDER BY name, value FORMAT TSV;
--- `_sum` / `_count` still fold under summary.
-SELECT name, value, labels, type
-FROM format(
-    OpenMetrics,
-    concat('# TYPE x summary', char(10), 'x_sum 5', char(10), 'x_count 7', char(10), '# EOF', char(10))
-)
-ORDER BY name, value FORMAT TSV;
--- `_bucket` still folds under histogram.
-SELECT name, value, labels, type
-FROM format(
-    OpenMetrics,
-    concat('# TYPE x histogram', char(10), 'x_bucket{le="0.5"} 3', char(10), '# EOF', char(10))
-)
-ORDER BY name, value FORMAT TSV;
--- Histogram `_bucket` without `{le=...}` is malformed; do not fold into the base family.
+-- Type-specific suffix folding: `_bucket` is histogram-only (under summary it stays its own metric with `le` kept),
+-- `_sum`/`_count` fold for both, and a collision with a user non-empty `sum`/`count` label is rejected.
+SELECT name, value, labels, type FROM format(OpenMetrics, concat('# TYPE x summary', char(10), 'x_bucket{le="0.5"} 3', char(10), '# EOF', char(10))) ORDER BY name, value FORMAT TSV;
+SELECT name, value, labels, type FROM format(OpenMetrics, concat('# TYPE x summary', char(10), 'x_sum 5', char(10), 'x_count 7', char(10), '# EOF', char(10))) ORDER BY name, value FORMAT TSV;
+SELECT name, value, labels, type FROM format(OpenMetrics, concat('# TYPE x histogram', char(10), 'x_bucket{le="0.5"} 3', char(10), '# EOF', char(10))) ORDER BY name, value FORMAT TSV;
 SELECT * FROM format(OpenMetrics, concat('# TYPE x histogram', char(10), 'x_bucket 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, concat('# TYPE x histogram', char(10), 'x_bucket{job="a"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
--- Empty `sum=""` / `count=""` markers from external producers are idempotent (no error).
-SELECT name, value, labels
-FROM format(
-    OpenMetrics,
-    concat('# TYPE x histogram', char(10), 'x_sum{sum=""} 5', char(10), 'x_count{count=""} 7', char(10), '# EOF', char(10))
-)
-ORDER BY name, value FORMAT TSV;
--- Collision: user-provided non-empty `sum`/`count` label on a `_sum`/`_count` sample is rejected.
+SELECT name, value, labels FROM format(OpenMetrics, concat('# TYPE x histogram', char(10), 'x_sum{sum=""} 5', char(10), 'x_count{count=""} 7', char(10), '# EOF', char(10))) ORDER BY name, value FORMAT TSV;
 SELECT * FROM format(OpenMetrics, concat('# TYPE x histogram', char(10), 'x_sum{sum="bytes"} 5', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, concat('# TYPE x summary', char(10), 'x_count{count="oops"} 7', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 
--- ----------------------------------------------------------------------------
--- Output: `le -> _bucket` rewrite is histogram-only; summary preserves `le`.
--- Output: `sum`/`count` are suffix markers only when the label value is empty;
--- a non-empty user value is preserved as a normal label.
--- ----------------------------------------------------------------------------
--- Histogram + `{le: "0.5"}` -> `<name>_bucket{le="0.5"}`.
-SELECT 'h' AS name, 3.0 AS value, '' AS help, 'histogram' AS type, map('le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics;
--- Summary + `{le: "0.5"}` -> `<name>{le="0.5"}` (no `_bucket` rewrite, `le` preserved).
-SELECT 's' AS name, 3.0 AS value, '' AS help, 'summary' AS type, map('le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics;
--- Output: non-empty `unit` column emits `# UNIT <name> <unit>` before samples.
-SELECT 'bytes_total' AS name, 1.0 AS value, '' AS help, 'counter' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, 'bytes' AS unit
-FORMAT OpenMetrics;
+-- Output: `le -> _bucket` is histogram-only (summary keeps `le`); `sum`/`count` are markers only when the value is empty.
+SELECT 'h' AS name, 3.0 AS value, '' AS help, 'histogram' AS type, map('le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+SELECT 's' AS name, 3.0 AS value, '' AS help, 'summary' AS type, map('le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+SELECT 'bytes_total' AS name, 1.0 AS value, '' AS help, 'counter' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, 'bytes' AS unit FORMAT OpenMetrics;
+SELECT 'h' AS name, 9.0 AS value, '' AS help, 'histogram' AS type, map('sum', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+SELECT 's' AS name, 11.0 AS value, '' AS help, 'summary' AS type, map('count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+SELECT 'h' AS name, 7.0 AS value, '' AS help, 'histogram' AS type, map('sum', 'bytes') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+SELECT 's' AS name, 8.0 AS value, '' AS help, 'summary' AS type, map('count', 'oops') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
 
--- Histogram + `{sum: ""}` marker -> `<name>_sum` (label dropped).
-SELECT 'h' AS name, 9.0 AS value, '' AS help, 'histogram' AS type, map('sum', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics;
--- Summary + `{count: ""}` marker -> `<name>_count` (label dropped).
-SELECT 's' AS name, 11.0 AS value, '' AS help, 'summary' AS type, map('count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics;
--- Histogram + non-empty `sum` label -> kept as a normal label (no `_sum` rewrite).
-SELECT 'h' AS name, 7.0 AS value, '' AS help, 'histogram' AS type, map('sum', 'bytes') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics;
--- Summary + non-empty `count` label -> kept as a normal label (no `_count` rewrite).
-SELECT 's' AS name, 8.0 AS value, '' AS help, 'summary' AS type, map('count', 'oops') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics;
-
--- Histogram rows cannot combine `le` with empty `sum`/`count` marker labels (bucket vs sum/count).
-SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('sum', '', 'le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
-SELECT 'h' AS name, 2.0 AS value, '' AS help, 'histogram' AS type, map('count', '', 'le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+-- A histogram/summary row must represent exactly one sample kind (bucket/quantile, `_sum`, or `_count`).
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('sum', '', 'le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 'h' AS name, 2.0 AS value, '' AS help, 'histogram' AS type, map('count', '', 'le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_sum{le="0.5"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h{sum="",le="0.5"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
-
--- Histogram/summary rows must represent exactly one sample kind (bucket/quantile, `_sum`, or `_count`).
-SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('sum', '', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
-SELECT 's' AS name, 2.0 AS value, '' AS help, 'summary' AS type, map('sum', '', 'quantile', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('sum', '', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 's' AS name, 2.0 AS value, '' AS help, 'summary' AS type, map('sum', '', 'quantile', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_sum{count=""} 3', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, concat('# TYPE s summary', char(10), 's_sum{quantile="0.5"} 4', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 
 -- Output validates every buffered row once the family `type` is known (not only the current row).
-SELECT *
-FROM (
-    SELECT 'h' AS name, 1.0 AS value, '' AS help, '' AS type, map('sum', '', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-    UNION ALL
-    SELECT 'h', 2.0, '', 'histogram', map('le', '0.5'), CAST(NULL AS Nullable(Int64)), ''
-)
-ORDER BY value
-FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
-
--- Overflowing timestamp tokens are rejected even when the `timestamp` column is not projected.
-SELECT name
-FROM format(OpenMetrics, concat('m 1 1e20', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM (SELECT 'h' AS name, 1.0 AS value, '' AS help, '' AS type, map('sum', '', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit UNION ALL SELECT 'h', 2.0, '', 'histogram', map('le', '0.5'), CAST(NULL AS Nullable(Int64)), '') ORDER BY value FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+-- Overflowing timestamp tokens are rejected even when `timestamp` is not projected.
+SELECT name FROM format(OpenMetrics, concat('m 1 1e20', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 
 -- Histogram `+Inf` / `_count` synthesis preserves non-marker labels per series.
-SELECT 'req' AS name, 10.0 AS value, '' AS help, 'histogram' AS type, map('job', 'api', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
-FORMAT OpenMetrics;
-SELECT *
-FROM (
+SELECT 'req' AS name, 10.0 AS value, '' AS help, 'histogram' AS type, map('job', 'api', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+SELECT * FROM (
     SELECT 'req' AS name, 5.0 AS value, '' AS help, 'histogram' AS type, map('job', 'api', 'le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
     UNION ALL
     SELECT 'req', 10.0, '', 'histogram', map('job', 'api', 'count', ''), CAST(NULL AS Nullable(Int64)), ''
     UNION ALL
     SELECT 'req', 20.0, '', 'histogram', map('job', 'web', 'le', '+Inf'), CAST(NULL AS Nullable(Int64)), ''
-)
-ORDER BY value
-FORMAT OpenMetrics;
+) ORDER BY value FORMAT OpenMetrics;
 
--- ----------------------------------------------------------------------------
--- Output label serialization contract.
---   * Only `\\`, `\"`, and `\n` escapes are emitted; other control characters are
---     rejected so output round-trips through the OpenMetrics input parser.
---   * Duplicate label keys in the `labels` map are rejected (OpenMetrics requires
---     unique names; the input side already treats duplicates as `INCORRECT_DATA`).
--- ----------------------------------------------------------------------------
--- Newline is escaped as `\n` and remains readable by `FORMAT OpenMetrics` input.
+-- Output label serialization: only `\\`,`\"`,`\n` escapes; other control chars / duplicate keys / bad names rejected.
 SELECT 'm' AS name, 1.0 AS value, map('k', concat('a', char(10), 'b')) AS labels FORMAT OpenMetrics;
--- Tab and other unsupported control characters are rejected at output time.
 SELECT 'm' AS name, 1.0 AS value, map('k', concat('a', char(9), 'b')) AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
--- Duplicate keys in the `labels` map are rejected instead of silently keeping the first.
 SELECT 'm' AS name, 1.0 AS value, map('a', '1', 'a', '2') AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
-
--- Output validates metric and label names with the same rules as the input parser.
 SELECT 'bad name' AS name, 1.0 AS value FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT 'm' AS name, 1.0 AS value, map('trace:id', 'x') AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+
+-- ===== Regression: histogram `+Inf` / `_count` synthesis is keyed per (series, timestamp) =====
+-- Same series sampled at two timestamps: a `_count` marker at one and a `+Inf` bucket at the other.
+-- Each timestamp must get its own synthesized counterpart; a series-only key would cross-match the
+-- two timestamps and suppress both syntheses, leaving an incomplete histogram at each timestamp.
+SELECT * FROM (
+    SELECT 'lat' AS name, 7.0 AS value, '' AS help, 'histogram' AS type, map('count', '') AS labels, CAST(1000 AS Nullable(Int64)) AS timestamp, '' AS unit
+    UNION ALL
+    SELECT 'lat', 9.0, '', 'histogram', map('le', '+Inf'), CAST(2000 AS Nullable(Int64)), ''
+) ORDER BY timestamp FORMAT OpenMetrics;
+-- Two `_count` markers for the same series at different timestamps each get their own synthesized
+-- `+Inf` (a series-only key would overwrite the marker row and emit only one `+Inf`).
+SELECT * FROM (
+    SELECT 'lat2' AS name, 3.0 AS value, '' AS help, 'histogram' AS type, map('count', '') AS labels, CAST(1000 AS Nullable(Int64)) AS timestamp, '' AS unit
+    UNION ALL
+    SELECT 'lat2', 5.0, '', 'histogram', map('count', ''), CAST(2000 AS Nullable(Int64)), ''
+) ORDER BY timestamp FORMAT OpenMetrics;
