@@ -739,39 +739,23 @@ private:
     void addDigest(const Node & node, std::string_view path);
 };
 
-// ────────────────────────────────────────────────────────────────────────────────
-// V8 parallel-snapshot load API — memory storage only (not template members).
-// Kept as free functions so the RocksDB explicit instantiation never sees
-// Container::LocalInsertBatch (which does not exist on RocksDBContainer).
-// ────────────────────────────────────────────────────────────────────────────────
+// Parallel-snapshot load API — memory storage only (free functions to avoid
+// pulling LocalInsertBatch into the RocksDB explicit instantiation).
 
-/// Per-frame state accumulated by one deserialization worker (or the serial caller).
+/// Per-chunk state accumulated by one deserialization worker.
 struct MemorySnapshotLoadHandle
 {
-    SnapshotableHashTable<KeeperMemNode>::LocalInsertBatch nodes; /// parsed node batch
+    SnapshotableHashTable<KeeperMemNode>::LocalInsertBatch nodes;
     uint64_t digest_sum = 0;
     KeeperMemoryStorage::Ephemerals local_ephemerals;
     size_t local_ephemeral_nodes = 0;
     std::unordered_map<ACLId, uint64_t> acl_usage;
 };
 
-/// Create a new handle whose node batch is backed by `storage.container`'s arena.
-/// Callable from any thread; takes no locks.
+/// Create a handle backed by `storage.container`'s arena. Thread-safe, no locks.
 MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperMemoryStorage & storage);
 
-/// Merge all handles into `storage` in the order given.
-///
-/// Steps (in order):
-///   1. storage.container.buildMapFromBatches — splice + reserve + map walk
-///   2. Root invariant: find("/") must exist
-///   3. Children walk via updateValueForLoad + inline over-count check
-///   4. Folded equality validation (sum of children.size() == total declared)
-///   5. Merge side state: digest, ephemerals, ACL usage
-///
-/// Caller must hold the storage lock exclusive (apply_snapshot) or be the init thread.
-void finalizeMemorySnapshotLoad(
-    KeeperMemoryStorage & storage,
-    std::span<MemorySnapshotLoadHandle> handles,
-    bool recalculate_digest);
-
+/// Merge handles into `storage`: splice nodes, validate structure, merge side state.
+/// Caller must hold the storage lock (or be the init thread).
+void finalizeMemorySnapshotLoad(KeeperMemoryStorage & storage, std::span<MemorySnapshotLoadHandle> handles, bool recalculate_digest);
 }

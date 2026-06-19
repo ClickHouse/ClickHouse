@@ -5054,10 +5054,6 @@ template class KeeperStorage<SnapshotableHashTable<KeeperMemNode>>;
 template class KeeperStorage<RocksDBContainer<KeeperRocksNode>>;
 #endif
 
-// ────────────────────────────────────────────────────────────────────────────────
-// V8 parallel-snapshot load API (memory storage only, concrete free functions).
-// ────────────────────────────────────────────────────────────────────────────────
-
 MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperMemoryStorage & storage)
 {
     MemorySnapshotLoadHandle handle;
@@ -5065,18 +5061,9 @@ MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperMemoryStorage & storage)
     return handle;
 }
 
-void finalizeMemorySnapshotLoad(
-    KeeperMemoryStorage & storage,
-    std::span<MemorySnapshotLoadHandle> handles,
-    bool recalculate_digest)
+void finalizeMemorySnapshotLoad(KeeperMemoryStorage & storage, std::span<MemorySnapshotLoadHandle> handles, bool recalculate_digest)
 {
-    // Step 1: splice all node batches into the container, reserve the map, build index map.
-    // Also accumulates total declared num_children (out_total_children) and non-root node
-    // count (out_non_root) for folded validation below.
-    //
-    // buildMapFromBatches takes LocalInsertBatch objects; extract them from the handles.
-    // LocalInsertBatch is move-only; after the move the handle's nodes list is empty
-    // and its destructor is a no-op.
+    // Splice all node batches into the container and build the hash map.
     using LocalBatch = SnapshotableHashTable<KeeperMemNode>::LocalInsertBatch;
     std::vector<LocalBatch> batches;
     batches.reserve(handles.size());
@@ -5084,19 +5071,22 @@ void finalizeMemorySnapshotLoad(
         batches.push_back(std::move(h.nodes));
 
     uint64_t out_total_children = 0;
-    uint64_t out_non_root = 0;
-    storage.container.buildMapFromBatches(
-        std::span<LocalBatch>{batches},
-        out_total_children, out_non_root);
+    storage.container.buildMapFromBatches(std::span<LocalBatch>{batches}, out_total_children);
 
-    // Step 2: root invariant check — must run BEFORE the children walk which dereferences parents.
-    // The chunked snapshot path constructs storage with insert_initial_root=false so the snapshot's
-    // own "/" is the only source of the root.
+    // Root must exist (snapshot is constructed with insert_initial_root=false).
     if (!storage.container.contains("/"))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot has no root '/' node");
 
-    // Step 3: children walk — one traversal. updateValueForLoad throws CORRUPTED_DATA on
-    // a missing parent (unlike updateValue which throws LOGICAL_ERROR).
+    // Folded equality check: per-node over-count + non-negative guarantee above imply
+    // children.size() == numChildren() for every node iff out_non_root == out_total_children.
+    if (storage.container.size() - 1 != out_total_children)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Rebuilt child count {} != declared {} (corrupt snapshot)",
+            storage.container.size() - 1,
+            out_total_children);
+
+    // Rebuild parent→child links.
     for (const auto & itr : storage.container)
     {
         if (itr.key == "/")
@@ -5105,12 +5095,11 @@ void finalizeMemorySnapshotLoad(
         const auto parent_path = Coordination::parentNodePath(itr.key);
         const auto child_name = Coordination::getBaseNodeName(itr.key);
 
-        storage.container.updateValueForLoad(parent_path,
+        storage.container.updateValue(
+            parent_path,
             [&child_name, &parent_path](KeeperMemNode & parent)
             {
                 parent.addChild(child_name);
-                // Inline over-count check: a parent's rebuilt children set cannot exceed
-                // the declared numChildren (validated >= 0 at parse time).
                 if (static_cast<int64_t>(parent.getChildren().size()) > parent.numChildren())
                     throw Exception(
                         ErrorCodes::CORRUPTED_DATA,
@@ -5121,18 +5110,7 @@ void finalizeMemorySnapshotLoad(
             });
     }
 
-    // Step 4: folded equality validation O(1).
-    // With per-node children.size() <= numChildren() (inline check above), non-negative
-    // numChildren (parse-time check), and sum of children.size() == out_non_root:
-    //   out_non_root == out_total_children ⟹ children.size() == numChildren() for every node.
-    if (out_non_root != out_total_children)
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "Rebuilt child count {} != declared {} (corrupt snapshot)",
-            out_non_root,
-            out_total_children);
-
-    // Step 5: merge side state from all handles.
+    // Merge side state from all handles.
     for (auto & h : handles)
     {
         if (recalculate_digest)
@@ -5148,7 +5126,6 @@ void finalizeMemorySnapshotLoad(
             storage.acl_map.addUsageBatch(h.acl_usage);
     }
 }
-
 }
 
 // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

@@ -23,6 +23,7 @@ using ClusterConfig = nuraft::cluster_config;
 using ClusterConfigPtr = nuraft::ptr<ClusterConfig>;
 
 class ReadBuffer;
+class ReadBufferFromNuraftBuffer;
 
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
@@ -145,7 +146,8 @@ struct SnapshotFileInfo
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
 
 #if USE_ROCKSDB
-using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>, std::shared_ptr<KeeperStorageSnapshot<KeeperRocksStorage>>>;
+using KeeperStorageSnapshotPtr
+    = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>, std::shared_ptr<KeeperStorageSnapshot<KeeperRocksStorage>>>;
 #else
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>>;
 #endif
@@ -269,8 +271,8 @@ private:
     /// Deserialize a chunked (independently-compressed ZSTD) snapshot from `buffer`.
     /// Called from deserializeSnapshotFromBuffer after "CKFS" magic is detected.
     /// Throws UNKNOWN_FORMAT_VERSION if called for a RocksDB storage instantiation.
-    SnapshotDeserializationResult<Storage> deserializeChunkedSnapshotFromBuffer(
-        nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage = true) const;
+    SnapshotDeserializationResult<Storage>
+    deserializeChunkedSnapshotFromBuffer(ReadBufferFromNuraftBuffer & buffer, bool load_full_storage = true) const;
 
     /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
     void removeOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx);
