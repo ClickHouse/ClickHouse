@@ -14,16 +14,11 @@ for table in aka_name aka_title cast_info char_name comp_cast_type company_name 
              movie_companies movie_info movie_info_idx movie_keyword movie_link \
              name person_info role_type title; do
     clickhouse client --query \
-        "INSERT INTO ${table} SELECT * FROM s3('https://s3.eu-west-3.amazonaws.com/public-pme/join_bench/job/${table}.parquet', 'Parquet')"
+        "INSERT INTO ${table} SELECT * FROM s3('https://s3.eu-west-3.amazonaws.com/public-pme/join_bench/job/${table}.parquet', NOSIGN, 'Parquet')"
 done
 ```
 
 # List of known problems
 
-The following queries deviate slightly from the canonical JOB queries. The changes are noted in a comment at the top of the corresponding query file.
-
-## Q2c, Q5b
-The original queries return an empty result. The aggregate was switched from `MIN(...)` to `count(...)` so the query returns `0` instead of an empty row, making the result explicit.
-
-## Q5a, Q10b, Q32a
-The original queries return an empty result against this snapshot. The selection predicates were adjusted slightly to ensure a non-empty result.
+Original queries that return an empty result: 2c, 5a, 5b, 10b, 32a (5 of 113)
+This is expected, see [Data set mismatch: empty queries results and reproducibility issues](https://github.com/gregrahn/join-order-benchmark/issues/11)
