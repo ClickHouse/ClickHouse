@@ -771,7 +771,7 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     if (!predicate)
         return {};
 
-    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
     auto matches = matchTrees(expr, *filter_dag.dag, false);
 
     auto predicates = analyze(filter_dag.predicate, matches, context, max_elements);
