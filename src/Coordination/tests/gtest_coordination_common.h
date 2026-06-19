@@ -9,7 +9,7 @@
 #include <Coordination/ACLMap.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
-#include <Coordination/KeeperStorage_fwd.h>
+#include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperCommon.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -49,16 +49,9 @@ struct ChangelogDirTest
     }
 };
 
-struct CompressionParam
-{
-    bool enable_compression;
-    std::string extension;
-};
-
-template <typename TStorage, bool enable_compression_param>
+template <bool enable_compression_param>
 struct TestParam
 {
-    using Storage = TStorage;
     static constexpr bool enable_compression = enable_compression_param;
 };
 
@@ -66,7 +59,6 @@ template<typename TestType>
 class CoordinationTest : public ::testing::Test
 {
 public:
-    using Storage = typename TestType::Storage;
     static constexpr bool enable_compression = TestType::enable_compression;
     std::string extension;
 
@@ -99,10 +91,9 @@ public:
     }
 };
 
-template <typename Storage>
-void addNode(Storage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, DB::ACLId acl_id = 0)
+inline void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, DB::ACLId acl_id = 0)
 {
-    using Node = typename Storage::Node;
+    using Node = DB::KeeperStorage::Node;
     Node node{};
     node.setData(data);
     if (ephemeral_owner)
@@ -120,17 +111,14 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
         });
 }
 
-template <typename Storage>
-Coordination::ACLs getUncommittedACLs(const Storage & storage, std::string_view path)
+inline Coordination::ACLs getUncommittedACLs(const DB::KeeperStorage & storage, std::string_view path)
 {
     const auto * node = storage.uncommitted_state.getNode(path).get();
     Coordination::ACLId acl_id = node ? node->acl_id : 0;
     return storage.acl_map.convertNumber(acl_id);
 }
 
-using Implementation = testing::Types<TestParam<DB::KeeperStorage, true>
-                                      ,TestParam<DB::KeeperStorage, false>
-                                      >;
+using Implementation = testing::Types<TestParam<true>, TestParam<false>>;
 TYPED_TEST_SUITE(CoordinationTest, Implementation);
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;

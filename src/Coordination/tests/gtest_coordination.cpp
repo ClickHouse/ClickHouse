@@ -364,7 +364,7 @@ TYPED_TEST(CoordinationTest, TestStateMachineAndLogStore)
     using namespace Coordination;
     using namespace DB;
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
@@ -440,7 +440,7 @@ TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
 
     SnapshotsQueue snapshots_queue{1};
@@ -476,7 +476,7 @@ TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecomm
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
 
     SnapshotsQueue snapshots_queue{1};
@@ -529,7 +529,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
@@ -711,7 +711,7 @@ TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
@@ -767,7 +767,7 @@ TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitte
 
     SnapshotsQueue snapshots_queue{1};
 
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
     auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
@@ -908,7 +908,7 @@ TYPED_TEST(CoordinationTest, TestDurableState)
 TYPED_TEST(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
-    using Storage [[maybe_unused]] = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
 
     Storage storage{500, "", this->keeper_context};

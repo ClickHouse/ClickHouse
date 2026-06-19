@@ -283,7 +283,7 @@ KeeperServer::KeeperServer(
     SnapshotsQueue & snapshots_queue_,
     KeeperContextPtr keeper_context_,
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
-    IKeeperStateMachine::CommitCallback commit_callback)
+    KeeperStateMachine::CommitCallback commit_callback)
     : server_id(server_config->server_id)
     , log(getLogger("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
@@ -798,7 +798,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions &
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     entries.reserve(requests_for_sessions.size());
     for (const auto & request_for_session : requests_for_sessions)
-        entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(request_for_session));
+        entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(request_for_session));
 
     return raft_instance->append_entries(entries);
 }
@@ -1064,7 +1064,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 auto entry_buf = entry->get_buf_ptr();
 
-                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version = {};
+                KeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version = {};
                 size_t request_end_position = 0;
                 auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
                 request_for_session->zxid = next_zxid;
@@ -1076,10 +1076,10 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 /// older versions of Keeper can send logs that are missing some fields
                 size_t bytes_missing = 0;
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     bytes_missing += sizeof(request_for_session->time);
 
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
                     bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
 
                 if (bytes_missing != 0)
@@ -1093,7 +1093,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 size_t write_buffer_header_size = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version)
                     + sizeof(request_for_session->digest->value);
 
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     write_buffer_header_size += sizeof(request_for_session->time);
                 else
                     request_end_position += sizeof(request_for_session->time);
@@ -1102,7 +1102,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
 
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     writeIntBinary(request_for_session->time, write_buf);
 
                 writeIntBinary(request_for_session->zxid, write_buf);

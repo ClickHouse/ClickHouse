@@ -230,16 +230,16 @@ public:
 
     /// Return the map entry for `log_idx`, or `nullptr` if absent. Holding the
     /// result pins the file against unlink and cross-disk moves.
-    /// Caller must hold `IKeeperStateMachine::snapshots_lock`.
+    /// Caller must hold `KeeperStateMachine::snapshots_lock`.
     SnapshotFileInfoPtr getSnapshotPin(uint64_t log_idx) const;
 
     /// Protect this log index from retention — the file backing `latest_snapshot_meta` must
-    /// stay servable to NuRaft. 0 = none. Caller must hold `IKeeperStateMachine::snapshots_lock`.
+    /// stay servable to NuRaft. 0 = none. Caller must hold `KeeperStateMachine::snapshots_lock`.
     void setProtectedSnapshotIndex(uint64_t log_idx);
 
     /// Protect the index of a saved-but-not-yet-applied install from retention until
     /// `apply_snapshot` consumes it (its file is not the mark, so the mark protection does
-    /// not cover it). 0 = none. Caller must hold `IKeeperStateMachine::snapshots_lock`.
+    /// not cover it). 0 = none. Caller must hold `KeeperStateMachine::snapshots_lock`.
     void setProtectedPendingSnapshotIndex(uint64_t log_idx);
 
 private:
