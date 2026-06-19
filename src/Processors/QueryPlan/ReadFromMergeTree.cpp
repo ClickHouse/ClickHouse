@@ -12,6 +12,8 @@
 #include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
@@ -1678,7 +1680,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), columns_to_restore);
     }
 
-    if (!distributed_read_layers.empty())
+    if (distributed_read_layered)
     {
         /// Distributed parallel FINAL: this worker's parts are exactly one global PK-range layer
         /// (selected by bucket_id). Read it in order and merge-dedup it, trimming the boundary granules
@@ -3505,19 +3507,31 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     {
         const size_t bucket_id = parse<UInt64>(settings.parameter_lookup->getParameter("bucket_id").safeGet<String>());
 
-        if (!distributed_read_layers.empty())
+        if (distributed_read_layered)
         {
-            /// Parallel FINAL: read exactly this bucket's PK-range layer, whose marks the coordinator
-            /// computed over the global part set, matched to local parts by name. A missing part is a
-            /// retryable error rather than a silently divergent read.
+            /// Parallel FINAL: this bucket's PK-range layer (its marks + the global borders) arrives as
+            /// the `final_layer` task parameter. Deserialize it, match marks to local parts by name (a
+            /// missing part is a retryable error), and keep the borders/index for the per-layer filter.
+            String blob = settings.parameter_lookup->getParameter("final_layer").safeGet<String>();
+            ReadBufferFromString buf(blob);
+            RangesInDataPartsDescription layer;
+            layer.deserialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+
+            const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+            size_t border_arity = 0;
+            readVarUInt(border_arity, buf);
+            size_t num_borders = 0;
+            readVarUInt(num_borders, buf);
+            DB::FormatSettings format_settings;
+            distributed_read_borders.assign(num_borders, std::vector<Field>(border_arity));
+            for (auto & border : distributed_read_borders)
+                for (size_t i = 0; i < border_arity; ++i)
+                    primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], buf, format_settings);
+            distributed_read_layer_index = bucket_id;
+
             std::unordered_map<String, RangesInDataPart> parts_by_name;
             for (auto & part : result.parts_with_ranges)
                 parts_by_name.emplace(part.data_part->info.getPartNameV1(), std::move(part));
-
-            if (bucket_id >= distributed_read_layers.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Distributed FINAL read: bucket {} is out of range of {} layers", bucket_id, distributed_read_layers.size());
-            const auto & layer = distributed_read_layers[bucket_id];
             RangesInDataParts layer_parts;
             layer_parts.reserve(layer.size());
             for (const auto & part_desc : layer)
@@ -3532,7 +3546,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 layer_parts.push_back(std::move(part));
             }
             result.parts_with_ranges = std::move(layer_parts);
-            distributed_read_layer_index = bucket_id;
         }
         else
         {
@@ -4766,6 +4779,33 @@ size_t ReadFromMergeTree::setupDistributedFinalLayers(size_t max_layers)
     return split.layers.size();
 }
 
+std::vector<String> ReadFromMergeTree::serializeDistributedFinalLayers() const
+{
+    std::vector<String> result;
+    if (distributed_read_layers.empty())
+        return result;
+
+    const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+    const size_t border_arity = distributed_read_borders.empty() ? 0 : distributed_read_borders.front().size();
+    DB::FormatSettings format_settings;
+
+    result.reserve(distributed_read_layers.size());
+    for (const auto & layer : distributed_read_layers)
+    {
+        WriteBufferFromOwnString buf;
+        layer.serialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+        /// All borders accompany every bucket (they are tiny); the worker picks its interval by bucket_id.
+        /// Borders are concrete PK values (the producer gates on `isSafePrimaryKey`, so no sentinel here).
+        writeVarUInt(border_arity, buf);
+        writeVarUInt(distributed_read_borders.size(), buf);
+        for (const auto & border : distributed_read_borders)
+            for (size_t i = 0; i < border_arity; ++i)
+                primary_key.data_types[i]->getDefaultSerialization()->serializeBinary(border[i], buf, format_settings);
+        result.push_back(buf.str());
+    }
+    return result;
+}
+
 Strings ReadFromMergeTree::getShardsForDistributedRead() const
 {
     Strings default_shard_list = {"0"};
@@ -4857,32 +4897,13 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
 
     if (distributed_read_bucket_count)
     {
-        /// Two distributed-read modes. A parallel FINAL read ships per-bucket PK-range layers (marks)
-        /// plus the PK-tuple borders between them; otherwise it pins the coordinator-selected parts so
-        /// all workers bucket over the same ordered list.
+        /// A parallel FINAL read carries its per-bucket PK-range layers as the `final_layer` task
+        /// parameter (set during fan-out), so the shared step holds no per-bucket data; a mark-offset
+        /// read pins the coordinator-selected parts so all workers bucket over the same ordered list.
         const bool layered = !distributed_read_layers.empty();
         writeBinary(layered, ctx.out);
 
-        if (layered)
-        {
-            const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-            const size_t border_arity = distributed_read_borders.empty() ? 0 : distributed_read_borders.front().size();
-            DB::FormatSettings format_settings;
-
-            writeVarUInt(border_arity, ctx.out);
-            writeVarUInt(distributed_read_borders.size(), ctx.out);
-            /// Borders are concrete PK values serialized as their PK column type. The producer gates on
-            /// `isSafePrimaryKey` (no Nullable/Float/Variant/Dynamic PK), so no null or +/-infinity
-            /// sentinel reaches here -- it would throw in `serializeBinary`.
-            for (const auto & border : distributed_read_borders)
-                for (size_t i = 0; i < border_arity; ++i)
-                    primary_key.data_types[i]->getDefaultSerialization()->serializeBinary(border[i], ctx.out, format_settings);
-
-            writeVarUInt(distributed_read_layers.size(), ctx.out);
-            for (const auto & layer : distributed_read_layers)
-                layer.serialize(ctx.out, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-        }
-        else
+        if (!layered)
         {
             Names part_names;
             if (auto analysis = selectRangesToRead())
@@ -4963,38 +4984,17 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(table.getInMemoryMetadataPtr(ctx.context, false), ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
-    /// Read after the storage snapshot so the primary-key data types are available to deserialize borders.
     size_t distributed_read_bucket_count = 0;
     readVarUInt(distributed_read_bucket_count, ctx.in);
 
     Names distributed_read_part_names;
-    std::vector<RangesInDataPartsDescription> distributed_read_layers;
-    std::vector<std::vector<Field>> distributed_read_borders;
+    bool distributed_read_layered = false;
     if (distributed_read_bucket_count)
     {
-        bool layered = false;
-        readBinary(layered, ctx.in);
-
-        if (layered)
-        {
-            const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-            size_t border_arity = 0;
-            readVarUInt(border_arity, ctx.in);
-            size_t num_borders = 0;
-            readVarUInt(num_borders, ctx.in);
-            DB::FormatSettings format_settings;
-            distributed_read_borders.assign(num_borders, std::vector<Field>(border_arity));
-            for (auto & border : distributed_read_borders)
-                for (size_t i = 0; i < border_arity; ++i)
-                    primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], ctx.in, format_settings);
-
-            size_t num_layers = 0;
-            readVarUInt(num_layers, ctx.in);
-            distributed_read_layers.resize(num_layers);
-            for (auto & layer : distributed_read_layers)
-                layer.deserialize(ctx.in, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-        }
-        else
+        /// A layered FINAL read carries its per-bucket layer in the `final_layer` task parameter, so the
+        /// step holds no per-bucket data; a mark-offset read pins the coordinator-selected part names.
+        readBinary(distributed_read_layered, ctx.in);
+        if (!distributed_read_layered)
         {
             size_t num_parts = 0;
             readVarUInt(num_parts, ctx.in);
@@ -5024,9 +5024,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
         read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
-        if (!distributed_read_layers.empty())
-            read_from_merge_tree_step->setDistributedReadLayers(std::move(distributed_read_layers), std::move(distributed_read_borders));
-        else
+        read_from_merge_tree_step->setDistributedReadLayered(distributed_read_layered);
+        if (!distributed_read_layered)
             read_from_merge_tree_step->setDistributedReadParts(std::move(distributed_read_part_names));
     }
 

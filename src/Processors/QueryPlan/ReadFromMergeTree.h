@@ -403,6 +403,11 @@ public:
     /// records them for a distributed parallel FINAL. Returns the number of layers, or 0 (read serially)
     /// when the data cannot be range-split (SAMPLE, unsafe or mixed-order primary key, or a single layer).
     size_t setupDistributedFinalLayers(size_t max_layers);
+    /// Serializes each PK-range layer (its marks + the borders) into a per-bucket blob to ship as the
+    /// `final_layer` task parameter; empty unless this is a layered FINAL read.
+    std::vector<String> serializeDistributedFinalLayers() const;
+    /// Marks this (deserialized, worker) read as a layered FINAL read; the layer arrives via the parameter.
+    void setDistributedReadLayered(bool layered_) { distributed_read_layered = layered_; }
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
 
@@ -584,14 +589,17 @@ private:
     size_t distributed_read_bucket_count = 0;
     /// Coordinator-selected parts a distributed-read worker buckets over. Empty otherwise.
     Names distributed_read_part_names;
-    /// Set instead of `distributed_read_part_names` for a parallel FINAL read: one PK-range layer of
-    /// marks per bucket, plus the PK-tuple borders between layers. The worker reads its bucket's layer
-    /// and merge-dedups it, trimming boundary granules by the borders, instead of slicing marks.
+    /// Per-bucket PK-range layers for a parallel FINAL read. On the initiator (producer) this holds all
+    /// layers + the borders, which are serialized per bucket into the `final_layer` task parameter (not
+    /// into the shared step). On a worker `distributed_read_layers` stays empty; the worker fills
+    /// `distributed_read_borders` / `distributed_read_layer_index` from its `final_layer` parameter and
+    /// reads its single layer's marks.
     std::vector<RangesInDataPartsDescription> distributed_read_layers;
     std::vector<std::vector<Field>> distributed_read_borders;
-    /// Which layer/bucket this distributed-read worker is assigned (index into `distributed_read_layers`
-    /// and `distributed_read_borders`); set from the bucket_id task parameter.
     size_t distributed_read_layer_index = 0;
+    /// True on a worker handling a layered FINAL read (set from the serialized flag); the layer arrives
+    /// as the `final_layer` task parameter rather than in the step.
+    bool distributed_read_layered = false;
 };
 /// Filter the mark ranges for a single part's worth of ranges for a specific bucket.
 /// `effective_bucket_index` is updated in-place so that consecutive calls across multiple parts

@@ -1037,7 +1037,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             {
                 /// No children, this means that this is a leaf step.
 
-                auto populate_shards = [&](std::vector<String> shards_for_read)
+                auto populate_shards = [&](std::vector<String> shards_for_read, std::vector<String> final_layers = {})
                 {
                     for (size_t bucket = 0; bucket < shards_for_read.size(); ++bucket)
                     {
@@ -1046,6 +1046,10 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                         task.parameters.parameters["bucket_id"] = Field(shard_id);
                         task.parameters.parameters["bucket_description"] = Field(shards_for_read[bucket]);
                         task.parameters.parameters["total_buckets"] = Field(shards_for_read.size());
+                        /// A layered FINAL read ships this bucket's PK-range layer (marks + borders) here,
+                        /// so each worker receives only its own layer rather than all of them in the step.
+                        if (!final_layers.empty())
+                            task.parameters.parameters["final_layer"] = Field(final_layers[bucket]);
                         frame.list_of_shards[shard_id] = std::move(task);
                     }
                 };
@@ -1067,10 +1071,15 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 {
                     auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get());
 
+                    /// For a layered parallel FINAL read, ship each bucket its own PK-range layer as a task param.
+                    std::vector<String> final_layers;
+                    if (auto * read_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get()))
+                        final_layers = read_merge_tree_step->serializeDistributedFinalLayers();
+
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(frame.node->step));
 
-                    populate_shards(std::move(shards_for_read));
+                    populate_shards(std::move(shards_for_read), std::move(final_layers));
                 }
             }
 
