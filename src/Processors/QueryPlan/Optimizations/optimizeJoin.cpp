@@ -387,8 +387,19 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         auto estimated = estimateReadRowsCount(*node.children.front(), filter);
         auto limit = limit_step->getLimit();
-        if (!estimated.estimated_rows || estimated.estimated_rows > limit)
-            estimated.estimated_rows = limit;
+        if (estimated.estimated_rows)
+        {
+            /// Exact child estimate: the LIMIT caps it, and the capped value is still exact.
+            if (estimated.estimated_rows > limit)
+                estimated.estimated_rows = limit;
+        }
+        else
+        {
+            /// Inexact child: `limit` only bounds the result from above, so keep it as an upper
+            /// bound rather than promoting it into the exact-estimate slot (`estimated_rows`),
+            /// which the build-side choice relies on being trustworthy. See `chooseJoinOrder`.
+            estimated.estimated_rows_upper_bound = std::min<UInt64>(estimated.estimated_rows_upper_bound.value_or(limit), limit);
+        }
         return estimated;
     }
 
@@ -439,10 +450,20 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        if (sorting_step->getLimit())
+        if (auto limit = sorting_step->getLimit())
         {
-            if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
-                stats.estimated_rows = sorting_step->getLimit();
+            if (stats.estimated_rows)
+            {
+                /// Exact child estimate: the LIMIT caps it, and the capped value is still exact.
+                if (stats.estimated_rows > limit)
+                    stats.estimated_rows = limit;
+            }
+            else
+            {
+                /// Inexact child: `limit` is only an upper bound on the result; keep it as one
+                /// instead of promoting it to an exact estimate (see `chooseJoinOrder`).
+                stats.estimated_rows_upper_bound = std::min<UInt64>(stats.estimated_rows_upper_bound.value_or(limit), limit);
+            }
         }
         return stats;
     }

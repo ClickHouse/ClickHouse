@@ -66,5 +66,40 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
+-- Soundness: a `LIMIT` (or `ORDER BY ... LIMIT`) above an inexact child yields only an upper
+-- bound on the row count, which must NOT be treated as an exact estimate. The right input below
+-- is a subquery with a huge `LIMIT` over a residual-filtered 10-row table: its true size is ~10,
+-- but the `LIMIT` value (1000000) must not enter the exact-estimate slot. Otherwise the optimizer
+-- would compare the left input's upper bound (100000) against 1000000 and wrongly swap the
+-- 100000-row left input onto the build side. With the `LIMIT` kept as an upper bound, both inputs
+-- are upper-bound-only, so no swap happens and the tiny right subquery stays the build side.
+DROP TABLE IF EXISTS lhs_big;
+DROP TABLE IF EXISTS rhs_tiny;
+
+CREATE TABLE lhs_big (k Int32, v Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO lhs_big SELECT number, number FROM numbers(100000);
+
+CREATE TABLE rhs_tiny (k Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO rhs_tiny SELECT number FROM numbers(10);
+
+SELECT * FROM lhs_big JOIN (SELECT k FROM rhs_tiny WHERE k != -1 ORDER BY k LIMIT 1000000) AS rr
+    ON lhs_big.k = rr.k WHERE lhs_big.v != -1
+SETTINGS log_comment = '04337_join_choose_build_table_limit_upper_bound' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 1 AND 100, 'ok', format('fail({}): build={}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 90000 AND 110000, 'ok', format('fail({}): probe={}', query_id, ProfileEvents['JoinProbeTableRowCount'])),
+    if(ProfileEvents['JoinResultRowCount'] = 10, 'ok', format('fail({}): result={}', query_id, ProfileEvents['JoinResultRowCount']))
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+  AND query_kind = 'Select' AND current_database = currentDatabase()
+  AND log_comment = '04337_join_choose_build_table_limit_upper_bound'
+ORDER BY event_time DESC
+LIMIT 1;
+
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;
+DROP TABLE IF EXISTS lhs_big;
+DROP TABLE IF EXISTS rhs_tiny;
