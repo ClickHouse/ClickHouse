@@ -345,13 +345,16 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         ///    does not prove the whole predicate was consumed, and an index range still reads its
         ///    boundary granules whole, then filters.)
         ///  * SAMPLE;
-        ///  * FINAL (collapsing/replacing/aggregating merges drop rows).
+        ///  * FINAL (collapsing/replacing/aggregating merges drop rows);
+        ///  * a lightweight-delete mask (`_row_exists`), applied after mark selection.
+        const auto mutations_snapshot = reading->getMutationsSnapshot();
         bool can_reduce_rows = filter
             || reading->getPrewhereInfo()
             || reading->getFilterActionsDAG()
             || reading->getDeferredRowLevelFilter()
             || reading->isQueryWithFinal()
-            || analyzed_result->sampling.use_sampling;
+            || analyzed_result->sampling.use_sampling
+            || (mutations_snapshot && mutations_snapshot->hasLightweightDeletedMask());
         if (can_reduce_rows)
             return RelationStats{.estimated_rows = analyzed_result->selected_rows, .estimated_rows_kind = RowCountKind::UpperBound, .table_name = table_display_name};
 
@@ -708,6 +711,7 @@ static String dumpRowCountForLogs(const RelationStats & stats)
         case RowCountKind::Cached:     return fmt::format("{} (cached)", stats.estimated_rows.value());
         case RowCountKind::Unknown:    return "unknown";
     }
+    UNREACHABLE();
 }
 
 static String dumpStatsForLogs(const RelationStats & stats)
@@ -813,6 +817,10 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         ///    risk noted on `canAnchorUpperBoundSwap`.
         const UInt64 cached_rows = num_rows_from_cache.value();
         if (stats.estimated_rows_kind == RowCountKind::Exact)
+            /// If the cache is stale-low (the table grew since the last build, so cached < exact),
+            /// the result is Exact(cached) -- a smaller-than-true "exact" count. This can only make
+            /// the right side look smaller, so at worst it misses a beneficial swap; the join stays
+            /// correct, so we keep the (cheap, monotone) min rather than tracking growth.
             stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value(), cached_rows);
         else if (cached_rows <= stats.estimated_rows.value_or(MAX_ROWS))
         {
