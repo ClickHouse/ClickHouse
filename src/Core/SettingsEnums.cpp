@@ -129,6 +129,10 @@ IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {"value", FormatSettings::AggregateFunctionInputFormat::Value},
     {"array", FormatSettings::AggregateFunctionInputFormat::Array}})
 
+IMPLEMENT_SETTING_ENUM(GeoJSONUnsupportedGeometryHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::UnsupportedGeometryHandling::Throw},
+     {"null",  FormatSettings::UnsupportedGeometryHandling::Null}})
+
 IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(LogQueriesType, ErrorCodes::BAD_ARGUMENTS)
@@ -439,6 +443,12 @@ IMPLEMENT_SETTING_ENUM(
     {{"any", SearchOrphanedPartsDisks::ANY},
      {"local", SearchOrphanedPartsDisks::LOCAL},
      {"none", SearchOrphanedPartsDisks::NONE}})
+
+IMPLEMENT_SETTING_ENUM(
+    TextIndexPostingListCodec,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"none", TextIndexPostingListCodec::None},
+     {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreePartMinMaxIndexColumns,
