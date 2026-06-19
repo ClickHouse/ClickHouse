@@ -206,7 +206,6 @@ The combinations of these options control how much detail is shown:
 The `json` and `distributed` options do not enable the `pretty` defaults (`actions`, `compact`, and `pretty`), even when `explain_query_plan_default = 'pretty'`. To include action details in their output, set `actions = 1` manually.
 :::
 
-
 Example:
 
 ```sql

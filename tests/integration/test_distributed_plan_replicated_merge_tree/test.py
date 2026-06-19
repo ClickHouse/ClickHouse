@@ -83,6 +83,8 @@ DISTRIBUTED_SETTINGS = ", ".join([
     "query_plan_convert_any_join_to_semi_or_anti_join = 0",
     # Runtime filters are not yet implemented for distributed queries.
     "enable_join_runtime_filters = 0",
+    # To suppor old explain format
+    "explain_query_plan_default = 'legacy'",
 ])
 
 
