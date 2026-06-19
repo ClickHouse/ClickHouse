@@ -69,17 +69,6 @@ public:
     /// Set text to be prepopulated in the next readLine call
     virtual void setInitialText(const String &) {}
 
-    /// Read a single line with the given prompt. Returns the line contents,
-    /// or empty string if the user entered nothing or aborted (Ctrl+D).
-    /// Unlike `readLine`, this does not loop on empty input and does not
-    /// handle extenders/delimiters/multiline. Used for continuation prompts.
-    String readOneSingleLine(const String & prompt);
-
-    /// Add a line to history from outside the normal `readLine` flow.
-    /// Used to record the full multi-line query after continuation lines
-    /// have been collected, replacing the partial first-line entry.
-    void addStringToHistory(const String & line);
-
     bool hasInputData() const;
 
 protected:

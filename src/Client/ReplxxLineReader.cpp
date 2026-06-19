@@ -309,6 +309,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     )
     , rx(options.input_stream, options.output_stream, options.in_fd, options.out_fd, options.err_fd)
     , highlighter(std::move(options.highlighter))
+    , query_needs_continuation(std::move(options.query_needs_continuation))
     , word_break_characters(options.word_break_characters.data())
     , editor(getEditor())
 {
@@ -385,6 +386,22 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// requires the highlighter, preserving the previous behavior.
         if (!replxx_last_is_delimiter && ((highlighter && multiline) || hasInputData()))
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+
+        /// In single-line mode, if the current input is an incomplete query (the
+        /// parser reached the end of input still expecting more tokens), insert a
+        /// newline and keep editing within the same prompt instead of committing
+        /// an incomplete query. This mirrors pressing Alt+Enter: the whole query
+        /// stays under one prompt, so arrow keys navigate across all of its lines.
+        /// A trailing delimiter (e.g. `;`) still forces submission, which is how
+        /// the user submits a query that is intentionally incomplete to see the
+        /// syntax error.
+        if (!replxx_last_is_delimiter && !multiline && query_needs_continuation)
+        {
+            replxx::Replxx::State state(rx.get_state());
+            if (query_needs_continuation(state.text()))
+                return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+        }
+
         replxx_last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };

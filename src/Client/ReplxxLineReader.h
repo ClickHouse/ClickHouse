@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <span>
 
 #include <Client/LineReader.h>
@@ -25,6 +26,12 @@ public:
         Patterns delimiters;
         std::span<char> word_break_characters;
         replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+        /// Called on <ENTER> in single-line mode with the current edit buffer.
+        /// If it returns true, the query is considered incomplete and a newline
+        /// is inserted into the same buffer instead of committing the query.
+        /// Optional: when unset (e.g. for keeper-client and disks, which do not
+        /// process SQL queries), no continuation is performed.
+        std::function<bool(const String &)> query_needs_continuation = nullptr;
         std::istream & input_stream = std::cin;
         std::ostream & output_stream = std::cout;
         int in_fd = STDIN_FILENO;
@@ -52,6 +59,7 @@ private:
 
     replxx::Replxx rx;
     replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+    std::function<bool(const String &)> query_needs_continuation;
 
     const char * word_break_characters;
 

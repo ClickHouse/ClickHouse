@@ -4000,6 +4000,10 @@ void ClientBase::runInteractive()
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
         .highlighter = highlight_callback,
+        /// In single-line mode, pressing Enter on an incomplete query inserts a
+        /// newline into the same edit buffer (like Alt+Enter) instead of
+        /// committing it. This keeps the whole query under one prompt.
+        .query_needs_continuation = [this](const String & text) { return queryNeedsContinuation(text); },
         .input_stream = input_stream,
         .output_stream = output_stream,
         .in_fd = stdin_fd,
@@ -4058,38 +4062,6 @@ void ClientBase::runInteractive()
             }
 
             input = lr->readLine(getPrompt(), ":-] ");
-
-            /// In single-line mode (the default), if the parser fails at the end
-            /// of input (expecting more tokens), automatically prompt for
-            /// continuation lines instead of showing a syntax error. This is
-            /// similar to how JavaScript REPL works. The user can submit the
-            /// query simply by pressing Enter on a valid (or empty) line.
-            if (!multiline && !input.empty())
-            {
-                /// Do not ask for continuation if the input is an exit command
-                /// or a backslash command, because these are not SQL queries.
-                auto trimmed_for_check = trim(input, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
-                bool is_special_command = exit_strings.contains(trimmed_for_check)
-                    || trimmed_for_check.starts_with("\\");
-
-                if (!is_special_command)
-                {
-                    String first_line = input;
-                    while (queryNeedsContinuation(input))
-                    {
-                        String continuation = lr->readOneSingleLine(":-] ");
-                        if (continuation.empty())
-                            break;
-                        input += "\n" + continuation;
-                    }
-
-                    /// If continuation lines were added, put the full
-                    /// multi-line query into history so the user can
-                    /// recall it with the up-arrow key.
-                    if (input != first_line)
-                        lr->addStringToHistory(input);
-                }
-            }
         }
 
         if (input.empty())

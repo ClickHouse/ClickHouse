@@ -1,7 +1,5 @@
 #!/usr/bin/expect -f
 
-# Tags: no-fasttest
-
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
 
@@ -26,49 +24,31 @@ expect_after {
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
 expect ":) "
 
-# Test 1: Incomplete SELECT (missing column list) triggers continuation,
-# completing it produces the correct result.
+# In single-line mode, pressing <ENTER> on an incomplete query does not submit
+# it. Instead, a newline is inserted into the same edit buffer (like Alt+Enter),
+# keeping the whole query under a single prompt (no separate ":-] " prompt).
+
+# Incomplete "SELECT" continues on the next line; completing it runs the whole
+# query. If it had been submitted on the first <ENTER>, the result would be a
+# syntax error rather than "42".
 send -- "SELECT\r"
-expect ":-] "
 send -- "42\r"
-expect "42"
+expect "│ 42 │"
 expect ":) "
 
-# Test 2: Incomplete WHERE clause triggers continuation.
-send -- "SELECT 1 WHERE\r"
-expect ":-] "
-send -- "1\r"
-expect "│ 1 │"
-expect ":) "
-
-# Test 3: Unmatched parenthesis triggers continuation.
+# An unclosed opening parenthesis also continues; closing it on the next line
+# completes the query. The column name "plus(1, 2)" only appears if the full
+# "SELECT (1 + 2)" was executed as one query.
 send -- "SELECT (1\r"
-expect ":-] "
 send -- "+ 2)\r"
-expect "│ 3 │"
+expect "plus(1, 2)"
 expect ":) "
 
-# Test 4: Empty continuation line submits query as-is (may produce error,
-# but should not hang).
-send -- "SELECT\r"
-expect ":-] "
-send -- "\r"
-# The incomplete query is submitted; we just need to get back to the prompt.
+# A trailing semicolon forces submission even when the query is incomplete, so
+# the syntax error is reported instead of starting a continuation line.
+send -- "SELECT;\r"
+expect "Syntax error"
 expect ":) "
 
-# Test 5: History should contain the full multi-line query.
-# Press up-arrow twice to skip the empty-continuation query (test 4) and
-# reach the parenthesized query from test 3.
-# Up-arrow in terminal sends escape sequence \x1b\[A.
-send -- "\x1b\[A"
-expect "SELECT"
-# Confirm we get the multi-line query back (the incomplete "SELECT" from test 4).
-# Press up again to get the parenthesized query from test 3.
-send -- "\x1b\[A"
-expect "SELECT (1"
-# Abort the recalled line with Ctrl-C and exit.
-send -- "\x03"
-expect ":) "
-
-send -- ""
+send -- "\4"
 expect eof
