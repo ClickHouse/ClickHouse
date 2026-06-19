@@ -773,7 +773,7 @@ ExpireSnapshotsResult expireSnapshots(
 
         updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
 
-        std::string json_representation = stringifyJson(metadata, 4);
+        std::string json_representation = stringifyJSON(metadata, 4);
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
         auto hint_path = filename_generator.generateVersionHint();
         if (!writeMetadataFileAndVersionHint(

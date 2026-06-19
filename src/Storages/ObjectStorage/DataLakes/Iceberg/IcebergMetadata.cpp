@@ -157,7 +157,7 @@ namespace
 {
 String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_object)
 {
-    return stringifyJson(metadata_object);
+    return stringifyJSON(metadata_object);
 }
 }
 

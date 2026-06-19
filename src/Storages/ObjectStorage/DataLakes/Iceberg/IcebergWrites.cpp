@@ -333,11 +333,16 @@ String removeEscapedSlashes(const String & json_str)
     return result;
 }
 
-String stringifyJson(const Poco::Dynamic::Var & json, unsigned indent)
+String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent)
 {
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(json, oss, indent);
     return removeEscapedSlashes(oss.str());
+}
+
+avro::ValidSchema compileAvroSchema(const String & schema_json)
+{
+    return avro::compileJsonSchemaFromString(schema_json);
 }
 
 static void extendSchemaForPartitions(
@@ -355,7 +360,7 @@ static void extendSchemaForPartitions(
         partition_fields->add(field);
     }
 
-    std::string json_representation = stringifyJson(partition_fields);
+    std::string json_representation = stringifyJSON(partition_fields);
 
     std::string from = "#";
     size_t start_pos = schema.find(from);
@@ -447,7 +452,7 @@ void generateManifestFile(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported iceberg format-version {}", version);
 
     extendSchemaForPartitions(schema_representation, partition_columns, partition_types);
-    auto schema = avro::compileJsonSchemaFromString(schema_representation);
+    auto schema = compileAvroSchema(schema_representation);
 
     const avro::NodePtr & root_schema = schema.root(); // NOLINT
 
@@ -455,14 +460,14 @@ void generateManifestFile(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
     Poco::JSON::Object::Ptr schema_object_to_write = schema_to_serialize ? schema_to_serialize : getCurrentSchema(metadata);
-    std::string json_representation = stringifyJson(schema_object_to_write, 4);
+    std::string json_representation = stringifyJSON(schema_object_to_write, 4);
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata(Iceberg::f_schema, json_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
-    writer.setMetadata(Iceberg::f_partition_spec, stringifyJson(partition_spec->getArray(Iceberg::f_fields)));
+    writer.setMetadata(Iceberg::f_partition_spec, stringifyJSON(partition_spec->getArray(Iceberg::f_fields)));
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
     for (size_t file_idx = 0; file_idx < data_file_names.size(); ++file_idx)
@@ -622,7 +627,7 @@ void generateManifestList(
     else
         schema_representation = manifest_list_v2_schema;
 
-    auto schema = avro::compileJsonSchemaFromString(schema_representation); // NOLINT
+    auto schema = compileAvroSchema(schema_representation); // NOLINT
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
@@ -851,18 +856,18 @@ void generateExistingManifestFile(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown iceberg version {}", version);
 
     extendSchemaForPartitions(schema_representation, partition_columns, partition_types);
-    auto schema = avro::compileJsonSchemaFromString(schema_representation);
+    auto schema = compileAvroSchema(schema_representation);
 
     if (schema.root()->type() != avro::AVRO_RECORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
-    std::string json_representation = stringifyJson(getCurrentSchema(metadata), 4);
+    std::string json_representation = stringifyJSON(getCurrentSchema(metadata), 4);
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata(Iceberg::f_schema, json_representation);
 
-    writer.setMetadata(Iceberg::f_partition_spec, stringifyJson(partition_spec->getArray(Iceberg::f_fields)));
+    writer.setMetadata(Iceberg::f_partition_spec, stringifyJSON(partition_spec->getArray(Iceberg::f_fields)));
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
 
     for (const auto & entry : entries)
@@ -1329,7 +1334,7 @@ bool IcebergStorageSink::initializeMetadata()
         }
 
         {
-            std::string json_representation = stringifyJson(metadata, 4);
+            std::string json_representation = stringifyJSON(metadata, 4);
 
             fiu_do_on(FailPoints::iceberg_writes_cleanup,
             {
