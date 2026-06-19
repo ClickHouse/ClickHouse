@@ -14,6 +14,13 @@ namespace ErrorCodes
 }
 
 
+/// Whether [offset, offset + length) is within `total` bytes, computed so it can't overflow.
+static bool rangeWithin(uint64_t offset, uint64_t length, uint64_t total)
+{
+    return offset <= total && length <= total - offset;
+}
+
+
 Elf::Elf(const std::string & path_)
 {
     in.emplace(path_, 0);
@@ -46,7 +53,7 @@ void Elf::init(const char * data, size_t size, const std::string & path_)
 
     if (!section_header_offset
         || !section_header_num_entries
-        || section_header_offset + section_header_num_entries * sizeof(ElfSectionHeader) > elf_size)
+        || !rangeWithin(section_header_offset, section_header_num_entries * sizeof(ElfSectionHeader), elf_size))
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' is truncated (section header points after end of file)", path);
 
     section_headers = reinterpret_cast<const ElfSectionHeader *>(mapped + section_header_offset);
@@ -61,10 +68,16 @@ void Elf::init(const char * data, size_t size, const std::string & path_)
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' doesn't have string table with section names", path);
 
     uint64_t section_names_offset = section_names_strtab->header.offset;
-    if (section_names_offset >= elf_size)
+    uint64_t section_names_table_size = section_names_strtab->header.size;
+    if (!rangeWithin(section_names_offset, section_names_table_size, elf_size))
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' is truncated (section names string table points after end of file)", path);
 
     section_names = reinterpret_cast<const char *>(mapped + section_names_offset);
+    section_names_size = section_names_table_size;
+
+    /// Require the trailing NUL (guaranteed by the ELF spec) so name() can return C strings without re-scanning.
+    if (section_names_size == 0 || section_names[section_names_size - 1] != '\0')
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' has a section names string table that is not zero-terminated", path);
 
     /// Get program headers
 
@@ -73,7 +86,7 @@ void Elf::init(const char * data, size_t size, const std::string & path_)
 
     if (!program_header_offset
         || !program_header_num_entries
-        || program_header_offset + program_header_num_entries * sizeof(ElfProgramHeader) > elf_size)
+        || !rangeWithin(program_header_offset, program_header_num_entries * sizeof(ElfProgramHeader), elf_size))
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' is truncated (program header points after end of file)", path);
 
     program_headers = reinterpret_cast<const ElfProgramHeader *>(mapped + program_header_offset);
@@ -92,8 +105,8 @@ bool Elf::iterateSections(std::function<bool(const Section & section, size_t idx
     {
         Section section(section_headers[idx], *this);
 
-        /// Sections spans after end of file.
-        if (section.header.offset + section.header.size > elf_size)
+        /// Skip sections that span past the end of file.
+        if (!rangeWithin(section.header.offset, section.header.size, elf_size))
             continue;
 
         if (pred(section, idx))
@@ -152,7 +165,11 @@ String Elf::getBuildID() const
         const ElfProgramHeader & phdr = program_headers[idx];
 
         if (phdr.type == ProgramHeaderType::NOTE)
+        {
+            if (!rangeWithin(phdr.offset, phdr.filesz, elf_size))
+                continue;
             return getBuildID(mapped + phdr.offset, phdr.filesz);
+        }
     }
 
     return {};
@@ -164,14 +181,22 @@ String Elf::getBuildID(const char * nhdr_pos, size_t size)
 
     while (nhdr_pos < nhdr_end)
     {
-        ElfNameHeader nhdr = unalignedLoad<ElfNameHeader>(nhdr_pos);
+        if (static_cast<size_t>(nhdr_end - nhdr_pos) < sizeof(ElfNameHeader))
+            break;
 
-        nhdr_pos += sizeof(ElfNameHeader) + nhdr.namesz;
+        ElfNameHeader nhdr = unalignedLoad<ElfNameHeader>(nhdr_pos);
+        nhdr_pos += sizeof(ElfNameHeader);
+
+        if (nhdr.namesz > static_cast<size_t>(nhdr_end - nhdr_pos))
+            break;
+        nhdr_pos += nhdr.namesz;
+
+        if (nhdr.descsz > static_cast<size_t>(nhdr_end - nhdr_pos))
+            break;
+
         if (nhdr.type == NameHeaderType::GNU_BUILD_ID)
-        {
-            const char * build_id = nhdr_pos;
-            return {build_id, nhdr.descsz};
-        }
+            return {nhdr_pos, nhdr.descsz};
+
         nhdr_pos += nhdr.descsz;
     }
 
@@ -192,7 +217,10 @@ const char * Elf::Section::name() const
     if (!elf.section_names)
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "Section names are not initialized");
 
-    /// TODO buffer overflow is possible, we may need to check strlen.
+    /// init() verified the table ends with a NUL, so a forward scan from any in-bounds offset stays in-bounds.
+    if (header.name >= elf.section_names_size)
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "Section name offset is out of bounds");
+
     return elf.section_names + header.name;
 }
 
