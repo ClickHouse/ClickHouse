@@ -1185,10 +1185,39 @@ void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_
         }
     }
 
+    /// descendants of any lazy short-circuit arg may not run at execution time
+    /// (e.g. the `then` branch of `if`); folding them eagerly here could throw
+    std::unordered_set<const Node *> short_circuit_lazy;
+    {
+        std::vector<const Node *> stack;
+        for (const auto & node : nodes)
+        {
+            if (node.type != ActionType::FUNCTION || !node.function_base)
+                continue;
+            IFunctionBase::ShortCircuitSettings sc;
+            if (!node.function_base->isShortCircuit(sc, node.children.size()))
+                continue;
+            for (size_t i = 0; i < node.children.size(); ++i)
+                if (!sc.arguments_with_disabled_lazy_execution.contains(i))
+                    stack.push_back(node.children[i]);
+        }
+        while (!stack.empty())
+        {
+            const Node * n = stack.back();
+            stack.pop_back();
+            if (!short_circuit_lazy.insert(n).second)
+                continue;
+            for (const auto * c : n->children)
+                stack.push_back(c);
+        }
+    }
+
     /// bottom-up: a folded child becomes visible as const to parents we visit next
     for (auto & node : nodes)
     {
         if (surviving.contains(&node))
+            continue;
+        if (short_circuit_lazy.contains(&node))
             continue;
         if (node.type != ActionType::FUNCTION || !node.function_base || !node.function)
             continue;
