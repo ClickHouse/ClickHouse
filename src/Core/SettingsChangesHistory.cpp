@@ -77,6 +77,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_transitive_predicates", false, true, "Turn on enable_join_transitive_predicates by default"},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+            {"generate_random_max_json_dynamic_keys", 5, 5, "New setting: maximum number of randomly generated dynamic paths per JSON object in `generateRandom`. Has no effect for non-JSON columns."},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",
