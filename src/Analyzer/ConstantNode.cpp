@@ -180,6 +180,9 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
     static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
 
+    if (options.use_source_expression_for_constants && source_expression)
+        return source_expression->toAST(options);
+
     if (!options.add_cast_for_constants)
         return getCachedAST(from_column);
 
