@@ -23,9 +23,8 @@ MergeTreeDataPartBuilder::MergeTreeDataPartBuilder(
     VolumePtr volume_,
     String root_path_,
     String part_dir_,
-    const ReadSettings & read_settings_
-    , bool part_may_exist_on_disk_
-    )
+    const ReadSettings & read_settings_,
+    bool part_may_exist_on_disk_)
     : data(data_)
     , name(std::move(name_))
     , volume(std::move(volume_))
@@ -40,9 +39,8 @@ MergeTreeDataPartBuilder::MergeTreeDataPartBuilder(
     const MergeTreeData & data_,
     String name_,
     MutableDataPartStoragePtr part_storage_,
-    const ReadSettings & read_settings_
-    , bool part_may_exist_on_disk_
-    )
+    const ReadSettings & read_settings_,
+    bool part_may_exist_on_disk_)
     : data(data_)
     , name(std::move(name_))
     , part_storage(std::move(part_storage_))
@@ -91,13 +89,9 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     switch (part_type->getValue())
     {
         case PartType::Wide:
-            return std::make_shared<MergeTreeDataPartWide>(data, *data_settings, name, *part_info, part_storage, parent_part
-                , part_may_exist_on_disk
-                );
+            return std::make_shared<MergeTreeDataPartWide>(data, *data_settings, name, *part_info, part_storage, parent_part, part_may_exist_on_disk);
         case PartType::Compact:
-            return std::make_shared<MergeTreeDataPartCompact>(data, *data_settings, name, *part_info, part_storage, parent_part
-                , part_may_exist_on_disk
-                );
+            return std::make_shared<MergeTreeDataPartCompact>(data, *data_settings, name, *part_info, part_storage, parent_part, part_may_exist_on_disk);
         default:
             throw Exception(ErrorCodes::UNKNOWN_PART_TYPE,
                 "Unknown type of part {}", part_storage->getRelativePath());
@@ -157,9 +151,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartType(MergeTreeDataP
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartStorageType(MergeTreeDataPartStorageType storage_type_)
 {
-    part_storage = getPartStorageByType(storage_type_, volume, root_path, part_dir,
-        part_may_exist_on_disk,
-        read_settings);
+    part_storage = getPartStorageByType(storage_type_, volume, root_path, part_dir, part_may_exist_on_disk, read_settings);
     return *this;
 }
 
@@ -186,9 +178,7 @@ MergeTreeDataPartBuilder::getPartStorageAndMarkType(
 
         if (MarkType::isMarkFileExtension(ext))
         {
-            auto storage = getPartStorageByType(MergeTreeDataPartStorageType::Full, volume_, root_path_, part_dir_,
-                true,
-                read_settings_);
+            auto storage = getPartStorageByType(MergeTreeDataPartStorageType::Full, volume_, root_path_, part_dir_, true, read_settings_);
             return {std::move(storage), MarkType(ext)};
         }
 
