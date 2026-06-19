@@ -124,6 +124,10 @@ private:
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
+    /// True when only the database name changes (RENAME DATABASE) and the table name and UUID are kept.
+    /// Such a rename is safe because inner target tables are resolved by UUID; a genuine table rename is not.
+    bool isDatabaseOnlyRename(const StorageID & new_table_id) const;
+
     /// The CREATE query with normalization applied.
     const boost::intrusive_ptr<const ASTCreateQuery> normalized_create_query;
 

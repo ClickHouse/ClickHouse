@@ -482,17 +482,32 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
 }
 
 
-void StorageTimeSeries::checkTableCanBeRenamed(const StorageID & /* new_name */) const
+bool StorageTimeSeries::isDatabaseOnlyRename(const StorageID & new_table_id) const
 {
-    /// Reject before DatabaseAtomic touches the disk. renameInMemory() throws unconditionally,
-    /// but it runs after the metadata files are already swapped/detached, which strands an
-    /// orphaned _tmp_replace_*.sql during CREATE OR REPLACE and later aborts the load.
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
+    /// RENAME DATABASE only changes the database name; the table keeps its name and UUID, and
+    /// inner target tables are resolved by UUID, so the parent's references stay valid. A change
+    /// of the table name (or UUID) means a genuine table rename, which is not supported.
+    auto old_table_id = getStorageID();
+    return new_table_id.table_name == old_table_id.table_name && new_table_id.uuid == old_table_id.uuid;
 }
 
-void StorageTimeSeries::renameInMemory(const StorageID & /* new_table_id */)
+void StorageTimeSeries::checkTableCanBeRenamed(const StorageID & new_name) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
+    /// Reject genuine renames before DatabaseAtomic touches the disk: renameInMemory() runs after
+    /// the metadata files are already swapped/detached, which strands an orphaned _tmp_replace_*.sql
+    /// during CREATE OR REPLACE and later aborts the load. RENAME DATABASE is allowed.
+    if (!isDatabaseOnlyRename(new_name))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
+}
+
+void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
+{
+    /// DatabaseAtomic::renameDatabase() does not call checkTableCanBeRenamed() before moving the
+    /// database metadata file, so guard the same invariant here: allow RENAME DATABASE, reject a
+    /// genuine table rename (it would throw after the commit point and leave a half-applied state).
+    if (!isDatabaseOnlyRename(new_table_id))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
+    IStorage::renameInMemory(new_table_id);
 }
 
 
