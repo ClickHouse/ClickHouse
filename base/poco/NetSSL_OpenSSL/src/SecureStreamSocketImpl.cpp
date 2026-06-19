@@ -267,4 +267,10 @@ void SecureStreamSocketImpl::setBioMethod(const BIO_METHOD * method)
 }
 
 
+void SecureStreamSocketImpl::setMutex(std::unique_ptr<SecureSocketImpl::RecursiveMutex> mutex)
+{
+    _impl.setMutex(std::move(mutex));
+}
+
+
 } } // namespace Poco::Net

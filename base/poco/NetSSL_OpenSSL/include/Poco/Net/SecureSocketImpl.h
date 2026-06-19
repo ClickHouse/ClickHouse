@@ -26,6 +26,7 @@
 #include "Poco/Net/Session.h"
 #include "Poco/Net/SocketImpl.h"
 
+#include <memory>
 #include <mutex>
 
 namespace Poco
@@ -198,6 +199,16 @@ namespace Net
         /// Has no effect once the SSL handshake has been initiated (i.e. once
         /// any I/O has happened). If never called, `BIO_s_socket()` is used.
 
+        struct RecursiveMutex
+        {
+            virtual ~RecursiveMutex() = default;
+            virtual void lock() = 0;
+            virtual void unlock() = 0;
+        };
+
+        void setMutex(std::unique_ptr<RecursiveMutex> mutex);
+        /// Replace the lock guarding SSL operations.
+
 
     protected:
         void acceptSSL();
@@ -249,7 +260,16 @@ namespace Net
         /// Returns the BIO_METHOD to use for the SSL transport BIO.
         /// Falls back to `BIO_s_socket()` when no custom method was set via `setBioMethod`.
 
-        mutable std::recursive_mutex _mutex;
+        struct StdRecursiveMutex final : RecursiveMutex
+        {
+            void lock() override { _m.lock(); }
+            void unlock() override { _m.unlock(); }
+            std::recursive_mutex _m;
+        };
+
+        using ScopedLock = std::lock_guard<RecursiveMutex>;
+
+        mutable std::unique_ptr<RecursiveMutex> _mutex{std::make_unique<StdRecursiveMutex>()};
         SSL * _pSSL; // GUARDED_BY _mutex
         Poco::AutoPtr<SocketImpl> _pSocket;
         Context::Ptr _pContext;
