@@ -388,10 +388,85 @@ if __name__ == "__main__":
                 f"listed line numbers for the full context]"
             )
 
-    # The per-function listing used to print mangled C++ symbol names verbatim,
-    # which were unreadable (e.g. `_ZNK2DB12_GLOBAL__N_1...`) and added no
-    # signal beyond the per-file function counts already shown in the inventory
-    # above. Removed.
+    # --- Lost Baseline Coverage (LBC) for test-only PRs ---
+    # For PRs that change only tests/CI (no C/C++ source files), print_uncovered_code.py
+    # never runs (it needs a changed-files diff to scope to). We compute LBC here
+    # instead, globally across all files:
+    #
+    #   lost = covered(stable_master) \ covered(pr.info)
+    #
+    # Using the stable master baseline (union of N runs) means a line must have fired
+    # in at least one master run to be a candidate — pure flicker lines that never
+    # consistently appear in master are excluded. A line that shows up here was
+    # reliably covered in master but is now missed by the PR run, which indicates
+    # a test was weakened or removed.
+    lbc_lines: dict[str, list[int]] = defaultdict(list)
+    lbc_fns: dict[str, list[str]] = defaultdict(list)
+
+    for rel, b in base_data.items():
+        c = curr_data.get(rel)
+        if c is None:
+            continue  # file entirely absent from PR run — skip
+        for ln, bcnt in b["lines"].items():
+            if bcnt == 0:
+                continue
+            if _is_noise(rel, ln):
+                continue
+            # Lost: was covered in stable baseline, not covered in PR run.
+            ccnt = c["lines"].get(ln)
+            if ccnt is not None and ccnt == 0:
+                lbc_lines[rel].append(ln)
+        for fn, bcnt in b["fns"].items():
+            if bcnt > 0 and c["fns"].get(fn, 0) == 0:
+                lbc_fns[rel].append(fn)
+
+    lbc_total_lines = sum(len(v) for v in lbc_lines.values())
+    lbc_total_fns = sum(len(v) for v in lbc_fns.values())
+
+    if lbc_total_lines > 0 or lbc_total_fns > 0:
+        lbc_bits: list[str] = []
+        if lbc_total_lines > 0:
+            lbc_bits.append(f"{lbc_total_lines} line(s)")
+        if lbc_total_fns > 0:
+            lbc_bits.append(f"{lbc_total_fns} function(s)")
+        lbc_summary = ", ".join(lbc_bits)
+        print(f"\n=== Lost Baseline Coverage: {lbc_summary} ===\n")
+
+        lbc_file_stats = sorted(
+            [
+                (rel, len(lbc_lines.get(rel, [])), len(lbc_fns.get(rel, [])))
+                for rel in set(lbc_lines) | set(lbc_fns)
+            ],
+            key=lambda x: (-x[1], -x[2], x[0]),
+        )
+        print(f"All {len(lbc_file_stats)} file(s) with lost coverage, ranked by line count:")
+        for rel, lc, fc in lbc_file_stats:
+            parts = []
+            if lc > 0:
+                parts.append(f"{lc} line(s)")
+            if fc > 0:
+                parts.append(f"{fc} function(s)")
+            print(f"  {rel}: {', '.join(parts)}")
+
+        # Snippet preview for top files.
+        printed_lbc = 0
+        print("\nLost coverage (with context):\n")
+        for rel, lc, _ in lbc_file_stats:
+            if lc == 0 or printed_lbc >= MAX_BLOCK_LINES:
+                break
+            print("=" * 80)
+            print(rel)
+            print("=" * 80)
+            for out_line in _format_block_preview(rel, lbc_lines[rel]):
+                print(out_line)
+                printed_lbc += 1
+                if printed_lbc >= MAX_BLOCK_LINES:
+                    break
+        summary += f" | lost baseline coverage: {lbc_summary}"
+        if comment_text:
+            comment_text += f" | lost: {lbc_summary}"
+    else:
+        print("\nNo lost baseline coverage found.")
 
     r = Result.create_from(
         name="Newly Covered Code",
@@ -402,6 +477,8 @@ if __name__ == "__main__":
     r.ext["newly_covered_lines"] = total_lines
     r.ext["newly_covered_fns"] = total_fns
     r.ext["newly_covered_files"] = total_files
+    r.ext["lbc_lines"] = lbc_total_lines
+    r.ext["lbc_fns"] = lbc_total_fns
     # Snapshot the top files into the result for inline rendering in the GH comment.
     r.ext["newly_covered_top_files"] = [
         {"rel": rel, "lines": lc, "fns": fc}
