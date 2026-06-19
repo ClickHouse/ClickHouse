@@ -295,6 +295,9 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
         total_number_of_distinct_values = input_stats.estimated_rows;
 
     aggregation_stats.estimated_rows = total_number_of_distinct_values;
+    /// The number of groups is a heuristic (NDV-based, or the input row count as a fallback).
+    aggregation_stats.estimated_rows_kind
+        = aggregation_stats.estimated_rows ? RowCountKind::Estimate : RowCountKind::Unknown;
 
     return aggregation_stats;
 }
@@ -317,6 +320,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     : nullptr;
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
+                /// A selectivity-estimator row count is a heuristic, not a guaranteed bound.
+                stats.estimated_rows_kind = stats.estimated_rows ? RowCountKind::Estimate : RowCountKind::Unknown;
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
             }
@@ -342,9 +347,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// only with no filter at all. Keep it as an upper bound rather than the exact estimate
         /// the build-side choice trusts as a lower bound (see `chooseJoinOrder`).
         if (has_filter)
-            return RelationStats{.estimated_rows = {}, .estimated_rows_upper_bound = analyzed_result->selected_rows, .table_name = table_display_name};
+            return RelationStats{.estimated_rows = analyzed_result->selected_rows, .estimated_rows_kind = RowCountKind::UpperBound, .table_name = table_display_name};
 
-        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .estimated_rows_exact = true, .table_name = table_display_name};
+        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .estimated_rows_kind = RowCountKind::Exact, .table_name = table_display_name};
     }
 
     if (typeid_cast<const ReadFromObjectStorageStep *>(step))
@@ -354,7 +359,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .estimated_rows_exact = true, .table_name = table_display_name};
+        return RelationStats{.estimated_rows = estimated_rows, .estimated_rows_kind = RowCountKind::Exact, .table_name = table_display_name};
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
@@ -369,32 +374,32 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         auto estimated = estimateReadRowsCount(*node.children.front(), filter);
         auto limit = limit_step->getLimit();
+        bool child_is_point = estimated.estimated_rows_kind == RowCountKind::Exact
+            || estimated.estimated_rows_kind == RowCountKind::Estimate;
         if (limit_step->withTies())
         {
             /// `LIMIT n WITH TIES` emits every row whose sort key ties with the boundary row, so
             /// the result is NOT bounded by `limit` -- only by the child row count (e.g. `LIMIT 1
-            /// WITH TIES` over all-equal rows returns them all). Do not cap by `limit`; just keep
-            /// the child's upper bound, demoting an exact child estimate (no longer exact, since
-            /// the actual count is somewhere between `limit` and the child count).
-            if (estimated.estimated_rows)
-            {
-                estimated.estimated_rows_upper_bound = estimated.estimated_rows;
-                estimated.estimated_rows.reset();
-                estimated.estimated_rows_exact = false;
-            }
+            /// WITH TIES` over all-equal rows returns them all). Do not cap by `limit`; demote a
+            /// point estimate to an upper bound (the actual count is between `limit` and the child
+            /// count); an existing upper bound or unknown is left as is.
+            if (child_is_point)
+                estimated.estimated_rows_kind = RowCountKind::UpperBound;
         }
-        else if (estimated.estimated_rows)
+        else if (child_is_point)
         {
-            /// Exact child estimate: the LIMIT caps it, and the capped value is still exact.
+            /// Point estimate: the LIMIT caps it. A capped exact stays exact; a capped heuristic
+            /// stays a heuristic (kind is unchanged).
             if (estimated.estimated_rows > limit)
                 estimated.estimated_rows = limit;
         }
         else
         {
-            /// Inexact child: `limit` only bounds the result from above, so keep it as an upper
-            /// bound rather than promoting it into the exact-estimate slot (`estimated_rows`),
-            /// which the build-side choice relies on being trustworthy. See `chooseJoinOrder`.
-            estimated.estimated_rows_upper_bound = std::min<UInt64>(estimated.estimated_rows_upper_bound.value_or(limit), limit);
+            /// No point estimate (a bare upper bound or unknown child): `limit` only bounds the
+            /// result from above, so report it as an upper bound rather than an exact estimate the
+            /// build-side choice would trust as a lower bound. See `chooseJoinOrder`.
+            estimated.estimated_rows = std::min<UInt64>(estimated.estimated_rows.value_or(limit), limit);
+            estimated.estimated_rows_kind = RowCountKind::UpperBound;
         }
         return estimated;
     }
@@ -437,8 +442,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
+        auto estimated_rows = join_step->getResultRowsEstimation();
         return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
+            .estimated_rows = estimated_rows,
+            /// A join's result cardinality is a heuristic, not a guaranteed bound.
+            .estimated_rows_kind = estimated_rows ? RowCountKind::Estimate : RowCountKind::Unknown,
             .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName()};
     }
@@ -448,17 +456,20 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         if (auto limit = sorting_step->getLimit())
         {
-            if (stats.estimated_rows)
+            bool child_is_point = stats.estimated_rows_kind == RowCountKind::Exact
+                || stats.estimated_rows_kind == RowCountKind::Estimate;
+            if (child_is_point)
             {
-                /// Exact child estimate: the LIMIT caps it, and the capped value is still exact.
+                /// Point estimate: the LIMIT caps it (a capped exact stays exact).
                 if (stats.estimated_rows > limit)
                     stats.estimated_rows = limit;
             }
             else
             {
-                /// Inexact child: `limit` is only an upper bound on the result; keep it as one
-                /// instead of promoting it to an exact estimate (see `chooseJoinOrder`).
-                stats.estimated_rows_upper_bound = std::min<UInt64>(stats.estimated_rows_upper_bound.value_or(limit), limit);
+                /// No point estimate: `limit` is only an upper bound on the result; report it as
+                /// one instead of an exact estimate (see `chooseJoinOrder`).
+                stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(limit), limit);
+                stats.estimated_rows_kind = RowCountKind::UpperBound;
             }
         }
         return stats;
@@ -504,8 +515,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).pointEstimate();
+        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).pointEstimate();
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
             lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
             rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
@@ -667,8 +678,9 @@ static String dumpStatsForLogs(const RelationStats & stats)
 {
     return fmt::format("{}: {} rows, columns: [{}]",
         stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value())
-            : (stats.estimated_rows_upper_bound ? fmt::format("unknown (<= {})", stats.estimated_rows_upper_bound.value()) : "unknown"),
+        stats.estimated_rows_kind == RowCountKind::UpperBound
+            ? fmt::format("unknown (<= {})", stats.estimated_rows.value())
+            : (stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown"),
         fmt::join(stats.column_stats | std::views::transform(
             [](const auto & p)
             {
@@ -753,10 +765,13 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         /// The cached size comes from `HashTablesStatistics`, a process-global cache that keeps a
         /// max-like value: it tracks growth immediately but only shrinks when a new size drops
         /// below half of the stored one. So it can be stale and is neither an exact count nor a
-        /// guaranteed bound on the current size. Use it only as a heuristic point estimate and do
-        /// NOT mark it exact, so the upper-bound-driven swap won't trust it as a lower bound
-        /// (see `chooseJoinOrder`).
-        stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
+        /// guaranteed bound on the current size. Combine it with any prior point estimate and mark
+        /// the result a heuristic, so the upper-bound-driven swap won't trust it as a lower bound
+        /// (see `chooseJoinOrder`). An already-exact leaf stays exact: the min only tightens it and
+        /// remains a valid lower bound.
+        stats.estimated_rows = std::min<UInt64>(stats.pointEstimate().value_or(MAX_ROWS), num_rows_from_cache.value());
+        if (stats.estimated_rows_kind != RowCountKind::Exact)
+            stats.estimated_rows_kind = RowCountKind::Estimate;
     }
 
     if (!label.empty())
@@ -1147,8 +1162,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             bool has_prepared_storage_at_right = bool(typeid_cast<const JoinStepLogicalLookup *>(right_child_node->step.get()));
             bool has_prepared_storage_at_left = bool(typeid_cast<const JoinStepLogicalLookup *>(left_child_node->step.get()));
 
-            auto lhs_estimation = entry->left->estimated_rows;
-            auto rhs_estimation = entry->right->estimated_rows;
+            auto lhs_estimation = entry->left->pointEstimate();
+            auto rhs_estimation = entry->right->pointEstimate();
 
             /// We flip the join to move the smaller input to the build (right) side.
             ///
@@ -1168,8 +1183,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                     && lhs_estimation.value() < rhs_estimation.value();
             else
                 swap_on_sizes = entry->join_method == JoinMethod::Hash
-                    && entry->left->estimated_rows_upper_bound && rhs_estimation && entry->right->estimated_rows_exact
-                    && entry->left->estimated_rows_upper_bound.value() < rhs_estimation.value();
+                    && entry->left->estimated_rows_kind == RowCountKind::UpperBound
+                    && entry->right->estimated_rows_kind == RowCountKind::Exact
+                    && entry->left->estimated_rows.value() < entry->right->estimated_rows.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 

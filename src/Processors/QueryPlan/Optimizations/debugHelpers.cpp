@@ -60,7 +60,11 @@ RelationStats getDummyStats(const String & dummy_stats_str, const String & table
         stats.table_name = table_name;
 
         if (stat_object->has("cardinality"))
+        {
             stats.estimated_rows = stat_object->getValue<UInt64>("cardinality");
+            /// A testing hint, treated as a heuristic point estimate (not a guaranteed bound).
+            stats.estimated_rows_kind = RowCountKind::Estimate;
+        }
 
         if (stat_object->isObject("distinct_keys"))
         {
@@ -99,6 +103,8 @@ RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const Strin
     RelationStats stats;
     stats.table_name = table_name;
     stats.estimated_rows = 1 + (hash % 10'000'000);
+    /// Randomized stats are a fuzzing heuristic, used for cost/ordering only.
+    stats.estimated_rows_kind = RowCountKind::Estimate;
 
     pcg64 rng(hash);
     for (const auto & col : header)

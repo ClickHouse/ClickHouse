@@ -20,6 +20,24 @@ enum class JoinMethod : UInt8
     Merge,
 };
 
+/// Quality of a row-count value held in `estimated_rows`.
+enum class RowCountKind : UInt8
+{
+    /// Nothing is known; `estimated_rows` is empty.
+    Unknown,
+    /// A guaranteed exact count (e.g. an unfiltered table size or an in-memory row count). Being
+    /// exact, it is also a valid lower bound, which the build-side choice requires before trusting
+    /// it against the other side (see `chooseJoinOrder`).
+    Exact,
+    /// A guaranteed upper bound but not exact (e.g. a residual filter the primary index cannot use
+    /// leaves only the scanned-row count, or `LIMIT [WITH TIES]` over an inexact child).
+    UpperBound,
+    /// A heuristic estimate with no guarantee in either direction (NDV-based aggregation result,
+    /// join cardinality, the max-like hash-table-stats cache). Usable for cost/ordering but never
+    /// as proof of relative size for the swap.
+    Estimate,
+};
+
 struct DPJoinEntry
 {
     BitSet relations;
@@ -28,24 +46,19 @@ struct DPJoinEntry
     DPJoinEntryPtr right;
 
     double cost = 0.0;
+    /// The best known row-count value; empty iff `estimated_rows_kind == Unknown`. Its guarantee
+    /// is described by `estimated_rows_kind`. Used directly as a size proxy for cost/ordering;
+    /// the build-side swap additionally inspects the kind (see `chooseJoinOrder`).
     std::optional<UInt64> estimated_rows = {};
-    /// A guaranteed upper bound on the number of rows, set when an exact estimate is not
-    /// available but a ceiling is known (e.g. a residual filter pushed to a table scan that
-    /// the primary index cannot use — the metadata row count then bounds the rows from above).
-    /// Used only for the build-side choice; see `chooseJoinOrder`.
-    std::optional<UInt64> estimated_rows_upper_bound = {};
-    /// Whether `estimated_rows` is a guaranteed exact count (e.g. an unfiltered table size or a
-    /// cached actual build size) rather than a heuristic estimate (NDV-based aggregation result,
-    /// join cardinality, ...). An exact count is also a valid lower bound, which the build-side
-    /// choice requires before trusting it against the other side's upper bound; see
-    /// `chooseJoinOrder`. Heuristic estimates stay in `estimated_rows` for cost/order purposes
-    /// but must not be used as proof of relative size.
-    bool estimated_rows_exact = false;
+    RowCountKind estimated_rows_kind = RowCountKind::Unknown;
     std::unordered_map<String, ColumnStats> column_stats = {};
 
-    /// Best known upper bound on the row count: the exact estimate if present, otherwise the
-    /// dedicated upper bound. Empty only when nothing is known.
-    std::optional<UInt64> rowsUpperBound() const { return estimated_rows ? estimated_rows : estimated_rows_upper_bound; }
+    /// The value only when it is a point estimate (exact or heuristic), i.e. not a bare upper
+    /// bound. This is what the heuristic `lhs < rhs` swap comparison and result reporting use.
+    std::optional<UInt64> pointEstimate() const
+    {
+        return (estimated_rows_kind == RowCountKind::Exact || estimated_rows_kind == RowCountKind::Estimate) ? estimated_rows : std::nullopt;
+    }
 
     /// For join nodes
     JoinOperator join_operator;
@@ -55,7 +68,7 @@ struct DPJoinEntry
     int relation_id = -1;
 
     /// Constructor for a leaf node (base relation)
-    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {}, std::optional<UInt64> rows_upper_bound = {}, bool rows_exact = false);
+    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {}, RowCountKind rows_kind = RowCountKind::Unknown);
 
     /// Constructor for a join node
     DPJoinEntry(DPJoinEntryPtr lhs,
@@ -73,16 +86,17 @@ struct DPJoinEntry
 struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
-    /// See `DPJoinEntry::estimated_rows_upper_bound`.
-    std::optional<UInt64> estimated_rows_upper_bound = {};
-    /// See `DPJoinEntry::estimated_rows_exact`.
-    bool estimated_rows_exact = false;
+    /// See `DPJoinEntry::estimated_rows_kind`.
+    RowCountKind estimated_rows_kind = RowCountKind::Unknown;
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;
 
-    /// See `DPJoinEntry::rowsUpperBound`.
-    std::optional<UInt64> rowsUpperBound() const { return estimated_rows ? estimated_rows : estimated_rows_upper_bound; }
+    /// See `DPJoinEntry::pointEstimate`.
+    std::optional<UInt64> pointEstimate() const
+    {
+        return (estimated_rows_kind == RowCountKind::Exact || estimated_rows_kind == RowCountKind::Estimate) ? estimated_rows : std::nullopt;
+    }
 };
 
 struct QueryGraph
