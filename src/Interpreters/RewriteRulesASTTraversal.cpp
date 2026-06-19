@@ -277,6 +277,14 @@ void applyRule(ASTPtr &ast, RewriteRuleObjectPtr rule, std::unordered_map<String
 
             ASTs new_children;
             new_children.reserve(top->children.size());
+            /// Some AST nodes also keep typed pointers to a child (for example
+            /// `ASTTableJoin::on_expression` or `ASTTableExpression::sample_size`). When a
+            /// placeholder child is replaced by a single captured node, the corresponding
+            /// typed pointer must be updated too, otherwise it keeps pointing at the old
+            /// `ASTQueryParameter` and the rewritten query is still formatted/analyzed with
+            /// the placeholder. Record such single-child replacements and fix the pointers
+            /// after rebuilding `children`, mirroring `ReplaceQueryParameterVisitor::visitChildren`.
+            std::vector<std::pair<const IAST *, ASTPtr>> replaced_children;
             for (auto & child : top->children)
             {
                 auto * query_parameter = child->as<ASTQueryParameter>();
@@ -319,15 +327,22 @@ void applyRule(ASTPtr &ast, RewriteRuleObjectPtr rule, std::unordered_map<String
                             query_parameter->name
                         );
 
+                    /// Splicing only happens inside an `ASTExpressionList`, which keeps no
+                    /// typed pointers to its items, so no pointer fix-up is needed here.
                     for (auto & item : captured_list->children)
                         new_children.push_back(item);
                 }
                 else
                 {
+                    replaced_children.emplace_back(child.get(), captured);
                     new_children.push_back(std::move(captured));
                 }
             }
             top->children = std::move(new_children);
+            /// `child.get()` above is still a live address: any typed pointer that referenced
+            /// the replaced placeholder keeps it alive, so this only rewrites those pointers.
+            for (const auto & [old_ptr, new_ptr] : replaced_children)
+                top->updatePointerToChild(old_ptr, new_ptr);
         }
         ast = std::move(resulting_query);
     } else if (query_rule.reject())
