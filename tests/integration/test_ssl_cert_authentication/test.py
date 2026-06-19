@@ -532,3 +532,39 @@ def test_session_log_certificate_https_non_cert_auth():
         check_callback=lambda r: r.strip() not in ("", "0"),
     ).strip()
     assert result not in ("", "0"), result
+
+
+def test_session_log_certificate_far_future_validity():
+    # The 'client_far_future' certificate is valid until the year 2126, which is past the upper bound
+    # of DateTime (UInt32 epoch seconds, ~2106). The validity period must be recorded faithfully and
+    # not silently wrapped around, so the columns are DateTime64 rather than DateTime.
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert (
+        execute_query_https(
+            "SELECT currentUser()",
+            user="peter",
+            enable_ssl_auth=False,
+            cert_name="client_far_future",
+        )
+        == "peter\n"
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # certificate_not_after must be recorded as a year well beyond 2106 (here 2126); with a DateTime
+    # (UInt32) column the value would have wrapped around to before certificate_not_before instead.
+    result = instance.query_with_retry(
+        """
+        SELECT toYear(certificate_not_after)
+        FROM system.session_log
+        WHERE user = 'peter' AND type = 'LoginSuccess' AND interface = 'HTTP'
+              AND has(certificate_subjects, 'CN:client_far_future')
+              AND certificate_not_before IS NOT NULL AND certificate_not_after IS NOT NULL
+              AND certificate_not_before < certificate_not_after
+              AND toYear(certificate_not_after) > 2106
+        ORDER BY event_time_microseconds DESC LIMIT 1
+        """,
+        check_callback=lambda r: r.strip() not in ("", "0"),
+    ).strip()
+    assert result == "2126", result
