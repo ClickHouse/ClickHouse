@@ -32,8 +32,18 @@ StorageSystemRewriteRulesLogs::StorageSystemRewriteRulesLogs(const StorageID & t
 {
 }
 
-void StorageSystemRewriteRulesLogs::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemRewriteRulesLogs::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
+    /// The log exposes applied rule names and the original/resulting query text, from which
+    /// a reader could infer the global rewrite/rejection policies and rewritten targets even
+    /// when `system.query_rules` itself returns no rows. Gate it behind the same
+    /// rule-management grants as `system.query_rules`.
+    const auto & access = context->getAccess();
+    if (!access->isGranted(AccessType::CREATE_RULE)
+        && !access->isGranted(AccessType::ALTER_RULE)
+        && !access->isGranted(AccessType::DROP_RULE))
+        return;
+
     auto logs = RewriteRules::instance().getLogs();
     for (const auto & log : logs)
     {
