@@ -36,10 +36,13 @@ public:
     /// Uses PLAN-EXECUTE split: PLAN holds changelog_lock (shared), EXECUTE runs without it.
     nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override TSA_NO_THREAD_SAFETY_ANALYSIS;
 
+    static constexpr int32_t NO_PEER_ID = -1;
+
     /// Return entries between [start, end) with total size limited by batch_size_hint_in_bytes.
     /// Uses PLAN-EXECUTE split: PLAN holds changelog_lock (shared), EXECUTE runs without it.
+    /// peer_id identifies the NuRaft follower peer making the request (L2 read-ahead hook); -1 = NO_PEER_ID.
     nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
-    log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes) override TSA_NO_THREAD_SAFETY_ANALYSIS;
+    log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes, int32_t peer_id = NO_PEER_ID) override TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Return entry at index
     nuraft::ptr<nuraft::log_entry> entry_at(uint64_t index) override;

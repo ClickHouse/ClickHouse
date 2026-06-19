@@ -221,6 +221,14 @@ public:
 
                     if (move_changelog_cb)
                         move_changelog_cb(current_file_description, std::move(new_path), disk);
+
+                    /// L2: publish the sealed flag AFTER the to_log_index correction and move callback.
+                    /// A FILL's acquire-load of sealed==true happens-after the final to_log_index write,
+                    /// so the later plain to_log_index read is both the corrected value AND race-free.
+                    /// NOT set in finalizeCurrentFile() (which runs before the correction).
+                    /// NOT set for deleted files (compaction-deleted; they are never read-ahead targets).
+                    if (!current_file_description->broken_at_end)
+                        current_file_description->sealed.store(true, std::memory_order_release);
                 }
             }
             else
@@ -2321,6 +2329,13 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
         if (description->disk != disk)
             moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
+
+        /// L2 (D3b): seal historical complete non-broken files after recovery so read-ahead works for them.
+        /// The active file (start_index == latest_start_index) is NOT sealed (skipped above via continue).
+        /// broken_at_end files are NOT sealed — their physical tail past the last valid record is corrupt.
+        /// Explicit release store: matches the acquire-load in getReadAheadPlan and the FILL EOF rule.
+        if (!description->broken_at_end)
+            description->sealed.store(true, std::memory_order_release);
     }
 
     initialized = true;

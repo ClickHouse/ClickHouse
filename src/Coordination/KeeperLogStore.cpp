@@ -96,7 +96,7 @@ nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_ent
 }
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
-KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes)
+KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes, int32_t /*peer_id*/)
 {
     LogReadPlan plan;
     {

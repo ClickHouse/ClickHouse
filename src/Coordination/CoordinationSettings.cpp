@@ -96,6 +96,14 @@ namespace ErrorCodes
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
     DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
+    DECLARE(Bool, keeper_log_readahead_enabled, false, "Enable per-peer decoded read-ahead for changelog catch-up reads (Layer 2). Off by default.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_window_bytes, 64 * 1024 * 1024, "Read-ahead window budget in bytes. Must be >= max_requests_append_bytes_size to cover a full append batch.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_max_peer_readers, 8, "Maximum number of concurrent per-peer read-ahead readers.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_eviction_timeout_ms, 30000, "Idle timeout in milliseconds after which an inactive per-peer reader is evicted.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_pool_threads, 0, "Number of threads in the dedicated read-ahead thread pool. 0 = derive from max_peer_readers.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_serve_wait_timeout_ms, 50, "Maximum time in milliseconds to wait for the background fill before falling back to a direct read.", 0) \
+    DECLARE(Bool, keeper_log_readahead_foreground_fallback, true, "When true (default), on a fill timeout the serve does a direct read under lock_. When false (hard posture), it returns the deque prefix without any read under lock_.", 0) \
+    DECLARE(UInt64, keeper_log_read_request_timeout_ms, 0, "Per-read wall-clock deadline in milliseconds for changelog catch-up reads. Must be > 0 when keeper_log_readahead_enabled is true. 0 = no deadline.", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 
