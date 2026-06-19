@@ -981,7 +981,14 @@ public:
             {
                 Int32 cycles = 0;
                 const ExtendedDayNum shifted = shiftIntoLUTRange(toDayNum(v), cycles);
-                return static_cast<Int16>(toISOYear(shifted) - cycles * 400);
+                /// The ISO year can fall just outside [0000, 9999] at the boundaries (e.g. 0000-01-01 belongs
+                /// to ISO year -1); clamp it so the returned year stays within the representable range.
+                Int32 iso_year = toISOYear(shifted) - cycles * 400;
+                if (iso_year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
+                    iso_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
+                else if (iso_year > DATE_LUT_MAX_REPRESENTABLE_YEAR)
+                    iso_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
+                return static_cast<Int16>(iso_year);
             }
 
         const LUTIndex i = toLUTIndex(v);
