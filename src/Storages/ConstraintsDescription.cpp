@@ -38,9 +38,11 @@ namespace
 /// validation on every insert.  Such subqueries are dangerous because they run
 /// arbitrary work for each inserted block, so both bare subqueries (`CHECK (SELECT 1)`)
 /// and scalar subqueries nested under functions (`CHECK equals((SELECT 1), 1)`) are
-/// rejected.  The single allowed exception is the set side of an `IN`-family operator
-/// (`x IN (SELECT ...)`): it becomes a "not-ready set" built lazily at insert time
-/// (see `getExpressions`), which matches the legacy behaviour.
+/// rejected.  The single allowed exception is a direct subquery on the set side of an
+/// `IN`-family operator (`x IN (SELECT ...)`): it becomes a "not-ready set" built lazily
+/// at insert time (see `getExpressions`), which matches the legacy behaviour.  A subquery
+/// hidden inside the set side (`x IN (1, (SELECT 1))`) is not a not-ready set and is
+/// rejected like any other nested scalar subquery.
 bool containsForbiddenSubquery(const ASTPtr & ast)
 {
     if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
@@ -48,12 +50,22 @@ bool containsForbiddenSubquery(const ASTPtr & ast)
 
     if (const auto * func = ast->as<ASTFunction>(); func && functionIsInOrGlobalInOperator(func->name) && func->arguments)
     {
-        /// Validate every argument except the set side (the last one), which is
-        /// allowed to be a subquery handled as a not-ready set.
         const auto & arguments = func->arguments->children;
-        for (size_t i = 0; i + 1 < arguments.size(); ++i)
-            if (containsForbiddenSubquery(arguments[i]))
+        if (!arguments.empty())
+        {
+            /// Validate every argument except the set side (the last one).
+            for (size_t i = 0; i + 1 < arguments.size(); ++i)
+                if (containsForbiddenSubquery(arguments[i]))
+                    return true;
+
+            /// The set side is allowed to be a direct subquery (`x IN (SELECT ...)`),
+            /// which becomes a not-ready set built lazily at insert time.  Any other
+            /// shape must still be validated: a scalar subquery nested in a tuple or
+            /// list (`x IN (1, (SELECT 1))`) would otherwise run on every insert.
+            const auto & set_side = arguments.back();
+            if (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side))
                 return true;
+        }
         return false;
     }
 
@@ -185,7 +197,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
             ASTPtr expr = constraint_ptr->expr->clone();
             if (containsForbiddenSubquery(expr))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Subqueries are not allowed in CHECK constraints, except on the right-hand side of an IN operator");
+                    "Subqueries are not allowed in CHECK constraints, except a direct subquery on the right-hand side of an IN operator");
             /// Do not build `IN (subquery)` sets eagerly here: the constraint actions are
             /// compiled while the INSERT pipeline is being constructed (in the
             /// `CheckConstraintsTransform` constructor), before the sample-block handshake.

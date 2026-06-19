@@ -23,6 +23,13 @@ ALTER TABLE check_in_lhs ADD CONSTRAINT c0 CHECK (SELECT 1) IN (1, 2, 3);
 INSERT INTO TABLE check_in_lhs (c0) VALUES (1); -- { serverError BAD_ARGUMENTS }
 DROP TABLE check_in_lhs;
 
+-- A scalar subquery hidden inside the IN set side (a list, not a direct subquery) is
+-- rejected as well: it is not a not-ready set, so it would run on every insert.
+CREATE TABLE check_in_rhs_list (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
+ALTER TABLE check_in_rhs_list ADD CONSTRAINT c0 CHECK c0 IN (1, (SELECT 1), 3);
+INSERT INTO TABLE check_in_rhs_list (c0) VALUES (1); -- { serverError BAD_ARGUMENTS }
+DROP TABLE check_in_rhs_list;
+
 -- An IN subquery (a "not-ready set") remains allowed: the set is built lazily at insert time.
 DROP TABLE IF EXISTS check_in_set_src;
 CREATE TABLE check_in_set_src (id Int) ENGINE = MergeTree() ORDER BY tuple();
