@@ -2459,13 +2459,7 @@ struct ToDateTimeComponentsImpl
 
     static DateTimeComponentsWithFractionalPart execute(const DateTime64 & t, const DateTime64::NativeType scale_multiplier, const DateLUTImpl & time_zone)
     {
-        auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-
-        if (t.value < 0 && components.fractional)
-        {
-            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-            --components.whole;
-        }
+        const auto components = DecimalUtils::splitWithScaleMultiplierFloor(t, scale_multiplier);
 
         // Normalize the dividers between microseconds and nanoseconds w.r.t. the scale.
         Int64 microsecond_divider = (millisecond_multiplier * scale_multiplier) / microsecond_multiplier;

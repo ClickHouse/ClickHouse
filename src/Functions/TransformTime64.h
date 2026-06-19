@@ -80,10 +80,7 @@ public:
         }
         else
         {
-            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-            if (t.value < 0 && components.fractional)
-                --components.whole;
-
+            const auto components = DecimalUtils::splitWithScaleMultiplierFloor(t, scale_multiplier);
             return wrapped_transform.execute(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
     }

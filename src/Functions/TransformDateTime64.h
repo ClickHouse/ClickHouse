@@ -80,10 +80,7 @@ public:
         }
         else
         {
-            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-            if (t.value < 0 && components.fractional)
-                --components.whole;
-
+            const auto components = DecimalUtils::splitWithScaleMultiplierFloor(t, scale_multiplier);
             return wrapped_transform.execute(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
     }
@@ -108,7 +105,7 @@ public:
         }
         else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
         {
-            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            const auto components = DecimalUtils::splitWithScaleMultiplierFloor(t, scale_multiplier);
 
             const auto result = wrapped_transform.executeExtendedResult(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;
@@ -124,7 +121,7 @@ public:
         }
         else
         {
-            const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            const auto components = DecimalUtils::splitWithScaleMultiplierFloor(t, scale_multiplier);
             return wrapped_transform.executeExtendedResult(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
     }
