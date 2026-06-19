@@ -503,10 +503,14 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         speculative_set->setHeader(plan->getCurrentHeader()->getColumnsWithTypeAndName());
         speculative_set->fillSetElements();
 
+        /// Leave `external_table` null on the temporary `SetAndKey`: the speculative `CreatingSetsTransform`
+        /// must not write to the real `GLOBAL IN` temporary table before the build is committed, otherwise
+        /// a silently-stopped pass would leave a prefix of rows there that the deferred build then appends
+        /// to (remote shards would see the failed prefix plus the real build). The external table is
+        /// populated from the committed set below instead.
         auto tmp_set_and_key = std::make_shared<SetAndKey>();
         tmp_set_and_key->key = set_and_key->key;
         tmp_set_and_key->set = speculative_set;
-        tmp_set_and_key->external_table = set_and_key->external_table;
 
         auto creating_set = std::make_unique<CreatingSetStep>(
             plan->getCurrentHeader(),
@@ -559,7 +563,15 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// so the original `source` plan is no longer needed. On the destructive fallback `source` was already
     /// consumed by `build`, so `reset` is a no-op there.
     if (speculative_set)
+    {
         set_and_key->set = speculative_set;
+        /// The speculative build left the `GLOBAL IN` external table untouched; populate it now from the
+        /// committed set (mirroring `setExternalTable`). The deferred build is skipped, so this is the
+        /// single, atomic population of the table. On the destructive fallback the external table was
+        /// already written by `build`'s `CreatingSetsTransform`, exactly as before.
+        if (set_and_key->external_table)
+            buildExternalTableFromInplaceSet(set_and_key->external_table);
+    }
     source.reset();
 
     logProcessorProfile(context, pipeline.getProcessors());
