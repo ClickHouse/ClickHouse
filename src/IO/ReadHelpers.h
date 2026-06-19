@@ -917,9 +917,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             if constexpr (throw_exception)
             {
-                /// Year 0 means "no date" (epoch) only for DateTime, which cannot represent it anyway.
-                /// DateTime64 spans down to 0000-01-01, so it must keep the real value there.
-                if (!dt64_mode && unlikely(year == 0))
+                if (unlikely(year == 0))
                     datetime = 0;
                 else
                     datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
@@ -929,7 +927,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 if (saturate_on_overflow)
                 {
                     /// Use saturating version - makeDateTime saturates out-of-range years
-                    if (!dt64_mode && unlikely(year == 0))
+                    if (unlikely(year == 0))
                         datetime = 0;
                     else
                         datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
