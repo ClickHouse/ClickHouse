@@ -245,7 +245,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 

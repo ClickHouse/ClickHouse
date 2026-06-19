@@ -38,7 +38,7 @@ struct GroupByKeyComparator
 {
     GroupByKeyComparator(QueryTreeNodePtr node_) /// NOLINT
         : node(std::move(node_))
-        , hash(node->getTreeHash({.compare_aliases = false, .compare_types = true}))
+        , hash(node->getTreeHash({.compare_aliases = false}))
     {}
 
     bool operator==(const GroupByKeyComparator & other) const { return hash == other.hash && compareGroupByKeys(node, other.node); }

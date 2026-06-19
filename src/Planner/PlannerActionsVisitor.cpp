@@ -546,6 +546,17 @@ public:
         return false;
     }
 
+    /// Returns true if the node exists and is a source node: an INPUT, or a constant COLUMN
+    /// (for example, a constant input duplicated as a COLUMN node by the ActionsDAG constructor).
+    [[maybe_unused]] bool containsInputOrConstantNode(const std::string & node_name)
+    {
+        const auto * node = tryGetNode(node_name);
+        if (node && (node->type == ActionsDAG::ActionType::INPUT || node->type == ActionsDAG::ActionType::COLUMN))
+            return true;
+
+        return false;
+    }
+
     [[maybe_unused]] const ActionsDAG::Node * tryGetNode(const std::string & node_name)
     {
         auto it = node_name_to_node.find(node_name);
@@ -1199,9 +1210,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
      *    SELECT foo(a, b, c) as x FROM table GROUP BY foo(a, b, c)
      * In this case we should not analyze `a`, `b`, `c` again.
      * Moreover, it can lead to an error if we have arrayJoin in the arguments because it will be calculated twice.
+     *
+     * The expression can also be present as a constant COLUMN node: when a GROUP BY key expression
+     * is constant-foldable, the aggregation step exposes it as a constant column, and the ActionsDAG
+     * constructor duplicates constant inputs as COLUMN nodes. Visiting the arguments in this case can
+     * lead to an error: for example, after aggregation with group_by_use_nulls, GROUP BY key constants
+     * are wrapped into Nullable but keep their names, and a lambda capture built over such a constant
+     * fails with a type mismatch.
      */
     bool is_input_node = function_node.isAggregateFunction() || function_node.isWindowFunction()
-        || actions_stack.front().containsInputNode(function_node_name);
+        || actions_stack.front().containsInputOrConstantNode(function_node_name);
     if (is_input_node)
     {
         size_t actions_stack_size = actions_stack.size();

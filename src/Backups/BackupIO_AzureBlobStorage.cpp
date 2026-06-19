@@ -204,7 +204,7 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        0,
        size,
        /* dest_container */ connection_params.getContainer(),
-       /* dest_path */ destination,
+       /* dest_path */ fs::path(blob_path) / destination,
        settings,
        read_settings,
        std::optional<ObjectAttributes>(),

@@ -564,7 +564,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             for (size_t pair = 0; pair < num_pairs; ++pair)
             {
-                auto & cond_node = multi_if_args[2 * pair];
+                /// Snapshot, not reference: `resolveExpressionNode` rebinds matchers in place.
+                QueryTreeNodePtr cond_node = multi_if_args[2 * pair];
                 resolveExpressionNode(cond_node,
                     scope,
                     false /*allow_lambda_expression*/,

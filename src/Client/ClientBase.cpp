@@ -713,12 +713,6 @@ try
             config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
             pager_cmd = ShellCommand::execute(config);
             underlying_buf = &pager_cmd->in;
-
-            /// With `--pager` the result set is written through the pager's stdin pipe rather than
-            /// through `std_out`, so install the cancellation hook here too. Otherwise a stuck or
-            /// slow pager could fill its stdin pipe and the first Ctrl+C would appear to have no
-            /// effect. `pager_cmd` is recreated per query, so the hook does not need to be removed.
-            pager_cmd->in.setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
         }
         else
         {
@@ -801,17 +795,8 @@ try
                 if (query_with_output->isIntoOutfileWithStdout())
                 {
                     select_into_file_and_stdout = true;
-
-                    /// In `INTO OUTFILE ... AND STDOUT` mode the result is written to this separate
-                    /// stdout buffer rather than through `std_out`, so install the same cancellation
-                    /// hook here. Otherwise Ctrl+C would not promptly abort the output when the
-                    /// stdout sink (e.g. a slow terminal) is blocked. This buffer is recreated per
-                    /// query, so the hook does not need to be removed afterwards.
-                    auto stdout_buf = std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd);
-                    stdout_buf->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
-
-                    out_file_buf = std::make_unique<ForkWriteBuffer>(
-                        ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf), std::move(stdout_buf)});
+                    out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
+                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
@@ -1429,13 +1414,6 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
         {
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
-
-            /// Abort writing the result set to the output promptly when the query is cancelled.
-            /// Without this, a write to a slow or stuck sink (e.g. a slow terminal) blocks the
-            /// client, so the first Ctrl+C appears to have no effect until the whole block is
-            /// written. The hook lets the output buffer stop waiting and discard the rest.
-            std_out->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
-            SCOPE_EXIT({ std_out->setCancellationHook({}); });
 
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;

@@ -344,7 +344,7 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 
         /// Build a KeyCondition for the `token` column to skip dictionary blocks
         /// whose token range does not match the filter.
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().at(0), context);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().at(0), context, /* boolean_context */ true);
 
         auto token_column = ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "token");
         auto key_expr = std::make_shared<ExpressionActions>(ActionsDAG({token_column}));
