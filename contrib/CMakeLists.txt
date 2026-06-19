@@ -174,21 +174,18 @@ add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
-option(ENABLE_JIEBA "Enable jieba support" ${ENABLE_LIBRARIES})
-if (ENABLE_JIEBA)
-    if (ARCH_S390X)
-        # The jieba dictionary file (`contrib/jieba/dict_le.dat.zst`) is little-endian
-        # only: the header, the double weights array, and the darts-clone trie array
-        # are all `reinterpret_cast` directly out of the decompressed buffer. There is
-        # no big-endian variant of the file. The runtime would fail anyway via
-        # `static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, ...)` in
-        # `jieba_dict.cpp`; we report it here so the misconfiguration is caught at
-        # configure time rather than during the build.
-        message(WARNING "ENABLE_JIEBA is not supported on big-endian (s390x) — disabling")
-    else()
-        add_contrib (darts-clone-cmake darts-clone)
-        add_contrib (jieba)
-    endif()
+# The feature is named after what it provides (a Chinese tokenizer) rather than after
+# the underlying library: the algorithm is a reimplementation following fxsjy/jieba, and
+# only the embedded dictionary/model data is derived from cppjieba — so neither `JIEBA`
+# nor `CPPJIEBA` is an accurate name for the option.
+option(ENABLE_CHINESE_TOKENIZER "Enable the Chinese tokenizer (jieba-style segmentation in contrib/Jieba-CPP)" ${ENABLE_LIBRARIES})
+if (ENABLE_CHINESE_TOKENIZER)
+    # The Jieba-CPP dictionary ships in both little-endian (`dict_le.dat.zst`) and
+    # big-endian (`dict_be.dat.zst`) variants, and `jieba_dict.cpp` `#embed`s the one
+    # matching the host `__BYTE_ORDER__`, so the tokenizer works on big-endian targets
+    # (e.g. s390x) as well — no architecture guard is needed here.
+    add_contrib (darts-clone-cmake darts-clone)
+    add_contrib (Jieba-CPP-cmake Jieba-CPP)
 endif()
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
