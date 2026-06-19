@@ -1,9 +1,6 @@
 -- Exercise the SYSTEM query parser and AST formatter for the engine-agnostic
 -- background-control commands (STOP/START/PAUSE/CANCEL/REFRESH [db.]table and
--- ... ALL BACKGROUND). The final two sections pin that these verbs reject
--- ON CLUSTER (like the SYSTEM ... VIEW aliases they mirror) and apply only to
--- tables with controllable background activity.
-
+-- ... ALL BACKGROUND).
 SELECT '--- per-table forms (db.table and bare table) ---';
 EXPLAIN SYNTAX SYSTEM STOP db.t;
 EXPLAIN SYNTAX SYSTEM START db.t;
@@ -70,3 +67,21 @@ system stop mv;    -- { serverError BAD_ARGUMENTS }
 system refresh mv; -- { serverError BAD_ARGUMENTS }
 drop table mv;
 drop table mt;
+
+SELECT '--- a bare verb needs a parseable table, else it is a syntax error ---';
+SYSTEM STOP 1;    -- { clientError SYNTAX_ERROR }
+SYSTEM START 1;    -- { clientError SYNTAX_ERROR }
+SYSTEM PAUSE 1;    -- { clientError SYNTAX_ERROR }
+SYSTEM CANCEL 1;    -- { clientError SYNTAX_ERROR }
+SYSTEM REFRESH 1; -- { clientError SYNTAX_ERROR }
+
+SELECT '--- per-table verbs on a missing table report UNKNOWN_TABLE ---';
+SYSTEM STOP nonexistent_table_04320;    -- { serverError UNKNOWN_TABLE }
+SYSTEM START nonexistent_table_04320;   -- { serverError UNKNOWN_TABLE }
+SYSTEM PAUSE nonexistent_table_04320;   -- { serverError UNKNOWN_TABLE }
+SYSTEM CANCEL nonexistent_table_04320;  -- { serverError UNKNOWN_TABLE }
+SYSTEM REFRESH nonexistent_table_04320; -- { serverError UNKNOWN_TABLE }
+
+SELECT '--- SYSTEM REFRESH/CANCEL VIEW on a missing refreshable view reports BAD_ARGUMENTS ---';
+SYSTEM REFRESH VIEW nonexistent_view_04320; -- { serverError BAD_ARGUMENTS }
+SYSTEM CANCEL VIEW nonexistent_view_04320;  -- { serverError BAD_ARGUMENTS }

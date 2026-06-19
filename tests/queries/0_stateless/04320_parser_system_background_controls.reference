@@ -32,3 +32,6 @@ SYSTEM STOP `all`
 --- ON CLUSTER is not supported (matches the SYSTEM ... VIEW aliases) ---
 --- sentinel enum values (UNKNOWN/END) are not commands and must be rejected ---
 --- only tables with controllable background activity are accepted ---
+--- a bare verb needs a parseable table, else it is a syntax error ---
+--- per-table verbs on a missing table report UNKNOWN_TABLE ---
+--- SYSTEM REFRESH/CANCEL VIEW on a missing refreshable view reports BAD_ARGUMENTS ---
