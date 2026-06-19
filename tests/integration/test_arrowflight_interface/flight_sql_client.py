@@ -29,6 +29,12 @@ from google.protobuf.internal import builder as _builder
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import symbol_database as _symbol_database
 
+# The serialized FileDescriptorProto below depends on `google/protobuf/descriptor.proto`
+# (see the `\x1a google/protobuf/descriptor.proto` dependency in the bytes). Importing
+# `descriptor_pb2` registers that file in the default descriptor pool as a side effect,
+# which `AddSerializedFile` requires; the name itself is intentionally unused here.
+from google.protobuf import descriptor_pb2 as _descriptor_pb2  # noqa: F401
+
 _sym_db = _symbol_database.Default()
 
 _DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(

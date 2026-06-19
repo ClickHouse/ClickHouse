@@ -79,7 +79,7 @@ def kafka_setup_teardown():
 # TODO: add test for SELECT LIMIT is working.
 
 
-@k.pytest.mark.parametrize(
+@pytest.mark.parametrize(
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
 )

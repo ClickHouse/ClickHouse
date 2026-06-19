@@ -7,6 +7,8 @@ import socket
 import string
 import time
 
+import avro.datafile
+import avro.io
 import avro.schema
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
 from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
