@@ -543,25 +543,33 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         return;
 
     /// TODO: estimate number of buckets based on statistics and available nodes and memory
-    const size_t bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
+    size_t bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
 
     if (read_from_merge_tree_step)
     {
-        /// Round-robin mark-range bucketing would split rows with the same sort key across buckets and
-        /// break FINAL dedup on engines with specialized merging (Replacing, Collapsing, ...). Fall back
-        /// to serial read until a correctness-preserving bucketing strategy exists.
-        if (read_from_merge_tree_step->isQueryWithFinal() &&
-            read_from_merge_tree_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-            return;
-
         /// Check if table is big enough for distributed read
         /// TODO: implement better logic for choosing number of parallel readers
         auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
         if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
             return;
 
-        /// Move read step to a new node and set it to distributed read
-        read_from_merge_tree_step->setDistributedRead(bucket_count);
+        if (read_from_merge_tree_step->isQueryWithFinal() &&
+            read_from_merge_tree_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+        {
+            /// Round-robin mark-range bucketing would split rows sharing a sort key across buckets and
+            /// break FINAL dedup. Split the read into primary-key-range layers instead (each layer
+            /// deduplicated independently, then concatenated). Fall back to a serial read when the data
+            /// cannot be range-split (SAMPLE, unsafe or mixed-order primary key, or a single layer).
+            const size_t layer_count = read_from_merge_tree_step->setupDistributedFinalLayers(bucket_count);
+            if (layer_count == 0)
+                return;
+            bucket_count = layer_count;
+        }
+        else
+        {
+            /// Move read step to a new node and set it to distributed read
+            read_from_merge_tree_step->setDistributedRead(bucket_count);
+        }
     }
     else if (read_from_object_storage_step)
     {

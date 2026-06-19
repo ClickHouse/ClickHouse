@@ -399,6 +399,10 @@ public:
     /// Per-bucket PK-range layers (marks) + the PK-tuple borders between them, for a parallel FINAL
     /// distributed read. Mutually exclusive with `setDistributedReadParts`.
     void setDistributedReadLayers(std::vector<RangesInDataPartsDescription> layers, std::vector<std::vector<Field>> borders);
+    /// For a FINAL read, splits the analyzed parts into up to `max_layers` primary-key-range layers and
+    /// records them for a distributed parallel FINAL. Returns the number of layers, or 0 (read serially)
+    /// when the data cannot be range-split (SAMPLE, unsafe or mixed-order primary key, or a single layer).
+    size_t setupDistributedFinalLayers(size_t max_layers);
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
 

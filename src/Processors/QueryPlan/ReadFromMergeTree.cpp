@@ -4729,6 +4729,43 @@ void ReadFromMergeTree::setDistributedReadLayers(std::vector<RangesInDataPartsDe
     distributed_read_borders = std::move(borders);
 }
 
+size_t ReadFromMergeTree::setupDistributedFinalLayers(size_t max_layers)
+{
+    /// SAMPLE interacts with layer boundaries in undefined ways, and splitting needs a safe, uniformly
+    /// ordered primary key. Read serially otherwise.
+    const auto & modifiers = query_info.table_expression_modifiers;
+    if (modifiers && (modifiers->hasSampleSizeRatio() || modifiers->hasSampleOffsetRatio()))
+        return 0;
+
+    const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+    if (!isSafePrimaryKey(primary_key))
+        return 0;
+
+    auto in_reverse_order = deriveReverseOrder(primary_key, storage_snapshot->metadata->getSortingKey());
+    if (!in_reverse_order)
+        return 0;
+
+    auto analysis = selectRangesToRead();
+    if (!analysis || analysis->parts_with_ranges.empty())
+        return 0;
+
+    auto split = splitIntersectingPartsRangesIntoLayers(
+        analysis->parts_with_ranges, max_layers, primary_key.column_names.size(), *in_reverse_order, log);
+
+    /// A single layer has nothing to parallelize and carries no borders to trim by.
+    if (split.layers.size() <= 1)
+        return 0;
+
+    std::vector<RangesInDataPartsDescription> layers;
+    layers.reserve(split.layers.size());
+    for (const auto & layer : split.layers)
+        layers.push_back(layer.getDescriptions());
+
+    setDistributedRead(split.layers.size());
+    setDistributedReadLayers(std::move(layers), std::move(split.borders));
+    return split.layers.size();
+}
+
 Strings ReadFromMergeTree::getShardsForDistributedRead() const
 {
     Strings default_shard_list = {"0"};
