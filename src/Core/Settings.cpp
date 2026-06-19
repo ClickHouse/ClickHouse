@@ -965,6 +965,8 @@ ClickHouse supports the following algorithms of choosing replicas:
 - [Random](#load_balancing-random) (by default)
 - [Nearest hostname](#load_balancing-nearest_hostname)
 - [Hostname levenshtein distance](#load_balancing-hostname_levenshtein_distance)
+- [Hostname longest common prefix](#load_balancing-hostname_longest_common_prefix)
+- [Hostname longest common suffix](#load_balancing-hostname_longest_common_suffix)
 - [In order](#load_balancing-in_order)
 - [First or random](#load_balancing-first_or_random)
 - [Round robin](#load_balancing-round_robin)
@@ -1014,6 +1016,49 @@ example-clickhouse-0-0 example-clickhouse-1-10
 example-clickhouse-0-0 example-clickhouse-12-0
 3
 ```
+
+### Hostname longest common prefix {#load_balancing-hostname_longest_common_prefix}
+
+```sql
+load_balancing = hostname_longest_common_prefix
+```
+
+Just like `nearest_hostname`, but the replica whose hostname shares the longest common prefix with the local hostname is preferred (the longer the common prefix, the higher the priority). Unlike `nearest_hostname`, which counts differing characters position by position, this strategy is not confused by hostnames whose numeric segments have different lengths. For example, for the local hostname `sfe301`:
+
+```text
+sfe301 sde301
+1
+
+sfe301 sfe10101
+3
+
+sfe301 sde505
+1
+```
+
+Here `sfe10101` is preferred because it shares the longest common prefix (`sfe`, length 3) with `sfe301`.
+
+Replicas with equal common prefix length are chosen at random. In particular, when no replica shares any prefix with the local hostname (all common prefix lengths are zero), this strategy behaves exactly like `random`.
+
+### Hostname longest common suffix {#load_balancing-hostname_longest_common_suffix}
+
+```sql
+load_balancing = hostname_longest_common_suffix
+```
+
+Just like `hostname_longest_common_prefix`, but the longest common *suffix* is compared instead of the prefix. This is useful when the data center identity is encoded as a suffix of the hostname. For example, for the local hostname `et46gtghn.qc.localdomain`:
+
+```text
+et46gtghn.qc.localdomain tr676ddgh.td.localdomain
+12
+
+et46gtghn.qc.localdomain ab999.qc.localdomain
+15
+```
+
+Here `ab999.qc.localdomain` is preferred because it shares the longest common suffix (`.qc.localdomain`, length 15) with `et46gtghn.qc.localdomain`.
+
+Replicas with equal common suffix length are chosen at random. In particular, when no replica shares any suffix with the local hostname (all common suffix lengths are zero), this strategy behaves exactly like `random`.
 
 ### In Order {#load_balancing-in_order}
 
@@ -7878,6 +7923,12 @@ instead of glob listing. 0 means disabled.
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_nullable_tuple_type, false, R"(
+Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
+
+This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
+Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
+)", BETA, enable_nullable_tuple_type) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(
@@ -7903,9 +7954,6 @@ Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or 
 )", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
-)", 0) \
-    DECLARE(Bool, enable_join_runtime_filter_shared_fixed_hash_table, true, R"(
-When the hash join build side has been converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that map directly as the runtime filter for the probe side, replacing the Set/BloomFilter that the runtime filter framework otherwise builds for the same join.
 )", 0) \
     \
     /* ####################################################### */ \
@@ -8055,12 +8103,6 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
 Allow to create database with Engine=MaterializedPostgreSQL(...).
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_nullable_tuple_type, false, R"(
-Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
-
-This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
-Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
 
@@ -8068,7 +8110,7 @@ Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Null
 - `true`: Return `Nullable(Tuple(...))` and use `NULL` for rows where the subcolumn is missing.
 
 This setting controls extracted subcolumn behavior only.
-It does not control whether `Nullable(Tuple(...))` columns can be created in tables; that is controlled by `allow_experimental_nullable_tuple_type`.
+It does not control whether `Nullable(Tuple(...))` columns can be created in tables; that is controlled by `enable_nullable_tuple_type`.
 
 ClickHouse uses the value for this setting loaded at server startup.
 Changes made with `SET` or query-level `SETTINGS` do not change extracted subcolumn behavior.
@@ -8187,6 +8229,9 @@ Number of blocks that are skipped before trying to dynamically re-enable a runti
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
 If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
+When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
+)", 0) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
@@ -8606,6 +8651,9 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         {
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = SettingsTraits::resolveName(change.name);
+
+            if (getTier(final_name) == SettingsTierType::OBSOLETE)
+                continue;
 
             /// If this setting was changed manually, we don't change it
             if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
