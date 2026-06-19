@@ -16,6 +16,7 @@ from pyspark.sql.types import (
 from pyspark.sql.window import Window
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 from helpers.s3_tools import (
     AzureUploader,
@@ -50,8 +51,8 @@ def get_spark(log_dir=None):
             "spark.sql.catalog.spark_catalog.warehouse",
             "/var/lib/clickhouse/user_files",
         )
-        .config("spark.driver.memory", "8g")
-        .config("spark.executor.memory", "8g")
+        .config("spark.driver.memory", "2g")
+        .config("spark.executor.memory", "2g")
         .master("local")
     )
 
