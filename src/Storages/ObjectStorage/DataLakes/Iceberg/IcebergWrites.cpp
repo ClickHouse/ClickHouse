@@ -699,6 +699,12 @@ void generateExistingManifestFile(
     writer.setMetadata(Iceberg::f_partition_spec, stringifyJSON(partition_spec->getArray(Iceberg::f_fields)));
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
 
+    /// The reader infers the manifest format version from this avro metadata key and falls back to
+    /// v1 when it is absent (see `AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata`).
+    /// Under v1 it never reads the per-entry `sequence_number`, so a re-emitted EXISTING entry would
+    /// read back as having a null data sequence number, which Iceberg v2 forbids. Stamp it explicitly.
+    writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
+
     for (const auto & entry : entries)
     {
         const auto & parsed = *entry->parsed_entry;
