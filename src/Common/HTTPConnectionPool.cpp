@@ -933,6 +933,16 @@ private:
         std::exception_ptr last_net_error;
         size_t connect_attempts = 0;
 
+        /// Report the cumulative time spent across all connect attempts, including the failed
+        /// ones, rather than only the last attempt. A request that waits through a slow or
+        /// blackholed address before succeeding on a later one would otherwise understate the
+        /// connection-establishment latency reported to callers (e.g. the S3/Azure connect-time
+        /// histograms). The accumulated value is written back on every exit from the loop below -
+        /// success or failure - by this scope guard. `connect_time == nullptr` callers are
+        /// unaffected: the guard only writes through a non-null pointer.
+        UInt64 total_connect_time = 0;
+        SCOPE_EXIT({ if (connect_time) *connect_time = total_connect_time; });
+
         for (size_t i = 0; i < max_resolve_iterations && connect_attempts < max_connect_attempts; ++i)
         {
             auto address = resolver->resolve();
@@ -982,7 +992,13 @@ private:
                 setTimeouts(*connection, timeouts);
 
                 auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
-                connection->doConnect(connect_time);
+                /// `Session::reconnect` records this attempt's connect duration on both success
+                /// and failure, so accumulate it into `total_connect_time` however `doConnect`
+                /// exits. The guard fires while the stack unwinds out of this `try`, before any
+                /// of the catch handlers below run, so a failed attempt's time is also counted.
+                UInt64 attempt_connect_time = 0;
+                SCOPE_EXIT({ total_connect_time += attempt_connect_time; });
+                connection->doConnect(&attempt_connect_time);
             }
 #if USE_SSL
             catch (const Poco::Net::SSLException &)

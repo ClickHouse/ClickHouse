@@ -815,7 +815,8 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
     UInt64 errors_before = DB::CurrentThread::getProfileEvents()[metrics.errors].load();
     UInt64 failed_before = DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load();
 
-    auto connection = pool->getConnection(timeouts, nullptr);
+    UInt64 connect_time = 0;
+    auto connection = pool->getConnection(timeouts, &connect_time);
     ASSERT_TRUE(connection->connected());
 
     /// First attempt: connect to `bad_ip` → fails (counted in `errors` and resolver `failed`).
@@ -823,6 +824,13 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created].load() - created_before);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors].load() - errors_before);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load() - failed_before);
+
+    /// The retry path must still report the connection-establishment time to the caller: the
+    /// connect duration is accumulated across the failed and the successful attempt and written
+    /// back even though the first address failed. A unit test cannot deterministically time a
+    /// slow failed attempt, but a populated (non-zero) value here guards the accumulation
+    /// plumbing against a regression that would leave `connect_time` unwritten on the retry path.
+    ASSERT_GT(connect_time, 0u);
 
     /// The recovered connection is fully usable.
     echoRequest("Hello", *connection);
