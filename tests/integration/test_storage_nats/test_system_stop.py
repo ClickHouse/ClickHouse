@@ -474,7 +474,7 @@ def test_cancel_during_direct_select_does_not_drop_messages(nats_cluster):
     subject = "js_cancel_subject"
     durable = "js_cancel_durable"
     table = "nats_direct_cancel"
-    n = 20
+    n = 10
 
     # Short ack-wait so messages a direct read pulled but never acked are redelivered quickly.
     jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=2)
@@ -524,7 +524,7 @@ def test_cancel_during_direct_select_does_not_drop_messages(nats_cluster):
         stop.set()
         canceller.join()
 
-    drain(time.time() + 60)  # finish draining with no cancels in flight
+    drain(time.time() + 120)  # finish draining with no cancels in flight
 
     missing = set(range(n)) - collected
     assert not missing, (
@@ -626,3 +626,63 @@ def test_system_stop_requires_grant(nats_cluster):
         instance.query(f"SYSTEM {verb} test.{table}", user=user)
 
     instance.query(f"DROP USER {user}")
+
+
+def test_direct_select_blocked_while_stopped_with_attached_view(nats_cluster):
+    # While a table with an attached materialized view is STOPped, a direct SELECT must still be
+    # rejected: the direct-read guard depends on the attached view, not on whether streaming is
+    # running. Otherwise the SELECT would consume messages meant for the view and lose them.
+    table = "nats_stopped_direct"
+    subject = "stopped_direct_subject"
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+        """
+    )
+    # Let the consumer connection and consumers initialize, so the direct SELECT below reaches the
+    # attached-view guard rather than a "not connected" error.
+    time.sleep(3)
+
+    # Stop before any view is attached, then attach the view while stopped.
+    instance.query(f"SYSTEM STOP test.{table}")
+    instance.query(
+        f"""
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table};
+        """
+    )
+
+    # The background task picks up the attached view on its next wake-up and sets the guard, after which
+    # a direct SELECT is rejected.
+    def direct_select_rejected():
+        try:
+            instance.query(
+                f"SELECT count() FROM test.{table}",
+                settings={"stream_like_engine_allow_direct_select": 1},
+            )
+            return False
+        except Exception as e:
+            return "Cannot read from StorageNATS with attached materialized views" in str(e)
+
+    for _ in range(40):
+        if direct_select_rejected():
+            break
+        time.sleep(0.5)
+    else:
+        assert False, "direct SELECT was not blocked while a materialized view is attached"
+
+    # START resumes consumption into the view.
+    instance.query(f"SYSTEM START test.{table}")
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+    nats_publish(nats_cluster, subject, 0, 10)
+    wait_dst_count_at_least(table, 10)

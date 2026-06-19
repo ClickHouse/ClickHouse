@@ -265,12 +265,12 @@ void StorageNATS::initializeConsumersFunc()
     }
 
     size_t num_views = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
+    mv_attached.store(num_views > 0);
     if (num_views == 0)
     {
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
     }
-    mv_attached.store(true);
 
     if (!subscribeConsumers())
     {
@@ -619,15 +619,14 @@ void StorageNATS::threadFunc()
 
     bool consumers_queues_are_empty = false;
 
+    const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+    mv_attached.store(num_views > 0);
+
     try
     {
-        /// SYSTEM STOP/PAUSE blocks consumption: skip streaming to views. The streaming task keeps
-        /// rescheduling; SYSTEM START wakes it via `onActionLockRemove`.
-        if (consumers_connection && consumers_connection->isConnected() && stream_control.claimCycle())
+        if (num_views && consumers_connection && consumers_connection->isConnected() && stream_control.claimCycle())
         {
             auto start_time = std::chrono::steady_clock::now();
-
-            mv_attached.store(true);
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!shutdown_called && num_created_consumers > 0)
@@ -638,8 +637,7 @@ void StorageNATS::threadFunc()
                     break;
                 }
 
-                LOG_DEBUG(log, "Started streaming to {} attached views",
-                    DatabaseCatalog::instance().getDependentViews(table_id).size());
+                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 if (streamToViews())
                 {
@@ -670,8 +668,6 @@ void StorageNATS::threadFunc()
     if (shutdown_called)
         return;
 
-    size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-
     if (num_views != 0)
     {
         /// While paused/stopped the loop above does no work, so reschedule with a delay to avoid
@@ -693,7 +689,6 @@ void StorageNATS::threadFunc()
     }
 
     initialize_consumers_task->schedule();
-    mv_attached.store(false);
 }
 
 
