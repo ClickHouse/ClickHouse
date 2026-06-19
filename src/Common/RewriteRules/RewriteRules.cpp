@@ -164,6 +164,19 @@ namespace
         if (!query.rewrite())
             return;
 
+        /// A placeholder in the result template whose type the substitution does not
+        /// understand (anything other than `String`, `Int`, `Expression`, `ExpressionList`
+        /// or `Subquery`) — for example `{t:Identifier}` — would be substituted as a raw
+        /// captured node into an incompatible position, leaving a malformed AST that fails
+        /// at execution time. Reject such types up front, symmetrically with the source
+        /// template.
+        if (auto unsupported = findUnsupportedQueryParameter(query.resulting_query))
+            throw Exception(
+                ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
+                "Rewrite rule `{}` uses query parameter `{}` with unsupported type `{}` in its result template. "
+                "Supported placeholder types are: String, Int, Expression, ExpressionList, Subquery",
+                query.rule_name, unsupported->first, unsupported->second);
+
         /// Every placeholder referenced by the result template must be captured by the
         /// source template, otherwise matching queries throw
         /// `REWRITE_RULE_UNKNOWN_QUERY_PARAMETER` at execution time.
