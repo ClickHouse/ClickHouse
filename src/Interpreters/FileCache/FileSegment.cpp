@@ -1,6 +1,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 
 #include <filesystem>
+#include <fcntl.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCache.h>
@@ -693,6 +694,19 @@ void FileSegment::renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock
     {
         fs::rename(old_path, new_path);
         size_in_filename = true;
+
+        /// A reader that opened this segment while it was still named `old_path` left an entry in
+        /// `OpenedFileCache` keyed by `old_path`. When this segment is later removed,
+        /// `removeFileSegmentImpl` invalidates only the current (`new_path`) name, so without this the
+        /// `old_path` entry would survive. A future segment created at the same key and offset is again
+        /// named `old_path` while it downloads, so opening it could reuse the stale descriptor of this —
+        /// by then removed — segment and read its old bytes. Drop the `old_path` entry now; existing
+        /// readers keep their own shared descriptors (the inode is unchanged across the rename), so this
+        /// only prevents future opens from reusing the pre-rename descriptor. Mirror the flag handling in
+        /// `removeFileSegmentImpl`: the file may have been opened with or without `O_DIRECT`.
+        const int flags = getFlagsForLocalRead();
+        OpenedFileCache::instance().remove(old_path, flags);
+        OpenedFileCache::instance().remove(old_path, flags | O_DIRECT);
     }
     catch (...)
     {
