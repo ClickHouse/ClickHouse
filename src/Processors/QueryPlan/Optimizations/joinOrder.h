@@ -47,17 +47,6 @@ inline std::optional<UInt64> pointEstimate(std::optional<UInt64> rows, RowCountK
     return (kind == RowCountKind::Exact || kind == RowCountKind::Estimate) ? rows : std::nullopt;
 }
 
-/// Whether a right-side value may anchor an upper-bound-driven swap (`upperBound(left) < this`).
-/// Only an Exact count qualifies -- it is a guaranteed CURRENT lower bound. A heuristic `Estimate`
-/// (e.g. an NDV-less aggregation reporting its input row count, or a stale-high cached size) may
-/// exceed the true right size, so anchoring on it could move a larger left input onto the build
-/// side. It is still used in the heuristic `lhs < rhs` comparison (`pointEstimate`), just not as
-/// proof that the left side is smaller.
-inline bool canAnchorUpperBoundSwap(RowCountKind kind)
-{
-    return kind == RowCountKind::Exact;
-}
-
 struct DPJoinEntry
 {
     BitSet relations;

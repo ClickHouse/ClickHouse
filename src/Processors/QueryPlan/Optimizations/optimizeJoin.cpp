@@ -799,9 +799,9 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         /// max-like value: it tracks growth immediately but only shrinks when a new size drops
         /// below half of the stored one. So it can be STALE-HIGH (above the current size) and stay
         /// that way indefinitely. It is a heuristic point estimate, never a lower bound -- it does
-        /// not anchor the upper-bound swap (see `canAnchorUpperBoundSwap`); it only feeds the
-        /// `lhs < rhs` comparison and cost/ordering. It must never raise the estimate above what we
-        /// already know:
+        /// not anchor the upper-bound swap (see `chooseJoinOrder`); it only feeds the `lhs < rhs`
+        /// comparison and cost/ordering. It must never raise the estimate above what we already
+        /// know:
         ///  * an exact leaf stays exact -- the min only tightens it and remains a valid lower bound;
         ///  * otherwise the cache is used only when it is at or below the prior value (an upper
         ///    bound, or a heuristic), as an Estimate. A stale-high cache is ignored: the known upper
@@ -1215,10 +1215,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// When the left input has only an upper bound (a residual filter defeated its exact
             /// estimate, see `estimateReadRowsCount`), `upperBound(left) < rhs` only implies
             /// `left < right` if `rhs` does not exceed the true right size -- i.e. only if `rhs` is
-            /// a current lower bound. So the right side must be Exact (`canAnchorUpperBoundSwap`).
-            /// A heuristic Estimate or a possibly-stale Cached value can exceed the true right size
-            /// and would wrongly move a larger left input onto the build side, so neither anchors
-            /// here -- they only take part in the `lhs < rhs` comparison above.
+            /// a current lower bound. So the right side must be Exact. A heuristic Estimate (e.g. an
+            /// NDV-less aggregation reported as its input row count, or a possibly-stale cached
+            /// size) can exceed the true right size and would wrongly move a larger left input onto
+            /// the build side, so it does not anchor here -- it only takes part in the `lhs < rhs`
+            /// comparison above.
             bool swap_on_sizes = false;
             if (optimization_settings.join_swap_table.has_value())
                 swap_on_sizes = optimization_settings.join_swap_table.value();
@@ -1228,7 +1229,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             else
                 swap_on_sizes = entry->join_method == JoinMethod::Hash
                     && entry->left->estimated_rows_kind == RowCountKind::UpperBound
-                    && canAnchorUpperBoundSwap(entry->right->estimated_rows_kind)
+                    && entry->right->estimated_rows_kind == RowCountKind::Exact
                     && entry->left->estimated_rows.value() < entry->right->estimated_rows.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
