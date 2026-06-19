@@ -158,6 +158,7 @@ static struct InitFiu
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
+    REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
@@ -203,7 +204,9 @@ static struct InitFiu
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     PAUSEABLE(transaction_after_commit_pause) \
-    REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc)
+    REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
+    REGULAR(tcp_handler_fail_connection_setup) \
+    REGULAR(distributed_plan_status_check_reenqueue_fault)
 
 namespace FailPoints
 {
