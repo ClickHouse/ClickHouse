@@ -179,6 +179,10 @@ CREATE TABLE dist_longlit AS loc_longlit
 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), loc_longlit, rand());
 INSERT INTO loc_longlit (dt, x) VALUES ('2024-01-01 00:00:00', 7);
 
+-- Pin the threshold so the 300-byte literal is guaranteed to be scalarized regardless of the
+-- default value of `optimize_const_name_size` (which may change in the future).
+SET optimize_const_name_size = 64;
+
 SELECT length(a1), length(a2) FROM dist_longlit ORDER BY dt DESC LIMIT 1;
 SELECT a1 = a2 FROM dist_longlit ORDER BY dt DESC LIMIT 1;
 SELECT length(a1) AS l, length(a2) AS m, count() AS c FROM dist_longlit GROUP BY a1, a2 ORDER BY l;
