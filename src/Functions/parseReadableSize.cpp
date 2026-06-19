@@ -6,7 +6,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -37,9 +36,9 @@ enum class ErrorHandling : uint8_t
     Null
 };
 
-using ScaleFactors = UnorderedMapWithMemoryTracking<std::string_view, size_t>;
+using ScaleFactors = std::unordered_map<std::string_view, size_t>;
 
-class FunctionParseReadable final : public IFunction
+class FunctionParseReadable : public IFunction
 {
 public:
     FunctionParseReadable(const char * name_, ErrorHandling error_handling_)
