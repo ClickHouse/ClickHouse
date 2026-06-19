@@ -712,14 +712,14 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
     /// internal/proxy-only hostname), and a local DNS lookup would fail the request before the
     /// proxy is even contacted. Use a target host that is guaranteed not to resolve (the
     /// `.invalid` TLD, RFC 6761) together with a proxy whose port has no listener. With local
-    /// resolution skipped, the request must reach the proxy connect and fail there - the error
-    /// then refers to the proxy endpoint, not to a DNS lookup of the unresolvable target.
+    /// resolution skipped, the request must reach the proxy connect and fail there with a
+    /// connection error, not with a DNS lookup of the unresolvable target.
     auto uri = Poco::URI("http://proxy-only-target.invalid:9999");
 
     DB::ProxyConfiguration proxy_config;
     proxy_config.host = "127.0.0.1";
     /// TCPMUX (port 1) is a reserved port that almost never has a listener,
-    /// so connect attempts return ECONNREFUSED synchronously.
+    /// so connect attempts fail with ECONNREFUSED ("Connection refused").
     proxy_config.port = 1;
     proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
 
@@ -734,11 +734,17 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
     }
     catch (const Poco::Exception & e)
     {
-        /// The error must come from connecting to the proxy endpoint (`127.0.0.1:1`), proving
-        /// the unresolvable target host was never resolved locally. Had local resolution run,
-        /// it would have failed first with a DNS error mentioning the target host instead.
+        /// The error must come from connecting to the proxy endpoint, proving the unresolvable
+        /// target host was never resolved locally. Had local resolution run, the request would
+        /// have failed first with a DNS error naming the target host. The positive signal is a
+        /// connection-level failure ("Connection refused" from the listener-less proxy port):
+        /// `Poco::Net::SocketImpl::connect` with a timeout reports a refused peer via `SO_ERROR`
+        /// after `poll`, and that path throws a `ConnectionRefusedException` whose message has no
+        /// address, so the proxy address text is not a reliable marker - match on the error kind,
+        /// and accept the address too for the synchronous-failure path.
         const std::string text = e.displayText();
-        reached_proxy_connect = text.find("127.0.0.1:1") != std::string::npos;
+        reached_proxy_connect = text.find("Connection refused") != std::string::npos
+            || text.find("127.0.0.1:1") != std::string::npos;
         ASSERT_EQ(std::string::npos, text.find("proxy-only-target.invalid"))
             << "Target host was resolved locally: " << text;
     }
