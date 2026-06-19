@@ -66,6 +66,19 @@ def test_remote_view_resolves_query_on_remote_with_serialized_plan():
     )
 
 
+def test_remote_view_if_permitted_resolves_query_on_remote():
+    assert (
+        initiator.query(
+            """
+            SELECT *
+            FROM remote('remote', viewIfPermitted(SELECT x FROM remote_only_eval_table ELSE null('x UInt64')))
+            SETTINGS enable_analyzer = 1
+            """
+        )
+        == "42\n"
+    )
+
+
 def test_remote_view_if_permitted_resolves_query_on_remote_with_serialized_plan():
     assert (
         initiator.query(

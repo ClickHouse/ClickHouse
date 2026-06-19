@@ -4356,12 +4356,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
         {
             const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();
+            const auto nested_table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_argument_function_name, scope_context);
             auto table_expression_argument_index_it = std::find(
                 table_expression_argument_indexes.begin(),
                 table_expression_argument_indexes.end(),
                 table_function_argument_index);
             if (table_expression_argument_index_it != table_expression_argument_indexes.end()
-                && TableFunctionFactory::instance().isTableFunctionName(table_function_argument_function_name))
+                && nested_table_function_ptr)
             {
                 auto table_function_node_to_resolve_typed = std::make_shared<TableFunctionNode>(table_function_argument_function_name);
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
@@ -4390,12 +4391,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     /// before the query is sent to the remote server.
                     skip_analysis_arguments_indexes.push_back(table_function_argument_index);
                 }
-                else if (table_function_argument_function_name == "view"
+                else if (nested_table_function_ptr->hasShardSideResolvedQueryArguments()
                     || (table_function_argument_function_name == "merge"
                         && (table_function_name == "remote" || table_function_name == "remoteSecure"
                             || table_function_name == "cluster" || table_function_name == "clusterAllReplicas")))
                 {
-                    /// The `view` table function contains a subquery that may reference tables
+                    /// Some table functions contain subqueries that may reference tables
                     /// not available on the initiator.
                     /// The `merge` table function inside remote/cluster should not be resolved
                     /// on the initiator, because it pattern-matches tables that may only exist
