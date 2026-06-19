@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <base/sort.h>
 
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
@@ -1998,7 +1999,7 @@ void ReadFromMergeTree::buildIndexes(
 
     const auto & settings = query_context->getSettingsRef();
 
-    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr), query_context);
+    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr), query_context, /* boolean_context */ true);
 
     indexes.emplace(
         ReadFromMergeTree::Indexes{KeyCondition{
@@ -2152,22 +2153,37 @@ void ReadFromMergeTree::buildIndexes(
             for (const auto & idx : skip_indexes.useful_indices)
             {
                 size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName());
+                auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName(), &part.data_part->getDataPartStorage());
 
                 for (const auto & substream : format.substreams)
                 {
                     String stream_name = idx.index->getFileName() + substream.suffix;
-                    /// Check for both original and hashed filenames
+                    /// Check for both original and hashed filenames in checksums.txt
                     auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, part.data_part->checksums);
                     if (actual_stream_name)
+                    {
                         index_size += part.data_part->getFileSizeOrZero(*actual_stream_name + substream.extension);
+                    }
+                    else
+                    {
+                        /// Packed substreams have no individual checksum entry (only
+                        /// skp_idx.packed does), so the checksums-only lookup above returns
+                        /// nullopt. Ask the storage overlay - DataPartStorageOnDiskFull serves
+                        /// packed virtual-file sizes from the archive index. Without this
+                        /// fallback the cost-based skip-index reordering treats packed indices
+                        /// as free and may evaluate expensive ones before cheap ones.
+                        const String data_file = stream_name + substream.extension;
+                        const auto & storage = part.data_part->getDataPartStorage();
+                        if (storage.existsFile(data_file))
+                            index_size += storage.getFileSize(data_file);
+                    }
                 }
 
                 index_sizes.emplace_back(index_size);
             }
 
             // Move minmax indices to first positions, so they will be applied first as cheapest ones
-            std::stable_sort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
+            ::stableSort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
             {
                 const auto l_index = useful_indices[l].index;
                 const auto r_index = useful_indices[r].index;
