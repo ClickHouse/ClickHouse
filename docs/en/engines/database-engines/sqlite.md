@@ -8,8 +8,6 @@ title: 'SQLite'
 doc_type: 'reference'
 ---
 
-# SQLite
-
 Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and SQLite.
 
 ## Creating a database {#creating-a-database}

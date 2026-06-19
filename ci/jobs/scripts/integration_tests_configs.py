@@ -33,6 +33,7 @@ TEST_CONFIGS = [
     TC("test_random_inserts/", False, "standard replicated inserts test; cluster is fully isolated"),
     TC("test_server_overload/", True, "uses taskset to pin ClickHouse to specific CPU cores; sensitive to concurrent CPU load"),
     TC("test_storage_kafka/", False, "each cluster has its own Kafka container and Docker network"),
+    TC("test_storage_rabbitmq/", False, "each cluster has its own RabbitMQ container; tests use unique exchange/db names"),
     TC("test_storage_kerberized_kafka/", False, "each cluster has its own Kafka container and Docker network"),
     TC(
         "test_backup_restore_on_cluster/test_concurrency.py",
@@ -42,6 +43,16 @@ TEST_CONFIGS = [
     TC("test_storage_iceberg_no_spark/", False, "minio/azurite per cluster; fully isolated"),
     TC("test_storage_iceberg_with_spark_cache/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
     TC("test_storage_iceberg_concurrent/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
+    TC(
+        "test_storage_delta/test_azure_cluster.py",
+        True,
+        "pins azurite to fixed host port 10000 (emulator mode); concurrent --dist=each workers collide on bind",
+    ),
+    TC(
+        "test_storage_iceberg_interoperability_azure/",
+        True,
+        "pins azurite to fixed host port 10000 (Spark emulator mode); concurrent --dist=each workers collide on bind",
+    ),
 ]
 
 IMAGES_ENV = {
@@ -110,6 +121,7 @@ test_backup_restore_s3/test.py	615552
 test_s3_aws_sdk_has_slightly_unreliable_behaviour/test.py	606699
 test_multiple_disks/test.py	599070
 test_max_bytes_ratio_before_external_order_group_by_for_server/test.py	570263
+test_storage_rabbitmq/test.py	556081
 test_backup_restore_on_cluster/test_concurrency.py	552817
 test_backup_restore_new/test.py	509909
 test_dictionaries_all_layouts_separate_sources/test_mongo.py	496567

@@ -139,6 +139,56 @@ def test_arrowflight_storage():
     node.query("DROP TABLE arrow_test")
 
 
+def test_arrowflight_storage_virtual_column_table():
+    dataset = uuid.uuid4().hex
+
+    node.query(
+        f"""
+        CREATE TABLE arrow_virtual_test (
+            column1 String,
+            column2 String
+        ) ENGINE=ArrowFlight('arrowflight1:5005', '{dataset}')
+        """
+    )
+
+    node.query(
+        "INSERT INTO arrow_virtual_test VALUES ('a','data_a'), ('b','data_b')"
+    )
+
+    # Select only the _table virtual column
+    result = node.query("SELECT _table FROM arrow_virtual_test ORDER BY column1")
+    assert result == TSV(
+        [
+            ["arrow_virtual_test"],
+            ["arrow_virtual_test"],
+        ]
+    )
+
+    # Select physical and virtual columns together
+    result = node.query(
+        "SELECT column1, _table FROM arrow_virtual_test ORDER BY column1"
+    )
+    assert result == TSV(
+        [
+            ["a", "arrow_virtual_test"],
+            ["b", "arrow_virtual_test"],
+        ]
+    )
+
+    # Select all columns plus virtual
+    result = node.query(
+        "SELECT *, _table FROM arrow_virtual_test ORDER BY column1"
+    )
+    assert result == TSV(
+        [
+            ["a", "data_a", "arrow_virtual_test"],
+            ["b", "data_b", "arrow_virtual_test"],
+        ]
+    )
+
+    node.query("DROP TABLE arrow_virtual_test")
+
+
 def test_table_function_with_named_collection():
     """Test that ArrowFlight table function works with named collections and dataset parameter."""
     # Create a named collection for ArrowFlight

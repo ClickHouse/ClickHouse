@@ -5,7 +5,6 @@
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
-#include <DataTypes/Serializations/ISerialization.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
@@ -421,6 +420,7 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         MonotonicFunctionsChain & out_functions_chain,
+        bool & out_chain_is_positive,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
 
@@ -437,7 +437,8 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
-        DataTypePtr & out_type);
+        DataTypePtr & out_type,
+        bool & out_chain_is_positive);
 
     bool canConstantBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
@@ -544,10 +545,10 @@ private:
 
     struct SpaceFillingCurveDescription
     {
-        size_t key_column_pos;
+        size_t key_column_pos{};
         String function_name;
         std::vector<String> arguments;
-        SpaceFillingCurveType type;
+        SpaceFillingCurveType type{};
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
     SpaceFillingCurveDescriptions key_space_filling_curves;

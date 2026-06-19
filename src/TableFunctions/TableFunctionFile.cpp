@@ -2,6 +2,7 @@
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <TableFunctions/TableFunctionFile.h>
 
+#include <Core/Field.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -26,8 +27,78 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+StorageFile::FileSource parseFileSourceFromStringArray(const Array & sources, const ContextPtr & context)
+{
+    if (sources.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function 'file' must contain at least one path");
+
+    StorageFile::FileSource result;
+    bool is_first_source = true;
+    bool has_different_formats = false;
+    for (const auto & source_field : sources)
+    {
+        if (source_field.getType() != Field::Types::String)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "All elements of the first argument of table function 'file' must have type String, got {}",
+                fieldTypeToString(source_field.getType()));
+
+        auto source = StorageFile::FileSource::parse(source_field.safeGet<String>(), context);
+        if (source.archive_info)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Array source for table function 'file' does not support archive path syntax");
+
+        result.paths.insert(result.paths.end(), source.paths.begin(), source.paths.end());
+        result.total_bytes_to_read += source.total_bytes_to_read;
+
+        if (is_first_source)
+        {
+            result.format_from_filenames = source.format_from_filenames;
+            is_first_source = false;
+        }
+        else if (result.format_from_filenames != source.format_from_filenames)
+        {
+            has_different_formats = true;
+        }
+    }
+
+    if (has_different_formats)
+        result.format_from_filenames = {};
+
+    /// Array sources are supported only for reading, even if the array contains a single path.
+    result.with_globs = true;
+    if (!result.paths.empty())
+        result.path_for_partitioned_write = result.paths.front();
+
+    return result;
+}
+
+}
+
 void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr & context)
 {
+    const auto * literal = arg->as<ASTLiteral>();
+    if (!literal)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The first argument of table function '{}' must be a path, an array of paths, or a file descriptor",
+            getName());
+
+    auto type = literal->value.getType();
+    if (type == Field::Types::Array)
+    {
+        if (getName() != name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' must be a path, not an array", getName());
+
+        filename = arg->formatForErrorMessage();
+        file_source = parseFileSourceFromStringArray(literal->value.safeGet<Array>(), context);
+        return;
+    }
+
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
@@ -35,8 +106,6 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         return;
     }
 
-    const auto * literal = arg->as<ASTLiteral>();
-    auto type = literal->value.getType();
     if (type == Field::Types::String)
     {
         filename = literal->value.safeGet<String>();
@@ -57,7 +126,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor must be non-negative");
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' mush be path or file descriptor", getName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' must be path or file descriptor", getName());
 }
 
 std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
