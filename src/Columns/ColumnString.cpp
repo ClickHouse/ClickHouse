@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -142,7 +143,21 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnString::insertRangeFrom method.");
 
     size_t nested_offset = src_concrete.offsetAt(start);
-    size_t nested_length = src_concrete.offsetAt(start + length) - nested_offset;
+    size_t nested_end = src_concrete.offsetAt(start + length);
+
+    /// Diagnostic guard: the source column must keep offsets consistent with its chars array
+    /// (the same invariant the copy constructor enforces). Validate the end offset before computing
+    /// the length: the offsets must be monotonic (nested_end >= nested_offset) and must stay within
+    /// chars, otherwise the memcpy below would read out of bounds. Computing nested_length first would
+    /// underflow for decreasing offsets and wrap nested_offset + nested_length back below chars.size(),
+    /// silently bypassing the check.
+    if (nested_end < nested_offset || nested_end > src_concrete.chars.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnString::insertRangeFrom: source offsets inconsistent with chars array. "
+            "nested_offset: {}, nested_end: {}, source chars size: {}",
+            nested_offset, nested_end, src_concrete.chars.size());
+
+    size_t nested_length = nested_end - nested_offset;
 
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
     offsets.reserve(offsets.size() + length);
@@ -157,12 +172,27 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     }
     else
     {
-        size_t old_size = offsets.size();
-        size_t prev_max_offset = offsets.back();    /// -1th index is Ok, see PaddedPODArray
+        const size_t old_size = offsets.size();
+        const size_t prev_max_offset = offsets.back();    /// -1th index is Ok, see PaddedPODArray
         offsets.resize(old_size + length);
 
+        size_t prev_src_offset = nested_offset;
         for (size_t i = 0; i < length; ++i)
-            offsets[old_size + i] = src_concrete.offsets[start + i] - nested_offset + prev_max_offset;
+        {
+            const size_t src_offset = src_concrete.offsets[start + i];
+
+            // Intermediate offsets can still be non-monotonic
+            /// A copied offset that dips below the previous one (in particular below nested_offset) would underflow the subtraction and
+            /// store a corrupt destination offset, so reject it here.
+            if (src_offset < prev_src_offset)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ColumnString::insertRangeFrom: source offsets inconsistent with chars array. "
+                    "non-monotonic offset {} at position {} (previous offset {})",
+                    src_offset, start + i, prev_src_offset);
+
+            offsets[old_size + i] = src_offset - nested_offset + prev_max_offset;
+            prev_src_offset = src_offset;
+        }
     }
 }
 
