@@ -1,0 +1,8 @@
+-- query-level SETTINGS output_format='Native' overrides the path .CSV extension in the filename
+Content-Disposition: attachment; filename="hits.Native"
+-- query-level SETTINGS format='Native' (the generic format setting) is reflected too
+Content-Disposition: attachment; filename="hits.Native"
+-- URL-level output_format override still wins over the path extension (unchanged behavior)
+Content-Disposition: attachment; filename="hits.Native"
+-- no override: the path .Native extension is kept as-is
+Content-Disposition: attachment; filename="hits.Native"

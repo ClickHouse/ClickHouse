@@ -957,12 +957,13 @@ void HTTPHandler::processQuery(
     /// filename does not already carry that extension (`/hits.CSV?compression=gz`), it is appended.
     String disposition_filename = path_info.filename_for_disposition;
     String disposition_base = path_info.table;
+    String disposition_path_format = path_info.format;
     String disposition_compression = settings[Setting::compression];
     String disposition_format_override = !settings[Setting::output_format].value.empty()
         ? settings[Setting::output_format].value
         : settings[Setting::format].value;
     auto set_query_result
-        = [&response, this, disposition_filename, disposition_base, disposition_compression, disposition_format_override]
+        = [&response, this, disposition_filename, disposition_base, disposition_path_format, disposition_compression, disposition_format_override]
         (const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
@@ -997,8 +998,12 @@ void HTTPHandler::processQuery(
                 if (response_is_compressed)
                     filename += "." + disposition_compression;
             }
-            else if (!disposition_filename.empty())
+            else if (!disposition_filename.empty()
+                && (disposition_path_format.empty() || !details.format || *details.format == disposition_path_format))
             {
+                /// The path filename already reflects the effective output format (both `path_info.format`
+                /// and `details.format` are canonical format names), so keep it — it preserves the user's
+                /// casing (`/hits.csv`).
                 filename = disposition_filename;
                 /// The response is compressed (e.g. via `?compression=gz`); make sure the path-derived
                 /// filename ends with the effective compression extension instead of advertising bytes
@@ -1009,6 +1014,18 @@ void HTTPHandler::processQuery(
                     if (!filename.ends_with(compression_suffix))
                         filename += compression_suffix;
                 }
+            }
+            else if (details.format)
+            {
+                /// The effective output format (`details.format`) differs from the path's extension —
+                /// this happens when a query-level `SETTINGS output_format = …` / `format = …` (applied
+                /// inside `executeQuery`, after `disposition_format_override` was captured from the
+                /// URL/profile settings) overrides the path. Honor the same "explicit override wins over
+                /// the path extension" contract by rebuilding the filename from the path table name (or
+                /// `result`) + the effective format.
+                filename = (disposition_base.empty() ? "result" : disposition_base) + "." + *details.format;
+                if (response_is_compressed)
+                    filename += "." + disposition_compression;
             }
             else
             {

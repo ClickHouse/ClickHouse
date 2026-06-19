@@ -1396,6 +1396,83 @@ static void takeNestedConstructionSettings(ASTSelectWithUnionQuery & select_unio
     }
 }
 
+static bool isConstructionSettingName(std::string_view name)
+{
+    return name == "select" || name == "filter" || name == "order" || name == "sort"
+        || name == "limit" || name == "offset" || name == "page";
+}
+
+/// Collect (deduplicated) the names of any construction settings that appear in a `SETTINGS` clause
+/// anywhere in the AST subtree.
+static void collectConstructionSettings(const IAST * ast, std::vector<String> & found)
+{
+    if (!ast)
+        return;
+    if (const auto * set_query = ast->as<ASTSetQuery>())
+    {
+        for (const auto & change : set_query->changes)
+            if (isConstructionSettingName(change.name)
+                && std::find(found.begin(), found.end(), change.name) == found.end())
+                found.push_back(change.name);
+    }
+    for (const auto & child : ast->children)
+        collectConstructionSettings(child.get(), found);
+}
+
+/// The query-construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` /
+/// `page`) shape the result a query returns to the client. `INSERT … SELECT`, `CREATE … AS SELECT`
+/// and similar statements return no such result, so these settings are deliberately not applied to
+/// them (see `applyQueryConstructionSettings` and the nested wrappers, which stop at those query
+/// kinds). Accepting them silently would be a foot-gun — e.g.
+/// `INSERT INTO dst SETTINGS filter = 'x > 0' SELECT * FROM src` would insert the *unfiltered* rows.
+/// Reject them with a clear error instead. The whole statement subtree is scanned, so a construction
+/// setting in the statement's own `SETTINGS`, in the source `SELECT`'s `SETTINGS`, or in any nested
+/// subquery's `SETTINGS` is caught — none of them take effect for a write statement.
+static void rejectConstructionSettingsOnWriteQuery(const ASTPtr & ast)
+{
+    if (!ast)
+        return;
+
+    /// `EXPLAIN <write query> SETTINGS …` carries the settings on the explained query.
+    if (const auto * explain_query = ast->as<ASTExplainQuery>())
+    {
+        rejectConstructionSettingsOnWriteQuery(explain_query->getExplainedQuery());
+        return;
+    }
+
+    const char * query_kind = nullptr;
+    if (const auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (!insert_query->select)
+            return; /// `INSERT … VALUES` / `INSERT … FROM INFILE`: no source query to shape.
+        query_kind = "INSERT ... SELECT";
+    }
+    else if (const auto * create_query = ast->as<ASTCreateQuery>())
+    {
+        if (!create_query->select)
+            return; /// plain `CREATE TABLE` without `AS SELECT`.
+        query_kind = "CREATE ... AS SELECT";
+    }
+    else
+        return;
+
+    std::vector<String> found;
+    collectConstructionSettings(ast.get(), found);
+    if (found.empty())
+        return;
+
+    std::sort(found.begin(), found.end());
+    String names_list;
+    for (const auto & name : found)
+        names_list += (names_list.empty() ? "`" : ", `") + name + "`";
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Query-construction settings ({}) shape the result a query returns to the client, so they are "
+        "not supported on {}, which returns no such result — they would otherwise be silently ignored. "
+        "Use explicit `WHERE` / `ORDER BY` / `LIMIT` clauses in the source query instead.",
+        names_list, query_kind);
+}
+
 /// Recursively materialize the construction settings (`select` / `filter` / `order` / `sort` and
 /// `limit` / `offset` / `page`) that a nested (sub)query carries in its OWN `SETTINGS` clause, by
 /// wrapping that subquery as a derived table — the same way the top-level query is handled by
@@ -2091,6 +2168,11 @@ static BlockIO executeQueryImpl(
             /// values are not read into the context as (spurious) query-level settings.
             wrapPerArmConstructionSettings(out_ast,
                 max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            /// Construction settings are result modifiers and are not applied to write-producing
+            /// statements (`INSERT … SELECT` / `CREATE … AS SELECT`); reject them there instead of
+            /// silently ignoring them. Runs before the settings are read into the context below.
+            rejectConstructionSettingsOnWriteQuery(out_ast);
 
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
