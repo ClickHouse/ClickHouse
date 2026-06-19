@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Settings.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Interpreters/Context.h>
 
@@ -29,7 +30,8 @@ public:
     }
 
     explicit FunctionDateOrDateTimeToDateTimeOrDateTime64(ContextPtr context_)
-        : enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
+        : enable_extended_results_for_datetime_functions(
+            widensDate32AndDateTime64Input<Transform>() || context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
     {
     }
 
@@ -50,6 +52,20 @@ public:
                 "Function {} supports a 2nd argument (optional) that must be a valid time zone",
                 this->getName());
 
+        if constexpr (widensDate32AndDateTime64Input<Transform>() && !widensDateInput<Transform>())
+        {
+            if (which.isDate())
+                throwDateIsNotSupported(Transform::name);
+            if (which.isDate32())
+                throwDate32IsNotSupported(Transform::name);
+        }
+
+        if constexpr (widensDateInput<Transform>())
+        {
+            if (which.isDate())
+                return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale, time_zone);
+        }
+
         if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
         {
             Int64 scale = DataTypeDateTime64::default_scale;
@@ -68,7 +84,12 @@ public:
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
         if (which.isDate())
+        {
+            if constexpr (widensDateInput<Transform>())
+                return DateTimeTransformImpl<DataTypeDate, DataTypeDateTime64, Transform, /*is_extended_result*/ true>::execute(
+                    arguments, result_type, input_rows_count);
             return DateTimeTransformImpl<DataTypeDate, DataTypeDateTime, Transform>::execute(arguments, result_type, input_rows_count);
+        }
         if (which.isDate32())
         {
             if (enable_extended_results_for_datetime_functions)

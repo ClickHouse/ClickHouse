@@ -231,6 +231,28 @@ struct ToStartOfDayImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfDayExtendedImpl : ToStartOfDayImpl
+{
+    static constexpr auto name = "toStartOfDayExtended";
+    /// `toStartOfDay` rounds a date-time down to midnight. Without widening it returns `DateTime`
+    /// (`1970-01-01`..`2106-02-07`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfDay(toDateTime64('1969-06-15 12:00:00', 0, 'UTC'))` returns `2105-07-22 06:28:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+
+    /// A `Date` argument is widened too: `toStartOfDay` returns a `DateTime`, but `Date` reaches
+    /// `2149-06-06`, beyond `DateTime`'s `2106-02-07` maximum, so without widening the result wraps.
+    /// (Among the time-of-day functions only `toStartOfDay` accepts a date-only argument.) For example,
+    /// `SELECT toStartOfDay(toDate('2149-06-06'))` returns `2013-04-29 17:31:44`.
+    static constexpr bool widen_date_input = true;
+
+    using ToStartOfDayImpl::executeExtendedResult;
+    static Int64 executeExtendedResult(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return common::mulIgnoreOverflow(time_zone.fromDayNum(DayNum(d)), DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale));
+    }
+};
+
 struct ToMondayImpl
 {
     static constexpr auto name = "toMonday";
@@ -1043,6 +1065,16 @@ struct ToStartOfMinuteImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfMinuteExtendedImpl : ToStartOfMinuteImpl
+{
+    static constexpr auto name = "toStartOfMinuteExtended";
+    /// `toStartOfMinute` rounds a date-time down to the start of the minute. Without widening it returns
+    /// `DateTime` (`1970-01-01`..`2106-02-07`), which wraps for a `DateTime64` (`1900-01-01`..`2299-12-31`)
+    /// argument outside that range. For example,
+    /// `SELECT toStartOfMinute(toDateTime64('1969-12-31 23:59:30', 0, 'UTC'))` returns `2106-02-07 06:27:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 // Rounding towards negative infinity.
 // 1.01 => 1.00
 // -1.01 => -2
@@ -1338,6 +1370,17 @@ struct ToStartOfFiveMinutesImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfFiveMinutesExtendedImpl : ToStartOfFiveMinutesImpl
+{
+    static constexpr auto name = "toStartOfFiveMinutesExtended";
+    /// `toStartOfFiveMinutes` rounds a date-time down to the start of its five-minute interval. Without
+    /// widening it returns `DateTime` (`1970-01-01`..`2106-02-07`), which wraps for a `DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfFiveMinutes(toDateTime64('1969-12-31 23:57:30', 0, 'UTC'))` returns
+    /// `2106-02-07 06:23:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToStartOfTenMinutesImpl
 {
     static constexpr auto name = "toStartOfTenMinutes";
@@ -1382,6 +1425,17 @@ struct ToStartOfTenMinutesImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfTenMinutesExtendedImpl : ToStartOfTenMinutesImpl
+{
+    static constexpr auto name = "toStartOfTenMinutesExtended";
+    /// `toStartOfTenMinutes` rounds a date-time down to the start of its ten-minute interval. Without
+    /// widening it returns `DateTime` (`1970-01-01`..`2106-02-07`), which wraps for a `DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfTenMinutes(toDateTime64('1969-12-31 23:55:30', 0, 'UTC'))` returns
+    /// `2106-02-07 06:18:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToStartOfFifteenMinutesImpl
 {
     static constexpr auto name = "toStartOfFifteenMinutes";
@@ -1424,6 +1478,17 @@ struct ToStartOfFifteenMinutesImpl
     }
 
     using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfFifteenMinutesExtendedImpl : ToStartOfFifteenMinutesImpl
+{
+    static constexpr auto name = "toStartOfFifteenMinutesExtended";
+    /// `toStartOfFifteenMinutes` rounds a date-time down to the start of its fifteen-minute interval. Without
+    /// widening it returns `DateTime` (`1970-01-01`..`2106-02-07`), which wraps for a `DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfFifteenMinutes(toDateTime64('1969-12-31 23:50:30', 0, 'UTC'))` returns
+    /// `2106-02-07 06:13:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
 };
 
 /// Round to start of half-an-hour length interval with unspecified offset. This transform is specific for Metrica web analytics system.
@@ -1533,6 +1598,16 @@ struct ToStartOfHourImpl
     }
 
     using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfHourExtendedImpl : ToStartOfHourImpl
+{
+    static constexpr auto name = "toStartOfHourExtended";
+    /// `toStartOfHour` rounds a date-time down to the start of the hour. Without widening it returns
+    /// `DateTime` (`1970-01-01`..`2106-02-07`), which wraps for a `DateTime64` (`1900-01-01`..`2299-12-31`)
+    /// argument outside that range. For example,
+    /// `SELECT toStartOfHour(toDateTime64('1969-12-31 23:30:00', 0, 'UTC'))` returns `2106-02-07 05:28:16`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
 };
 
 struct ToYearImpl
