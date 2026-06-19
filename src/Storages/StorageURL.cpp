@@ -400,6 +400,7 @@ StorageURLSource::StorageURLSource(
     , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
+    , has_request_body(static_cast<bool>(callback))
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
@@ -442,7 +443,7 @@ StorageURLSource::StorageURLSource(
 
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
-        if (need_only_count && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (need_only_count && !has_request_body && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
             num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), current_file_last_modified);
 
         if (num_rows_from_cache)
@@ -574,7 +575,7 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        if (input_format && !has_request_body && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
@@ -990,6 +991,12 @@ namespace
 
         void setNumRowsToLastFile(size_t num_rows) override
         {
+            /// The inferred schema and the row count depend on the request body, but the schema
+            /// cache key does not account for it, so caching would cross-contaminate entries for
+            /// different bodies. Skip the cache entirely for body-carrying (POST) requests.
+            if (body_callback)
+                return;
+
             if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
@@ -999,6 +1006,10 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
+            /// See setNumRowsToLastFile: do not cache schemas that depend on a request body.
+            if (body_callback)
+                return;
+
             if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
@@ -1040,6 +1051,12 @@ namespace
         std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & urls)
         {
             auto context = getContext();
+            /// The response (and thus the inferred schema) depends on the request body, but the
+            /// schema cache key does not include it, so a cached schema for the same URL with a
+            /// different body would be wrong. Never read from the cache for body-carrying requests.
+            if (body_callback)
+                return std::nullopt;
+
             if (!context->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return std::nullopt;
 

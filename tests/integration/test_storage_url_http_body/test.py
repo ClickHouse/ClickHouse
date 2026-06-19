@@ -4,7 +4,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-from . import http_headers_echo_server, redirect_server
+from . import body_dependent_response_server, http_headers_echo_server, redirect_server
 
 cluster = ClickHouseCluster(__file__)
 server = cluster.add_instance("node")
@@ -51,6 +51,11 @@ def run_echo_server():
     run_server(container_id, "http_headers_echo_server.py", "localhost", 8000)
 
 
+def run_body_dependent_server():
+    container_id = cluster.get_container_id("node")
+    run_server(container_id, "body_dependent_response_server.py", "localhost", 8001)
+
+
 def run_redirect_server():
     container_id = cluster.get_container_id("node")
     run_server(container_id, "redirect_server.py", "localhost", 8080, "localhost", 8000)
@@ -62,6 +67,7 @@ def started_cluster():
         cluster.start()
         run_redirect_server()
         run_echo_server()
+        run_body_dependent_server()
 
         yield cluster
     finally:
@@ -137,3 +143,46 @@ def test_empty_string_in_http_body(started_cluster):
     )
     assert method.strip() == "POST"
     assert body == ""
+
+
+def test_schema_cache_is_body_aware(started_cluster):
+    # The response schema depends on the request body, so the schema-inference cache (keyed by
+    # URL/format/settings) must not be shared across different bodies. With caching enabled, a
+    # second query with a different body must infer its own schema instead of reusing the first.
+    settings = {
+        "schema_inference_use_cache_for_url": 1,
+        "schema_inference_cache_require_modification_time_for_url": 0,
+    }
+    columns_a = server.query(
+        "DESC url('http://localhost:8001/', JSONEachRow, body('schema_a'))",
+        settings=settings,
+    )
+    columns_bc = server.query(
+        "DESC url('http://localhost:8001/', JSONEachRow, body('schema_bc'))",
+        settings=settings,
+    )
+    assert "col_a" in columns_a
+    assert "col_b" in columns_bc and "col_c" in columns_bc
+    # The second schema must not be contaminated by the first body's cached columns.
+    assert "col_a" not in columns_bc
+
+
+def test_count_cache_is_body_aware(started_cluster):
+    # The row count depends on the request body, so the URL row-count cache must not be shared
+    # across different bodies. With caching enabled, a second count() with a different body must
+    # send its own request instead of reusing the first body's cached count.
+    settings = {
+        "use_cache_for_count_from_files": 1,
+        "schema_inference_cache_require_modification_time_for_url": 0,
+    }
+    count_one = server.query(
+        "SELECT count() FROM url('http://localhost:8001/', JSONEachRow, 'v UInt8', body('rows_1'))",
+        settings=settings,
+    ).strip()
+    count_three = server.query(
+        "SELECT count() FROM url('http://localhost:8001/', JSONEachRow, 'v UInt8', body('rows_3'))",
+        settings=settings,
+    ).strip()
+    assert count_one == "1"
+    # The second count must not reuse the cached count from the first body.
+    assert count_three == "3"

@@ -277,6 +277,9 @@ private:
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
     bool need_only_count;
+    /// True when the read sends a request body (POST). Body-dependent responses must not use the
+    /// row-count cache, whose key does not account for the body.
+    bool has_request_body;
     StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
