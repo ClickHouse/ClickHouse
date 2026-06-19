@@ -958,6 +958,14 @@ static WorkerAddress resolveWorkerAddress(
     return address;
 }
 
+UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port)
+{
+    for (const auto & stream : exchange_stream_sources.stream_hosts)
+        if (stream.second.port != server_exchange_port)
+            return 2;
+    return 1;
+}
+
 TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
 {
     fillWorkerAddresses(context_);
@@ -1482,6 +1490,7 @@ protected:
         task_description.settings_changes = context->getSettingsRef().changes();
 
         const String unique_temp_file_path = toString(unique_query_id);
+        const auto server_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
 
         for (const auto & task : stage.tasks)
         {
@@ -1496,6 +1505,7 @@ protected:
                 String input_stream_name = input_stream.toString();
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
+            task_description.serialization_version = chooseTaskSerializationVersion(task_description.exchange_stream_sources, server_exchange_port);
 
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.

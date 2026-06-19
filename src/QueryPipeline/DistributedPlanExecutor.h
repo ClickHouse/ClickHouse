@@ -11,6 +11,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/ProtocolDefines.h>
 
 namespace DB
 {
@@ -106,6 +107,10 @@ struct ExchangeStreamSources
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> stream_hosts;
 };
 
+/// Minimal serialization version: v1 if every producer uses the server-level exchange port (a v1 worker
+/// derives it locally), else v2.
+UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port);
+
 /// Contains all info to send a task to remote worker
 struct DistributedQueryTaskDescription
 {
@@ -117,6 +122,8 @@ struct DistributedQueryTaskDescription
     /// The initiator's changed settings, applied on the worker so query limits and execution-affecting
     /// settings (e.g. max_memory_usage) are honored remotely.
     SettingsChanges settings_changes;
+    /// Wire-format version to emit, lowered to v1 for legacy-port-only tasks (rolling-upgrade safe).
+    UInt64 serialization_version = DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION;
 };
 
 /// Executes a task locally. `distributed_query_id` is the node-independent identifier of the whole

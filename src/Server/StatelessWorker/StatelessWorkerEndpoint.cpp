@@ -39,7 +39,7 @@ std::string StatelessWorkerEndpoint::getId(const std::string & path) const
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
 {
-    writeVarUInt(DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION, out);
+    writeVarUInt(task_description.serialization_version, out);
 
     writeStringBinary(task_description.initial_query_id, out);
 
@@ -86,7 +86,8 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
     {
         writeStringBinary(stream, out);
         writeStringBinary(address.host, out);
-        writeVarUInt(address.port, out);
+        if (task_description.serialization_version >= 2)
+            writeVarUInt(address.port, out);
     }
 
     writeVarUInt(task_description.settings_changes.size(), out);
