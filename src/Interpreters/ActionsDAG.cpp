@@ -1160,16 +1160,14 @@ void ActionsDAG::unwrapMaterializeWrapAtOutput(const std::string & name)
 
 void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_output_name)
 {
-    /// Without a dropped output every output survives, so folding to Const would
-    /// change observable runtime types - bail out early
+    /// no dropped output means every output survives, no safe path to fold
     if (dropped_output_name.empty())
         return;
     const Node * dropped_output = tryFindInOutputs(dropped_output_name);
     if (!dropped_output)
         return;
 
-    /// Nodes reachable from any output other than the dropped one are observed downstream
-    /// (their runtime column type matters), so they are not safe to fold in place
+    /// nodes feeding surviving outputs are observed downstream and must not be folded
     std::unordered_set<const Node *> surviving;
     {
         std::vector<const Node *> stack;
@@ -1187,8 +1185,7 @@ void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_
         }
     }
 
-    /// bottom-up: marking a node constant via `node.column` lets parents visited later
-    /// see it as const through `resolveConstThroughMaterialize` and fold the same way
+    /// bottom-up: a folded child becomes visible as const to parents we visit next
     for (auto & node : nodes)
     {
         if (surviving.contains(&node))
@@ -1235,8 +1232,7 @@ void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_
             }
             any_through_materialize = any_through_materialize || resolved->through_materialize;
             all_deterministic = all_deterministic && resolved->deterministic;
-            /// DAG-stored consts are size 0 by convention, some functions (e.g. moduloOrNull) misbehave
-            /// on size-0 input - match getFunctionArguments and resize to size 1 before execute
+            /// DAG consts are size 0, some functions like `moduloOrNull` need size 1 for `execute`
             ColumnPtr column = resolved->column;
             if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()); column_const && column_const->empty())
                 column = ColumnConst::create(column_const->getDataColumnPtr(), 1);
@@ -1253,9 +1249,7 @@ void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_
         if (!column_const)
             continue;
 
-        /// store the folded const directly on this FUNCTION node, matching `addFunctionImpl`:
-        /// downstream readers treat `node.column` set to a ColumnConst as the canonical constant,
-        /// the original children become orphans removed by the next `removeUnusedActions` pass
+        /// same pattern as `addFunctionImpl`: store the const on the FUNCTION node, orphan children get pruned later
         if (!column_const->empty())
             node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
         else

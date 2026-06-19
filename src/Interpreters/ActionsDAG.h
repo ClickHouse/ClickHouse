@@ -245,10 +245,8 @@ public:
 
     void removeAliasesForFilter(const std::string & filter_name);
 
-    /// Fold FUNCTION nodes whose args reach a const through `materialize(...)` wrappers
-    /// by storing the result in `node.column`. Scoped to nodes that are unreachable from
-    /// any output other than `dropped_output_name` (typically the filter column being
-    /// removed) so folds cannot change observable runtime types of surviving outputs.
+    /// Fold f(materialize(c)) into f marked constant via `node.column`
+    /// scoped to the path of `dropped_output_name` so surviving outputs are untouched
     void pushMaterializeOutwardForConstants(const std::string & dropped_output_name);
 
     /// If output `name` is `materialize(Const)`, strip the materialize so the output is
