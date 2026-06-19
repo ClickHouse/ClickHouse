@@ -42,19 +42,100 @@ enum SnapshotVersion : uint8_t
 
 static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V7;
 
-/// What is stored in binary snapshot
+struct KeeperSnapshotReader
+{
+    struct Stream
+    {
+        /// Call these 3 in order to read a node.
+        /// Returns false if there are no more nodes to read.
+        bool readNodePathSize(size_t & out_path_size);
+        void readNodePathAndDataSize(char * out_path, size_t path_size, size_t & out_data_size);
+        void readNodeDataAndStats(char * out_data, size_t data_size, KeeperNodeStats & out_stats);
+
+        /// Annoying compatibility thing: very old snapshots may have system nodes (/keeper/...),
+        /// and we may need to skip them or clear their stats+data.
+        /// Hopefully we can remove this soon.
+        enum class WhatToDoWithNode
+        {
+            ProcessNormally,
+            Skip,
+            Clear,
+        };
+        WhatToDoWithNode checkIfSystemNode(std::string_view path, const KeeperNodeStats & stats);
+
+    private:
+        friend struct KeeperSnapshotReader;
+
+        KeeperSnapshotReader & parent;
+        ReadBuffer * in = nullptr;
+        size_t nodes_read = 0;
+        /// TODO: Deferred ACL usage updates, etc.
+
+        /// TODO: For chunked snapshots, readNodePathAndDataSize would lazily initialize `in`
+        ///       instead, by grabbing the next available chunk using an atomic counter in `parent`,
+        ///       advancing to next chunk when current one is exhausted, stopping only when the
+        ///       atomic counter reaches the end of the array of chunks.
+        explicit Stream(KeeperSnapshotReader & parent_) : parent(parent_), in(parent.in.get()) {}
+    };
+
+    KeeperSnapshotReader(std::unique_ptr<ReadBuffer> in_, KeeperContextPtr keeper_context_);
+
+    /// How to read a snapshot:
+    ///   readMetadata();
+    ///   readACLMapAndNodeCount();
+    ///   streams = createStreams(desired_num_threads);
+    ///   actual_num_threads = streams.size(); // may be less than desired_num_threads
+    ///   spawn threads, i-th thread does:
+    ///       while (streams[i]->readNodePathAndDataSize(...))
+    ///           streams[i]->readNodeDataAndStats(...);
+    ///   join threads;
+    ///   finishStreams(std::move(streams));
+    ///   readSessionsAndClusterConfig(...);
+    ///
+    /// Each node is read by exactly one stream. Each stream reads some subsequence (i.e. order is
+    /// preserved) of the snapshot's sequence of nodes. E.g. if the snapshot has all nodes sorted by
+    /// path, each stream will see nodes sorted by path, but not necessarily consecutive.
+    /// If you don't want to implement multithreaded loading, just use createStreams(1).
+    ///
+    /// TODO: For chunked snapshots no API change should be needed, Stream would point either to
+    ///       the same main ReadBuffer as KeeperSnapshotReader (if not chunked) or to a Stream-owned
+    ///       ReadBuffer decompressing a Stream-owned memory buffer populated by
+    ///       KeeperSnapshotReader::compressed_file::readBigAt for the chunk's whole range, or something.
+
+    /// These must be called in exactly this order (as shown above) and can't be skipped (but you
+    /// can stop early and destroy the KeeperSnapshotReader, e.g. just read metadata).
+    void readMetadata();
+    void readACLMapAndNodeCount();
+    /// Creates sub-readers that can be used from different threads in parallel.
+    std::vector<std::unique_ptr<Stream>> createStreams(size_t n);
+    /// Finalizes acl_map.
+    void finishStreams(std::vector<std::unique_ptr<Stream>> streams);
+    void readSessionsAndClusterConfig(KeeperStorage & storage);
+
+    KeeperContextPtr keeper_context;
+
+    SnapshotVersion current_version = SnapshotVersion::V0;
+    SnapshotMetadataPtr snapshot_meta;
+    ClusterConfigPtr cluster_config;
+    size_t node_count = 0;
+    int64_t commit_zxid = 0;
+    int64_t old_snapshot_zxid = 0;
+    int64_t session_id_counter = 0;
+    uint64_t nodes_digest = 0;
+    ACLMap acl_map;
+
+private:
+    friend class KeeperSnapshotManager;
+
+    std::unique_ptr<ReadBuffer> in;
+};
+
+/// Misc metadata from a snapshot
 struct SnapshotDeserializationResult
 {
-    /// Storage
-    std::unique_ptr<KeeperStorage> storage;
     /// Snapshot metadata (up_to_log_idx and so on)
     SnapshotMetadataPtr snapshot_meta;
-    /// Cluster config
     ClusterConfigPtr cluster_config;
-    /// Container with all the paths stored in snapshot
-    /// used if we don't want to load entire storage from snapshot
-    /// which can be useful for analyzing snapshot files
-    std::vector<std::string> paths;
 };
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be
@@ -87,8 +168,6 @@ public:
     ~KeeperStorageSnapshot();
 
     static void serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context);
-
-    static void deserialize(SnapshotDeserializationResult & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context, bool load_full_storage = true);
 
     KeeperStorage * storage;
 
@@ -179,12 +258,15 @@ public:
     KeeperSnapshotManager(
         size_t snapshots_to_keep_,
         const KeeperContextPtr & keeper_context_,
-        bool compress_snapshots_zstd_ = true,
-        const std::string & superdigest_ = "",
-        size_t storage_tick_time_ = 500);
+        bool compress_snapshots_zstd_ = true);
+
+    /// TODO: We should probably allow arbitrary WriteBuffer/SeekableReadBuffer in most of these
+    ///       methods, instead of requiring the whole snapshot to be read/written into memory first.
+    /// TODO: Rename methods that just copy a buffer to/from file from serialize*/deserialize* to
+    ///       read/write or something, to avoid confusion with methods that actually serialize/deserialize.
 
     /// Restore storage from latest available snapshot
-    SnapshotDeserializationResult restoreFromLatestSnapshot();
+    SnapshotDeserializationResult restoreFromLatestSnapshot(KeeperStorage & storage);
 
     /// Compress snapshot and serialize it to buffer
     nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const;
@@ -202,7 +284,9 @@ public:
     /// Serialize snapshot directly to disk
     SnapshotFileInfoPtr serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
 
-    SnapshotDeserializationResult deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage = true) const;
+    std::unique_ptr<KeeperSnapshotReader> makeSnapshotReader(nuraft::ptr<nuraft::buffer> buffer) const;
+
+    SnapshotDeserializationResult deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage) const;
 
     SnapshotMetadataPtr deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
@@ -273,10 +357,6 @@ private:
     uint64_t protected_pending_snapshot_log_idx = 0;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
-    /// Superdigest for deserialization of storage
-    const std::string superdigest;
-    /// Storage sessions timeout check interval (also for deserializatopn)
-    size_t storage_tick_time;
 
     KeeperContextPtr keeper_context;
 
