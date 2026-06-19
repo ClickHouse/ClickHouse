@@ -5645,7 +5645,8 @@ def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster)
     retry_hits = int(instance.query(
         "SELECT count() FROM system.text_log "
         f"WHERE query_id = '{retry_query_id}' "
-        "  AND message ILIKE '%refreshed via catalog callback and retrying%'"
+        "  AND message ILIKE '%stale credentials during snapshot init; rebuilding%'"
+        "  AND message ILIKE '%refreshed via callback: true%'"
     ).strip())
     assert retry_hits >= 1, (
         f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "

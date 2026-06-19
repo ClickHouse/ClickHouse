@@ -106,6 +106,7 @@ public:
         UpdateStatsFunc update_stats_func_,
         LoggerPtr log_)
         : kernel_snapshot_state(kernel_snapshot_state_)
+        , captured_credentials_fingerprint(helper_->getCredentialsFingerprint())
         , helper(helper_)
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
@@ -232,24 +233,37 @@ public:
             }
         }
 
-        if (!helper->refreshCredentials())
+        /// Two paths can yield fresh credentials:
+        ///   1. Catalog-vended providers (Glue / Unity / REST) — `refreshCredentials`
+        ///      explicitly swaps the underlying S3 client.
+        ///   2. Rotating S3 providers (assume-role, web-identity, IMDS) — the C++ SDK
+        ///      auto-refreshes its cached session on `getCredentials` when the cached
+        ///      session expiry has passed. In that case the fingerprint changes versus
+        ///      what we captured at engine-build time, without any callback firing.
+        const bool refreshed_via_callback = helper->refreshCredentials();
+        const DB::UInt128 post_fingerprint = helper->getCredentialsFingerprint();
+        const bool fingerprint_drifted = post_fingerprint != captured_credentials_fingerprint;
+
+        if (!refreshed_via_callback && !fingerprint_drifted)
         {
             LOG_INFO(
                 log,
-                "Delta kernel reported stale credentials during scan iteration, but no catalog "
-                "refresh callback is configured. Propagating exception.");
+                "Delta kernel reported stale credentials during scan iteration, but neither "
+                "a catalog refresh callback nor SDK-side credential rotation produced fresh "
+                "credentials. Propagating exception.");
             return false;
         }
 
         LOG_INFO(
             log,
-            "Delta kernel reported stale credentials during scan iteration; "
-            "refreshed via catalog callback and rebuilding scan state. Original error: {}",
-            msg);
+            "Delta kernel reported stale credentials during scan iteration; rebuilding "
+            "scan state (refreshed via callback: {}, fingerprint drifted: {}). Original error: {}",
+            refreshed_via_callback, fingerprint_drifted, msg);
 
         kernel_snapshot_state = std::make_shared<KernelSnapshotState>(
             *helper,
             std::optional<size_t>(kernel_snapshot_state->snapshot_version));
+        captured_credentials_fingerprint = post_fingerprint;
         scan = KernelScan();
         scan_data_iterator = KernelScanDataIterator();
         return true;
@@ -588,6 +602,12 @@ private:
     using KernelScanDataIterator = KernelPointerWrapper<ffi::SharedScanMetadataIterator, ffi::free_scan_metadata_iter>;
 
     std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
+    /// Fingerprint of the credentials embedded in `kernel_snapshot_state` at build time.
+    /// Used by the retry path to detect SDK-side auto-refresh of rotating S3 providers
+    /// (assume-role, web-identity, IMDS) — those have no `credentials_refresh_callback`,
+    /// but `helper->getCredentialsFingerprint()` re-reads from the live S3 client and
+    /// reflects any refresh the SDK performed transparently between attempts.
+    DB::UInt128 captured_credentials_fingerprint;
     KernelScan scan;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
@@ -796,8 +816,10 @@ void TableSnapshot::initOrUpdateSnapshot() const
     }
     catch (const DB::Exception & e)
     {
-        /// Vended creds are static in the C++ client until the callback fires; route
-        /// delta-kernel's stale-token error to refreshCredentials and retry once.
+        /// Vended creds are static in the C++ client until the callback fires; rotating
+        /// S3 providers (assume-role / web-identity / IMDS) auto-refresh inside the SDK
+        /// instead, surfacing as a fingerprint drift on the next re-read. Retry once if
+        /// either path produced fresh credentials.
         if (e.code() != DB::ErrorCodes::DELTA_KERNEL_ERROR)
             throw;
         const auto & msg = e.message();
@@ -805,14 +827,20 @@ void TableSnapshot::initOrUpdateSnapshot() const
             msg.find("ExpiredToken") != std::string::npos
             || msg.find("InvalidToken") != std::string::npos
             || msg.find("TokenRefreshRequired") != std::string::npos;
-        if (!stale_credentials_error || !helper->refreshCredentials())
+        if (!stale_credentials_error)
+            throw;
+
+        const bool refreshed_via_callback = helper->refreshCredentials();
+        const auto post_fingerprint = helper->getCredentialsFingerprint();
+        const bool fingerprint_drifted = post_fingerprint != current_credentials_fingerprint;
+        if (!refreshed_via_callback && !fingerprint_drifted)
             throw;
 
         LOG_INFO(
             log,
-            "Delta kernel reported stale credentials during snapshot init; "
-            "refreshed via catalog callback and retrying once. Original error: {}",
-            msg);
+            "Delta kernel reported stale credentials during snapshot init; rebuilding "
+            "(refreshed via callback: {}, fingerprint drifted: {}). Original error: {}",
+            refreshed_via_callback, fingerprint_drifted, msg);
 
         kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
     }
