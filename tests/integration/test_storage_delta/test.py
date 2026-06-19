@@ -5598,3 +5598,56 @@ def test_delta_kernel_rebuild_on_credentials_rotation(started_cluster):
         f"Expected the credentials-rotation rebuild log line to fire for query {rotated_query_id}, "
         f"found {rebuild_hits} hits — the fingerprint check did not rebuild the kernel state."
     )
+
+
+def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster):
+    """Simulate delta-kernel reporting an `ExpiredToken` during snapshot init. The
+    `delta_kernel_force_stale_token_error` failpoint throws the kernel error exactly
+    once; `object_storage_force_refresh_callback_success` short-circuits the catalog
+    refresh callback to succeed without an actual catalog. The retry path must rebuild
+    the snapshot and return the correct row count.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_retry_on_stale_token")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # Prime the cache so the second read starts from a clean state.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    retry_query_id = f"{TABLE_NAME}_retry"
+    instance.query("SYSTEM ENABLE FAILPOINT object_storage_force_refresh_callback_success")
+    # Drift the fingerprint so initOrUpdateSnapshot enters its rebuild branch; the
+    # stale-token failpoint then trips inside the KernelSnapshotState ctor and the
+    # retry path takes over.
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_stale_token_error")
+    try:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=retry_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+        instance.query("SYSTEM DISABLE FAILPOINT object_storage_force_refresh_callback_success")
+        # delta_kernel_force_stale_token_error is FIU_ONETIME and self-disables, but
+        # disable defensively in case the retry path never reached it.
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_stale_token_error")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    retry_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{retry_query_id}' "
+        "  AND message ILIKE '%refreshed via catalog callback and retrying%'"
+    ).strip())
+    assert retry_hits >= 1, (
+        f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
+        f"found {retry_hits} hits — the stale-token retry path was not exercised."
+    )

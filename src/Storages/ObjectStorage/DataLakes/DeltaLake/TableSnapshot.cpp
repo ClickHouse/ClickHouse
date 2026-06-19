@@ -14,6 +14,7 @@
 #include <Columns/IColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
@@ -55,6 +56,11 @@ namespace ProfileEvents
     extern const Event DeltaLakePartitionPrunedFiles;
     extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
+}
+
+namespace DB::FailPoints
+{
+    extern const char delta_kernel_force_stale_token_error[];
 }
 
 namespace DeltaLake
@@ -825,6 +831,13 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::getKernelSnap
 
 TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_)
 {
+    fiu_do_on(DB::FailPoints::delta_kernel_force_stale_token_error,
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DELTA_KERNEL_ERROR,
+            "ExpiredToken: forced by delta_kernel_force_stale_token_error failpoint");
+    });
+
     auto * engine_builder = helper_.createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
     if (snapshot_version_.has_value())
