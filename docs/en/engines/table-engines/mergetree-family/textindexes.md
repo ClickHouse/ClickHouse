@@ -80,10 +80,10 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
-                                            | chinese[(granularity)]
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 -- Optional advanced parameters:
@@ -114,10 +114,10 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
-                                            | chinese[(granularity)]
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 -- Optional advanced parameters:
@@ -149,6 +149,13 @@ ALTER TABLE table DROP INDEX text_idx;
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
+- `chinese[(granularity)]` segments Chinese text into words using a dictionary and a Hidden Markov Model (the algorithm follows [jieba](https://github.com/fxsjy/jieba); the embedded dictionary and model data are derived from [cppjieba](https://github.com/yanyiwu/cppjieba)).
+  Unlike `asciiCJK`, which treats every non-ASCII character as a single-character token, `chinese` groups consecutive Chinese characters into actual words (for example `北京大学` becomes one token `北京大学` rather than four single-character tokens), which yields more meaningful tokens and higher search quality for Chinese text. Use `asciiCJK` for general/mixed CJK text and `chinese` specifically for Chinese.
+  ClickHouse does not ship a separate ICU/SmartCN-based Chinese tokenizer: `asciiCJK` is the rule-based, UAX #29 (ICU-style) approach that segments on Unicode word boundaries and treats each CJK character as its own token, whereas `chinese` uses the dictionary-and-HMM jieba method to recover whole words. So the choice between them is essentially "rule-based per-character (ICU-style)" vs "dictionary-based words (jieba)": `chinese` produces fewer, more meaningful tokens and higher search quality for Chinese at the cost of being Chinese-specific and carrying an embedded dictionary, while `asciiCJK` is general-purpose across scripts.
+  The `chinese` tokenizer does not tokenize English/ASCII like a dedicated ASCII tokenizer: it keeps runs of ASCII letters and digits together as a single token (for example `5G` and `iPhone6`) and drops ASCII punctuation, but it does no word splitting of Latin text. For English-only or mixed data where ASCII matters, prefer `splitByNonAlpha` or `asciiCJK`.
+  To search a `chinese` text index, use [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) / [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), which tokenize the needle with the same `chinese` tokenizer. `hasToken` is not suitable for `chinese` (it splits its needle on ASCII separators only, which does not match Chinese word segmentation).
+  The optional `granularity` argument must either be `'coarse_grained'` (the default if not specified) or `'fine_grained'`.
+  `coarse_grained` produces one segmentation into non-overlapping words. `fine_grained` additionally enumerates overlapping sub-words (for example `北京邮电大学` also yields `北京`, `邮电`, `大学`, …), which improves recall at the cost of a larger index — as a rule of thumb, expect noticeably more tokens (and thus a larger text index) than `coarse_grained`.
 - `ngrams(N)` splits strings into equally large `N`-grams (see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
   The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
@@ -158,9 +165,6 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/sql-reference/functions/array-functions.md/#array)).
-- `chinese[(granularity)]` segments Chinese text using the embedded `cppjieba` dictionary.
-  The optional `granularity` argument is one of `'coarse_grained'` (default) or `'fine_grained'`;
-  `fine_grained` enumerates overlapping word candidates and is therefore better suited for recall.
 
 All available tokenizers are listed in [system.tokenizers](../../../operations/system-tables/tokenizers.md).
 
