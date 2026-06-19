@@ -14,6 +14,10 @@
 #include <optional>
 #include <functional>
 
+#ifndef ZOOKEEPER_IMPL
+#define ZOOKEEPER_IMPL
+#endif
+
 namespace DB
 {
 class ReadBuffer;

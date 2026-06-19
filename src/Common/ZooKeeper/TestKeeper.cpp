@@ -2,11 +2,16 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/TestKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
+
 #include <base/types.h>
+
 #include <functional>
+
+#ifdef ZOOKEEPER_IMPL
+#  error "TestKeeper must not use ZooKeeper implementation"
+#endif
 
 namespace Coordination
 {
@@ -590,18 +595,19 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
             if (parentPath(child_it->first) == path)
             {
                 const bool is_ephemeral = child_it->second.stat.ephemeralOwner != 0;
-                const bool should_return = list_request_type == ALL
-                    || (is_ephemeral && list_request_type == EPHEMERAL_ONLY)
-                    || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
+                const bool should_return = !list_request_type.has_value()
+                    || list_request_type.value() == ALL
+                    || (is_ephemeral && list_request_type.value() == EPHEMERAL_ONLY)
+                    || (!is_ephemeral && list_request_type.value() == PERSISTENT_ONLY);
 
                 if (should_return)
                 {
                     response.names.emplace_back(baseName(child_it->first));
 
-                    if (with_data)
+                    if (with_data.value_or(false))
                         response.data.emplace_back(child_it->second.data);
 
-                    if (with_stat)
+                    if (with_stat.value_or(false))
                         response.stats.emplace_back(child_it->second.stat);
                 }
             }
