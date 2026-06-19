@@ -359,7 +359,14 @@ struct ToDate32TransformFromSecondsOrDays
 
         if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
             if (from >= DATE_LUT_MAX_EXTEND_DAY_NUM)
+            {
+                /// Casting a huge floating-point value directly to Int64 is undefined behaviour and yields
+                /// different results across architectures (e.g. INT64_MIN on x86 vs saturation on AArch64),
+                /// which would then map far outside the Date32 range. Cap it in the floating-point domain first.
+                if constexpr (is_floating_point<FromType>)
+                    return time_zone.toDayNum(static_cast<time_t>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATE32_TIMESTAMP))));
                 return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATE32_TIMESTAMP)));
+            }
 
         return static_cast<Int32>(from);
     }
