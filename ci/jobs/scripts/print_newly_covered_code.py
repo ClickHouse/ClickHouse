@@ -166,7 +166,7 @@ def _format_block_preview(rel: str, lines_in_block: list[int], context: int = 2)
 
 
 if __name__ == "__main__":
-    BASE = f"{temp_dir}/base_llvm_coverage.info"
+    BASE = os.environ.get("COVERAGE_BASE_INFO", f"{temp_dir}/base_llvm_coverage.info")
     # For partial runs (e.g. only stateless tests changed), llvm_coverage_job.py
     # creates merged_llvm_coverage.info = union(pr.info, master.info) and passes it
     # via COVERAGE_CURR_INFO so that gained lines are computed against the full

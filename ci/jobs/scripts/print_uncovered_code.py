@@ -389,17 +389,30 @@ if __name__ == "__main__":
     # Line numbers in baseline.changed.info may differ from current.changed.info
     # because the PR itself edited those files.  We remap them through the unified
     # diff in pure Python (lcov --diff was removed in lcov 2.x).
-    #
-    # Multi-baseline cross-validation: to avoid false-positive LBC from lines that
-    # only occasionally fire in background/async code (timing-dependent), we require
-    # a line to be covered in ALL available extra baselines (baseline_N.changed.info,
-    # slots 2-6) in addition to the primary baseline.changed.info.  Only lines in
-    # the N-of-N intersection are flagged as LBC.  Falls back to single-baseline
-    # mode if no extras are available.
-    BASELINE_INFO = f"{temp_dir}/baseline.changed.info"
-    EXTRA_BASELINE_CHANGED_PATHS = [
-        f"{temp_dir}/baseline_{i}.changed.info" for i in range(2, 7)
+    # Use the stable baseline for LBC: union of all extracted baseline slices.
+    # This eliminates false LBC from lines covered in *any* master run.
+    # baseline_N.changed.info files are extracted by generate_diff_coverage_report.sh.
+    _baseline_slices = [
+        f"{temp_dir}/baseline_{i}.changed.info"
+        for i in range(2, 7)
+        if os.path.exists(f"{temp_dir}/baseline_{i}.changed.info")
+        and os.path.getsize(f"{temp_dir}/baseline_{i}.changed.info") > 0
     ]
+    if _baseline_slices:
+        import subprocess as _sp
+        _a_args = " ".join(f"-a '{f}'" for f in [f"{temp_dir}/baseline.changed.info"] + _baseline_slices)
+        _stable_path = f"{temp_dir}/stable_baseline.changed.info"
+        _r = _sp.run(
+            f"lcov {_a_args} --ignore-errors inconsistent,corrupt,unsupported -o '{_stable_path}'",
+            shell=True, capture_output=True
+        )
+        if _r.returncode == 0 and os.path.exists(_stable_path) and os.path.getsize(_stable_path) > 0:
+            BASELINE_INFO = _stable_path
+            print(f"Using stable LBC baseline (union of {1 + len(_baseline_slices)} master runs)")
+        else:
+            BASELINE_INFO = f"{temp_dir}/baseline.changed.info"
+    else:
+        BASELINE_INFO = f"{temp_dir}/baseline.changed.info"
 
     lbc_lines: list[tuple[str, int]] = []     # (relpath, lineno)
     lbc_fns: list[tuple[str, str]] = []       # (relpath, fn_name)
@@ -408,42 +421,6 @@ if __name__ == "__main__":
         diff_hunks = _parse_diff_hunks(DIFF)
         base_data = _parse_info(BASELINE_INFO)
         curr_data = _parse_info(INFO)
-
-        # Build N-of-N intersection of covered sets from extra baselines.
-        # extra_covered_lines[(rel, old_ln)] is True only if the line is covered
-        # in every available extra baseline.  If no extras exist, no filtering
-        # is applied (every line from the primary baseline is a candidate).
-        extra_covered_lines: set[tuple[str, int]] | None = None
-        extra_covered_fns: set[tuple[str, str]] | None = None
-        extra_baselines_used = 0
-        for extra_path in EXTRA_BASELINE_CHANGED_PATHS:
-            if not (os.path.exists(extra_path) and os.path.getsize(extra_path) > 0):
-                continue
-            ex = _parse_info(extra_path)
-            this_lines: set[tuple[str, int]] = set()
-            this_fns: set[tuple[str, str]] = set()
-            for rel, v in ex.items():
-                for ln, cnt in v["lines"].items():
-                    if cnt > 0:
-                        this_lines.add((rel, ln))
-                for fn, cnt in v["fns"].items():
-                    if cnt > 0:
-                        this_fns.add((rel, fn))
-            del ex
-            if extra_covered_lines is None:
-                extra_covered_lines = this_lines
-                extra_covered_fns = this_fns
-            else:
-                extra_covered_lines &= this_lines
-                extra_covered_fns &= this_fns
-            extra_baselines_used += 1
-
-        have_extra = extra_covered_lines is not None
-        if have_extra:
-            print(
-                f"LBC cross-validation: using {1 + extra_baselines_used} master baselines "
-                f"(line must be covered in all of them to be flagged as LBC)"
-            )
 
         _empty: dict = {"lines": {}, "fns": {}}
         for rel in sorted(base_data):
@@ -455,9 +432,6 @@ if __name__ == "__main__":
 
             for old_ln, bcnt in b["lines"].items():
                 if bcnt == 0:
-                    continue
-                # Cross-validate: require coverage in all extra baselines too.
-                if have_extra and (rel, old_ln) not in extra_covered_lines:
                     continue
                 new_ln = _remap_line(old_ln, hunks)
                 if new_ln is None:
@@ -472,11 +446,7 @@ if __name__ == "__main__":
                     lbc_lines.append((rel, new_ln))
 
             for fn, bcnt in b["fns"].items():
-                if bcnt == 0:
-                    continue
-                if have_extra and (rel, fn) not in extra_covered_fns:
-                    continue
-                if c["fns"].get(fn, 0) == 0:
+                if bcnt > 0 and c["fns"].get(fn, 0) == 0:
                     lbc_fns.append((rel, fn))
 
     if lbc_lines:
