@@ -332,7 +332,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>input_parameter.py {test-parameter:UInt64}</command>
+        <command>input_parameter.py {test parameter:UInt64}</command>
     </function>
 
     <function>
