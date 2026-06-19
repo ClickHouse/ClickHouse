@@ -746,6 +746,16 @@ bool ChineseTokenizer::nextInString(const char *, size_t, size_t &, size_t &, si
 
 bool ChineseTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
 {
+    /// LIKE/ILIKE tokenization is intentionally unsupported for the `chinese` tokenizer
+    /// (`supportsStringLike()` returns `false`). `nextInStringLike` is the streaming entry
+    /// point that extracts index tokens from a LIKE pattern, splitting it on the `%`/`_`
+    /// wildcards and emitting the literal fragments between them. That model assumes a
+    /// tokenizer whose tokens are delimited by characters in the text (splitByNonAlpha,
+    /// ngrams, ...). Chinese word segmentation has no such delimiters: words are inferred
+    /// from a dictionary/HMM over a whole sentence, and a LIKE fragment cut at an arbitrary
+    /// wildcard boundary is generally not a word boundary, so the fragments would not match
+    /// the indexed tokens. We therefore reject it instead of producing wrong tokens; use
+    /// `tokens(value, 'chinese')` with `hasAnyTokens`/`hasAllTokens` instead of LIKE.
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInStringLike is not supported");
 }
 
