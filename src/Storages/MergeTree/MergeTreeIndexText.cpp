@@ -1379,7 +1379,7 @@ PostingListBuilder::Large::Large(std::array<UInt32, inline_capacity> values_, UI
 
 void PostingListBuilder::Large::flush(size_t segment_size, size_t min_flush_size)
 {
-    if (values.size() >= min_flush_size)
+    if (!values.empty() && values.size() >= min_flush_size)
     {
         encoder->append({values.data(), values.size()}, segment_size);
         values.clear();
