@@ -14,11 +14,18 @@ SET enable_analyzer = 1;
 SET use_statistics = 0;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
--- These cases verify the metadata/upper-bound based build-side choice deterministically, so
--- disable the runtime hash-table-size cache: it is process-global and persists across test runs
--- (e.g. `--test-runs`), which would otherwise make the chosen build side depend on run order.
+-- These cases verify the metadata/upper-bound based build-side choice deterministically, so:
+--  * disable the runtime hash-table-size cache -- it is process-global and persists across test
+--    runs (e.g. `--test-runs`), which would otherwise make the chosen build side depend on run
+--    order;
+--  * disable join-order randomization -- a non-zero seed replaces the row estimates with random
+--    values, intentionally randomizing the build side;
+--  * keep the join-order optimization enabled (the build-side choice lives in that pass) -- a
+--    randomized limit of 0 would disable it and leave the tables in their written order.
 SET collect_hash_table_stats_during_joins = 0;
 SET use_hash_table_stats_for_join_reordering = 0;
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_optimize_join_order_limit = 10;
 
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;
@@ -136,9 +143,45 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
+-- Soundness: an aggregation's `estimated_rows` is a heuristic, not a lower bound -- when the
+-- group-key NDVs are unknown it falls back to the child row count. `GROUP BY g` over `big` (1M
+-- rows, 1000 distinct `g`) is estimated at 1000000 while it emits ~1000 groups. The
+-- upper-bounded left input (a residual-filtered scan, 10000 rows) must NOT be swapped onto the
+-- build side just because its bound is below that heuristic 1000000: the aggregation is actually
+-- smaller, so it must stay the build side as written.
+DROP TABLE IF EXISTS lhs_filtered;
+DROP TABLE IF EXISTS big_agg;
+
+CREATE TABLE lhs_filtered (g Int32, x Int32) ENGINE = MergeTree ORDER BY g;
+INSERT INTO lhs_filtered SELECT number % 1000, number FROM numbers(10000);
+
+CREATE TABLE big_agg (k Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO big_agg SELECT number FROM numbers(1000000);
+
+SELECT * FROM lhs_filtered JOIN (SELECT k % 1000 AS g FROM big_agg GROUP BY g) AS r ON lhs_filtered.g = r.g
+WHERE lhs_filtered.x != -1
+SETTINGS log_comment = '04337_join_choose_build_table_aggregation' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The aggregation (~1000 groups) must stay the build side; the 10000-row left input must not be
+-- swapped onto it.
+SELECT
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 900 AND 1100, 'ok', format('fail({}): build={}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 9000 AND 11000, 'ok', format('fail({}): probe={}', query_id, ProfileEvents['JoinProbeTableRowCount'])),
+    if(ProfileEvents['JoinResultRowCount'] = 10000, 'ok', format('fail({}): result={}', query_id, ProfileEvents['JoinResultRowCount']))
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+  AND query_kind = 'Select' AND current_database = currentDatabase()
+  AND log_comment = '04337_join_choose_build_table_aggregation'
+ORDER BY event_time DESC
+LIMIT 1;
+
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;
 DROP TABLE IF EXISTS lhs_big;
 DROP TABLE IF EXISTS rhs_tiny;
 DROP TABLE IF EXISTS tied;
 DROP TABLE IF EXISTS rhs_exact;
+DROP TABLE IF EXISTS lhs_filtered;
+DROP TABLE IF EXISTS big_agg;
