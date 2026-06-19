@@ -47,6 +47,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int INVALID_PARTITION_VALUE;
+extern const int LIMIT_EXCEEDED;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
@@ -772,12 +773,13 @@ void AlterDropPartitionExecutor::run()
 
         DropPlan plan{findTargetManifests(state, targets)};
 
+        /// `tryCommit` logs the committed snapshot details on success.
         if (tryCommit(state, std::move(plan)))
-        {
-            LOG_INFO(log, "No data files match the requested partition; DROP PARTITION is a no-op");
             return;
-        }
     }
+
+    throw Exception(
+        ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessful retries to drop partition in Iceberg table");
 }
 
 }
