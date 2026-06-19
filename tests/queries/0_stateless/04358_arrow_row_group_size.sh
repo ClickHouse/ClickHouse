@@ -16,7 +16,7 @@ check_batches()
     local format="$1"
     local filename="$TMP_DIR/out_${format}.arrow"
 
-    "$CLICKHOUSE_CLIENT" --query "
+    "${CLICKHOUSE_CLIENT}" --query "
         SELECT number
         FROM numbers(5)
         SETTINGS output_format_arrow_row_group_size = 2
@@ -43,7 +43,7 @@ PY
 check_batches ArrowStream
 check_batches Arrow
 
-"$CLICKHOUSE_CLIENT" --query "
+"${CLICKHOUSE_CLIENT}" --query "
     SELECT number
     FROM numbers(1)
     SETTINGS output_format_arrow_row_group_size = 0
