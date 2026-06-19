@@ -75,8 +75,8 @@ public:
         /// Re-add the named children explicitly, in the same order `ParserExplainQuery`
         /// produces them, so that the clone has the same `getTreeHash` as a freshly parsed
         /// AST. The parser parses the EXPLAIN-level settings before the explained query
-        /// (e.g. `EXPLAIN SETTINGS max_threads = 1 SELECT 1` is parsed as
-        /// `children = [ast_settings, query]`), so `ast_settings` must come before `query`.
+        /// (e.g. `EXPLAIN header = 1 SELECT 1` is parsed as `children = [ast_settings, query]`),
+        /// so `ast_settings` must come before `query`.
         res->children.clear();
         res->query = nullptr;
         res->ast_settings = nullptr;
