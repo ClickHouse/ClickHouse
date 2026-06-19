@@ -19,6 +19,8 @@ CREATE TABLE l (k1 String, k2 String, val UInt32) ENGINE = Memory;
 INSERT INTO l VALUES ('foo', 'bar', 1), ('foo', 'baz', 2), ('qux', 'bar', 3);
 
 SET join_algorithm = 'hash';
+-- The old analyzer rejects the non-equi ON conjunct (INVALID_JOIN_ON_EXPRESSION), so pin the new one.
+SET enable_analyzer = 1;
 
 SELECT l.k1, l.k2, r.k1, r.k2 FROM l AS l
 LEFT JOIN dict AS r ON l.k1 = r.k1 AND l.k2 != r.k2
