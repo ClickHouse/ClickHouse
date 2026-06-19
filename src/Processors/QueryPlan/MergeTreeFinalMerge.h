@@ -7,11 +7,10 @@
 namespace DB
 {
 
-/// Adds the FINAL merge transform for the table's merging engine (Ordinary / Collapsing / Replacing /
-/// Summing / Aggregating / VersionedCollapsing / Graphite / Coalescing) on top of `pipe`, collapsing
-/// rows that share the sort key into the single FINAL result. The pipe's input streams must already be
-/// sorted by `sort_description`. For Replacing with `enable_vertical_final`, appends the
-/// SelectByIndicesTransform that materializes the vertical-final result.
+/// Adds the FINAL merge transform for the table's merging engine on top of `pipe`, collapsing rows
+/// that share the sort key into the single FINAL result. The pipe's input streams must already be
+/// sorted by `sort_description`. For `Replacing` with `enable_vertical_final`, appends the
+/// `SelectByIndicesTransform` that materializes the vertical-final result.
 void addMergingFinal(
     Pipe & pipe,
     const SortDescription & sort_description,
