@@ -11,6 +11,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTCreateRewriteRuleQuery.h>
+#include <Parsers/ASTAlterRewriteRuleQuery.h>
 
 namespace DB
 {
@@ -76,12 +78,65 @@ namespace
         return {};
     }
 
+    /// `collectQueryParameters` / `findUnsupportedQueryParameter` above and the matcher in
+    /// `RewriteRulesASTTraversal.cpp` only ever descend through `IAST::children`.
+    /// `ASTCreateRewriteRuleQuery` / `ASTAlterRewriteRuleQuery` keep their own
+    /// `source_query` / `resulting_query` templates outside `children`, so a placeholder
+    /// embedded inside a *nested* rule-DDL template (for example
+    /// `CREATE RULE outer AS (CREATE RULE inner AS (SELECT {x:String}) REWRITE TO (SELECT 1))
+    /// REWRITE TO (SELECT 1)`) is unreachable by the matcher: it can be neither bound nor
+    /// substituted, so the rule would silently never match as intended. Returns the name of
+    /// the first such placeholder so it can be rejected at DDL time. `inside_nested_template`
+    /// is true once the walk has descended into a nested rule's template fields.
+    std::optional<String> findQueryParameterInNestedRuleTemplate(const ASTPtr & ast, bool inside_nested_template)
+    {
+        if (!ast)
+            return {};
+
+        if (inside_nested_template)
+            if (const auto * query_parameter = ast->as<ASTQueryParameter>())
+                return query_parameter->name;
+
+        if (const auto * create_rule = ast->as<ASTCreateRewriteRuleQuery>())
+        {
+            if (auto found = findQueryParameterInNestedRuleTemplate(create_rule->source_query, true))
+                return found;
+            if (auto found = findQueryParameterInNestedRuleTemplate(create_rule->resulting_query, true))
+                return found;
+        }
+        else if (const auto * alter_rule = ast->as<ASTAlterRewriteRuleQuery>())
+        {
+            if (auto found = findQueryParameterInNestedRuleTemplate(alter_rule->source_query, true))
+                return found;
+            if (auto found = findQueryParameterInNestedRuleTemplate(alter_rule->resulting_query, true))
+                return found;
+        }
+
+        for (const auto & child : ast->children)
+            if (auto found = findQueryParameterInNestedRuleTemplate(child, inside_nested_template))
+                return found;
+
+        return {};
+    }
+
     /// Validates a rule's source/result templates at DDL time so that invalid rule
     /// metadata is rejected on `CREATE RULE` / `ALTER RULE` instead of turning into
     /// runtime exceptions for every matching query later on.
     template <typename Query>
     void validateRuleTemplates(const Query & query)
     {
+        /// Placeholders inside a nested `CREATE RULE` / `ALTER RULE` template are
+        /// unreachable by the matcher and the substitution (both walk only `children`),
+        /// so a rule using them could never match or rewrite as intended. Reject them up
+        /// front instead of silently storing a rule that does nothing.
+        for (const auto & template_query : {query.source_query, query.resulting_query})
+            if (auto nested = findQueryParameterInNestedRuleTemplate(template_query, false))
+                throw Exception(
+                    ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
+                    "Rewrite rule `{}` uses query parameter `{}` inside a nested CREATE RULE / "
+                    "ALTER RULE template; placeholders in nested rule templates are not supported",
+                    query.rule_name, *nested);
+
         std::unordered_set<String> source_parameters;
         std::vector<String> source_duplicates;
         collectQueryParameters(query.source_query, source_parameters, source_duplicates);
