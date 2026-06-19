@@ -482,6 +482,14 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
 }
 
 
+void StorageTimeSeries::checkTableCanBeRenamed(const StorageID & /* new_name */) const
+{
+    /// Reject before DatabaseAtomic touches the disk. renameInMemory() throws unconditionally,
+    /// but it runs after the metadata files are already swapped/detached, which strands an
+    /// orphaned _tmp_replace_*.sql during CREATE OR REPLACE and later aborts the load.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
+}
+
 void StorageTimeSeries::renameInMemory(const StorageID & /* new_table_id */)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
