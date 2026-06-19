@@ -38,6 +38,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace QueryPlanOptimizations
@@ -45,6 +46,20 @@ namespace QueryPlanOptimizations
 
 bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
+    /// Reading a projection part bypasses the parent table's delete-bitmap
+    /// filter, so logically-deleted rows would resurface. Fail closed when a
+    /// unique-key table also carries a projection, regardless of how that
+    /// combination came to exist (CREATE/ALTER reject it, but
+    /// SECONDARY_CREATE/ATTACH still load it). A unique-key table with no
+    /// projection is unaffected; its base-table read stays correct and filtered.
+    /// TODO(unique-key): support reading via projections on UNIQUE KEY tables.
+    {
+        const auto metadata = reading->getStorageMetadata();
+        if (metadata->hasUniqueKey() && metadata->hasProjections())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "UNIQUE KEY tables do not support reading via projections");
+    }
+
     if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
         return false;
 

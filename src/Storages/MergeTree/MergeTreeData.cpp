@@ -1088,8 +1088,29 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
+    /// TTL on a UNIQUE KEY table cannot be honored: TTL delete / recompression /
+    /// GROUP BY are enforced during merges, and merges are disabled on UNIQUE KEY
+    /// tables until merge-side bitmap reconciliation lands. Reject at CREATE so the
+    /// combination cannot exist (`ALTER MODIFY TTL` is rejected in
+    /// `checkAlterIsPossible`); ATTACH must still load existing tables. Mirrors the
+    /// projection reject below.
+    /// TODO(unique-key): support TTL on UNIQUE KEY tables (lands with PR-14 merges).
+    if (new_metadata.hasAnyTTL() && new_metadata.hasUniqueKey() && !attach)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "TTL is not supported on tables with UNIQUE KEY");
+
     if (!new_metadata.projections.empty())
     {
+        /// Projections on a UNIQUE KEY table would read through the projection
+        /// part, bypassing the delete-bitmap filter and exposing logically-
+        /// deleted rows. ALTER ADD PROJECTION is already rejected (see
+        /// `checkAlterIsPossible`); reject CREATE-with-projection too so the
+        /// combination cannot exist. CREATE only — ATTACH must still load.
+        /// TODO(unique-key): support projections on UNIQUE KEY tables.
+        if (new_metadata.hasUniqueKey() && !attach)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projections are not supported on tables with UNIQUE KEY");
+
         std::unordered_set<String> projections_names;
 
         for (const auto & projection : new_metadata.projections)
@@ -4413,6 +4434,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "MODIFY ORDER BY is not supported on tables with UNIQUE KEY. "
                     "The dense-index SSTs produced at write time depend on the sort order.");
 
+            /// TTL is enforced during merges, which are disabled on UNIQUE KEY tables
+            /// until merge-side reconciliation lands (mirrors the CREATE-time reject in
+            /// `checkProperties`). Covers table TTL (MODIFY_TTL) and per-column TTL added
+            /// via ADD/MODIFY COLUMN (`command.ttl`). REMOVE TTL is allowed — it only
+            /// clears an expression, and a column ALTER with no TTL clause leaves
+            /// `command.ttl` null.
+            /// TODO(unique-key): support TTL on UNIQUE KEY tables (lands with PR-14 merges).
+            if (command.type == AlterCommand::MODIFY_TTL)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "MODIFY TTL is not supported on tables with UNIQUE KEY");
+            if ((command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN)
+                && command.ttl)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Column TTL is not supported on tables with UNIQUE KEY");
+
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
                 || command.type == AlterCommand::RENAME_COLUMN
@@ -5026,6 +5062,14 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
             if (command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER DELETE / ALTER UPDATE is not supported on tables with UNIQUE KEY");
+
+            /// MATERIALIZE TTL rewrites parts to apply expiration, bypassing the UNIQUE KEY
+            /// dedup path (like MATERIALIZE COLUMN below) — and TTL is unsupported anyway
+            /// while merges are disabled. Reject so an ATTACH-loaded UK+TTL table cannot
+            /// materialize it.
+            if (command.type == MutationCommand::MATERIALIZE_TTL)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
 
             if (command.type == MutationCommand::MATERIALIZE_COLUMN && is_uk_column(command.column_name))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

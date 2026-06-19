@@ -1269,6 +1269,19 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions)
 {
+    /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
+    /// a DELETE's target part between part-resolution and marker publish (the
+    /// per-partition UK mutex guards DELETE but not merges), silently dropping the
+    /// delete. Until merge-side bitmap forwarding + late-kill lands, gate every
+    /// merge here — the single chokepoint for both background selection and the
+    /// OPTIMIZE -> merge() path. Marker + data parts simply accumulate for now.
+    /// TODO(unique-key): remove when merge-side bitmap forwarding + late-kill (PR-14) lands.
+    if (metadata_snapshot->hasUniqueKey())
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
+        });
+
     auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, lock);
     auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
 
@@ -1961,6 +1974,15 @@ bool StorageMergeTree::optimize(
     ContextPtr local_context)
 {
     assertNotReadonly();
+
+    /// Merges are disabled for UNIQUE KEY tables (see selectPartsToMerge). Reject
+    /// explicit OPTIMIZE up front with an actionable message rather than letting it
+    /// fall through to a no-op merge.
+    /// TODO(unique-key): remove when merge-side bitmap forwarding + late-kill (PR-14) lands.
+    if (getInMemoryMetadataPtr(local_context, false)->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "OPTIMIZE is not supported for UNIQUE KEY tables: merges are currently disabled "
+                        "to preserve DELETE correctness. Parts will not be compacted.");
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
     if (deduplicate && getInMemoryMetadataPtr(local_context, false)->hasProjections()
