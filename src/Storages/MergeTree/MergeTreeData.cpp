@@ -1064,7 +1064,7 @@ void MergeTreeData::checkProperties(
                         checkSuspiciousIndices(index_expression_ptr);
                 }
 
-                MergeTreeIndexFactory::instance().validate(index, attach);
+                MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
             }
             catch (Exception & e)
             {
@@ -1792,7 +1792,9 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
         for (auto & column : block)
         {
             auto field = getFieldForConstVirtualColumn(column.name, *part.data_part);
-            column.column->assumeMutableRef().insert(field);
+            auto mutable_column = IColumn::mutate(std::move(column.column));
+            mutable_column->insert(field);
+            column.column = std::move(mutable_column);
         }
     }
 
@@ -5940,7 +5942,7 @@ void MergeTreeData::removePartsFromWorkingSet(
 
 void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
-    removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock, /*create_empty_part*/ false);
+    removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock, /*create_empty_part*/ true);
 }
 
 DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
@@ -6055,11 +6057,15 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     /// if we remove a range from the middle when dropping a part).
     /// Maybe we could do it by incrementing mutation version to get a name for the empty covering part,
     /// but it's okay to simply avoid creating it for DROP PART (for a part in the middle).
-    /// NOTE: Block numbers in ReplicatedMergeTree start from 0. For MergeTree, is_new_syntax is always false.
-    chassert(!create_empty_part || supportsReplication());
+    /// NOTE: Both ReplicatedMergeTree DROP/REPLACE and plain MergeTree REPLACE PARTITION rely on this
+    /// empty covering part so that the removed parts are not resurrected as active after a restart.
+    /// It is gated on is_new_syntax (block numbers start from 0); old-format MergeTree tables are skipped.
     bool range_in_the_middle = drop_range.min_block;
     bool is_new_syntax = format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
-    if (create_empty_part && !parts_to_remove.empty() && is_new_syntax && !range_in_the_middle)
+    /// Under a running MVCC transaction the removed parts keep their version metadata (creation/removal CSN
+    /// persisted on disk), which already prevents them from being resurrected on restart, so no covering part
+    /// is needed (mirrors plain MergeTree DROP PARTITION, which only covers parts in its non-transaction path).
+    if (create_empty_part && !txn && !parts_to_remove.empty() && is_new_syntax && !range_in_the_middle)
     {
         /// We are going to remove a lot of parts from zookeeper just after returning from this function.
         /// And we will remove parts from disk later (because some queries may use them).
@@ -11324,7 +11330,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         getSettings(),
         metadata_snapshot,
         columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices(), *getSettings()),
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::NonTransactionalTID,

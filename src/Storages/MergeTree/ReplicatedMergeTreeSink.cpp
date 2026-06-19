@@ -1283,13 +1283,12 @@ void ReplicatedMergeTreeSink::waitForQuorum(
 
         /// Wait for the quorum watch to fire, but in bounded steps so that a cancelled query stops waiting
         /// promptly instead of blocking for the whole quorum_timeout_ms. The watch is only signalled when the
-        /// quorum node changes, so on a `KILL QUERY` (or once max_execution_time is exceeded) nothing would wake
-        /// us up: without this a cancelled quorum INSERT can stay in the processlist for the entire (possibly very
-        /// large) insert_quorum_timeout and trip the hung-check. checkTimeLimit() throws QUERY_WAS_CANCELLED on a
-        /// kill and TIMEOUT_EXCEEDED on max_execution_time when timeout_overflow_mode = 'throw'; with
-        /// timeout_overflow_mode = 'break' it returns false instead. A quorum INSERT cannot return a partial
-        /// success while the quorum status is unknown, so we treat a false return as a timeout too (rather than
-        /// silently continuing to wait). This matches the check ZooKeeperRetriesControl performs between retries.
+        /// quorum node changes, so on a `KILL QUERY` (or once max_execution_time is exceeded with
+        /// timeout_overflow_mode = 'throw') nothing would wake us up: without this a cancelled quorum INSERT can
+        /// stay in the processlist for the entire (possibly very large) insert_quorum_timeout and trip the
+        /// hung-check. checkTimeLimit() throws QUERY_WAS_CANCELLED on a kill and TIMEOUT_EXCEEDED on
+        /// max_execution_time when timeout_overflow_mode = 'throw'. This matches the check ZooKeeperRetriesControl
+        /// performs between retries.
         auto process_list_element = context->getProcessListElement();
         Stopwatch quorum_watch;
         bool quorum_updated = false;
@@ -1305,16 +1304,14 @@ void ReplicatedMergeTreeSink::waitForQuorum(
                 break;
             }
 
-            /// checkTimeLimit() throws on a kill or on a 'throw'-mode timeout. A false return means a 'break'-mode
-            /// timeout was reached: the framework would normally let such a query finish gracefully (as a
-            /// successful "break"), but a quorum INSERT must not report success while the quorum status is unknown.
-            /// Escalate to a hard cancellation (the same call CancellationChecker uses for 'throw' mode) so the
-            /// query fails with TIMEOUT_EXCEEDED instead of being silently completed.
-            if (process_list_element && !process_list_element->checkTimeLimit())
-            {
-                process_list_element->cancelQuery(DB::CancelReason::TIMEOUT);
+            /// checkTimeLimit() throws on a kill (QUERY_WAS_CANCELLED) or on a 'throw'-mode max_execution_time
+            /// timeout (TIMEOUT_EXCEEDED), which is what we need to stop waiting promptly. With
+            /// timeout_overflow_mode = 'break' it returns false instead of throwing: there is nothing to "break"
+            /// to here (a quorum INSERT cannot report a partial success), so we deliberately ignore the false and
+            /// keep waiting until the quorum is satisfied or quorum_timeout_ms elapses (the wait's own bound,
+            /// reported as UNKNOWN_STATUS_OF_INSERT). A kill is still honored every step regardless of the mode.
+            if (process_list_element)
                 process_list_element->checkTimeLimit();
-            }
         }
 
         if (!quorum_updated)
