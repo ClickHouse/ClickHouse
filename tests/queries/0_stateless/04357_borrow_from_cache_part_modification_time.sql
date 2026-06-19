@@ -13,8 +13,8 @@ ENGINE = MergeTree() ORDER BY x
 SETTINGS disk = disk(
     type = cache,
     disk = 'local_disk',
-    name = '05017_cache_creator',
-    path = '05017_borrow_modtime_cache/',
+    name = '04357_cache_creator',
+    path = '04357_borrow_modtime_cache/',
     max_size = '100Mi',
     load_metadata_asynchronously = 0
 );
@@ -27,8 +27,8 @@ SETTINGS disk = disk(
     type = object_storage,
     object_storage_type = 'borrow_from_cache',
     metadata_type = 'memory',
-    cache_name = '05017_cache_creator',
-    name = '05017_borrowed_modtime_disk'
+    cache_name = '04357_cache_creator',
+    name = '04357_borrowed_modtime_disk'
 );
 
 INSERT INTO tmp_borrowed VALUES (1, 'hello'), (2, 'world'), (3, 'test');
