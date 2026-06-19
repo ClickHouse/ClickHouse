@@ -53,45 +53,41 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
--- A cached size must NOT anchor the upper-bound swap, because it is process-global and can be
--- stale-high relative to the CURRENT data even when it does not exceed the scan upper bound. Here
--- `tag = 1` matches all 1000000 rows on the first run, so the cache records 1000000; the data then
--- changes so `tag = 1` matches a single row, while the scan upper bound is still 1000000 (so the
--- earlier `cache <= upper_bound` guard does not catch it). If that cached 1000000 anchored the
--- swap, the residual-filtered 1000-row left input would be moved onto the build side over a right
--- side that now emits 1 row. Since only an Exact count anchors (a cached size is a heuristic
--- estimate), the tiny right side stays the build.
-DROP TABLE IF EXISTS sl;
-DROP TABLE IF EXISTS sr;
+-- The cache also ANCHORS the upper-bound swap on the OPPOSITE side -- the mechanism that lets the
+-- common "small left, large filtered right" case reorder. `pf` is a residual-filtered left input
+-- that is only an upper bound (1000); `cf` is residual-filtered too, but a first build records its
+-- actual 1000000-row size in the cache. With that cached size on the right, `pf`'s upper bound
+-- (1000) is below it, so `pf` is swapped onto the build side -- even though neither side has an
+-- exact count. We trust the cache as a lower-bound proxy here and accept the stale-cache mis-swap
+-- risk (the provable stale-high guard is exercised by the next case). A purely-derived estimate on
+-- the right would NOT anchor this -- see the aggregation case in 04337.
+DROP TABLE IF EXISTS pf;
+DROP TABLE IF EXISTS cf;
 
-CREATE TABLE sl (k Int32, v Int32) ENGINE = MergeTree ORDER BY k;
-INSERT INTO sl SELECT number, number FROM numbers(1000);
+CREATE TABLE pf (k Int32, v Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO pf SELECT number, number FROM numbers(1000);
 
-CREATE TABLE sr (k Int32, tag Int32) ENGINE = MergeTree ORDER BY k;
-INSERT INTO sr SELECT number, 1 FROM numbers(1000000);   -- tag=1 matches all -> build 1000000, cache=1000000
+CREATE TABLE cf (k Int32, w Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO cf SELECT number, number FROM numbers(1000000);
 
--- Prime the cache with the 1000000-row build (sr is the default right side; both are upper bounds).
-SELECT * FROM sl JOIN (SELECT k FROM sr WHERE tag = 1) AS rf ON sl.k = rf.k WHERE sl.v != -1
+-- Prime the cache: build `cf` (the default right side; both inputs are upper bounds, so no swap).
+SELECT * FROM pf JOIN cf ON pf.k = cf.k WHERE pf.v != -1 AND cf.w != -1
 SETTINGS query_plan_join_swap_table = 'auto' FORMAT Null;
 
--- Data changes: `tag = 1` now matches one row; the table is still 1000000 rows (scan ub unchanged).
-TRUNCATE TABLE sr;
-INSERT INTO sr SELECT number, if(number = 0, 1, 2) FROM numbers(1000000);
-
-SELECT * FROM sl JOIN (SELECT k FROM sr WHERE tag = 1) AS rf ON sl.k = rf.k WHERE sl.v != -1
-SETTINGS query_plan_join_swap_table = 'auto', log_comment = '04357_join_choose_build_table_cached_not_anchor' FORMAT Null;
+-- Now `cf` is Cached (1000000); `pf`'s upper bound (1000) is below it, so `pf` is swapped to build.
+SELECT * FROM pf JOIN cf ON pf.k = cf.k WHERE pf.v != -1 AND cf.w != -1
+SETTINGS query_plan_join_swap_table = 'auto', log_comment = '04357_join_choose_build_table_cached_anchor' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- The right side now emits 1 row and must stay the build side; the 1000-row left input must not be
--- swapped onto it on the strength of the stale 1000000 cache.
+-- The filtered `pf` (1000) must be swapped onto the build side via the cached size on `cf`.
 SELECT
-    if(ProfileEvents['JoinBuildTableRowCount'] < 100, 'ok', format('fail({}): build={}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
-    if(ProfileEvents['JoinResultRowCount'] = 1, 'ok', format('fail({}): result={}', query_id, ProfileEvents['JoinResultRowCount']))
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 900 AND 1100, 'ok', format('fail({}): build={}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 900000 AND 1100000, 'ok', format('fail({}): probe={}', query_id, ProfileEvents['JoinProbeTableRowCount']))
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
   AND query_kind = 'Select' AND current_database = currentDatabase()
-  AND log_comment = '04357_join_choose_build_table_cached_not_anchor'
+  AND log_comment = '04357_join_choose_build_table_cached_anchor'
 ORDER BY event_time DESC
 LIMIT 1;
 
@@ -139,7 +135,7 @@ LIMIT 1;
 
 DROP TABLE IF EXISTS f;
 DROP TABLE IF EXISTS u;
-DROP TABLE IF EXISTS sl;
-DROP TABLE IF EXISTS sr;
+DROP TABLE IF EXISTS pf;
+DROP TABLE IF EXISTS cf;
 DROP TABLE IF EXISTS sc_l;
 DROP TABLE IF EXISTS sc_r;

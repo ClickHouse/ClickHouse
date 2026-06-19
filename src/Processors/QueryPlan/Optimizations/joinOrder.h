@@ -32,19 +32,40 @@ enum class RowCountKind : UInt8
     /// A guaranteed upper bound but not exact (e.g. a residual filter the primary index cannot use
     /// leaves only the scanned-row count, or `LIMIT [WITH TIES]` over an inexact child).
     UpperBound,
-    /// A heuristic estimate with no guarantee in either direction: an NDV-based aggregation result,
-    /// a join cardinality, a statistics-estimator value, or the runtime hash-table-stats cache
-    /// (a measured prior build size, but process-global and possibly stale-high for the current
-    /// data). Usable for cost/ordering and the heuristic `lhs < rhs` comparison, but never as proof
-    /// of relative size for the swap.
+    /// A purely-derived heuristic estimate with no guarantee in either direction (an NDV-based
+    /// aggregation result, a join cardinality, a statistics-estimator value). Usable for
+    /// cost/ordering and the heuristic `lhs < rhs` comparison, but never as proof of relative size
+    /// for the swap.
     Estimate,
+    /// A measured row count from the runtime hash-table-stats cache (`HashTablesStatistics`): the
+    /// actual number of rows a previous execution of THIS subtree fed into its build, i.e. the
+    /// real post-filter size from that run. We deliberately TRUST it as a stand-in lower bound so
+    /// the upper-bound swap can fire (see `canAnchorUpperBoundSwap`), accepting a known risk -- the
+    /// cache is process-global and only refreshed by a build, so if the data (or a filter's
+    /// selectivity) changed since the last build it can be stale-high and lead to a mis-swap.
+    Cached,
 };
 
-/// The row count only when it is a point estimate (exact or heuristic), i.e. not a bare upper
-/// bound. This is what the heuristic `lhs < rhs` swap comparison and result reporting use.
+/// The row count only when it is a point estimate (exact, heuristic or measured), i.e. not a bare
+/// upper bound. This is what the heuristic `lhs < rhs` swap comparison and result reporting use.
 inline std::optional<UInt64> pointEstimate(std::optional<UInt64> rows, RowCountKind kind)
 {
-    return (kind == RowCountKind::Exact || kind == RowCountKind::Estimate) ? rows : std::nullopt;
+    return (kind == RowCountKind::Exact || kind == RowCountKind::Estimate || kind == RowCountKind::Cached) ? rows : std::nullopt;
+}
+
+/// Whether a right-side value may anchor an upper-bound-driven swap (`upperBound(left) < this`),
+/// i.e. be trusted as a lower bound on the right size. An Exact count always qualifies. A `Cached`
+/// measurement also qualifies BY CHOICE: it is the real post-filter size of this subtree from a
+/// prior build, which for a repeated query on stable data is an excellent proxy, and trusting it
+/// is what lets the common "small left, large filtered right" case reorder. We ACCEPT the residual
+/// risk that a stale-high cache (data/selectivity changed since the last build) mis-swaps a larger
+/// input onto the build side; the `cache <= scan_upper_bound` guard in `addChildQueryGraph` rules
+/// out the provable case (the table physically shrank), but cannot catch a selectivity change at a
+/// fixed table size. A purely-derived `Estimate` (e.g. an NDV-less aggregation reporting its input
+/// row count) is excluded -- it has no measurement behind it and could be arbitrarily wrong.
+inline bool canAnchorUpperBoundSwap(RowCountKind kind)
+{
+    return kind == RowCountKind::Exact || kind == RowCountKind::Cached;
 }
 
 struct DPJoinEntry
