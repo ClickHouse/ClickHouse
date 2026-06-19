@@ -496,60 +496,56 @@ bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size
 
 DiskCacheView::DiskCacheView(
     std::shared_ptr<FileSegmentsHolder> read_holder_,
-    FileCachePtr cache_,
-    FileCacheKey cache_key_,
-    FileCacheOriginInfo origin_,
     size_t object_file_offset_)
     : read_holder(std::move(read_holder_))
-    , cache(std::move(cache_))
-    , cache_key(cache_key_)
-    , origin(std::move(origin_))
     , object_file_offset(object_file_offset_)
 {
 }
 
 DiskCacheView::~DiskCacheView()
 {
-    /// Deferred LRU bump: re-fetch and `increasePriority` each `read`-recorded
-    /// range, so a hit next to fresh inserts isn't aged below them. No write
-    /// buffers live in this view, so no finalize-before-bump ordering is needed
-    /// here — the executor orders write-buffer destruction before view
-    /// destruction in Stage 4.
-    if (hits_to_touch.empty())
+    /// Deferred LRU bump: raise the priority of each segment this view actually
+    /// read, so a hit next to fresh inserts isn't aged below them. Bump directly
+    /// on the held `read_holder` — it pins exactly the segments the readers read
+    /// from, so there is no need to re-`cache->get` them (which would re-take the
+    /// per-key metadata lock and re-hash the key). A sequential run records many
+    /// contiguous sub-ranges over the same few segments; sorting the records lets
+    /// the linear sweep below bump each touched segment exactly once. No write
+    /// buffers live in this view, so no finalize-before-bump ordering is needed —
+    /// the executor orders write-buffer destruction before view destruction.
+    if (hits_to_touch.empty() || !read_holder)
         return;
 
-    for (const auto & range : hits_to_touch)
+    std::sort(hits_to_touch.begin(), hits_to_touch.end(),
+        [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
+
+    try
     {
-        chassert(range.offset >= object_file_offset);
-        const ByteRange range_in_object{range.offset - object_file_offset, range.size};
-
-        try
+        size_t ti = 0;
+        for (const auto & segment : *read_holder)
         {
-            auto touch_holder = cache->get(
-                cache_key,
-                range_in_object.offset,
-                range_in_object.size,
-                /*file_segments_limit=*/0,
-                origin.user_id);
-
-            if (!touch_holder)
+            const auto state = segment->state();
+            if (state != FileSegmentState::DOWNLOADED
+                && state != FileSegmentState::PARTIALLY_DOWNLOADED
+                && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
                 continue;
 
-            for (const auto & segment : *touch_holder)
-            {
-                const auto state = segment->state();
-                if (state != FileSegmentState::DOWNLOADED
-                    && state != FileSegmentState::PARTIALLY_DOWNLOADED
-                    && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
-                    continue;
+            /// `segment->range()` is object-local; the recorded ranges are file-space.
+            const auto & seg_range = segment->range();
+            const size_t seg_start = seg_range.left + object_file_offset;
+            const size_t seg_end = seg_range.right + 1 + object_file_offset;
 
+            /// Drop records lying entirely before this segment.
+            while (ti < hits_to_touch.size() && hits_to_touch[ti].end() <= seg_start)
+                ++ti;
+            /// Bump once if the next record overlaps the segment.
+            if (ti < hits_to_touch.size() && hits_to_touch[ti].offset < seg_end)
                 segment->increasePriority();
-            }
         }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Deferred LRU priority bump failed", LogsLevel::debug);
-        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Deferred LRU priority bump failed", LogsLevel::debug);
     }
 }
 
@@ -612,8 +608,7 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
             read_holder = std::shared_ptr<FileSegmentsHolder>(std::move(got));
     }
 
-    auto view = std::make_unique<DiskCacheView>(
-        read_holder, cache, resolved_key, resolved_origin, object_file_offset);
+    auto view = std::make_unique<DiskCacheView>(read_holder, object_file_offset);
 
     /// Collect raw (unaligned) object-local miss sub-ranges as we classify; the
     /// cache-alignment + merge happens in a second pass so adjacent misses fold.

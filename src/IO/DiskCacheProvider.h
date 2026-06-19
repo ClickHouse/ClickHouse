@@ -125,9 +125,6 @@ class DiskCacheView : public CacheView
 public:
     DiskCacheView(
         std::shared_ptr<FileSegmentsHolder> read_holder_,
-        FileCachePtr cache_,
-        FileCacheKey cache_key_,
-        FileCacheOriginInfo origin_,
         size_t object_file_offset_);
 
     ~DiskCacheView() override;
@@ -142,9 +139,6 @@ public:
 
 private:
     std::shared_ptr<FileSegmentsHolder> read_holder;
-    FileCachePtr cache;
-    FileCacheKey cache_key;
-    FileCacheOriginInfo origin;
     size_t object_file_offset;
     LoggerPtr log = getLogger("DiskCacheView");
 };
