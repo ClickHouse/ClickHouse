@@ -1713,18 +1713,27 @@ static void applyQueryConstructionSettings(
     base_select->setIsOutfileAppend(false);
     base_select->setIsOutfileTruncate(false);
 
-    /// `limit` / `offset` / `page` are consumed here (materialized as the outer query's `LIMIT`/
-    /// `OFFSET` below). Strip them from every `SETTINGS` clause carried by the base query so the
-    /// base query's interpreter — in particular the analyzer, which reads these settings from the
-    /// query's own `SETTINGS` clause — does not apply them a second time on top of the outer
-    /// `LIMIT`/`OFFSET`. A single `SELECT … SETTINGS limit = …` keeps the clause on the inner
-    /// `ASTSelectQuery` (`settings()`), while a `UNION … SETTINGS …` keeps it on the union node
+    /// All construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` / `page`)
+    /// are consumed here — materialized into the outer wrapper's `SELECT` / `WHERE` / `ORDER BY` /
+    /// `LIMIT` / `OFFSET` below. Strip them from every `SETTINGS` clause carried by the base query so
+    /// they are not applied a second time, either by the base query's interpreter (the analyzer reads
+    /// `limit` / `offset` from the query's own `SETTINGS` clause) or by the later
+    /// `wrapNestedConstructionSettings` pass — the query-level `SETTINGS` clause is re-attached to the
+    /// outer wrapper below, and that pass would otherwise re-consume the construction settings still in
+    /// it and wrap the query a second time (e.g. `SETTINGS select = 'number AS x'` would expose only
+    /// `x` in the first wrap and then fail to resolve `number` in the second). A single
+    /// `SELECT … SETTINGS …` keeps the clause on the inner `ASTSelectQuery` (`settings()`), while a
+    /// `UNION … SETTINGS …` or the `… FORMAT … SETTINGS …` suffix keeps it on the union node
     /// (`settings_ast`), so both locations have to be handled.
-    auto strip_limit_offset_from_settings = [](ASTPtr & settings_ptr)
+    auto strip_construction_settings = [](ASTPtr & settings_ptr)
     {
         auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
         if (!set_query)
             return;
+        set_query->changes.removeSetting("select");
+        set_query->changes.removeSetting("filter");
+        set_query->changes.removeSetting("order");
+        set_query->changes.removeSetting("sort");
         set_query->changes.removeSetting("limit");
         set_query->changes.removeSetting("offset");
         set_query->changes.removeSetting("page");
@@ -1732,14 +1741,14 @@ static void applyQueryConstructionSettings(
             settings_ptr.reset();
     };
 
-    strip_limit_offset_from_settings(base_settings);
+    strip_construction_settings(base_settings);
     for (auto & select_child : base_select->list_of_selects->children)
     {
         if (auto * inner_select = select_child->as<ASTSelectQuery>())
         {
             if (ASTPtr inner_settings = inner_select->settings())
             {
-                strip_limit_offset_from_settings(inner_settings);
+                strip_construction_settings(inner_settings);
                 if (!inner_settings)
                     inner_select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
             }
