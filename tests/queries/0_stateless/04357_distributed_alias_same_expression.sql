@@ -78,7 +78,84 @@ SET allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas
 SELECT a1, a2 FROM local_same_expr ORDER BY dt DESC LIMIT 1;
 SELECT a1, a2, count() AS c FROM local_same_expr GROUP BY a1, a2 ORDER BY a1;
 
+-- Single hop with serialize_query_plan: the plan-serialization transport must reconcile the
+-- collapsed shard header too.
+SELECT a1, a2 FROM dist_same_expr ORDER BY dt DESC LIMIT 1 SETTINGS serialize_query_plan = 1;
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1 SETTINGS serialize_query_plan = 1;
+
 SET allow_experimental_parallel_reading_from_replicas = 0;
 
 DROP TABLE dist_same_expr;
 DROP TABLE local_same_expr;
+
+-- Multi-hop: Distributed over Distributed. Duplicate ALIAS columns expanding to the same
+-- expression must survive two transport hops without a column-count mismatch, including over
+-- the plan-serialization transport.
+DROP TABLE IF EXISTS dod_local;
+DROP TABLE IF EXISTS dod_inner;
+DROP TABLE IF EXISTS dod_outer;
+
+CREATE TABLE dod_local (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO dod_local VALUES (1), (2), (10);
+
+CREATE TABLE dod_inner
+(
+    x UInt64,
+    a UInt64 ALIAS 2,
+    b UInt64 ALIAS 2,
+    inner_c UInt64 ALIAS x + 1,
+    inner_d UInt64 ALIAS x + 1
+)
+ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), dod_local);
+
+CREATE TABLE dod_outer
+(
+    x UInt64,
+    inner_c UInt64,
+    a UInt64 ALIAS 1,
+    b UInt64 ALIAS 1,
+    c UInt64 ALIAS inner_c,
+    d UInt64 ALIAS inner_c,
+    inner_d UInt64
+)
+ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), dod_inner);
+
+SELECT 'multi_hop prefer_localhost_replica=0';
+SELECT x, a, b, c, d, inner_c, inner_d FROM dod_outer ORDER BY x SETTINGS prefer_localhost_replica = 0;
+SELECT 'multi_hop prefer_localhost_replica=1';
+SELECT x, a, b, c, d, inner_c, inner_d FROM dod_outer ORDER BY x SETTINGS prefer_localhost_replica = 1;
+SELECT 'multi_hop serialize_query_plan=1';
+SELECT x, a, b, c, d, inner_c, inner_d FROM dod_outer ORDER BY x SETTINGS serialize_query_plan = 1;
+
+DROP TABLE dod_outer;
+DROP TABLE dod_inner;
+DROP TABLE dod_local;
+
+-- Second hop: remote() over a Distributed table with parallel replicas. Duplicate ALIAS columns
+-- expanding to the same expression must survive the remote -> Distributed -> parallel-replicas
+-- fan-out without a column-count mismatch.
+DROP TABLE IF EXISTS ph_local;
+DROP TABLE IF EXISTS ph_dist;
+
+CREATE TABLE ph_local
+(
+    dt DateTime64(3),
+    base String,
+    alias_base_0 String ALIAS base,
+    alias_base_1 String ALIAS base
+)
+ENGINE = MergeTree ORDER BY dt;
+INSERT INTO ph_local VALUES ('1999-03-29T01:15:33', 'x'), ('1999-03-29T01:15:34', 'y');
+
+CREATE TABLE ph_dist AS ph_local
+ENGINE = Distributed('test_cluster_one_shard_three_replicas_localhost', currentDatabase(), ph_local);
+
+SELECT 'second_hop single replica';
+SELECT dt, alias_base_0, alias_base_1 FROM remote('127.0.0.2', currentDatabase(), ph_dist) ORDER BY dt LIMIT 1
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
+SELECT 'second_hop parallel replicas';
+SELECT dt, alias_base_0, alias_base_1 FROM remote('127.0.0.2', currentDatabase(), ph_dist) ORDER BY dt LIMIT 1
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
+
+DROP TABLE ph_dist;
+DROP TABLE ph_local;
