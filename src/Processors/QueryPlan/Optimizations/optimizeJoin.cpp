@@ -750,11 +750,13 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
     {
-        /// A cached size is the actual number of rows a previous execution fed into this hash
-        /// table, so treat it as an exact count -- trustworthy as a lower bound for the
-        /// build-side choice (see `chooseJoinOrder`).
+        /// The cached size comes from `HashTablesStatistics`, a process-global cache that keeps a
+        /// max-like value: it tracks growth immediately but only shrinks when a new size drops
+        /// below half of the stored one. So it can be stale and is neither an exact count nor a
+        /// guaranteed bound on the current size. Use it only as a heuristic point estimate and do
+        /// NOT mark it exact, so the upper-bound-driven swap won't trust it as a lower bound
+        /// (see `chooseJoinOrder`).
         stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
-        stats.estimated_rows_exact = true;
     }
 
     if (!label.empty())
