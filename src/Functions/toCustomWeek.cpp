@@ -11,7 +11,9 @@ namespace DB
 using FunctionToWeek = FunctionCustomWeekToSomething<DataTypeUInt8, ToWeekImpl>;
 using FunctionToYearWeek = FunctionCustomWeekToSomething<DataTypeUInt32, ToYearWeekImpl>;
 using FunctionToStartOfWeek = FunctionCustomWeekToDateOrDate32<ToStartOfWeekImpl>;
+using FunctionToStartOfWeekExtended = FunctionCustomWeekToDateOrDate32<ToStartOfWeekExtendedImpl>;
 using FunctionToLastDayOfWeek = FunctionCustomWeekToDateOrDate32<ToLastDayOfWeekImpl>;
+using FunctionToLastDayOfWeekExtended = FunctionCustomWeekToDateOrDate32<ToLastDayOfWeekExtendedImpl>;
 
 REGISTER_FUNCTION(ToCustomWeek)
 {
@@ -111,6 +113,7 @@ Rounds a date or date with time down to the nearest Sunday or Monday.
 
 :::note
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions).
+For an always-on, per-function alternative independent of the session setting (recommended for primary key and partition expressions), see [`toStartOfWeekExtended`](#toStartOfWeekExtended).
 :::
     )";
     FunctionDocumentation::Syntax syntax_to_start_of_week = R"(
@@ -150,6 +153,7 @@ Rounds a date or date with time up to the nearest Saturday or Sunday.
 
 :::note
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions).
+For an always-on, per-function alternative independent of the session setting (recommended for primary key and partition expressions), see [`toLastDayOfWeekExtended`](#toLastDayOfWeekExtended).
 :::
     )";
     FunctionDocumentation::Syntax syntax_to_last_day_of_week = R"(
@@ -186,6 +190,103 @@ toLastDayOfWeek(toDate('2023-04-23'), 1):                2023-04-23
     /// Compatibility aliases for mysql.
     factory.registerAlias("week", "toWeek", FunctionFactory::Case::Insensitive);
     factory.registerAlias("yearweek", "toYearWeek", FunctionFactory::Case::Insensitive);
+}
+
+REGISTER_FUNCTION(ToStartOfWeekExtended)
+{
+    FunctionDocumentation::Description description = R"(
+Same as [`toStartOfWeek`](#toStartOfWeek), but the result is monotonic across the entire range of every supported argument type, regardless of the [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions) setting.
+
+The result type is widened only as far as is needed to represent the result without wrapping. The function returns [`Date32`](/sql-reference/data-types/date32) for `Date32` and `DateTime64` arguments, and `Date` for `Date` and `DateTime` arguments.
+
+It is therefore the recommended choice for primary key and partition key expressions. A monotonic function preserves the order of its input, so the primary index can still prune data when the function is applied to a key column. The [`toStartOfWeek`](#toStartOfWeek) function is monotonic only within the `Date` range.
+    )";
+    FunctionDocumentation::Syntax syntax = "toStartOfWeekExtended(datetime[, mode[, timezone]])";
+    FunctionDocumentation::Arguments arguments = {
+        {"datetime", "A date or date with time to convert.", {"Date", "DateTime", "Date32", "DateTime64"}},
+        {"mode", "Determines the first day of the week as described in the `toWeek` function. Default `0`.", {"UInt8"}},
+        {"timezone", "The timezone to use for the conversion. If not specified, the server's timezone is used.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Date of the nearest Sunday or Monday on, or prior to, the given date, depending on the mode.", {"Date", "Date32"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Far-future input rounded back to start of week",
+            R"(
+SELECT toStartOfWeekExtended(toDate32('2200-06-13')) AS far_future_tuesday
+            )",
+            R"(
+┌─far_future_tuesday─┐
+│         2200-06-08 │
+└────────────────────┘
+            )"
+        },
+        {
+            "Side-by-side: narrow `toStartOfWeek` clamps pre-`1970-01-01` input to the epoch; `toStartOfWeekExtended` stays monotonic",
+            R"(
+SELECT toStartOfWeek(toDateTime64('1969-06-15 12:00:00', 0, 'UTC'))         AS narrow_clamps,
+       toStartOfWeekExtended(toDateTime64('1969-06-15 12:00:00', 0, 'UTC')) AS extended_ok
+            )",
+            R"(
+┌─narrow_clamps─┬─extended_ok─┐
+│    1970-01-01 │  1969-06-15 │
+└───────────────┴─────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionToStartOfWeekExtended>(documentation);
+}
+
+REGISTER_FUNCTION(ToLastDayOfWeekExtended)
+{
+    FunctionDocumentation::Description description = R"(
+Same as [`toLastDayOfWeek`](#toLastDayOfWeek), but the result is monotonic across the entire range of every supported argument type, regardless of the [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions) setting.
+
+The result type is widened only as far as is needed to represent the result without wrapping. The function returns [`Date32`](/sql-reference/data-types/date32) for `Date32` and `DateTime64` arguments, and `Date` for `Date` and `DateTime` arguments.
+
+It is therefore the recommended choice for primary key and partition key expressions. A monotonic function preserves the order of its input, so the primary index can still prune data when the function is applied to a key column. The [`toLastDayOfWeek`](#toLastDayOfWeek) function is monotonic only within the `Date` range.
+    )";
+    FunctionDocumentation::Syntax syntax = "toLastDayOfWeekExtended(datetime[, mode[, timezone]])";
+    FunctionDocumentation::Arguments arguments = {
+        {"datetime", "A date or date with time to convert.", {"Date", "DateTime", "Date32", "DateTime64"}},
+        {"mode", "Determines the first day of the week as described in the `toWeek` function. Default `0`.", {"UInt8"}},
+        {"timezone", "The timezone to use for the conversion. If not specified, the server's timezone is used.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Date of the nearest Saturday or Sunday, on or after the given date, depending on the mode.", {"Date", "Date32"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Pre-epoch and far-future last day of week",
+            R"(
+SELECT toLastDayOfWeekExtended(toDateTime64('1969-12-29 12:00:00', 0, 'UTC')) AS pre_epoch,
+       toLastDayOfWeekExtended(toDate32('2200-06-15'))                        AS far_future
+            )",
+            R"(
+┌──pre_epoch─┬─far_future─┐
+│ 1970-01-03 │ 2200-06-21 │
+└────────────┴────────────┘
+            )"
+        },
+        {
+            "Side-by-side: narrow `toLastDayOfWeek` wraps for pre-`1970-01-01` input; `toLastDayOfWeekExtended` stays monotonic",
+            R"(
+SELECT toLastDayOfWeek(toDateTime64('1969-06-15 12:00:00', 0, 'UTC'))         AS narrow_wraps,
+       toLastDayOfWeekExtended(toDateTime64('1969-06-15 12:00:00', 0, 'UTC')) AS extended_ok
+            )",
+            R"(
+┌─narrow_wraps─┬─extended_ok─┐
+│   2148-11-25 │  1969-06-21 │
+└──────────────┴─────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionToLastDayOfWeekExtended>(documentation);
 }
 
 }

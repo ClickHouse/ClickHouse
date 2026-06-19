@@ -1,5 +1,7 @@
 #pragma once
+
 #include <Core/Settings.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Functions/IFunctionCustomWeek.h>
 #include <Interpreters/Context.h>
 
@@ -28,7 +30,8 @@ public:
     }
 
     explicit FunctionCustomWeekToDateOrDate32(ContextPtr context)
-        : enable_extended_results_for_datetime_functions(context->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
+        : enable_extended_results_for_datetime_functions(
+            widensDate32AndDateTime64Input<Transform>() || context->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
     {
     }
 
@@ -38,6 +41,13 @@ public:
 
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
+
+        if constexpr (widensDateInput<Transform>())
+        {
+            if (which.isDate())
+                return std::make_shared<DataTypeDate32>();
+        }
+
         if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
             return std::make_shared<DataTypeDate32>();
         return std::make_shared<DataTypeDate>();
@@ -49,7 +59,12 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
+        {
+            if constexpr (widensDateInput<Transform>())
+                return CustomWeekTransformImpl<DataTypeDate, DataTypeDate32, /*is_extended_result*/ true>::execute(
+                    arguments, result_type, input_rows_count, Transform{});
             return CustomWeekTransformImpl<DataTypeDate, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{});
+        }
         if (which.isDate32())
         {
             if (enable_extended_results_for_datetime_functions)

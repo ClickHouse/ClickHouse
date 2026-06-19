@@ -518,6 +518,16 @@ struct ToStartOfWeekImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfWeekExtendedImpl : ToStartOfWeekImpl
+{
+    static constexpr auto name = "toStartOfWeekExtended";
+    /// `toStartOfWeek` rounds a date down to the first day of its week. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfWeek(toDate32('1969-12-29'))` returns `2149-06-03`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToLastDayOfWeekImpl
 {
     static constexpr auto name = "toLastDayOfWeek";
@@ -547,9 +557,29 @@ struct ToLastDayOfWeekImpl
     {
         return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
+    static Int32 executeExtendedResult(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        /// Use `ExtendedDayNum` so end-of-week past `2149-06-06` isn't truncated to `UInt16`.
+        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
+    }
 
     static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
+};
+
+struct ToLastDayOfWeekExtendedImpl : ToLastDayOfWeekImpl
+{
+    static constexpr auto name = "toLastDayOfWeekExtended";
+    /// `toLastDayOfWeek` rounds a date up to the last day of its week. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toLastDayOfWeek(toDate32('1969-06-15'))` returns `2148-11-25`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+    /// Because `toLastDayOfWeek` rounds up, even an in-range `Date` argument can overflow: it returns
+    /// `Date`, but `2149-06-06` rounds up to `2149-06-07`, past `Date`'s `2149-06-06` maximum, so
+    /// without widening the result wraps. For example,
+    /// `SELECT toLastDayOfWeek(toDate('2149-06-06'))` returns `1970-01-01`.
+    static constexpr bool widen_date_input = true;
 };
 
 struct ToWeekImpl
