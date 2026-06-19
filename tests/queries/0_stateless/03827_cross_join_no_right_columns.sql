@@ -41,5 +41,14 @@ SETTINGS cross_join_min_rows_to_compress = 1, max_block_size = 1000, max_threads
 SELECT count() FROM t1_big, t2_big PREWHERE a >= 0 AND b != ''
 SETTINGS cross_join_min_bytes_to_compress = 1, max_block_size = 1000, max_threads = 1;
 
+-- A zero-column right block also reached the cross-join spill-to-disk path. There the temporary stream
+-- serializes Block::rows() == 0 (the count lives only in the selector) and Block::empty() stops the read
+-- side at the first spilled block, so every spilled zero-column right block contributed 0 rows and the
+-- cross product was silently undercounted. A small max_rows_in_join keeps the first blocks in memory then
+-- routes later zero-column blocks through the spill path, so the result must still be the full product.
+SELECT count() FROM t1_big, t2_big PREWHERE a >= 0 AND b != ''
+SETTINGS max_rows_in_join = 5000, max_block_size = 1000, max_threads = 1,
+         cross_join_min_rows_to_compress = 0, cross_join_min_bytes_to_compress = 0;
+
 DROP TABLE t1_big;
 DROP TABLE t2_big;
