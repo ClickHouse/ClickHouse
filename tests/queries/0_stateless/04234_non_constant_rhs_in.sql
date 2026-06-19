@@ -17,6 +17,8 @@ SELECT number, tuple(number, number + 1) AS t, number IN (t), (number + 1) IN (t
 SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number + 2) IN ((number, number + 1)) FROM numbers(3) ORDER BY number;
 SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 0;
 SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 1;
+SELECT CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')], CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') NOT IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')] FROM numbers(1) SETTINGS transform_null_in = 0, allow_experimental_nullable_tuple_type = 1;
+SELECT CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')], CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') NOT IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')] FROM numbers(1) SETTINGS transform_null_in = 1, allow_experimental_nullable_tuple_type = 1;
 
 SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
 FROM (SELECT materialize(NULL) AS x, materialize(2) AS y);
@@ -47,6 +49,8 @@ SELECT number, tuple(number, number + 1) AS t, number IN (t), (number + 1) IN (t
 SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number + 2) IN ((number, number + 1)) FROM numbers(3) ORDER BY number;
 SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 0;
 SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 1;
+SELECT CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')], CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') NOT IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')] FROM numbers(1) SETTINGS transform_null_in = 0, allow_experimental_nullable_tuple_type = 1;
+SELECT CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')], CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') NOT IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')] FROM numbers(1) SETTINGS transform_null_in = 1, allow_experimental_nullable_tuple_type = 1;
 
 SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
 FROM (SELECT materialize(NULL) AS x, materialize(2) AS y);
