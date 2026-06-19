@@ -124,8 +124,8 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionNumbers<true>>(
         {
-            .description = R"(The same as `numbers`, but generates the values using multiple threads (according to the `max_threads` setting), so the order of the rows is not deterministic. Returns a table with a single `number` column of type `UInt64`.)",
-            .syntax = "numbers_mt(N) | numbers_mt(N, M) | numbers_mt(N, M, S)",
+            .description = R"(The same as `numbers`, but generates the values using multiple threads (according to the `max_threads` setting), so the order of the rows is not deterministic. Returns a table with a single `number` column of type `UInt64`. When called with no arguments, it produces an unbounded stream of integers starting from 0.)",
+            .syntax = "numbers_mt() | numbers_mt(N) | numbers_mt(N, M) | numbers_mt(N, M, S)",
             .arguments = {
                 {"N", "When used as `numbers_mt(N)`: the number of integers to return (`0` to `N - 1`). When used as `numbers_mt(N, M[, S])`: the starting value (offset).", {"UInt64"}},
                 {"M", "The number of integers to return, starting from `N` (only for `numbers_mt(N, M)` and `numbers_mt(N, M, S)`).", {"UInt64"}},
@@ -135,6 +135,7 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
             .examples = {
                 {"The integers from 0 to 9, in an unspecified order", "SELECT * FROM numbers_mt(10) ORDER BY number;", ""},
                 {"Count rows using multiple threads", "SELECT count() FROM numbers_mt(1000000000);", ""},
+                {"Limit an infinite stream", "SELECT * FROM numbers_mt() LIMIT 10;", ""},
             },
             .introduced_in = {1, 1},
             .category = FunctionDocumentation::Category::TableFunction,
@@ -143,8 +144,8 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
 
     factory.registerFunction<TableFunctionNumbers<false>>(
         {
-            .description = R"(Returns a table with a single `number` column of type `UInt64` that contains a sequence of integers, starting from 0. Similar to the `system.numbers` table. Useful for testing and for generating successive values.)",
-            .syntax = "numbers(N) | numbers(N, M) | numbers(N, M, S)",
+            .description = R"(Returns a table with a single `number` column of type `UInt64` that contains a sequence of integers, starting from 0. Similar to the `system.numbers` table. Useful for testing and for generating successive values. When called with no arguments, it produces an unbounded stream of integers starting from 0.)",
+            .syntax = "numbers() | numbers(N) | numbers(N, M) | numbers(N, M, S)",
             .arguments = {
                 {"N", "When used as `numbers(N)`: the number of integers to return (`0` to `N - 1`). When used as `numbers(N, M[, S])`: the starting value (offset).", {"UInt64"}},
                 {"M", "The number of integers to return, starting from `N` (only for `numbers(N, M)` and `numbers(N, M, S)`).", {"UInt64"}},
