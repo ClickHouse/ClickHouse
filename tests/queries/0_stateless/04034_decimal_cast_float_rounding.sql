@@ -80,6 +80,10 @@ SELECT CAST(toFloat64(2.7), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-2.7), 'Decim
 SELECT 'Truncation when rounding is disabled (batch):';
 WITH arrayJoin([0.5, 1.5, -0.5, -1.5, 2.7, -2.7]) AS x
 SELECT toFloat64(x) AS f, CAST(f, 'Decimal(9, 0)') AS d;
+-- The non-finite-multiplier path (`Float32` -> `Decimal256` high scale) is independent of rounding;
+-- exercise it under truncation too (overflow stays an error, zero stays representable).
+SELECT CAST(materialize(toFloat32(1)), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(materialize(toFloat32(0)), 'Decimal256(76)');
 SET cast_float_to_decimal_uses_rounding = 1;
 
 -- The setting also reaches the float -> `DateTime64`/`Time64` conversion paths
