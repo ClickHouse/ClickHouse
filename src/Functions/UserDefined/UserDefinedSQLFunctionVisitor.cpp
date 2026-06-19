@@ -10,6 +10,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -87,6 +88,9 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     auto & function_arguments = function_arguments_list->children;
 
     auto * create_function_query = user_defined_function->as<ASTCreateSQLFunctionQuery>();
+
+    if (!create_function_query && user_defined_function->as<ASTCreateWasmFunctionQuery>())
+        return nullptr;
 
     if (!create_function_query)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
