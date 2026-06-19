@@ -1132,6 +1132,24 @@ static void reorderColumns(ActionsDAG & dag, const Block & header, const std::st
     dag.getOutputs() = std::move(new_outputs);
 }
 
+std::optional<bool> deriveReverseOrder(const KeyDescription & primary_key, const KeyDescription & sorting_key)
+{
+    if (sorting_key.reverse_flags.empty())
+        return false;
+
+    size_t num_primary_keys = primary_key.expression_list_ast->children.size();
+    chassert(sorting_key.reverse_flags.size() >= num_primary_keys);
+    bool in_reverse_order = sorting_key.reverse_flags[0];
+    for (size_t i = 1; i < num_primary_keys; ++i)
+    {
+        /// Splitting by primary-key ranges is impossible when some key columns are ascending and
+        /// others descending.
+        if (in_reverse_order != sorting_key.reverse_flags[i])
+            return {};
+    }
+    return in_reverse_order;
+}
+
 SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
@@ -1171,23 +1189,13 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         return result;
     }
 
-    bool in_reverse_order = false;
-    size_t num_primary_keys = primary_key.expression_list_ast->children.size();
-    if (!sorting_key.reverse_flags.empty())
+    auto in_reverse_order_opt = deriveReverseOrder(primary_key, sorting_key);
+    if (!in_reverse_order_opt)
     {
-        chassert(sorting_key.reverse_flags.size() >= num_primary_keys);
-        in_reverse_order = sorting_key.reverse_flags[0];
-        for (size_t i = 1; i < num_primary_keys; ++i)
-        {
-            /// It's not possible to split parts when some keys are in ascending
-            /// order while others are in descending order.
-            if (in_reverse_order != sorting_key.reverse_flags[i])
-            {
-                result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
-                return result;
-            }
-        }
+        result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
+        return result;
     }
+    bool in_reverse_order = *in_reverse_order_opt;
 
     if (split_parts_ranges_into_intersecting_and_non_intersecting_final)
     {
