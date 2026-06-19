@@ -1,4 +1,6 @@
--- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- Tags: no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- no-parallel: ATTACHes a table with a fixed UUID (item 10c), which collides
+-- across concurrent runs of this test (e.g. the flaky check's parallel workers).
 -- UNIQUE KEY DDL + metadata.
 -- Runtime dedup is out of scope; this test only exercises parsing, metadata,
 -- round-trip, guards, and restart survival.

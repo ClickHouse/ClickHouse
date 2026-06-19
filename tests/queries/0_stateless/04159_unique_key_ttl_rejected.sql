@@ -1,4 +1,6 @@
--- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- Tags: no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- no-parallel: ATTACHes a table with a fixed UUID, which collides across
+-- concurrent runs of this test (e.g. the flaky check's parallel workers).
 -- TTL is enforced during merges, which are disabled on UNIQUE KEY tables (interim,
 -- until merge-side bitmap reconciliation lands), so it cannot be honored. Every TTL
 -- entry path is rejected with SUPPORT_IS_DISABLED: CREATE-with-TTL (table or column),
