@@ -956,6 +956,42 @@ def test_use_extended_date_and_time_types_setting_table_engine_rejected(started_
     ), error
 
 
+def test_use_extended_date_and_time_types_setting_alter_database_rejected(started_cluster):
+    # The setting only controls the column types chosen by type inference when the nested tables
+    # are created. The already created nested tables keep their fixed column types, so changing it
+    # for an existing database with `ALTER DATABASE ... MODIFY SETTING` would be a silent no-op and
+    # must be rejected with a clear exception instead.
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_alter_date_types")
+    cursor.execute("CREATE TABLE test_alter_date_types (key integer PRIMARY KEY, d date)")
+    cursor.execute("INSERT INTO test_alter_date_types VALUES (1, '2000-05-12')")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_tables_list = 'test_alter_date_types'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    assert_eq_with_retry(
+        instance, "SELECT count() FROM test_database.test_alter_date_types", "1"
+    )
+
+    error = instance.query_and_get_error(
+        "ALTER DATABASE test_database MODIFY SETTING "
+        "materialized_postgresql_use_extended_date_and_time_types = 0"
+    )
+    assert (
+        "materialized_postgresql_use_extended_date_and_time_types" in error
+        and "cannot be changed for an existing database" in error
+    ), error
+
+    pg_manager.drop_materialized_db()
+    cursor.execute("DROP TABLE IF EXISTS test_alter_date_types")
+
+
 def test_numeric_to_int256(started_cluster):
     # https://github.com/ClickHouse/ClickHouse/issues/59224
     # PostgreSQL numeric with precision wider than Decimal256 can hold (76 digits) and scale 0
