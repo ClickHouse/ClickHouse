@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -26,6 +27,9 @@ class FunctionNode;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
+
+class ColumnConst;
+using ColumnConstPtr = COW<IColumn>::immutable_ptr<ColumnConst>;
 
 namespace QueryPlanOptimizations
 {
@@ -103,8 +107,8 @@ public:
         /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
         bool is_deterministic_constant = true;
-        /// For COLUMN node and propagated constants.
-        ColumnPtr column;
+        /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
+        ColumnConstPtr column;
 
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
@@ -124,17 +128,18 @@ private:
     NodeRawConstPtrs outputs;
 
 public:
-    ActionsDAG() = default;
-    ActionsDAG(ActionsDAG &&) = default;
+    ActionsDAG();
+    ActionsDAG(ActionsDAG &&) noexcept;
     ActionsDAG(const ActionsDAG &) = delete;
-    ActionsDAG & operator=(ActionsDAG &&) = default;
+    ActionsDAG & operator=(ActionsDAG &&) noexcept;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
+    ~ActionsDAG();
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns = true);
 
     const Nodes & getNodes() const { return nodes; }
     NodeRawConstPtrs getNodesPointers() const;
-    static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
+    static Nodes detachNodes(ActionsDAG && dag);
     const NodeRawConstPtrs & getInputs() const { return inputs; }
     const NodeRawConstPtrs & getOutputs() const { return outputs; }
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
@@ -159,7 +164,7 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant = true);
+    const Node & addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant = true);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
@@ -239,6 +244,10 @@ public:
     size_t removeNodes(const std::unordered_set<const Node *> & to_remove);
 
     void removeAliasesForFilter(const std::string & filter_name);
+
+    /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
+    /// outputs preserve their names via aliases when needed, dead nodes are pruned
+    void deduplicateSubtrees();
 
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs
@@ -370,7 +379,7 @@ public:
         NameToNameMap * new_names = nullptr,
         NameSet * columns_contain_compiled_function = nullptr);
     /// Create expression which add const column and then materialize it.
-    static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
+    static ActionsDAG makeAddingColumnActions(ColumnConstPtr column, DataTypePtr type, std::string name);
     static ActionsDAG makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value);
 
     /// Create ActionsDAG which represents expression equivalent to applying first and second actions consequently.

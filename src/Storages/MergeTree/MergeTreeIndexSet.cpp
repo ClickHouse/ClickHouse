@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
+#include <Columns/ColumnConst.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
@@ -181,23 +182,36 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     /// Due to using of position-dependent encoding, we have to read into a temporary block and then move to the accumulating block.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto column = block_for_reading.getByPosition(i).column;
+        /// A reference into the scratch block (not a copy), so it stays uniquely owned: `mutate` below is a no-op
+        /// and the `popBack` reset is written back, leaving the scratch column empty for the next granule.
+        auto & column = block_for_reading.getByPosition(i).column;
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serializations[i]->deserializeBinaryBulkWithMultipleStreams(column, 0, rows_to_read, settings, state, nullptr);
 
-        block.getByPosition(i).column->assumeMutableRef().insertRangeFrom(*column, 0, rows_to_read);
-        column->assumeMutableRef().popBack(rows_to_read);
+        {
+            auto mutable_column = IColumn::mutate(std::move(block.getByPosition(i).column));
+            mutable_column->insertRangeFrom(*column, 0, rows_to_read);
+            block.getByPosition(i).column = std::move(mutable_column);
+        }
+
+        {
+            auto mutable_column = IColumn::mutate(std::move(column));
+            mutable_column->popBack(rows_to_read);
+            column = std::move(mutable_column);
+        }
     }
 
     /// The last column is designating the granule
     auto & elem = block.getByPosition(num_columns);
-    MutableColumnPtr granule_num_column = elem.column->assumeMutable();
+    MutableColumnPtr granule_num_column = IColumn::mutate(std::move(elem.column));
 
     auto & data = assert_cast<ColumnUInt64 &>(*granule_num_column).getData();
     for (size_t i = 0; i < rows_to_read; ++i)
         data.push_back(granule_num);
+
+    elem.column = std::move(granule_num_column);
 }
 
 
@@ -577,25 +591,18 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             }
             else
             {
-                ColumnWithTypeAndName unknown_field_column_with_type;
-
-                unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
-                unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
-                unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
-
-                result_node = &result_dag.addColumn(unknown_field_column_with_type);
+                auto name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+                auto type = std::make_shared<DataTypeUInt8>();
+                ColumnConstPtr column = type->createColumnConst(1, UNKNOWN_FIELD);
+                result_node = &result_dag.addColumn(std::move(column), std::move(type), std::move(name));
             }
         }
     }
     else
     {
-        ColumnWithTypeAndName unknown_field_column_with_type;
-
-        unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
-        unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
-        unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
-
-        result_node = &result_dag.addColumn(unknown_field_column_with_type);
+        auto unknown_field_type = std::make_shared<DataTypeUInt8>();
+        auto unknown_field_column = unknown_field_type->createColumnConst(0, UNKNOWN_FIELD);
+        result_node = &result_dag.addColumn(std::move(unknown_field_column), unknown_field_type, calculateConstantActionNodeName(UNKNOWN_FIELD));
     }
 
     node_to_result_node.emplace(&node, result_node);
@@ -610,7 +617,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
+    if (node_to_check->column)
         return &node;
 
     RPNBuilderTreeContext tree_context(context);
@@ -664,7 +671,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
+    if (node_to_check->column)
         return nullptr;
 
     if (node_to_check->type != ActionsDAG::ActionType::FUNCTION)
@@ -735,7 +742,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             sets_to_prepare.push_back(set);
         return false;
     }
-    if (node.column && isColumnConst(*node.column))
+    if (node.column)
     {
         return !atomic && node.column->getBool(0);
     }
@@ -760,7 +767,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
                 /// check above returns false (not useless) for `getBool(0) == 0`,
                 /// which would incorrectly make the entire OR appear non-useless
                 /// even when no indexed columns are referenced.
-                if (function_name == "or" && arg->column && isColumnConst(*arg->column) && !arg->column->getBool(0))
+                if (function_name == "or" && arg->column && !arg->column->getBool(0))
                     continue;
 
                 bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);
@@ -803,13 +810,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index);
 }
 
-MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr setIndexCreator(const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     size_t max_rows = getFieldFromIndexArgumentAST(index.arguments->children[0]).safeGet<size_t>();
     return std::make_shared<MergeTreeIndexSet>(index, max_rows);
 }
 
-void setIndexValidator(const IndexDescription & index, bool /*attach*/)
+void setIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
 {
     if (!index.arguments || index.arguments->children.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument");
