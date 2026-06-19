@@ -889,6 +889,17 @@ def test_backup_database(started_cluster):
     # Must finish (previously looped forever on the consistency check).
     instance.query(f"BACKUP DATABASE test_database TO {backup_name}")
 
+    # Restoring the whole MaterializedPostgreSQL database is rejected (fail closed): recreating it
+    # would start replicating from the live PostgreSQL source before the backed-up table data is
+    # restored, which would mix the backup snapshot with the current remote state. The data must
+    # instead be restored per-table as a standalone ReplacingMergeTree (below).
+    instance.query("DROP DATABASE IF EXISTS restored_mpg_db SYNC")
+    error = instance.query_and_get_error(
+        f"RESTORE DATABASE test_database AS restored_mpg_db FROM {backup_name}"
+    )
+    assert "is not supported" in error, error
+    assert "MaterializedPostgreSQL" in error, error
+
     # The backed-up table data can be restored as a standalone ReplacingMergeTree.
     # `allow_different_table_def` is required because we intentionally restore a
     # MaterializedPostgreSQL table as a plain ReplacingMergeTree: the create query stored in the

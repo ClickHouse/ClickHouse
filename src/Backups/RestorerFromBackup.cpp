@@ -478,6 +478,26 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
             create_database_query = boost::static_pointer_cast<ASTCreateQuery>(database_info.create_database_query->clone());
         }
 
+        /// Restoring a MaterializedPostgreSQL database is not supported. Recreating such a database starts
+        /// replicating from the live PostgreSQL source immediately (its startup schedules `tryStartSynchronization`),
+        /// which happens before the backed-up table data is restored and would mix the backup snapshot with the
+        /// current remote state. Fail closed and direct the user to restore the data of individual tables into
+        /// separately created `ReplacingMergeTree` tables instead - the data is still captured by the backup (see
+        /// `StorageMaterializedPostgreSQL::backupData`).
+        {
+            const auto * storage = create_database_query->storage;
+            const String database_engine_name = storage && storage->engine ? storage->engine->name : "";
+            if (database_engine_name == "MaterializedPostgreSQL")
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_DATABASE,
+                    "Restoring a MaterializedPostgreSQL database ({}) is not supported, because recreating it would "
+                    "start replicating from the live PostgreSQL source and mix it with the backup snapshot. Restore "
+                    "the data of individual tables into separately created ReplacingMergeTree tables instead, e.g.: "
+                    "RESTORE TABLE <src_database>.<table> AS <database>.<existing_replacing_mergetree> "
+                    "SETTINGS allow_different_table_def = 1.",
+                    backQuoteIfNeed(database_name));
+        }
+
         /// Generate a new UUID for a database.
         /// The generated UUID will be ignored if the database does not support UUIDs.
         restore_coordination->generateUUIDForTable(*create_database_query);
