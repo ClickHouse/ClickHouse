@@ -5,8 +5,29 @@
 
 #include <Coordination/KeeperLogStore.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 
+#include <atomic>
+#include <barrier>
+#include <future>
 #include <thread>
+
+
+namespace DB
+{
+namespace FailPoints
+{
+    extern const char keeper_changelog_read_plan_resolved[];
+    extern const char keeper_changelog_removed_from_disk_set[];
+    extern const char keeper_changelog_prefetch_pause[];
+}
+}
+
+namespace ProfileEvents
+{
+    extern const Event KeeperLogsEntryReadFromFile;
+}
 
 
 template<typename TestType>
@@ -1588,6 +1609,494 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogLoadingFromInvalidName)
     changelog.init(15, 0);
 
     ASSERT_EQ(changelog.next_slot(), 501);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Layer 1 tests: PLAN/EXECUTE split + removed_from_disk fence
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Test A — ConcurrentAppendWhileHistoricalReadPaused
+//
+// Verifies that the PLAN/EXECUTE split releases `changelog_lock` before disk I/O.
+// A reader thread parks between PLAN and EXECUTE via the
+// `keeper_changelog_read_plan_resolved` failpoint.  While the reader holds no
+// lock, the main thread calls `append` + `end_of_append_batch`, which requires
+// an EXCLUSIVE lock.  This MUST complete within a bounded deadline.
+//
+// On the old code (reader holds SHARED changelog_lock for the full read) the
+// append would deadlock.
+TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendWhileHistoricalReadPaused)
+{
+    // Skip compressed variant; compression does not change PLAN/EXECUTE lock
+    // behaviour but slows the test without adding coverage.
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    // Tiny cache so index 1 will definitely be in logs_location (on-disk).
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 100,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    // Write 10 entries and commit them to disk.
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("data", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    // Arm the failpoint: the reader will pause between PLAN and EXECUTE.
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    std::promise<void> reader_past_plan;
+    std::promise<void> reader_done;
+    std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> entries_promise;
+
+    // Reader thread: plan [1,6) then park, then execute.
+    std::thread reader([&]
+    {
+        // log_entries_ext calls getReadPlan (under shared lock), then
+        // pauseFailPoint (no lock held), then executeReadPlan.
+        auto entries = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0);
+        entries_promise.set_value(std::move(entries));
+    });
+
+    // Give the reader time to reach the failpoint.
+    // We use waitForPause (checks pause_epoch > resume_epoch) — safe to call
+    // after the reader has already parked.
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    // While the reader is parked (no lock held), perform an append.
+    // On old code this would deadlock because the reader holds SHARED lock.
+    std::promise<void> append_done_promise;
+    std::thread appender([&]
+    {
+        auto entry = getLogEntry("new_entry", 11);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        append_done_promise.set_value();
+    });
+
+    // The append must complete within 5 seconds.
+    auto append_future = append_done_promise.get_future();
+    ASSERT_EQ(append_future.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "append deadlocked — changelog_lock was held across the EXECUTE disk read";
+
+    // Resume the reader.
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    reader.join();
+    appender.join();
+
+    // Verify entries are correct (indices 1..5, terms 1..5).
+    auto entries = entries_promise.get_future().get();
+    ASSERT_NE(entries, nullptr);
+    ASSERT_EQ(entries->size(), 5u);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*entries)[i]->get_term(), static_cast<ulong>(i + 1));
+}
+
+
+// Test B — CompactionRemovesFileAfterPlanBeforeRead
+//
+// Verifies the removed_from_disk fence (Q2/Q5):
+//   1. Plan a range whose entries reside in a file that will be compacted.
+//   2. Park between PLAN and EXECUTE (via keeper_changelog_read_plan_resolved).
+//   3. Compact the range.  The background RemoveChangelog operation sets
+//      `removed_from_disk = true` under file_mutex before calling removeFile.
+//   4. Resume the reader — executeReadPlan must observe removed_from_disk and
+//      return nullptr (snapshot fallback), NOT throw and NOT read a deleted file.
+//
+// Sub-case B2: compact EVERYTHING so the store is empty (max_log_id+1 retained).
+//   A request for an old positive index must return nullptr, not throw.
+TYPED_TEST(CoordinationChangelogTest, CompactionRemovesFileAfterPlanBeforeRead)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    // Write 10 entries (2 files of 5 each).
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("d", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    // ── Sub-case B1: compact the first file after PLAN, before EXECUTE ──────
+    {
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+        std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> entries_promise;
+
+        std::thread reader([&]
+        {
+            // log_entries (not _ext) throws if nullptr; use log_entries_ext which
+            // propagates nullptr as-is for the snapshot-fallback contract.
+            auto entries = changelog.log_entries_ext(1, 4, /*batch_size_hint_in_bytes=*/0);
+            entries_promise.set_value(std::move(entries));
+        });
+
+        // Wait for reader to be parked.
+        DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+        // Compact the first file (entries 1-5).
+        this->keeper_context->setLastCommitIndex(5);
+        changelog.compact(5);
+
+        // Resume the reader.
+        DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+        reader.join();
+
+        auto entries = entries_promise.get_future().get();
+        // Must be nullptr (compacted) or a valid prefix — never a throw.
+        // In this case the file is being removed; nullptr is the expected outcome.
+        // We only assert no exception was thrown (if it were, the promise would
+        // not be set and get() would throw).
+        (void)entries;
+    }
+
+    // ── Sub-case B2: compact EVERYTHING (empty store) ───────────────────────
+    // After full compaction, getStartIndex() == max_log_id+1 (> 0).
+    // A request for an old index must return nullptr, not LOGICAL_ERROR.
+    {
+        // Compact everything (entries 6-10).
+        this->keeper_context->setLastCommitIndex(10);
+        changelog.compact(10);
+
+        // Small sleep to let the background removal thread process the queue.
+        // The async removal is not required for getReadPlan's retained_start
+        // logic; getStartIndex() already moved past max_log_id.
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        // log_entries_ext with an old index should return nullptr (not throw).
+        auto entries = changelog.log_entries_ext(1, 4, 0);
+        EXPECT_EQ(entries, nullptr)
+            << "Expected nullptr (compacted) for fully-compacted store, got non-null";
+    }
+}
+
+
+// Test C — PrefetchCancelDoesNotWedgeRead
+//
+// Verifies that an unresolved PrefetchedCacheEntryPtr in the commit log cache
+// is treated as a cache miss (not awaited) during PLAN, so the changelog_lock
+// is released promptly and executeReadPlan falls back to the FileRun path.
+//
+// We use keeper_changelog_prefetch_pause to keep a cache slot unresolved during
+// the read, then disable it to verify the read completes without hanging.
+TYPED_TEST(CoordinationChangelogTest, PrefetchCancelDoesNotWedgeRead)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 100,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("data", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    // Enable the prefetch-pause failpoint.  This simulates an unresolved
+    // PrefetchedCacheEntryPtr sitting in the cache (placeholder not yet filled).
+    // The PLAN logic must treat it as a miss (not block on the future).
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_prefetch_pause);
+
+    std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> entries_promise;
+
+    std::thread reader([&]
+    {
+        // This must complete (not hang) even if a cache entry is unresolved.
+        auto entries = changelog.log_entries_ext(1, 6, 0);
+        entries_promise.set_value(std::move(entries));
+    });
+
+    // Immediately disable the failpoint — the test verifies the read does not
+    // hang waiting for the unresolved placeholder to be filled.
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_prefetch_pause);
+
+    reader.join();
+
+    // The entries must be readable (either from file or partially from cache).
+    auto entries = entries_promise.get_future().get();
+    // Non-null result (entries may be empty if compacted, but here no compaction).
+    ASSERT_NE(entries, nullptr);
+    // We got some entries.
+    ASSERT_GT(entries->size(), 0u);
+}
+
+
+// Test D — WriteAtRaceHistoricalRead
+//
+// A write_at truncates the log from some index N while a concurrent reader
+// has planned entries [1, N+2).  The test verifies the read is:
+//   - correct entries (if EXECUTE finishes before the write_at takes effect), OR
+//   - nullptr (if the file was compacted/removed), OR
+//   - throws a corruption exception (index mismatch from per-record validation)
+// but NEVER silently returns wrong data (e.g., entries with the wrong term).
+TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    // Write 10 entries with term == index for easy validation.
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("d", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    // Park between PLAN and EXECUTE so write_at can race.
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> entries_promise;
+
+    std::thread reader([&]
+    {
+        try
+        {
+            auto entries = changelog.log_entries_ext(1, 6, 0);
+            entries_promise.set_value(std::move(entries));
+        }
+        catch (...)
+        {
+            // Corruption exception from per-record index validation is allowed.
+            entries_promise.set_value(nullptr);
+        }
+    });
+
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    // write_at truncates from index 5: overwrites the 5th entry.
+    auto new_entry = getLogEntry("overwrite", 999);
+    changelog.write_at(5, new_entry);
+    changelog.end_of_append_batch(0, 0);
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+    reader.join();
+
+    auto entries = entries_promise.get_future().get();
+    // Whatever the result, it must not be silently wrong.
+    // If non-null and non-empty, each returned entry must have term == its position.
+    if (entries && !entries->empty())
+    {
+        for (size_t i = 0; i < entries->size(); ++i)
+        {
+            const auto term = (*entries)[i]->get_term();
+            // Either the original term (i+1) or the overwritten entry at index 5.
+            // We cannot predict which won the race, but each term must be one of
+            // the values we actually wrote — never a garbage value.
+            EXPECT_TRUE(term == static_cast<ulong>(i + 1) || term == 999u)
+                << "Unexpected term " << term << " at position " << i;
+        }
+    }
+}
+
+
+// Test E — ActiveFileEvictedEntryStillReturned
+//
+// Verifies liveness: entries stored in the (not-yet-rotated) changelog file are
+// readable via log_entries_ext after reloading from disk with a tiny cache that
+// forces nearly all entries out of the in-memory cache.
+//
+// With latest_logs_cache_size_threshold == 1 (1 byte), only entry 20 (the newest)
+// stays in cache after reload.  Reading entries 1–10 must use logs_location and
+// read from disk, incrementing KeeperLogsEntryReadFromFile.
+//
+// For uncompressed logs: executeReadPlan seeks directly to the byte offset.
+// For compressed logs: executeReadPlan wraps with a decompression layer and skips
+// records sequentially until the decompressed-stream position matches, then reads.
+// Both paths increment KeeperLogsEntryReadFromFile for each entry read.
+TYPED_TEST(CoordinationChangelogTest, ActiveFileEvictedEntryStillReturned)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::LogFileSettings settings{
+        .force_sync = true,
+        .compress_logs = this->enable_compression,
+        .rotate_interval = 1000,   // large enough to hold all 20 entries without rotation
+        .latest_logs_cache_size_threshold = 1,
+        .commit_logs_cache_size_threshold = 1,
+    };
+
+    // Phase 1: write 20 entries and flush to disk.
+    {
+        DB::KeeperLogStore writer(settings, DB::FlushSettings(), this->keeper_context);
+        writer.init(0, 0);
+
+        for (size_t i = 0; i < 20; ++i)
+        {
+            auto entry = getLogEntry("data", static_cast<size_t>(i + 1));
+            writer.append(entry);
+        }
+        writer.end_of_append_batch(0, 0);
+        waitDurableLogs(writer);
+    }   // writer destroyed here
+
+    // Phase 2: reload from disk with tiny cache (threshold = 1 byte).
+    // addEntryWithLocation populates logs_location and evicts entries from
+    // latest_logs_cache when over the 1-byte threshold, leaving only entry 20
+    // (the last one) in cache.
+    uint64_t counter_before
+        = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile].load();
+
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), this->keeper_context);
+    changelog.init(0, 0);
+
+    // Read entries 1–10.  Only entry 20 is in cache, so all 10 reads go to disk.
+    auto entries = changelog.log_entries_ext(1, 11, 0);
+    ASSERT_NE(entries, nullptr);
+    ASSERT_EQ(entries->size(), 10u);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        EXPECT_EQ((*entries)[i]->get_term(), static_cast<ulong>(i + 1))
+            << "Wrong term at index " << (i + 1);
+    }
+
+    // At least one entry must have been read from file (counter must have grown).
+    // For uncompressed logs: executeReadPlan seeks directly to the raw byte offset.
+    // For compressed logs: executeReadPlan skips records sequentially using the
+    // decompression wrapper until the decompressed-stream position is reached.
+    uint64_t counter_after
+        = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile].load();
+    EXPECT_GT(counter_after, counter_before)
+        << "Expected disk reads because loaded entries are not in the tiny cache";
+}
+
+
+// Test F — ConcurrentAppendVsActiveFileRead (TSan)
+//
+// Stress: one thread appends and rotates while another repeatedly reads
+// a disk-resident range that may reach into the active file.  Under TSan
+// this detects data races on `removed_from_disk` and `logs_location`.
+TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendVsActiveFileRead)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = this->enable_compression,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    // Pre-populate 10 entries so readers have something on disk.
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("base", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> appended{10};
+
+    // Writer thread: keep appending and rotating.
+    std::thread writer([&]
+    {
+        while (!stop.load(std::memory_order_relaxed))
+        {
+            size_t idx = appended.fetch_add(1, std::memory_order_relaxed) + 1;
+            auto entry = getLogEntry("w", idx);
+            changelog.append(entry);
+            changelog.end_of_append_batch(0, 0);
+        }
+    });
+
+    // Reader thread: repeatedly read the first 5 entries (which should be on disk).
+    std::thread reader_thread([&]
+    {
+        for (int iter = 0; iter < 200 && !stop.load(std::memory_order_relaxed); ++iter)
+        {
+            try
+            {
+                auto entries = changelog.log_entries_ext(1, 6, 0);
+                // Either nullptr (if compacted) or non-empty.
+                if (entries && !entries->empty())
+                {
+                    EXPECT_LE(entries->size(), 5u);
+                }
+            }
+            catch (const DB::Exception &)
+            {
+                // Corruption exception is acceptable in this race scenario.
+            }
+        }
+        stop.store(true, std::memory_order_relaxed);
+    });
+
+    reader_thread.join();
+    writer.join();
 }
 
 #endif

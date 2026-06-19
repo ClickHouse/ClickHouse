@@ -20,6 +20,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -53,6 +54,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char keeper_changelog_read_plan_resolved[];
+    extern const char keeper_changelog_removed_from_disk_set[];
+    extern const char keeper_changelog_prefetch_pause[];
 }
 
 namespace
@@ -1621,6 +1629,225 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
     return ret;
 }
 
+LogReadPlan LogEntryStorage::getReadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes, uint64_t retained_start) const
+{
+    LogReadPlan plan;
+    /// Special case: negative byte limit means return empty (backpressure signal)
+    if (max_size_bytes == -1)
+        return plan;    /// plan.ok==true, plan.items empty -> EXECUTE returns empty non-null vector
+
+    plan.reserve_hint = end - start;
+    plan.items.reserve(end - start);
+
+    int64_t total_size = 0;
+    const auto size_limit_reached = [&](int64_t entry_size)
+    {
+        if (max_size_bytes == 0)
+            return false;
+        bool limit_reached = total_size > 0 && total_size + entry_size > max_size_bytes;
+        if (!limit_reached)
+            total_size += entry_size;
+        return limit_reached;
+    };
+
+    std::optional<LogReadPlan::FileRun> run;
+    size_t next_position = 0;
+
+    const auto set_new_file = [&](uint64_t idx, const LogLocation & loc)
+    {
+        run.emplace();
+        run->file_description = loc.file_description;
+        run->position = loc.position;
+        run->count = 1;
+        run->first_index = idx;
+        next_position = loc.position + loc.size_in_file;
+    };
+
+    const auto flush_run = [&]
+    {
+        if (run)
+        {
+            plan.items.emplace_back(std::move(*run));
+            run.reset();
+        }
+    };
+
+    SharedLockGuard commit_logs_lock(commit_logs_cache_mutex);
+    for (size_t i = start; i < end; ++i)
+    {
+        /// Non-blocking cache peek: only copy a resolved LogEntryPtr; treat unresolved placeholder as miss.
+        LogEntryPtr cached;
+        if (const CacheEntry * ce = commit_logs_cache.getCacheEntry(i))
+        {
+            if (const auto * r = std::get_if<LogEntryPtr>(ce))
+                cached = *r;
+        }
+        if (!cached)
+        {
+            if (const CacheEntry * ce = latest_logs_cache.getCacheEntry(i))
+            {
+                if (const auto * r = std::get_if<LogEntryPtr>(ce))
+                    cached = *r;
+            }
+        }
+
+        if (cached)
+        {
+            flush_run();
+            if (size_limit_reached(static_cast<int64_t>(cached->get_buf().size())))
+                break;
+            plan.items.emplace_back(std::move(cached));
+            continue;
+        }
+
+        auto it = logs_location.find(i);
+        if (it == logs_location.end())
+        {
+            if (i < retained_start)
+            {
+                /// Entry is below retained start — compacted away => return nullptr via EXECUTE
+                plan.ok = false;
+                return plan;
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Location of log entry with index {} is missing", i);
+        }
+
+        const auto & loc = it->second;
+        if (size_limit_reached(static_cast<int64_t>(loc.size_in_file)))
+            break;
+
+        if (!run)
+        {
+            set_new_file(i, loc);
+        }
+        else if (run->file_description == loc.file_description && next_position == loc.position)
+        {
+            ++run->count;
+            next_position += loc.size_in_file;
+        }
+        else
+        {
+            flush_run();
+            set_new_file(i, loc);
+        }
+    }
+
+    flush_run();
+    return plan;
+}
+
+LogEntriesPtr LogEntryStorage::executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms) const
+{
+    if (!plan.ok)
+        return nullptr;     /// compacted below start -> snapshot fallback
+
+    auto ret = nuraft::cs_new<std::vector<nuraft::ptr<nuraft::log_entry>>>();
+    ret->reserve(plan.reserve_hint);
+
+    Stopwatch watch;    /// DD12 wall-clock deadline
+    const auto deadline_hit = [&]()
+    {
+        return read_deadline_ms != 0 && watch.elapsedMilliseconds() > read_deadline_ms;
+    };
+
+    for (const auto & item : plan.items)
+    {
+        if (const auto * e = std::get_if<LogEntryPtr>(&item))
+        {
+            ret->push_back(*e);
+            continue;
+        }
+
+        const auto & file_run = std::get<LogReadPlan::FileRun>(item);
+        bool compacted = false;
+        bool deadline = false;
+
+        file_run.file_description->withLock(
+            [&]
+            {
+                if (file_run.file_description->removed_from_disk)
+                {
+                    compacted = true;
+                    return;
+                }
+
+                const auto & path = file_run.file_description->path;
+                LOG_TRACE(log, "Reading from path {} {} entries", path, file_run.count);
+
+                const CompressionMethod compression = chooseCompressionMethod(path, "");
+                const bool is_compressed = compression != CompressionMethod::None;
+
+                /// For compressed files: positions in logs_location are decompressed-stream offsets
+                /// (recorded by ChangelogReader which reads through a decompression wrapper).
+                /// We cannot seek to them in the raw compressed byte stream, so we open with
+                /// a decompression wrapper and skip records sequentially until we reach the
+                /// target decompressed-stream position.
+                ///
+                /// For uncompressed files: positions are raw byte offsets — seek directly.
+                std::unique_ptr<ReadBuffer> decompressed_buf;   /// non-null only for compressed files
+                ReadBuffer * buf = nullptr;
+
+                auto raw_file = file_run.file_description->disk->readFile(path, getReadSettings());
+                if (is_compressed)
+                {
+                    decompressed_buf = wrapReadBufferWithCompressionMethod(std::move(raw_file), compression);
+                    buf = decompressed_buf.get();
+                }
+                else
+                {
+                    raw_file->seek(file_run.position, SEEK_SET);
+                    buf = raw_file.get();
+                }
+
+                uint64_t expected = file_run.first_index;
+
+                if (is_compressed)
+                {
+                    /// Skip records until the decompressed stream reaches file_run.position.
+                    while (buf->count() < file_run.position && !buf->eof())
+                    {
+                        [[maybe_unused]] auto skipped = readChangelogRecord(*buf, path);
+                    }
+
+                    if (buf->count() != file_run.position)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Failed to seek to decompressed position {} in compressed file {} (reached {})",
+                            file_run.position,
+                            path,
+                            buf->count());
+                }
+
+                for (size_t k = 0; k < file_run.count; ++k)
+                {
+                    if (deadline_hit())
+                    {
+                        deadline = true;
+                        return;
+                    }
+                    auto record = readChangelogRecord(*buf, path);
+                    if (record.header.index != expected)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Read log index {} but expected {} from {}",
+                            record.header.index,
+                            expected,
+                            path);
+                    ret->push_back(logEntryFromRecord(record));
+                    ProfileEvents::increment(ProfileEvents::KeeperLogsEntryReadFromFile);
+                    ++expected;
+                }
+            });
+
+        if (compacted)
+            return nullptr;     /// removed_from_disk -> snapshot fallback
+        if (deadline)
+            return ret;         /// DD12: return contiguous prefix decoded so far (DD18-valid)
+    }
+
+    return ret;
+}
+
 void LogEntryStorage::getKeeperLogInfo(KeeperLogInfo & log_info) const
 {
     log_info.latest_logs_cache_entries = latest_logs_cache.numberOfEntries();
@@ -2525,6 +2752,17 @@ LogEntriesPtr Changelog::getLogEntriesBetween(uint64_t start, uint64_t end, int6
     return entry_storage.getLogEntriesBetween(start, end, max_size_bytes);
 }
 
+LogReadPlan Changelog::getReadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes)
+{
+    /// getStartIndex() handles the empty-store case: returns max_log_id+1 when empty (NOT 0)
+    return entry_storage.getReadPlan(start, end, max_size_bytes, /*retained_start=*/getStartIndex());
+}
+
+LogEntriesPtr Changelog::executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms)
+{
+    return entry_storage.executeReadPlan(plan, read_deadline_ms);
+}
+
 LogEntryPtr Changelog::entryAt(uint64_t index) const
 {
     return entry_storage.getEntry(index);
@@ -2695,20 +2933,26 @@ void Changelog::backgroundChangelogOperationsThread()
         if (std::holds_alternative<RemoveChangelog>(changelog_operation->operation))
         {
             chassert(changelog_operation->changelog);
-            const auto & changelog = *changelog_operation->changelog;
-            try
-            {
-                changelog.disk->removeFile(changelog.path);
-                LOG_INFO(log, "Removed changelog {} because of compaction.", changelog.path);
-            }
-            catch (Exception & e)
-            {
-                LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", changelog.path, e.message());
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log);
-            }
+            auto & changelog = *changelog_operation->changelog;   /// mutable: we set removed_from_disk
+            changelog.withLock(
+                [&]
+                {
+                    changelog.removed_from_disk = true;   /// set BEFORE removeFile (L1 fence for EXECUTE readers)
+                    FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_removed_from_disk_set);
+                    try
+                    {
+                        changelog.disk->removeFile(changelog.path);
+                        LOG_INFO(log, "Removed changelog {} because of compaction.", changelog.path);
+                    }
+                    catch (Exception & e)
+                    {
+                        LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", changelog.path, e.message());
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log);
+                    }
+                });
         }
         else if (auto * move_operation = std::get_if<MoveChangelog>(&changelog_operation->operation))
         {

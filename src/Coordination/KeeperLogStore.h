@@ -32,12 +32,14 @@ public:
     /// Remove all entries starting from index and write entry into index position
     void write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & entry) override;
 
-    /// Return entries between [start, end)
-    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override;
+    /// Return entries between [start, end).
+    /// Uses PLAN-EXECUTE split: PLAN holds changelog_lock (shared), EXECUTE runs without it.
+    nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> log_entries(uint64_t start, uint64_t end) override TSA_NO_THREAD_SAFETY_ANALYSIS;
 
-    /// Return entries between [start, end) with total size limited by batch_size_hint_in_bytes
+    /// Return entries between [start, end) with total size limited by batch_size_hint_in_bytes.
+    /// Uses PLAN-EXECUTE split: PLAN holds changelog_lock (shared), EXECUTE runs without it.
     nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
-    log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes) override;
+    log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes) override TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Return entry at index
     nuraft::ptr<nuraft::log_entry> entry_at(uint64_t index) override;

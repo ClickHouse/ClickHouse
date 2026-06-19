@@ -91,6 +91,19 @@ struct ChangelogFileDescription
 
     bool deleted = false;
 
+    /// Set under file_mutex (withLock) by the background RemoveChangelog operation IMMEDIATELY before
+    /// disk->removeFile(). A reader that resolved a file location outside changelog_lock re-checks this
+    /// under the same withLock; if set, it treats the file as compacted-away => the read returns nullptr
+    /// (NuRaft snapshot fallback). DISTINCT from `deleted` (above), which is set under writer_mutex/
+    /// changelog_lock and read by ChangelogWriter::setFile OUTSIDE file_mutex. Reusing `deleted`
+    /// would be a multi-domain data race; this flag lives entirely in the file_mutex domain.
+    bool removed_from_disk = false;
+
+    /// Set true (release) after the file is finalized and sealed (complete + !broken_at_end + not the
+    /// active writer file). Monotonic false->true. Used by Layer 2 read-ahead to determine whether it is
+    /// safe to read a file to physical EOF.
+    std::atomic<bool> sealed{false};
+
     std::deque<std::weak_ptr<ChangelogFileOperation>> file_operations;
 
     /// How many entries should be stored in this log
@@ -152,6 +165,38 @@ struct LogLocation
     size_t position;
     size_t entry_size;
     size_t size_in_file;
+};
+
+/// Transient plan produced by PLAN (under changelog_lock) and consumed by EXECUTE (lock-free).
+/// Holds shared_ptr refs to keep file descriptors alive across the lock release.
+struct LogReadPlan
+{
+    /// A coalesced contiguous run of records in ONE file. first_index lets EXECUTE validate against a
+    /// torn/overwritten read. FileRuns may target the active writer file too; the append-only invariant
+    /// makes that safe — exactly as today's getLogEntriesBetween already does.
+    struct FileRun
+    {
+        ChangelogFileDescriptionPtr file_description;   /// keeps the descriptor object alive across lock release
+        size_t position = 0;
+        size_t count = 0;
+        uint64_t first_index = 0;
+    };
+
+    /// L2: open-ended fill cursor for read-ahead (sealed files only, read to EOF).
+    /// Not used by Layer 1 EXECUTE; reserved for Layer 2 FILL.
+    struct FillCursor
+    {
+        ChangelogFileDescriptionPtr file_description;
+        size_t start_position = 0;
+        uint64_t first_index = 0;
+    };
+
+    using Item = std::variant<LogEntryPtr, FileRun>;    /// LogEntryPtr = already-resolved cache entry
+    std::vector<Item> items;
+    std::vector<FillCursor> fill_cursors;   /// L2: sealed-file cursors for the forward window (Layer 2 only)
+    size_t reserve_hint = 0;
+    bool ok = true;     /// false => a needed location was missing below retained start => EXECUTE returns nullptr
+    bool readahead_engaged = false;  /// L2: false => caller uses items via L1 executeReadPlan
 };
 
 struct PrefetchedCacheEntry
@@ -222,6 +267,24 @@ struct LogEntryStorage
     void addLogLocations(std::vector<IndexWithLogLocation> && indices_with_log_locations);
 
     void refreshCache();
+
+    /// PLAN: resolve [start,end) into a LogReadPlan. PRECONDITION: caller holds changelog_lock (shared)
+    /// so latest_logs_cache and logs_location are stable; takes commit_logs_cache_mutex (shared) internally
+    /// for non-blocking cache PEEKs only. Does NO disk I/O, never resolves a prefetch future, never reads
+    /// current_writer, mutates NO shared state. retained_start is the log's first retained index passed
+    /// in by the Changelog forwarder (= Changelog::getStartIndex(), which is max_log_id+1 for an EMPTY
+    /// store — NOT getFirstIndex(), which returns 0 when empty).
+    LogReadPlan getReadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes, uint64_t retained_start) const;
+
+    /// EXECUTE: run the plan's file reads under per-file withLock. Holds NEITHER changelog_lock NOR
+    /// commit_logs_cache_mutex. Returns nullptr ONLY when !ok (compacted below start) or a file's
+    /// removed_from_disk is set; corruption / index mismatch propagate as exceptions (as today).
+    /// NO byte logic here: the byte budget is applied at PLAN time from size_in_file metadata,
+    /// so EXECUTE never reads a record merely to learn its size. It reads exactly the planned count records.
+    /// read_deadline_ms (DD12): 0 = no deadline; >0 = wall-clock budget checked at each record boundary
+    /// via a Stopwatch — on exceed, return the contiguous prefix decoded so far (DD18-valid).
+    /// Intentionally called WITHOUT changelog_lock held; see LogReadPlan/PLAN-EXECUTE split.
+    LogEntriesPtr executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms = 0) const TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end, int64_t max_size_bytes = 0) const;
 
@@ -385,6 +448,11 @@ public:
 
     /// Return log entries between [start, end) with optional byte size limit
     LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index, int64_t max_size_bytes = 0);
+
+    /// Layer 1 forwarders: PLAN under changelog_lock, EXECUTE outside.
+    LogReadPlan getReadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes = 0);
+    /// Intentionally called WITHOUT changelog_lock held; see LogReadPlan/PLAN-EXECUTE split.
+    LogEntriesPtr executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms = 0) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Return entry at position index
     LogEntryPtr entryAt(uint64_t index) const;

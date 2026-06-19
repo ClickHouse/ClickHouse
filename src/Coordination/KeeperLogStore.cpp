@@ -1,4 +1,6 @@
 #include <Coordination/KeeperLogStore.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfiledLocks.h>
 #include <IO/CompressionMethod.h>
 #include <Disks/DiskLocal.h>
@@ -7,6 +9,18 @@
 namespace ProfileEvents
 {
     extern const Event KeeperChangelogLockWaitMicroseconds;
+}
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+namespace FailPoints
+{
+    extern const char keeper_changelog_read_plan_resolved[];
+}
 }
 
 namespace DB
@@ -63,15 +77,36 @@ void KeeperLogStore::write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & e
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_entries(uint64_t start, uint64_t end)
 {
-    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-    return changelog.getLogEntriesBetween(start, end);
+    LogReadPlan plan;
+    {
+        ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+        plan = changelog.getReadPlan(start, end, /*max_size_bytes=*/0);
+    }    /// changelog_lock released here
+
+    FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_read_plan_resolved);
+
+    auto res = changelog.executeReadPlan(plan);
+    if (!res)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Log entries [{}, {}) are no longer available (compacted/removed)",
+            start,
+            end);
+    return res;
 }
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
 KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes)
 {
-    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-    return changelog.getLogEntriesBetween(start, end, batch_size_hint_in_bytes);
+    LogReadPlan plan;
+    {
+        ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+        plan = changelog.getReadPlan(start, end, batch_size_hint_in_bytes);
+    }    /// changelog_lock released here
+
+    FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_read_plan_resolved);
+
+    return changelog.executeReadPlan(plan);   /// nullptr -> NuRaft snapshot fallback
 }
 
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)
