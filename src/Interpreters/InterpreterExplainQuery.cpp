@@ -76,6 +76,7 @@ namespace Setting
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsOverflowMode result_overflow_mode;
     extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
@@ -1002,12 +1003,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             QueryPlan plan;
             ContextPtr context;
 
+            std::function<std::unique_ptr<QueryPlan>()> parallel_replicas_builder;
+
             UInt64 planning_ns = 0;
             Stopwatch watch;
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
                 context = interpreter.getContext();
+                parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
@@ -1021,6 +1025,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto optimization_settings = QueryPlanOptimizationSettings(context);
 
             optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+            optimization_settings.query_plan_with_parallel_replicas_builder = parallel_replicas_builder;
 
             watch.restart();
             plan.optimize(optimization_settings);
@@ -1030,6 +1035,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.
             /// EXPLAIN ANALYZE rejects distributed plans above, so this covers the whole plan tree.
             PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan);
+
+            plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
             watch.restart();
             auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context), false);
