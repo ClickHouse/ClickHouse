@@ -180,7 +180,7 @@ constexpr auto USER_QUERY_LOG_TABLE_NAME = "user_query_log";
 
 String getSystemViewCreateQuery(const String & view_name, const String & select_query)
 {
-    return "CREATE VIEW system." + backQuoteIfNeed(view_name) + " DEFINER = default SQL SECURITY DEFINER AS " + select_query;
+    return "CREATE VIEW system." + backQuoteIfNeed(view_name) + " SQL SECURITY NONE AS " + select_query;
 }
 
 ASTPtr parseSystemViewCreateQuery(const String & view_name, const String & select_query)
@@ -220,7 +220,7 @@ void validateExistingSystemView(
         throwReservedSystemViewName(view_name);
 
     auto metadata = view->getInMemoryMetadataPtr(context, false);
-    if (metadata->sql_security_type != SQLSecurityType::DEFINER || !metadata->definer || *metadata->definer != "default")
+    if (metadata->sql_security_type != SQLSecurityType::NONE || metadata->definer)
         throwReservedSystemViewName(view_name);
 
     if (!metadata->getSelectQuery().inner_query)
