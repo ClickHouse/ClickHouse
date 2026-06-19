@@ -1265,7 +1265,7 @@ void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_
             ColumnPtr column = resolved->column;
             if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()); column_const && column_const->empty())
                 column = ColumnConst::create(column_const->getDataColumnPtr(), 1);
-            args.push_back({std::move(column), node.children[i]->result_type, node.children[i]->result_name});
+            args.push_back({column, node.children[i]->result_type, node.children[i]->result_name});
         }
         if (!all_resolved)
             continue;
