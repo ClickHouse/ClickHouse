@@ -39,7 +39,6 @@ namespace FailPoints
 {
     extern const char plain_object_storage_write_fail_on_directory_create[];
     extern const char plain_object_storage_write_fail_on_directory_move[];
-    extern const char plain_object_storage_write_fail_after_empty_file_object[];
     extern const char plain_object_storage_copy_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
@@ -320,14 +319,12 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
 MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
     std::string path_,
     StoredObject object_,
-    bool create_empty_object_,
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_)
     : path(std::move(path_))
     , object(std::move(object_))
-    , create_empty_object(create_empty_object_)
     , object_storage(std::move(object_storage_))
     , fs_tree(std::move(fs_tree_))
     , layout(std::move(layout_))
@@ -340,38 +337,19 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}', size: {}", path, object.bytes_size);
 
-    if (fs_tree->existsFile(path))
-        return;
-
-    /// plain_rewritable rebuilds metadata from the object listing, so a 0-byte file with no copied
-    /// blob must still get a real (empty) object here or it would not survive reload or a later copy.
-    if (create_empty_object)
+    if (!fs_tree->existsFile(path))
     {
-        /// Mark attempted before the write so undo() removes the object even if the write created it then threw.
-        object_write_attempted = true;
-        object_storage->writeObject(
-            object,
-            WriteMode::Rewrite,
-            /*object_attributes*/ std::nullopt,
-            /*buf_size*/ 128,
-            /*settings*/ getWriteSettings())->finalize();
-
-        fiu_do_on(FailPoints::plain_object_storage_write_fail_after_empty_file_object, {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after creating empty file object for '{}'", path);
-        });
+        fs_tree->recordFile(path, {object.bytes_size, std::time(nullptr)});
+        written = true;
     }
-
-    fs_tree->recordFile(path, {object.bytes_size, std::time(nullptr)});
-    written = true;
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
 {
-    if (written)
-        fs_tree->removeFile(path);
+    if (!written)
+        return;
 
-    if (object_write_attempted)
-        object_storage->removeObjectIfExists(object);
+    fs_tree->removeFile(path);
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
