@@ -83,6 +83,9 @@ public:
 
     void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server);
 
+    /// Update read-ahead settings (thread-safe, takes effect on next admission).
+    void setReadAheadSettings(ReadAheadSettings settings) TSA_NO_THREAD_SAFETY_ANALYSIS;
+
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
     std::vector<KeeperChangelogStatus> getChangelogsStatus() const;

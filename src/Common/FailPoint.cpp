@@ -208,7 +208,10 @@ static struct InitFiu
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     PAUSEABLE(keeper_changelog_read_plan_resolved) \
     PAUSEABLE(keeper_changelog_removed_from_disk_set) \
-    PAUSEABLE(keeper_changelog_prefetch_pause)
+    PAUSEABLE(keeper_changelog_prefetch_pause) \
+    PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
+    PAUSEABLE(keeper_changelog_readahead_serve_wait) \
+    PAUSEABLE(keeper_changelog_readahead_park_armed)
 
 namespace FailPoints
 {
