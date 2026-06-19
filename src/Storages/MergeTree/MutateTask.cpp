@@ -3171,7 +3171,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 if (already_in_recalc.contains(index.name))
                     continue;
 
-                auto index_ptr = index_factory.get(index, *ctx->data->getSettings());
+                auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
                 const String file_name = index_ptr->getFileName();
                 for (const auto & sub : index_ptr->getSubstreams())
                 {
