@@ -813,6 +813,7 @@ TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
             args.chroot.pop_back();
     }
 
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::MULTI_READ);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_NOT_EXISTS);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
