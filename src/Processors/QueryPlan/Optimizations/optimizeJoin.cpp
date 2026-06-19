@@ -394,12 +394,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
     {
-        /// An `arrayJoin` embedded in the expression multiplies the number of rows by an unknown
-        /// factor, so the child's row count is neither an estimate nor an upper bound for this
-        /// subtree. (The `ARRAY JOIN` clause uses a dedicated `ArrayJoinStep`, which is not
-        /// row-preserving and is rejected by the fallthrough below; this guards the function form
-        /// folded into expression actions.)
-        if (expression_step->getExpression().hasArrayJoin())
+        /// An `arrayJoin` folded into the expression actions multiplies the number of rows by an
+        /// unknown factor, so the child's row count is neither an estimate nor an upper bound for
+        /// this subtree. `ExpressionStep` already reflects this in its traits
+        /// (`preserves_number_of_rows = !hasArrayJoin()`), so defer to that instead of
+        /// re-deriving it. (The `ARRAY JOIN` clause uses a dedicated `ArrayJoinStep`, also not
+        /// row-preserving, and is rejected by the fallthrough below.)
+        if (!expression_step->getTransformTraits().preserves_number_of_rows)
             return {};
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
@@ -409,6 +410,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
     {
         const auto & dag = filter_step->getExpression();
+        /// `FilterStep` always declares `preserves_number_of_rows = false` (it only removes rows),
+        /// so its trait cannot single out the row-multiplying case -- check for an `arrayJoin`
+        /// directly. A filter only reduces rows, so otherwise the child count stays a valid bound.
         if (dag.hasArrayJoin())
             return {};
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
