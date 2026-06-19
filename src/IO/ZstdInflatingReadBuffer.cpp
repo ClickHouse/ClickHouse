@@ -10,9 +10,9 @@ namespace ErrorCodes
     extern const int ZSTD_DECODER_FAILED;
 }
 
-ZstdInflatingReadBuffer::ZstdInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max, bool require_frame_complete)
+ZstdInflatingReadBuffer::ZstdInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max, bool require_frame_complete_)
     : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
-    , require_frame_complete_(require_frame_complete)
+    , require_frame_complete(require_frame_complete_)
 {
     dctx = ZSTD_createDCtx();
     input = {nullptr, 0, 0};
@@ -82,12 +82,9 @@ bool ZstdInflatingReadBuffer::nextImpl()
         /// If end of file is reached, fill eof variable and return true if there is some data in buffer, otherwise return false
         if (in->eof())
         {
-            /// When require_frame_complete_ is set, we must verify that ZSTD_decompressStream
-            /// returned 0 (frame fully decoded, including content checksum).  A non-zero ret
-            /// at inner-buffer EOF means the frame's epilogue (e.g. the 4-byte content checksum
-            /// written when ZSTD_c_checksumFlag=1) was never fed to the decompressor, so the
-            /// integrity check was silently skipped.  Used by V8 snapshot frame readers.
-            if (require_frame_complete_ && ret != 0)
+            /// With require_frame_complete, a non-zero ret at EOF means the ZSTD frame epilogue
+            /// (e.g. 4-byte content checksum) was never consumed — integrity check silently skipped.
+            if (require_frame_complete && ret != 0)
                 throw Exception(
                     ErrorCodes::ZSTD_DECODER_FAILED,
                     "ZSTD frame incomplete: input ended before frame checksum/epilogue was consumed"

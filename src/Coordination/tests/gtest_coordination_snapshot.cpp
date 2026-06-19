@@ -42,6 +42,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
+#include <algorithm>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
@@ -3597,9 +3598,11 @@ TEST(CoordinationChunkedSnapshotTest, ApplyChunkedSnapshotReplacesCommittedState
     // in the loaded storage's acl_map (serialized in the METADATA chunk, deserialized
     // by the parallel NODES-chunk path that batches acl_usage into acl_map.addUsageBatch).
     {
-        const auto & mapping = storage.acl_map.getMapping();
-        ASSERT_EQ(mapping.count(test_acl_id), 1u) << "ACL id " << test_acl_id << " must be present in acl_map after chunked apply_snapshot";
-        EXPECT_EQ(mapping.at(test_acl_id), expected_acl)
+        const auto mapping = storage.acl_map.getMapping();
+        auto acl_it = std::find_if(
+            mapping.begin(), mapping.end(), [&](const auto & entry) { return entry.first == test_acl_id; });
+        ASSERT_NE(acl_it, mapping.end()) << "ACL id " << test_acl_id << " must be present in acl_map after chunked apply_snapshot";
+        EXPECT_EQ(acl_it->second, expected_acl)
             << "ACL for id " << test_acl_id << " must match the original ACL after chunked apply_snapshot";
         EXPECT_EQ(storage.container.getValue("/b_acl").acl_id, test_acl_id) << "/b_acl must retain its acl_id after chunked apply_snapshot";
     }
