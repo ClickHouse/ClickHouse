@@ -2326,7 +2326,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                 else if (name == "storage_policy")
                 {
                     found_storage_policy_setting = true;
-                    if (!is_attach)
+                    if (!is_loading_from_existing_metadata)
                     {
                         auto policy_name = value.safeGet<String>();
                         context->getStoragePolicy(policy_name);
