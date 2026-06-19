@@ -1285,7 +1285,9 @@ private:
 
         DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, arguments[1].type});
         ColumnPtr col_nested = castColumn({ col_array->getDataPtr(), array_elements_type, "" }, common_type);
-        ColumnPtr item_arg = castColumn({ arguments[1].column, removeLowCardinality(index_type), "" }, common_type);
+        /// Strip LowCardinality from the column too, not just the type, so the {column, type} pair stays consistent.
+        ColumnPtr item_arg = castColumn(
+            {arguments[1].column->convertToFullColumnIfLowCardinality(), removeLowCardinality(index_type), ""}, common_type);
 
         auto col_res = ResultColumnType::create();
 
