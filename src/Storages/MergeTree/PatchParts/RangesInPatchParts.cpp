@@ -269,7 +269,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     static const MergeTreeSettings default_settings;
     auto index_ptr = MergeTreeIndexFactory::instance().get(metadata_snapshot, *it, default_settings);
     /// Check that index exists in data part. It may be absent for parts created in earlier versions.
-    if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName()))
+    if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName(), &patch_part->getDataPartStorage()))
         return {};
 
     size_t total_marks_without_final = patch_part->index_granularity->getMarksCountWithoutFinal();
