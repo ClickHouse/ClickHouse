@@ -3220,74 +3220,110 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
 bool ClientBase::queryNeedsContinuation(const String & text) const
 {
-    /// Check if the query text fails to parse specifically because the parser
-    /// reached the end of input and expected more tokens. This is used in
-    /// single-line interactive mode to automatically prompt for continuation
-    /// lines instead of showing a syntax error.
-
-    auto trimmed = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
-    if (trimmed.empty())
-        return false;
-
-    const auto & settings = client_context->getSettingsRef();
-    const Dialect dialect = settings[Setting::dialect];
-
-    std::unique_ptr<IParserBase> parser;
-    const char * begin = text.data();
-    const char * end = begin + text.size();
-
-    if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-    else if (dialect == Dialect::prql)
-        parser = std::make_unique<ParserPRQLQuery>(0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-    else if (dialect == Dialect::promql)
-        parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
-    else if (dialect == Dialect::polyglot)
-        parser = std::make_unique<ParserPolyglotQuery>(0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
-    else
-        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-
-    unsigned max_parser_depth = static_cast<unsigned>(settings[Setting::max_parser_depth]);
-    unsigned max_parser_backtracks = static_cast<unsigned>(settings[Setting::max_parser_backtracks]);
-
-    Tokens tokens(begin, end, 0, true);
-    IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
-
-    /// If there are no significant tokens, no continuation needed.
-    if (token_iterator->isEnd())
-        return false;
-
-    /// Check for unclosed opening parentheses -- these clearly need continuation.
-    /// Only trigger on unclosed opens, not excess closing brackets (which are syntax errors).
+    /// Returns true if the buffer is an incomplete query, i.e. its last statement
+    /// fails to parse specifically because the parser reached the end of input and
+    /// expected more tokens. Used in single-line interactive mode to insert a
+    /// newline into the same edit buffer instead of submitting the query.
+    ///
+    /// This runs from the `replxx` <ENTER> key binding, which is outside the
+    /// `try`/`catch` around `processQueryText` in `runInteractive`. It must
+    /// therefore never throw (some parsers, e.g. `ParserPRQLQuery` or
+    /// `ParserPrometheusQuery`, throw on invalid input) and must have no side
+    /// effects -- on any error it returns false so the line is committed and the
+    /// regular query-processing path reports the error and returns to the prompt.
+    try
     {
-        Tokens paren_tokens(begin, end, 0, true);
-        UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(paren_tokens));
-        bool has_unclosed_open = false;
-        for (const auto & token : unmatched)
+        auto trimmed = trim(text, [](char c) { return isWhitespaceASCII(c); });
+        if (trimmed.empty())
+            return false;
+
+        /// An explicit statement terminator means "submit now", even if the
+        /// statement is otherwise incomplete (this is how the user forces an
+        /// incomplete query to be submitted to see its syntax error). Checked
+        /// here, independently of the highlighter, because with `--highlight 0`
+        /// `ReplxxLineReader` never sets its delimiter flag.
+        if (trimmed.ends_with(";") || trimmed.ends_with("\\G"))
+            return false;
+
+        const auto & settings = client_context->getSettingsRef();
+        const Dialect dialect = settings[Setting::dialect];
+
+        std::unique_ptr<IParserBase> parser;
+        const char * begin = text.data();
+        const char * end = begin + text.size();
+
+        if (dialect == Dialect::kusto)
+            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        else if (dialect == Dialect::prql)
+            parser = std::make_unique<ParserPRQLQuery>(0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        else if (dialect == Dialect::promql)
+            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+        else if (dialect == Dialect::polyglot)
+            parser = std::make_unique<ParserPolyglotQuery>(0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+        else
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+
+        unsigned max_parser_depth = static_cast<unsigned>(settings[Setting::max_parser_depth]);
+        unsigned max_parser_backtracks = static_cast<unsigned>(settings[Setting::max_parser_backtracks]);
+
+        Tokens tokens(begin, end, 0, true);
+        IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+
+        /// If there are no significant tokens, no continuation needed.
+        if (token_iterator->isEnd())
+            return false;
+
+        /// Check for unclosed opening parentheses -- these clearly need continuation.
+        /// Only trigger on unclosed opens, not excess closing brackets (which are syntax errors).
         {
-            if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
+            Tokens paren_tokens(begin, end, 0, true);
+            UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(paren_tokens));
+            bool has_unclosed_open = false;
+            for (const auto & token : unmatched)
             {
-                has_unclosed_open = true;
-                break;
+                if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
+                {
+                    has_unclosed_open = true;
+                    break;
+                }
             }
+            if (has_unclosed_open)
+                return true;
         }
-        if (has_unclosed_open)
-            return true;
+
+        /// Parse statements one by one. The buffer needs continuation only if its
+        /// last statement is incomplete because the parser reached the end of
+        /// input. Earlier complete statements must not be committed (and executed,
+        /// possibly with side effects) just because a later one is unfinished.
+        while (true)
+        {
+            while (token_iterator->type == TokenType::Semicolon)
+                ++token_iterator;
+            if (token_iterator->isEnd())
+                return false;
+
+            ASTPtr ast;
+            Expected expected;
+            if (!parser->parse(token_iterator, ast, expected))
+            {
+                /// Continuation only if the failure is at the end of input.
+                return token_iterator.max().type == TokenType::EndOfStream;
+            }
+
+            if (token_iterator->isEnd())
+                return false;
+            if (token_iterator->type == TokenType::Semicolon)
+                continue;
+            /// Tokens remain after a fully parsed statement that are not a new
+            /// statement (e.g. INSERT data, or a real syntax error). Submit and
+            /// let the normal query-processing path handle it.
+            return false;
+        }
     }
-
-    ASTPtr ast;
-    Expected expected;
-    bool parse_res = parser->parse(token_iterator, ast, expected);
-
-    if (parse_res)
+    catch (...)
     {
-        /// Parsed successfully. No continuation needed.
         return false;
     }
-
-    /// Parsing failed. Check if the failure is at the end of input.
-    const auto last_token = token_iterator.max();
-    return last_token.type == TokenType::EndOfStream;
 }
 
 

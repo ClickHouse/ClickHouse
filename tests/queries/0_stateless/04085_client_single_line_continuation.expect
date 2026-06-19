@@ -50,6 +50,24 @@ send -- "SELECT;\r"
 expect "Syntax error"
 expect ":) "
 
+# A trailing terminator forces submission even when an opening parenthesis is
+# still unclosed, so the user is never stuck unable to submit.
+send -- "SELECT (;\r"
+expect "Syntax error"
+expect ":) "
+
+# Continuation considers the whole buffer: when it holds several statements, an
+# incomplete final statement continues without committing (and running) the
+# earlier complete ones. "SELECT 1; SELECT" continues; after completing it with
+# "2", both statements run and no syntax error is produced.
+send -- "SELECT 1; SELECT\r"
+send -- "2\r"
+expect {
+    "Syntax error" { exit 1 }
+    "│ 2 │" {}
+}
+expect ":) "
+
 # Ctrl+C while editing a continued (incomplete) query discards it without
 # submitting; the client returns to a fresh prompt and still accepts new queries.
 send -- "SELECT\r"
