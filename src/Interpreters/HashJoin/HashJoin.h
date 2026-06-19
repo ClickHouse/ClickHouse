@@ -227,6 +227,8 @@ public:
         M(key64)                       \
         M(key_string)                  \
         M(key_fixed_string)            \
+        M(keys32)                      \
+        M(keys64)                      \
         M(keys128)                     \
         M(keys256)                     \
         M(hashed)                      \
@@ -234,6 +236,8 @@ public:
         M(two_level_key64)             \
         M(two_level_key_string)        \
         M(two_level_key_fixed_string)  \
+        M(two_level_keys32)            \
+        M(two_level_keys64)            \
         M(two_level_keys128)           \
         M(two_level_keys256)           \
         M(two_level_hashed)            \
@@ -261,6 +265,8 @@ public:
         M(two_level_key64 __VA_OPT__(,) __VA_ARGS__)            \
         M(two_level_key_string __VA_OPT__(,) __VA_ARGS__)       \
         M(two_level_key_fixed_string __VA_OPT__(,) __VA_ARGS__) \
+        M(two_level_keys32 __VA_OPT__(,) __VA_ARGS__)           \
+        M(two_level_keys64 __VA_OPT__(,) __VA_ARGS__)           \
         M(two_level_keys128 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
@@ -303,6 +309,8 @@ public:
         std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
         std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_string;
         std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
+        std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           keys32;
+        std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           keys64;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
@@ -310,6 +318,8 @@ public:
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
         std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
         std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
+        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_keys32;
+        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_keys64;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
@@ -530,6 +540,8 @@ public:
     /// Must only be called when `haveCompressed()` is true.
     DecompressedColumnsPtr getDecompressedColumns(const ColumnsInfo * compressed) const;
 
+    void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
+
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
@@ -596,6 +608,7 @@ private:
     size_t max_joined_block_bytes = 0;
     bool joined_block_split_single_row = false;
     bool enable_lazy_columns_replication = false;
+    bool enable_lazy_columns_indexing = false;
     bool enable_prefetch = true;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
