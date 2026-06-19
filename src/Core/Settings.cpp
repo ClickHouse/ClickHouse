@@ -7959,6 +7959,10 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
     \
+    DECLARE(UInt64, generate_random_max_json_dynamic_keys, 5, R"(
+Maximum number of randomly generated dynamic paths per JSON object in `generateRandom`. Has no effect for non-JSON columns.
+)", 0) \
+    \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
