@@ -93,3 +93,19 @@ SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
 SELECT NULL <> ALL([NULL]);   -- NOT has([NULL], NULL)              -> 0
 SELECT NULL < SOME([1]);      -- arrayExists(_a -> NULL < _a, [1])  -> 0
 SELECT NULL > ALL([1]);       -- arrayAll(_a -> NULL > _a, [1])     -> 0
+
+-- The keyword predicates `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` carry their own
+-- null-safe semantics through the same `arrayExists` / `arrayAll` rewrite: they treat
+-- `NULL` as an ordinary comparable value and always return `0`/`1` (never `NULL`), so the
+-- result must not fold to `0` the way the `<` / `>` forms above do. These cases pin that
+-- behaviour and would give a different answer if the rewrite were `equals` / `notEquals`.
+SELECT NULL IS DISTINCT FROM SOME([NULL, 1]);     -- exists: NULL distinct from 1               -> 1
+SELECT NULL IS DISTINCT FROM ALL([NULL, 1]);      -- all: NULL not distinct from NULL           -> 0
+SELECT NULL IS NOT DISTINCT FROM SOME([NULL, 1]); -- exists: NULL not distinct from NULL (= 0)  -> 1
+SELECT NULL IS NOT DISTINCT FROM ALL([NULL, 1]);  -- all: NULL distinct from 1                  -> 0
+SELECT 1 IS DISTINCT FROM SOME([NULL]);           -- exists: 1 distinct from NULL (!= 0)        -> 1
+SELECT 1 IS DISTINCT FROM ALL([NULL]);            -- all: 1 distinct from NULL (!= 0)           -> 1
+SELECT 1 IS NOT DISTINCT FROM SOME([NULL, 1]);    -- exists: 1 not distinct from 1              -> 1
+-- The keyword form must stay equivalent to the explicit lambda form even with `NULL`.
+SELECT (NULL IS NOT DISTINCT FROM SOME([NULL, 1])) = arrayExists(_a -> NULL IS NOT DISTINCT FROM _a, [NULL, 1]);
+SELECT (1 IS DISTINCT FROM ALL([NULL])) = arrayAll(_a -> 1 IS DISTINCT FROM _a, [NULL]);
