@@ -67,16 +67,6 @@ def test_drop_partition_with_evolved_spec_is_rejected(started_cluster_iceberg_wi
     assert instance.query(f"SELECT count() FROM {table_name}") == "5\n"
 
 
-@pytest.mark.xfail(
-    reason=
-    "DROP PARTITION on a Spark-written manifest re-emits survivor entries "
-    "without a `data_sequence_number`, which violates Iceberg v2 (entries "
-    "with status=EXISTING must carry the sequence_number that first added "
-    "the file). The follow-up SELECT raises ICEBERG_SPECIFICATION_VIOLATION "
-    "from ManifestFileIterator. See the comment in `generateExistingManifestFile` "
-    "for the symmetric snapshot_id handling that already refuses this case.",
-    strict=True,
-)
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_drop_partition_on_spark_table_round_trip(started_cluster_iceberg_with_spark, storage_type):
     """Happy path: a Spark-created partitioned Iceberg table is modified by
@@ -143,11 +133,12 @@ def test_drop_partition_on_spark_table_round_trip(started_cluster_iceberg_with_s
 
     # Spark's Hadoop catalog reads the latest metadata via version-hint.text;
     # point it at the file CH just wrote. Iceberg metadata files are named
-    # `v<N>.metadata.json` or `v<N>-<uuid>.metadata.json`.
+    # `v<N>.metadata.json` or `v<N>-<uuid>.metadata.json`, optionally with a
+    # compression suffix (e.g. `v<N>.gz.metadata.json`).
     metadata_dir = os.path.join(local_dir, "metadata")
     versions = []
     for name in os.listdir(metadata_dir):
-        m = re.match(r"v(\d+)(?:[-.]).*\.metadata\.json$", name)
+        m = re.match(r"v(\d+)(?:[-.].*)?\.metadata\.json$", name)
         if m:
             versions.append(int(m.group(1)))
     assert versions, "ClickHouse should have written a new metadata.json"
