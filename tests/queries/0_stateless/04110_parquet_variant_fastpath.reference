@@ -1,0 +1,6 @@
+commit	a	create	x
+commit		create	x
+other		delete	y
+			
+2
+0

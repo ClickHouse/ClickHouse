@@ -16,4 +16,3 @@ $CLICKHOUSE_LOCAL -q "select toFixedString(42424242424242424242424242424242::UIn
 
 # BYTE_ARRAY of length 32 is interpreted as text by the v3 reader.
 $CLICKHOUSE_LOCAL -q "select toString(42424242424242424242424242424242::UInt256) as x format Parquet" | $CLICKHOUSE_LOCAL --input-format=Parquet --structure='x UInt256' -q "select * from table"
-

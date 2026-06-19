@@ -1,0 +1,8 @@
+object_root_value_is_null=True
+object_a_value_is_null=True
+object_a_typed_value=0
+object_ts_value_is_null=True
+object_ts_typed_value=2024-01-02T03:04:05.123456+00:00
+json_root_value_is_null=True
+json_typed_value=18446744073709551615
+json_typed_column=INT64 Int(bitWidth=64, isSigned=false)

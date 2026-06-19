@@ -1,0 +1,6 @@
+metadata	json.metadata	BYTE_ARRAY	None
+typed_value	json.typed_value.a.typed_value	BYTE_ARRAY	String
+value	json.typed_value.a.value	BYTE_ARRAY	None
+typed_value	json.typed_value.b.typed_value	INT64	None
+value	json.typed_value.b.value	BYTE_ARRAY	None
+value	json.value	BYTE_ARRAY	None
