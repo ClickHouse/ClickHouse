@@ -1,10 +1,6 @@
--- Regression test for a LOGICAL_ERROR (IColumn::assertTypeEquality) in
--- HashJoin::buildAdditionalFilter. A non-equi ON conjunct (l.k2 != r.k2) becomes a
--- residual (mixed) filter whose required columns reference the raw, non-Nullable right
--- inputs, while under join_use_nulls = 1 the right side of a key-value-storage join
--- (JoinStepLogicalLookup) reaches the saved join block already promoted to Nullable. A
--- dictionary is a key-value entity, so it reproduces the crash without EmbeddedRocksDB and
--- runs in normal/fasttest builds. join_algorithm = 'hash' forces the HashJoin path.
+-- The LOGICAL_ERROR exception in HashJoin::buildAdditionalFilter (a non-equi ON conjunct
+-- under join_use_nulls = 1) only reproduces with a key-value-storage right side, so this
+-- uses a COMPLEX_KEY_HASHED dictionary (no EmbeddedRocksDB needed, runs in fasttest).
 
 DROP DICTIONARY IF EXISTS dict;
 DROP TABLE IF EXISTS dict_src;
