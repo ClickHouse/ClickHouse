@@ -97,6 +97,7 @@ void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory);
 void registerOutputFormatOpenMetrics(FormatFactory & factory);
 void registerOutputFormatSQLInsert(FormatFactory & factory);
+void registerOutputFormatPNG(FormatFactory & factory);
 void registerOutputFormatHash(FormatFactory & factory);
 
 /// Input only formats.
@@ -155,6 +156,9 @@ void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
+
+void registerInputFormatGeoJSON(FormatFactory & factory);
+void registerGeoJSONSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -249,11 +253,13 @@ void registerFormats()
     registerOutputFormatPrometheus(factory);
     registerOutputFormatOpenMetrics(factory);
     registerOutputFormatSQLInsert(factory);
+    registerOutputFormatPNG(factory);
     registerOutputFormatHash(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
     registerInputFormatJSONAsObject(factory);
+    registerInputFormatGeoJSON(factory);
     registerInputFormatLineAsString(factory);
     registerInputFormatOpenMetrics(factory);
 #if USE_HIVE
@@ -282,6 +288,7 @@ void registerFormats()
     registerJSONObjectEachRowSchemaReader(factory);
     registerJSONAsStringSchemaReader(factory);
     registerJSONAsObjectSchemaReader(factory);
+    registerGeoJSONSchemaReader(factory);
     registerJSONColumnsSchemaReader(factory);
     registerJSONCompactColumnsSchemaReader(factory);
     registerJSONColumnsWithMetadataSchemaReader(factory);
