@@ -935,6 +935,10 @@ static WorkerAddress resolveWorkerAddress(
     address.host = host;
 
     auto server_level_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
+    /// Reject out-of-range values instead of silently narrowing them to a different or unset port.
+    if (server_level_exchange_port > 65535)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "`distributed_query.streaming_exchange_port` must be in range 0..65535, got {}", server_level_exchange_port);
     address.streaming_exchange_port = cluster_streaming_exchange_port != 0
         ? cluster_streaming_exchange_port
         : static_cast<UInt16>(server_level_exchange_port);
