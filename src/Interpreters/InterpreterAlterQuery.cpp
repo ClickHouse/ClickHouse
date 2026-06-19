@@ -310,6 +310,9 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     {
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
+            /// DDLGuard first to keep lock order consistent with RENAME/EXCHANGE and the RMT queue.
+            auto ddl_guard = DatabaseCatalog::instance().tryGetDDLGuardForStorage(
+                table, settings[Setting::lock_acquire_timeout]);
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             alter_commands->validate(table, context);
@@ -320,7 +323,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
-            table->alter(*alter_commands, context, alter_lock);
+            table->alter(*alter_commands, context, alter_lock, ddl_guard);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
@@ -444,6 +447,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
     }
 #endif
+
+    /// Re-resolve by name under a DDLGuard, like RENAME/EXCHANGE/DROP do, so a concurrent EXCHANGE
+    /// cannot move the table away in between. Temporary tables are session-local and need no guard.
+    if (table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        auto resolve_guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
+        table = database->tryGetTable(table_id.table_name, getContext());
+    }
 
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);

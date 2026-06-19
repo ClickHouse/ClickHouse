@@ -87,6 +87,7 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int ABORTED;
 }
 
 namespace Setting
@@ -1125,6 +1126,59 @@ DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String &
         throw Exception(ErrorCodes::UNFINISHED, "The database {} was dropped or renamed concurrently", database);
 
     return guard;
+}
+
+DDLGuardPtr DatabaseCatalog::tryGetDDLGuard(const String & database, const String & table, const IDatabase * expected_database)
+{
+    if (database.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot obtain lock for empty database");
+
+    DDLGuardPtr guard;
+    {
+        std::unique_lock lock(ddl_guards_mutex);
+        auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
+        DatabaseGuard & db_guard = db_guard_iter->second;
+        guard = std::make_unique<DDLGuard>(db_guard.table_guards, db_guard.database_ddl_mutex, std::move(lock), table, database, /*try_lock=*/true);
+    }
+
+    if (!guard->ownsTableLock())
+        return nullptr;
+
+    if (expected_database && expected_database != tryGetDatabase(database).get())
+        throw Exception(ErrorCodes::UNFINISHED, "The database {} was dropped or renamed concurrently", database);
+
+    return guard;
+}
+
+DDLGuardPtr DatabaseCatalog::tryGetDDLGuardForStorage(
+    const StoragePtr & storage,
+    const Poco::Timespan & timeout,
+    std::function<bool()> is_alive)
+{
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
+    while (is_alive())
+    {
+        StorageID before = storage->getStorageID();
+        DDLGuardPtr guard = tryGetDDLGuard(before.database_name, before.table_name, /*expected_database=*/nullptr);
+        if (guard)
+        {
+            /// Re-check StorageID: a RENAME could have moved the storage under us.
+            StorageID after = storage->getStorageID();
+            if (after.database_name == before.database_name
+                && after.table_name == before.table_name
+                && after.uuid == before.uuid)
+                return guard;
+            guard.reset();
+        }
+        if (std::chrono::steady_clock::now() >= deadline)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Failed to acquire a DDL guard for {} within {} ms",
+                storage->getStorageID().getNameForLogs(), timeout.totalMilliseconds());
+        sleepForMilliseconds(50);
+    }
+    throw Exception(ErrorCodes::ABORTED,
+        "Cannot acquire a DDL guard for {}: operation cancelled",
+        storage->getStorageID().getNameForLogs());
 }
 
 DatabaseCatalog::DatabaseGuard & DatabaseCatalog::getDatabaseGuard(const String & database)
@@ -2205,13 +2259,22 @@ TemporaryLockForUUIDDirectory & TemporaryLockForUUIDDirectory::operator = (Tempo
 }
 
 
-DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name)
+DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name, bool try_lock)
         : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
 {
     it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
     ++it->second.counter;
     guards_lock.unlock();
-    table_lock = std::unique_lock(*it->second.mutex);
+    if (try_lock)
+    {
+        table_lock = std::unique_lock(*it->second.mutex, std::try_to_lock);
+        if (!table_lock.owns_lock())
+            return;
+    }
+    else
+    {
+        table_lock = std::unique_lock(*it->second.mutex);
+    }
     is_database_guard = elem.empty();
     if (!is_database_guard)
     {
@@ -2241,6 +2304,7 @@ DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mu
                 database_name,
                 MAX_TRY * INTERVAL_MS);
         }
+        db_mutex_held = true;
     }
 }
 
@@ -2252,7 +2316,8 @@ void DDLGuard::releaseTableLock() noexcept
     table_lock_removed = true;
     guards_lock.lock();
     UInt32 counter = --it->second.counter;
-    table_lock.unlock();
+    if (table_lock.owns_lock())
+        table_lock.unlock();
     if (counter == 0)
         map.erase(it);
     guards_lock.unlock();
@@ -2260,10 +2325,11 @@ void DDLGuard::releaseTableLock() noexcept
 
 DDLGuard::~DDLGuard()
 {
-    if (!is_database_guard)
+    if (db_mutex_held)
         db_mutex.unlock_shared();
     releaseTableLock();
 }
+
 
 std::pair<String, String> TableNameHints::getHintForTable(const String & table_name) const
 {

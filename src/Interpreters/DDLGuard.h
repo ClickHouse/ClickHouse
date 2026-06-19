@@ -29,8 +29,13 @@ public:
         SharedMutex & db_mutex_,
         std::unique_lock<std::mutex> guards_lock_,
         const String & elem,
-        const String & database_name);
+        const String & database_name,
+        bool try_lock = false);
     ~DDLGuard();
+
+    /// True when the per-table mutex was successfully acquired.
+    /// Only ever false when the guard was constructed with try_lock = true and the mutex was busy.
+    bool ownsTableLock() const { return table_lock.owns_lock(); }
 
     /// Unlocks table name, keeps holding read lock for database name
     void releaseTableLock() noexcept;
@@ -43,6 +48,7 @@ private:
     std::unique_lock<std::mutex> table_lock;
     bool table_lock_removed = false;
     bool is_database_guard = false;
+    bool db_mutex_held = false;
 };
 
 using DDLGuardPtr = std::unique_ptr<DDLGuard>;

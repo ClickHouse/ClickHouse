@@ -132,6 +132,15 @@ public:
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
+    /// Non-blocking variant: returns nullptr if another thread already holds the guard.
+    /// Useful in background operations where waiting could deadlock against shutdown.
+    DDLGuardPtr tryGetDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
+    /// Non-blocking DDLGuard acquisition with rename-retry; throws TIMEOUT_EXCEEDED on timeout or
+    /// ABORTED when `is_alive()` returns false (lets background callers bail out on shutdown).
+    DDLGuardPtr tryGetDDLGuardForStorage(
+        const StoragePtr & storage,
+        const Poco::Timespan & timeout,
+        std::function<bool()> is_alive = [] { return true; });
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
 

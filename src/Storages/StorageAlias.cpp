@@ -204,7 +204,8 @@ SinkToStoragePtr StorageAlias::write(
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & /*table_lock_holder*/,
+    DDLGuardPtr & ddl_guard)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
 
@@ -227,7 +228,14 @@ void StorageAlias::alter(
         }
     }
 
-    target_storage->alter(params, local_context, table_lock_holder);
+    /// The forwarded ALTER writes the target's metadata, so guard the target, not the alias.
+    /// Release the alias guard first to avoid stalling against a RENAME/EXCHANGE that locks both
+    /// names. The alias stays alive: the share lock from InterpreterAlterQuery blocks DROP.
+    ddl_guard.reset();
+    auto target_ddl_guard = DatabaseCatalog::instance().tryGetDDLGuardForStorage(
+        target_storage, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto target_alter_lock = target_storage->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    target_storage->alter(params, local_context, target_alter_lock, target_ddl_guard);
 }
 
 void StorageAlias::truncate(

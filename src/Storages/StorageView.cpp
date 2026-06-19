@@ -397,7 +397,8 @@ void StorageView::drop()
 void StorageView::alter(
     const AlterCommands & params,
     ContextPtr context,
-    AlterLockHolder &)
+    AlterLockHolder &,
+    DDLGuardPtr &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);

@@ -441,7 +441,7 @@ void StorageTimeSeries::checkAlterIsPossible(const AlterCommands & commands, Con
     }
 }
 
-void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
 {
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
     params.apply(new_metadata, local_context);
