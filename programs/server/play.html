@@ -3232,6 +3232,11 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         if (is_table) targetResultEl.transposeIfNeeded();
     }
 
+    /// A tab switch during an awaited renderer (chart/graph loader) makes the render bail
+    /// without painting; report cancellation too, so the caller does not then update the
+    /// now-active tab's shared progress/download/history state for this stale run.
+    if (posted_request_num != request_num) { return { cancelled: true }; }
+
     return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error };
 }
 
