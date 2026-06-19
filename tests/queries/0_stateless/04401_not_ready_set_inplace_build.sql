@@ -32,4 +32,17 @@ SYSTEM ENABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 SELECT count() FROM t_not_ready_set WHERE k IN (SELECT k FROM t_not_ready_set WHERE k < 500);
 SYSTEM DISABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 
+-- Nested `IN`: the inner subquery's source plan itself contains a set-building step, so the outer
+-- subquery `source` is a `DelayedCreatingSetsStep`, which is intentionally left non-clonable; that
+-- subquery shape takes the destructive fallback (as it always did before this change). The whole
+-- query must still produce the correct result when the in-place build fails silently once: the
+-- `ONCE` failpoint fires on the first (innermost, clonable) set, whose deferred build recovers it.
+SELECT count() FROM t_not_ready_set
+WHERE k IN (SELECT k FROM t_not_ready_set WHERE k IN (SELECT k FROM t_not_ready_set WHERE k < 250));
+
+SYSTEM ENABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
+SELECT count() FROM t_not_ready_set
+WHERE k IN (SELECT k FROM t_not_ready_set WHERE k IN (SELECT k FROM t_not_ready_set WHERE k < 250));
+SYSTEM DISABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
+
 DROP TABLE t_not_ready_set;

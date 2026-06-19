@@ -463,21 +463,40 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     ///
     /// So run the pipeline against a clone of `source`, leaving the original intact. Some source steps
     /// cannot be cloned — most notably `ReadFromPreparedSource`, which wraps an already-materialized,
-    /// single-use `Pipe` (dictionary, many system table, and remote reads go through it). For those,
-    /// fall back to the original destructive build so primary key analysis is still performed for such
-    /// subqueries (as it always was); only the rare silent-failure case stays unrecoverable there,
-    /// exactly as before this change.
+    /// single-use `Pipe` (dictionary, many system table, and remote reads go through it), and
+    /// `DelayedCreatingSetsStep`, which a nested `IN` subquery adds to the source plan. The latter is left
+    /// non-clonable on purpose: it holds the inner subqueries by shared pointer, and building it consumes
+    /// each inner `source` (`DelayedCreatingSetsStep::makePlansForSets` calls `FutureSetFromSubquery::build`,
+    /// which moves the inner `source` out). A shallow clone would share those inner subqueries, so a
+    /// speculative pass would consume the inner sources and mutate the canonical inner sets anyway — giving
+    /// no real preservation. For any non-clonable source, fall back to the original destructive build so
+    /// primary key analysis is still performed for such subqueries (as it always was); only the rare
+    /// silent-failure case stays unrecoverable there, exactly as before this change.
+    ///
+    /// The non-destructive path is also skipped when there is a `GLOBAL IN` / `GLOBAL JOIN` external
+    /// table. Such a build must stream the subquery output into the external table *during* the pipeline
+    /// run, both to enforce the network transfer limits (`max_rows_to_transfer` / `max_bytes_to_transfer`,
+    /// checked in `CreatingSetsTransform::consume` only while writing the table) and to materialize the
+    /// rows actually sent to remote shards — which is not the same as replaying the set elements, because
+    /// those may be deduplicated or dropped once `use_index_for_in_with_subqueries_max_values` is exceeded.
+    /// Writing to the real external table speculatively would also leave a partial prefix there on a silent
+    /// failure that the deferred build would then append to. So for the external-table case use the
+    /// destructive build, exactly as before this change; the silent-failure case stays unrecoverable there,
+    /// no worse than the previous behavior.
     std::unique_ptr<QueryPlan> plan;
     bool source_preserved = false;
-    try
+    if (!set_and_key->external_table)
     {
-        plan = std::make_unique<QueryPlan>(source->clone());
-        source_preserved = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
-            throw;
+        try
+        {
+            plan = std::make_unique<QueryPlan>(source->clone());
+            source_preserved = true;
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                throw;
+        }
     }
 
     /// On the non-destructive path the speculative pipeline builds into this temporary set; it is
@@ -503,11 +522,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         speculative_set->setHeader(plan->getCurrentHeader()->getColumnsWithTypeAndName());
         speculative_set->fillSetElements();
 
-        /// Leave `external_table` null on the temporary `SetAndKey`: the speculative `CreatingSetsTransform`
-        /// must not write to the real `GLOBAL IN` temporary table before the build is committed, otherwise
-        /// a silently-stopped pass would leave a prefix of rows there that the deferred build then appends
-        /// to (remote shards would see the failed prefix plus the real build). The external table is
-        /// populated from the committed set below instead.
+        /// The temporary `SetAndKey` has no external table (the non-destructive path is only taken when
+        /// `set_and_key->external_table` is null, see above), so the speculative `CreatingSetsTransform`
+        /// only builds the set and never touches a `GLOBAL IN` temporary table.
         auto tmp_set_and_key = std::make_shared<SetAndKey>();
         tmp_set_and_key->key = set_and_key->key;
         tmp_set_and_key->set = speculative_set;
@@ -563,15 +580,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// so the original `source` plan is no longer needed. On the destructive fallback `source` was already
     /// consumed by `build`, so `reset` is a no-op there.
     if (speculative_set)
-    {
         set_and_key->set = speculative_set;
-        /// The speculative build left the `GLOBAL IN` external table untouched; populate it now from the
-        /// committed set (mirroring `setExternalTable`). The deferred build is skipped, so this is the
-        /// single, atomic population of the table. On the destructive fallback the external table was
-        /// already written by `build`'s `CreatingSetsTransform`, exactly as before.
-        if (set_and_key->external_table)
-            buildExternalTableFromInplaceSet(set_and_key->external_table);
-    }
     source.reset();
 
     logProcessorProfile(context, pipeline.getProcessors());
