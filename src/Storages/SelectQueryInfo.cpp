@@ -1,7 +1,6 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/Utils.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
@@ -13,28 +12,28 @@ SelectQueryInfo::SelectQueryInfo()
 
 const ASTPtr & SelectQueryInfo::getQuery() const
 {
-    if (!query_ast && query_is_lazy)
-        query_ast = queryNodeToSelectQuery(query_tree);
+    if (!query_ast && query_ast_builder)
+        query_ast = query_ast_builder();
     return query_ast;
 }
 
 ASTPtr & SelectQueryInfo::getQuery()
 {
-    if (!query_ast && query_is_lazy)
-        query_ast = queryNodeToSelectQuery(query_tree);
+    if (!query_ast && query_ast_builder)
+        query_ast = query_ast_builder();
     return query_ast;
 }
 
 void SelectQueryInfo::setQuery(ASTPtr query_)
 {
     query_ast = std::move(query_);
-    query_is_lazy = false;
+    query_ast_builder = nullptr;
 }
 
-void SelectQueryInfo::setLazyQuery()
+void SelectQueryInfo::setLazyQuery(std::function<ASTPtr()> build_query_ast)
 {
     query_ast = nullptr;
-    query_is_lazy = true;
+    query_ast_builder = std::move(build_query_ast);
 }
 
 bool SelectQueryInfo::isFinal() const

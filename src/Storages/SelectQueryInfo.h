@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
+#include <functional>
 #include <memory>
 
 namespace DB
@@ -134,9 +135,10 @@ struct SelectQueryInfo
     /// `ASTPtr &`) keep working and their mutations persist in this `SelectQueryInfo`.
     ASTPtr & getQuery();
     void setQuery(ASTPtr query_);
-    /// Mark the AST as lazily materialized from `query_tree`. `query_tree` must already be set and
-    /// be a `QueryNode` (the invariant required by `queryNodeToSelectQuery`).
-    void setLazyQuery();
+    /// Install a builder that materializes the query AST on first `getQuery` access. Used by
+    /// `buildSelectQueryInfo` to defer the expensive `queryNodeToSelectQuery` rebuild. `setQuery`
+    /// clears the builder.
+    void setLazyQuery(std::function<ASTPtr()> build_query_ast);
 
     ASTPtr view_query; /// Optimized VIEW query
 
@@ -239,11 +241,11 @@ struct SelectQueryInfo
 
 private:
     /// Backing storage for `getQuery`/`setQuery`. Mutable because `getQuery` materializes the AST
-    /// lazily on a const `SelectQueryInfo` (see `query_is_lazy`).
+    /// lazily (via `query_ast_builder`) on a const `SelectQueryInfo`.
     mutable ASTPtr query_ast;
-    /// When true, `getQuery` materializes `query_ast` from `query_tree` on first access. Set only by
-    /// `setLazyQuery` (used by `buildSelectQueryInfo`). `setQuery` clears it, so an explicitly set
-    /// (or unset/null) AST is never silently rebuilt from `query_tree`.
-    bool query_is_lazy = false;
+    /// When set, `getQuery` invokes it once to materialize `query_ast` on first access. Installed only
+    /// by `setLazyQuery` (used by `buildSelectQueryInfo`); `setQuery` clears it, so an explicitly set
+    /// (or unset/null) AST is never silently rebuilt.
+    std::function<ASTPtr()> query_ast_builder;
 };
 }
