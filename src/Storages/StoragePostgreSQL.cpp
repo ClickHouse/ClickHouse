@@ -964,25 +964,77 @@ ColumnsDescription doQueryResultStructure(pqxx::connection & connection, const S
     if (num_columns == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL query returned no columns: {}", query);
 
-    /// Resolve the type names of the result columns from their type OIDs.
-    /// `WITH ORDINALITY` together with the explicit `ORDER BY` keeps the resolved type names
+    /// Resolve the type names of the result columns from their type OIDs and type modifiers.
+    /// Carrying the type modifier (`format_type(atttypid, atttypmod)`, exactly as the table path does) is
+    /// required so that e.g. `numeric(78, 0)` is mapped to `Int256` instead of falling back to a generic
+    /// `Decimal128`. `WITH ORDINALITY` together with the explicit `ORDER BY` keeps the resolved type names
     /// lined up with the result columns regardless of how the array is unnested.
     std::vector<std::string> oids;
+    std::vector<std::string> type_modifiers;
     oids.reserve(num_columns);
+    type_modifiers.reserve(num_columns);
     for (pqxx::row_size_type i = 0; i < num_columns; ++i)
+    {
         oids.push_back(std::to_string(sample.column_type(i)));
+        type_modifiers.push_back(std::to_string(sample.column_type_modifier(i)));
+    }
 
     pqxx::result type_names{tx.exec(
-        "SELECT format_type(type_oid, NULL) FROM unnest(ARRAY[" + boost::algorithm::join(oids, ",")
-        + "]::oid[]) WITH ORDINALITY AS t(type_oid, ord) ORDER BY ord")};
+        "SELECT format_type(type_oid, type_mod) FROM unnest(ARRAY[" + boost::algorithm::join(oids, ",")
+        + "]::oid[], ARRAY[" + boost::algorithm::join(type_modifiers, ",")
+        + "]::integer[]) WITH ORDINALITY AS t(type_oid, type_mod, ord) ORDER BY ord")};
+
+    std::vector<String> resolved_types(num_columns);
+    std::vector<pqxx::row_size_type> array_columns;
+    for (pqxx::row_size_type i = 0; i < num_columns; ++i)
+    {
+        resolved_types[i] = type_names[i][0].as<std::string>();
+        if (resolved_types[i].ends_with("[]"))
+            array_columns.push_back(i);
+    }
+
+    /// PostgreSQL array type OIDs do not encode the number of dimensions, so an `integer[][]` result column
+    /// looks exactly like `integer[]`. Probe the actual data with `array_ndims` (as the table path does via
+    /// its `recheck_array` step) to learn the real dimensions; otherwise multidimensional arrays would be
+    /// inferred as one-dimensional and fail at read time with `Got more dimensions than expected`. When the
+    /// query returns no rows there is nothing to probe, and the dimensions stay at one (the result is empty
+    /// anyway).
+    std::vector<uint16_t> dimensions(num_columns, 1);
+    if (!array_columns.empty())
+    {
+        /// Reference the result columns positionally through an explicit column alias list, so we do not have
+        /// to rely on the (possibly duplicate or unnamed) result column names of an arbitrary query.
+        std::vector<std::string> alias_columns;
+        std::vector<std::string> ndims_exprs;
+        alias_columns.reserve(num_columns);
+        ndims_exprs.reserve(array_columns.size());
+        for (pqxx::row_size_type i = 0; i < num_columns; ++i)
+            alias_columns.push_back("c" + std::to_string(i));
+        for (auto i : array_columns)
+            ndims_exprs.push_back("array_ndims(c" + std::to_string(i) + ")");
+
+        pqxx::result ndims_result{tx.exec(
+            "SELECT " + boost::algorithm::join(ndims_exprs, ",") + " FROM (" + query + ") AS __subquery("
+            + boost::algorithm::join(alias_columns, ",") + ") LIMIT 1")};
+
+        if (!ndims_result.empty())
+        {
+            for (size_t j = 0; j < array_columns.size(); ++j)
+            {
+                const auto & field = ndims_result[0][static_cast<pqxx::row_size_type>(j)];
+                if (!field.is_null())
+                    dimensions[array_columns[j]] = static_cast<uint16_t>(field.as<int>());
+            }
+        }
+    }
+
     tx.commit();
 
     NamesAndTypesList columns;
-    auto recheck_array = []() {}; /// Result columns of an arbitrary query are treated as 1-dimensional arrays.
+    auto recheck_array = []() {}; /// Dimensions are resolved explicitly above, so the recheck callback is unused.
     for (pqxx::row_size_type i = 0; i < num_columns; ++i)
     {
-        String type_name = type_names[i][0].as<std::string>();
-        auto data_type = convertPostgreSQLDataType(type_name, recheck_array, use_nulls, /*dimensions=*/ 1);
+        auto data_type = convertPostgreSQLDataType(resolved_types[i], recheck_array, use_nulls, dimensions[i]);
         columns.emplace_back(sample.column_name(i), data_type);
     }
 

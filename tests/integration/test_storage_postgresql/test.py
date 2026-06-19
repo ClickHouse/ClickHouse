@@ -1101,6 +1101,37 @@ def test_postgres_query_passing(started_cluster):
     )
     node1.query("DROP TABLE pg_engine_query")
 
+    # Schema inference must preserve PostgreSQL type modifiers and array dimensions of the query result,
+    # exactly as the plain table-name path does. In particular a wide numeric(78, 0) must be inferred as
+    # Int256 (the typmod must be carried into format_type), and a multidimensional array must keep its
+    # dimensions instead of being treated as one-dimensional.
+    wide_name = "test_query_passing_wide"
+    cursor.execute(f"DROP TABLE IF EXISTS {wide_name}")
+    cursor.execute(
+        f"CREATE TABLE {wide_name} (id integer, big numeric(78, 0), arr1 integer[], arr2 integer[][])"
+    )
+    big_value = "123456789012345678901234567890123456789012345678901234567890"
+    cursor.execute(
+        f"INSERT INTO {wide_name} VALUES (1, {big_value}, '{{1,2,3}}', '{{{{1,2}},{{3,4}}}}')"
+    )
+    started_cluster.postgres_conn.commit()
+
+    # Pin external_table_functions_use_nulls = 0 so the inferred types are not wrapped into Nullable,
+    # which keeps the type-name assertions focused on the typmod and dimension inference.
+    q_wide = (
+        f"postgresql('{host}', 'postgres', query('SELECT id, big, arr1, arr2 FROM {wide_name}'), "
+        f"'postgres', '{pg_pass}') SETTINGS external_table_functions_use_nulls = 0"
+    )
+    assert (
+        node1.query(
+            f"SELECT toTypeName(big), toTypeName(arr1), toTypeName(arr2) FROM {q_wide}"
+        ).rstrip()
+        == "Int256\tArray(Int32)\tArray(Array(Int32))"
+    )
+    assert node1.query(f"SELECT big FROM {q_wide}").rstrip() == big_value
+    assert node1.query(f"SELECT arr2 FROM {q_wide}").rstrip() == "[[1,2],[3,4]]"
+
+    cursor.execute(f"DROP TABLE {wide_name}")
     cursor.execute(f"DROP TABLE {table_name}")
     cursor.execute(f"DROP TABLE {dim_name}")
 
