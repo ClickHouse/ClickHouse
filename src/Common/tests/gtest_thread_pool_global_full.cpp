@@ -33,7 +33,9 @@ TEST(ThreadPool, GlobalFull1)
     std::atomic<size_t> counter = 0;
     static constexpr size_t num_jobs = capacity + 1;
 
-    auto func = [&] { ++counter; while (counter != num_jobs) {} };
+    /// Wait until every job has run. Use `<` (not `!=`): if a job that should have been
+    /// rejected unexpectedly runs, counter overshoots num_jobs, and `!=` would spin forever.
+    auto func = [&] { ++counter; while (counter < num_jobs) {} };
 
     ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_jobs);
 
@@ -71,7 +73,7 @@ TEST(ThreadPool, GlobalFull2)
     global_pool.wait();
 
     std::atomic<size_t> counter = 0;
-    auto func = [&] { ++counter; while (counter != capacity + 1) {} };
+    auto func = [&] { ++counter; while (counter < capacity + 1) {} };
 
     ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, capacity, 0, capacity);
     for (size_t i = 0; i < capacity; ++i)
