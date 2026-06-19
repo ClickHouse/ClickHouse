@@ -369,7 +369,20 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         auto estimated = estimateReadRowsCount(*node.children.front(), filter);
         auto limit = limit_step->getLimit();
-        if (estimated.estimated_rows)
+        if (limit_step->withTies())
+        {
+            /// `LIMIT n WITH TIES` emits every row whose sort key ties with the boundary row, so
+            /// the result is NOT bounded by `limit` -- only by the child row count (e.g. `LIMIT 1
+            /// WITH TIES` over all-equal rows returns them all). Do not cap by `limit`; just keep
+            /// the child's upper bound, demoting an exact child estimate (no longer exact, since
+            /// the actual count is somewhere between `limit` and the child count).
+            if (estimated.estimated_rows)
+            {
+                estimated.estimated_rows_upper_bound = estimated.estimated_rows;
+                estimated.estimated_rows.reset();
+            }
+        }
+        else if (estimated.estimated_rows)
         {
             /// Exact child estimate: the LIMIT caps it, and the capped value is still exact.
             if (estimated.estimated_rows > limit)

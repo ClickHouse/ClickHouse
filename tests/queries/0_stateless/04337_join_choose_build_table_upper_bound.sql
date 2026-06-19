@@ -99,7 +99,41 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
 ORDER BY event_time DESC
 LIMIT 1;
 
+-- Soundness: `LIMIT n WITH TIES` can emit far more than `n` rows -- every row whose sort key
+-- ties with the boundary row. Here every `v` is equal, so `ORDER BY v LIMIT 1 WITH TIES` returns
+-- all 100000 rows. The limit must therefore NOT cap the estimate: the result is bounded only by
+-- the child row count (100000), not by 1. Otherwise the optimizer would read this input as 1 row
+-- and swap the 100000-row tied input onto the build side over the 50000-row right input.
+DROP TABLE IF EXISTS tied;
+DROP TABLE IF EXISTS rhs_exact;
+
+CREATE TABLE tied (k Int32, v Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO tied SELECT number, 5 FROM numbers(100000);
+
+CREATE TABLE rhs_exact (k Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO rhs_exact SELECT number FROM numbers(50000);
+
+SELECT * FROM (SELECT k FROM tied ORDER BY v LIMIT 1 WITH TIES) AS t JOIN rhs_exact ON t.k = rhs_exact.k
+SETTINGS log_comment = '04337_join_choose_build_table_limit_with_ties' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The 50000-row right input must stay the build side; the tied input (100000 rows) must not be
+-- swapped onto it.
+SELECT
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 45000 AND 55000, 'ok', format('fail({}): build={}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 90000 AND 110000, 'ok', format('fail({}): probe={}', query_id, ProfileEvents['JoinProbeTableRowCount'])),
+    if(ProfileEvents['JoinResultRowCount'] = 50000, 'ok', format('fail({}): result={}', query_id, ProfileEvents['JoinResultRowCount']))
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+  AND query_kind = 'Select' AND current_database = currentDatabase()
+  AND log_comment = '04337_join_choose_build_table_limit_with_ties'
+ORDER BY event_time DESC
+LIMIT 1;
+
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;
 DROP TABLE IF EXISTS lhs_big;
 DROP TABLE IF EXISTS rhs_tiny;
+DROP TABLE IF EXISTS tied;
+DROP TABLE IF EXISTS rhs_exact;
