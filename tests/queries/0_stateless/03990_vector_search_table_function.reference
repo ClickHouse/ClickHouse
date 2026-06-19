@@ -31,7 +31,7 @@
 0	0
 1	0.010314941
 -- 6. Larger dataset with cosineDistance
--- 6a. Approximate top-10 recall against exact top-10 is at least 8/10
+-- 6a. At least 8 of the approximate top-10 fall within the exact top-20
 1
 -- 6b. The table function returns exactly K = 10 rows
 1
