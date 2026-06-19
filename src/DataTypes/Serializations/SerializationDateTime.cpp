@@ -111,6 +111,11 @@ SerializationPtr SerializationTime::create(const DataTypeTime & time_type)
     return ISerialization::pooled(getHash(time_type), [&] { return new SerializationTime(time_type); });
 }
 
+void SerializationDateTime::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeText(column, row_num, ostr, settings);
+}
+
 void SerializationDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
