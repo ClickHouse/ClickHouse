@@ -214,7 +214,9 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
 
             for (size_t j = 0; j < labels.size(); ++j)
             {
-                wb << labels[j] << "=\"" << label_values[j] << "\",";
+                wb << labels[j] << '=';
+                writeDoubleQuotedString(label_values[j], wb);
+                wb << ',';
             }
 
             wb << "le=\"";
@@ -240,7 +242,8 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
                 {
                     wb << ',';
                 }
-                wb << labels[j] << "=\"" << label_values[j] << '"';
+                wb << labels[j] << '=';
+                writeDoubleQuotedString(label_values[j], wb);
             }
             wb << '}';
         }
@@ -256,7 +259,8 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
                 {
                     wb << ',';
                 }
-                wb << labels[j] << "=\"" << label_values[j] << '"';
+                wb << labels[j] << '=';
+                writeDoubleQuotedString(label_values[j], wb);
             }
             wb << '}';
         }
@@ -297,7 +301,8 @@ void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const Dim
                 {
                     wb << ',';
                 }
-                wb << labels[i] << "=\"" << label_values[i] << '"';
+                wb << labels[i] << '=';
+                writeDoubleQuotedString(label_values[i], wb);
             }
             wb << '}';
         }
