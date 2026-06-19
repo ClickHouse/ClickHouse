@@ -213,6 +213,8 @@ public:
         M(key64)                       \
         M(key_string)                  \
         M(key_fixed_string)            \
+        M(keys32)                      \
+        M(keys64)                      \
         M(keys128)                     \
         M(keys256)                     \
         M(hashed)                      \
@@ -220,6 +222,8 @@ public:
         M(two_level_key64)             \
         M(two_level_key_string)        \
         M(two_level_key_fixed_string)  \
+        M(two_level_keys32)            \
+        M(two_level_keys64)            \
         M(two_level_keys128)           \
         M(two_level_keys256)           \
         M(two_level_hashed)            \
@@ -247,6 +251,8 @@ public:
         M(two_level_key64 __VA_OPT__(,) __VA_ARGS__)            \
         M(two_level_key_string __VA_OPT__(,) __VA_ARGS__)       \
         M(two_level_key_fixed_string __VA_OPT__(,) __VA_ARGS__) \
+        M(two_level_keys32 __VA_OPT__(,) __VA_ARGS__)           \
+        M(two_level_keys64 __VA_OPT__(,) __VA_ARGS__)           \
         M(two_level_keys128 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
@@ -289,6 +295,8 @@ public:
         std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
         std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_string;
         std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
+        std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           keys32;
+        std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           keys64;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
@@ -296,6 +304,8 @@ public:
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
         std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
         std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
+        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_keys32;
+        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_keys64;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
@@ -572,6 +582,9 @@ private:
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;
 
+    /// Track if shared runtime filters were already published to keep publication one-shot.
+    bool shared_runtime_filters_publish_attempted = false;
+
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
     String instance_log_id;
@@ -605,6 +618,10 @@ private:
     void tryRerangeRightTableDataImpl(Map & map);
 
     bool canConvertToFixedHashMap() const;
+
+    /// Publish a SharedFixedHashTableRuntimeFilter that replaces the Set/BloomFilter
+    /// installed by BuildRuntimeFilterStep, when the build side is a FixedHashMap.
+    void publishSharedRuntimeFilters();
     void tryConvertToFixedHashMap();
 
     template <bool is_signed, typename Key, typename MapsTemplate>
