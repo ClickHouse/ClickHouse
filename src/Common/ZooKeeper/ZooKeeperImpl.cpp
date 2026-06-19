@@ -1862,7 +1862,7 @@ void ZooKeeper::list(
     auto request = std::make_shared<ZooKeeperListRequest>();
     request->path = path;
 
-    if (request->list_request_type != ListRequestType::ALL)
+    if (list_request_type != ListRequestType::ALL)
         request->list_request_type = list_request_type;
 
     if (with_stat || with_data)
