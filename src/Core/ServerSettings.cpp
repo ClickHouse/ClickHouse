@@ -73,10 +73,11 @@ namespace
     DECLARE(InsertDeduplicationVersions, insert_deduplication_version, InsertDeduplicationVersions::NEW_UNIFIED_HASHES, R"(
         This setting makes it possible to migrate from the code version which makes insert deduplication for sync and async inserts totally different not transparent way to the code version where inserted data would be deduplicated across sync and async inserts.
         The value `old_separate_hashes` means that ClickHouse will use different deduplication hashes for sync and async inserts (the same as before).
-        This value should be used as a default value if there is no intention to start migration.
+        This value preserves the legacy pre-migration behavior, for instances that intentionally have not started the migration; it is no longer the recommended default.
         The value `compatible_double_hashes` means that ClickHouse will use two deduplication hashes: the old one for sync or async inserts and another the new one for all inserts. This value should be used to migrate existing instances to the new behavior in a safe way.
         This value should be enabled for some time (see replicated_deduplication_window and non_replicated_deduplication_window settings) to make sure that no sync or async inserts are lost during migration.
         Finally the value `new_unified_hash` means that ClickHouse will use the new deduplication hash for sync and async inserts. This value could be enabled on new instances of ClickHouse or on instances which already used `compatible_double_hashes` value for some time.
+        With `new_unified_hash`, the deduplication hash covers the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not per individual partition.
         The default was `compatible_double_hashes` for one phase of the migration and is now `new_unified_hash`, which completes the migration in a safe way in two phases.
         Instances upgraded directly from `old_separate_hashes` should run with `compatible_double_hashes` for some time (see replicated_deduplication_window and non_replicated_deduplication_window settings) before relying on the unified hash.
     )", 0) \
