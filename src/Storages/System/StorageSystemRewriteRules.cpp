@@ -35,6 +35,17 @@ StorageSystemRewriteRules::StorageSystemRewriteRules(const StorageID & table_id_
 
 void StorageSystemRewriteRules::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
+    /// Rewrite rules are global policies whose source/result templates can embed table
+    /// names, filters and (masked) secrets. Expose them only to users who are allowed to
+    /// manage rules, mirroring how `system.named_collections` gates its rows behind a
+    /// grant. Without this check, any user able to read the `system` database could
+    /// enumerate every rewrite/rejection rule defined on the server.
+    const auto & access = context->getAccess();
+    if (!access->isGranted(AccessType::CREATE_RULE)
+        && !access->isGranted(AccessType::ALTER_RULE)
+        && !access->isGranted(AccessType::DROP_RULE))
+        return;
+
     auto rules = RewriteRules::instance().getAll();
     for (const auto & [name, rule] : rules)
     {
