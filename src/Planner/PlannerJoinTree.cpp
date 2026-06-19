@@ -110,6 +110,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
+    extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
@@ -1364,8 +1365,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// would leave dangling, and the other side may be a local table that cannot be
                 /// shipped to shards at all. Joined queries fall back to the standard
                 /// StorageView::readImpl path.
+                ///
+                /// Also skip when distributed_group_by_no_merge is set. A normal StorageView advertises
+                /// FetchColumns, so an outer GROUP BY aggregates on the initiator over rows from all
+                /// shards. Under the pushdown effective_storage is the Distributed table, and with
+                /// distributed_group_by_no_merge its getQueryProcessingStage returns a stage where each
+                /// shard aggregates independently and the initiator only concatenates — so a group key
+                /// present on several shards yields one partial row per shard instead of one merged row.
+                /// Fall back to the StorageView path, which still merges on the initiator.
                 const auto * view = (is_single_table_expression
-                                     && query_context->getSettingsRef()[Setting::optimize_trivial_view_pushdown_to_distributed])
+                                     && settings[Setting::optimize_trivial_view_pushdown_to_distributed]
+                                     && !settings[Setting::distributed_group_by_no_merge])
                     ? typeid_cast<const StorageView *>(storage.get())
                     : nullptr;
                 if (view)

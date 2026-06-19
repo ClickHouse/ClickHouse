@@ -72,7 +72,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"input_format_geojson_unsupported_geometry_handling", "throw", "throw", "New setting that controls handling of GeoJSON geometry types that cannot be represented in the Geometry type (GeometryCollection, MultiPoint)"},
             {"enable_identifier_resolve_cache", false, true, "New setting to control the identifier resolution cache in the query analyzer"},
-            {"optimize_trivial_view_pushdown_to_distributed", false, true, "New setting to push the full outer query to shards for trivial views over Distributed tables."},
             {"optimize_limit_by_in_order", false, true, "New setting to optimize `LIMIT BY` queries when `BY` columns are a prefix of the table's sorting key."},
             {"analyzer_compatibility_prefer_alias_over_subcolumn", false, false, "New compatibility setting"},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
