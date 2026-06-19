@@ -1005,7 +1005,7 @@ public:
         /// of the run, which is bounded by the worker cluster size and can legitimately be 1 (a valid
         /// single-worker distributed query); the "was it distributed" question is answered by
         /// DistributedPlanRemoteTasks instead.
-        std::unordered_set<std::string_view> distinct_hosts;
+        UnorderedSetWithMemoryTracking<String> distinct_hosts;
         for (const auto & [task_id, host] : task_to_host_map->getTaskHosts())
             distinct_hosts.insert(host);
         ProfileEvents::increment(ProfileEvents::DistributedPlanHostsUsed, distinct_hosts.size());
