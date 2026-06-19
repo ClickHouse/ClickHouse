@@ -12,7 +12,11 @@ import pytest
 from pathlib import Path
 
 import helpers.client
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import (
+    CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    ClickHouseCluster,
+    ClickHouseInstance,
+)
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
@@ -143,7 +147,7 @@ def started_cluster():
             with_minio=True,
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="25.3.3.42",
+            tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
             stay_alive=True,
             main_configs=[
                 "configs/remote_servers.xml",
@@ -2691,7 +2695,9 @@ def test_archive(started_cluster):
     node2 = started_cluster.instances["dummy2"]
     node_old = started_cluster.instances["dummy_old"]
     try:
-        need_restart = "25.3" not in node_old.query("SELECT version()")
+        need_restart = CLICKHOUSE_CI_MIN_TESTED_VERSION not in node_old.query(
+            "SELECT version()"
+        )
     except Exception:
         need_restart = True
     if need_restart:
@@ -3044,7 +3050,9 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
     query_id = f"{table_name}_query_6"
     node_old = started_cluster.instances["dummy_old"]
     try:
-        need_restart = "25.3" not in node_old.query("SELECT version()")
+        need_restart = CLICKHOUSE_CI_MIN_TESTED_VERSION not in node_old.query(
+            "SELECT version()"
+        )
     except Exception:
         need_restart = True
     if need_restart:
@@ -3222,7 +3230,9 @@ def test_file_pruning_with_hive_style_partitioning_2(started_cluster):
 
     node_old = started_cluster.instances["dummy_old"]
     try:
-        need_restart = "25.3" not in node_old.query("SELECT version()")
+        need_restart = CLICKHOUSE_CI_MIN_TESTED_VERSION not in node_old.query(
+            "SELECT version()"
+        )
     except Exception:
         need_restart = True
     if need_restart:

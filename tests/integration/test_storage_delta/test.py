@@ -43,7 +43,7 @@ from decimal import Decimal
 from pyspark.sql.window import Window
 
 import helpers.client
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
@@ -173,7 +173,7 @@ def started_cluster():
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="25.3.3.42",
+            tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
