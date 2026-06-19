@@ -402,6 +402,22 @@ if __name__ == "__main__":
                                     _changed_paths.add(_path)
                 except Exception as _e:
                     print(f"Warning: could not parse changes.diff for path detection: {_e}")
+            else:
+                # changes.diff is not written when generate_diff_coverage_report.sh
+                # exits early (no C/C++ files changed). Fall back to the GitHub API
+                # so that _binary_unchanged / _tests_changed are computed correctly
+                # for test-only and CI-only PRs.
+                if pr_number > 0 and base_commit_sha:
+                    try:
+                        _gh_files = Shell.get_output(
+                            f"gh api repos/{repo_name}/compare/{base_commit_sha}...{current_commit_sha}"
+                            f" --jq '.files[].filename'",
+                            verbose=False,
+                        )
+                        _changed_paths = {p for p in _gh_files.splitlines() if p}
+                        print(f"Loaded {len(_changed_paths)} changed paths from GitHub API (no changes.diff)")
+                    except Exception as _e:
+                        print(f"Warning: could not fetch changed files from GitHub API: {_e}")
 
             def _is_test_path(p: str) -> bool:
                 # Strict allowlist of paths containing runnable test
@@ -482,6 +498,20 @@ if __name__ == "__main__":
             _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
             _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
             _global_stats_available = Path(_base_info).exists() and Path(_curr_info).exists()
+
+            # Download extra master baselines for cross-validation and for building
+            # the stable master baseline. We download them here, unconditionally
+            # whenever we have a primary baseline — both the newly-covered and the
+            # LBC analyses benefit from them regardless of what the PR changed.
+            # (The original design gated this on _binary_unchanged, but that gate
+            # was broken for test-only PRs: generate_diff_coverage_report.sh exits
+            # early without writing changes.diff when no C/C++ files changed, so
+            # _changed_paths is empty, _binary_unchanged evaluates to False, and
+            # the download never fired. The 2.5 GB concern is addressed by capping
+            # TARGET_EXTRA_BASELINES at 5 — not by a complex gate.)
+            if _global_stats_available:
+                _first_base = master_track_commits[0] if master_track_commits else base_commit_sha
+                _download_extra_baselines(master_track_commits, _first_base)
 
             # Build the stable master baseline (union of all downloaded master runs).
             # This replaces the single noisy base_llvm_coverage.info for all
