@@ -629,9 +629,13 @@ namespace QueryPlanFormat
                 if (output->type != ActionsDAG::ActionType::INPUT)
                     pretty_names[output->result_name] = PrettyColumnName(formatNodePretty(output, pretty_names, runtime_filter_names, subquery_set_names));
         }
-        else if (step_name == "Aggregating" || step_name == "AggregatingProjection")
+        else if (step_name == "Aggregating")
         {
             addAggregatesPrettyNames(static_cast<const AggregatingStep *>(step.get())->getParams(), pretty_names);
+        }
+        else if (step_name == "AggregatingProjection")
+        {
+            addAggregatesPrettyNames(static_cast<const AggregatingProjectionStep *>(step.get())->getParams(), pretty_names);
         }
         else if (step_name == "MergingAggregated")
         {

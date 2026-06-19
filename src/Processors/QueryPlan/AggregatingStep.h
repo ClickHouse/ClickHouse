@@ -172,6 +172,8 @@ public:
     String getName() const override { return "AggregatingProjection"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
+    const Aggregator::Params & getParams() const { return params; }
+
 private:
     void updateOutputHeader() override;
 
