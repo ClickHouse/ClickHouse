@@ -559,8 +559,10 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
             /// Round-robin mark-range bucketing would split rows sharing a sort key across buckets and
             /// break FINAL dedup. Split the read into primary-key-range layers instead (each layer
             /// deduplicated independently, then concatenated). Fall back to a serial read when the data
-            /// cannot be range-split (SAMPLE, unsafe or mixed-order primary key, or a single layer).
-            const size_t layer_count = read_from_merge_tree_step->setupDistributedFinalLayers(bucket_count);
+            /// cannot be range-split (SAMPLE, unsafe or mixed-order primary key, or a single layer) or a
+            /// per-partition split would need more layers than the bucket-count limit allows.
+            const size_t layer_count = read_from_merge_tree_step->setupDistributedFinalLayers(
+                bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
             if (layer_count == 0)
                 return;
             bucket_count = layer_count;

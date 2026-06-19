@@ -1682,9 +1682,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     if (distributed_read_layered)
     {
-        /// Distributed parallel FINAL: this worker's parts are exactly one global PK-range layer
-        /// (selected by bucket_id). Read it in order and merge-dedup it, trimming the boundary granules
-        /// to the layer's two-sided range. No re-split -- parallelism is across buckets, one layer each.
+        /// Distributed parallel FINAL: this worker's parts are exactly one PK-range layer of its span
+        /// (its marks, span borders, and index arrived in the `final_layer` parameter). Read it in order
+        /// and merge-dedup it, trimming the boundary granules to the layer's two-sided range. No re-split
+        /// -- parallelism is across buckets, one layer each.
         Pipe pipe = read(
             std::move(parts_with_ranges), index_build_context, column_names, ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache);
         pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
@@ -3509,9 +3510,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         if (distributed_read_layered)
         {
-            /// Parallel FINAL: this bucket's PK-range layer (its marks + the global borders) arrives as
-            /// the `final_layer` task parameter. Deserialize it, match marks to local parts by name (a
-            /// missing part is a retryable error), and keep the borders/index for the per-layer filter.
+            /// Parallel FINAL: this bucket's PK-range layer (its marks, its span's borders, and its index
+            /// among them) arrives as the `final_layer` task parameter. Deserialize it, match marks to
+            /// local parts by name (a missing part is a retryable error), and keep the borders/index for
+            /// the per-layer trimming filter.
             String blob = settings.parameter_lookup->getParameter("final_layer").safeGet<String>();
             ReadBufferFromString buf(blob);
             RangesInDataPartsDescription layer;
@@ -3527,7 +3529,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             for (auto & border : distributed_read_borders)
                 for (size_t i = 0; i < border_arity; ++i)
                     primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], buf, format_settings);
-            distributed_read_layer_index = bucket_id;
+            readVarUInt(distributed_read_layer_index, buf);
 
             std::unordered_map<String, RangesInDataPart> parts_by_name;
             for (auto & part : result.parts_with_ranges)
@@ -4736,13 +4738,7 @@ void ReadFromMergeTree::setDistributedReadParts(Names part_names)
     distributed_read_part_names = std::move(part_names);
 }
 
-void ReadFromMergeTree::setDistributedReadLayers(std::vector<RangesInDataPartsDescription> layers, std::vector<std::vector<Field>> borders)
-{
-    distributed_read_layers = std::move(layers);
-    distributed_read_borders = std::move(borders);
-}
-
-size_t ReadFromMergeTree::setupDistributedFinalLayers(size_t max_layers)
+size_t ReadFromMergeTree::setupDistributedFinalLayers(size_t max_layers, size_t max_total_layers)
 {
     /// SAMPLE interacts with layer boundaries in undefined ways, and splitting needs a safe, uniformly
     /// ordered primary key. Read serially otherwise.
@@ -4762,45 +4758,81 @@ size_t ReadFromMergeTree::setupDistributedFinalLayers(size_t max_layers)
     if (!analysis || analysis->parts_with_ranges.empty())
         return 0;
 
-    auto split = splitIntersectingPartsRangesIntoLayers(
-        analysis->parts_with_ranges, max_layers, primary_key.column_names.size(), *in_reverse_order, log);
+    /// When FINAL does not merge across partitions, each partition is deduplicated independently, so a
+    /// layer must not span partitions (a key may repeat across partitions and must not be merged). Group
+    /// the parts into one span per partition (parts of a partition are adjacent in the analyzed order);
+    /// otherwise all parts form a single span that is merged together.
+    std::vector<RangesInDataParts> spans;
+    if (doNotMergePartsAcrossPartitionsFinal())
+    {
+        auto part_it = analysis->parts_with_ranges.begin();
+        while (part_it != analysis->parts_with_ranges.end())
+        {
+            const auto partition_id = part_it->data_part->info.getPartitionId();
+            RangesInDataParts span;
+            while (part_it != analysis->parts_with_ranges.end() && part_it->data_part->info.getPartitionId() == partition_id)
+                span.push_back(*part_it++);
+            spans.push_back(std::move(span));
+        }
+    }
+    else
+    {
+        /// Copy (not move): the analysis result is cached and reused by later callers (serialize, pipeline).
+        spans.push_back(analysis->parts_with_ranges);
+    }
 
-    /// A single layer has nothing to parallelize and carries no borders to trim by.
-    if (split.layers.size() <= 1)
+    size_t total_marks = 0;
+    for (const auto & span : spans)
+        total_marks += span.getMarksCountAllParts();
+
+    /// Split each span into PK-range layers, giving it a share of the layer budget proportional to its
+    /// marks (at least one layer per span). Each layer keeps its span's borders and its index among them
+    /// so the worker can rebuild the trimming filter for its interval.
+    std::vector<DistributedFinalLayer> final_layers;
+    for (auto & span : spans)
+    {
+        const size_t span_marks = span.getMarksCountAllParts();
+        const size_t span_max_layers = total_marks == 0 ? 1 : std::max<size_t>(1, max_layers * span_marks / total_marks);
+        auto split = splitIntersectingPartsRangesIntoLayers(
+            std::move(span), span_max_layers, primary_key.column_names.size(), *in_reverse_order, log);
+        for (size_t i = 0; i < split.layers.size(); ++i)
+            final_layers.push_back({split.layers[i].getDescriptions(), split.borders, i});
+    }
+
+    /// A single layer has nothing to parallelize and carries no borders to trim by. A per-partition split
+    /// can also produce more layers than the distributed plan allows buckets (a table with many
+    /// partitions); read serially rather than exceed that limit.
+    if (final_layers.size() <= 1 || final_layers.size() > max_total_layers)
         return 0;
 
-    std::vector<RangesInDataPartsDescription> layers;
-    layers.reserve(split.layers.size());
-    for (const auto & layer : split.layers)
-        layers.push_back(layer.getDescriptions());
-
-    setDistributedRead(split.layers.size());
-    setDistributedReadLayers(std::move(layers), std::move(split.borders));
-    return split.layers.size();
+    setDistributedRead(final_layers.size());
+    distributed_read_final_layers = std::move(final_layers);
+    return distributed_read_final_layers.size();
 }
 
 std::vector<String> ReadFromMergeTree::serializeDistributedFinalLayers() const
 {
     std::vector<String> result;
-    if (distributed_read_layers.empty())
+    if (distributed_read_final_layers.empty())
         return result;
 
     const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-    const size_t border_arity = distributed_read_borders.empty() ? 0 : distributed_read_borders.front().size();
     DB::FormatSettings format_settings;
 
-    result.reserve(distributed_read_layers.size());
-    for (const auto & layer : distributed_read_layers)
+    result.reserve(distributed_read_final_layers.size());
+    for (const auto & layer : distributed_read_final_layers)
     {
         WriteBufferFromOwnString buf;
-        layer.serialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-        /// All borders accompany every bucket (they are tiny); the worker picks its interval by bucket_id.
-        /// Borders are concrete PK values (the producer gates on `isSafePrimaryKey`, so no sentinel here).
+        layer.marks.serialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+        /// The layer's span borders and its index among them; the worker rebuilds the trimming filter from
+        /// these. Borders are concrete PK values (the producer gates on `isSafePrimaryKey`, so no sentinel).
+        const size_t border_arity = layer.borders.empty() ? 0 : layer.borders.front().size();
         writeVarUInt(border_arity, buf);
-        writeVarUInt(distributed_read_borders.size(), buf);
-        for (const auto & border : distributed_read_borders)
+        writeVarUInt(layer.borders.size(), buf);
+        for (const auto & border : layer.borders)
             for (size_t i = 0; i < border_arity; ++i)
                 primary_key.data_types[i]->getDefaultSerialization()->serializeBinary(border[i], buf, format_settings);
+        writeVarUInt(layer.index, buf);
         result.push_back(buf.str());
     }
     return result;
@@ -4900,7 +4932,7 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         /// A parallel FINAL read carries its per-bucket PK-range layers as the `final_layer` task
         /// parameter (set during fan-out), so the shared step holds no per-bucket data; a mark-offset
         /// read pins the coordinator-selected parts so all workers bucket over the same ordered list.
-        const bool layered = !distributed_read_layers.empty();
+        const bool layered = !distributed_read_final_layers.empty();
         writeBinary(layered, ctx.out);
 
         if (!layered)

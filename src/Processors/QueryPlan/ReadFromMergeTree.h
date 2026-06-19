@@ -78,6 +78,18 @@ struct TopKFilterInfo
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
+/// One primary-key-range layer of a distributed parallel FINAL read: the marks to read, the borders of
+/// the layer's partition span, and the layer's index among them. The worker reads the marks in order,
+/// trims to the interval (borders[index-1], borders[index]] and merge-dedups it. When FINAL does not
+/// merge across partitions each layer stays within one partition, so the borders are that partition's;
+/// otherwise all parts form one span and every layer carries the same global borders.
+struct DistributedFinalLayer
+{
+    RangesInDataPartsDescription marks;
+    std::vector<std::vector<Field>> borders;
+    size_t index = 0;
+};
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -396,13 +408,12 @@ public:
     void setDistributedRead(size_t bucket_count);
     /// Parts (by name) every worker buckets over, so the partition is identical across replicas.
     void setDistributedReadParts(Names part_names);
-    /// Per-bucket PK-range layers (marks) + the PK-tuple borders between them, for a parallel FINAL
-    /// distributed read. Mutually exclusive with `setDistributedReadParts`.
-    void setDistributedReadLayers(std::vector<RangesInDataPartsDescription> layers, std::vector<std::vector<Field>> borders);
-    /// For a FINAL read, splits the analyzed parts into up to `max_layers` primary-key-range layers and
-    /// records them for a distributed parallel FINAL. Returns the number of layers, or 0 (read serially)
-    /// when the data cannot be range-split (SAMPLE, unsafe or mixed-order primary key, or a single layer).
-    size_t setupDistributedFinalLayers(size_t max_layers);
+    /// For a FINAL read, splits the analyzed parts into around `max_layers` primary-key-range layers and
+    /// records them for a distributed parallel FINAL. When FINAL does not merge across partitions the
+    /// split is done per partition so a layer never merges keys from different partitions. Returns the
+    /// number of layers, or 0 (read serially) when the data cannot be range-split (SAMPLE, unsafe or
+    /// mixed-order primary key, or a single layer) or the per-partition split exceeds `max_total_layers`.
+    size_t setupDistributedFinalLayers(size_t max_layers, size_t max_total_layers);
     /// Serializes each PK-range layer (its marks + the borders) into a per-bucket blob to ship as the
     /// `final_layer` task parameter; empty unless this is a layered FINAL read.
     std::vector<String> serializeDistributedFinalLayers() const;
@@ -589,12 +600,11 @@ private:
     size_t distributed_read_bucket_count = 0;
     /// Coordinator-selected parts a distributed-read worker buckets over. Empty otherwise.
     Names distributed_read_part_names;
-    /// Per-bucket PK-range layers for a parallel FINAL read. On the initiator (producer) this holds all
-    /// layers + the borders, which are serialized per bucket into the `final_layer` task parameter (not
-    /// into the shared step). On a worker `distributed_read_layers` stays empty; the worker fills
-    /// `distributed_read_borders` / `distributed_read_layer_index` from its `final_layer` parameter and
-    /// reads its single layer's marks.
-    std::vector<RangesInDataPartsDescription> distributed_read_layers;
+    /// Per-bucket PK-range layers for a parallel FINAL read. On the initiator (producer) this holds every
+    /// layer; each is serialized into the `final_layer` task parameter (not into the shared step). On a
+    /// worker it stays empty; the worker fills `distributed_read_borders` / `distributed_read_layer_index`
+    /// from its own `final_layer` parameter and reads that single layer's marks.
+    std::vector<DistributedFinalLayer> distributed_read_final_layers;
     std::vector<std::vector<Field>> distributed_read_borders;
     size_t distributed_read_layer_index = 0;
     /// True on a worker handling a layered FINAL read (set from the serialized flag); the layer arrives
