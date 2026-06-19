@@ -38,6 +38,13 @@ enum class RowCountKind : UInt8
     Estimate,
 };
 
+/// The row count only when it is a point estimate (exact or heuristic), i.e. not a bare upper
+/// bound. This is what the heuristic `lhs < rhs` swap comparison and result reporting use.
+inline std::optional<UInt64> pointEstimate(std::optional<UInt64> rows, RowCountKind kind)
+{
+    return (kind == RowCountKind::Exact || kind == RowCountKind::Estimate) ? rows : std::nullopt;
+}
+
 struct DPJoinEntry
 {
     BitSet relations;
@@ -53,12 +60,7 @@ struct DPJoinEntry
     RowCountKind estimated_rows_kind = RowCountKind::Unknown;
     std::unordered_map<String, ColumnStats> column_stats = {};
 
-    /// The value only when it is a point estimate (exact or heuristic), i.e. not a bare upper
-    /// bound. This is what the heuristic `lhs < rhs` swap comparison and result reporting use.
-    std::optional<UInt64> pointEstimate() const
-    {
-        return (estimated_rows_kind == RowCountKind::Exact || estimated_rows_kind == RowCountKind::Estimate) ? estimated_rows : std::nullopt;
-    }
+    std::optional<UInt64> pointEstimate() const { return DB::pointEstimate(estimated_rows, estimated_rows_kind); }
 
     /// For join nodes
     JoinOperator join_operator;
@@ -92,11 +94,7 @@ struct RelationStats
 
     String table_name;
 
-    /// See `DPJoinEntry::pointEstimate`.
-    std::optional<UInt64> pointEstimate() const
-    {
-        return (estimated_rows_kind == RowCountKind::Exact || estimated_rows_kind == RowCountKind::Estimate) ? estimated_rows : std::nullopt;
-    }
+    std::optional<UInt64> pointEstimate() const { return DB::pointEstimate(estimated_rows, estimated_rows_kind); }
 };
 
 struct QueryGraph

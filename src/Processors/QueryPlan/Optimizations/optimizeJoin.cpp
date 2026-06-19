@@ -692,13 +692,22 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
 
+static String dumpRowCountForLogs(const RelationStats & stats)
+{
+    switch (stats.estimated_rows_kind)
+    {
+        case RowCountKind::Exact:      return fmt::format("{} (exact)", stats.estimated_rows.value());
+        case RowCountKind::UpperBound: return fmt::format("<= {}", stats.estimated_rows.value());
+        case RowCountKind::Estimate:   return fmt::format("{} (est)", stats.estimated_rows.value());
+        case RowCountKind::Unknown:    return "unknown";
+    }
+}
+
 static String dumpStatsForLogs(const RelationStats & stats)
 {
     return fmt::format("{}: {} rows, columns: [{}]",
         stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows_kind == RowCountKind::UpperBound
-            ? fmt::format("unknown (<= {})", stats.estimated_rows.value())
-            : (stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown"),
+        dumpRowCountForLogs(stats),
         fmt::join(stats.column_stats | std::views::transform(
             [](const auto & p)
             {
