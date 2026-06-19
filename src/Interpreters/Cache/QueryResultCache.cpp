@@ -24,6 +24,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
+#include <chrono>
+#include <condition_variable>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
@@ -205,7 +207,7 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     return finder_data.has_system_tables;
 }
 
-bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
+bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check, bool no_throw)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -219,14 +221,22 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
         const QueryResultCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
 
         if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
+        {
+            if (no_throw)
+                return false;
             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
                 "The query result was not cached because the query contains a non-deterministic function."
                 " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless, or omit caching");
+        }
 
         if (ast_contains_system_tables && system_table_handling == QueryResultCacheSystemTableHandling::Throw)
+        {
+            if (no_throw)
+                return false;
             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
                 "The query result was not cached because the query contains a system table."
                 " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless, or omit caching");
+        }
 
         if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
             && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
@@ -554,6 +564,35 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
     SipHash hash;
     hash.update(key.ast_hash.low64);
     hash.update(key.is_subquery);
+    return hash.get64();
+}
+
+bool QueryResultCache::HerdCoalescingKey::operator==(const HerdCoalescingKey & other) const
+{
+    if (ast_hash != other.ast_hash)
+        return false;
+    if (share_between_users != other.share_between_users)
+        return false;
+    if (share_between_users)
+        return true;
+    return user_id == other.user_id && current_user_roles == other.current_user_roles;
+}
+
+/// Hash the herd coalescing key
+/// If not sharing between users, include the user id and roles in the hash.
+size_t QueryResultCache::HerdCoalescingKeyHash::operator()(const HerdCoalescingKey & k) const
+{
+    SipHash hash;
+    hash.update(k.ast_hash.low64);
+    hash.update(k.ast_hash.high64);
+    hash.update(k.share_between_users);
+    if (!k.share_between_users)
+    {
+        if (k.user_id.has_value())
+            hash.update(k.user_id->toUnderType());
+        for (const auto & role : k.current_user_roles)
+            hash.update(role.toUnderType());
+    }
     return hash.get64();
 }
 
@@ -916,12 +955,135 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
     return std::move(source_from_chunks_extremes);
 }
 
+/// One in-flight computation that concurrent identical queries coalesce on. It also stores its own key so that
+/// `finishAsyncInsert` can locate and remove the matching map entry while waking is keyed on the token object itself.
+struct QueryResultCache::HerdCoalescingToken
+{
+    explicit HerdCoalescingToken(HerdCoalescingKey key_) : key(std::move(key_)) {}
+
+    const HerdCoalescingKey key;
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool done = false;
+};
+
+/// Thundering-herd coalescing for the streaming insert path. Holds all the heavy synchronization state (token map,
+/// mutex, condition variables) out of the header. The first query for a key becomes the "executor"; concurrent identical
+/// queries wait on the executor's token until it is done (finishAsyncInsert) or until a timeout.
+class QueryResultCache::HerdCoalescing
+{
+public:
+    HerdCoalescingTokenPtr startAsyncInsert(const HerdCoalescingKey & key, std::chrono::milliseconds timeout);
+    void finishAsyncInsert(const HerdCoalescingTokenPtr & token);
+    void clear();
+
+private:
+    using TokenPtr = HerdCoalescingTokenPtr;
+
+    /// Mark the given tokens done and wake their waiters. Must be called without `mutex` held.
+    static void wake(const std::vector<TokenPtr> & tokens);
+
+    std::mutex mutex;
+    std::unordered_map<HerdCoalescingKey, TokenPtr, HerdCoalescingKeyHash> tokens TSA_GUARDED_BY(mutex);
+};
+
+void QueryResultCache::HerdCoalescing::wake(const std::vector<TokenPtr> & tokens_to_wake)
+{
+    for (const auto & token : tokens_to_wake)
+    {
+        std::lock_guard token_lock(token->mutex);
+        token->done = true;
+    }
+    for (const auto & token : tokens_to_wake)
+        token->cv.notify_all();
+}
+
+QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::HerdCoalescing::startAsyncInsert(const HerdCoalescingKey & key, std::chrono::milliseconds timeout)
+{
+    TokenPtr existing_token;
+    {
+        std::lock_guard lock(mutex);
+        auto [it, inserted] = tokens.try_emplace(key, std::make_shared<HerdCoalescingToken>(key));
+        if (inserted)
+            return it->second; /// This query is the executor; it owns the token and must call finishAsyncInsert.
+        existing_token = it->second;
+    }
+
+    auto & token = *existing_token;
+    bool timed_out = false;
+    {
+        std::unique_lock token_lock(token.mutex);
+        /// Loop until the token is done or the timeout is reached.
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (!token.done)
+        {
+            if (token.cv.wait_until(token_lock, deadline) == std::cv_status::timeout)
+            {
+                timed_out = !token.done;
+                break;
+            }
+        }
+    }
+
+    /// We timed out waiting for the executor. This is the failure mode the timeout exists for: the executor may have died
+    /// without calling finishAsyncInsert, leaving its token in the map forever. Remove the stale token so the degraded
+    /// state does not persist for this key - otherwise every subsequent query would block for the full timeout. Only erase
+    /// if the map still points to the same token, to avoid removing a fresh token started by another query in the meantime.
+    /// Removing the map entry never strands other waiters still blocked on this token: the executor wakes them through the
+    /// token object directly in finishAsyncInsert, not via a map lookup.
+    if (timed_out)
+    {
+        std::lock_guard lock(mutex);
+        auto it = tokens.find(key);
+        if (it != tokens.end() && it->second == existing_token)
+            tokens.erase(it);
+    }
+    return nullptr;
+}
+
+void QueryResultCache::HerdCoalescing::finishAsyncInsert(const TokenPtr & token)
+{
+    if (!token)
+        return;
+
+    {
+        std::lock_guard lock(mutex);
+        auto it = tokens.find(token->key);
+        /// Remove only our own token. A waiter may have timed out and erased it, and a later query may have installed a
+        /// fresh token for the same key; we must not evict that one. Regardless, we still wake our own waiters below.
+        if (it != tokens.end() && it->second == token)
+            tokens.erase(it);
+    }
+    wake({token});
+}
+
+void QueryResultCache::HerdCoalescing::clear()
+{
+    std::vector<TokenPtr> tokens_to_wake;
+    {
+        std::lock_guard lock(mutex);
+        tokens_to_wake.reserve(tokens.size());
+        /// Save the tokens before clearing the map.
+        for (const auto & kv : tokens)
+            tokens_to_wake.push_back(kv.second);
+        tokens.clear();
+    }
+    /// The waiters blocked in startAsyncInsert are waiting for a currently running query to finish and insert its result into the
+    /// cache. When the cache is cleared (SYSTEM CLEAR QUERY CACHE), there will no longer be any in-progress entry for their key, so
+    /// these waiters are woken up. Once woken, they will each attempt to execute the queries themselves and possibly insert their
+    /// result, rather than waiting any longer. Without this, the waiters would stall until timeout unnecessarily.
+    wake(tokens_to_wake);
+}
+
 QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
     : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
             CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+    , herd_coalescing(std::make_unique<HerdCoalescing>())
 {
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
 }
+
+QueryResultCache::~QueryResultCache() = default;
 
 void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
 {
@@ -967,6 +1129,7 @@ void QueryResultCache::clear(const std::optional<String> & tag)
     else
     {
         cache.clear();
+        herd_coalescing->clear();
     }
 
     std::lock_guard lock(mutex);
@@ -1002,6 +1165,16 @@ size_t QueryResultCache::recordQueryRun(const Key & key)
 std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
 {
     return cache.dump();
+}
+
+QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::startAsyncInsert(const HerdCoalescingKey & key, std::chrono::milliseconds timeout)
+{
+    return herd_coalescing->startAsyncInsert(key, timeout);
+}
+
+void QueryResultCache::finishAsyncInsert(const HerdCoalescingTokenPtr & token)
+{
+    herd_coalescing->finishAsyncInsert(token);
 }
 
 }

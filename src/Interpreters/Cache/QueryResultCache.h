@@ -11,7 +11,12 @@
 #include <Parsers/IAST_fwd.h>
 #include <base/UUID.h>
 
+#include <chrono>
+#include <memory>
+#include <mutex>
 #include <optional>
+#include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -24,7 +29,10 @@ struct Settings;
 /// When skip_context_check is true, the context's canUseQueryResultCache flag is not checked.
 /// This is used for explicit per-subquery opt-in where the subquery has SETTINGS use_query_cache = true
 /// but the outer query context may not have the flag set.
-bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false);
+/// When no_throw is true, the function returns false instead of throwing for the cases above; this is used to
+/// probe write-eligibility before query execution (e.g. for thundering-herd coalescing) without changing where
+/// the user-visible exception surfaces.
+bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false, bool no_throw = false);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
@@ -124,6 +132,28 @@ public:
         bool operator==(const Key & other) const;
     };
 
+    /// Coalescing key for thundering herd: unlike `Key::operator==` (AST-only), this includes user id and
+    /// roles when `query_cache_share_between_users` is false, matching `QueryResultCacheReader` access rules.
+    struct HerdCoalescingKey
+    {
+        IASTHash ast_hash;
+        std::optional<UUID> user_id;
+        std::vector<UUID> current_user_roles;
+        bool share_between_users;
+
+        bool operator==(const HerdCoalescingKey & other) const;
+    };
+
+    struct HerdCoalescingKeyHash
+    {
+        size_t operator()(const HerdCoalescingKey & key) const;
+    };
+
+    /// Opaque handle returned to the herd "executor" by `startAsyncInsert`. The executor passes it back to
+    /// `finishAsyncInsert` to wake its own waiters. Defined in the .cpp so the synchronization primitives stay there.
+    struct HerdCoalescingToken;
+    using HerdCoalescingTokenPtr = std::shared_ptr<HerdCoalescingToken>;
+
     struct Entry
     {
         Chunks chunks;
@@ -152,6 +182,7 @@ public:
     using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
 
     QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+    ~QueryResultCache();
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
@@ -173,6 +204,15 @@ public:
     /// Record new execution of query represented by key. Returns number of executions so far.
     size_t recordQueryRun(const Key & key);
 
+    /// Thundering-herd coalescing for the streaming insert path. The first query for a key becomes the "executor" and
+    /// startAsyncInsert returns a non-null token; concurrent identical queries wait (bounded by `timeout`) for the
+    /// executor's finishAsyncInsert and return nullptr. Waiters that time out drop the stale token so the degraded state
+    /// does not persist for the key (the next query becomes a fresh executor). The executor must pass the returned token
+    /// back to finishAsyncInsert: waking is keyed on the token itself, not the map, so a waiter that times out and removes
+    /// a stale map entry cannot strand other waiters still blocked on that token.
+    HerdCoalescingTokenPtr startAsyncInsert(const HerdCoalescingKey & key, std::chrono::milliseconds timeout);
+    void finishAsyncInsert(const HerdCoalescingTokenPtr & token);
+
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;
 
@@ -188,6 +228,11 @@ private:
     /// Cache configuration
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
+
+    /// Thundering-herd coalescing state (token map, mutex, condition variables). Kept behind a pointer so that the heavy
+    /// synchronization headers (e.g. <condition_variable>) stay in the .cpp and do not leak into this widely-included header.
+    class HerdCoalescing;
+    const std::unique_ptr<HerdCoalescing> herd_coalescing;
 
     friend class StorageSystemQueryResultCache;
     friend class QueryResultCacheWriter;
