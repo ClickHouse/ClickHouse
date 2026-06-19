@@ -424,8 +424,8 @@ private:
         PlanSchedule schedule;
 
         /// Per-retrieve runtime status, 1:1 with `schedule.retrieves`, allocated at
-        /// plan build and reset on re-plan/seek. The assert spine maintains it as a
-        /// debug shadow; the schedule-driven interpreter maintains and serves from it.
+        /// plan build and reset on re-plan/seek. The schedule-driven interpreter maintains
+        /// it (phase transitions) and serves from it (`depsSatisfied`, serve dispatch).
         VectorWithMemoryTracking<RetrieveStatus> retrieve_status;
 
         /// The step interpreter's loop authority - an index into `schedule.steps`,
@@ -473,11 +473,11 @@ private:
         /// connection with THIS, never the live `read_extent_end` member - a
         /// soft-cancelled machine must not race `setReadExtent`.
         std::optional<size_t> extent_snapshot;
-        /// SE-2 assert spine: the schedule retrieve this machine fulfills (index into the
-        /// launch-time plan's `schedule.retrieves` / `retrieve_status`). Meaningful only
-        /// while this machine is the live in-flight handle of that plan; the re-plan
-        /// barrier (`chassert(!machine)`) guarantees no machine straddles a plan rebuild.
-        /// Set and read only under the assert spine (`DEBUG_OR_SANITIZER_BUILD`).
+        /// The schedule retrieve this machine fulfills (index into the launch-time plan's
+        /// `schedule.retrieves` / `retrieve_status`). Set at launch; read live by
+        /// `reapPutMachine` (marks the retrieve Done) and `cancelMachine` (clears the
+        /// handle). Meaningful only while this machine is the live in-flight handle of that
+        /// plan; the re-plan barrier (`chassert(!machine)`) guarantees none straddles a rebuild.
         size_t retrieve_index = 0;
         /// The long source connection CARRIED by this machine: moved in from the
         /// foreground at launch (a machine never opens one itself - the foreground is
@@ -840,15 +840,13 @@ private:
     /// plan.
     void observeAndSchedule(size_t physical_start);
 
-    /// Schedule processing state maintenance. The assert spine (debug-only) maintains it
-    /// as a shadow alongside the live walk; the schedule-driven interpreter maintains it
-    /// for real and serves from it. `cursor` = index of the step whose `output` contains
-    /// the current `position_phys`; `retrieve_status[ri].phase` mirrors the machine lifecycle.
+    /// Schedule-cursor maintenance: `cursor` = index of the `schedule.steps` step whose
+    /// `output` contains the current `position_phys`; the interpreter dispatches and serves
+    /// from it. `reconstructCursor` re-derives it after a re-plan or seek; `advanceCursor`
+    /// moves it forward as windows are served.
     size_t findStepContaining(size_t pos_phys) const;
-    void shadowReconstructCursor();
-    void shadowAdvanceCursor();
-    void shadowSetPhase(const FetchMachine & m, RetrievePhase phase);
-    void shadowResetRetrieve(const FetchMachine & m);
+    void reconstructCursor();
+    void advanceCursor();
 
     /// The schedule-driven interpreter: `readNextWindow` runs the schedule's already-planned
     /// jobs instead of re-deriving the next gap from the coverage map. `interpretStep`

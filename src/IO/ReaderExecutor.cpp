@@ -467,11 +467,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
                 || (position_phys + window_size > read_plan.geometry()->plan_end && !planReachesEnd())))
         {
             observeAndSchedule(position_phys);
-            shadowReconstructCursor();
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: a fresh plan starts at the cursor
-            chassert(read_plan.schedule.steps.empty()
-                || read_plan.schedule.steps.front().output.offset == position_phys);
-#endif
+            reconstructCursor();
         }
     }
 
@@ -486,23 +482,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// `predictedReach` sizes the next residency lookup span (`boundedPlanSpan`).
     if (chain.range().size)
         lookup_continuity.onServe(position_phys, chain.range().size);
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: the window is a prefix of (or equals) the cursor step
-    if (read_plan.geometry() && !read_plan.schedule.steps.empty() && !chain.empty() && !reached_eof
-        && read_plan.cursor < read_plan.schedule.steps.size())
-    {
-        const size_t produced_off_phys = (position - chain.range().size) + data_start_offset;
-        const auto & step = read_plan.schedule.steps[read_plan.cursor];
-        chassert(produced_off_phys >= step.output.offset);
-        chassert(produced_off_phys + chain.range().size <= step.output.end());
-        /// Strict equality only when this window spanned the whole step (known size); a
-        /// step wider than the per-call block/window is served over several windows.
-        if (!offset_map.hasUnknownSize()
-            && produced_off_phys == step.output.offset
-            && position + data_start_offset == step.output.end())
-            chassert(chain.range().size == step.output.size);
-    }
-#endif
-    shadowAdvanceCursor();
+    advanceCursor();
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         chain.range().size, chain.getNodes().size(), position);
 
@@ -532,7 +512,7 @@ void ReaderExecutor::seek(size_t new_position)
         LOG_TRACE(log, "seek: target within prefetch [{}, {}), keeping prefetch",
             machine->requested_range.offset, machine->requested_range.end());
         position = new_position;
-        shadowReconstructCursor();  /// jumped within the surviving plan
+        reconstructCursor();  /// jumped within the surviving plan
         return;
     }
 
@@ -860,9 +840,6 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
         /// un-joined; see `cancelMachine`).
         LOG_TRACE(log, "tryCollectMachine: prefetch was queued, cancelling and reading from position {}", position);
         stats.add(Stats::PrefetchCancelled);
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: revoked before serving -> NotLaunched
-        shadowResetRetrieve(*m);
-#endif
         abandoned_machines.push_back(std::move(m));
         return false;
     }
@@ -905,12 +882,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
         /// An interrupted step that produced nothing degrades to the revoke path:
         /// the connection is reclaimed (above), the caller reads synchronously.
         if (m->fetched.empty())
-        {
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: interrupted with nothing served -> NotLaunched
-            shadowResetRetrieve(*m);
-#endif
             return false;
-        }
 
         /// A prefix that cannot serve the cursor (extension-only bytes below the
         /// requested range, or a kept seek moved past it) is still BANKED in the
@@ -924,9 +896,6 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
             IntervalSet covered_unused;
             backfillBytes(m->physical_window, requested_phys, m->fetched, assembled, covered_unused,
                 /*push_to_writers=*/false, stats);
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: prefix banked but not served at the cursor -> NotLaunched
-            shadowResetRetrieve(*m);
-#endif
             schedulePutStep(std::move(m), assembled);
             return false;
         }
@@ -974,9 +943,6 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain, bool & is_plainte
     }
     chain = finalizeAssembledWindow(slice_window, pin_frontier, serve_plaintext ? served_plain : result, reached_eof);
     is_plaintext = serve_plaintext;
-#if defined(DEBUG_OR_SANITIZER_BUILD)  /// SE-2: InFlight -> Ready (bytes in hand, serve proceeds)
-    shadowSetPhase(*m, RetrievePhase::Ready);
-#endif
     /// The deferred write side of this window: the put step takes the writers and
     /// the assembled chain to the background. After `finalizeAssembledWindow` - the
     /// pin was just taken from the plan's writers while they were still here.
@@ -2397,9 +2363,8 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ch
     }
 }
 
-/// Schedule processing-state maintenance. Always compiled: the assert spine (debug)
-/// maintains it as a shadow, and the schedule-driven interpreter maintains it for real
-/// and serves from it.
+/// The index of the `schedule.steps` step whose `output` contains `pos_phys` (the live
+/// serve cursor). Clamps to the last step past the materialized span (EOF / extent ceiling).
 size_t ReaderExecutor::findStepContaining(size_t pos_phys) const
 {
     const auto & steps = read_plan.schedule.steps;
@@ -2410,14 +2375,14 @@ size_t ReaderExecutor::findStepContaining(size_t pos_phys) const
     return steps.empty() ? 0 : steps.size() - 1;
 }
 
-void ReaderExecutor::shadowReconstructCursor()
+void ReaderExecutor::reconstructCursor()
 {
     if (!read_plan.geometry() || read_plan.schedule.steps.empty())
         return;
     read_plan.cursor = findStepContaining(position + data_start_offset);
 }
 
-void ReaderExecutor::shadowAdvanceCursor()
+void ReaderExecutor::advanceCursor()
 {
     const size_t pos_phys = position + data_start_offset;
     auto & cursor = read_plan.cursor;
@@ -2427,21 +2392,6 @@ void ReaderExecutor::shadowAdvanceCursor()
     /// step that now contains the position rather than incrementing once per window.
     while (cursor + 1 < steps.size() && steps[cursor].output.end() <= pos_phys)
         ++cursor;
-}
-
-void ReaderExecutor::shadowSetPhase(const FetchMachine & m, RetrievePhase phase)
-{
-    if (m.retrieve_index < read_plan.retrieve_status.size())
-        read_plan.retrieve_status[m.retrieve_index].phase = phase;
-}
-
-void ReaderExecutor::shadowResetRetrieve(const FetchMachine & m)
-{
-    /// Reads only the immutable launch-time `retrieve_index` and writes the
-    /// foreground-private sidecar, so it is safe even on the soft-cancel path where
-    /// the worker may still own the rest of the machine payload.
-    if (m.retrieve_index < read_plan.retrieve_status.size())
-        read_plan.retrieve_status[m.retrieve_index] = {};
 }
 
 // ─── Schedule-driven interpreter ──────────────────────────────────────────────
@@ -2547,7 +2497,7 @@ void ReaderExecutor::maybeLaunchAhead()
     if (!read_plan.geometry() || !read_plan.geometry()->covers(ByteRange{position_phys, probe}))
     {
         observeAndSchedule(position_phys);
-        shadowReconstructCursor();
+        reconstructCursor();
     }
     if (effectivePrefetchWindowSize(read_plan.geometry()->pressure_level) == 0)
         return;  /// read-ahead suppressed under High/Critical memory pressure
@@ -2685,7 +2635,7 @@ ChainedBuffers ReaderExecutor::handleExtentOrReplan(size_t position_phys, size_t
     if (!read_plan.geometry() || read_plan.cursor >= read_plan.schedule.steps.size())
     {
         observeAndSchedule(position_phys);
-        shadowReconstructCursor();
+        reconstructCursor();
         if (read_plan.schedule.steps.empty())
             return {};
     }
@@ -2984,8 +2934,7 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     auto m = std::move(machine);
     if (!m)
         return;
-    /// Clear the cancelled job's non-owning machine handle in ALL builds: it is live
-    /// serve state for the schedule-driven interpreter, not just a debug shadow. Without
+    /// Clear the cancelled job's non-owning machine handle: it is live serve state. Without
     /// this, a later `serveRetrieveStep` would see a stale `st.machine` and collect a
     /// machine the foreground no longer owns (a null `shared_ptr` deref). The banked
     /// `ready_bytes`/`fetched` stay valid - the cursor has not moved (`setReadExtent`), or
