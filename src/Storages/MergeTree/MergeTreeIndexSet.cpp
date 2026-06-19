@@ -806,7 +806,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
     return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index);
 }
 
