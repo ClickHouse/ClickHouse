@@ -562,13 +562,20 @@ void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
     /// would need explicit buffer trimming, which the executor does not support.
     chassert(!logical_end || *logical_end >= position);
 
-    /// Detach any in-flight machine before changing the extent: a read-ahead
-    /// issued for the old range must not be served for the new one. The cancel
-    /// is SOFT (no wait): the machine works against its own launch-time extent
-    /// snapshot, never the live member, so the mutation below cannot race it.
-    /// No-op when no machine is in flight (the common per-mark-range boundary,
-    /// where prefetch is clamped to the extent), so it is free on the hot path.
-    cancelMachine(/*cancelled=*/true);
+    /// An ADVANCE (or clear to EOF) does NOT invalidate an in-flight read-ahead: the
+    /// long connection is opened PAST the current extent (`longConnectionBound` =
+    /// `max(extent, reach)`), so it already covers the larger bound and keeps
+    /// streaming - one GET spans the mark ranges. Cancelling here would reset that GET
+    /// at every per-mark-range bound advance, forcing a fresh GET (and its S3
+    /// first-byte) per range - the populate-path GET amplification. The machine reads
+    /// against its immutable launch-time `extent_snapshot`, so updating the live bound
+    /// cannot race it, and serving stays bounded by `clampToExtent` on the live
+    /// `read_extent_end`. Only a backward SHRINK (which MergeTree never issues - see the
+    /// assert above) would strand an over-reading prefetch past the new bound, so detach
+    /// the machine just then.
+    const bool advance_or_clear = !logical_end || (read_extent_end && *logical_end >= *read_extent_end);
+    if (!advance_or_clear)
+        cancelMachine(/*cancelled=*/true);
     read_extent_end = logical_end;
 }
 
