@@ -1614,7 +1614,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             effective_storage = underlying_dist;
                             effective_snapshot = underlying_dist->getStorageSnapshot(
                                 underlying_dist->getInMemoryMetadataPtr(query_context, false), query_context);
-                            effective_context = inner_context;
+
+                            /// Disable result-size limits and extremes for the underlying distributed
+                            /// read, mirroring StorageView::readImpl (getViewContext). These settings
+                            /// must be enforced only at the outer query boundary (the final result),
+                            /// not on the inner view read: otherwise a query like
+                            /// `SELECT id FROM v ORDER BY id LIMIT 1 SETTINGS max_result_rows = 1`
+                            /// could throw on a shard whose intermediate result exceeds the limit,
+                            /// before the coordinator applies the final ORDER BY/LIMIT. The outer query
+                            /// still runs under query_context, so the limits remain enforced on the
+                            /// result the client receives.
+                            auto read_context = Context::createCopy(inner_context);
+                            read_context->setSetting("max_result_rows", Field(0));
+                            read_context->setSetting("max_result_bytes", Field(0));
+                            read_context->setSetting("extremes", Field(false));
+                            effective_context = std::move(read_context);
                         }
                     }
                 }
