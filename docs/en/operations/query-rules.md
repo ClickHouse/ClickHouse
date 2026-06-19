@@ -31,7 +31,9 @@ A `{name:Type}` placeholder uses the query parameter syntax, but here `Type` is 
 
 A placeholder with any other type (for example `{x:UInt64}` or `{d:Date}`) is rejected at `CREATE RULE` / `ALTER RULE` time, because it would be stored but never match any query.
 
-Every `{name:Type}` placeholder referenced by a rule's result template must also appear in its source template, and a placeholder must not be repeated within the source template. Such rules are rejected at `CREATE RULE` / `ALTER RULE` time.
+Every `{name:Type}` placeholder referenced by a rule's result template must also appear in its source template, and a placeholder must not be repeated within the source template. A placeholder reused in the result template must declare the same `Type` as in the source template. Such rules are rejected at `CREATE RULE` / `ALTER RULE` time.
+
+A rule template may itself be a `CREATE RULE` / `ALTER RULE` statement, but a `{name:Type}` placeholder inside such a nested rule template is not supported and is rejected at `CREATE RULE` / `ALTER RULE` time.
 
 ## Syntax {#syntax}
 
@@ -111,11 +113,17 @@ Format of table: `{name:String, rule:String}` where name is rule name and rule i
 System table `system.query_rules_log` stores logs of query rules.
 Format of table: `{original_query:String, applied_rules:Array(String), resulting_query: String}`.
 
+Both tables only return rows to users who hold at least one of the `CREATE RULE`, `ALTER RULE` or `DROP RULE` grants. A user without any of these grants sees no rows, so rule definitions and rewrite activity (which may reference table names, filters and secrets) are not exposed to users who cannot manage rules.
+
 ## System setting {#system-setting}
 
 System boolean setting `query_rules` activates query rewrite rules. By default value is false. It is an `EXPERIMENTAL` setting.
 
 `query_rules` is a session/profile-level setting: it is evaluated before a query's own `SETTINGS` clause is interpreted, so `SELECT ... SETTINGS query_rules = ...` does not affect whether rules are applied to that query. Set it at the session or profile level instead.
+
+## Limitations {#limitations}
+
+Rules are matched against the parsed query **before** query parameters (`{name:Type}` of a prepared statement) are substituted. As a result, a value supplied through a query parameter reaches the matcher as a placeholder rather than as the literal it will become, so a query that parameterizes the matched value is not matched. In particular, a `REJECT` rule that blocks a specific literal can be bypassed by passing that literal through a query parameter. Do not rely on `REJECT` rules as a security boundary against users who can choose how to parameterize their queries.
 
 ## Access grants {#access-grants}
 

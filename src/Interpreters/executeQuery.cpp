@@ -1349,6 +1349,13 @@ static BlockIO executeQueryImpl(
         /// (`InterpreterSetQuery::applySettingsFromQuery` below), so `query_rules` is a
         /// session/profile-level setting: `SELECT ... SETTINGS query_rules = ...` does not
         /// affect whether rules are applied to that query.
+        ///
+        /// Known limitation: because matching happens before parameter substitution, a value
+        /// supplied via a query parameter reaches the matcher as an `ASTQueryParameter` rather
+        /// than the literal it becomes, so a parameterized query is not matched. A `REJECT`
+        /// rule that blocks a literal can therefore be bypassed by passing that literal as a
+        /// query parameter; `REJECT` rules are not a security boundary (documented in
+        /// docs/en/operations/query-rules.md).
         astTraversal(out_ast, context);
 
         const char * query_end = end;
