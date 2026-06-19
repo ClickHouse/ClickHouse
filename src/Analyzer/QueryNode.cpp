@@ -389,7 +389,9 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(is_cte);
         state.update(cte_name.size());
         state.update(cte_name);
-        state.update(cte_name_is_double_quoted);
+        /// Skip the quote flag when it's the default (false) so non-CTE queries keep the old hash
+        if (cte_name_is_double_quoted)
+            state.update(true);
     }
 
     state.update(projection_columns.size());
@@ -401,15 +403,21 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         projection_column.type->updateHash(state);
     }
 
-    state.update(projection_aliases_to_override.size());
-    for (size_t i = 0; i < projection_aliases_to_override.size(); ++i)
+    /// Skip the size prefix when the override list is empty so we keep the previous hash for
+    /// the common case (no projection override) — only mix in size + per-element quote flags
+    /// when we actually have overrides.
+    if (!projection_aliases_to_override.empty())
     {
-        const auto & projection_alias = projection_aliases_to_override[i];
-        state.update(projection_alias.size());
-        state.update(projection_alias);
-        const bool quoted = i < projection_aliases_to_override_is_double_quoted.size()
-            && projection_aliases_to_override_is_double_quoted[i];
-        state.update(quoted);
+        state.update(projection_aliases_to_override.size());
+        for (size_t i = 0; i < projection_aliases_to_override.size(); ++i)
+        {
+            const auto & projection_alias = projection_aliases_to_override[i];
+            state.update(projection_alias.size());
+            state.update(projection_alias);
+            const bool quoted = i < projection_aliases_to_override_is_double_quoted.size()
+                && projection_aliases_to_override_is_double_quoted[i];
+            state.update(quoted);
+        }
     }
 
     state.update(is_materialized);
@@ -530,7 +538,14 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
 
             if (ast_with_alias)
+            {
                 ast_with_alias->setAlias(projection_columns[i].name);
+                /// Preserve the original double-quoting for projection-override aliases
+                /// (`AS t("MyCol")` / `WITH cte("MyCol")`) so reparsing under `standard` mode
+                /// keeps the column alias case-sensitive instead of folding it to unquoted.
+                if (i < projection_aliases_to_override_is_double_quoted.size())
+                    ast_with_alias->alias_is_double_quoted = projection_aliases_to_override_is_double_quoted[i];
+            }
         }
     }
 

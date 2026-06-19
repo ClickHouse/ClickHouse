@@ -253,7 +253,9 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
     state.update(cte_name.size());
     state.update(cte_name);
-    state.update(cte_name_is_double_quoted);
+    /// Skip the quote flag when it's the default (false) so non-CTE unions keep the old hash
+    if (cte_name_is_double_quoted)
+        state.update(true);
 
     state.update(static_cast<size_t>(union_mode));
 }

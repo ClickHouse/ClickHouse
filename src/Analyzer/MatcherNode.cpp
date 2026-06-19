@@ -242,25 +242,47 @@ void MatcherNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) con
     const auto & qualified_identifier_full_name = qualified_identifier.getFullName();
     hash_state.update(qualified_identifier_full_name.size());
     hash_state.update(qualified_identifier_full_name);
-    hash_state.update(qualified_identifier_quote_styles.size());
-    for (auto style : qualified_identifier_quote_styles)
-        hash_state.update(static_cast<uint8_t>(style));
 
-    hash_state.update(columns_identifiers.size());
-    for (size_t i = 0; i < columns_identifiers.size(); ++i)
+    /// Mix in qualifier quote styles only when at least one part was actually quoted,
+    /// so plain `T.*` keeps the previous hash unchanged
+    bool any_qualifier_quoted = false;
+    for (auto style : qualified_identifier_quote_styles)
+        if (style != IdentifierQuoteStyle::None)
+        {
+            any_qualifier_quoted = true;
+            break;
+        }
+    if (any_qualifier_quoted)
     {
-        const auto & identifier_full_name = columns_identifiers[i].getFullName();
+        hash_state.update(qualified_identifier_quote_styles.size());
+        for (auto style : qualified_identifier_quote_styles)
+            hash_state.update(static_cast<uint8_t>(style));
+    }
+
+    for (const auto & identifier : columns_identifiers)
+    {
+        const auto & identifier_full_name = identifier.getFullName();
         hash_state.update(identifier_full_name.size());
         hash_state.update(identifier_full_name);
-        if (i < columns_identifiers_quote_styles.size())
+    }
+
+    /// Mix in per-argument quote styles only when at least one argument had a quoted part
+    bool any_arg_quoted = false;
+    for (const auto & arg_quotes : columns_identifiers_quote_styles)
+        for (auto style : arg_quotes)
+            if (style != IdentifierQuoteStyle::None)
+            {
+                any_arg_quoted = true;
+                break;
+            }
+    if (any_arg_quoted)
+    {
+        hash_state.update(columns_identifiers_quote_styles.size());
+        for (const auto & arg_quotes : columns_identifiers_quote_styles)
         {
-            hash_state.update(columns_identifiers_quote_styles[i].size());
-            for (auto style : columns_identifiers_quote_styles[i])
+            hash_state.update(arg_quotes.size());
+            for (auto style : arg_quotes)
                 hash_state.update(static_cast<uint8_t>(style));
-        }
-        else
-        {
-            hash_state.update(size_t(0));
         }
     }
 

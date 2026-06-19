@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- Tests: standard mode, default mode, column resolution, compound identifiers
 
 SET allow_experimental_analyzer = 1;

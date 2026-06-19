@@ -214,8 +214,10 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         {
             hash_state.update(node_to_process->alias.size());
             hash_state.update(node_to_process->alias);
-            /// Quoted vs unquoted alias is semantic in `standard` mode
-            hash_state.update(node_to_process->alias_is_double_quoted);
+            /// Quoted vs unquoted alias is semantic in `standard` mode. Only mix in the flag
+            /// when it's true so old (unquoted) aliases keep their hash unchanged.
+            if (node_to_process->alias_is_double_quoted)
+                hash_state.update(true);
         }
 
         node_to_process->updateTreeHashImpl(hash_state, compare_options);

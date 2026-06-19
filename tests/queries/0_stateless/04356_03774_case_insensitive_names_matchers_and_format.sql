@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- Covers the matcher / qualified-matcher / format-reparse contract edges of `case_insensitive_names = 'standard'`.
 
 SET allow_experimental_analyzer = 1;

@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- Tests: ambiguity, joins, subqueries, CTEs, aliases, nested columns, edge cases
 
 SET allow_experimental_analyzer = 1;

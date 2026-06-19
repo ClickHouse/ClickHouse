@@ -84,6 +84,9 @@ void ASTIdentifier::setShortName(const String & new_name)
 
     full_name = new_name;
     name_parts = {new_name};
+    /// Resetting parts to a single name; the new short name was not quoted by the caller, so
+    /// clear the per-part quote tracking too (semantic in `standard` mode)
+    quote_styles.clear();
 
     bool special = semantic->special;
     auto table = semantic->table;
@@ -98,9 +101,21 @@ void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
     /// Quote styles change analyzer semantics in `standard` mode, so include them in the AST hash
     /// (otherwise `QueryResultCache` could share a cache entry between `"X"` and `X`).
-    hash_state.update(quote_styles.size());
+    /// Only mix in styles when at least one part was actually quoted, so identifiers with the
+    /// default (no quotes) keep their previous hash.
+    bool any_quoted = false;
     for (auto style : quote_styles)
-        hash_state.update(static_cast<uint8_t>(style));
+        if (style != IdentifierQuoteStyle::None)
+        {
+            any_quoted = true;
+            break;
+        }
+    if (any_quoted)
+    {
+        hash_state.update(quote_styles.size());
+        for (auto style : quote_styles)
+            hash_state.update(static_cast<uint8_t>(style));
+    }
 }
 
 const String & ASTIdentifier::name() const
@@ -173,6 +188,10 @@ void ASTIdentifier::restoreTable()
     if (!compound())
     {
         name_parts.insert(name_parts.begin(), semantic->table);
+        /// Keep `quote_styles` aligned with `name_parts` when we prepend the table qualifier.
+        /// The inserted table name comes from semantic, not user input, so it has no quote style.
+        if (!quote_styles.empty())
+            quote_styles.insert(quote_styles.begin(), IdentifierQuoteStyle::None);
         resetFullName();
     }
 }

@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- SQL Standard: unquoted = case-insensitive, double-quoted = case-sensitive, backtick-quoted = case-insensitive
 
 SET allow_experimental_analyzer = 1;
