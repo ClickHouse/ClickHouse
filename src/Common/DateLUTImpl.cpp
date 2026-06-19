@@ -324,7 +324,11 @@ DateLUTImpl::Time DateLUTImpl::addDaysOutOfRange(Time t, Int64 delta) const
     t = std::clamp(t, min_chrono_safe_time, max_chrono_safe_time);
     const cctz::time_zone & tz = *cctz_time_zone;
     const cctz::civil_second cs = cctz::convert(std::chrono::system_clock::from_time_t(t), tz);
-    const cctz::civil_day target_day = cctz::civil_day{cs} + delta;
+    /// Saturate to the representable calendar: a huge delta would otherwise move the day far outside
+    /// [0000, 9999] and overflow the conversion back to a time point.
+    const Int64 capped_delta = std::clamp(delta, min_representable_day_index - max_representable_day_index, max_representable_day_index - min_representable_day_index);
+    const Int64 day_index = std::clamp(dayIndexOfCivilDay(cctz::civil_day{cs} + capped_delta), min_representable_day_index, max_representable_day_index);
+    const cctz::civil_day target_day = cctz::civil_day{DATE_LUT_MIN_YEAR, 1, 1} + day_index;
     const cctz::civil_second target{target_day.year(), target_day.month(), target_day.day(), cs.hour(), cs.minute(), cs.second()};
     return std::chrono::system_clock::to_time_t(tz.lookup(target).pre);
 }
@@ -335,9 +339,13 @@ DateLUTImpl::Time DateLUTImpl::addMonthsOutOfRange(Time t, Int64 delta) const
     const cctz::time_zone & tz = *cctz_time_zone;
     const cctz::civil_second cs = cctz::convert(std::chrono::system_clock::from_time_t(t), tz);
 
-    const Int64 month_index = static_cast<Int64>(cs.year()) * 12 + (cs.month() - 1) + delta;
-    const Int64 year = month_index >= 0 ? month_index / 12 : -((-month_index + 11) / 12);
-    const int month = static_cast<int>(month_index - year * 12) + 1;
+    /// Cap the delta so the month index cannot overflow Int64 for a huge interval.
+    const Int64 capped_delta = std::clamp<Int64>(delta, -12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1), 12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1));
+    const Int64 month_index = static_cast<Int64>(cs.year()) * 12 + (cs.month() - 1) + capped_delta;
+    const Int64 unclamped_year = month_index >= 0 ? month_index / 12 : -((-month_index + 11) / 12);
+    const int month = static_cast<int>(month_index - unclamped_year * 12) + 1;
+    /// Saturate to the representable calendar so converting the result back to a time point cannot overflow.
+    const Int64 year = std::clamp<Int64>(unclamped_year, DATE_LUT_MIN_REPRESENTABLE_YEAR, DATE_LUT_MAX_REPRESENTABLE_YEAR);
 
     /// Saturate the day of month, e.g. 31 Jan + 1 month = 28/29 Feb.
     const int day_of_month = std::min<int>(cs.day(), daysInCivilMonth(year, month));
@@ -352,7 +360,10 @@ DateLUTImpl::Time DateLUTImpl::addYearsOutOfRange(Time t, Int64 delta) const
     const cctz::time_zone & tz = *cctz_time_zone;
     const cctz::civil_second cs = cctz::convert(std::chrono::system_clock::from_time_t(t), tz);
 
-    const Int64 year = static_cast<Int64>(cs.year()) + delta;
+    /// Saturate to the representable calendar so a huge delta cannot overflow the year computation or the
+    /// conversion of the result back to a time point.
+    const Int64 capped_delta = std::clamp<Int64>(delta, -(DATE_LUT_MAX_REPRESENTABLE_YEAR + 1), DATE_LUT_MAX_REPRESENTABLE_YEAR + 1);
+    const Int64 year = std::clamp<Int64>(static_cast<Int64>(cs.year()) + capped_delta, DATE_LUT_MIN_REPRESENTABLE_YEAR, DATE_LUT_MAX_REPRESENTABLE_YEAR);
     int day_of_month = cs.day();
     /// Saturation to 28 Feb can happen for 29 Feb of a leap year mapped onto a non-leap year.
     if (cs.month() == 2 && day_of_month == 29)
@@ -366,9 +377,13 @@ ExtendedDayNum DateLUTImpl::addMonthsOutOfRange(ExtendedDayNum d, Int64 delta) c
 {
     const cctz::civil_day cd = cctz::civil_day{DATE_LUT_MIN_YEAR, 1, 1} + outOfRangeDayIndex(d);
 
-    const Int64 month_index = static_cast<Int64>(cd.year()) * 12 + (cd.month() - 1) + delta;
-    const Int64 year = month_index >= 0 ? month_index / 12 : -((-month_index + 11) / 12);
-    const int month = static_cast<int>(month_index - year * 12) + 1;
+    /// Cap the delta so the month index cannot overflow Int64 for a huge interval; the day index is clamped
+    /// to the representable calendar below.
+    const Int64 capped_delta = std::clamp<Int64>(delta, -12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1), 12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1));
+    const Int64 month_index = static_cast<Int64>(cd.year()) * 12 + (cd.month() - 1) + capped_delta;
+    const Int64 unclamped_year = month_index >= 0 ? month_index / 12 : -((-month_index + 11) / 12);
+    const int month = static_cast<int>(month_index - unclamped_year * 12) + 1;
+    const Int64 year = std::clamp<Int64>(unclamped_year, DATE_LUT_MIN_REPRESENTABLE_YEAR, DATE_LUT_MAX_REPRESENTABLE_YEAR);
     const int day_of_month = std::min<int>(cd.day(), daysInCivilMonth(year, month));
 
     return dayNumOfDayIndex(dayIndexOfCivilDay(cctz::civil_day{static_cast<int>(year), month, day_of_month}));
@@ -378,7 +393,9 @@ ExtendedDayNum DateLUTImpl::addYearsOutOfRange(ExtendedDayNum d, Int64 delta) co
 {
     const cctz::civil_day cd = cctz::civil_day{DATE_LUT_MIN_YEAR, 1, 1} + outOfRangeDayIndex(d);
 
-    const Int64 year = static_cast<Int64>(cd.year()) + delta;
+    /// Saturate to the representable calendar so a huge delta cannot overflow the year computation.
+    const Int64 capped_delta = std::clamp<Int64>(delta, -(DATE_LUT_MAX_REPRESENTABLE_YEAR + 1), DATE_LUT_MAX_REPRESENTABLE_YEAR + 1);
+    const Int64 year = std::clamp<Int64>(static_cast<Int64>(cd.year()) + capped_delta, DATE_LUT_MIN_REPRESENTABLE_YEAR, DATE_LUT_MAX_REPRESENTABLE_YEAR);
     int day_of_month = cd.day();
     if (cd.month() == 2 && day_of_month == 29)
         day_of_month = std::min(day_of_month, daysInCivilMonth(year, 2));
@@ -388,12 +405,16 @@ ExtendedDayNum DateLUTImpl::addYearsOutOfRange(ExtendedDayNum d, Int64 delta) co
 
 DateLUTImpl::Time DateLUTImpl::makeDateOutOfRange(Int64 year, UInt8 month, UInt8 day_of_month) const
 {
+    /// Saturate the year to the representable calendar so converting the result to a time point cannot overflow.
+    year = std::clamp<Int64>(year, DATE_LUT_MIN_REPRESENTABLE_YEAR, DATE_LUT_MAX_REPRESENTABLE_YEAR);
     const cctz::civil_day date{static_cast<int>(year), month, day_of_month};
     return std::chrono::system_clock::to_time_t(lookupTz(*cctz_time_zone, date));
 }
 
 DateLUTImpl::Time DateLUTImpl::makeDateTimeOutOfRange(Int64 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
 {
+    /// Saturate the year to the representable calendar so converting the result to a time point cannot overflow.
+    year = std::clamp<Int64>(year, DATE_LUT_MIN_REPRESENTABLE_YEAR, DATE_LUT_MAX_REPRESENTABLE_YEAR);
     /// In case of ambiguity (clock moved backwards) we choose the greater timestamp, matching the in-range makeDateTime.
     const cctz::civil_second cs{static_cast<int>(year), month, day_of_month, hour, minute, second};
     return std::chrono::system_clock::to_time_t(cctz_time_zone->lookup(cs).post);
@@ -401,6 +422,7 @@ DateLUTImpl::Time DateLUTImpl::makeDateTimeOutOfRange(Int64 year, UInt8 month, U
 
 ExtendedDayNum DateLUTImpl::makeDayNumOutOfRange(Int64 year, UInt8 month, UInt8 day_of_month) const
 {
+    year = std::clamp<Int64>(year, DATE_LUT_MIN_REPRESENTABLE_YEAR, DATE_LUT_MAX_REPRESENTABLE_YEAR);
     const cctz::civil_day date{static_cast<int>(year), month, day_of_month};
     return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(dayIndexOfCivilDay(date) - daynum_offset_epoch)};
 }
