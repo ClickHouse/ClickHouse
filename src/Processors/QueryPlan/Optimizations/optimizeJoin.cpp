@@ -792,14 +792,23 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     {
         /// The cached size comes from `HashTablesStatistics`, a process-global cache that keeps a
         /// max-like value: it tracks growth immediately but only shrinks when a new size drops
-        /// below half of the stored one. It is a real measurement of a previous build, not a
-        /// guaranteed bound -- but it is the value the optimizer already relies on for join
-        /// reordering, so mark it `Cached`: the upper-bound swap accepts it on the opposite side
-        /// (see `chooseJoinOrder`), unlike a purely-derived `Estimate`. An already-exact leaf stays
-        /// exact: the min only tightens it and remains a valid lower bound.
-        stats.estimated_rows = std::min<UInt64>(stats.pointEstimate().value_or(MAX_ROWS), num_rows_from_cache.value());
-        if (stats.estimated_rows_kind != RowCountKind::Exact)
+        /// below half of the stored one. So it can be STALE-HIGH (above the current size) and stay
+        /// that way indefinitely. It must never raise the estimate above what we already know:
+        ///  * an exact leaf stays exact -- the min only tightens it and remains a valid lower bound;
+        ///  * otherwise the cache is used only when it is at or below the prior value (an upper
+        ///    bound, or a heuristic). When it tightens, the result is a real measurement, so mark
+        ///    it `Cached` -- the value the optimizer already trusts for reordering, which the
+        ///    upper-bound swap accepts on the opposite side (unlike a purely-derived `Estimate`).
+        ///    A stale-high cache is ignored: the known upper bound is kept (and stays UpperBound,
+        ///    so it cannot anchor a swap with a value it never actually measured).
+        const UInt64 cached_rows = num_rows_from_cache.value();
+        if (stats.estimated_rows_kind == RowCountKind::Exact)
+            stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value(), cached_rows);
+        else if (cached_rows <= stats.estimated_rows.value_or(MAX_ROWS))
+        {
+            stats.estimated_rows = cached_rows;
             stats.estimated_rows_kind = RowCountKind::Cached;
+        }
     }
 
     if (!label.empty())
