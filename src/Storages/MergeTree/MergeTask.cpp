@@ -850,6 +850,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// the new default expression instead of the inserted type-default.
         for (const auto & name : part->getSerializationInfos().getSkippedColumns())
         {
+            /// A column dropped (or cleared) by a pending mutation has stale data
+            /// in this part, so its skipped marker must not be carried into the
+            /// merged part. Otherwise, after DROP COLUMN `b` then a merge then
+            /// ADD COLUMN `b` ... DEFAULT 999, the merged part would record a stale
+            /// `b` marker (the drop conversion is gone after the merge), and the
+            /// re-added `b` would read the inserted type-default instead of 999.
+            if (part_alter_conversions->isColumnDropped(name))
+                continue;
+
             if (part_alter_conversions->columnHasNewName(name))
                 source_skipped_columns.insert(part_alter_conversions->getColumnNewName(name));
             else
