@@ -295,6 +295,8 @@ DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(GeoJSONUnsupportedGeometryHandling, FormatSettings::UnsupportedGeometryHandling)
+
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetCompression)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompression)
@@ -490,6 +492,14 @@ enum class SearchOrphanedPartsDisks : uint8_t
 };
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
+
+enum class TextIndexPostingListCodec : uint8_t
+{
+    None,
+    Bitpacking
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
 
 /// NOTE: Part level min-max index depends on strict columns order.
 ///       That means if you want to add new columns segment to index - it will not be materialized until
