@@ -1,5 +1,6 @@
 #include <IO/ReadBufferFromString.h>
 
+#include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <gtest/gtest.h>
@@ -19,15 +20,10 @@ TEST(ZooKeeperTest, TestMatchPath)
 
 TEST(ZooKeeperTest, ListRequestWireRoundTrip)
 {
-    auto roundtrip = [](OpNum expected_op_num, std::optional<ListRequestType> list_request_type,
-                        std::optional<bool> with_stat, std::optional<bool> with_data)
+    auto roundtrip = [](OpNum expected_op_num, ListRequestType list_request_type, bool with_stat, bool with_data)
     {
-        ZooKeeperListRequest request;
-        request.path = "/round/trip";
-        request.has_watch = true;
-        request.list_request_type = list_request_type;
-        request.with_stat = with_stat;
-        request.with_data = with_data;
+        auto request_ptr = zkutil::makeListRequest("/round/trip", list_request_type, with_stat, with_data);
+        auto & request = dynamic_cast<ZooKeeperListRequest &>(*request_ptr);
         EXPECT_EQ(request.getOpNum(), expected_op_num);
 
         WriteBufferFromOwnString out;
@@ -41,14 +37,15 @@ TEST(ZooKeeperTest, ListRequestWireRoundTrip)
         EXPECT_TRUE(in.eof());
         EXPECT_EQ(decoded_list.getOpNum(), expected_op_num);
         EXPECT_EQ(decoded_list.path, request.path);
-        EXPECT_EQ(decoded_list.list_request_type, list_request_type);
-        EXPECT_EQ(decoded_list.with_stat, with_stat);
-        EXPECT_EQ(decoded_list.with_data, with_data);
+        EXPECT_EQ(decoded_list.list_request_type, request.list_request_type);
+        EXPECT_EQ(decoded_list.with_stat, request.with_stat);
+        EXPECT_EQ(decoded_list.with_data, request.with_data);
     };
 
-    roundtrip(OpNum::List, std::nullopt, std::nullopt, std::nullopt);
-    roundtrip(OpNum::FilteredList, ListRequestType::ALL, std::nullopt, std::nullopt);
-    roundtrip(OpNum::FilteredList, ListRequestType::PERSISTENT_ONLY, std::nullopt, std::nullopt);
-    roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::EPHEMERAL_ONLY, true, true);
-    roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, true, false);
+    roundtrip(OpNum::List, ListRequestType::ALL, false, false);
+    roundtrip(OpNum::FilteredList, ListRequestType::PERSISTENT_ONLY, false, false);
+    roundtrip(OpNum::FilteredList, ListRequestType::EPHEMERAL_ONLY, false, false);
+    roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, true, true);
+    roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::EPHEMERAL_ONLY, true, false);
+    roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, false, true);
 }
