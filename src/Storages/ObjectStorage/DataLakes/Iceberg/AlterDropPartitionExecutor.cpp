@@ -771,7 +771,14 @@ void AlterDropPartitionExecutor::run()
             FailPointInjection::pauseFailPoint(FailPoints::iceberg_drop_partition_pause_after_discovery);
         }
 
-        DropPlan plan{findTargetManifests(state, targets)};
+        auto target_manifests = findTargetManifests(state, targets);
+        if (target_manifests.empty())
+        {
+            LOG_INFO(log, "No manifest match the requested partition; DROP PARTITION is a no-op");
+            return;
+        }
+
+        DropPlan plan{std::move(target_manifests)};
 
         /// `tryCommit` logs the committed snapshot details on success.
         if (tryCommit(state, std::move(plan)))

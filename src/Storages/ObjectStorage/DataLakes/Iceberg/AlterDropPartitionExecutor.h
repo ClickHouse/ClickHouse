@@ -74,6 +74,10 @@ private:
     {
         std::vector<TargetManifest> fully_matched;     // entries_to_keep is empty
         std::vector<TargetManifest> partially_matched; // entries_to_keep is non-empty
+
+        bool empty() const {
+            return fully_matched.empty() && partially_matched.empty();
+        }
     };
 
     struct DropPlan
