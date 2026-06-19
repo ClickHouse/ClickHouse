@@ -61,6 +61,7 @@ namespace ProfileEvents
     extern const Event LongConnectionHits;
     extern const Event LongConnectionFallbacks;
     extern const Event LongConnectionBytes;
+    extern const Event ReaderExecutorObservations;
 }
 
 namespace CurrentMetrics
@@ -175,6 +176,7 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case LongConnectionHits:        ProfileEvents::increment(ProfileEvents::LongConnectionHits, value); break;
         case LongConnectionFallbacks:   ProfileEvents::increment(ProfileEvents::LongConnectionFallbacks, value); break;
         case LongConnectionBytes:       ProfileEvents::increment(ProfileEvents::LongConnectionBytes, value); break;
+        case Observations:              ProfileEvents::increment(ProfileEvents::ReaderExecutorObservations, value); break;
         case NumCounters:               break;
     }
 }
@@ -2691,6 +2693,7 @@ ChainedBuffers ReaderExecutor::interpretStep(size_t position_phys, size_t to_rea
 
 void ReaderExecutor::observeAndSchedule(size_t physical_start)
 {
+    stats.add(Stats::Observations);
     /// Machine-check the threading invariant: the held read/write buffers are
     /// foreground-private and must never be torn down / rebuilt while a prefetch worker
     /// is in flight (the worker co-owns only the immutable geometry). Deferred fills

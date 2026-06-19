@@ -250,6 +250,10 @@ private:
             LongConnectionHits,
             LongConnectionFallbacks,
             LongConnectionBytes,
+            /// Number of `observeAndSchedule` calls = residency-plan (re)builds. A
+            /// continuous read whose plan is capped at `read_extent_end` rebuilds per
+            /// mark range; this sizes how short-lived the held cache readers are.
+            Observations,
             NumCounters
         };
 
