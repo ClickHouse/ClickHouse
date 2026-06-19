@@ -31,3 +31,15 @@ SELECT
     event.amount::String::Decimal64(6) AS indirect_via_str_to_dec,
     JSONExtract(event, 'amount', 'Decimal64(6)') AS json_extract_from_jdt
 FORMAT Vertical;
+
+-- float -> DateTime64 / Time64 cast through Decimal, so they round the sub-second part too
+-- (and honor the same `cast_float_to_decimal_uses_rounding` setting).
+SELECT 'DateTime64 / Time64:';
+SELECT toDateTime64(1.2345678, 6, 'UTC');
+SELECT toDateTime64(1.2345678, 6, 'UTC') SETTINGS cast_float_to_decimal_uses_rounding = 0;
+SELECT toTime64(1.2345678, 6);
+SELECT toTime64(1.2345678, 6) SETTINGS cast_float_to_decimal_uses_rounding = 0;
+-- Upper-bound saturation to the type maximum is pre-existing and independent of rounding
+-- (the same result is produced with or without rounding).
+SELECT toDateTime64(10413791999.4, 3, 'UTC');
+SELECT toTime64(3599999.6, 0);
