@@ -338,6 +338,49 @@ def test_stop_during_insert_does_not_duplicate(rabbitmq_cluster):
     assert_dst_count_stable(table, n, seconds=8)
 
 
+def test_cancel_during_insert_does_not_duplicate(rabbitmq_cluster):
+    # CANCEL companion to test_stop_during_insert_does_not_duplicate: a CANCEL during the slow insert
+    # must let the block finish and ack exactly once. CANCEL keeps consuming, so a wrongly requeued
+    # block would be redelivered on its own and show up as a duplicate (no START needed).
+    table = "rabbitmq_cancel_during_insert"
+    exchange = "cancel_during_insert_exchange"
+    n = 5
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{exchange}',
+                     rabbitmq_flush_interval_ms = 500,
+                     rabbitmq_max_block_size = {n},
+                     rabbitmq_row_delimiter = '\\n';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
+        """
+    )
+    instance.wait_for_log_line("Started streaming to 1 attached views")
+
+    # Halt, pre-load exactly one block, then resume: the source polls all n rows at once
+    # (max_block_size = n, no flush wait) and hands them to the ~n*0.4s insert.
+    instance.query(f"SYSTEM STOP test.{table}")
+    publish(rabbitmq_cluster, exchange, 0, n)
+    instance.query(f"SYSTEM START test.{table}")
+
+    # CANCEL during the slow insert; it keeps consuming, so a requeued block would redeliver.
+    time.sleep(1)
+    instance.query(f"SYSTEM CANCEL test.{table}")
+
+    # Acked exactly once: count reaches n and never grows (no duplicate, no loss).
+    wait_dst_count(table, n)
+    assert_dst_count_stable(table, n, seconds=8)
+
+
 def test_system_stop_all_background(rabbitmq_cluster):
     table = "rabbitmq_allbg"
     exchange = "allbg_exchange"

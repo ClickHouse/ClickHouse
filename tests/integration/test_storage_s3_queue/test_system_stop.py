@@ -299,6 +299,52 @@ def test_stop_aborts_inflight_batch_pause_commits_it(started_cluster):
             wait_dst_count(node, table, n_files * ROWS_PER_FILE)
 
 
+def test_cancel_during_insert_does_not_duplicate(started_cluster):
+    # CANCEL companion to test_stop_aborts_inflight_batch_pause_commits_it. For S3Queue the abort
+    # cancels the running insert pipeline and resets the in-flight files; CANCEL keeps polling, so they
+    # are reprocessed on their own. The single-batch commit is atomic, so every file lands exactly once.
+    node = started_cluster.instances["instance"]
+    n_files = 10
+    table = f"s3queue_cancel_insert_{generate_random_string()}"
+    files_path = f"{table}_data"
+    # One commit for the whole batch (threshold 1000) on a single thread, with a per-row-sleeping view,
+    # so the batch stays in-flight long enough for CANCEL to land before it commits.
+    create_table(
+        started_cluster,
+        node,
+        table,
+        "unordered",
+        files_path,
+        additional_settings={
+            "max_processed_files_before_commit": 1000,
+            "processing_threads_num": 1,
+        },
+    )
+    node.query(f"DROP TABLE IF EXISTS {table}_dst")
+    node.query(
+        f"CREATE TABLE {table}_dst (column1 UInt32, column2 UInt32, column3 UInt32) "
+        f"ENGINE = MergeTree ORDER BY column1"
+    )
+    node.query(
+        f"CREATE MATERIALIZED VIEW {table}_mv TO {table}_dst AS "
+        f"SELECT column1, column2, column3 FROM {table} WHERE sleepEachRow(0.1) = 0"
+    )
+
+    # Pre-load while halted, then resume so a fresh batch opens over all the files and processes them
+    # slowly; nothing is marked Processed until the batch commits.
+    node.query(f"SYSTEM STOP {table}")
+    generate_random_files(started_cluster, files_path, count=n_files, start_ind=0)
+    node.query(f"SYSTEM START {table}")
+
+    # CANCEL the in-flight batch; it keeps polling, so the reset files are reprocessed without START.
+    time.sleep(3)
+    node.query(f"SYSTEM CANCEL {table}")
+
+    # Every file lands exactly once: count reaches n_files*ROWS and never grows (no duplicate, no loss).
+    wait_dst_count(node, table, n_files * ROWS_PER_FILE)
+    assert_dst_count_stable(node, table, n_files * ROWS_PER_FILE, seconds=8)
+
+
 def test_stopped_state_does_not_persist_across_restart(started_cluster):
     # The STOP state lives in in-memory action locks, not in on-disk metadata, so it does not survive
     # a server restart: a STOPped table resumes consuming on its own after the node restarts, with no

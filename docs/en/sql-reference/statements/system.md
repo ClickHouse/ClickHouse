@@ -787,7 +787,7 @@ For a refreshable materialized view each verb is an alias of the corresponding `
 
 The per-table and wildcard forms differ in how they treat tables without a background activity. The per-table form (`SYSTEM STOP [db.]table`) throws an error if the named table is neither a streaming engine nor a refreshable materialized view. The wildcard form silently skips such tables, so it is always safe to run.
 
-The unit of streaming background work is one consumption cycle: read a block from the source, insert it into the dependent materialized views, then reach the engine's durable boundary (Kafka offset commit, RabbitMQ/NATS ack, S3Queue/AzureQueue file marked as processed). `STOP` and `CANCEL` abort the in-flight cycle *before* that boundary, so its uncommitted data is redelivered and reprocessed later (except for core NATS, which has no replay).
+`STOP` and `CANCEL` interrupt consumption as soon as possible. For `Kafka`, `RabbitMQ` and `NATS` they stop reading from the source but do not interrupt an insert that has already started: a block already being written into the materialized views still finishes and commits. (`S3Queue` and `AzureQueue` read and insert in a single pipeline, so there the insert is cancelled too and the file is reprocessed later.) Data that was read but not yet committed is consumed again later, so nothing is lost, except for core NATS (without JetStream), which cannot redeliver and drops it.
 
 :::note
 None of these states persist across a server restart. After a restart, refreshable views resume their configured schedules and streaming engines resume consuming.
@@ -795,7 +795,7 @@ None of these states persist across a server restart. After a restart, refreshab
 
 ### SYSTEM STOP {#stop-background}
 
-Interrupt the activity running right now and block any further activity.
+Stop the background activity and keep it stopped: interrupt what is running now, and run nothing further until `SYSTEM START`. Equivalent to `PAUSE` + `CANCEL`.
 
 ```sql
 SYSTEM STOP [db.]table
@@ -813,7 +813,7 @@ SYSTEM START ALL BACKGROUND
 
 ### SYSTEM PAUSE {#pause-background}
 
-Block any further activity, but let the activity running right now finish (reach its durable boundary). Undo with `SYSTEM START`.
+Prevent further background activity, but let whatever is running right now finish first.
 
 ```sql
 SYSTEM PAUSE [db.]table
@@ -831,7 +831,7 @@ SYSTEM CANCEL ALL BACKGROUND
 
 ### SYSTEM REFRESH {#refresh-background}
 
-Trigger one out-of-order refresh or consumption cycle. For a streaming table the cycle runs immediately, exactly once, even while the table is stopped or paused, after which the block applies again. For a refreshable materialized view the command behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the request is remembered and the refresh runs once `SYSTEM START` releases it.
+Run one extra cycle out of schedule. On a streaming table it runs immediately and once, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the refresh is remembered and runs once `SYSTEM START` releases it.
 
 ```sql
 SYSTEM REFRESH [db.]table

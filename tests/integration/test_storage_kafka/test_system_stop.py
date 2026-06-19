@@ -435,6 +435,55 @@ def test_stop_during_insert_does_not_duplicate(kafka_cluster, keeper):
         assert_dst_count_stable(table, n, seconds=8)
 
 
+@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
+def test_cancel_during_insert_does_not_duplicate(kafka_cluster, keeper):
+    # CANCEL companion to test_stop_during_insert_does_not_duplicate: a CANCEL during the slow insert
+    # must let the block finish and commit exactly once. CANCEL keeps scheduling, so a wrongly
+    # rolled-back block would be redelivered on its own and show up as a duplicate (no START needed).
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_cancel_insert_{k.random_string(6)}"
+    n = 5
+    with k.kafka_topic(admin_client, table):
+        keeper_settings = (
+            f", kafka_keeper_path = '/clickhouse/kafka2/{table}', kafka_replica_name = 'r1'"
+            if keeper
+            else ""
+        )
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{table}',
+                         kafka_group_name = '{table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 500,
+                         kafka_poll_timeout_ms = 1000,
+                         kafka_max_block_size = {n}{keeper_settings};
+            CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+                SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
+            """,
+            settings=(
+                {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+            ),
+        )
+
+        # Halt, pre-load exactly one block, then resume: the source polls all n rows at once
+        # (max_block_size = n, no flush wait) and hands them to the ~n*0.4s insert.
+        instance.query(f"SYSTEM STOP test.{table}")
+        produce(kafka_cluster, table, 0, n)
+        instance.query(f"SYSTEM START test.{table}")
+
+        # CANCEL during the slow insert; it keeps scheduling, so a rolled-back block would redeliver.
+        time.sleep(1)
+        instance.query(f"SYSTEM CANCEL test.{table}")
+
+        # Committed exactly once: count reaches n and never grows (no duplicate, no loss).
+        wait_dst_count(table, n)
+        assert_dst_count_stable(table, n, seconds=8)
+
+
 def test_stop_with_commit_every_batch_does_not_lose_rows(kafka_cluster):
     # `kafka_commit_every_batch` commits offsets at every poll batch (`kafka_poll_max_batch_size`)
     # while the single block is still being assembled, BEFORE it is inserted into the views. 

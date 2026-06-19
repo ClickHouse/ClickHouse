@@ -414,6 +414,54 @@ def test_stop_during_insert_does_not_duplicate(nats_cluster):
     assert jetstream_ack_pending(nats_cluster, stream, durable) == 0
 
 
+def test_cancel_during_insert_does_not_duplicate(nats_cluster):
+    # CANCEL companion to test_stop_during_insert_does_not_duplicate (JetStream): a CANCEL during the
+    # slow insert must let the block finish and ack exactly once. CANCEL keeps consuming, so a wrongly
+    # skipped ack would redeliver after ack_wait on its own and show up as a duplicate (no START needed).
+    stream = "js_cancel_insert_stream"
+    subject = "js_cancel_insert_subject"
+    durable = "js_cancel_insert_durable"
+    table = "nats_cancel_during_insert"
+    n = 5
+
+    # A short ack-wait so a missing ack surfaces quickly as a redelivery.
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=3)
+
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
+        """
+    )
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+
+    jetstream_publish(nats_cluster, subject, 0, n)
+
+    # CANCEL during the slow insert; it keeps consuming, so a skipped ack would redeliver after ack_wait.
+    time.sleep(1)
+    instance.query(f"SYSTEM CANCEL test.{table}")
+
+    # Acked exactly once: count reaches n and never grows (no duplicate, no loss), and nothing is
+    # left pending acknowledgement.
+    wait_dst_count_at_least(table, n)
+    assert_dst_count_stable(table, n, seconds=8)
+    assert jetstream_ack_pending(nats_cluster, stream, durable) == 0
+
+
 def test_cancel_during_direct_select_does_not_drop_messages(nats_cluster):
     # A direct SELECT on a NATS table consumes messages but -- unlike the background view path --
     # performs no acknowledgement of its own (NATSSource never acks/commits). So an aborted direct
