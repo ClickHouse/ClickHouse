@@ -89,6 +89,9 @@ struct QueryRunnerJobOrigin
 {
     std::optional<UUID> user_id;
     std::optional<std::vector<UUID>> roles;
+    String current_user;
+    String initial_user;
+    String authenticated_user;
 };
 
 struct QueryRunnerSyncBatch
@@ -319,6 +322,10 @@ private:
             chassert(cluster_name.empty());
             job_context->setCurrentRoles(*job.origin->roles);
         }
+
+        job_context->setCurrentUserName(job.origin->current_user);
+        job_context->setInitialUserName(job.origin->initial_user);
+        job_context->setAuthenticatedUserName(job.origin->authenticated_user);
 
         if (cluster_name.empty() && !job.database.empty())
             job_context->setCurrentDatabase(job.database);
@@ -648,11 +655,18 @@ void StorageQueryRunner::shutdown(bool /*is_drop*/)
 
 SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    const auto & inserter = local_context->getClientInfo();
     std::shared_ptr<const QueryRunnerJobOrigin> origin;
     if (!metadata_snapshot->sql_security_type)
     {
         /// The cluster mode runs the query on the remote entirely under the cluster credentials.
-        origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{});
+        origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
+            .user_id = {},
+            .roles = {},
+            .current_user = {},
+            .initial_user = {},
+            .authenticated_user = inserter.authenticated_user,
+        });
     }
     else
     {
@@ -662,16 +676,28 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = local_context->getUserID(),
                     .roles = local_context->getCurrentRoles(),
+                    .current_user = inserter.current_user,
+                    .initial_user = inserter.initial_user,
+                    .authenticated_user = inserter.authenticated_user,
                 });
                 break;
             case SQLSecurityType::DEFINER:
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = metadata_snapshot->getDefinerID(local_context),
                     .roles = {},
+                    .current_user = *metadata_snapshot->definer,
+                    .initial_user = *metadata_snapshot->definer,
+                    .authenticated_user = inserter.authenticated_user,
                 });
                 break;
             case SQLSecurityType::NONE:
-                origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{});
+                origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
+                    .user_id = {},
+                    .roles = {},
+                    .current_user = {},
+                    .initial_user = {},
+                    .authenticated_user = inserter.authenticated_user,
+                });
                 break;
         }
     }

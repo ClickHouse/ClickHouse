@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 
 #include <mutex>
+#include <optional>
 
 
 namespace DB
@@ -22,22 +23,38 @@ DefinerDependencies & DefinerDependencies::instance()
     return *global_instance;
 }
 
+std::optional<String> DefinerDependencies::tryDetachLocked(const StorageID & object_id)
+{
+    auto object_it = object_to_definer.find(object_id);
+    if (object_it == object_to_definer.end())
+        return {};
+
+    String definer = object_it->second;
+    object_to_definer.erase(object_it);
+
+    auto definer_it = definer_to_objects.find(definer);
+    chassert(definer_it != definer_to_objects.end());
+    if (definer_it != definer_to_objects.end())
+    {
+        definer_it->second.erase(object_id);
+        if (definer_it->second.empty())
+            definer_to_objects.erase(definer_it);
+    }
+
+    return definer;
+}
+
+void DefinerDependencies::attachLocked(const String & definer, const StorageID & object_id)
+{
+    definer_to_objects[definer].insert(object_id);
+    object_to_definer[object_id] = definer;
+}
+
 void DefinerDependencies::addDependency(const String & definer, const StorageID & object_id)
 {
     std::lock_guard lock(mutex);
-
-    /// Remove any existing mapping for this object to a different definer
-    auto existing_definer_it = object_to_definer.find(object_id);
-    if (existing_definer_it != object_to_definer.end() && existing_definer_it->second != definer)
-    {
-        auto & old_objects = definer_to_objects[existing_definer_it->second];
-        old_objects.erase(object_id);
-        if (old_objects.empty())
-            definer_to_objects.erase(existing_definer_it->second);
-    }
-
-    definer_to_objects[definer].insert(object_id);
-    object_to_definer[object_id] = definer;
+    tryDetachLocked(object_id);
+    attachLocked(definer, object_id);
 }
 
 void DefinerDependencies::removeDependencies(const StorageID & object_id)
@@ -66,6 +83,24 @@ void DefinerDependencies::removeDependencies(const StorageID & object_id)
         }
         object_to_definer.erase(object_it);
     }
+}
+
+void DefinerDependencies::rename(const StorageID & old_object_id, const StorageID & new_object_id)
+{
+    std::lock_guard lock(mutex);
+    if (auto definer = tryDetachLocked(old_object_id))
+        attachLocked(*definer, new_object_id);
+}
+
+void DefinerDependencies::exchange(const StorageID & object_id_a, const StorageID & object_id_b)
+{
+    std::lock_guard lock(mutex);
+    auto definer_a = tryDetachLocked(object_id_a);
+    auto definer_b = tryDetachLocked(object_id_b);
+    if (definer_a)
+        attachLocked(*definer_a, object_id_b);
+    if (definer_b)
+        attachLocked(*definer_b, object_id_a);
 }
 
 std::vector<StorageID> DefinerDependencies::getObjectsForDefiner(const String & definer) const

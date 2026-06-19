@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -29,6 +30,12 @@ public:
     /// Remove all dependencies for a specific object (when it is dropped)
     void removeDependencies(const StorageID & object_id);
 
+    /// Re-key the dependency of an object when it is renamed
+    void rename(const StorageID & old_object_id, const StorageID & new_object_id);
+
+    /// Swap the dependencies of two objects when they are exchanged
+    void exchange(const StorageID & object_id_a, const StorageID & object_id_b);
+
     /// Get all objects defined by a specific definer
     std::vector<StorageID> getObjectsForDefiner(const String & definer) const;
 
@@ -37,6 +44,9 @@ public:
 
 private:
     DefinerDependencies() = default;
+
+    std::optional<String> tryDetachLocked(const StorageID & object_id);
+    void attachLocked(const String & definer, const StorageID & object_id);
 
     std::unordered_map<String, ObjectSet> definer_to_objects;
 
