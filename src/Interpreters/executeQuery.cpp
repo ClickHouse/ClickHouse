@@ -1772,7 +1772,7 @@ static BlockIO executeQueryImpl(
                         /// EXPLAIN ANALYZE executes the inner SELECT, so it must be charged against
                         /// the select-query quota just like a normal SELECT. Other EXPLAIN kinds do not
                         /// execute the inner query and stay counted as generic queries only.
-                        const auto * explain_query = out_ast->as<ASTExplainQuery>();
+                        const auto * explain_query = out_ast ? out_ast->as<ASTExplainQuery>() : nullptr;
                         const bool is_explain_analyze = explain_query && explain_query->getKind() == ASTExplainQuery::Analyze;
                         const bool charge_as_select = query_plan
                             || out_ast->as<ASTSelectQuery>()
