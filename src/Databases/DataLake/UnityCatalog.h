@@ -22,6 +22,7 @@ public:
         const std::string & catalog_,
         const std::string & base_url_,
         const std::string & catalog_credential_,
+        size_t max_requests_per_second_,
         DB::ContextPtr context_);
 
     ~UnityCatalog() override = default;

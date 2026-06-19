@@ -1231,3 +1231,62 @@ def test_iceberg_file_progress_callback(started_cluster):
         f"`IcebergIterator::next` did not invoke the file-progress callback "
         f"(regression of PR #105413 wiring)."
     )
+
+
+def get_global_event(node, event_name):
+    value = node.query(
+        f"SELECT value FROM system.events WHERE event = '{event_name}'"
+    ).strip()
+    return int(value) if value else 0
+
+
+def test_catalog_request_throttler(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"throttler_{uuid.uuid4()}"
+    namespaces = [
+        root_namespace,
+        f"{root_namespace}.A",
+        f"{root_namespace}.A.B",
+    ]
+    leaf_namespace = f"{root_namespace}.A.B"
+    tables = ["t1", "t2", "t3"]
+
+    catalog = load_catalog_impl(started_cluster)
+    for namespace in namespaces:
+        catalog.create_namespace(namespace)
+    for table in tables:
+        create_table(catalog, leaf_namespace, table)
+
+    db_name = f"throttled_{root_namespace}"
+
+    count_before = get_global_event(node, "DataLakeCatalogRequestThrottlerCount")
+    sleep_before = get_global_event(
+        node, "DataLakeCatalogRequestThrottlerSleepMicroseconds"
+    )
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        db_name,
+        additional_settings={"catalog_max_requests_per_second": 1},
+    )
+
+    assert "catalog_max_requests_per_second = 1" in node.query(
+        f"SHOW CREATE DATABASE {db_name}"
+    )
+
+    listed = node.query(
+        f"SELECT count() FROM system.tables WHERE database = '{db_name}' "
+        f"AND name ILIKE '{root_namespace}%' "
+        f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+    ).strip()
+    assert int(listed) == len(tables)
+
+    count_after = get_global_event(node, "DataLakeCatalogRequestThrottlerCount")
+    sleep_after = get_global_event(
+        node, "DataLakeCatalogRequestThrottlerSleepMicroseconds"
+    )
+
+    assert count_after - count_before > 0
+    assert sleep_after - sleep_before > 0

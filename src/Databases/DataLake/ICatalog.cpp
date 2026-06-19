@@ -1,12 +1,19 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/Throttler.h>
 #include <Poco/String.h>
 
 #include <filesystem>
 
 #include <Common/FailPoint.h>
 #include <Poco/URI.h>
+
+namespace ProfileEvents
+{
+    extern const Event DataLakeCatalogRequestThrottlerCount;
+    extern const Event DataLakeCatalogRequestThrottlerSleepMicroseconds;
+}
 
 namespace DB::ErrorCodes
 {
@@ -22,6 +29,23 @@ namespace DB::FailPoints
 
 namespace DataLake
 {
+
+ICatalog::ICatalog(const std::string & warehouse_, size_t max_requests_per_second_)
+    : warehouse(warehouse_)
+{
+    if (max_requests_per_second_)
+        request_throttler = std::make_shared<DB::Throttler>(
+            max_requests_per_second_,
+            max_requests_per_second_,
+            ProfileEvents::DataLakeCatalogRequestThrottlerCount,
+            ProfileEvents::DataLakeCatalogRequestThrottlerSleepMicroseconds);
+}
+
+void ICatalog::throttle() const
+{
+    if (request_throttler)
+        request_throttler->throttle(1);
+}
 
 StorageType parseStorageTypeFromLocation(const std::string & location)
 {
