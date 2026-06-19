@@ -3815,7 +3815,13 @@ void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::Abstrac
 {
     /// The feature is experimental and disabled by default. When disabled, keep the registry empty so no
     /// drivers are usable, and clear any drivers a previous configuration may have loaded.
-    if (!shared->server_settings[ServerSetting::allow_experimental_executable_udf_drivers])
+    /// Read the gate from the passed configuration rather than from the startup-time `shared->server_settings`:
+    /// `SYSTEM RELOAD CONFIG` does not refresh `shared->server_settings`, so reading it there would ignore a
+    /// toggle of `allow_experimental_executable_udf_drivers` until the next server restart. Reading from `config`
+    /// is equivalent at startup (it is the same configuration) and correct on reload.
+    ServerSettings reloaded_server_settings;
+    reloaded_server_settings.loadSettingsFromConfig(config);
+    if (!reloaded_server_settings[ServerSetting::allow_experimental_executable_udf_drivers])
     {
         UserDefinedExecutableFunctionDriverRegistry::instance().loadDriversFromConfigs({});
         return;

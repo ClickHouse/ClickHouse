@@ -370,7 +370,13 @@ static std::optional<BlockIO> tryExecuteWithDriver(const ASTPtr & query_ptr, Con
     if (!create_function_query)
         return std::nullopt;
 
-    if (!current_context->getServerSettings()[ServerSetting::allow_experimental_executable_udf_drivers])
+    /// Read the experimental gate from the live configuration rather than from the startup-time `ServerSettings`
+    /// returned by `getServerSettings` (which `SYSTEM RELOAD CONFIG` does not refresh), so that toggling
+    /// `allow_experimental_executable_udf_drivers` takes effect on reload, consistently with
+    /// `Context::loadUserDefinedExecutableFunctionDrivers` loading the driver registry.
+    ServerSettings reloaded_server_settings;
+    reloaded_server_settings.loadSettingsFromConfig(current_context->getConfigRef());
+    if (!reloaded_server_settings[ServerSetting::allow_experimental_executable_udf_drivers])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Drivers for executable user-defined functions are an experimental feature. "
             "Enable the server setting `allow_experimental_executable_udf_drivers` to use them");
