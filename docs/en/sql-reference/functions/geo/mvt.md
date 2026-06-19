@@ -13,12 +13,12 @@ doc_type: 'reference'
 clients such as MapLibre and Mapbox GL render natively. ClickHouse can build such tiles entirely in SQL with a pair of
 cooperating functions:
 
-- `mvtEncodeGeom` — a scalar function that projects a geometry into the tile-local pixel space of a slippy-map tile and
+- `MVTEncodeGeom` — a scalar function that projects a geometry into the tile-local pixel space of a slippy-map tile and
   clips it to the tile.
-- `mvtEncode` — an aggregate function that collects the projected geometries of a group into the binary bytes of a
+- `MVTEncode` — an aggregate function that collects the projected geometries of a group into the binary bytes of a
   single-layer tile.
 
-Two helper functions, `mvtTileBBox` and `mvtTileBBoxMercator`, return the bounding box of a tile so that rows can be
+Two helper functions, `MVTBoundingBox` and `MVTBoundingBoxMercator`, return the bounding box of a tile so that rows can be
 restricted to it in the `WHERE` clause using an index.
 
 Point, line and polygon geometry are supported, including the `Geometry` type and the concrete geo types (`Point`,
@@ -27,9 +27,9 @@ Point, line and polygon geometry are supported, including the `Geometry` type an
 The resulting bytes are a complete tile that can be returned directly over the HTTP interface with `FORMAT RawBLOB`.
 
 These functions mirror the PostGIS workflow and are also available under their PostGIS names as aliases: `ST_AsMVTGeom`
-for `mvtEncodeGeom` and `ST_AsMVT` for `mvtEncode`.
+for `MVTEncodeGeom` and `ST_AsMVT` for `MVTEncode`.
 
-## mvtEncodeGeom {#mvtencodegeom}
+## MVTEncodeGeom {#mvtencodegeom}
 
 Projects a geometry given in geographic coordinates (longitude/latitude) into the tile-local pixel space of the
 slippy-map tile identified by `zoom`, `tile_x` and `tile_y`, clips it to the tile, snaps it to the integer pixel grid,
@@ -37,8 +37,8 @@ and returns the tile-space geometry.
 
 The projection is Web Mercator over the full `UInt32` coordinate range. The returned coordinates have their origin at the
 top-left corner of the tile with the y axis pointing downwards, which is the coordinate convention of the Mapbox Vector
-Tile format, so the result feeds directly into `mvtEncode`. Coordinates are rounded to whole pixels, so grouping by
-`mvtEncodeGeom` collapses geometry falling on the same grid into a single cluster.
+Tile format, so the result feeds directly into `MVTEncode`. Coordinates are rounded to whole pixels, so grouping by
+`MVTEncodeGeom` collapses geometry falling on the same grid into a single cluster.
 
 When `clip` is enabled (the default), the geometry is clipped to the tile expanded by `buffer` pixels (the range
 `[-buffer, extent + buffer]` on each axis); geometry that falls entirely outside becomes `NULL`. This is the analogue of
@@ -51,7 +51,7 @@ several parts).
 **Syntax**
 
 ```sql
-mvtEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
+MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 ```
 
 **Arguments**
@@ -71,7 +71,7 @@ Returns the tile-space geometry, or `NULL` if it is fully clipped out. [`Geometr
 **Example**
 
 ```sql
-SELECT mvtEncodeGeom((13.37, 52.52)::Point, 10, 550, 335) AS pixel
+SELECT MVTEncodeGeom((13.37, 52.52)::Point, 10, 550, 335) AS pixel
 ```
 
 ```text
@@ -80,13 +80,13 @@ SELECT mvtEncodeGeom((13.37, 52.52)::Point, 10, 550, 335) AS pixel
 └────────────┘
 ```
 
-## mvtEncode {#mvtencode}
+## MVTEncode {#mvtencode}
 
 Encodes a group of features into a binary Mapbox Vector Tile layer. This is the aggregate counterpart of the scalar
-function `mvtEncodeGeom`. Each input row becomes one feature; point, line and polygon geometry are supported.
+function `MVTEncodeGeom`. Each input row becomes one feature; point, line and polygon geometry are supported.
 
-The `geometry` argument is a `Geometry` of tile-space coordinates, typically produced by `mvtEncodeGeom`. Rows whose
-geometry is `NULL` (for example, clipped out by `mvtEncodeGeom`) are skipped. The optional `properties` argument is a
+The `geometry` argument is a `Geometry` of tile-space coordinates, typically produced by `MVTEncodeGeom`. Rows whose
+geometry is `NULL` (for example, clipped out by `MVTEncodeGeom`) are skipped. The optional `properties` argument is a
 named tuple whose element names become the feature attribute keys and whose element types determine the vector tile value
 types.
 
@@ -96,19 +96,19 @@ PostGIS `ST_AsMVT`.
 **Syntax**
 
 ```sql
-mvtEncode(layer_name[, extent[, feature_id_name[, stringify_unsupported]]])(geometry[, properties])
+MVTEncode(layer_name[, extent[, feature_id_name[, stringify_unsupported]]])(geometry[, properties])
 ```
 
 **Parameters**
 
 - `layer_name` — Name of the vector tile layer. [`String`](../../data-types/string.md).
 - `extent` — Tile extent in pixels per side, in the range `[1, 2147483647]`. Defaults to `4096`. [`UInt32`](../../data-types/int-uint.md).
-- `feature_id_name` — Optional name of an integer element of the `properties` tuple to emit as the MVT Feature `id` (a `UInt64`) rather than as a tag. A `NULL` or negative id is omitted for that feature. Parameters are positional, so `extent` must be given to use it. [`String`](../../data-types/string.md).
+- `feature_id_name` — Optional name of an unsigned-integer element of the `properties` tuple to emit as the MVT Feature `id` (a `UInt64`) rather than as a tag. Signed integers are rejected. A `NULL` id is omitted for that feature. Parameters are positional, so `extent` must be given to use it. [`String`](../../data-types/string.md).
 - `stringify_unsupported` — Optional flag (`0`/`1`, default `0`); when `1`, property types not directly supported (e.g. big integers, `UUID`, `Decimal`) are encoded as their text `string_value` rather than raising an error. [`UInt8`](../../data-types/int-uint.md).
 
 **Arguments**
 
-- `geometry` — Tile-space geometry, for example from `mvtEncodeGeom`. [`Geometry`](../../data-types/geo.md).
+- `geometry` — Tile-space geometry, for example from `MVTEncodeGeom`. [`Geometry`](../../data-types/geo.md).
 - `properties` — Optional named tuple of feature attributes. Element names become attribute keys. [`Tuple`](../../data-types/tuple.md).
 
 **Returned value**
@@ -146,15 +146,15 @@ tuple(count(), any(id))::Tuple(cluster_count UInt64, id String)
 
 ### Clustering {#clustering}
 
-Clustering is expressed in SQL, not by the function. Because `mvtEncodeGeom` rounds to whole pixels, grouping on the
+Clustering is expressed in SQL, not by the function. Because `MVTEncodeGeom` rounds to whole pixels, grouping on the
 pixel geometry merges coincident geometry; aggregate the group in a subquery, then pass one row per cluster to
-`mvtEncode`:
+`MVTEncode`:
 
 ```sql
-SELECT mvtEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)) AS tile
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)) AS tile
 FROM
 (
-    SELECT mvtEncodeGeom((lon, lat)::Point, 10, 550, 335) AS geom, count() AS cluster_count
+    SELECT MVTEncodeGeom((lon, lat)::Point, 10, 550, 335) AS geom, count() AS cluster_count
     FROM points
     GROUP BY geom
 )
@@ -165,7 +165,7 @@ Grouping on a `Geometry` value requires `allow_suspicious_types_in_group_by = 1`
 `Geometry` type is restricted by default. Omit the inner `GROUP BY` (and `count()`) to emit one feature per input row
 instead of clustered features.
 
-## mvtTileBBox {#mvttilebbox}
+## MVTBoundingBox {#mvtboundingbox}
 
 Returns the geographic bounding box of the slippy-map tile identified by `zoom`, `tile_x` and `tile_y` as a tuple
 `(min_lon, min_lat, max_lon, max_lat)` in degrees.
@@ -173,12 +173,12 @@ Returns the geographic bounding box of the slippy-map tile identified by `zoom`,
 Use it to restrict rows to a tile while filtering on the `longitude`/`latitude` columns directly — so a primary key or
 index on those columns can be used — instead of recomputing the Web Mercator projection per row. The optional `margin`
 expands the box on every side by that fraction of the tile size; set it to `buffer / extent` to cover the clip buffer of
-`mvtEncodeGeom`.
+`MVTEncodeGeom`.
 
 **Syntax**
 
 ```sql
-mvtTileBBox(zoom, tile_x, tile_y[, margin])
+MVTBoundingBox(zoom, tile_x, tile_y[, margin])
 ```
 
 **Arguments**
@@ -195,7 +195,7 @@ Returns the tile bounding box as a tuple `(min_lon, min_lat, max_lon, max_lat)` 
 **Example**
 
 ```sql
-SELECT mvtTileBBox(0, 0, 0) AS bbox
+SELECT MVTBoundingBox(0, 0, 0) AS bbox
 ```
 
 ```text
@@ -204,22 +204,22 @@ SELECT mvtTileBBox(0, 0, 0) AS bbox
 └──────────────────────────────────────────────────┘
 ```
 
-## mvtTileBBoxMercator {#mvttilebboxmercator}
+## MVTBoundingBoxMercator {#mvtboundingboxmercator}
 
-The Web Mercator counterpart of `mvtTileBBox`. Returns the
-bounding box of the tile in the full-`UInt32` Web Mercator coordinate space used internally by `mvtEncodeGeom`, as a tuple
+The Web Mercator counterpart of `MVTBoundingBox`. Returns the
+bounding box of the tile in the full-`UInt32` Web Mercator coordinate space used internally by `MVTEncodeGeom`, as a tuple
 `(min_x, min_y, max_x, max_y)`. The y axis grows downward (north at the top). Intended for tables that materialize
 Mercator coordinate columns and index those instead of `longitude`/`latitude`.
 
 **Syntax**
 
 ```sql
-mvtTileBBoxMercator(zoom, tile_x, tile_y[, margin])
+MVTBoundingBoxMercator(zoom, tile_x, tile_y[, margin])
 ```
 
 **Arguments**
 
-Same as [`mvtTileBBox`](#mvttilebbox).
+Same as [`MVTBoundingBox`](#mvtboundingbox).
 
 **Returned value**
 
@@ -228,7 +228,7 @@ Returns the tile bounding box as a tuple `(min_x, min_y, max_x, max_y)` in Web M
 **Example**
 
 ```sql
-SELECT mvtTileBBoxMercator(1, 0, 0) AS bbox
+SELECT MVTBoundingBoxMercator(1, 0, 0) AS bbox
 ```
 
 ```text
@@ -240,7 +240,7 @@ SELECT mvtTileBBoxMercator(1, 0, 0) AS bbox
 ## Restricting rows to a tile {#restricting-rows-to-a-tile}
 
 A tile must only contain the geometry that belongs to it. This is best expressed as two cooperating steps: a cheap,
-index-using bounding-box predicate in the `WHERE` clause (performance), and the clip of `mvtEncodeGeom` (correctness).
+index-using bounding-box predicate in the `WHERE` clause (performance), and the clip of `MVTEncodeGeom` (correctness).
 The clip drops geometry outside the tile, so even a loose bounding-box predicate cannot leak out-of-tile geometry into
 the result.
 
@@ -248,11 +248,11 @@ the result.
 WITH
     1 AS buffer,
     4096 AS extent,
-    mvtTileBBox({z:UInt8}, {x:UInt32}, {y:UInt32}, buffer / extent) AS bounding_box   -- margin matches the clip buffer
-SELECT mvtEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64))
+    MVTBoundingBox({z:UInt8}, {x:UInt32}, {y:UInt32}, buffer / extent) AS bounding_box   -- margin matches the clip buffer
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64))
 FROM
 (
-    SELECT mvtEncodeGeom((lon, lat)::Point, {z:UInt8}, {x:UInt32}, {y:UInt32}) AS geom, count() AS cluster_count
+    SELECT MVTEncodeGeom((lon, lat)::Point, {z:UInt8}, {x:UInt32}, {y:UInt32}) AS geom, count() AS cluster_count
     FROM points
     WHERE lon BETWEEN bounding_box.1 AND bounding_box.3 AND lat BETWEEN bounding_box.2 AND bounding_box.4   -- index-using prefilter
     GROUP BY geom
@@ -261,7 +261,7 @@ SETTINGS allow_suspicious_types_in_group_by = 1
 ```
 
 The bounding-box predicate is only a coarse prefilter; the exact tile boundary is enforced by the clip of
-`mvtEncodeGeom`. Pass `clip => false` (the seventh argument) to `mvtEncodeGeom` to disable clipping and rely on the
+`MVTEncodeGeom`. Pass `clip => false` (the seventh argument) to `MVTEncodeGeom` to disable clipping and rely on the
 `WHERE` predicate alone.
 
 ## Serving tiles over HTTP {#serving-tiles-over-http}
@@ -271,7 +271,7 @@ ClickHouse does not expose a tile endpoint by default: the HTTP interface only a
 server configuration. The handler's `url` uses the `regex:` form to capture the path segments, binds them to query
 parameters, and returns the bytes with `FORMAT RawBLOB`.
 
-In the simplest case the table has a `Geometry` column and the handler serves one feature per row — `mvtEncodeGeom`
+In the simplest case the table has a `Geometry` column and the handler serves one feature per row — `MVTEncodeGeom`
 projects each geometry into the requested tile and clips it, so rows outside the tile drop out automatically:
 
 ```xml
@@ -282,8 +282,8 @@ projects each geometry into the requested tile and clips it, so rows outside the
         <handler>
             <type>predefined_query_handler</type>
             <query>
-                SELECT mvtEncode('shapes')(
-                    mvtEncodeGeom(geom, {z:UInt8}, {x:UInt32}, {y:UInt32}),
+                SELECT MVTEncode('shapes')(
+                    MVTEncodeGeom(geom, {z:UInt8}, {x:UInt32}, {y:UInt32}),
                     tuple(id, name)::Tuple(id UInt32, name String))
                 FROM shapes
                 FORMAT RawBLOB
@@ -299,7 +299,7 @@ Here `shapes` is a table with a `geom Geometry` column (any mix of points, lines
 returns the encoded tile.
 
 For point data this works just as well against plain `longitude`/`latitude` columns by building the point inline with
-`mvtEncodeGeom((lon, lat)::Point, …)`. To cluster coincident features, or to add an index-using bounding-box prefilter
+`MVTEncodeGeom((lon, lat)::Point, …)`. To cluster coincident features, or to add an index-using bounding-box prefilter
 for large tables, extend the inner query as shown in [Clustering](#clustering) and
 [Restricting rows to a tile](#restricting-rows-to-a-tile).
 

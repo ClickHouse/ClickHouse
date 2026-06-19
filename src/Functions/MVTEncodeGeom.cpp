@@ -133,22 +133,22 @@ struct GeometryVariantBuilder
     }
 };
 
-/// mvtEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]]) -> Geometry
+/// MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]]) -> Geometry
 ///
 /// Projects a geometry (in geographic lon/lat) into the tile-local pixel space of the slippy-map tile identified by
 /// zoom/tile_x/tile_y, optionally clips it to the tile expanded by `buffer` pixels, snaps to the integer pixel grid, and
 /// returns the tile-space geometry as a `Geometry` (NULL when the geometry falls entirely outside the clip window). The
-/// result feeds the aggregate function `mvtEncode`. Analogue of PostGIS `ST_AsMVTGeom` (registered alias `ST_AsMVTGeom`).
-class FunctionMvtEncodeGeom final : public IFunction
+/// result feeds the aggregate function `MVTEncode`. Analogue of PostGIS `ST_AsMVTGeom` (registered alias `ST_AsMVTGeom`).
+class FunctionMVTEncodeGeom final : public IFunction
 {
 public:
-    static constexpr auto name = "mvtEncodeGeom";
+    static constexpr auto name = "MVTEncodeGeom";
 
     static constexpr UInt64 default_extent = 4096;
     static constexpr UInt64 default_buffer = 1;
     static constexpr Int64 max_extent_or_buffer = std::numeric_limits<Int32>::max();
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMvtEncodeGeom>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMVTEncodeGeom>(); }
 
     String getName() const override { return name; }
 
@@ -179,7 +179,7 @@ public:
                 getName(),
                 arguments[0].type->getName());
 
-        /// zoom, tile_x, tile_y, extent, buffer and clip must be unsigned integers (matching mvtTileBBox); accepting
+        /// zoom, tile_x, tile_y, extent, buffer and clip must be unsigned integers (matching MVTBoundingBox); accepting
         /// arbitrary numeric types would silently truncate fractional values such as a zoom of 1.9 to 1.
         for (size_t i = 1; i < arguments.size(); ++i)
             if (!isNativeUInt(removeNullable(arguments[i].type)))
@@ -246,8 +246,8 @@ public:
 
             /// When clipping, coordinates lie in [-buffer, extent + buffer], so a segment across the buffered tile can
             /// have a delta of extent + 2 * buffer; require it to fit Int32 so the clipped result is always encodable by
-            /// mvtEncode. With clipping disabled the buffer is unused, and any out-of-range coordinate or delta is
-            /// rejected by mvtEncode instead.
+            /// MVTEncode. With clipping disabled the buffer is unused, and any out-of-range coordinate or delta is
+            /// rejected by MVTEncode instead.
             if (clip && extent + 2 * buffer > static_cast<UInt64>(max_extent_or_buffer))
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
@@ -432,7 +432,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(MvtEncodeGeom)
+REGISTER_FUNCTION(MVTEncodeGeom)
 {
     FunctionDocumentation::Description description = R"(
 Projects a geometry given in geographic coordinates (longitude/latitude) into the tile-local pixel space of the
@@ -442,12 +442,12 @@ pixel grid, and returns the tile-space geometry as a `Geometry`.
 The projection is Web Mercator over the full `UInt32` coordinate range; the origin is the tile's top-left corner with the
 y axis pointing downwards (the Mapbox Vector Tile convention). When `clip` is enabled (the default) the geometry is
 clipped to the tile expanded by `buffer` pixels, and geometries that fall entirely outside become `NULL`. The result is
-intended to be passed to the aggregate function `mvtEncode`. This function is the analogue of PostGIS `ST_AsMVTGeom`.
+intended to be passed to the aggregate function `MVTEncode`. This function is the analogue of PostGIS `ST_AsMVTGeom`.
 
 Supported input geometry types are `Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon` and the
 `Geometry` variant.
     )";
-    FunctionDocumentation::Syntax syntax = "mvtEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])";
+    FunctionDocumentation::Syntax syntax = "MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])";
     FunctionDocumentation::Arguments arguments = {
         {"geometry", "Geometry in longitude/latitude degrees.", {"Point", "LineString", "MultiLineString", "Ring", "Polygon", "MultiPolygon", "Geometry"}},
         {"zoom", "Slippy-map zoom level, in the range `[0, 32]`.", {"UInt8"}},
@@ -462,7 +462,7 @@ Supported input geometry types are `Point`, `LineString`, `MultiLineString`, `Ri
     FunctionDocumentation::Examples examples = {
         {
             "Project a point into a tile",
-            "SELECT mvtEncodeGeom((13.37, 52.52)::Point, 10, 550, 335)",
+            "SELECT MVTEncodeGeom((13.37, 52.52)::Point, 10, 550, 335)",
             "",
         },
     };
@@ -470,8 +470,8 @@ Supported input geometry types are `Point`, `LineString`, `MultiLineString`, `Ri
     FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionMvtEncodeGeom>(documentation);
-    factory.registerAlias("ST_AsMVTGeom", FunctionMvtEncodeGeom::name);
+    factory.registerFunction<FunctionMVTEncodeGeom>(documentation);
+    factory.registerAlias("ST_AsMVTGeom", FunctionMVTEncodeGeom::name);
 }
 
 }

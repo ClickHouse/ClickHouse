@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// The Web Mercator coordinate space used by `mvtEncodeGeom` spans 2^32 units on each axis.
+/// The Web Mercator coordinate space used by `MVTEncodeGeom` spans 2^32 units on each axis.
 constexpr double mercator_max = 4294967296.0; /// 2^32
 /// Latitude bound of the Web Mercator projection (the projection diverges at the poles).
 constexpr double latitude_limit = 85.05112877980659;
@@ -40,23 +40,23 @@ double mercatorXToLongitude(double mercator_x)
 
 double mercatorYToLatitude(double mercator_y)
 {
-    /// Inverse of the forward projection in `mvtEncodeGeom`: mercator_y = max * (0.5 - ln(tan((lat+90)/360*pi)) / (2*pi)).
+    /// Inverse of the forward projection in `MVTEncodeGeom`: mercator_y = max * (0.5 - ln(tan((lat+90)/360*pi)) / (2*pi)).
     const double t = 0.5 - mercator_y / mercator_max;
     return std::atan(std::exp(2.0 * std::numbers::pi * t)) * 360.0 / std::numbers::pi - 90.0;
 }
 
-/// mvtTileBBox / mvtTileBBoxMercator: the bounding box of a slippy-map tile (zoom, tile_x, tile_y), optionally expanded
+/// MVTBoundingBox / MVTBoundingBoxMercator: the bounding box of a slippy-map tile (zoom, tile_x, tile_y), optionally expanded
 /// by `margin` (a fraction of the tile size) on every side. The geographic form returns (min_lon, min_lat, max_lon,
 /// max_lat) in degrees; the Mercator form returns (min_x, min_y, max_x, max_y) in the full-UInt32 Web Mercator space
-/// used internally by `mvtEncodeGeom`. The box is the natural companion to `mvtEncodeGeom`'s clip mode: use it in the
+/// used internally by `MVTEncodeGeom`. The box is the natural companion to `MVTEncodeGeom`'s clip mode: use it in the
 /// `WHERE` clause to restrict rows to the tile, with `margin = buffer / extent` to cover the clip buffer zone.
 template <BBoxSpace space>
-class FunctionMvtTileBBox final : public IFunction
+class FunctionMVTBoundingBox final : public IFunction
 {
 public:
-    static constexpr auto name = space == BBoxSpace::Geographic ? "mvtTileBBox" : "mvtTileBBoxMercator";
+    static constexpr auto name = space == BBoxSpace::Geographic ? "MVTBoundingBox" : "MVTBoundingBoxMercator";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMvtTileBBox>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMVTBoundingBox>(); }
 
     String getName() const override { return name; }
 
@@ -149,7 +149,7 @@ public:
                     getName());
             const double pad = margin * tile_size;
 
-            /// The full UInt32 Mercator space; y grows downward (north at the top), matching `mvtEncodeGeom`.
+            /// The full UInt32 Mercator space; y grows downward (north at the top), matching `MVTEncodeGeom`.
             const double min_x = std::clamp(static_cast<double>(tile_x) * tile_size - pad, 0.0, mercator_max);
             const double max_x = std::clamp((static_cast<double>(tile_x) + 1.0) * tile_size + pad, 0.0, mercator_max);
             const double min_y = std::clamp(static_cast<double>(tile_y) * tile_size - pad, 0.0, mercator_max);
@@ -178,19 +178,19 @@ public:
 
 }
 
-REGISTER_FUNCTION(MvtTileBBox)
+REGISTER_FUNCTION(MVTBoundingBox)
 {
     {
         FunctionDocumentation::Description description = R"(
 Returns the geographic bounding box of the slippy-map tile identified by `zoom`, `tile_x` and `tile_y` as a tuple
 `(min_lon, min_lat, max_lon, max_lat)` in degrees.
 
-The bounding box is the companion of `mvtEncodeGeom`: use it in a `WHERE` clause to restrict rows to a tile while
+The bounding box is the companion of `MVTEncodeGeom`: use it in a `WHERE` clause to restrict rows to a tile while
 filtering on the `longitude`/`latitude` columns directly (so a primary key or index on those columns can be used),
 instead of recomputing the Web Mercator projection per row. The optional `margin` expands the box on every side by that
-fraction of the tile size; set `margin` to `buffer / extent` to match the clip buffer of `mvtEncodeGeom`.
+fraction of the tile size; set `margin` to `buffer / extent` to match the clip buffer of `MVTEncodeGeom`.
         )";
-        FunctionDocumentation::Syntax syntax = "mvtTileBBox(zoom, tile_x, tile_y[, margin])";
+        FunctionDocumentation::Syntax syntax = "MVTBoundingBox(zoom, tile_x, tile_y[, margin])";
         FunctionDocumentation::Arguments arguments = {
             {"zoom", "Slippy-map zoom level, in the range `[0, 32]`.", {"UInt8"}},
             {"tile_x", "Tile column index, in the range `[0, 2^zoom - 1]`.", {"UInt32"}},
@@ -203,7 +203,7 @@ fraction of the tile size; set `margin` to `buffer / extent` to match the clip b
         FunctionDocumentation::Examples examples = {
             {
                 "Bounding box of the whole world at zoom 0",
-                "SELECT mvtTileBBox(0, 0, 0) AS bbox",
+                "SELECT MVTBoundingBox(0, 0, 0) AS bbox",
                 R"(
 ┌─bbox───────────────────────────────────────────┐
 │ (-180,-85.05112877980659,180,85.05112877980659) │
@@ -215,19 +215,19 @@ fraction of the tile size; set `margin` to `buffer / extent` to match the clip b
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-        factory.registerFunction<FunctionMvtTileBBox<BBoxSpace::Geographic>>(documentation);
+        factory.registerFunction<FunctionMVTBoundingBox<BBoxSpace::Geographic>>(documentation);
     }
 
     {
         FunctionDocumentation::Description description = R"(
 Returns the bounding box of the slippy-map tile identified by `zoom`, `tile_x` and `tile_y` in the full-`UInt32` Web
-Mercator coordinate space used internally by `mvtEncodeGeom`, as a tuple `(min_x, min_y, max_x, max_y)`.
+Mercator coordinate space used internally by `MVTEncodeGeom`, as a tuple `(min_x, min_y, max_x, max_y)`.
 
-This is the Web Mercator counterpart of `mvtTileBBox`, intended for tables that materialize Mercator coordinate columns
-and index those instead of `longitude`/`latitude`. The y axis grows downward (north at the top), matching `mvtEncodeGeom`.
+This is the Web Mercator counterpart of `MVTBoundingBox`, intended for tables that materialize Mercator coordinate columns
+and index those instead of `longitude`/`latitude`. The y axis grows downward (north at the top), matching `MVTEncodeGeom`.
 The optional `margin` expands the box on every side by that fraction of the tile size.
         )";
-        FunctionDocumentation::Syntax syntax = "mvtTileBBoxMercator(zoom, tile_x, tile_y[, margin])";
+        FunctionDocumentation::Syntax syntax = "MVTBoundingBoxMercator(zoom, tile_x, tile_y[, margin])";
         FunctionDocumentation::Arguments arguments = {
             {"zoom", "Slippy-map zoom level, in the range `[0, 32]`.", {"UInt8"}},
             {"tile_x", "Tile column index, in the range `[0, 2^zoom - 1]`.", {"UInt32"}},
@@ -240,7 +240,7 @@ The optional `margin` expands the box on every side by that fraction of the tile
         FunctionDocumentation::Examples examples = {
             {
                 "Mercator bounding box of a tile",
-                "SELECT mvtTileBBoxMercator(1, 0, 0) AS bbox",
+                "SELECT MVTBoundingBoxMercator(1, 0, 0) AS bbox",
                 R"(
 ┌─bbox────────────────────────┐
 │ (0,0,2147483648,2147483648) │
@@ -252,7 +252,7 @@ The optional `margin` expands the box on every side by that fraction of the tile
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-        factory.registerFunction<FunctionMvtTileBBox<BBoxSpace::Mercator>>(documentation);
+        factory.registerFunction<FunctionMVTBoundingBox<BBoxSpace::Mercator>>(documentation);
     }
 }
 

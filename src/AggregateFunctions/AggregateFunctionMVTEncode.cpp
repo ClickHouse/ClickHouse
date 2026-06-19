@@ -59,7 +59,7 @@ namespace GeoDisc
 }
 
 /// Mapbox Vector Tile feature geometry types.
-namespace MvtGeomType
+namespace MVTGeomType
 {
     constexpr UInt8 Point = 1;
     constexpr UInt8 LineString = 2;
@@ -67,7 +67,7 @@ namespace MvtGeomType
 }
 
 /// MVT geometry command ids (a CommandInteger is `(id & 0x7) | (count << 3)`).
-namespace MvtCommand
+namespace MVTCommand
 {
     constexpr UInt32 MoveTo = 1;
     constexpr UInt32 LineTo = 2;
@@ -79,7 +79,7 @@ namespace MvtCommand
 constexpr bool mvt_exterior_area_positive = true;
 
 /// Which Mapbox Vector Tile `Value` variant a property column is encoded as.
-enum class MvtValueKind : UInt8
+enum class MVTValueKind : UInt8
 {
     String, /// string_value (field 1)
     FixedString, /// string_value (field 1), with FixedString NUL padding trimmed
@@ -91,10 +91,10 @@ enum class MvtValueKind : UInt8
     StringifiedText, /// string_value (field 1), the value's text form (opt-in fallback for otherwise-unsupported types)
 };
 
-struct MvtProperty
+struct MVTProperty
 {
     String key;
-    MvtValueKind kind;
+    MVTValueKind kind;
     size_t column_index; /// index of this element in the properties tuple (the feature-id element is excluded)
     SerializationPtr serialization; /// set only for StringifiedText, to render the value as text
 };
@@ -105,7 +105,7 @@ struct MvtProperty
 /// `Value` message. Records are self-contained and order-independent, so `merge` is a plain buffer concatenation.
 /// Value interning into the layer's shared value pool, and the final protobuf assembly, are deferred to
 /// `insertResultInto`, which is where MVT property sharing happens.
-struct AggregateFunctionMvtEncodeData
+struct AggregateFunctionMVTEncodeData
 {
     UInt64 data_size = 0;
     UInt64 allocated_size = 0;
@@ -130,59 +130,58 @@ struct AggregateFunctionMvtEncodeData
     }
 };
 
-class AggregateFunctionMvtEncode final
-    : public IAggregateFunctionDataHelper<AggregateFunctionMvtEncodeData, AggregateFunctionMvtEncode>
+class AggregateFunctionMVTEncode final
+    : public IAggregateFunctionDataHelper<AggregateFunctionMVTEncodeData, AggregateFunctionMVTEncode>
 {
 private:
-    using Base = IAggregateFunctionDataHelper<AggregateFunctionMvtEncodeData, AggregateFunctionMvtEncode>;
+    using Base = IAggregateFunctionDataHelper<AggregateFunctionMVTEncodeData, AggregateFunctionMVTEncode>;
 
     const String layer_name;
     const UInt32 extent;
     const bool has_properties;
-    VectorWithMemoryTracking<MvtProperty> properties;
+    VectorWithMemoryTracking<MVTProperty> properties;
     /// Optional MVT Feature `id` (PostGIS `feature_id_name`): a property-tuple element emitted as the feature id
-    /// (uint64) instead of as a tag. Set when the third parameter names an integer element of the properties tuple.
+    /// (uint64) instead of as a tag. Set when the third parameter names an unsigned-integer element of the properties tuple.
     bool has_feature_id = false;
     size_t feature_id_column_index = 0;
-    bool feature_id_signed = false;
 
     /// Returns the MVT value kind for a directly-supported property type, or nullopt for an unsupported type
     /// (the caller either throws or falls back to StringifiedText).
-    static std::optional<MvtValueKind> kindForType(const DataTypePtr & element_type)
+    static std::optional<MVTValueKind> kindForType(const DataTypePtr & element_type)
     {
         const DataTypePtr base = removeNullable(recursiveRemoveLowCardinality(element_type));
         WhichDataType which(base);
 
         if (which.isString())
-            return MvtValueKind::String;
+            return MVTValueKind::String;
         if (which.isFixedString())
-            return MvtValueKind::FixedString;
+            return MVTValueKind::FixedString;
         if (which.isFloat32() || which.isBFloat16())
-            return MvtValueKind::Float;
+            return MVTValueKind::Float;
         if (which.isFloat64())
-            return MvtValueKind::Double;
+            return MVTValueKind::Double;
         if (isBool(base))
-            return MvtValueKind::Bool;
+            return MVTValueKind::Bool;
         if (which.isNativeInt() || which.isDate32())
-            return MvtValueKind::Sint;
+            return MVTValueKind::Sint;
         if (which.isNativeUInt() || which.isDate() || which.isDateTime())
-            return MvtValueKind::UInt;
+            return MVTValueKind::UInt;
 
         return std::nullopt;
     }
 
     /// Render one property value as the body of an MVT `Value` message into `out`.
-    void renderValue(const MvtProperty & property, const IColumn & column, size_t row, String & out) const
+    void renderValue(const MVTProperty & property, const IColumn & column, size_t row, String & out) const
     {
         switch (property.kind)
         {
-            case MvtValueKind::String:
+            case MVTValueKind::String:
             {
                 const std::string_view value = column.getDataAt(row);
                 MVT::writeLengthDelimitedField(out, 1, value);
                 return;
             }
-            case MvtValueKind::FixedString:
+            case MVTValueKind::FixedString:
             {
                 /// FixedString right-pads with NUL bytes; the logical value (and the equivalent String) has the
                 /// trailing NULs trimmed, matching ClickHouse's FixedString-to-String conversion.
@@ -192,22 +191,22 @@ private:
                 MVT::writeLengthDelimitedField(out, 1, value);
                 return;
             }
-            case MvtValueKind::Float:
+            case MVTValueKind::Float:
                 MVT::writeFloatField(out, 2, column.getFloat32(row));
                 return;
-            case MvtValueKind::Double:
+            case MVTValueKind::Double:
                 MVT::writeDoubleField(out, 3, column.getFloat64(row));
                 return;
-            case MvtValueKind::Sint:
+            case MVTValueKind::Sint:
                 MVT::writeVarintField(out, 6, encodeZigZag(column.getInt(row)));
                 return;
-            case MvtValueKind::UInt:
+            case MVTValueKind::UInt:
                 MVT::writeVarintField(out, 5, column.getUInt(row));
                 return;
-            case MvtValueKind::Bool:
+            case MVTValueKind::Bool:
                 MVT::writeVarintField(out, 7, column.getUInt(row) != 0 ? 1 : 0);
                 return;
-            case MvtValueKind::StringifiedText:
+            case MVTValueKind::StringifiedText:
             {
                 /// Opt-in fallback: render the value's text form (e.g. big integers, UUID, Decimal) as a string_value.
                 WriteBufferFromOwnString buf;
@@ -231,7 +230,7 @@ private:
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Aggregate function {} received a geometry coordinate ({}) outside the representable MVT range; "
-                "use mvtEncodeGeom to project and clip the geometry to a tile first",
+                "use MVTEncodeGeom to project and clip the geometry to a tile first",
                 function_name,
                 value);
         return static_cast<Int32>(rounded);
@@ -271,8 +270,8 @@ private:
         if (delta < std::numeric_limits<Int32>::min() || delta > std::numeric_limits<Int32>::max())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Aggregate function mvtEncode produced a geometry delta ({}) outside the range of the MVT command "
-                "stream; reduce the extent or clip the geometry to the tile with mvtEncodeGeom",
+                "Aggregate function MVTEncode produced a geometry delta ({}) outside the range of the MVT command "
+                "stream; reduce the extent or clip the geometry to the tile with MVTEncodeGeom",
                 delta);
         return encodeZigZag(delta);
     }
@@ -291,12 +290,12 @@ private:
         removeConsecutiveDuplicates(points);
         if (points.size() < 2)
             return;
-        MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
+        MVT::writeVarint(out, (MVTCommand::MoveTo & 0x7) | (1u << 3));
         MVT::writeVarint(out, zigZagDelta(points[0].first - cursor_x));
         MVT::writeVarint(out, zigZagDelta(points[0].second - cursor_y));
         cursor_x = points[0].first;
         cursor_y = points[0].second;
-        MVT::writeVarint(out, (MvtCommand::LineTo & 0x7) | (static_cast<UInt32>(points.size() - 1) << 3));
+        MVT::writeVarint(out, (MVTCommand::LineTo & 0x7) | (static_cast<UInt32>(points.size() - 1) << 3));
         for (size_t i = 1; i < points.size(); ++i)
         {
             MVT::writeVarint(out, zigZagDelta(points[i].first - cursor_x));
@@ -341,12 +340,12 @@ private:
         if ((area > 0) != want_positive)
             std::reverse(points.begin(), points.end());
 
-        MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
+        MVT::writeVarint(out, (MVTCommand::MoveTo & 0x7) | (1u << 3));
         MVT::writeVarint(out, zigZagDelta(points[0].first - cursor_x));
         MVT::writeVarint(out, zigZagDelta(points[0].second - cursor_y));
         cursor_x = points[0].first;
         cursor_y = points[0].second;
-        MVT::writeVarint(out, (MvtCommand::LineTo & 0x7) | (static_cast<UInt32>(points.size() - 1) << 3));
+        MVT::writeVarint(out, (MVTCommand::LineTo & 0x7) | (static_cast<UInt32>(points.size() - 1) << 3));
         for (size_t i = 1; i < points.size(); ++i)
         {
             MVT::writeVarint(out, zigZagDelta(points[i].first - cursor_x));
@@ -354,7 +353,7 @@ private:
             cursor_x = points[i].first;
             cursor_y = points[i].second;
         }
-        MVT::writeVarint(out, (MvtCommand::ClosePath & 0x7) | (1u << 3));
+        MVT::writeVarint(out, (MVTCommand::ClosePath & 0x7) | (1u << 3));
         return true;
     }
 
@@ -385,33 +384,33 @@ private:
                 Int32 x = 0;
                 Int32 y = 0;
                 readPoint(geometry, x, y, getName());
-                MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
+                MVT::writeVarint(out, (MVTCommand::MoveTo & 0x7) | (1u << 3));
                 MVT::writeVarint(out, zigZagDelta(x));
                 MVT::writeVarint(out, zigZagDelta(y));
-                return MvtGeomType::Point;
+                return MVTGeomType::Point;
             }
             case GeoDisc::LineString:
                 emitLineTo(out, readPointSequence(geometry, getName()), cursor_x, cursor_y);
-                return MvtGeomType::LineString;
+                return MVTGeomType::LineString;
             case GeoDisc::MultiLineString:
             {
                 const Array & lines = geometry.safeGet<Array>();
                 for (const Field & line : lines)
                     emitLineTo(out, readPointSequence(line, getName()), cursor_x, cursor_y);
-                return MvtGeomType::LineString;
+                return MVTGeomType::LineString;
             }
             case GeoDisc::Ring:
                 emitRing(out, readPointSequence(geometry, getName()), /*exterior=*/true, cursor_x, cursor_y);
-                return MvtGeomType::Polygon;
+                return MVTGeomType::Polygon;
             case GeoDisc::Polygon:
                 emitPolygon(out, geometry, cursor_x, cursor_y, getName());
-                return MvtGeomType::Polygon;
+                return MVTGeomType::Polygon;
             case GeoDisc::MultiPolygon:
             {
                 const Array & polygons = geometry.safeGet<Array>();
                 for (const Field & polygon : polygons)
                     emitPolygon(out, polygon, cursor_x, cursor_y, getName());
-                return MvtGeomType::Polygon;
+                return MVTGeomType::Polygon;
             }
             default:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} received an unsupported geometry", getName());
@@ -419,10 +418,10 @@ private:
     }
 
 public:
-    AggregateFunctionMvtEncode(
+    AggregateFunctionMVTEncode(
         const DataTypes & argument_types_, const Array & parameters_, String layer_name_, UInt32 extent_,
         const String & feature_id_name_, bool stringify_)
-        : IAggregateFunctionDataHelper<AggregateFunctionMvtEncodeData, AggregateFunctionMvtEncode>(
+        : IAggregateFunctionDataHelper<AggregateFunctionMVTEncodeData, AggregateFunctionMVTEncode>(
               argument_types_, parameters_, std::make_shared<DataTypeString>())
         , layer_name(std::move(layer_name_))
         , extent(extent_)
@@ -432,7 +431,7 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "The geometry (first) argument of aggregate function {} must be of type Geometry (e.g. the result of "
-                "mvtEncodeGeom), got {}",
+                "MVTEncodeGeom), got {}",
                 getName(),
                 argument_types_[0]->getName());
 
@@ -454,8 +453,9 @@ public:
             const auto & names = properties_type->getElementNames();
             const auto & elements = properties_type->getElements();
 
-            /// Resolve the optional feature-id element (PostGIS `feature_id_name`): it must name an integer element,
-            /// which is emitted as the MVT Feature `id` and excluded from the property tags.
+            /// Resolve the optional feature-id element (PostGIS `feature_id_name`): it must name an unsigned-integer
+            /// element, which is emitted as the MVT Feature `id` and excluded from the property tags. Signed integers
+            /// are rejected because the MVT id is a `uint64` and a signed column would silently drop negative ids.
             std::optional<size_t> id_index;
             if (!feature_id_name_.empty())
             {
@@ -475,15 +475,14 @@ public:
 
                 const DataTypePtr id_base = removeNullable(recursiveRemoveLowCardinality(elements[*id_index]));
                 const WhichDataType id_which(id_base);
-                if (!id_which.isNativeInt() && !id_which.isNativeUInt())
+                if (!id_which.isNativeUInt())
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "The feature id element '{}' of aggregate function {} must be an integer type, got {}",
+                        "The feature id element '{}' of aggregate function {} must be an unsigned integer type, got {}",
                         feature_id_name_, getName(), elements[*id_index]->getName());
 
                 has_feature_id = true;
                 feature_id_column_index = *id_index;
-                feature_id_signed = id_which.isNativeInt();
             }
 
             properties.reserve(id_index ? elements.size() - 1 : elements.size());
@@ -495,7 +494,7 @@ public:
                 if (const auto kind = kindForType(elements[i]))
                     properties.push_back({names[i], *kind, i, nullptr});
                 else if (stringify_)
-                    properties.push_back({names[i], MvtValueKind::StringifiedText, i, elements[i]->getDefaultSerialization()});
+                    properties.push_back({names[i], MVTValueKind::StringifiedText, i, elements[i]->getDefaultSerialization()});
                 else
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -515,7 +514,7 @@ public:
         }
     }
 
-    String getName() const override { return "mvtEncode"; }
+    String getName() const override { return "MVTEncode"; }
 
     bool allocatesMemoryInArena() const override { return true; }
 
@@ -546,26 +545,10 @@ public:
             if (has_feature_id)
             {
                 const IColumn & id_column = properties_column.getColumn(feature_id_column_index);
-                bool present = !id_column.isNullAt(row_num);
-                UInt64 id_value = 0;
-                if (present)
-                {
-                    if (feature_id_signed)
-                    {
-                        const Int64 signed_id = id_column.getInt(row_num);
-                        if (signed_id < 0) /// the MVT feature id is uint64; drop negative ids (matching PostGIS)
-                            present = false;
-                        else
-                            id_value = static_cast<UInt64>(signed_id);
-                    }
-                    else
-                    {
-                        id_value = id_column.getUInt(row_num);
-                    }
-                }
+                const bool present = !id_column.isNullAt(row_num);
                 record.push_back(present ? 1 : 0);
                 if (present)
-                    MVT::writeVarint(record, id_value);
+                    MVT::writeVarint(record, id_column.getUInt(row_num));
             }
 
             for (const auto & property : properties)
@@ -618,13 +601,13 @@ public:
     {
         auto & state = Base::data(place);
         if (state.data_size != 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "mvtEncode deserialize() expects an empty state");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "MVTEncode deserialize() expects an empty state");
 
         UInt8 version = 0;
         readBinary(version, buf);
         if (version != state_format_version)
             throw Exception(
-                ErrorCodes::INCORRECT_DATA, "Unknown mvtEncode aggregate state version {}", static_cast<UInt16>(version));
+                ErrorCodes::INCORRECT_DATA, "Unknown MVTEncode aggregate state version {}", static_cast<UInt16>(version));
 
         readVarUInt(state.num_features, buf);
 
@@ -632,14 +615,14 @@ public:
         readVarUInt(size, buf);
         static constexpr UInt64 max_data_size = UInt64{1} << 48;
         if (size > max_data_size)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid mvtEncode state: data size {} is too large", size);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid MVTEncode state: data size {} is too large", size);
 
         /// A record is at least one geometry-type byte plus a one-byte (zero-length) geometry, plus the feature-id
         /// presence byte (when configured) and one presence byte per property, so reject payloads too small to hold
         /// the claimed feature count (overflow-safe).
         const UInt64 min_record_size = 2 + (has_feature_id ? 1 : 0) + properties.size();
         if (state.num_features != 0 && state.num_features > size / min_record_size)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid mvtEncode state: payload too small for {} features", state.num_features);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid MVTEncode state: payload too small for {} features", state.num_features);
 
         state.reserveForAppend(size, arena);
         buf.readStrict(state.data, size);
@@ -665,13 +648,13 @@ public:
         for (UInt64 feature = 0; feature < state.num_features; ++feature)
         {
             if (pos >= end)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated feature");
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted MVTEncode aggregate state: truncated feature");
             const UInt8 geometry_type = static_cast<UInt8>(*pos++);
 
             UInt64 geometry_length = 0;
             pos = readVarUInt(geometry_length, pos, end - pos);
             if (geometry_length > static_cast<UInt64>(end - pos))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated geometry");
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted MVTEncode aggregate state: truncated geometry");
             std::string_view geometry(pos, geometry_length);
             pos += geometry_length;
 
@@ -680,7 +663,7 @@ public:
             if (has_feature_id)
             {
                 if (pos >= end)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated feature id");
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted MVTEncode aggregate state: truncated feature id");
                 const bool present = *pos++ != 0;
                 if (present)
                 {
@@ -693,7 +676,7 @@ public:
             for (size_t i = 0; i < properties.size(); ++i)
             {
                 if (pos >= end)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated property");
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted MVTEncode aggregate state: truncated property");
                 const bool present = *pos++ != 0;
                 if (!present)
                     continue;
@@ -703,7 +686,7 @@ public:
                 /// Compare sizes rather than pointers: `length` is read from the (possibly corrupted) state and could
                 /// be huge, so `pos + length` would overflow the pointer and the check could be bypassed.
                 if (length > static_cast<UInt64>(end - pos))
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated value");
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted MVTEncode aggregate state: truncated value");
                 std::string_view value(pos, length);
                 pos += length;
 
@@ -742,7 +725,7 @@ public:
     }
 };
 
-AggregateFunctionPtr createAggregateFunctionMvtEncode(
+AggregateFunctionPtr createAggregateFunctionMVTEncode(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     if (argument_types.empty() || argument_types.size() > 2)
@@ -755,7 +738,7 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
     if (parameters.empty())
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {} requires a layer name parameter, e.g. mvtEncode('layer')(geometry, properties)",
+            "Aggregate function {} requires a layer name parameter, e.g. MVTEncode('layer')(geometry, properties)",
             name);
     if (parameters.size() > 4)
         throw Exception(
@@ -799,8 +782,8 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
         if (parameters[2].getType() != Field::Types::String)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "The third parameter (feature_id_name) of aggregate function {} must be a string naming an integer "
-                "element of the properties tuple",
+                "The third parameter (feature_id_name) of aggregate function {} must be a string naming an unsigned "
+                "integer element of the properties tuple",
                 name);
         feature_id_name = parameters[2].safeGet<String>();
     }
@@ -820,23 +803,23 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
                 name);
     }
 
-    return std::make_shared<AggregateFunctionMvtEncode>(
+    return std::make_shared<AggregateFunctionMVTEncode>(
         argument_types, parameters, layer_name, extent, feature_id_name, stringify_unsupported);
 }
 
 }
 
-void registerAggregateFunctionMvtEncode(AggregateFunctionFactory & factory);
+void registerAggregateFunctionMVTEncode(AggregateFunctionFactory & factory);
 
-void registerAggregateFunctionMvtEncode(AggregateFunctionFactory & factory)
+void registerAggregateFunctionMVTEncode(AggregateFunctionFactory & factory)
 {
     const AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
 
     FunctionDocumentation::Description description = R"(
 Encodes a group of features into a binary [Mapbox Vector Tile](https://github.com/mapbox/vector-tile-spec) layer.
 
-This is the aggregate counterpart of the scalar function `mvtEncodeGeom`. Each input row becomes one feature. The
-geometry argument is a `Geometry` of tile-space coordinates, typically produced by `mvtEncodeGeom`; the optional
+This is the aggregate counterpart of the scalar function `MVTEncodeGeom`. Each input row becomes one feature. The
+geometry argument is a `Geometry` of tile-space coordinates, typically produced by `MVTEncodeGeom`; the optional
 properties argument is a named tuple whose element names become the feature attribute keys and whose element types
 determine the vector tile value types. Point, line and polygon geometry are supported.
 
@@ -844,22 +827,22 @@ The properties tuple must have explicit element names. Column aliases inside `tu
 element names, so name the elements with a cast, for example `tuple(count(), any(id))::Tuple(cluster_count UInt64, id String)`.
 
 Identical property values are interned into the layer's shared value pool, so the emitted tile does not duplicate them.
-If `feature_id_name` is given, the named integer property element is emitted as the MVT Feature `id` (a `uint64`) and
-excluded from the tags; a `NULL` or negative id is omitted for that feature.
+If `feature_id_name` is given, the named unsigned-integer property element is emitted as the MVT Feature `id` (a `uint64`)
+and excluded from the tags; a `NULL` id is omitted for that feature.
 The result is the raw bytes of a single-layer tile, which can be returned directly over the HTTP interface with
 `FORMAT RawBLOB`. This function is the analogue of PostGIS `ST_AsMVT`.
     )";
     FunctionDocumentation::Syntax syntax
-        = "mvtEncode(layer_name[, extent[, feature_id_name[, stringify_unsupported]]])(geometry[, properties])";
+        = "MVTEncode(layer_name[, extent[, feature_id_name[, stringify_unsupported]]])(geometry[, properties])";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "Tile-space geometry, e.g. from `mvtEncodeGeom`.", {"Geometry"}},
+        {"geometry", "Tile-space geometry, e.g. from `MVTEncodeGeom`.", {"Geometry"}},
         {"properties", "Optional named tuple of feature attributes. Element names become attribute keys.", {"Tuple"}},
     };
     FunctionDocumentation::Parameters parameters = {
         {"layer_name", "Name of the vector tile layer.", {"String"}},
         {"extent", "Tile extent in pixels per side. Defaults to `4096`.", {"UInt32"}},
         {"feature_id_name",
-         "Optional name of an integer element of the properties tuple to emit as the Feature `id` instead of as a tag. "
+         "Optional name of an unsigned-integer element of the properties tuple to emit as the Feature `id` instead of as a tag. "
          "Parameters are positional, so `extent` must also be given to use it.",
          {"String"}},
         {"stringify_unsupported",
@@ -873,10 +856,10 @@ The result is the raw bytes of a single-layer tile, which can be returned direct
         {
             "Encode a clustered tile of points",
             R"(
-SELECT mvtEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)) AS tile
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)) AS tile
 FROM
 (
-    SELECT mvtEncodeGeom((lon, lat)::Point, 10, 550, 335) AS geom, count() AS cluster_count
+    SELECT MVTEncodeGeom((lon, lat)::Point, 10, 550, 335) AS geom, count() AS cluster_count
     FROM points
     GROUP BY geom
 )
@@ -889,8 +872,8 @@ SETTINGS allow_suspicious_types_in_group_by = 1;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("mvtEncode", {createAggregateFunctionMvtEncode, documentation, properties});
-    factory.registerAlias("ST_AsMVT", "mvtEncode");
+    factory.registerFunction("MVTEncode", {createAggregateFunctionMVTEncode, documentation, properties});
+    factory.registerAlias("ST_AsMVT", "MVTEncode");
 }
 
 }
