@@ -9,22 +9,18 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t ENGINE = TimeSeries;
 
--- CREATE OR REPLACE on an existing table goes through the intermediate _tmp_replace_<hash>
--- table and an EXCHANGE. StorageTimeSeries cannot be renamed, so the EXCHANGE must be
--- rejected up front. Before the fix the check only fired in renameInMemory(), which runs
--- after DatabaseAtomic has already swapped the metadata files on disk and detached the old
--- table in memory; the failed cleanup then stranded an orphaned _tmp_replace_*.sql carrying
--- the old explicit UUID. A later reload loaded both files, hit a duplicate UUID in
--- DatabaseCatalog::addUUIDMapping and aborted the server with a LOGICAL_ERROR.
+-- CREATE OR REPLACE goes through an intermediate _tmp_replace_<hash> table and an EXCHANGE.
+-- StorageTimeSeries cannot be renamed, so the EXCHANGE must be rejected before DatabaseAtomic
+-- swaps any metadata; otherwise a half-applied EXCHANGE strands an orphaned _tmp_replace_*.sql.
 CREATE OR REPLACE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t ENGINE = TimeSeries; -- { serverError NOT_IMPLEMENTED }
 
--- Reload from disk: this is the path that used to abort. No orphaned _tmp_replace_* table
--- must have been left behind, the original table must still be there, and the server alive.
+-- Reload from disk: the path that used to abort on a duplicate UUID. Assert no orphaned
+-- _tmp_replace_* table was left, the original table survives, and the server stays alive.
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name LIKE '\_tmp\_replace\_%';
-SELECT name FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name NOT LIKE '.inner%' ORDER BY name;
+SHOW TABLES FROM {CLICKHOUSE_DATABASE_1:Identifier} LIKE '\_tmp\_replace\_%';
+SHOW TABLES FROM {CLICKHOUSE_DATABASE_1:Identifier} NOT LIKE '.inner%';
 SELECT 'alive';
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
