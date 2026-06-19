@@ -145,6 +145,40 @@ class TestArrayJoinFromPosition(unittest.TestCase):
         )
 
 
+class TestUnnestWithOrdinality(unittest.TestCase):
+    # `UNNEST(...) WITH ORDINALITY` is valid PostgreSQL table-function syntax
+    # that adds a 1-based ordinality column. `ARRAY JOIN` cannot express it, and
+    # the omitted-`AS` alias parser would otherwise misread the bare `WITH`
+    # token as the table alias and emit invalid
+    # `ARRAY JOIN arr AS WITH ORDINALITY AS u(x, n)`. The construct must be left
+    # unchanged rather than turned into invalid ClickHouse SQL (which would make
+    # the benchmark count a rewriter artifact as a ClickHouse query failure).
+    def test_join_unnest_with_ordinality_left_unchanged(self):
+        sql = "SELECT * FROM t CROSS JOIN UNNEST(arr) WITH ORDINALITY AS u(x, n)"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_left_join_unnest_with_ordinality_left_unchanged(self):
+        sql = "SELECT * FROM t LEFT JOIN UNNEST(arr) WITH ORDINALITY AS u(x, n) ON TRUE"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_from_unnest_with_ordinality_left_unchanged(self):
+        sql = "SELECT * FROM UNNEST(arr) WITH ORDINALITY AS u(x, n)"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_unnest_with_ordinality_case_insensitive_left_unchanged(self):
+        # The guard is case-insensitive, like the rest of the rewriter.
+        sql = "SELECT * FROM t JOIN unnest(arr) with ordinality AS u(x, n)"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_plain_unnest_alias_still_rewritten(self):
+        # Sanity check that the `WITH ORDINALITY` guard does not suppress the
+        # ordinary `UNNEST(arr) AS u(x)` rewrite.
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t CROSS JOIN UNNEST(arr) AS u(x)"),
+            "SELECT * FROM t \nARRAY JOIN arr AS x",
+        )
+
+
 class TestAnyArrayRewrite(unittest.TestCase):
     def test_simple_identifier(self):
         self.assertEqual(

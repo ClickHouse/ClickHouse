@@ -524,6 +524,19 @@ def rewrite_arrayjoin_to_array_join(sql):
         expr = sql[paren_start + 1:paren_end]
         after = sql[paren_end + 1:]
 
+        # `UNNEST(arr) WITH ORDINALITY [AS] u(x, n)` is a PostgreSQL
+        # table-function clause that adds a 1-based ordinality column. `ARRAY
+        # JOIN` has no direct equivalent for it, and `WITH` is not a clause
+        # keyword in `_NOT_AN_ALIAS`, so without this guard the omitted-`AS`
+        # alias parser below would accept the bare `WITH` token as the table
+        # alias and emit invalid `ARRAY JOIN arr AS WITH ORDINALITY AS u(x, n)`.
+        # Leave the whole construct unchanged, mirroring the conservative
+        # handling of other shapes that `ARRAY JOIN` cannot represent.
+        if re.match(r'\s+WITH\s+ORDINALITY\b', after, re.IGNORECASE):
+            result.append(sql[i:paren_end + 1])
+            i = paren_end + 1
+            continue
+
         # Parse: [AS] alias(col) or [AS] alias, optionally followed by ON ...
         # `AS` is optional because PostgreSQL table-function aliases commonly
         # omit it (`UNNEST(arr) u(x)`). Allow optional whitespace before the
