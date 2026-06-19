@@ -3720,7 +3720,6 @@ function renderTabBar() {
         el.className = 'tab' + (tab.id === activeTabId ? ' active' : '');
         el.dataset.id = tab.id;
         el.tabIndex = 0;
-        el.title = tab.title;
         /// Inactive tabs are tinted by the hash of their own query text.
         el.style.setProperty('--tab-hue', queryToColor(tab.query));
 
