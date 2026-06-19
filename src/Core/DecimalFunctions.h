@@ -311,6 +311,28 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
     return {whole, fractional};
 }
 
+/** Like `splitWithScaleMultiplier`, but the whole part is rounded toward negative infinity and the
+ * fractional part is the corresponding non-negative remainder, so that
+ * `whole * scale_multiplier + fractional == decimal.value` holds for negative input too.
+ * For non-negative input it is identical to `splitWithScaleMultiplier`. Round-down date/time
+ * transforms (`toStartOf*`, calendar component splitting) need this so that the last fractional
+ * second before a boundary is attributed to the earlier whole unit instead of rounding up.
+ */
+template <typename DecimalType>
+inline DecimalComponents<DecimalType> splitWithScaleMultiplierFloor(
+        const DecimalType & decimal,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    using T = typename DecimalType::NativeType;
+    auto components = splitWithScaleMultiplier(decimal, scale_multiplier);
+    if (decimal.value < 0 && components.fractional)
+    {
+        components.fractional = scale_multiplier + (components.whole ? T(-1) : T(1)) * components.fractional;
+        --components.whole;
+    }
+    return components;
+}
+
 /// Split decimal into components: whole and fractional part, @see `DecimalComponents` for details.
 template <typename DecimalType>
 inline DecimalComponents<DecimalType> split(const DecimalType & decimal, UInt32 scale)
