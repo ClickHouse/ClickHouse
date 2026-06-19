@@ -339,7 +339,7 @@ void LazyReadReplacingFinalSource::work()
     processors = Pipe::detachProcessors(std::move(pipe));
 
     for (auto & proc : processors)
-        proc->setQueryPlanStep(getQueryPlanStep(), getQueryPlanStepGroup());
+        proc->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 }
 
 IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
