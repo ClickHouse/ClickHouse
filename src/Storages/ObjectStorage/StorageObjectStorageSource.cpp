@@ -523,7 +523,13 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
-        else if (format_filter_info->condition_hash)
+        /// Do not write the query condition cache for a bucketed read: `getMatchedBuckets`
+        /// reports only this bucket's matching row groups while `total_groups` is the whole
+        /// file, so the row groups owned by other buckets (which this reader never examined)
+        /// would be stored as unmatched under the whole-object key `(uuid, file, condition_hash)`
+        /// and poison later non-bucketed reads. This mirrors the count-cache guard below and the
+        /// cache-read guard in `createReader`.
+        else if (format_filter_info->condition_hash && !reader.getObjectInfo()->file_bucket_info)
         {
             const auto & object_info = reader.getObjectInfo();
             try
