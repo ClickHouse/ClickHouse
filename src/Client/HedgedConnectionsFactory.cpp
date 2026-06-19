@@ -1,6 +1,7 @@
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnectionsFactory.h>
+#include <base/sort.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Core/ProtocolDefines.h>
@@ -409,7 +410,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         return State::CANNOT_CHOOSE;
 
     /// Sort replicas by staleness.
-    std::stable_sort(
+    ::stableSort(
         indexes.begin(),
         indexes.end(),
         [&](size_t lhs, size_t rhs)
