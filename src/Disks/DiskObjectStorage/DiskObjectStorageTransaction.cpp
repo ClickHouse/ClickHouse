@@ -512,9 +512,10 @@ void DiskObjectStorageTransaction::copyFileImpl(
 
     /// A metadata storage that has no blobless files (e.g. plain_rewritable) needs a real 0-byte object
     /// for an empty source file, so go through the write path instead of recording a blobless entry.
+    /// Pass the caller's write_settings (throttlers, cache, conditional writes); writeFile enriches them.
     if (blobs_to_create.empty() && !metadata_storage->supportsEmptyFilesWithoutBlobs())
     {
-        writeFile(to_file_path, 0, WriteMode::Rewrite, getWriteSettings())->finalize();
+        writeFile(to_file_path, 0, WriteMode::Rewrite, write_settings)->finalize();
         return;
     }
 
