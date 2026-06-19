@@ -335,18 +335,24 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (!analyzed_result)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
-        bool has_filter = filter || reading->getPrewhereInfo();
-
         /// `selected_rows` is the number of rows in the selected mark ranges, counted before any
-        /// residual filter is applied while reading. A residual filter exists whenever the index
-        /// does not fully resolve the predicate -- both the part the index cannot use at all
-        /// (e.g. a non-key column) and the granule-level imprecision of an index range (the
-        /// boundary granules are read whole, then filtered). The index pruning *some* granules
-        /// does not prove the whole predicate was consumed. So whenever any filter is present,
-        /// `selected_rows` is only an upper bound on the rows that pass; it equals the exact count
-        /// only with no filter at all. Keep it as an upper bound rather than the exact estimate
-        /// the build-side choice trusts as a lower bound (see `chooseJoinOrder`).
-        if (has_filter)
+        /// row-reducing operation the read applies. It is the exact table size only when NONE of
+        /// those can fire; otherwise it is just an upper bound on the rows that actually come out,
+        /// and must not be the exact lower bound the build-side choice trusts (see `chooseJoinOrder`).
+        /// Row reducers, none of which is reflected in `selected_rows`:
+        ///  * a residual filter -- the parent FilterStep predicate (`filter`), a PREWHERE, a filter
+        ///    pushed into the scan, or a row-level security policy. (Index pruning *some* granules
+        ///    does not prove the whole predicate was consumed, and an index range still reads its
+        ///    boundary granules whole, then filters.)
+        ///  * SAMPLE;
+        ///  * FINAL (collapsing/replacing/aggregating merges drop rows).
+        bool can_reduce_rows = filter
+            || reading->getPrewhereInfo()
+            || reading->getFilterActionsDAG()
+            || reading->getDeferredRowLevelFilter()
+            || reading->isQueryWithFinal()
+            || analyzed_result->sampling.use_sampling;
+        if (can_reduce_rows)
             return RelationStats{.estimated_rows = analyzed_result->selected_rows, .estimated_rows_kind = RowCountKind::UpperBound, .table_name = table_display_name};
 
         return RelationStats{.estimated_rows = analyzed_result->selected_rows, .estimated_rows_kind = RowCountKind::Exact, .table_name = table_display_name};
