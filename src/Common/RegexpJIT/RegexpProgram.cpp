@@ -1,0 +1,650 @@
+#include <Common/RegexpJIT/RegexpProgram.h>
+
+#include <limits>
+
+
+namespace DB::RegexpJIT
+{
+
+namespace
+{
+
+constexpr uint32_t UNBOUNDED = std::numeric_limits<uint32_t>::max();
+
+/// Maximum number of `Optional` constructs we are willing to compile. Each one can duplicate the
+/// continuation in the generated code, so without a cap the code size could grow exponentially.
+constexpr int MAX_OPTIONALS = 4;
+/// Guard against pathological nesting depth.
+constexpr int MAX_DEPTH = 16;
+
+bool isAscii(uint8_t c) { return c < 0x80; }
+
+/// Recursive-descent parser for the supported subset. Bails out (sets `failed`) for anything else.
+class Parser
+{
+public:
+    Parser(std::string_view pattern_, const ParseFlags & flags_)
+        : pattern(pattern_)
+        , case_insensitive(flags_.case_insensitive)
+        , dot_all(flags_.dot_all)
+    {
+    }
+
+    std::optional<RegexpProgram> parse()
+    {
+        RegexpProgram program;
+
+        consumeLeadingFlags();
+
+        if (peek() == '^')
+        {
+            program.anchored_start = true;
+            ++pos;
+        }
+
+        program.ops = parseSequence(/* depth */ 0, /* in_group */ false);
+
+        /// A trailing `$` (only valid at the very end of the top-level sequence) is recorded as
+        /// `anchored_end`; `parseSequence` leaves it for us to consume here.
+        if (!failed && peek() == '$' && pos + 1 == pattern.size())
+        {
+            program.anchored_end = true;
+            ++pos;
+        }
+
+        if (failed || pos != pattern.size())
+            return std::nullopt;
+        if (optionals_count > MAX_OPTIONALS)
+            return std::nullopt;
+
+        program.num_captures = next_capture_index;
+        program.case_insensitive = case_insensitive;
+        program.dot_all = dot_all;
+        return program;
+    }
+
+private:
+    std::string_view pattern;
+    size_t pos = 0;
+    int next_capture_index = 1; /// group 0 is the whole match, reserved.
+    int optionals_count = 0;
+    bool case_insensitive = false;
+    bool dot_all = false;
+    bool failed = false;
+
+    char peek(size_t ahead = 0) const { return pos + ahead < pattern.size() ? pattern[pos + ahead] : '\0'; }
+    void bail() { failed = true; }
+
+    /// Recognize a leading global flag group like `(?i)`, `(?s)`, `(?is)`.
+    void consumeLeadingFlags()
+    {
+        if (!(peek() == '(' && peek(1) == '?'))
+            return;
+        size_t p = pos + 2;
+        bool saw_flag = false;
+        bool ci = case_insensitive;
+        bool da = dot_all;
+        while (p < pattern.size() && pattern[p] != ')' && pattern[p] != ':')
+        {
+            switch (pattern[p])
+            {
+                case 'i': ci = true; break;
+                case 's': da = true; break;
+                case 'm': return; /// multiline not supported - leave the group for the main parser to reject.
+                case 'U': return; /// ungreedy flag flips greediness globally - not supported.
+                case '-': return; /// negated flags - not supported.
+                default: return;
+            }
+            saw_flag = true;
+            ++p;
+        }
+        if (saw_flag && p < pattern.size() && pattern[p] == ')')
+        {
+            case_insensitive = ci;
+            dot_all = da;
+            pos = p + 1;
+        }
+    }
+
+    /// Parse a sequence of atoms until end of input, or until a `)` when inside a group.
+    std::vector<Op> parseSequence(int depth, bool in_group)
+    {
+        std::vector<Op> ops;
+        std::vector<uint8_t> literal_run;
+
+        auto flush_literal = [&]()
+        {
+            if (literal_run.empty())
+                return;
+            Op op;
+            op.kind = OpKind::Literal;
+            op.literal = std::move(literal_run);
+            literal_run.clear();
+            ops.push_back(std::move(op));
+        };
+
+        if (depth > MAX_DEPTH)
+        {
+            bail();
+            return ops;
+        }
+
+        while (!failed && pos < pattern.size())
+        {
+            char c = pattern[pos];
+
+            if (in_group && c == ')')
+                break;
+
+            switch (c)
+            {
+                case ')':
+                    bail(); /// Unbalanced close paren at top level.
+                    break;
+
+                case '|':
+                    bail(); /// Alternation is not supported yet.
+                    break;
+
+                case '^':
+                    bail(); /// Interior `^` (leading one already consumed by `parse`).
+                    break;
+
+                case '$':
+                    /// Only a trailing top-level `$` is allowed; `parse` will consume it.
+                    if (!in_group && pos + 1 == pattern.size())
+                        return flush_literal(), ops;
+                    bail();
+                    break;
+
+                case '.':
+                {
+                    flush_literal();
+                    ++pos; /// consume '.'
+                    CharSet set;
+                    set.add('\n');
+                    set.invert(); /// `.` = everything except newline ...
+                    if (dot_all)
+                        set.add('\n'); /// ... unless DOT_NL is set.
+                    Op op;
+                    op.kind = OpKind::CharQuant;
+                    op.set = set;
+                    if (!applyQuantifierForVariableSet(op))
+                        bail();
+                    else
+                        ops.push_back(std::move(op));
+                    break;
+                }
+
+                case '[':
+                {
+                    flush_literal();
+                    Op op;
+                    if (!parseCharClass(op))
+                        bail();
+                    else
+                        ops.push_back(std::move(op));
+                    break;
+                }
+
+                case '(':
+                {
+                    flush_literal();
+                    if (!parseGroup(depth, ops))
+                        bail();
+                    break;
+                }
+
+                case '\\':
+                {
+                    /// An escape is either a literal byte or a shorthand class.
+                    CharSet shorthand;
+                    bool is_class = false;
+                    uint8_t literal_byte = 0;
+                    if (!parseEscape(shorthand, is_class, literal_byte))
+                    {
+                        bail();
+                        break;
+                    }
+                    if (is_class)
+                    {
+                        flush_literal();
+                        Op op;
+                        op.kind = OpKind::CharQuant;
+                        op.set = shorthand;
+                        if (!applyQuantifierForPositiveSet(op))
+                            bail();
+                        else
+                            ops.push_back(std::move(op));
+                    }
+                    else
+                    {
+                        handleSingleChar(literal_byte, literal_run, ops, flush_literal);
+                    }
+                    break;
+                }
+
+                case '*':
+                case '+':
+                case '?':
+                case '{':
+                    bail(); /// Quantifier without a preceding atom.
+                    break;
+
+                default:
+                {
+                    if (!isAscii(static_cast<uint8_t>(c)) && case_insensitive)
+                    {
+                        /// Case-insensitive matching of non-ASCII bytes would require Unicode folding.
+                        bail();
+                        break;
+                    }
+                    ++pos; /// consume the character.
+                    handleSingleChar(static_cast<uint8_t>(c), literal_run, ops, flush_literal);
+                    break;
+                }
+            }
+        }
+
+        flush_literal();
+        return ops;
+    }
+
+    /// A single byte that may carry a quantifier. Without a quantifier it joins the literal run;
+    /// with one it becomes a (positive, single-member) `CharQuant`.
+    /// Precondition: the character byte has already been consumed (pos points just past it).
+    template <typename FlushLiteral>
+    void handleSingleChar(uint8_t byte, std::vector<uint8_t> & literal_run, std::vector<Op> & ops, FlushLiteral && flush_literal)
+    {
+        char q = peek();
+        if (q == '*' || q == '+' || q == '?' || q == '{')
+        {
+            if (!isAscii(byte))
+            {
+                /// Quantifying a single non-ASCII byte would split a multi-byte code point.
+                bail();
+                return;
+            }
+            flush_literal();
+            Op op;
+            op.kind = OpKind::CharQuant;
+            op.set.add(byte);
+            if (case_insensitive)
+                op.set.foldAsciiCase();
+            if (!applyQuantifierForPositiveSet(op)) /// single positive char: any quantifier is safe.
+                bail();
+            else
+                ops.push_back(std::move(op));
+        }
+        else
+        {
+            literal_run.push_back(byte);
+        }
+    }
+
+    /// Quantifier rules for a *positive*, ASCII-only set (single char or `[...]` / `\d` / ...):
+    /// any quantifier is span-safe, because in-set code points are all single ASCII bytes.
+    bool applyQuantifierForPositiveSet(Op & op) { return applyQuantifier(op, /* allow_fixed */ true); }
+
+    /// Quantifier rules for a *variable* set (`.` or a negated class): the byte- and code-point
+    /// interpretations only agree for maximal runs, so we accept exactly `*` and `+`.
+    bool applyQuantifierForVariableSet(Op & op) { return applyQuantifier(op, /* allow_fixed */ false); }
+
+    bool applyQuantifier(Op & op, bool allow_fixed)
+    {
+        char q = peek();
+        if (q == '*')
+        {
+            ++pos;
+            op.min = 0;
+            op.max = UNBOUNDED;
+        }
+        else if (q == '+')
+        {
+            ++pos;
+            op.min = 1;
+            op.max = UNBOUNDED;
+        }
+        else if (q == '?')
+        {
+            if (!allow_fixed)
+                return false;
+            ++pos;
+            op.min = 0;
+            op.max = 1;
+        }
+        else if (q == '{')
+        {
+            if (!allow_fixed)
+                return false;
+            if (!parseBraceQuantifier(op))
+                return false;
+        }
+        else
+        {
+            if (!allow_fixed)
+                return false; /// A bare `.` or `[^...]` (fixed count 1) is not span-safe.
+            op.min = 1;
+            op.max = 1;
+        }
+
+        /// Non-greedy variants (`*?`, `+?`, ...) are not supported.
+        if (peek() == '?')
+            return false;
+        /// Possessive variants (`*+`, ...) are not supported.
+        if (peek() == '+')
+            return false;
+        return true;
+    }
+
+    bool parseBraceQuantifier(Op & op)
+    {
+        /// pos points at '{'. Parse {n}, {n,}, {n,m}.
+        size_t p = pos + 1;
+        auto read_number = [&](uint32_t & out) -> bool
+        {
+            size_t start = p;
+            uint64_t value = 0;
+            while (p < pattern.size() && pattern[p] >= '0' && pattern[p] <= '9')
+            {
+                value = value * 10 + static_cast<uint64_t>(pattern[p] - '0');
+                if (value > 1000000)
+                    return false;
+                ++p;
+            }
+            if (p == start)
+                return false;
+            out = static_cast<uint32_t>(value);
+            return true;
+        };
+
+        uint32_t lo = 0;
+        if (!read_number(lo))
+            return false;
+        uint32_t hi = lo;
+        if (p < pattern.size() && pattern[p] == ',')
+        {
+            ++p;
+            if (p < pattern.size() && pattern[p] == '}')
+                hi = UNBOUNDED;
+            else if (!read_number(hi))
+                return false;
+        }
+        if (p >= pattern.size() || pattern[p] != '}')
+            return false;
+        if (hi != UNBOUNDED && hi < lo)
+            return false;
+        op.min = lo;
+        op.max = hi;
+        pos = p + 1;
+        return true;
+    }
+
+    bool parseGroup(int depth, std::vector<Op> & ops)
+    {
+        /// pos points at '('.
+        bool capturing = true;
+        size_t body_start = pos + 1;
+
+        if (peek(1) == '?')
+        {
+            if (peek(2) == ':')
+            {
+                capturing = false;
+                body_start = pos + 3;
+            }
+            else
+            {
+                return false; /// Named groups, lookaround, flags-in-group, etc. are not supported.
+            }
+        }
+
+        int capture_index = -1;
+        if (capturing)
+            capture_index = next_capture_index++;
+
+        pos = body_start;
+        std::vector<Op> body = parseSequence(depth + 1, /* in_group */ true);
+        if (failed)
+            return false;
+        if (peek() != ')')
+            return false;
+        ++pos; /// consume ')'.
+
+        /// Optional quantifier on the group: only `?` is supported (turns into `Optional`).
+        char q = peek();
+        bool is_optional = false;
+        if (q == '?')
+        {
+            ++pos;
+            if (peek() == '?' || peek() == '+')
+                return false; /// non-greedy / possessive.
+            is_optional = true;
+        }
+        else if (q == '*' || q == '+' || q == '{')
+        {
+            return false; /// Repetition of a group is not supported yet.
+        }
+
+        std::vector<Op> group_ops;
+        if (capturing)
+        {
+            Op start_op;
+            start_op.kind = OpKind::CaptureStart;
+            start_op.capture_index = capture_index;
+            group_ops.push_back(std::move(start_op));
+        }
+        for (auto & op : body)
+            group_ops.push_back(std::move(op));
+        if (capturing)
+        {
+            Op end_op;
+            end_op.kind = OpKind::CaptureEnd;
+            end_op.capture_index = capture_index;
+            group_ops.push_back(std::move(end_op));
+        }
+
+        if (is_optional)
+        {
+            ++optionals_count;
+            Op op;
+            op.kind = OpKind::Optional;
+            op.body = std::move(group_ops);
+            ops.push_back(std::move(op));
+        }
+        else
+        {
+            for (auto & op : group_ops)
+                ops.push_back(std::move(op));
+        }
+        return true;
+    }
+
+    bool parseCharClass(Op & op)
+    {
+        /// pos points at '['.
+        ++pos;
+        bool negated = false;
+        if (peek() == '^')
+        {
+            negated = true;
+            ++pos;
+        }
+
+        CharSet set;
+        bool first = true;
+        while (pos < pattern.size())
+        {
+            char c = pattern[pos];
+            if (c == ']' && !first)
+                break;
+            first = false;
+
+            uint8_t lo_byte = 0;
+            if (c == '\\')
+            {
+                CharSet shorthand;
+                bool is_class = false;
+                uint8_t literal_byte = 0;
+                if (!parseEscape(shorthand, is_class, literal_byte))
+                    return false;
+                if (is_class)
+                {
+                    for (unsigned b = 0; b < 256; ++b)
+                        if (shorthand.contains(static_cast<uint8_t>(b)))
+                            set.add(static_cast<uint8_t>(b));
+                    continue;
+                }
+                lo_byte = literal_byte;
+            }
+            else
+            {
+                lo_byte = static_cast<uint8_t>(c);
+                ++pos;
+            }
+
+            if (!isAscii(lo_byte))
+                return false; /// Char classes must be ASCII-only to stay byte/code-point equivalent.
+
+            /// Range like `a-z` (but a trailing `-` before `]` is a literal `-`).
+            if (peek() == '-' && peek(1) != ']' && peek(1) != '\0')
+            {
+                ++pos; /// consume '-'.
+                uint8_t hi_byte;
+                if (peek() == '\\')
+                {
+                    CharSet shorthand;
+                    bool is_class = false;
+                    uint8_t literal_byte = 0;
+                    if (!parseEscape(shorthand, is_class, literal_byte) || is_class)
+                        return false;
+                    hi_byte = literal_byte;
+                }
+                else
+                {
+                    hi_byte = static_cast<uint8_t>(peek());
+                    ++pos;
+                }
+                if (!isAscii(hi_byte) || hi_byte < lo_byte)
+                    return false;
+                set.addRange(lo_byte, hi_byte);
+            }
+            else
+            {
+                set.add(lo_byte);
+            }
+        }
+
+        if (pos >= pattern.size() || pattern[pos] != ']')
+            return false;
+        ++pos; /// consume ']'.
+
+        if (case_insensitive)
+            set.foldAsciiCase();
+        if (negated)
+            set.invert();
+
+        op.kind = OpKind::CharQuant;
+        op.set = set;
+
+        /// A negated class can match a multi-byte code point, so only `*`/`+` are span-safe;
+        /// a positive ASCII class is safe with any quantifier.
+        if (negated)
+            return applyQuantifierForVariableSet(op);
+        return applyQuantifierForPositiveSet(op);
+    }
+
+    /// Parse the escape sequence after a backslash (pos points at '\\'). Returns false to bail.
+    /// Either fills a shorthand class (`is_class = true`) or a single literal byte.
+    bool parseEscape(CharSet & shorthand, bool & is_class, uint8_t & literal_byte)
+    {
+        ++pos; /// consume '\\'.
+        if (pos >= pattern.size())
+            return false;
+        char e = pattern[pos];
+        is_class = false;
+
+        auto add_digits = [&](CharSet & s) { s.addRange('0', '9'); };
+        auto add_word = [&](CharSet & s) { s.addRange('0', '9'); s.addRange('a', 'z'); s.addRange('A', 'Z'); s.add('_'); };
+        auto add_space = [&](CharSet & s) { s.add(' '); s.add('\t'); s.add('\n'); s.add('\r'); s.add('\f'); s.add('\v'); };
+
+        switch (e)
+        {
+            case 'd': add_digits(shorthand); is_class = true; ++pos; return true;
+            case 'w': add_word(shorthand); is_class = true; ++pos; return true;
+            case 's': add_space(shorthand); is_class = true; ++pos; return true;
+            case 'D': add_digits(shorthand); shorthand.invert(); is_class = true; ++pos; return true;
+            case 'W': add_word(shorthand); shorthand.invert(); is_class = true; ++pos; return true;
+            case 'S': add_space(shorthand); shorthand.invert(); is_class = true; ++pos; return true;
+
+            case 'n': literal_byte = '\n'; ++pos; return true;
+            case 'r': literal_byte = '\r'; ++pos; return true;
+            case 't': literal_byte = '\t'; ++pos; return true;
+            case 'f': literal_byte = '\f'; ++pos; return true;
+            case 'v': literal_byte = '\v'; ++pos; return true;
+            case '0': literal_byte = '\0'; ++pos; return true;
+
+            /// Escaped metacharacters and punctuation -> the literal byte.
+            case '.': case '\\': case '/': case '(': case ')': case '[': case ']':
+            case '{': case '}': case '?': case '*': case '+': case '|': case '^':
+            case '$': case '-':
+                literal_byte = static_cast<uint8_t>(e);
+                ++pos;
+                return true;
+
+            default:
+                /// `\b`, `\xHH`, Unicode classes, back-references, etc.: bail out conservatively.
+                return false;
+        }
+    }
+};
+
+}
+
+/// Does any `CharQuant` in the program match a byte >= 0x80 (i.e. is it `.` or a negated class)?
+static bool anyCharQuantMatchesHighByte(const std::vector<Op> & ops)
+{
+    for (const auto & op : ops)
+    {
+        if (op.kind == OpKind::CharQuant)
+        {
+            for (unsigned c = 0x80; c < 256; ++c)
+                if (op.set.contains(static_cast<uint8_t>(c)))
+                    return true;
+        }
+        else if (op.kind == OpKind::Optional && anyCharQuantMatchesHighByte(op.body))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<RegexpProgram> tryCompileToProgram(std::string_view pattern, const ParseFlags & flags)
+{
+    if (pattern.empty())
+        return std::nullopt;
+
+    /// A case-insensitive pattern containing non-ASCII bytes would need Unicode case folding.
+    if (flags.case_insensitive)
+        for (unsigned char c : pattern)
+            if (!isAscii(c))
+                return std::nullopt;
+
+    Parser parser(pattern, flags);
+    auto program = parser.parse();
+    if (!program)
+        return std::nullopt;
+
+    /// A pure unanchored literal (e.g. `abc`, `\.com`) is already handled optimally by the
+    /// substring searcher inside `OptimizedRegularExpression`; the JIT's position-by-position scan
+    /// would be slower, so defer such patterns to the general engine.
+    if (!program->anchored_start && !program->anchored_end && program->ops.size() == 1
+        && program->ops[0].kind == OpKind::Literal)
+        return std::nullopt;
+
+    program->requires_ascii_input = anyCharQuantMatchesHighByte(program->ops);
+    return program;
+}
+
+}

@@ -1158,6 +1158,12 @@ Compile some scalar functions and operators to native code.
     DECLARE(UInt64, min_count_to_compile_expression, 3, R"(
 Minimum count of executing same expression before it is get compiled.
 )", 0) \
+    DECLARE(Bool, compile_regular_expressions, true, R"(
+Compile simple regular expressions used in functions like `match` and `extract` to native code. Patterns outside the supported subset transparently fall back to the general engine.
+)", 0) \
+    DECLARE(UInt64, min_count_to_compile_regular_expression, 3, R"(
+Minimum count of executing same regular expression before it is get compiled.
+)", 0) \
     DECLARE(Bool, compile_aggregate_expressions, true, R"(
 Enables or disables JIT-compilation of aggregate functions to native code. Enabling this setting can improve the performance.
 

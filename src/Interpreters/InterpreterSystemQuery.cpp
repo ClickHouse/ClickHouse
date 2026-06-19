@@ -40,6 +40,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/JIT/CHJIT.h>
+#include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -551,6 +552,7 @@ BlockIO InterpreterSystemQuery::execute()
             resetExpressionJITInstance();
             resetAggregatorJITInstance();
             resetSortDescriptionJITInstance();
+            resetRegexpJITInstance();
             /// Clearing the cache invokes `~JITModuleMemoryManager` for every entry, which runs LLVM's
             /// per-module destructors and frees their bookkeeping into the dedicated JIT arena. Purge dirty
             /// pages from that arena so the freed memory is returned to the OS without waiting for the
