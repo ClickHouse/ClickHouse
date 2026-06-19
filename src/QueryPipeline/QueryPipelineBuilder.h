@@ -196,6 +196,8 @@ public:
     const Block & getHeader() const { return pipe.getHeader(); }
     const SharedHeader & getSharedHeader() const { return pipe.getSharedHeader(); }
 
+    const Processors & getProcessors() const { return pipe.getProcessors(); }
+
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);
 
