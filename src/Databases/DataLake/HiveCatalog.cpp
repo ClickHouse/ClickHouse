@@ -182,9 +182,8 @@ DataLake::ICatalog::Namespaces HiveCatalog::getNamespaces() const
 DB::Names HiveCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
 {
     DB::Names current_tables;
-    /// Use the same reconnect/retry wrapper as the unscoped `getTables` path, so a
-    /// transient `TTransportException` is retried instead of bubbling up and being
-    /// turned into an empty table list by the caller.
+    /// Retry transient `TTransportException` (same wrapper as `getTables`) rather
+    /// than letting it bubble up and become an empty table list.
     executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, namespace_name); });
     DB::Names result;
     result.reserve(current_tables.size());

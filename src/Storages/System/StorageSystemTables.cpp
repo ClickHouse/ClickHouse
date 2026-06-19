@@ -68,13 +68,23 @@ std::optional<String> tryReadConstString(const ActionsDAG::Node * node)
     return field.safeGet<String>();
 }
 
-/// Walk the predicate DAG looking for a top-level conjunct that constrains the
-/// `name` column as `name = 'ns.table'` or `name LIKE 'ns.%'`. The matched
-/// predicate lets DataLake catalogs restrict which namespaces they list. Only
-/// case-sensitive LIKE is considered — `ilike` is skipped. `Equals` is preferred
-/// over `Like` when both are present (it is more selective). Since the result is
-/// only an advisory hint and the full predicate is re-applied afterwards, any
-/// single matching conjunct is a valid choice.
+/// Escape SQL LIKE wildcards (`%`, `_`) and the escape char (`\`) so a literal
+/// prefix (e.g. from `startsWith`) becomes an equivalent LIKE pattern.
+String escapeForLikeLiteral(const String & s)
+{
+    String result;
+    result.reserve(s.size());
+    for (char c : s)
+    {
+        if (c == '%' || c == '_' || c == '\\')
+            result += '\\';
+        result += c;
+    }
+    return result;
+}
+
+/// Extract a namespace-pushdown hint from a top-level `name` conjunct: `name = '…'`
+/// (Equals), or `name LIKE '…%'` / its analyzer rewrite `startsWith(name, '…')` (Like).
 TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
 {
     if (!predicate)
@@ -121,24 +131,28 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
 
         if (fn_name == "equals")
         {
-            /// `equals` is symmetric, so the literal may be on either side.
-            /// Prefer it immediately: it is the most selective predicate.
+            /// `equals` is symmetric (literal either side); prefer it — most selective.
             if (auto literal = tryReadConstString(lhs_is_name ? rhs : lhs))
                 return {TablesFilter::Kind::Equals, std::move(*literal)};
         }
         else if (fn_name == "like")
         {
-            /// `like` is NOT symmetric: only `name LIKE 'pattern'` constrains
-            /// `name` by the literal pattern. In the reversed form
-            /// `'literal' LIKE name`, `name` is the pattern and the literal is the
-            /// subject, so forwarding the literal would wrongly narrow the catalog
-            /// request (e.g. `'a.b' LIKE name` can match rows whose name is a
-            /// pattern like `%.%`). Accept only the former, and keep the first such
-            /// pattern in case no `equals` conjunct is found.
+            /// Not symmetric: only `name LIKE 'pattern'` (name on lhs) constrains `name`.
+            /// Keep the first such pattern if no `equals` is found.
             if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
             {
                 if (auto literal = tryReadConstString(rhs))
                     like_filter = {TablesFilter::Kind::Like, std::move(*literal)};
+            }
+        }
+        else if (fn_name == "startsWith")
+        {
+            /// Analyzer rewrite of a perfect-prefix `name LIKE 'prefix%'`. The literal
+            /// is a plain prefix, so escape it and append `%` to recover the LIKE pattern.
+            if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
+            {
+                if (auto literal = tryReadConstString(rhs))
+                    like_filter = {TablesFilter::Kind::Like, escapeForLikeLiteral(*literal) + "%"};
             }
         }
     }

@@ -289,11 +289,8 @@ def test_list_tables(started_cluster):
 
 
 def escape_like_literal(s):
-    # Escape SQL LIKE wildcards (`%`, `_`) and the escape character so the value
-    # is matched literally. ClickHouse keeps the backslash for LIKE convenience,
-    # so a single backslash in the query text is enough (no SQL-literal
-    # double-escaping needed). Used to bind the namespace path exactly in a
-    # `name LIKE '<ns>.%'` predicate.
+    # Escape SQL LIKE wildcards (`%`, `_`) and `\` so the value matches literally
+    # (ClickHouse keeps the backslash, so one backslash in the query text suffices).
     return re.sub(r"([\\%_])", r"\\\1", s)
 
 
@@ -370,13 +367,27 @@ def test_namespace_filter_pushdown(started_cluster):
 
     expected_ns1 = "\n".join(sorted(f"{namespace_1}.{t}" for t in namespace_1_tables))
 
-    # Case-sensitive LIKE pushdown. The namespace contains a literal `_`, which is
-    # a single-character wildcard in LIKE, so it must be escaped (`\_`) to bind the
-    # namespace exactly. Without the escape the pattern could also match sibling
-    # namespaces, so the push-down would (correctly) fetch them too.
+    # Case-sensitive LIKE pushdown. The namespace's literal `_` is a LIKE wildcard,
+    # so escape it (`\_`) to bind the namespace exactly.
     assert_scoped(
         f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name LIKE '{escape_like_literal(namespace_1)}.%' ORDER BY name "
         "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
+    # `startsWith` pushdown, pinned directly: the analyzer rewrites perfect-prefix
+    # `name LIKE 'prefix%'` to `startsWith(name, 'prefix')`, which must also scope.
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND startsWith(name, '{namespace_1}.') ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
+    # The same query written as `LIKE`, with the rewrite forced on, to guard the
+    # analyzer-rewrite path end-to-end even if the default flips in the future.
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name LIKE '{escape_like_literal(namespace_1)}.%' ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true, optimize_rewrite_like_perfect_affix = 1",
         expected_ns1,
     )
 

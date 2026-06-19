@@ -316,12 +316,8 @@ DB::SettingsChanges CatalogSettings::allChanged() const
 namespace
 {
 
-/// Returns true if SOME string having `prefix` as a prefix can match the SQL
-/// LIKE `pattern` (`%` = any sequence, `_` = any single char, `\` escapes the
-/// next char). Used to decide whether a namespace `N` (passed as `N + "."`)
-/// could contain a table whose full `N.table` name matches the pattern: once
-/// the whole prefix is consumed we return true, because the unknown table-name
-/// continuation can satisfy whatever pattern remains. Case-sensitive.
+/// True if some string starting with `prefix` can match the SQL LIKE `pattern`
+/// (case-sensitive). Decides whether namespace `N` (as `N + "."`) may hold a match.
 bool likeCanMatchWithPrefix(std::string_view prefix, std::string_view pattern)
 {
     size_t i = 0;            /// index into prefix
@@ -392,8 +388,7 @@ DB::Names ICatalog::getTables(const TableNameFilter & filter) const
 
         case TableNameFilter::Kind::Equals:
         {
-            /// `name = 'ns.table'` -> list the single namespace `ns` directly.
-            /// The downstream `system.tables` filter narrows to the exact row.
+            /// `name = 'ns.table'` -> list only namespace `ns`; the outer filter keeps the exact row.
             const auto pos = filter.value.rfind('.');
             if (pos == std::string::npos)
                 return getTables();
@@ -402,11 +397,8 @@ DB::Names ICatalog::getTables(const TableNameFilter & filter) const
 
         case TableNameFilter::Kind::Like:
         {
-            /// `name LIKE 'pattern'` -> list every namespace that could contain a
-            /// matching table (a table in `N` is named `N.<leaf>`, so test the
+            /// List every namespace that could hold a matching table (test the
             /// pattern against `N + "."` as a prefix), then list each directly.
-            /// `getNamespaces()` already enumerates nested namespaces, so listing
-            /// each one directly covers the matched subtree without duplicates.
             DB::Names result;
             for (const auto & namespace_name : getNamespaces())
             {

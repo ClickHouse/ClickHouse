@@ -46,17 +46,12 @@ struct LightWeightTableDetails
     String name;
 };
 
-/// Optional hint passed to getTablesIterator that lets the caller push down
-/// the `name`-column predicate to the database implementation. The hint is
-/// purely advisory: implementations that ignore it must still return correct
-/// results. Currently used by DataLake catalogs (Iceberg REST, Glue, Unity,
-/// Hive, Paimon REST) to restrict which namespaces are listed instead of
-/// enumerating every table in the catalog.
+/// Advisory hint passed to getTablesIterator: lets DataLake catalogs restrict
+/// which namespaces are listed instead of enumerating the whole catalog.
 struct TablesFilter
 {
-    /// How the `name` column is constrained by the query predicate. `Equals`
-    /// (`name = 'ns.table'`) and `Like` (`name LIKE 'ns.%'`) let the catalog
-    /// narrow the set of namespaces it lists; `None` means no usable predicate.
+    /// How the `name` column is constrained: `Equals` (`name = 'ns.table'`) or
+    /// `Like` (`name LIKE 'ns.%'`); `None` means no usable predicate.
     enum class Kind
     {
         None,
@@ -66,8 +61,7 @@ struct TablesFilter
 
     Kind kind = Kind::None;
 
-    /// For `Equals`: the full literal value (e.g. `ns.table`).
-    /// For `Like`:   the full LIKE pattern (e.g. `ns.%`). Unused for `None`.
+    /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
     String pattern;
 };
 
@@ -222,12 +216,7 @@ public:
     virtual bool isRemoteDatabase() const { return false; }
 
     /// True only for DataLake catalog databases (Iceberg REST, Glue, Unity, Hive,
-    /// Paimon REST). Unlike other remote databases (MySQL, PostgreSQL) these expose
-    /// a namespace hierarchy that can be addressed as `catalog.ns1.ns2` and honour
-    /// the namespace hint in `getTablesIteratorWithHint`. Used to gate behaviour
-    /// that only makes sense for catalogs, such as the `SHOW TABLES FROM` namespace
-    /// split, which would otherwise mask "database does not exist" errors for the
-    /// other remote engines.
+    /// Paimon REST), which expose a `catalog.ns1.ns2` namespace hierarchy.
     virtual bool isDataLakeCatalog() const { return false; }
 
     /// Load a set of existing tables.

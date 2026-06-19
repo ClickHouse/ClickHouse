@@ -125,9 +125,8 @@ namespace FailPoints
 namespace
 {
 
-/// Translate the database-layer `TablesFilter` (extracted from the query's
-/// `name`-column predicate) into the catalog-layer `TableNameFilter`, so the
-/// catalog can restrict which namespaces it lists.
+/// Translate the database-layer `TablesFilter` into the catalog-layer
+/// `TableNameFilter` so the catalog can restrict which namespaces it lists.
 DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_filter)
 {
     switch (tables_filter.kind)
