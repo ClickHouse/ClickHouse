@@ -2700,6 +2700,38 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             dst_parts_locks.emplace_back(std::move(patch_part_lock));
         }
     }
+    else
+    {
+        std::unordered_map<String, DataPartsVector> base_parts_by_partition;
+        base_parts_by_partition.reserve(src_parts.size());
+        for (const auto & src_part : src_parts)
+        {
+            const String partition_for_part = src_part->partition.getID(src_data);
+            base_parts_by_partition[partition_for_part].push_back(src_part);
+        }
+
+        for (const auto & [partition_for_part, base_parts_for_partition] : base_parts_by_partition)
+        {
+            auto patches_for_partition = src_data.getPatchPartsVectorForPartition(partition_for_part);
+            patches_for_partition = filterUnappliedPatchParts(base_parts_for_partition, patches_for_partition);
+
+            for (const auto & src_patch_part : patches_for_partition)
+            {
+                IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
+                auto [dst_patch_part, patch_part_lock] = cloneAndLoadDataPart(
+                    src_patch_part,
+                    TMP_PREFIX,
+                    src_patch_part->info,
+                    my_metadata_snapshot,
+                    clone_params,
+                    local_context->getReadSettings(),
+                    local_context->getWriteSettings(),
+                    replace ? !are_policies_partition_op_compatible : false);
+                dst_parts.emplace_back(std::move(dst_patch_part));
+                dst_parts_locks.emplace_back(std::move(patch_part_lock));
+            }
+        }
+    }
 
     /// ATTACH empty part set
     if (!replace && dst_parts.empty())
