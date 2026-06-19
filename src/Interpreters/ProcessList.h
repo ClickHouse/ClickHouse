@@ -106,8 +106,12 @@ protected:
     QuerySlotPtr query_slot;
 
     /// Whether this query holds an admission slot (for early release).
-    /// Protected by ProcessList::mutex.
-    bool holds_admission_slot = false;
+    /// Compound updates (e.g. transferring the slot to a FIFO waiter) happen under `ProcessList::mutex`,
+    /// but `releaseAdmissionSlot` reads this flag once on the lock-free fast path before deciding whether
+    /// to take the mutex at all (so the default, admission-queue-disabled path stays lock-free). It is
+    /// therefore `std::atomic` to make that unlocked read well-defined; the under-lock double-check
+    /// remains the authoritative decision point.
+    std::atomic<bool> holds_admission_slot = false;
 
     /// Whether the admission slot was released early (before `ProcessListEntry` destruction);
     /// used to maintain `ProcessList::admission_pending_teardowns`. Protected by ProcessList::mutex.
