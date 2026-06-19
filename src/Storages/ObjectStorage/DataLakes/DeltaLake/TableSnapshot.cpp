@@ -679,13 +679,27 @@ size_t TableSnapshot::getVersionUnlocked() const
 
 TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStats() const
 {
-    if (!snapshot_stats.has_value())
+    if (snapshot_stats.has_value())
+        return snapshot_stats.value();
+
+    const auto pre_fingerprint = kernel_state_credentials_fingerprint;
+    try
     {
         snapshot_stats = getSnapshotStatsImpl();
-        LOG_TEST(
-            log, "Updated statistics for snapshot version {}",
-            getVersionUnlocked());
     }
+    catch (const DB::Exception & e)
+    {
+        if (!tryRefreshAfterStaleTokenError(e, pre_fingerprint, "stats scan"))
+            throw;
+        /// Invalidate the cached engine so `initOrUpdateSnapshot` rebuilds with the
+        /// freshened credentials, then re-run the stats scan against the new engine.
+        kernel_snapshot_state.reset();
+        initOrUpdateSnapshot();
+        snapshot_stats = getSnapshotStatsImpl();
+    }
+    LOG_TEST(
+        log, "Updated statistics for snapshot version {}",
+        getVersionUnlocked());
     return snapshot_stats.value();
 }
 
@@ -792,6 +806,35 @@ std::optional<size_t> TableSnapshot::getTotalBytes() const
     return getSnapshotStats().total_bytes;
 }
 
+bool TableSnapshot::tryRefreshAfterStaleTokenError(
+    const DB::Exception & e,
+    DB::UInt128 pre_fingerprint,
+    const char * context_for_log) const
+{
+    if (e.code() != DB::ErrorCodes::DELTA_KERNEL_ERROR)
+        return false;
+    const auto & msg = e.message();
+    const bool stale_credentials_error =
+        msg.find("ExpiredToken") != std::string::npos
+        || msg.find("InvalidToken") != std::string::npos
+        || msg.find("TokenRefreshRequired") != std::string::npos;
+    if (!stale_credentials_error)
+        return false;
+
+    const bool refreshed_via_callback = helper->refreshCredentials();
+    const auto post_fingerprint = helper->getCredentialsFingerprint();
+    const bool fingerprint_drifted = post_fingerprint != pre_fingerprint;
+    if (!refreshed_via_callback && !fingerprint_drifted)
+        return false;
+
+    LOG_INFO(
+        log,
+        "Delta kernel reported stale credentials during {}; rebuilding "
+        "(refreshed via callback: {}, fingerprint drifted: {}). Original error: {}",
+        context_for_log, refreshed_via_callback, fingerprint_drifted, msg);
+    return true;
+}
+
 void TableSnapshot::initOrUpdateSnapshot() const
 {
     /// Rebuild when credentials rotate so the engine never outlives its embedded STS token.
@@ -816,32 +859,8 @@ void TableSnapshot::initOrUpdateSnapshot() const
     }
     catch (const DB::Exception & e)
     {
-        /// Vended creds are static in the C++ client until the callback fires; rotating
-        /// S3 providers (assume-role / web-identity / IMDS) auto-refresh inside the SDK
-        /// instead, surfacing as a fingerprint drift on the next re-read. Retry once if
-        /// either path produced fresh credentials.
-        if (e.code() != DB::ErrorCodes::DELTA_KERNEL_ERROR)
+        if (!tryRefreshAfterStaleTokenError(e, current_credentials_fingerprint, "snapshot init"))
             throw;
-        const auto & msg = e.message();
-        const bool stale_credentials_error =
-            msg.find("ExpiredToken") != std::string::npos
-            || msg.find("InvalidToken") != std::string::npos
-            || msg.find("TokenRefreshRequired") != std::string::npos;
-        if (!stale_credentials_error)
-            throw;
-
-        const bool refreshed_via_callback = helper->refreshCredentials();
-        const auto post_fingerprint = helper->getCredentialsFingerprint();
-        const bool fingerprint_drifted = post_fingerprint != current_credentials_fingerprint;
-        if (!refreshed_via_callback && !fingerprint_drifted)
-            throw;
-
-        LOG_INFO(
-            log,
-            "Delta kernel reported stale credentials during snapshot init; rebuilding "
-            "(refreshed via callback: {}, fingerprint drifted: {}). Original error: {}",
-            refreshed_via_callback, fingerprint_drifted, msg);
-
         kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, version_to_build);
     }
     kernel_state_credentials_fingerprint = helper->getCredentialsFingerprint();
