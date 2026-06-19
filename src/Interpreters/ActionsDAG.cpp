@@ -1325,7 +1325,7 @@ void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_
         {
             result = node.function->execute(args, node.result_type, 1, true);
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: speculative fold, throw means "cannot fold"
         {
             continue;
         }
