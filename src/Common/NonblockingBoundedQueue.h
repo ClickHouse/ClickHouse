@@ -89,7 +89,7 @@ public:
     /// atomic operations in such functions, so the happens-before edges through `slot.pos`
     /// remain visible to it, and accesses to the contents of `T` in callers are still checked
     /// correctly.
-    NO_SANITIZE_THREAD bool tryPush(T && value)
+    NO_SANITIZE_THREAD bool tryPush(T & value)
     {
         chassert(mask);
         size_t pos = enqueue_pos.load(std::memory_order_relaxed);
