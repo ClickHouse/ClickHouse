@@ -58,4 +58,52 @@ On **output**, label values are quoted with OpenMetrics-specific escaping (`\\`,
 
 See [Prometheus](./Prometheus.md) for a detailed tabular example. The same shape of data can be exported with `FORMAT OpenMetrics` to obtain `# UNIT` lines (when `unit` is set), samples, and a trailing `# EOF` line.
 
+### Exporting from a TimeSeries table {#exporting-from-a-timeseries-table}
+
+`FORMAT OpenMetrics` builds its output from the `name` and `value` columns, plus the optional `help`/`type`/`unit`/`labels`/`timestamp` columns, matched by column name. To export a [TimeSeries](/engines/table-engines/special/time_series) table as OpenMetrics, define a reusable [parameterized view](/sql-reference/statements/create/view#parameterized-view) once that reshapes the engine's data into those columns, then select from it with `FORMAT OpenMetrics`.
+
+TimeSeries data is stored across three target tables, so the view joins the [`timeSeriesSamples`](/sql-reference/table-functions/timeSeriesSamples), [`timeSeriesTags`](/sql-reference/table-functions/timeSeriesTags), and [`timeSeriesMetrics`](/sql-reference/table-functions/timeSeriesMetrics) table functions:
+
+```sql
+CREATE TABLE http_metrics ENGINE = TimeSeries;
+
+INSERT INTO http_metrics (metric_name, tags, time_series, metric_family, type, unit, help) VALUES
+    ('http_requests_total', {'method': 'POST', 'code': '200'},
+     [(toDateTime64('2024-01-01 00:00:00', 3), 1027)],
+     'http_requests_total', 'counter', 'requests', 'Total number of HTTP requests');
+
+CREATE VIEW openmetrics_exposition AS
+SELECT
+    CAST(tags.metric_name AS String)                  AS name,
+    samples.value                                     AS value,
+    coalesce(CAST(metrics.help AS String), '')        AS help,
+    coalesce(CAST(metrics.type AS String), '')        AS type,
+    coalesce(CAST(metrics.unit AS String), '')        AS unit,
+    mapFilter((k, v) -> (k != '__name__'), tags.tags) AS labels,
+    toUnixTimestamp64Milli(samples.timestamp)         AS timestamp
+FROM timeSeriesSamples(http_metrics) AS samples
+INNER JOIN timeSeriesTags(http_metrics) AS tags ON samples.id = tags.id
+LEFT JOIN timeSeriesMetrics(http_metrics) AS metrics ON tags.metric_name = metrics.metric_family_name
+WHERE tags.metric_name = {metric:String};
+```
+
+The `timestamp` column must be milliseconds since the Unix epoch (see [Timestamp column](#timestamp-column)), so the view converts the samples' `DateTime64(3)` with `toUnixTimestamp64Milli`. The `__name__` label is dropped because the metric name is exposed separately as `name`.
+
+Export a metric family by passing the parameter at call time:
+
+```sql
+SELECT * FROM openmetrics_exposition(metric = 'http_requests_total')
+ORDER BY name, timestamp
+FORMAT OpenMetrics;
+```
+
+```text
+# HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+# UNIT http_requests_total requests
+http_requests_total{code="200",method="POST"} 1027 1704067200
+
+# EOF
+```
+
 ## Format settings {#format-settings}
