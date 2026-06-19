@@ -38,20 +38,13 @@ UPDATE t_detach_attach_patches SET b = b + 3, c = c + 3 WHERE 1;
 SELECT '==========';
 SELECT * FROM t_detach_attach_patches ORDER BY ALL;
 
-ALTER TABLE t_detach_attach_patches DETACH PARTITION 0; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE t_detach_attach_patches APPLY PATCHES IN PARTITION 0;
 ALTER TABLE t_detach_attach_patches DETACH PARTITION 0;
 
-ALTER TABLE t_detach_attach_patches DETACH PART '1_0_0_0'; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE t_detach_attach_patches APPLY PATCHES IN PARTITION 1;
+ALTER TABLE t_detach_attach_patches DETACH PART '1_0_0_0';
 ALTER TABLE t_detach_attach_patches DETACH PART '1_0_0_0_4';
 
-ALTER TABLE t_detach_attach_patches MOVE PARTITION 2 TO TABLE t_detach_attach_patches_dst; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE t_detach_attach_patches APPLY PATCHES IN PARTITION 2;
 ALTER TABLE t_detach_attach_patches MOVE PARTITION 2 TO TABLE t_detach_attach_patches_dst;
 
-ALTER TABLE t_detach_attach_patches_dst REPLACE PARTITION 3 FROM t_detach_attach_patches; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE t_detach_attach_patches APPLY PATCHES IN PARTITION 3;
 ALTER TABLE t_detach_attach_patches_dst REPLACE PARTITION 3 FROM t_detach_attach_patches;
 
 ALTER TABLE t_detach_attach_patches DROP PARTITION 4;

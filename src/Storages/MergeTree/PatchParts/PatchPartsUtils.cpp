@@ -288,6 +288,41 @@ bool patchHasHigherDataVersion(const IMergeTreeDataPartInfoForReader & patch, In
     return patchHasHigherDataVersion(patch.getPartName(), min_patch_version, max_patch_version, max_data_version);
 }
 
+SourcePartsSetForPatch remapSourcePartsSet(
+    const SourcePartsSetForPatch & source_parts_set,
+    const std::unordered_map<String, String> & old_to_new_part_names)
+{
+    SourcePartsSetForPatch remapped;
+    for (const auto & [source_part_name, min_max] : source_parts_set.getSourcePartsMinMaxVersions())
+    {
+        const auto it = old_to_new_part_names.find(source_part_name);
+        const String & remapped_name = (it == old_to_new_part_names.end()) ? source_part_name : it->second;
+
+        /// Keep the same max data version contract used by SourcePartsSetForPatch::build.
+        remapped.addSourcePart(remapped_name, min_max.second);
+    }
+    return remapped;
+}
+
+DataPartsVector filterUnappliedPatchParts(const DataPartsVector & base_parts, const DataPartsVector & patch_parts)
+{
+    if (base_parts.empty() || patch_parts.empty())
+        return {};
+
+    Int64 min_data_version = std::numeric_limits<Int64>::max();
+    for (const auto & part : base_parts)
+        min_data_version = std::min(min_data_version, part->info.getDataVersion());
+
+    DataPartsVector res;
+    res.reserve(patch_parts.size());
+    for (const auto & patch : patch_parts)
+    {
+        if (patchHasHigherDataVersion(*patch, min_data_version))
+            res.push_back(patch);
+    }
+    return res;
+}
+
 PartsRange getPatchesToApplyOnMerge(const std::vector<MergeTreePartInfo> & patch_parts, const PartsRange & range, Int64 next_mutation_version)
 {
     if (range.empty())

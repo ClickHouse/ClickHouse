@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
+#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
@@ -52,6 +53,10 @@ String getPartitionIdForPatch(const MergeTreePartition & partition);
 /// Asserts that the patch's min and max data versions don't intersect max_data_version.
 bool patchHasHigherDataVersion(const IMergeTreeDataPart & patch, Int64 max_data_version);
 bool patchHasHigherDataVersion(const IMergeTreeDataPartInfoForReader & patch, Int64 max_data_version);
+SourcePartsSetForPatch remapSourcePartsSet(
+    const SourcePartsSetForPatch & source_parts_set,
+    const std::unordered_map<String, String> & old_to_new_part_names);
+DataPartsVector filterUnappliedPatchParts(const DataPartsVector & base_parts, const DataPartsVector & patch_parts);
 
 /// Returns maximal version among patches which version are in [current_data_version, next_mutation_version)
 /// If there no such patches returns current_data_version.
