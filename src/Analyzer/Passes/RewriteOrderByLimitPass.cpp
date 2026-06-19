@@ -12,6 +12,7 @@
 #include <Analyzer/SortNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
@@ -96,6 +97,17 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
         /// it false. Window functions are evaluated over the full result set before `LIMIT`, but the rewrite
         /// filters rows by their physical offset before they are computed, which would change their values.
         if (hasWindowFunctionNodes(query_node.getProjectionNode()) || hasWindowFunctionNodes(query_node.getOrderByNode()))
+            return {};
+        /// The `arrayJoin` function (as opposed to the `ARRAY JOIN` clause, which turns the join tree into a
+        /// non-`TableNode` and is already rejected below) expands one physical input row into several output
+        /// rows. The rewrite selects whole physical rows by `_part_starting_offset + _part_offset` and
+        /// re-evaluates the projection over them, so a row picked for a single expanded element is expanded
+        /// again and returns all of its elements instead of just the top-N. `hasFunctionNode` does not descend
+        /// into nested subqueries, so only an `arrayJoin` in this query's own scope is rejected.
+        if (hasFunctionNode(query_node.getProjectionNode(), "arrayJoin")
+            || hasFunctionNode(query_node.getOrderByNode(), "arrayJoin")
+            || (query_node.hasWhere() && hasFunctionNode(query_node.getWhere(), "arrayJoin"))
+            || (query_node.hasPrewhere() && hasFunctionNode(query_node.getPrewhere(), "arrayJoin")))
             return {};
         if (query_node.hasHaving())
             return {};
