@@ -46,6 +46,8 @@
 #include <algorithm>
 #include <stack>
 
+#include <absl/container/inlined_vector.h>
+
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
@@ -2803,6 +2805,14 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     {
         auto function_node = node.toFunctionNode();
 
+        /// A top-level IN atom builds its set via tryPrepareSetIndexForIn, but an IN wrapped in a
+        /// larger expression reaches here as a chain link. Its set is not built for this analysis
+        /// (and GLOBAL IN sets are filled later by ReadFromRemote), so keep all IN operators out of
+        /// the monotonic function chain or pruning would execute them against an unbuilt set
+        /// ("Not-ready Set").
+        if (functionIsInOrGlobalInOperator(function_node.getFunctionName()))
+            return false;
+
         size_t arguments_size = function_node.getArgumentsSize();
         if (arguments_size > 2 || arguments_size == 0)
             return false;
@@ -4736,7 +4746,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
     const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
-    std::vector<BoolMask> rpn_stack;
+    absl::InlinedVector<BoolMask, 16> rpn_stack;
 
     auto curve_type = [&](size_t key_column_pos)
     {
