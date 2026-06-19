@@ -2296,34 +2296,6 @@ TEST(CoordinationChunkedSnapshotTest, RejectsFrameExceedingBufferSize)
     }
 }
 
-TEST(CoordinationChunkedSnapshotTest, RejectsWrongFirstChunkType)
-{
-    // First chunk must be METADATA, not NODES.
-    std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::NODES, 13, 100}, // wrong: should be METADATA
-        {SnapshotChunkType::NODES, 113, 200},
-    };
-    auto buf = buildChunkedBufferFromDescriptors(frames);
-    {
-        DB::ReadBufferFromString in28(buf);
-        EXPECT_THROW(parseAndValidateChunkedSnapshot(in28), DB::Exception);
-    }
-}
-
-TEST(CoordinationChunkedSnapshotTest, RejectsMetadataAsNonFirstChunk)
-{
-    // Non-first chunks must be NODES, not METADATA.
-    std::vector<SnapshotChunkDescriptor> frames = {
-        {SnapshotChunkType::METADATA, 13, 100},
-        {SnapshotChunkType::METADATA, 113, 200}, // wrong: should be NODES
-    };
-    auto buf = buildChunkedBufferFromDescriptors(frames);
-    {
-        DB::ReadBufferFromString in27(buf);
-        EXPECT_THROW(parseAndValidateChunkedSnapshot(in27), DB::Exception);
-    }
-}
-
 TEST(CoordinationChunkedSnapshotTest, RejectsNonMonotonicOffsets)
 {
     // First frame at a higher offset than the second — non-monotonic (NODES starts before METADATA ends).

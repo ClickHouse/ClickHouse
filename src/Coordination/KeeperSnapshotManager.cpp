@@ -1257,10 +1257,23 @@ KeeperSnapshotManager<Storage>::deserializeChunkedSnapshotFromBuffer(ReadBufferF
 
         bool recalculate_digest = keeper_context->digestEnabled();
 
-        // ── METADATA chunk (always chunks[0], validated by parseAndValidateChunkedSnapshot) ──────────────
-        const SnapshotChunkDescriptor & metadata_chunk_info = chunks[0];
+        // Partition chunks by type; unknown future types are ignored.
+        const SnapshotChunkDescriptor * metadata_chunk_info = nullptr;
+        std::vector<const SnapshotChunkDescriptor *> nodes_chunks;
+        for (const auto & chunk_descriptor : chunks)
+        {
+            if (chunk_descriptor.type == SnapshotChunkType::METADATA)
+                metadata_chunk_info = &chunk_descriptor;
+            else if (chunk_descriptor.type == SnapshotChunkType::NODES)
+                nodes_chunks.push_back(&chunk_descriptor);
+        }
+
+        if (!metadata_chunk_info)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot: no METADATA chunk found");
+
+        // ── METADATA chunk ────────────────────────────────────────────────────────────────────────────
         auto compressed_metadata
-            = makeChunkReader(buffer.getView(metadata_chunk_info.compressed_offset, metadata_chunk_info.compressed_size));
+            = makeChunkReader(buffer.getView(metadata_chunk_info->compressed_offset, metadata_chunk_info->compressed_size));
         ReadBuffer & metadata_rbuf = *compressed_metadata;
 
         uint8_t version_byte = 0;
@@ -1282,13 +1295,6 @@ KeeperSnapshotManager<Storage>::deserializeChunkedSnapshotFromBuffer(ReadBufferF
             storage.nodes_digest = 0;
 
         const bool cleanup_acl_global = keeper_context->shouldBlockACL();
-
-        // ── NODES chunks ─────────────────────────────────────────────────────────────────────────────
-        // Collect chunk descriptors in header order (preserves deterministic splice order).
-        std::vector<const SnapshotChunkDescriptor *> nodes_chunks;
-        for (const auto & chunk_descriptor : chunks)
-            if (chunk_descriptor.type == SnapshotChunkType::NODES)
-                nodes_chunks.push_back(&chunk_descriptor);
 
         const size_t nodes_chunk_count = nodes_chunks.size();
 
@@ -1459,17 +1465,26 @@ KeeperSnapshotManager<Storage>::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft
     return result;
 }
 
-/// Decompress ONLY the METADATA chunk (chunks[0]) of a chunked snapshot and return the snapshot
-/// metadata.
-/// Called from deserializeSnapshotMetadataFromBuffer after CKFS front magic is detected.
+/// Decompress only the METADATA chunk of a chunked snapshot and return the snapshot metadata.
 static SnapshotMetadataPtr deserializeChunkedSnapshotMetadataFromBuffer(ReadBufferFromNuraftBuffer & buffer)
 {
     auto chunks = parseAndValidateChunkedSnapshot(buffer);
 
-    // Decompress ONLY chunks[0] (METADATA) — intentionally never touch NODES chunks.
-    const SnapshotChunkDescriptor & metadata_chunk_descriptor = chunks[0];
+    const SnapshotChunkDescriptor * metadata_chunk_descriptor = nullptr;
+    for (const auto & chunk : chunks)
+    {
+        if (chunk.type == SnapshotChunkType::METADATA)
+        {
+            metadata_chunk_descriptor = &chunk;
+            break;
+        }
+    }
+
+    if (!metadata_chunk_descriptor)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot: no METADATA chunk found");
+
     auto zbuf_meta
-        = makeChunkReader(buffer.getView(metadata_chunk_descriptor.compressed_offset, metadata_chunk_descriptor.compressed_size));
+        = makeChunkReader(buffer.getView(metadata_chunk_descriptor->compressed_offset, metadata_chunk_descriptor->compressed_size));
     ReadBuffer & rbuf = *zbuf_meta;
     uint8_t version_byte = 0;
     readBinary(version_byte, rbuf);

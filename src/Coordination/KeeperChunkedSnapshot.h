@@ -28,6 +28,7 @@ enum class SnapshotChunkType : uint8_t
 {
     METADATA = 0, ///< zxid/digest, session counter, ACL map, sessions, cluster config
     NODES = 1,
+    UNKNOWN = 0xFF, ///< unknown future type — reader skips the chunk
 };
 
 struct SnapshotChunkDescriptor
