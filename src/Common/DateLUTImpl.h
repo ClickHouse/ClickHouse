@@ -1833,8 +1833,9 @@ public:
         const LUTIndex index = findIndexInRange(t);
 
         /// If the destination day falls outside of the lookup table, recompute everything with cctz.
-        const Int64 new_day_index = static_cast<Int64>(index.toUnderType()) + delta;
-        if (unlikely(new_day_index < 0 || new_day_index >= DATE_LUT_SIZE))
+        /// Compare delta against the valid window so the bound check itself cannot overflow for huge delta.
+        const Int64 index_value = static_cast<Int64>(index.toUnderType());
+        if (unlikely(delta < -index_value || delta >= static_cast<Int64>(DATE_LUT_SIZE) - index_value))
             return addDaysOutOfRange(t, delta);
 
         const Values & values = lut[index];
@@ -1906,9 +1907,10 @@ public:
         if constexpr (!std::is_same_v<DateTime, UInt32>)
         {
             /// If the destination month falls outside of the lookup table, recompute everything with cctz.
-            const Int64 month_index = static_cast<Int64>(values.year) * 12 + (values.month - 1) + delta;
-            const Int64 year = month_index >= 0 ? month_index / 12 : -((-month_index + 11) / 12);
-            if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR))
+            /// Compare delta against the valid window so the bound check itself cannot overflow for huge delta.
+            const Int64 base_month_index = static_cast<Int64>(values.year) * 12 + (values.month - 1);
+            if (unlikely(delta < static_cast<Int64>(DATE_LUT_MIN_YEAR) * 12 - base_month_index
+                      || delta > static_cast<Int64>(DATE_LUT_MAX_YEAR) * 12 + 11 - base_month_index))
                 return addMonthsOutOfRange(t, delta);
         }
 
@@ -1943,9 +1945,10 @@ public:
                 return addMonthsOutOfRange(d, delta);
 
             const Values & values = lut[toLUTIndex(d)];
-            const Int64 month_index = static_cast<Int64>(values.year) * 12 + (values.month - 1) + delta;
-            const Int64 year = month_index >= 0 ? month_index / 12 : -((-month_index + 11) / 12);
-            if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR))
+            /// Compare delta against the valid window so the bound check itself cannot overflow for huge delta.
+            const Int64 base_month_index = static_cast<Int64>(values.year) * 12 + (values.month - 1);
+            if (unlikely(delta < static_cast<Int64>(DATE_LUT_MIN_YEAR) * 12 - base_month_index
+                      || delta > static_cast<Int64>(DATE_LUT_MAX_YEAR) * 12 + 11 - base_month_index))
                 return addMonthsOutOfRange(d, delta);
 
             return toDayNum(addMonthsIndex(d, delta));
@@ -1989,8 +1992,9 @@ public:
 
         if constexpr (!std::is_same_v<DateTime, UInt32>)
         {
-            const Int64 year = static_cast<Int64>(values.year) + delta;
-            if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR))
+            /// Compare delta against the valid window so the bound check itself cannot overflow for huge delta.
+            if (unlikely(delta < static_cast<Int64>(DATE_LUT_MIN_YEAR) - values.year
+                      || delta > static_cast<Int64>(DATE_LUT_MAX_YEAR) - values.year))
                 return addYearsOutOfRange(t, delta);
         }
 
@@ -2025,8 +2029,9 @@ public:
                 return addYearsOutOfRange(d, delta);
 
             const Values & values = lut[toLUTIndex(d)];
-            const Int64 year = static_cast<Int64>(values.year) + delta;
-            if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR))
+            /// Compare delta against the valid window so the bound check itself cannot overflow for huge delta.
+            if (unlikely(delta < static_cast<Int64>(DATE_LUT_MIN_YEAR) - values.year
+                      || delta > static_cast<Int64>(DATE_LUT_MAX_YEAR) - values.year))
                 return addYearsOutOfRange(d, delta);
 
             return toDayNum(addYearsIndex(d, delta));

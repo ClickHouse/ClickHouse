@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -205,6 +206,16 @@ TEST(DateLUTTest, ArithmeticOutOfRange)
     EXPECT_EQ(lut.toMonth(lut.addMonths(oor, 1)), 4);   // 1850-03-31 + 1 month -> 1850-04-30
     EXPECT_EQ(lut.toDayOfMonth(lut.addMonths(oor, 1)), 30);
     EXPECT_EQ(lut.toYear(lut.addDays(oor, 365)), 1851);
+
+    /// Extreme deltas must not overflow the in-range escape-detection guards; the result saturates to [0000, 9999].
+    const Int64 max_delta = std::numeric_limits<Int64>::max();
+    const Int64 min_delta = std::numeric_limits<Int64>::min();
+    EXPECT_EQ(lut.toYear(lut.addYears(in_range, max_delta)), 9999);
+    EXPECT_EQ(lut.toYear(lut.addYears(in_range, min_delta)), 0);
+    EXPECT_EQ(lut.toYear(lut.addMonths(in_range, max_delta)), 9999);
+    EXPECT_EQ(lut.toYear(lut.addMonths(in_range, min_delta)), 0);
+    EXPECT_EQ(lut.toYear(lut.addDays(in_range, max_delta)), 9999);
+    EXPECT_EQ(lut.toYear(lut.addDays(in_range, min_delta)), 0);
 }
 
 /// Week / ISO computations are timezone-independent and repeat every 400 years. Verify the periodicity holds
