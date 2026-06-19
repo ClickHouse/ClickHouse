@@ -301,12 +301,16 @@ std::vector<std::string> listFilesWithRegexpMatching(
 
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
-    /// Tracks the normalized form of every matched path so that adjacent globstars such as
-    /// `**/**/*.tsv` do not emit the same filesystem entry more than once.
-    std::unordered_set<std::string> matched_paths;
-
     for (const auto & for_match_expanded : for_match_paths_expanded)
+    {
+        /// Tracks the normalized form of every matched path so that adjacent globstars such as
+        /// `**/**/*.tsv` do not emit the same filesystem entry more than once. The set is scoped
+        /// to a single expanded pattern on purpose: independent brace-expanded alternatives
+        /// (e.g. `{top,top}.tsv` or `{a*,*}`) keep their pre-existing behavior of reading the
+        /// same concrete file once per alternative, rather than being silently collapsed.
+        std::unordered_set<std::string> matched_paths;
         listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0);
+    }
 
     return result;
 }

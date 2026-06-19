@@ -31,4 +31,11 @@ ${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('04320/**/braced.tsv', 'TSV', 'a UIn
 echo "adjacent globstars must not emit a file more than once:"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('04320/**/**/*.tsv', 'TSV', 'a UInt8, b UInt8') ORDER BY a"
 
+# Deduplication of adjacent globstars is scoped to a single expanded pattern: independent
+# brace-expanded alternatives that resolve to the same concrete file are still read once per
+# alternative, as before this change. `{top,top}.tsv` expands to two identical paths, so the
+# top-level file must be returned twice.
+echo "duplicate brace-expanded alternatives are read once per alternative (two rows):"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('04320/{top,top}.tsv', 'TSV', 'a UInt8, b UInt8') ORDER BY a"
+
 rm -rf "${USER_FILES_PATH:?}/04320"
