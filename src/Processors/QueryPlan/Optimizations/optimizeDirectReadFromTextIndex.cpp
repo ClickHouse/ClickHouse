@@ -403,7 +403,7 @@ private:
         /// Canonicalize the function-node subtree so that the serialized column names
         /// fed to MergeTreeIndexConditionText::traverseFunctionNode match the ones
         /// produced when the condition was originally constructed in ReadFromMergeTree::applyFilters.
-        ActionsDAGWithInversionPushDown canonical_dag(&function_node, context);
+        ActionsDAGWithInversionPushDown canonical_dag(&function_node, context, /* boolean_context */ false);
         const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : function_node;
 
         NameSet used_index_columns;
