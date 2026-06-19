@@ -307,7 +307,7 @@ void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
     size_t nested_begin = offsetAt(begin);
     size_t nested_end = offsetAt(end);
     getData().updateHashWithValueRange(nested_begin, nested_end, hash);
-    /// Relative offsets, see ColumnString::updateHashWithValueRange.
+    /// Relative offsets so equal data hashes equally regardless of position (insert deduplication).
     for (size_t i = begin; i < end; ++i)
     {
         UInt64 relative_offset = getOffsets()[i] - nested_begin;
