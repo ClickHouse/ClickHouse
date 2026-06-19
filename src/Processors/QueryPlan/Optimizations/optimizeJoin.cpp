@@ -330,36 +330,18 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (!analyzed_result)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
-        bool is_filtered_by_index = false;
-        UInt64 total_parts = 0;
-        UInt64 total_granules = 0;
-        for (const auto & idx_stat : analyzed_result->index_stats)
-        {
-            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
-            /// Further index_stats are used to estimate amount of filtered data after applying the index.
-            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
-            {
-                total_parts = idx_stat.num_parts_after;
-                total_granules = idx_stat.num_granules_after;
-                continue;
-            }
-
-            is_filtered_by_index = is_filtered_by_index
-                || (total_parts && idx_stat.num_parts_after < total_parts)
-                || (total_granules && idx_stat.num_granules_after < total_granules);
-
-            if (is_filtered_by_index)
-                break;
-        }
         bool has_filter = filter || reading->getPrewhereInfo();
 
-        /// If any conditions are pushed down to storage but not used in the index, we cannot
-        /// precisely estimate the row count: the residual filter is applied while reading and
-        /// can only remove rows. We still report `selected_rows` as an upper bound — it is the
-        /// number of rows scanned before the filter, so the post-filter count cannot exceed it.
-        /// The join-order optimizer uses this bound to pick the build side when the other input
-        /// has a trustworthy estimate (see `chooseJoinOrder`).
-        if (has_filter && !is_filtered_by_index)
+        /// `selected_rows` is the number of rows in the selected mark ranges, counted before any
+        /// residual filter is applied while reading. A residual filter exists whenever the index
+        /// does not fully resolve the predicate -- both the part the index cannot use at all
+        /// (e.g. a non-key column) and the granule-level imprecision of an index range (the
+        /// boundary granules are read whole, then filtered). The index pruning *some* granules
+        /// does not prove the whole predicate was consumed. So whenever any filter is present,
+        /// `selected_rows` is only an upper bound on the rows that pass; it equals the exact count
+        /// only with no filter at all. Keep it as an upper bound rather than the exact estimate
+        /// the build-side choice trusts as a lower bound (see `chooseJoinOrder`).
+        if (has_filter)
             return RelationStats{.estimated_rows = {}, .estimated_rows_upper_bound = analyzed_result->selected_rows, .table_name = table_display_name};
 
         return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
