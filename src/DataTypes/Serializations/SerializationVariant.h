@@ -210,6 +210,10 @@ private:
 
     static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream);
 
+    /// Validate a discriminator read from untrusted input: it must be NULL_DISCRIMINATOR
+    /// or a valid local discriminator (< number of variants). Throws INCORRECT_DATA otherwise.
+    void checkDiscriminator(ColumnVariant::Discriminator discr) const;
+
     /// Shared implementation for Escaped and Raw text deserialization.
     /// Checks for NULL representation in the raw buffer before escape processing
     /// (using three-path approach similar to `SerializationNullable`),

@@ -568,6 +568,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         {
             SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(
                 *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
+
+            const auto & discriminators_data = col.getLocalDiscriminators();
+            for (size_t i = prev_size; i != discriminators_data.size(); ++i)
+                checkDiscriminator(discriminators_data[i]);
         }
         else
         {
@@ -746,6 +750,15 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     col.validateState();
 }
 
+void SerializationVariant::checkDiscriminator(ColumnVariant::Discriminator discr) const
+{
+    if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= variant_serializations.size())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Invalid discriminator {} in Variant column: it must be {} (NULL) or less than the number of variants ({})",
+            UInt64(discr), UInt64(ColumnVariant::NULL_DISCRIMINATOR), variant_serializations.size());
+}
+
 std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deserializeCompactDiscriminators(
     DB::ColumnPtr & discriminators_column,
     size_t rows_offset,
@@ -775,6 +788,8 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
                 return {variant_rows_offsets, variant_limits};
 
             readDiscriminatorsGranuleStart(state, stream);
+            if (state.granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
+                checkDiscriminator(state.compact_discr);
         }
 
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
@@ -801,6 +816,8 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         {
             SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
             size_t start = discriminators_data.size() - limit_in_granule;
+            for (size_t i = start; i != discriminators_data.size(); ++i)
+                checkDiscriminator(discriminators_data[i]);
             size_t skipped_rows = std::min(rows_offset, limit_in_granule);
 
             for (size_t i = start; i != start + skipped_rows; ++i)
