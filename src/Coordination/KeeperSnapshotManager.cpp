@@ -55,9 +55,7 @@ namespace
 {
     std::string getSnapshotFileName(uint64_t up_to_log_idx, bool compress_zstd)
     {
-        /// Unique-from-birth names make same-index write collisions impossible (so no rename or
-        /// coordination is needed); a collision would silently truncate published bytes via
-        /// `writeFile`. Hex keeps the index as the second `_`-separated token.
+        /// Unique-from-birth name avoids collisions between concurrent same-index writes.
         auto base = fmt::format("snapshot_{}_{:016x}.bin", up_to_log_idx, thread_local_rng());
         if (compress_zstd)
             base += ".zstd";
@@ -846,10 +844,8 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     if (latest_snapshot_disk != disk)
         load_snapshot_from_disk(latest_snapshot_disk);
 
-    /// Duplicates outside the retained window are deleted (sibling is purged by maintenance anyway).
-    /// Duplicates of retained indexes are KEPT as redundant recovery points: `init` throws
-    /// `CORRUPTED_DATA` with no fallback; operator can remove the broken copy and restart from
-    /// any retained index. No copy is validated at scan time; no pins exist during startup.
+    /// Duplicates outside the retained window are deleted. Duplicates within it are kept as
+    /// redundant recovery points (operator can remove a broken copy and restart from another).
     const uint64_t latest_registered_idx = getLatestSnapshotIndex();
     std::optional<uint64_t> oldest_retained_idx;
     if (!existing_snapshots.empty() && snapshots_to_keep > 0)
@@ -876,10 +872,8 @@ KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
             continue;
         }
 
-        /// Same-named cross-disk duplicate (interrupted move): if the kept copy sits on the
-        /// index's target disk, re-point the registration to it (metadata only). Otherwise
-        /// maintenance would move the registered copy onto the target disk under the same
-        /// name and `copyFile` (WriteMode::Rewrite) would overwrite the kept copy.
+        /// Same-named cross-disk duplicate (interrupted move): re-point registration to the copy
+        /// already on the target disk so maintenance doesn't overwrite it via `copyFile`.
         const DiskPtr target_disk = (duplicate.up_to_log_idx == latest_registered_idx) ? getLatestSnapshotDisk() : getDisk();
         if (duplicate.path == registered->path && duplicate.disk != registered->disk && duplicate.disk == target_disk)
         {
@@ -1211,23 +1205,18 @@ void KeeperSnapshotManager<Storage>::setProtectedPendingSnapshotIndex(uint64_t l
     protected_pending_snapshot_log_idx = log_idx;
 }
 
-template<typename Storage>
-std::vector<SnapshotFileInfoPtr> KeeperSnapshotManager<Storage>::detachSnapshotForRemoval(uint64_t log_idx)
+template <typename Storage>
+std::vector<SnapshotFileInfoPtr>
+KeeperSnapshotManager<Storage>::detachSnapshotForRemoval(std::map<uint64_t, SnapshotFileInfoPtr>::iterator itr)
 {
-    auto itr = existing_snapshots.find(log_idx);
-    if (itr == existing_snapshots.end())
-        throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-
+    const uint64_t log_idx = itr->first;
     std::vector<SnapshotFileInfoPtr> retired;
     auto snapshot_file_info = itr->second;
     snapshot_file_info->retired_for_removal.store(true, std::memory_order_release);
     existing_snapshots.erase(itr);
     retired.push_back(std::move(snapshot_file_info));
 
-    /// Also retire tracked same-index recovery copies, returned (not unlinked here) so the
-    /// caller's pin drop unlinks them in Phase 4, off `snapshots_lock`. The corrupt-latest
-    /// recovery path erases the registry entry directly without calling this, keeping these
-    /// copies so the operator can still boot from a duplicate.
+    /// Retire same-index recovery copies; caller's pin drop unlinks them outside `snapshots_lock`.
     if (auto dup_it = retained_duplicate_snapshots.find(log_idx); dup_it != retained_duplicate_snapshots.end())
     {
         for (auto & duplicate : dup_it->second)
@@ -1261,7 +1250,7 @@ std::vector<SnapshotFileInfoPtr> KeeperSnapshotManager<Storage>::detachOutdatedS
             continue;
         }
         auto to_remove = candidate++;
-        auto detached = detachSnapshotForRemoval(to_remove->first);
+        auto detached = detachSnapshotForRemoval(to_remove);
         retired_snapshots.insert(
             retired_snapshots.end(), std::make_move_iterator(detached.begin()), std::make_move_iterator(detached.end()));
     }
@@ -1293,14 +1282,15 @@ std::vector<SnapshotMoveCandidate> KeeperSnapshotManager<Storage>::selectSnapsho
             continue;
         }
 
-        move_candidates.push_back(SnapshotMoveCandidate{
-            .log_idx = idx,
-            .file_info = file_info,
-            .source_disk = file_info->disk,
-            .source_path = file_info->path,
-            .target_disk = target_disk,
-            .target_path = file_info->path,
-        });
+        move_candidates.push_back(
+            SnapshotMoveCandidate{
+                .log_idx = idx,
+                .file_info = file_info,
+                .source_disk = file_info->disk,
+                .source_path = file_info->path,
+                .target_disk = target_disk,
+                .target_path = file_info->path,
+            });
     }
 
     return move_candidates;
@@ -1320,7 +1310,10 @@ void KeeperSnapshotManager<Storage>::removeSnapshot(uint64_t log_idx)
 {
     /// Tests/tools only: the dropped pins unlink synchronously here; the server reclaims
     /// via the deferred Phase 4 path.
-    detachSnapshotForRemoval(log_idx);
+    auto it = existing_snapshots.find(log_idx);
+    if (it == existing_snapshots.end())
+        throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
+    detachSnapshotForRemoval(it);
 }
 
 template<typename Storage>
@@ -1511,11 +1504,7 @@ bool KeeperSnapshotManager<Storage>::moveSnapshotCandidate(
 template<typename Storage>
 void KeeperSnapshotManager<Storage>::runMaintenanceInline(uint64_t just_written_log_idx)
 {
-    /// Maintenance is best-effort and runs AFTER the just-written snapshot is registered.
-    /// Preparing the tasks can throw (vector growth in `detachOutdatedSnapshotsIfNeeded`,
-    /// disk-selector lookups in `selectSnapshotsToMove`); keep preparation inside this
-    /// try/catch so a throw can never propagate out of the caller and let
-    /// `cancelIfHasUnfinishedSnapshotReceive` unlink the file we just registered.
+    /// Best-effort: swallow all exceptions so a failure here never unregisters the just-written snapshot.
     try
     {
         SnapshotMaintenanceTasks tasks = prepareSnapshotMaintenanceTasks(just_written_log_idx);

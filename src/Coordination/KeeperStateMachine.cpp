@@ -1125,9 +1125,7 @@ typename KeeperStateMachine<Storage>::LocalSnapshotPublishOutcome KeeperStateMac
 
     if (latest_snapshot_meta && requested_idx <= latest_snapshot_meta->get_last_log_idx())
     {
-        /// A snapshot at the same or a bigger index won while we were writing. Adopt the
-        /// MARK's entry (never the map max — that may be a saved-but-not-applied install)
-        /// and retire our file. Retention protects the mark's entry, so the pin exists.
+        /// A concurrent create at the same or higher index won; adopt the mark's entry and retire ours.
         outcome.published = snapshot_manager.getSnapshotPin(latest_snapshot_meta->get_last_log_idx());
         chassert(outcome.published);
         snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
@@ -1140,17 +1138,15 @@ typename KeeperStateMachine<Storage>::LocalSnapshotPublishOutcome KeeperStateMac
         return outcome;
     }
 
-    /// Drop the cached loader before maintenance retires snapshots; transfer
-    /// contexts keep their own loaders alive.
+    /// Drop the cached loader before maintenance retires snapshots.
     snapshot_loader_info.reset();
     snapshot_loader_info_log_idx = 0;
 
     outcome.published = snapshot_manager.publishSnapshotFile(requested_idx, written_file_info);
     if (outcome.published != written_file_info)
     {
-        /// A saved-but-not-applied install already registered this index — adopt it without probing
-        /// file existence (replaces removed SameIndexCreateFailsClosedOnMissingRegisteredFile test):
-        /// `protected_pending_snapshot_log_idx` pins it so retention can't unlink it before apply.
+        /// A saved-but-not-applied install already registered this index; adopt it (it's pinned by
+        /// `protected_pending_snapshot_log_idx`) and retire our file.
         snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
         outcome.loser_to_remove = written_file_info;
         advanceLatestSnapshotMeta(written_snapshot_meta);
@@ -1164,7 +1160,7 @@ typename KeeperStateMachine<Storage>::LocalSnapshotPublishOutcome KeeperStateMac
     }
 
     advanceLatestSnapshotMeta(written_snapshot_meta);
-    /// A create below saved-but-not-applied installs must not clobber the size cache.
+    /// Don't clobber the size cache if a higher-index install is already registered.
     if (written_size && snapshot_manager.getLatestSnapshotIndex() == requested_idx)
         latest_snapshot_size.store(*written_size, std::memory_order_relaxed);
     ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
@@ -1190,9 +1186,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
             captured_storage.get(), snapshot_meta_copy, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
     }
 
-    /// The snapshot must be destroyed under the storage mutex and followed by garbage
-    /// cleanup; this guard owns that until responsibility transfers to the task (e.g.
-    /// if `snapshots_queue.push` throws).
+    /// Guard snapshot cleanup until responsibility transfers to the task.
     bool snapshot_cleanup_transferred = false;
     SCOPE_EXIT({
         if (!snapshot_cleanup_transferred
@@ -1214,24 +1208,19 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
         if (!execute_only_cleanup)
         {
             const uint64_t requested_idx = snapshot->snapshot_meta->get_last_log_idx();
-            SnapshotFileInfoPtr written_file_info; /// non-null only while unpublished; the catch below retires it
-            SnapshotFileInfoPtr loser_file_info; /// retired loser; unlinked outside the lock
+            SnapshotFileInfoPtr written_file_info; /// non-null while unpublished; catch retires it
+            SnapshotFileInfoPtr loser_file_info;   /// unlinked outside the lock
             std::optional<DetachedSnapshotReceiveFiles> detached_receive_files;
             SnapshotMaintenanceTasks maintenance_tasks;
             try
             {
-                /// Phase 1: metadata-only pre-check under the lock — at or below the mark,
-                /// reuse the file backing the mark (NOT the map max: a saved-but-not-applied
-                /// install may exceed the mark while `last_snapshot` does not report it).
+                /// Phase 1: pre-check under the lock — reuse the mark's file if already covered.
                 bool already_covered = false;
                 {
                     std::lock_guard lock(snapshots_lock);
                     if (latest_snapshot_meta && requested_idx <= latest_snapshot_meta->get_last_log_idx())
                     {
-                        /// Retention protects the mark's entry, so the pin exists whenever the
-                        /// mark is set. Probe existence to keep the old `getLatestSnapshotInfo`
-                        /// contract (the result feeds the S3/shutdown upload paths); consumers
-                        /// handle nullptr.
+                        /// Probe existence; the result feeds S3/shutdown upload paths, consumers handle nullptr.
                         snapshot_file_info = getSnapshotPinUnlocked(latest_snapshot_meta->get_last_log_idx());
                         if (snapshot_file_info)
                         {
@@ -1281,21 +1270,18 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                         auto outcome = publishWrittenSnapshot(written_file_info, snapshot->snapshot_meta, written_size);
                         snapshot_file_info = std::move(outcome.published);
                         loser_file_info = std::move(outcome.loser_to_remove);
-                        /// Ownership transferred; the catch path must never retire a published file.
-                        written_file_info.reset();
-                        /// Publication is decided: later exceptions are post-commit failures, still success.
-                        ret = true;
+                        written_file_info.reset(); /// ownership transferred; catch must not retire a published file
+                        ret = true; /// publication decided — later exceptions are post-commit failures
                         if (outcome.won)
                         {
-                            /// A successful local snapshot supersedes any in-flight receive; its unique partial
-                            /// files are deleted outside the lock.
+                            /// Cancel any in-flight receive; partial files are deleted outside the lock.
                             detached_receive_files = detachUnfinishedSnapshotReceiveForCleanup();
                             maintenance_tasks = snapshot_manager.prepareSnapshotMaintenanceTasks(requested_idx);
                         }
                     }
 
-                    /// Phase 4: deferred disk IO, outside the lock.
-                    loser_file_info.reset(); /// pin deleter unlinks the retired loser
+                    /// Phase 4: deferred disk I/O, outside the lock.
+                    loser_file_info.reset(); /// pin deleter unlinks it
                     if (detached_receive_files)
                         cleanupDetachedSnapshotReceive(*detached_receive_files);
                     runSnapshotMaintenanceAfterUnlock(std::move(maintenance_tasks));
@@ -1305,7 +1291,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
             {
                 if (written_file_info)
                 {
-                    /// Written but never published — retire and unlink it now (outside the lock).
+                    /// Written but never published — retire and unlink it.
                     snapshot_manager.retireUnpublishedSnapshotFile(written_file_info);
                     written_file_info.reset();
                 }
@@ -1326,12 +1312,10 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
             }
         }
         {
-            /// Destroy snapshot with lock, against the captured storage: the member may point
-            /// elsewhere (or be empty) after a concurrent `apply_snapshot`.
+            /// Destroy snapshot under storage lock against the captured storage (member may differ after `apply_snapshot`).
             KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             LOG_TRACE(log, "Clearing garbage after snapshot");
-            /// Turn off "snapshot mode" and clear outdated part of storage state.
-            snapshot.reset(); /// ~KeeperStorageSnapshot -> disableSnapshotMode() on the captured storage
+            snapshot.reset(); /// ~KeeperStorageSnapshot -> disableSnapshotMode() on captured storage
             captured_storage->clearGarbageAfterSnapshot();
             LOG_TRACE(log, "Cleared garbage after snapshot");
         }
