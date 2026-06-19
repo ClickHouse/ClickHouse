@@ -1425,10 +1425,17 @@ static void collectConstructionSettings(const IAST * ast, std::vector<String> & 
 /// them (see `applyQueryConstructionSettings` and the nested wrappers, which stop at those query
 /// kinds). Accepting them silently would be a foot-gun — e.g.
 /// `INSERT INTO dst SETTINGS filter = 'x > 0' SELECT * FROM src` would insert the *unfiltered* rows.
-/// Reject them with a clear error instead. The whole statement subtree is scanned, so a construction
-/// setting in the statement's own `SETTINGS`, in the source `SELECT`'s `SETTINGS`, or in any nested
-/// subquery's `SETTINGS` is caught — none of them take effect for a write statement.
-static void rejectConstructionSettingsOnWriteQuery(const ASTPtr & ast)
+/// Reject them with a clear error instead.
+///
+/// Two sources are checked. First, the whole statement subtree is scanned, so a construction setting
+/// in the statement's own `SETTINGS`, in the source `SELECT`'s `SETTINGS`, or in any nested
+/// subquery's `SETTINGS` is caught. Second, the effective context is inspected: a construction
+/// setting can also arrive out-of-band, with no `SETTINGS` node in the AST for the scan to find — an
+/// HTTP URL parameter (`/?limit=2&query=INSERT …`), a repeated `?filter=` or a URL-path filter (kept
+/// in the HTTP combined-filter channel), or a session-level `SET filter = …`. `applyQueryConstructionSettings`
+/// returns for a write query, so such a setting would otherwise be silently ignored and the write
+/// would process all rows. None of these take effect for a write statement, so reject them too.
+static void rejectConstructionSettingsOnWriteQuery(const ASTPtr & ast, const Context & context)
 {
     if (!ast)
         return;
@@ -1436,7 +1443,7 @@ static void rejectConstructionSettingsOnWriteQuery(const ASTPtr & ast)
     /// `EXPLAIN <write query> SETTINGS …` carries the settings on the explained query.
     if (const auto * explain_query = ast->as<ASTExplainQuery>())
     {
-        rejectConstructionSettingsOnWriteQuery(explain_query->getExplainedQuery());
+        rejectConstructionSettingsOnWriteQuery(explain_query->getExplainedQuery(), context);
         return;
     }
 
@@ -1458,6 +1465,24 @@ static void rejectConstructionSettingsOnWriteQuery(const ASTPtr & ast)
 
     std::vector<String> found;
     collectConstructionSettings(ast.get(), found);
+
+    /// Also reject construction settings carried by the effective context — HTTP URL parameters, a
+    /// session-level `SET …`, an inherited profile default, or the HTTP combined-filter channel — none
+    /// of which appear as a `SETTINGS` node in the AST for the scan above to see.
+    const auto & settings = context.getSettingsRef();
+    auto note = [&](const char * name, bool present)
+    {
+        if (present && std::find(found.begin(), found.end(), name) == found.end())
+            found.emplace_back(name);
+    };
+    note("select", !settings[Setting::select].value.empty());
+    note("filter", !settings[Setting::filter].value.empty() || !context.getHTTPCombinedFilter().empty());
+    note("order", !settings[Setting::order].value.empty());
+    note("sort", !settings[Setting::sort].value.empty());
+    note("limit", settings[Setting::limit].value != 0);
+    note("offset", settings[Setting::offset].value != 0);
+    note("page", settings[Setting::page].value != 0);
+
     if (found.empty())
         return;
 
@@ -2180,8 +2205,11 @@ static BlockIO executeQueryImpl(
 
             /// Construction settings are result modifiers and are not applied to write-producing
             /// statements (`INSERT … SELECT` / `CREATE … AS SELECT`); reject them there instead of
-            /// silently ignoring them. Runs before the settings are read into the context below.
-            rejectConstructionSettingsOnWriteQuery(out_ast);
+            /// silently ignoring them — whether they appear in the query's AST or are carried by the
+            /// effective context (HTTP URL parameters / combined filter, session `SET`, profile
+            /// defaults). Runs after the request/session settings are on the context, but before the
+            /// query's own `SETTINGS` clause is read into it below (that case is covered by the AST scan).
+            rejectConstructionSettingsOnWriteQuery(out_ast, *context);
 
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
