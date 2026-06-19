@@ -195,6 +195,18 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
                     if (alter_conversions->isColumnRenamed(name_in_part))
                         name_in_part = alter_conversions->getColumnOldName(name_in_part);
 
+                    /// A pending DROP COLUMN (including CLEAR COLUMN, which is a
+                    /// DROP_COLUMN with `clear`) makes the old physical data stale.
+                    /// The skipped marker describes that stale data, so it must not
+                    /// be trusted: e.g. after DROP COLUMN `b` then ADD COLUMN `b`
+                    /// ... DEFAULT 999, the newly added `b` must read 999, not the
+                    /// inserted type-default; and after CLEAR COLUMN `b` it must
+                    /// read the column's current default rather than the stored
+                    /// type-default. Fall through to normal missing-column handling
+                    /// (which evaluates the DEFAULT expression) in that case.
+                    if (alter_conversions->isColumnDropped(name_in_part))
+                        continue;
+
                     if (part_skipped_columns.contains(name_in_part))
                         skipped_columns.insert(column.getNameInStorage());
                 }
