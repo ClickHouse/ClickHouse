@@ -33,9 +33,11 @@ INSERT INTO test_ambig VALUES (100, 200);
 SET case_insensitive_names = 'standard';
 SELECT '--- Disambiguating with quotes ---';
 
--- Unquoted: ambiguous
-SELECT Val FROM test_ambig; -- { serverError AMBIGUOUS_IDENTIFIER }
-SELECT val FROM test_ambig; -- { serverError AMBIGUOUS_IDENTIFIER }
+-- Exact-case unquoted match binds to the literal column even when another case variant exists.
+-- A wrong-case unquoted lookup with no exact match is still ambiguous.
+SELECT Val FROM test_ambig;
+SELECT val FROM test_ambig;
+SELECT VAL FROM test_ambig; -- { serverError AMBIGUOUS_IDENTIFIER }
 
 -- Double-quoted: exact match, no ambiguity
 SELECT "Val" FROM test_ambig;
@@ -51,9 +53,11 @@ INSERT INTO test_three VALUES (1, 2, 3);
 SET case_insensitive_names = 'standard';
 SELECT '--- Three-way ambiguity ---';
 
--- Unquoted: all ambiguous
-SELECT abc FROM test_three; -- { serverError AMBIGUOUS_IDENTIFIER }
-SELECT ABC FROM test_three; -- { serverError AMBIGUOUS_IDENTIFIER }
+-- Exact-case wins; only a non-exact spelling triggers ambiguity (multiple case-insensitive matches).
+SELECT abc FROM test_three;
+SELECT ABC FROM test_three;
+SELECT Abc FROM test_three;
+SELECT aBC FROM test_three; -- { serverError AMBIGUOUS_IDENTIFIER }
 
 -- Each double-quoted variant accesses its specific column
 SELECT "ABC" FROM test_three;

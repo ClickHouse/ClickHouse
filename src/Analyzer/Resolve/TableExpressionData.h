@@ -121,6 +121,12 @@ struct AnalysisTableExpressionData
         const String & scope_description) const
     {
         const auto & node_map = getColumnNodeMap();
+        /// Prefer an exact-case match — e.g. `information_schema.tables` exposes both `table_schema`
+        /// and `TABLE_SCHEMA`, and a literal lookup of either spelling must match the canonical entry
+        /// rather than throw on the case-insensitive collision.
+        if (auto exact_it = node_map.find(String(identifier_name)); exact_it != node_map.end())
+            return exact_it;
+
         auto it = lowercase_column_name_to_original_names.find(Poco::toLower(String(identifier_name)));
         if (it == lowercase_column_name_to_original_names.end())
             return node_map.end();

@@ -53,21 +53,33 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 
 String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, ContextPtr context) const
 {
-    /// then try case-insensitive match
+    /// Two-pass: prefer an exact-case match; only fall back to case-insensitive when none exists.
+    /// This is what makes `information_schema.tables` work in standard mode — the database contains
+    /// both `tables` and `TABLES`, but a literal lookup of `tables` matches `tables` exactly and
+    /// avoids the otherwise-ambiguous case-insensitive scan.
     String found_name;
+    String exact_match;
     for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
     {
-        if (Poco::icompare(table_it->name(), name) == 0)
+        const auto & table_name = table_it->name();
+        if (table_name == name)
+        {
+            exact_match = table_name;
+            break;
+        }
+        if (Poco::icompare(table_name, name) == 0)
         {
             if (!found_name.empty())
             {
                 throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                     "Table name '{}' is ambiguous: matches multiple tables with different cases: '{}' and '{}'",
-                    name, found_name, table_it->name());
+                    name, found_name, table_name);
             }
-            found_name = table_it->name();
+            found_name = table_name;
         }
     }
+    if (!exact_match.empty())
+        return exact_match;
     return found_name;
 }
 

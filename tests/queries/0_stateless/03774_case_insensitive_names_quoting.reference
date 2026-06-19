@@ -10,7 +10,12 @@
 --- Disambiguating with quotes ---
 100
 200
+100
+200
 --- Three-way ambiguity ---
+3
+1
+2
 1
 2
 3

@@ -99,22 +99,22 @@ void ASTIdentifier::setShortName(const String & new_name)
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
-    /// Quote styles change analyzer semantics in `standard` mode, so include them in the AST hash
-    /// (otherwise `QueryResultCache` could share a cache entry between `"X"` and `X`).
-    /// Only mix in styles when at least one part was actually quoted, so identifiers with the
-    /// default (no quotes) keep their previous hash.
-    bool any_quoted = false;
+    /// Only DoubleQuote changes analyzer semantics in `standard` mode (case-sensitive vs case-insensitive),
+    /// so include only the per-part double-quote flag in the AST hash. Backticks are kept out of the hash
+    /// because the formatter does not preserve them in the round-trip — including them would create a
+    /// spurious hash mismatch between the original AST and its reparsed form.
+    bool any_double_quoted = false;
     for (auto style : quote_styles)
-        if (style != IdentifierQuoteStyle::None)
+        if (style == IdentifierQuoteStyle::DoubleQuote)
         {
-            any_quoted = true;
+            any_double_quoted = true;
             break;
         }
-    if (any_quoted)
+    if (any_double_quoted)
     {
         hash_state.update(quote_styles.size());
         for (auto style : quote_styles)
-            hash_state.update(static_cast<uint8_t>(style));
+            hash_state.update(static_cast<uint8_t>(style == IdentifierQuoteStyle::DoubleQuote));
     }
 }
 

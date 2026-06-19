@@ -1,0 +1,23 @@
+--- JOIN USING with quoted key (Blocker #6) ---
+2
+2
+--- ARRAY JOIN quoted alias (Blocker #7) ---
+1
+2
+3
+10
+20
+--- Quoted lambda argument (Blocker #5) ---
+[2,3,4]
+[2,3,4]
+--- Recursive CTE with quoted name (Blocker #5) ---
+3
+3
+--- Alias self-reference case awareness (Blocker #4) ---
+0	0
+1	1
+--- Quoted alias distinct from unquoted (Blocker #1 hash/cache) ---
+1	2
+--- information_schema alias is not ambiguous (Blocker #9) ---
+1
+1

@@ -715,6 +715,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             auto lambda_arguments_nodes = std::make_shared<ListNode>();
             Names lambda_arguments;
             NameSet lambda_arguments_set;
+            /// Track per-argument quote style so a double-quoted lambda argument stays case-sensitive
+            /// in `standard` mode after the AST -> query tree translation.
+            std::vector<IdentifierQuoteStyle> lambda_argument_quote_styles;
 
             if (lambda_arguments_tuple.arguments)
             {
@@ -743,6 +746,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                             argument_name);
 
                     lambda_arguments.push_back(argument_name);
+                    lambda_argument_quote_styles.push_back(lambda_argument_identifier->getQuoteStyleAt(0));
                 }
             }
 
@@ -750,6 +754,17 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             auto lambda_expression_node = buildExpression(lambda_expression, context);
 
             result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->isOperator());
+
+            /// Propagate per-argument quote styles onto the freshly-built IdentifierNodes inside the
+            /// LambdaNode's argument list, so the resolver can later see which arguments were quoted.
+            auto & lambda_arg_list_nodes = result->as<LambdaNode &>().getArguments().getNodes();
+            for (size_t i = 0; i < lambda_argument_quote_styles.size() && i < lambda_arg_list_nodes.size(); ++i)
+            {
+                if (lambda_argument_quote_styles[i] == IdentifierQuoteStyle::None)
+                    continue;
+                if (auto * id_node = lambda_arg_list_nodes[i]->as<IdentifierNode>())
+                    id_node->setQuoteStyles({lambda_argument_quote_styles[i]});
+            }
         }
         else
         {

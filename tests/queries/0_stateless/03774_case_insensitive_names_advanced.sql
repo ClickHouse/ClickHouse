@@ -9,9 +9,9 @@ INSERT INTO test_ambig VALUES (10, 20);
 SET case_insensitive_names = 'standard';
 SELECT '--- Column ambiguity ---';
 
--- All variants are ambiguous
-SELECT Score FROM test_ambig; -- { serverError AMBIGUOUS_IDENTIFIER }
-SELECT sCOrE FROM test_ambig; -- { serverError AMBIGUOUS_IDENTIFIER }
+-- Exact-case unquoted lookups bind to the literal column; non-exact spellings remain ambiguous.
+SELECT Score FROM test_ambig;
+SELECT sCOrE FROM test_ambig;
 SELECT score FROM test_ambig; -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT SCORE FROM test_ambig; -- { serverError AMBIGUOUS_IDENTIFIER }
 
@@ -26,8 +26,11 @@ SELECT '--- Mixed ambiguity ---';
 SELECT name FROM test_mix;
 SELECT NAME FROM test_mix;
 
--- Id/ID are ambiguous
+-- Id/ID share a lowercase form; an unquoted non-exact spelling is ambiguous.
 SELECT id FROM test_mix; -- { serverError AMBIGUOUS_IDENTIFIER }
+-- Exact-case lookups bind to the literal columns.
+SELECT Id FROM test_mix;
+SELECT ID FROM test_mix;
 
 DROP TABLE IF EXISTS test_j1;
 DROP TABLE IF EXISTS test_j2;

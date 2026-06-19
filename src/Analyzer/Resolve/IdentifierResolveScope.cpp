@@ -271,9 +271,9 @@ bool IdentifierResolveScope::canCacheIdentifier(
     const auto & first_part = lookup.identifier.front();
     if (expressions_in_resolve_process_stack.hasExpressionWithAlias(first_part))
         return false;
-    /// Standard-mode unquoted lookups must also avoid the cache when an in-flight unquoted alias
-    /// of any case matches — otherwise a cached result from a case-insensitive prior lookup
-    /// can cause transitive aliases to resolve incorrectly.
+    /// Standard-mode unquoted lookup may bind transitively to a differently-cased in-flight alias.
+    /// Excluding the cache here keeps later lookups of the same identifier from receiving a stale
+    /// result that pre-dates the in-flight alias's resolution.
     if (isStandardMode() && !lookup.isPartDoubleQuoted(0)
         && expressions_in_resolve_process_stack.hasExpressionWithAliasCaseInsensitive(first_part))
         return false;

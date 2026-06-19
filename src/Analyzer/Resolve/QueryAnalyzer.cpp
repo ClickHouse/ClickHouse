@@ -1243,18 +1243,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
      * 1. SELECT dummy + 1 AS dummy
      * 2. SELECT avg(a) OVER () AS a, id FROM test
+     * In standard mode the cycle is detected using the resolved alias name (already case-canonicalized
+     * by the lookup above), so an exact-string check against in-flight aliases is sufficient.
      */
-    const auto find_in_flight_alias = [&]() -> QueryTreeNodePtr
-    {
-        /// Standard-mode unquoted lookups must also match an in-flight unquoted alias of any case.
-        if (use_case_insensitive)
-        {
-            if (auto ci = scope.expressions_in_resolve_process_stack.getExpressionWithAliasCaseInsensitive(identifier_bind_part))
-                return ci;
-        }
-        return scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part);
-    };
-    if (find_in_flight_alias() != nullptr)
+    if (scope.expressions_in_resolve_process_stack.getExpressionWithAlias(alias_node->getAlias()) != nullptr)
     {
         /* This is an important fallback in the identifier resolution. In the case of transitive aliases,
          * we may end up in the situation when we try to resolve the same expression, but it's not a cycle.

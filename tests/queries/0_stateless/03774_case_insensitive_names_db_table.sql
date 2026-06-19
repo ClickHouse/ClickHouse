@@ -104,11 +104,11 @@ CREATE TABLE AMBIGTABLE (x UInt8) ENGINE = Memory;
 INSERT INTO AMBIGTABLE VALUES (2);
 
 SET case_insensitive_names = 'standard';
--- This should fail with AMBIGUOUS_IDENTIFIER
+-- Wrong-case unquoted lookup is ambiguous (two case variants match case-insensitively).
 SELECT * FROM ambigtable; -- { serverError AMBIGUOUS_IDENTIFIER }
--- This should ALSO fail even though exact match exists
-SELECT * FROM AmbigTable; -- { serverError AMBIGUOUS_IDENTIFIER }
-SELECT * FROM AMBIGTABLE; -- { serverError AMBIGUOUS_IDENTIFIER }
+-- Exact-case unquoted lookups bind to the literal table.
+SELECT * FROM AmbigTable;
+SELECT * FROM AMBIGTABLE;
 
 -- Double-quoted avoids ambiguity
 SELECT '--- Double-quoted table avoids ambiguity ---';

@@ -1,7 +1,11 @@
 --- Column ambiguity ---
+10
+20
 --- Mixed ambiguity ---
 Test
 Test
+1
+2
 --- JOIN basic ---
 10	100
 20	200

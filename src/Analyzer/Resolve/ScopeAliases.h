@@ -102,6 +102,14 @@ struct ScopeAliases
         auto & lowercase_map = getLowercaseAliasMap(lookup.lookup_context);
 
         const std::string & key = getKey(lookup.identifier, find_option);
+
+        /// Prefer an exact-case match. The built-in `information_schema.tables` view defines aliases
+        /// in both cases (`x AS table_catalog`, then `table_catalog AS TABLE_CATALOG`); a literal
+        /// lookup of either spelling must bind to its exact alias rather than throw on the case-only
+        /// collision in the lowercase index.
+        if (auto exact_it = alias_map.find(key); exact_it != alias_map.end())
+            return &exact_it->second;
+
         String lower_key = Poco::toLower(key);
 
         auto it = lowercase_map.find(lower_key);
