@@ -24,6 +24,8 @@ namespace DB
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
+struct KeeperSnapshotReader;
+
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 
 /// KeeperMemNode should have as minimal size as possible to reduce memory footprint
@@ -465,6 +467,11 @@ public:
     ~KeeperStorage();
 
     void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;
+
+    /// Must be called on an empty storage, created with initialize_system_nodes = false.
+    /// Caller has already read everything before the nodes, this method starts from createStreams.
+    /// TODO: When we have chunked snapshots, probably pass a ThreadPool here.
+    void loadNodesFromSnapshot(KeeperSnapshotReader & reader) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
