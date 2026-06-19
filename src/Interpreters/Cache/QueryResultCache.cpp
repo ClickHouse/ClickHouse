@@ -1403,17 +1403,14 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
     if (!checkAccess(disk_entry_key, key))
         return std::nullopt;
 
-    /// The promotion below inserts into `memory_cache` under `disk_entry_key`, so it is accounted against
-    /// `disk_entry_key.user_id`'s memory quota. After a restart `loadEntrysFromDisk` populates only `disk_cache`,
-    /// leaving the `memory_cache` per-user quota map empty - and `PerUserTTLCachePolicyUserQuota` treats an
-    /// unregistered user as unlimited. Without registering the quota a result whose compressed on-disk size fit
-    /// the disk cache but whose in-memory weight exceeds the user's `query_cache_max_size_in_bytes` /
-    /// `query_cache_max_entries` could be promoted here and push `QueryCacheBytes` past the profile cap just by
-    /// being read from disk. Register it first (mirroring `createWriter`) so the `memory_cache.set` below is
-    /// declined by `approveWrite` when the promotion would exceed the quota; the entry is still returned to the
-    /// reader for this query.
-    if (disk_entry_key.user_id.has_value())
-        memory_cache.setQuotaForUser(*disk_entry_key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
+    /// `checkAccess` admits a *shared* entry (`is_shared`) for a reader other than its writer. The promotion
+    /// below inserts into `memory_cache` under `disk_entry_key` (the owner's key) and would register the quota
+    /// under the owner's `user_id` using *this reader's* `query_cache_max_size_in_bytes` /
+    /// `query_cache_max_entries`. For a different reader, that lets user B overwrite user A's memory-cache
+    /// quota state with B's (possibly looser) limits and promote A-owned entries past A's real quota. Only promote
+    /// (and register the quota) when the reader is the entry owner; for a cross-user shared read, still serve
+    /// the result for this query but do not touch the owner's memory cache or quota.
+    const bool reader_is_owner = (disk_entry_key.user_id == key.user_id);
 
     try
     {
@@ -1421,28 +1418,42 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
         if (!entry_)
             return std::nullopt;
 
-        if (disk_entry_key.is_compressed)
+        if (reader_is_owner)
         {
-            /// Promote a compressed copy into `memory_cache` (so the in-memory representation matches the
-            /// `is_compressed` flag), but return a decompressed entry to the reader. Unlike `readFromMemory`,
-            /// this path must not hand `ColumnCompressed` chunks to the pipeline: the source processors do
-            /// not decompress, and using such a column throws "ColumnCompressed must be decompressed before
-            /// use". The deserialized `entry_` already holds uncompressed chunks, so compress a separate copy
-            /// for the cache and keep `entry_` for the reader.
-            auto memory_entry = std::make_shared<Entry>();
-            for (const auto & chunk : entry_->chunks)
-                memory_entry->chunks.push_back(chunk.clone());
-            if (entry_->totals.has_value())
-                memory_entry->totals.emplace(entry_->totals->clone());
-            if (entry_->extremes.has_value())
-                memory_entry->extremes.emplace(entry_->extremes->clone());
+            /// After a restart `loadEntrysFromDisk` populates only `disk_cache`, leaving the `memory_cache`
+            /// per-user quota map empty - and `PerUserTTLCachePolicyUserQuota` treats an unregistered user as
+            /// unlimited. Without registering the quota a result whose compressed on-disk size fit the disk
+            /// cache but whose in-memory weight exceeds the user's `query_cache_max_size_in_bytes` /
+            /// `query_cache_max_entries` could be promoted here and push `QueryCacheBytes` past the profile cap
+            /// just by being read from disk. Register it first (mirroring `createWriter`) so the
+            /// `memory_cache.set` below is declined by `approveWrite` when the promotion would exceed the
+            /// quota; the entry is still returned to the reader for this query.
+            if (disk_entry_key.user_id.has_value())
+                memory_cache.setQuotaForUser(*disk_entry_key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
-            compressEntry(memory_entry);
-            memory_cache.set(disk_entry_key, memory_entry);
-        }
-        else
-        {
-            memory_cache.set(disk_entry_key, entry_);
+            if (disk_entry_key.is_compressed)
+            {
+                /// Promote a compressed copy into `memory_cache` (so the in-memory representation matches the
+                /// `is_compressed` flag), but return a decompressed entry to the reader. Unlike `readFromMemory`,
+                /// this path must not hand `ColumnCompressed` chunks to the pipeline: the source processors do
+                /// not decompress, and using such a column throws "ColumnCompressed must be decompressed before
+                /// use". The deserialized `entry_` already holds uncompressed chunks, so compress a separate copy
+                /// for the cache and keep `entry_` for the reader.
+                auto memory_entry = std::make_shared<Entry>();
+                for (const auto & chunk : entry_->chunks)
+                    memory_entry->chunks.push_back(chunk.clone());
+                if (entry_->totals.has_value())
+                    memory_entry->totals.emplace(entry_->totals->clone());
+                if (entry_->extremes.has_value())
+                    memory_entry->extremes.emplace(entry_->extremes->clone());
+
+                compressEntry(memory_entry);
+                memory_cache.set(disk_entry_key, memory_entry);
+            }
+            else
+            {
+                memory_cache.set(disk_entry_key, entry_);
+            }
         }
 
         return {{disk_entry_key, entry_}};
@@ -1634,18 +1645,89 @@ void QueryResultCache::compressEntry(const QueryResultCache::Cache::MappedPtr & 
 
 }
 
+namespace
+{
+
+bool isDigits(const std::string_view s)
+{
+    if (s.empty())
+        return false;
+    for (char c : s)
+        if (c < '0' || c > '9')
+            return false;
+    return true;
+}
+
+/// A query-result-cache entry directory is named "<low64>_<high64>", optionally followed by a "_subquery"
+/// suffix (see `Key::getKeyPath`): two decimal numbers separated by '_'. Only directories matching this exact
+/// pattern are query-result-cache entries. `loadEntrysFromDisk` removes directories it cannot load, so it must
+/// fail closed and never touch a directory whose name does not match this pattern - in case `query_cache.path`
+/// is misconfigured to point at a non-cache directory, a foreign directory must be skipped, not deleted.
+bool isQueryResultCacheEntryName(const std::string_view name)
+{
+    auto sep = name.find('_');
+    if (sep == std::string_view::npos)
+        return false;
+    if (!isDigits(name.substr(0, sep)))
+        return false;
+
+    auto rest = name.substr(sep + 1);
+    /// The high64 number may be followed by the optional "_subquery" suffix.
+    auto suffix_pos = rest.find('_');
+    if (suffix_pos == std::string_view::npos)
+        return isDigits(rest);
+    return isDigits(rest.substr(0, suffix_pos)) && rest.substr(suffix_pos) == "_subquery";
+}
+
+/// The first-level bucket directory is `ast_hash_str.substr(0, 3)` of the entry name above (see
+/// `Key::getKeyPath`), i.e. 1 to 3 decimal digits.
+bool isQueryResultCacheBucketName(const std::string_view name)
+{
+    return !name.empty() && name.size() <= 3 && isDigits(name);
+}
+
+}
+
 void QueryResultCache::loadEntrysFromDisk()
 {
     if (!disk)
         return;
 
+    /// `loadEntrysFromDisk` removes directories under `path` that it cannot load as cache entries, so an
+    /// empty, root or "."/".." `query_cache.path` (a misconfiguration) must never be walked. Fail closed:
+    /// log and skip loading rather than risk recursively deleting unrelated data on the configured disk.
+    const fs::path normalized_path = path.lexically_normal();
+    if (path.empty() || normalized_path == "/" || normalized_path == "." || normalized_path == "..")
+    {
+        LOG_ERROR(
+            logger,
+            "Query result cache path '{}' is not a dedicated cache subdirectory; skipping on-disk cache load and cleanup.",
+            path.string());
+        return;
+    }
+
     std::vector<String> expired_entrys;
     std::vector<String> broken_entrys;
     for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
     {
+        /// First level: hash buckets named with 1 to 3 decimal digits. Skip (do not remove) anything else.
+        if (!isQueryResultCacheBucketName(it->name()))
+        {
+            LOG_WARNING(logger, "Skipping unexpected entry under query result cache path (not a cache bucket): {}", it->path());
+            continue;
+        }
+
         for (auto entry_it = disk->iterateDirectory(it->path()); entry_it->isValid(); entry_it->next())
         {
             auto entry_path = fs::path(entry_it->path());
+
+            /// Second level: only directories whose names match the cache-entry pattern are query-result-cache
+            /// entries. A directory with a foreign name is logged and skipped, never removed (fail closed).
+            if (!isQueryResultCacheEntryName(entry_it->name()))
+            {
+                LOG_WARNING(logger, "Skipping unexpected entry under query result cache path (not a cache entry): {}", entry_path.string());
+                continue;
+            }
 
             /// A single malformed or partially-written entry must not abort loading of the whole cache (and
             /// therefore server startup). Parse and deserialize each entry defensively: on any error, log it

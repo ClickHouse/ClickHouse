@@ -165,3 +165,158 @@ def test_disk_cache_user_isolation_after_restart(start_cluster):
         settings={"use_query_cache": 1, "enable_reads_from_query_cache_disk": 1},
     )
     assert disk_hits_for(query_id) == 0
+
+
+CACHE_ROOT = "/var/lib/clickhouse/query_result_cache"
+
+
+def test_disk_load_does_not_delete_foreign_dirs(start_cluster):
+    setup_table()
+
+    # Write a real entry so the on-disk cache root exists and is non-empty.
+    node.query(
+        QUERY,
+        settings={
+            "use_query_cache": 1,
+            "enable_writes_to_query_cache_disk": 1,
+            "enable_reads_from_query_cache_disk": 1,
+            "query_cache_ttl": 600,
+        },
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.query_cache WHERE type = 'Disk'"
+        ).strip()
+        == "1"
+    )
+    assert (
+        node.exec_in_container(
+            ["bash", "-c", f"test -d '{CACHE_ROOT}' && echo yes"], user="root"
+        ).strip()
+        == "yes"
+    )
+
+    # Plant foreign content under the cache path:
+    #  - a foreign first-level directory whose name is not a hash bucket (1 to 3 digits), and
+    #  - a foreign entry directory inside a bucket-shaped directory whose name does not match the
+    #    "<low64>_<high64>" cache-entry pattern.
+    # `loadEntrysFromDisk` must skip both (they are not query-result-cache entries) and must never remove
+    # them. This is the fail-closed guard against a misconfigured `query_cache.path` pointing at a directory
+    # that also holds unrelated data.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p '{CACHE_ROOT}/foreign_dir/sub' && echo keep > '{CACHE_ROOT}/foreign_dir/sub/important.txt'",
+        ],
+        user="root",
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p '{CACHE_ROOT}/999/foreign_entry' && echo keep > '{CACHE_ROOT}/999/foreign_entry/important.txt'",
+        ],
+        user="root",
+    )
+
+    node.restart_clickhouse(kill=True)
+
+    # The real cache entry is still loaded ...
+    assert (
+        node.query(
+            "SELECT count() FROM system.query_cache WHERE type = 'Disk'"
+        ).strip()
+        == "1"
+    )
+    # ... and the foreign content was preserved, not deleted as a "broken" cache entry.
+    assert (
+        node.exec_in_container(
+            ["bash", "-c", f"cat '{CACHE_ROOT}/foreign_dir/sub/important.txt'"],
+            user="root",
+        ).strip()
+        == "keep"
+    )
+    assert (
+        node.exec_in_container(
+            ["bash", "-c", f"cat '{CACHE_ROOT}/999/foreign_entry/important.txt'"],
+            user="root",
+        ).strip()
+        == "keep"
+    )
+
+
+def test_disk_cache_shared_entry_quota_after_restart(start_cluster):
+    setup_table()
+
+    # `default` writes a SHARED entry (`query_cache_share_between_users = 1`) to the disk cache.
+    expected = node.query(
+        QUERY,
+        settings={
+            "use_query_cache": 1,
+            "query_cache_share_between_users": 1,
+            "enable_writes_to_query_cache_disk": 1,
+            "enable_reads_from_query_cache_disk": 1,
+            "query_cache_ttl": 600,
+        },
+    )
+    assert (
+        node.query(
+            "SELECT shared FROM system.query_cache WHERE type = 'Disk'"
+        ).strip()
+        == "1"
+    )
+
+    node.restart_clickhouse(kill=True)
+    assert (
+        node.query(
+            "SELECT count() FROM system.query_cache WHERE type = 'Memory'"
+        ).strip()
+        == "0"
+    )
+
+    # A different user (`other`) reads the shared entry from disk. The disk->memory promotion accounts the
+    # entry under the *writer*'s (`default`'s) `user_id`; doing so with the *reader*'s quota would let `other`
+    # overwrite `default`'s memory-cache quota and promote `default`-owned entries past `default`'s limit.
+    # For a cross-user shared read the entry is still served, but it must NOT be promoted into memory.
+    query_id = "qrc_on_disk_shared_other_read"
+    res = node.query(
+        QUERY,
+        user="other",
+        query_id=query_id,
+        settings={
+            "use_query_cache": 1,
+            "query_cache_share_between_users": 1,
+            "enable_reads_from_query_cache_disk": 1,
+            "query_cache_max_size_in_bytes": 1,
+        },
+    )
+    assert res == expected
+    assert disk_hits_for(query_id) == 1
+    # Cross-user shared read does not promote into memory, so the owner's quota state is left untouched.
+    assert (
+        node.query(
+            "SELECT count() FROM system.query_cache WHERE type = 'Memory'"
+        ).strip()
+        == "0"
+    )
+
+    # The owner (`default`) reading its own shared entry DOES promote it into memory (reader == owner).
+    query_id = "qrc_on_disk_shared_owner_read"
+    res = node.query(
+        QUERY,
+        query_id=query_id,
+        settings={
+            "use_query_cache": 1,
+            "query_cache_share_between_users": 1,
+            "enable_reads_from_query_cache_disk": 1,
+        },
+    )
+    assert res == expected
+    assert disk_hits_for(query_id) == 1
+    assert (
+        node.query(
+            "SELECT count() FROM system.query_cache WHERE type = 'Memory'"
+        ).strip()
+        == "1"
+    )
