@@ -813,21 +813,21 @@ def test_url_prefix_handler():
             assert 404 == get(not_matching).status_code, not_matching
 
 
-def test_url_regex_handler():
+def test_url_regexp_handler():
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "url_regex_handler", "test_url_regex_handler"
+            ClickHouseCluster(__file__), "url_regexp_handler", "test_url_regexp_handler"
         )
     ) as cluster:
         def get(path):
             return cluster.instance.http_request(path, method="GET")
 
-        # The rule is <url_regex>/test_regex/[0-9]+</url_regex>: the whole path must match the regular
+        # The rule is <url_regexp>/test_regexp/[0-9]+</url_regexp>: the whole path must match the regular
         # expression, regardless of the query string.
         for matching in [
-            "test_regex/0",  # a single digit
-            "test_regex/123",  # several digits
-            "test_regex/123?param=value",  # query string is ignored
+            "test_regexp/0",  # a single digit
+            "test_regexp/123",  # several digits
+            "test_regexp/123?param=value",  # query string is ignored
         ]:
             response = get(matching)
             assert response.status_code == 200, f"{matching} -> {response.status_code}"
@@ -835,21 +835,21 @@ def test_url_regex_handler():
 
         # These must NOT match: the regex must match the whole path.
         for not_matching in [
-            "test_regex/abc",  # not digits
-            "test_regex/",  # no digits
-            "test_regex/123/extra",  # trailing segment is not part of the match
-            "test_regex",  # missing the digits segment
+            "test_regexp/abc",  # not digits
+            "test_regexp/",  # no digits
+            "test_regexp/123/extra",  # trailing segment is not part of the match
+            "test_regexp",  # missing the digits segment
             "other",  # unrelated path
         ]:
             assert 404 == get(not_matching).status_code, not_matching
 
 
-def test_headers_regex_handler():
+def test_headers_regexp_handler():
     with contextlib.closing(
         SimpleCluster(
             ClickHouseCluster(__file__),
-            "headers_regex_handler",
-            "test_headers_regex_handler",
+            "headers_regexp_handler",
+            "test_headers_regexp_handler",
         )
     ) as cluster:
         def get(headers):
@@ -857,7 +857,7 @@ def test_headers_regex_handler():
                 "test_headers_regex", method="GET", headers=headers
             )
 
-        # The rule is <headers_regex><XXX>[0-9]+</XXX></headers_regex>: the value of header XXX must
+        # The rule is <headers_regexp><XXX>[0-9]+</XXX></headers_regexp>: the value of header XXX must
         # match the regular expression as a whole.
         response = get({"XXX": "123"})
         assert response.status_code == 200

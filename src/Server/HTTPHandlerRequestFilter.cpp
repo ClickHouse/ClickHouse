@@ -111,9 +111,9 @@ FilterExpression getExpression(const std::string & expression, HTTPRequestFilter
         return {.value = String{value}, .match_prefix = true, .ignore_query_string = ignore_query_string};
     }
 
-    /// `Regex` treats the whole value as a regular expression, while `Full` does so only when the value
+    /// `Regexp` treats the whole value as a regular expression, while `Full` does so only when the value
     /// starts with the "regex:" marker.
-    if (match_type == HTTPRequestFilterMatchType::Regex)
+    if (match_type == HTTPRequestFilterMatchType::Regexp)
         return {.value = expression, .regex = compileRegex(expression), .ignore_query_string = ignore_query_string};
 
     if (startsWith(expression, "regex:"))
@@ -210,28 +210,28 @@ std::vector<HTTPRequestFilter> extractHTTPRequestFiltersFromConfig(const Poco::U
         /// URL path (the query string is ignored)
         if (filter_type == "url")
             filters.push_back(urlFilter(config, config_prefix + ".url", HTTPRequestFilterMatchType::Full));
-        /// URL path matched as a regular expression
-        else if (filter_type == "url_regex")
-            filters.push_back(urlFilter(config, config_prefix + ".url_regex", HTTPRequestFilterMatchType::Regex));
         /// URL path matched as a base path
         else if (filter_type == "url_prefix")
             filters.push_back(urlFilter(config, config_prefix + ".url_prefix", HTTPRequestFilterMatchType::Prefix));
+        /// URL path matched as a regular expression
+        else if (filter_type == "url_regexp")
+            filters.push_back(urlFilter(config, config_prefix + ".url_regexp", HTTPRequestFilterMatchType::Regexp));
         /// Complete URL (scheme://host:port/path); the query string is ignored
         else if (filter_type == "full_url")
             filters.push_back(fullUrlFilter(config, config_prefix + ".full_url", HTTPRequestFilterMatchType::Full));
-        /// Complete URL matched as a regular expression
-        else if (filter_type == "full_url_regex")
-            filters.push_back(fullUrlFilter(config, config_prefix + ".full_url_regex", HTTPRequestFilterMatchType::Regex));
         /// Complete URL matched as a base path
         else if (filter_type == "full_url_prefix")
             filters.push_back(fullUrlFilter(config, config_prefix + ".full_url_prefix", HTTPRequestFilterMatchType::Prefix));
+        /// Complete URL matched as a regular expression
+        else if (filter_type == "full_url_regexp")
+            filters.push_back(fullUrlFilter(config, config_prefix + ".full_url_regexp", HTTPRequestFilterMatchType::Regexp));
         else if (filter_type == "empty_query_string")
             filters.push_back(emptyQueryStringFilter());
         else if (filter_type == "headers")
             filters.push_back(headersFilter(config, config_prefix + ".headers", HTTPRequestFilterMatchType::Full));
         /// Each header value matched as a regular expression
-        else if (filter_type == "headers_regex")
-            filters.push_back(headersFilter(config, config_prefix + ".headers_regex", HTTPRequestFilterMatchType::Regex));
+        else if (filter_type == "headers_regexp")
+            filters.push_back(headersFilter(config, config_prefix + ".headers_regexp", HTTPRequestFilterMatchType::Regexp));
         else if (filter_type == "methods")
             filters.push_back(methodsFilter(config, config_prefix + ".methods"));
         else
@@ -246,25 +246,25 @@ HTTPHandlerRegexpsWithNamedGroups HTTPHandlerRegexpsWithNamedGroups::fromConfig(
 {
     HTTPHandlerRegexpsWithNamedGroups result;
 
-    /// The URL is a regular expression when configured via the dedicated `url_regex` tag,
+    /// The URL is a regular expression when configured via the dedicated `url_regexp` tag,
     /// or via `url` carrying the obsolete "regex:" marker.
-    CompiledRegexPtr url_regex;
-    if (config.has(config_prefix + ".url_regex"))
+    CompiledRegexPtr url_regexp;
+    if (config.has(config_prefix + ".url_regexp"))
     {
-        url_regex = compileRegex(config.getString(config_prefix + ".url_regex"));
+        url_regexp = compileRegex(config.getString(config_prefix + ".url_regexp"));
     }
     else if (config.has(config_prefix + ".url"))
     {
         const auto url = config.getString(config_prefix + ".url");
         if (startsWith(url, "regex:"))
-            url_regex = compileRegex(url.substr(strlen("regex:")));
+            url_regexp = compileRegex(url.substr(strlen("regex:")));
     }
 
-    if (url_regex && hasAnyOfCapturingGroups(url_regex, group_names))
-        result.url_regex = url_regex;
+    if (url_regexp && hasAnyOfCapturingGroups(url_regexp, group_names))
+        result.url_regexp = url_regexp;
 
     /// Headers configured as regular expressions: `headers` entries carrying the "regex:" marker, and
-    /// `headers_regex` entries (whose value is the regular expression itself).
+    /// `headers_regexp` entries (whose value is the regular expression itself).
     const auto collect_header_regexes = [&](const std::string & headers_key, bool has_regex_marker)
     {
         Poco::Util::AbstractConfiguration::Keys header_names;
@@ -283,12 +283,12 @@ HTTPHandlerRegexpsWithNamedGroups HTTPHandlerRegexpsWithNamedGroups::fromConfig(
 
             auto regex = compileRegex(expression);
             if (hasAnyOfCapturingGroups(regex, group_names))
-                result.headers_name_with_regex.emplace(header_name, regex);
+                result.headers_name_with_regexp.emplace(header_name, regex);
         }
     };
 
     collect_header_regexes("headers", /* has_regex_marker= */ true);
-    collect_header_regexes("headers_regex", /* has_regex_marker= */ false);
+    collect_header_regexes("headers_regexp", /* has_regex_marker= */ false);
 
     return result;
 }

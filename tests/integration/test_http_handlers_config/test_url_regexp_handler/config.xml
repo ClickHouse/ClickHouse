@@ -2,13 +2,12 @@
     <http_handlers>
         <rule>
             <methods>GET</methods>
-            <url>/test_headers_regex</url>
-            <headers_regex><XXX>[0-9]+</XXX></headers_regex>
+            <url_regexp>/test_regexp/[0-9]+</url_regexp>
             <handler>
                 <type>static</type>
                 <status>200</status>
                 <content_type>text/plain; charset=UTF-8</content_type>
-                <response_content>headers regex handler matched</response_content>
+                <response_content>regex handler matched</response_content>
             </handler>
         </rule>
     </http_handlers>

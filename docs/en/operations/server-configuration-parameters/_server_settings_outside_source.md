@@ -474,19 +474,19 @@ The following settings can be configured by sub-tags (all these sub-tags are opt
 | Sub-tags             | Definition                                                                                                                                        |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
 | `url`                | To match the request URL path. The query string is ignored when matching |
-| `url_regex`          | To match the request URL path against a regular expression. The query string is ignored when matching |
 | `url_prefix`         | To match the request URL path against a base path: the path itself or anything below it on a path-segment boundary (e.g. '/api/v1' matches /api/v1, /api/v1/ and /api/v1/write, but not /api/v1beta). The query string is ignored when matching |
+| `url_regexp`         | To match the request URL path against a regular expression. The query string is ignored when matching |
 | `full_url`           | To match the complete request URL `scheme://host:port/path`. The query string is ignored when matching, and the host is the connection IP address (not the `Host` header) |
-| `full_url_regex`     | To match the complete request URL `scheme://host:port/path` against a regular expression. The query string is ignored when matching |
 | `full_url_prefix`    | To match the complete request URL `scheme://host:port/path` against base URL `scheme://host:port/base_path`, on a path-segment boundary (see `url_prefix`). The query string is ignored when matching |
+| `full_url_regexp`    | To match the complete request URL `scheme://host:port/path` against a regular expression. The query string is ignored when matching |
 | `methods`            | To match request methods, you can use commas to separate multiple method matches |
 | `headers`            | To match request headers, match each child element (child element name is header name) |
-| `headers_regex`      | Like `headers`, but each child element's value is matched against a regular expression |
+| `headers_regexp`     | Like `headers`, but each child element's value is matched against a regular expression |
 | `empty_query_string` | Check that there is no query string in the URL                                                                                                    |
 | `handler`            | The request handler (required)                                                                                                                    |
 
 :::note
-Instead of `url_regex`, `full_url_regex` and `headers_regex` you can also write a regular expression in `url`, `full_url` or `headers` using the `regex:` prefix (e.g. `<url>regex:/api/.*</url>`). This is still supported for backward compatibility, but is obsolete: prefer the dedicated `url_regex`, `full_url_regex` and `headers_regex` sub-tags.
+Instead of `url_regexp`, `full_url_regexp` and `headers_regexp` you can also write a regular expression in `url`, `full_url` or `headers` using the `regex:` prefix (e.g. `<url>regex:/api/.*</url>`). This is still supported for backward compatibility, but is obsolete: prefer the dedicated `url_regexp`, `full_url_regexp` and `headers_regexp` sub-tags.
 :::
 
 `handler` contains the following settings, which can be configured by sub-tags:

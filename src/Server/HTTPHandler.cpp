@@ -872,14 +872,14 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const HTTPHandlerConnectionConfig & connection_config,
     const NameSet & receive_params_,
     const std::string & predefined_query_,
-    const CompiledRegexPtr & url_regex_,
-    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
+    const CompiledRegexPtr & url_regexp_,
+    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
     const HTTPResponseHeaderSetup & http_response_headers_override_)
     : HTTPHandler(server_, connection_config, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
-    , url_regex(url_regex_)
-    , header_name_with_capture_regex(header_name_with_regex_)
+    , url_regexp(url_regexp_)
+    , header_name_with_capture_regexp(header_name_with_regexp_)
 {
 }
 
@@ -927,13 +927,13 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
         }
     };
 
-    if (url_regex)
+    if (url_regexp)
     {
         const auto & uri = request.getURI();
-        set_query_params(uri.data(), find_first_symbols<'?'>(uri.data(), uri.data() + uri.size()), url_regex);
+        set_query_params(uri.data(), find_first_symbols<'?'>(uri.data(), uri.data() + uri.size()), url_regexp);
     }
 
-    for (const auto & [header_name, regex] : header_name_with_capture_regex)
+    for (const auto & [header_name, regex] : header_name_with_capture_regexp)
     {
         const auto & header_value = request.get(header_name);
         set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
@@ -1018,8 +1018,8 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         &server,
         analyze_receive_params,
         predefined_query,
-        url_regex = regexps.url_regex,
-        headers_name_with_regex = std::move(regexps.headers_name_with_regex),
+        url_regexp = regexps.url_regexp,
+        headers_name_with_regexp = std::move(regexps.headers_name_with_regexp),
         http_response_headers_override,
         connection_config]
         -> std::unique_ptr<PredefinedQueryHandler>
@@ -1029,8 +1029,8 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
             connection_config,
             analyze_receive_params,
             predefined_query,
-            url_regex,
-            headers_name_with_regex,
+            url_regexp,
+            headers_name_with_regexp,
             http_response_headers_override);
     };
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));

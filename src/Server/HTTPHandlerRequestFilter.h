@@ -30,8 +30,8 @@ enum class HTTPRequestFilterMatchType
     /// Match the whole value: as an exact string, or as a regular expression if it starts with the "regex:" marker.
     Full,
 
-    /// Match the whole value as a regular expression (the value is the regex itself, without the "regex:" marker).
-    Regex,
+    /// Match the whole value as a regular expression (the value is the regexp itself, without the "regex:" marker).
+    Regexp,
 
     /// Match the value as a base path: the path itself or anything below it on a path-segment ('/') boundary.
     /// E.g. "/api/v1" matches "/api/v1", "/api/v1/" and "/api/v1/write", but not "/api/v1beta".
@@ -58,10 +58,10 @@ HTTPRequestFilter emptyQueryStringFilter();
 /// headers must match.
 HTTPRequestFilter headersFilter(const Poco::Util::AbstractConfiguration & config, const std::string & prefix, HTTPRequestFilterMatchType match_type);
 
-/// Builds the request filters from the rule sub-tags found under `config_prefix` (such as `url`, `url_regex`,
-/// `url_prefix`, `full_url`, `methods`, `headers`, `empty_query_string`, ...), one filter per sub-tag. The
-/// `handler` sub-tag is ignored. A request matches the rule only if every returned filter matches. Throws if
-/// an unknown sub-tag is encountered.
+/// Builds the request filters from the rule sub-tags found under `config_prefix` (such as `url`, `url_prefix`,
+/// `url_regexp`, `full_url`, `methods`, `headers`, `headers_regexp`, `empty_query_string`, ...), one filter per
+/// sub-tag. The `handler` sub-tag is ignored. A request matches the rule only if every returned filter matches.
+/// Throws if an unknown sub-tag is encountered.
 std::vector<HTTPRequestFilter> extractHTTPRequestFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
 /// Contains regular expressions configured for a rule's URL and headers with named capturing groups.
@@ -70,10 +70,10 @@ struct HTTPHandlerRegexpsWithNamedGroups
     /// Non-null if the rule's URL path is matched by a regular expression
     /// with at least one referenced named capturing group.
     /// Null if the rule's URL is a plain URL (an exact-match string).
-    CompiledRegexPtr url_regex;
+    CompiledRegexPtr url_regexp;
 
     /// Maps a header name to the regular expression configured for that header.
-    std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;
+    std::unordered_map<String, CompiledRegexPtr> headers_name_with_regexp;
 
     /// Extracts the regular expressions configured under `config_prefix`,
     /// keeping only those that have a named capturing group present in `group_names`.

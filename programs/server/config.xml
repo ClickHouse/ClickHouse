@@ -1807,20 +1807,20 @@
 
         rules are checked from top to bottom, first match runs the handler
             url - to match request URL path (query string is excluded) (optional)
-            url_regex - to match request URL path against a regular expression (query string is excluded) (optional)
             url_prefix - to match request URL path against a base path: the path itself or anything below it on a
                          path-segment boundary, e.g. /api/v1 matches /api/v1, /api/v1/ and /api/v1/write but not
                          /api/v1beta (query string is excluded) (optional)
+            url_regexp - to match request URL path against a regular expression (query string is excluded) (optional)
             full_url - to match the complete request URL `scheme://host:port/path` (host is an IP address here;
                        query string is excluded) (optional)
-            full_url_regex - to match the complete request URL `scheme://host:port/path` against a regular expression
-                             (query string is excluded) (optional)
             full_url_prefix - to match the complete request URL `scheme://host:port/path` against base
                               (see url_prefix above; query string is excluded) (optional)
+            full_url_regexp - to match the complete request URL `scheme://host:port/path` against a regular expression
+                             (query string is excluded) (optional)
             empty_query_string - check that there is no query string in the URL
             methods - to match request method, you can use commas to separate multiple method matches(optional)
             headers - to match request headers, match each child element (child element name is header name)(optional)
-            headers_regex - like headers, but each child element's value is matched against a regular expression (optional)
+            headers_regexp - like headers, but each child element's value is matched against a regular expression (optional)
 
         handler is request handler
             type - supported types: static, dynamic_query_handler, predefined_query_handler, redirect
@@ -1862,7 +1862,7 @@
         </rule>
 
         <rule>
-            <full_url_regex>http?://[^/]/dashboard</full_url_regex>
+            <full_url_regexp>http?://[^/]/dashboard</full_url_regexp>
             <handler>
                 <type>redirect</type>
                 <location>/dashboard?user=play</location>
