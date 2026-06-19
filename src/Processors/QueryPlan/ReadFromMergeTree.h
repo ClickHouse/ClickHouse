@@ -396,6 +396,9 @@ public:
     void setDistributedRead(size_t bucket_count);
     /// Parts (by name) every worker buckets over, so the partition is identical across replicas.
     void setDistributedReadParts(Names part_names);
+    /// Per-bucket PK-range layers (marks) + the PK-tuple borders between them, for a parallel FINAL
+    /// distributed read. Mutually exclusive with `setDistributedReadParts`.
+    void setDistributedReadLayers(std::vector<RangesInDataPartsDescription> layers, std::vector<std::vector<Field>> borders);
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
 
@@ -577,6 +580,11 @@ private:
     size_t distributed_read_bucket_count = 0;
     /// Coordinator-selected parts a distributed-read worker buckets over. Empty otherwise.
     Names distributed_read_part_names;
+    /// Set instead of `distributed_read_part_names` for a parallel FINAL read: one PK-range layer of
+    /// marks per bucket, plus the PK-tuple borders between layers. The worker reads its bucket's layer
+    /// and merge-dedups it, trimming boundary granules by the borders, instead of slicing marks.
+    std::vector<RangesInDataPartsDescription> distributed_read_layers;
+    std::vector<std::vector<Field>> distributed_read_borders;
 };
 /// Filter the mark ranges for a single part's worth of ranges for a specific bucket.
 /// `effective_bucket_index` is updated in-place so that consecutive calls across multiple parts

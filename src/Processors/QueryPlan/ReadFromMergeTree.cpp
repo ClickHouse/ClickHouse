@@ -6,8 +6,10 @@
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Names.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -4656,6 +4658,12 @@ void ReadFromMergeTree::setDistributedReadParts(Names part_names)
     distributed_read_part_names = std::move(part_names);
 }
 
+void ReadFromMergeTree::setDistributedReadLayers(std::vector<RangesInDataPartsDescription> layers, std::vector<std::vector<Field>> borders)
+{
+    distributed_read_layers = std::move(layers);
+    distributed_read_borders = std::move(borders);
+}
+
 Strings ReadFromMergeTree::getShardsForDistributedRead() const
 {
     Strings default_shard_list = {"0"};
@@ -4745,21 +4753,48 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
 
     writeVarUInt(distributed_read_bucket_count, ctx.out);
 
-    /// Pin the coordinator-selected parts so all workers bucket over the same ordered list.
     if (distributed_read_bucket_count)
     {
-        Names part_names;
-        if (auto analysis = selectRangesToRead())
-        {
-            part_names.reserve(analysis->parts_with_ranges.size());
-            for (const auto & part : analysis->parts_with_ranges)
-                part_names.push_back(part.data_part->name);
-        }
-        std::sort(part_names.begin(), part_names.end());
+        /// Two distributed-read modes. A parallel FINAL read ships per-bucket PK-range layers (marks)
+        /// plus the PK-tuple borders between them; otherwise it pins the coordinator-selected parts so
+        /// all workers bucket over the same ordered list.
+        const bool layered = !distributed_read_layers.empty();
+        writeBinary(layered, ctx.out);
 
-        writeVarUInt(part_names.size(), ctx.out);
-        for (const auto & part_name : part_names)
-            writeStringBinary(part_name, ctx.out);
+        if (layered)
+        {
+            const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+            const size_t border_arity = distributed_read_borders.empty() ? 0 : distributed_read_borders.front().size();
+            DB::FormatSettings format_settings;
+
+            writeVarUInt(border_arity, ctx.out);
+            writeVarUInt(distributed_read_borders.size(), ctx.out);
+            /// Borders are concrete PK values serialized as their PK column type. The producer gates on
+            /// `isSafePrimaryKey` (no Nullable/Float/Variant/Dynamic PK), so no null or +/-infinity
+            /// sentinel reaches here -- it would throw in `serializeBinary`.
+            for (const auto & border : distributed_read_borders)
+                for (size_t i = 0; i < border_arity; ++i)
+                    primary_key.data_types[i]->getDefaultSerialization()->serializeBinary(border[i], ctx.out, format_settings);
+
+            writeVarUInt(distributed_read_layers.size(), ctx.out);
+            for (const auto & layer : distributed_read_layers)
+                layer.serialize(ctx.out, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+        }
+        else
+        {
+            Names part_names;
+            if (auto analysis = selectRangesToRead())
+            {
+                part_names.reserve(analysis->parts_with_ranges.size());
+                for (const auto & part : analysis->parts_with_ranges)
+                    part_names.push_back(part.data_part->name);
+            }
+            std::sort(part_names.begin(), part_names.end());
+
+            writeVarUInt(part_names.size(), ctx.out);
+            for (const auto & part_name : part_names)
+                writeStringBinary(part_name, ctx.out);
+        }
     }
 }
 
@@ -4810,23 +4845,6 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     if (has_prewhere_info)
         query_info.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
 
-    size_t distributed_read_bucket_count = 0;
-    readVarUInt(distributed_read_bucket_count, ctx.in);
-
-    Names distributed_read_part_names;
-    if (distributed_read_bucket_count)
-    {
-        size_t num_parts = 0;
-        readVarUInt(num_parts, ctx.in);
-        distributed_read_part_names.reserve(num_parts);
-        for (size_t i = 0; i < num_parts; ++i)
-        {
-            String part_name;
-            readStringBinary(part_name, ctx.in);
-            distributed_read_part_names.push_back(std::move(part_name));
-        }
-    }
-
     /// The table could be dropped concurrently after the plan was serialized,
     /// so a failed lookup is a regular error, not a logical one.
     StorageID table_id(database_name, table_name);
@@ -4842,6 +4860,51 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
 
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(table.getInMemoryMetadataPtr(ctx.context, false), ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+
+    /// Read after the storage snapshot so the primary-key data types are available to deserialize borders.
+    size_t distributed_read_bucket_count = 0;
+    readVarUInt(distributed_read_bucket_count, ctx.in);
+
+    Names distributed_read_part_names;
+    std::vector<RangesInDataPartsDescription> distributed_read_layers;
+    std::vector<std::vector<Field>> distributed_read_borders;
+    if (distributed_read_bucket_count)
+    {
+        bool layered = false;
+        readBinary(layered, ctx.in);
+
+        if (layered)
+        {
+            const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+            size_t border_arity = 0;
+            readVarUInt(border_arity, ctx.in);
+            size_t num_borders = 0;
+            readVarUInt(num_borders, ctx.in);
+            DB::FormatSettings format_settings;
+            distributed_read_borders.assign(num_borders, std::vector<Field>(border_arity));
+            for (auto & border : distributed_read_borders)
+                for (size_t i = 0; i < border_arity; ++i)
+                    primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], ctx.in, format_settings);
+
+            size_t num_layers = 0;
+            readVarUInt(num_layers, ctx.in);
+            distributed_read_layers.resize(num_layers);
+            for (auto & layer : distributed_read_layers)
+                layer.deserialize(ctx.in, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+        }
+        else
+        {
+            size_t num_parts = 0;
+            readVarUInt(num_parts, ctx.in);
+            distributed_read_part_names.reserve(num_parts);
+            for (size_t i = 0; i < num_parts; ++i)
+            {
+                String part_name;
+                readStringBinary(part_name, ctx.in);
+                distributed_read_part_names.push_back(std::move(part_name));
+            }
+        }
+    }
 
     auto step = executor.readFromParts(
         snapshot_data.parts,
@@ -4859,7 +4922,10 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
         read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
-        read_from_merge_tree_step->setDistributedReadParts(std::move(distributed_read_part_names));
+        if (!distributed_read_layers.empty())
+            read_from_merge_tree_step->setDistributedReadLayers(std::move(distributed_read_layers), std::move(distributed_read_borders));
+        else
+            read_from_merge_tree_step->setDistributedReadParts(std::move(distributed_read_part_names));
     }
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution
