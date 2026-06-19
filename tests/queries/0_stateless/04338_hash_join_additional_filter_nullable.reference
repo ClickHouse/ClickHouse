@@ -1,0 +1,4 @@
+foo	bar	foo	baz
+foo	baz	foo	bar
+qux	bar	\N	\N
+2
