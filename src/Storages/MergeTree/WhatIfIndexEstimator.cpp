@@ -598,7 +598,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 
     /// Canonicalize the predicate (push NOT down, drop aliases) the way the read path does,
     /// so the condition can pick up a standalone conjunct out of a mixed AND/OR
-    ActionsDAGWithInversionPushDown predicate_dag(filter_dag->getOutputs().front(), context);
+    ActionsDAGWithInversionPushDown predicate_dag(filter_dag->getOutputs().front(), context, /* boolean_context */ true);
     const ActionsDAG::Node * predicate = predicate_dag.predicate;
 
     MergeTreeIndexConditionPtr condition;
