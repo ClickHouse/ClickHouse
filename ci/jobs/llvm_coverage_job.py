@@ -13,6 +13,44 @@ from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 CURRENT_DIR = Utils.cwd()
 TEMP_DIR = f"{CURRENT_DIR}/ci/tmp/"
 
+_EXTRA_BASELINES_TARGET = 5
+_S3_BASE_URL = "https://clickhouse-builds.s3.amazonaws.com/REFs/master"
+
+
+def _download_extra_baselines(master_commits: list[str], first_base_commit: str) -> int:
+    """Download up to _EXTRA_BASELINES_TARGET additional master coverage baselines.
+
+    Walks master_commits (nearest-first) starting after first_base_commit,
+    skipping commits without a published .info, until the target count is reached.
+    Files are written to TEMP_DIR/base_llvm_coverage_{2..N}.info.
+    Returns the number of extra baselines successfully downloaded.
+    """
+    found = 0
+    slot = 2
+    saw_first = False
+    for sha in master_commits:
+        if sha == first_base_commit:
+            saw_first = True
+            continue
+        if not saw_first:
+            continue
+        if found >= _EXTRA_BASELINES_TARGET:
+            break
+        url = f"{_S3_BASE_URL}/{sha}/llvm_coverage/llvm_coverage.info"
+        dest = Path(TEMP_DIR) / f"base_llvm_coverage_{slot}.info"
+        check = Shell.get_output(f"wget --spider '{url}' 2>&1 || true", verbose=False)
+        if "200 OK" not in check:
+            continue
+        print(f"Downloading extra baseline #{slot} from {sha[:12]}...")
+        rc = Shell.run(f"wget --quiet '{url}' -O '{dest}'", verbose=False)
+        if rc == 0 and dest.exists() and dest.stat().st_size > 0:
+            found += 1
+            slot += 1
+        else:
+            dest.unlink(missing_ok=True)
+    print(f"Downloaded {found} extra master baseline(s) for cross-validation (target: {_EXTRA_BASELINES_TARGET}).")
+    return found
+
 
 def _build_stable_master_info() -> str:
     """Union all available master baseline .info files into one stable baseline.
