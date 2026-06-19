@@ -101,6 +101,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoint returning a deterministic HTTP 400, which the url table function never retries.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_bad_request AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/bad_request', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # `api_key` is optional (some providers, e.g. a local Ollama, need no auth).
         # This collection omits it so we can assert no `Authorization` header is sent.
         instance.query(
@@ -728,3 +736,68 @@ def test_embed_retries_on_network_error(started_cluster):
     events = get_profile_events(qid)
     assert int(events["api_calls"]) == 3
     assert int(events["rows_processed"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Provider HTTP-status retry policy (matches the url table function):
+# deterministic client errors (400/401/403/404/405/501) are surfaced immediately,
+# transient/server-side errors (5xx, …) are retried.
+# ---------------------------------------------------------------------------
+
+
+def test_generate_deterministic_http_error_not_retried(started_cluster):
+    """A deterministic provider HTTP status (400 Bad Request) is surfaced immediately and is NOT
+    retried, even with `ai_function_max_retries` enabled — exactly like the url table function,
+    which never retries 400/401/403/404/405/501. Only a single API call is made."""
+    qid = unique_query_id("gen_400_no_retry")
+    result = instance.query(
+        "SELECT aiGenerate('bad request')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_credentials": "ai_bad_request",
+            "ai_function_max_retries": 5,
+            "ai_function_throw_on_error": 0,
+        },
+        query_id=qid,
+    )
+    # Non-retriable error with throw_on_error = 0: the row is skipped, producing an empty result.
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1  # exactly one call: the 400 was not retried
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1
+
+
+def test_generate_deterministic_http_error_throws(started_cluster):
+    """With the default `ai_function_throw_on_error = 1`, the deterministic 400 surfaces as
+    `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER` rather than being retried away."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('bad request')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_credentials": "ai_bad_request",
+            "ai_function_max_retries": 5,
+        },
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_generate_server_error_is_retried(started_cluster):
+    """Counterpart to the 400 case: an HTTP 500 is a transient/server-side error, so it IS retried
+    (1 initial attempt + `ai_function_max_retries` retries), matching the url table function."""
+    qid = unique_query_id("gen_500_retried")
+    result = instance.query(
+        "SELECT aiGenerate('server error')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_credentials": "ai_error",
+            "ai_function_max_retries": 2,
+            "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
+            "ai_function_throw_on_error": 0,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3  # 1 + 2 retries
+    assert int(events["rows_skipped"]) == 1

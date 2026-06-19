@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/HTTPCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 namespace ProfileEvents
@@ -48,7 +49,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -131,15 +131,18 @@ bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
     {
         std::rethrow_exception(eptr);
     }
+    catch (const AIProviderHTTPException & e)
+    {
+        /// A non-2xx response relayed from the provider. Apply the same retriable-status policy as
+        /// the `url` table function (`isRetriableHTTPError`): deterministic client errors (bad
+        /// request, unauthorized, forbidden, not found, method not allowed, not implemented) are
+        /// surfaced immediately, while transient/server-side errors (rate limiting, 5xx, …) are retried.
+        return isRetriableHTTPError(e.getHTTPStatus());
+    }
     catch (const NetException &)
     {
         /// ClickHouse-level network error (e.g. a DNS failure raised by the HTTP connection pool).
         return true;
-    }
-    catch (const Exception & e)
-    {
-        /// A non-2xx response relayed from the provider (rate limiting, server errors, etc.).
-        return e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -155,8 +158,8 @@ bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
     }
     catch (...)
     {
-        /// Argument/usage errors (malformed responses, bad configuration, JSON parse failures, …)
-        /// are deterministic — retrying would only repeat the same failure.
+        /// Ok: any other exception is a deterministic argument/usage error (malformed provider
+        /// response, bad configuration, JSON parse failure, …) — retrying would only repeat it.
         return false;
     }
 }

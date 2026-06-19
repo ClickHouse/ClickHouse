@@ -25,7 +25,10 @@ Endpoints:
       element, exercising the duplicate-index rejection path.
   POST /v1/embeddings_wrong_count    — returns one fewer entry than requested, exercising the
       cardinality mismatch path.
-  POST /v1/error                     — always returns HTTP 500 (used for chat completion errors)
+  POST /v1/error                     — always returns HTTP 500, a transient/server-side error that
+      the url table function (and so the AI functions) retries.
+  POST /v1/bad_request               — always returns HTTP 400, a deterministic client error that
+      the url table function never retries, used to assert AI functions do not retry it either.
   POST /v1/embeddings_error          — always returns HTTP 500 (used for embedding errors)
 """
 
@@ -203,6 +206,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/v1/error":
             self._send_json(500, make_error_response("permanent failure"))
+            return
+
+        if parsed.path == "/v1/bad_request":
+            # A deterministic client error (e.g. malformed request / bad API key). The url table
+            # function never retries 400, so neither should the AI functions.
+            self._send_json(400, make_error_response("invalid request", error_type="invalid_request_error"))
             return
 
         if parsed.path == "/v1/embeddings":
