@@ -120,7 +120,7 @@ bool isChunkedSnapshot(SeekableReadBuffer & in) noexcept
     {
         return parseChunkedSnapshotImpl(in, /*check_version=*/false).has_value();
     }
-    catch (...)
+    catch (...) // Ok: any IO or structural error means the buffer is not a chunked snapshot
     {
         return false;
     }
