@@ -68,19 +68,6 @@ function configure
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
 
-    if [[ -n "${SERVER_FUZZER_ENABLED:-}" ]]; then
-        cat > $CONFIG_DIR/users.d/serverfuzz-tweaks.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <ast_fuzzer_runs>5</ast_fuzzer_runs>
-            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
-        </default>
-    </profiles>
-</clickhouse>
-EOL
-    fi
-
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>
     <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
@@ -297,6 +284,11 @@ function fuzz
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
 
+    # Default: the loop leaves this unset if it exhausts all retries via the
+    # "alive but busy" branches (TOO_MANY_SIMULTANEOUS_QUERIES /
+    # MEMORY_LIMIT_EXCEEDED); a dead server sets server_died=1 and breaks.
+    server_died=0
+
     for _ in {1..100}
     do
         if clickhouse-client --receive_timeout=5 --query "SELECT 1" 2> err
@@ -308,8 +300,11 @@ function fuzz
             # SELECT * FROM remote('127.0.0.{1..255}', system, one)
             if grep -F 'TOO_MANY_SIMULTANEOUS_QUERIES' err
             then
-                # Give it some time to cool down
-                clickhouse-client --query "SHOW PROCESSLIST"
+                # Give it some time to cool down. The SHOW PROCESSLIST is only a
+                # diagnostic and runs under `set -e`; if the same overload rejects
+                # it, do not abort the script (that would skip the status.tsv
+                # write below and surface as a missing-status job ERROR).
+                clickhouse-client --query "SHOW PROCESSLIST" ||:
                 sleep 1
             elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
             then
