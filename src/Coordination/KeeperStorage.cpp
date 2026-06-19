@@ -576,8 +576,8 @@ struct RemoveNodeDelta
     NodeStats stat;
     /// RemoveRecursive can remove node with nonzero num_children (after also removing all its
     /// children, just not updating the parent's num_children).
-    int32_t num_children{0};
-    Coordination::ACLs acls;
+    int32_t num_children = 0;
+    ACLId acl_id = 0;
     String data;
 };
 
