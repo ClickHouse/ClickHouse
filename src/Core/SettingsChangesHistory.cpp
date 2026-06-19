@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_from_fixed_hash_table", false, true, "New setting."},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_nullable_tuple_type", false, false, "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."},
+            {"ai_function_credentials", "", "", "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
@@ -74,6 +75,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_avro_schema_registry_max_retries", 0, 5, "New setting controlling the maximum number of retries for transient failures (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429) when communicating with the Confluent Schema Registry. Set to 0 to disable retries. Previous behavior (no retries) is preserved by `compatibility = '26.5'`."},
             {"format_avro_schema_registry_retry_initial_backoff_ms", 100, 100, "New setting controlling the initial backoff (in milliseconds) before retrying a failed Confluent Schema Registry request. The backoff doubles on each retry, capped at 10 seconds. Has no effect when `format_avro_schema_registry_max_retries = 0` (the pre-26.6 behavior restored by `compatibility = '26.5'`)."},
             {"enable_join_transitive_predicates", false, true, "Turn on enable_join_transitive_predicates by default"},
+            {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
+            {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",
@@ -1245,6 +1248,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
+            {"packed_skip_index_max_bytes", 0, 0, "New setting. Pack any skip-index substream whose serialized on-disk size is at most this many bytes into a single skp_idx.packed archive per part; larger substreams stay in the standalone skp_idx_<name>.idx2 / .mrk2 layout. Decision is made per substream at write time."},
             {"allow_tuple_element_aggregation", false, false, "New setting"},
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
             {"text_index_dictionary_block_size", 512, 512, "New setting"},
