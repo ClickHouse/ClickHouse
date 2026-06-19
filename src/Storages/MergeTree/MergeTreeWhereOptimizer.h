@@ -69,6 +69,10 @@ private:
 
         UInt64 columns_size = 0;
         NameSet table_columns;
+        /// Column names resolved to their physical storage names (subcolumn suffix stripped).
+        /// Used for grouping: conditions on subcolumns of the same storage column
+        /// (e.g. `map.key_k0` and `map.key_k1`) are moved to PREWHERE together.
+        NameSet table_storage_columns;
 
         /// Can condition be moved to prewhere?
         bool viable = false;

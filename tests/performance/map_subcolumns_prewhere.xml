@@ -106,6 +106,40 @@
         SETTINGS optimize_functions_to_subcolumns=1
     </query>
 
+    <!-- Table with an extra column to test WHERE optimizer grouping.
+         When Map subcolumn conditions are interleaved with another column in WHERE,
+         the optimizer should group Map conditions together to avoid redundant reads. -->
+    <create_query>
+        CREATE TABLE map_subcol_pw_mixed (id UInt64, tags Map(String, String), value UInt32)
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_subcol_pw_mixed
+        SELECT number AS id,
+               mapFromArrays(
+                   arrayMap(i -> 'k' || toString(i), range(16)),
+                   arrayMap(i -> toString(number + i), range(16))) AS tags,
+               number AS value
+        FROM numbers_mt(5000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_subcol_pw_mixed FINAL SETTINGS mutations_sync=1</fill_query>
+
+    <!-- WHERE with interleaved Map subcolumns and another column.
+         The optimizer should group all Map conditions together even though
+         the 'value' condition appears between them in the original WHERE. -->
+    <query>
+        SELECT count() FROM map_subcol_pw_mixed
+        WHERE tags['k0'] != '' AND tags['k1'] != '' AND tags['k2'] != '' AND tags['k3'] != ''
+          AND value > 0
+          AND tags['k4'] != '' AND tags['k5'] != '' AND tags['k6'] != '' AND tags['k7'] != ''
+          AND tags['k8'] != '' AND tags['k9'] != '' AND tags['k10'] != '' AND tags['k11'] != ''
+          AND tags['k12'] != '' AND tags['k13'] != '' AND tags['k14'] != '' AND tags['k15'] != ''
+        SETTINGS optimize_functions_to_subcolumns=1, move_all_conditions_to_prewhere=1
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS map_subcol_pw_wide</drop_query>
     <drop_query>DROP TABLE IF EXISTS map_subcol_pw_compact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_subcol_pw_mixed</drop_query>
 </test>
