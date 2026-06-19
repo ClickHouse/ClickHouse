@@ -264,6 +264,16 @@ struct ToMondayImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToMondayExtendedImpl : ToMondayImpl
+{
+    static constexpr auto name = "toMondayExtended";
+    /// `toMonday` rounds a date down to the Monday of its week. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toMonday(toDate32('1969-12-29'))` returns `2149-06-04`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToStartOfMonthImpl
 {
     static constexpr auto name = "toStartOfMonth";
@@ -296,6 +306,16 @@ struct ToStartOfMonthImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfMonthExtendedImpl : ToStartOfMonthImpl
+{
+    static constexpr auto name = "toStartOfMonthExtended";
+    /// `toStartOfMonth` rounds a date down to the first day of its month. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfMonth(toDate32('1969-06-15'))` returns `2148-11-05`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToLastDayOfMonthImpl
 {
     static constexpr auto name = "toLastDayOfMonth";
@@ -324,7 +344,27 @@ struct ToLastDayOfMonthImpl
     {
         return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
     }
+    static Int32 executeExtendedResult(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
+    }
     using FactorTransform = ZeroTransform;
+};
+
+struct ToLastDayOfMonthExtendedImpl : ToLastDayOfMonthImpl
+{
+    static constexpr auto name = "toLastDayOfMonthExtended";
+    /// `toLastDayOfMonth` rounds a date up to the last day of its month. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toLastDayOfMonth(toDate32('1969-06-15'))` returns `2148-12-04`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+
+    /// Because `toLastDayOfMonth` rounds up, even an in-range `Date` argument can overflow: it returns
+    /// `Date`, but `2149-06-06` is in June 2149, whose last day `2149-06-30` is past `Date`'s
+    /// `2149-06-06` maximum, so without widening the result wraps. For example,
+    /// `SELECT toLastDayOfMonth(toDate('2149-06-06'))` returns `1970-01-24`.
+    static constexpr bool widen_date_input = true;
 };
 
 struct ToStartOfQuarterImpl
@@ -358,6 +398,16 @@ struct ToStartOfQuarterImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfQuarterExtendedImpl : ToStartOfQuarterImpl
+{
+    static constexpr auto name = "toStartOfQuarterExtended";
+    /// `toStartOfQuarter` rounds a date down to the first day of its quarter. Without widening it returns
+    /// `Date` (`1970-01-01`..`2149-06-06`), which wraps for a `Date32`
+    /// (`1900-01-01`..`2299-12-31`)/`DateTime64` (`1900-01-01`..`2299-12-31`) argument outside that range.
+    /// For example, `SELECT toStartOfQuarter(toDate32('1969-06-15'))` returns `2148-09-05`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
+};
+
 struct ToStartOfYearImpl
 {
     static constexpr auto name = "toStartOfYear";
@@ -388,6 +438,16 @@ struct ToStartOfYearImpl
     }
 
     using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfYearExtendedImpl : ToStartOfYearImpl
+{
+    static constexpr auto name = "toStartOfYearExtended";
+    /// `toStartOfYear` rounds a date down to January 1 of its year. Without widening it returns `Date`
+    /// (`1970-01-01`..`2149-06-06`), which wraps for a `Date32` (`1900-01-01`..`2299-12-31`)/`DateTime64`
+    /// (`1900-01-01`..`2299-12-31`) argument outside that range. For example,
+    /// `SELECT toStartOfYear(toDate32('1969-06-15'))` returns `2148-06-07`.
+    static constexpr bool widen_date32_and_datetime64_input = true;
 };
 
 struct ToYearWeekImpl
