@@ -1226,22 +1226,30 @@ void GlobalThreadPool::shutdown()
         /// condition variable and the `finalize` call below will block forever joining the
         /// underlying `std::thread`. Log the live local pool workers first so the leaker
         /// subsystem is identifiable in CI artifacts even when the join hangs. Pools whose
-        /// workers have all exited (e.g. idle long-lived shared pools) do not appear here,
-        /// so on a healthy shutdown the list is `(none)`.
+        /// workers have all exited (e.g. idle long-lived shared pools) do not appear here.
+        ///
+        /// Only emit the line when something is actually still alive. On a healthy shutdown
+        /// the snapshot is "(none)" and we stay silent: this code also runs in short-lived
+        /// client tools (clickhouse-benchmark/-local/-client), and an unconditional line on
+        /// their stderr breaks tests that capture and diff tool output (03636_benchmark_error_messages).
         ///
         /// Wrapped in `try/catch` so that an exception from `LOG_INFO` (Poco channel I/O,
         /// formatter allocation under `MEMORY_LIMIT_EXCEEDED`, etc.) cannot skip the
         /// `finalize` call. `snapshotLocalThreadPools` is itself `noexcept` and falls back
-        /// to `"(unavailable)"`; this catch covers everything else on the log path.
-        try
+        /// to `"(unavailable)"` (also logged, since it signals a leaker we could not enumerate).
+        const std::string live_local_pools = snapshotLocalThreadPools();
+        if (live_local_pools != "(none)")
         {
-            LOG_INFO(
-                &Poco::Logger::get("GlobalThreadPool"),
-                "shutdown(): live local ThreadPoolImpl worker threads at shutdown: [{}]",
-                snapshotLocalThreadPools());
-        }
-        catch (...) // NOLINT(bugprone-empty-catch) Ok: diagnostic must not skip `finalize`
-        {
+            try
+            {
+                LOG_INFO(
+                    &Poco::Logger::get("GlobalThreadPool"),
+                    "shutdown(): live local ThreadPoolImpl worker threads at shutdown: [{}]",
+                    live_local_pools);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: diagnostic must not skip `finalize`
+            {
+            }
         }
         the_instance->finalize();
     }
