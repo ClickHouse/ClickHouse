@@ -471,9 +471,16 @@ void HTTPHandler::processQuery(
             /// run it through `checkSettingsConstraints` here too — otherwise a `database` constraint
             /// (e.g. marked `const`, or restricted values) would protect the URL-parameter/header form
             /// but not the `/database/table` path form. The path takes precedence over a profile default.
+            ///
+            /// Apply it as the `database` setting as well (not just `setCurrentDatabase` below): `executeQuery`
+            /// re-applies a non-empty `database` setting via `setCurrentDatabase` after the query SETTINGS are
+            /// resolved, so an inherited profile default such as `database = 'db1'` would otherwise switch the
+            /// query back to `db1` after `/db2/...` had already set the current database — making unqualified
+            /// names resolve in the wrong database. Overwriting the setting here keeps the two in sync.
             SettingsChanges database_change;
             database_change.setSetting("database", path_info.database);
             context->checkSettingsConstraints(database_change, SettingSource::QUERY);
+            context->applySettingsChanges(database_change);
             resolved_database = path_info.database;
         }
         if (!resolved_database.empty())

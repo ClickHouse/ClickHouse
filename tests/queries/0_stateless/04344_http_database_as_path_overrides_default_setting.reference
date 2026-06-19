@@ -1,0 +1,6 @@
+-- sanity: WITHOUT a path the user falls back to its profile default db1
+from_db1
+-- /db2/marker: unqualified 'marker' must resolve in the path database db2, not db1
+from_db2
+-- /db2 (table-as-file off): currentDatabase() must be db2, not db1
+currentDatabase OK (db2)
