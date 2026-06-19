@@ -719,7 +719,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_insert_skip_read_only_replicas", trueOrFalseSettingNoOracle},
     {"distributed_plan_default_reader_bucket_count",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 128)); }, {}, false)},
     {"distributed_plan_default_shuffle_join_bucket_count",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 128)); }, {}, false)},
@@ -1098,10 +1098,12 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg, FuzzConfig &)
          {
              static const DB::Strings choices = {
-                 "'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"};
+                 "'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'hostname_longest_common_prefix'",
+                 "'hostname_longest_common_suffix'", "'nearest_hostname'", "'first_or_random'", "'random'"};
              return rg.pickRandomly(choices);
          },
-         {"'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"},
+         {"'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'hostname_longest_common_prefix'",
+          "'hostname_longest_common_suffix'", "'nearest_hostname'", "'first_or_random'", "'random'"},
          false)},
     {"load_balancing_first_offset",
      CHSetting(
