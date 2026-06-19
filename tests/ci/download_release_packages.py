@@ -37,6 +37,12 @@ def download_packages(
 
     logging.info("Will download %s", release)
 
+    # The debug-symbols package is only downloaded (and installed) in debug mode,
+    # so it is only required there.
+    required_prefixes = tuple(
+        prefix for prefix in REQUIRED_PACKAGE_PREFIXES if debug or "-dbg_" not in prefix
+    )
+
     failed = {}
     for pkg, url in release.assets.items():
         if not pkg.endswith("_amd64.deb") or (not debug and "-dbg_" in pkg):
@@ -50,20 +56,27 @@ def download_packages(
             failed[pkg] = str(e)
             logging.error("Failed to download %s: %s", pkg, e)
 
-    # Do not silently skip a missing essential package: an incomplete set always
-    # breaks the subsequent install, so fail with a clear, attributable reason
-    # (the per-package message distinguishes a genuine 404 from a transient error).
-    required_failed = {
+    # A required package can be unusable for two reasons, and both must fail the
+    # job loudly with a clear, attributable reason instead of letting a later
+    # `install_packages` die with an opaque `dpkg` glob error:
+    #   1. it was published but failed to download (recorded in `failed`; the
+    #      per-package message distinguishes a genuine 404 from a transient error);
+    #   2. it is absent from the release metadata entirely - a partially published
+    #      release - so it never even entered the download loop above.
+    errors = {
         pkg: reason
         for pkg, reason in failed.items()
-        if pkg.startswith(REQUIRED_PACKAGE_PREFIXES)
+        if pkg.startswith(required_prefixes)
     }
-    if required_failed:
-        details = "; ".join(
-            f"{pkg}: {reason}" for pkg, reason in required_failed.items()
-        )
+    available = [pkg for pkg in release.assets if pkg.endswith("_amd64.deb")]
+    for prefix in required_prefixes:
+        if not any(pkg.startswith(prefix) for pkg in available):
+            errors[prefix] = "not found in the release assets"
+
+    if errors:
+        details = "; ".join(f"{pkg}: {reason}" for pkg, reason in errors.items())
         raise DownloadException(
-            f"Failed to download {len(required_failed)} required release package(s) "
+            f"Failed to obtain {len(errors)} required release package(s) "
             f"for {release}: {details}"
         )
     if failed:

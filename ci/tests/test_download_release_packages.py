@@ -88,6 +88,7 @@ def test_essential_failure_raises_with_reason(tmp_path, monkeypatch):
     release = FakeRelease(
         "clickhouse-common-static_1_amd64.deb",
         "clickhouse-server_1_amd64.deb",
+        "clickhouse-client_1_amd64.deb",
     )
 
     with pytest.raises(DownloadException) as excinfo:
@@ -98,3 +99,52 @@ def test_essential_failure_raises_with_reason(tmp_path, monkeypatch):
     # The original per-package reason is preserved for diagnostics.
     assert "clickhouse-server_1_amd64.deb" in message
     assert "HTTP 404" in message
+
+
+def test_missing_required_package_raises(tmp_path, monkeypatch):
+    # A partially published release: every published asset downloads fine, but a
+    # required package is absent from the release metadata entirely, so it never
+    # enters the download loop. This must still fail loudly instead of letting a
+    # later `install_packages` die with an opaque `dpkg` glob error.
+    fake, calls = _make_fake_download()
+    monkeypatch.setattr(drp, "download_build_with_progress", fake)
+    release = FakeRelease(
+        "clickhouse-common-static_1_amd64.deb",
+        "clickhouse-server_1_amd64.deb",
+        # `clickhouse-client_..._amd64.deb` is missing.
+    )
+
+    with pytest.raises(DownloadException) as excinfo:
+        drp.download_packages(release, dest_path=tmp_path)
+
+    message = str(excinfo.value)
+    assert "required release package" in message
+    assert "clickhouse-client_" in message
+    assert "not found in the release assets" in message
+    # The packages that were present still got downloaded.
+    assert len(calls) == 2
+
+
+def test_missing_dbg_is_required_only_in_debug_mode(tmp_path, monkeypatch):
+    # The debug-symbols package is only installed (and thus required) in debug
+    # mode, so a release without it is fine for a non-debug run but must fail a
+    # debug run.
+    fake, _ = _make_fake_download()
+    monkeypatch.setattr(drp, "download_build_with_progress", fake)
+    release = FakeRelease(
+        "clickhouse-common-static_1_amd64.deb",
+        "clickhouse-server_1_amd64.deb",
+        "clickhouse-client_1_amd64.deb",
+        # `clickhouse-common-static-dbg_..._amd64.deb` is missing.
+    )
+
+    # Non-debug run: the debug package is not needed.
+    drp.download_packages(release, dest_path=tmp_path, debug=False)
+
+    # Debug run: the missing debug package is now a required, attributable error.
+    with pytest.raises(DownloadException) as excinfo:
+        drp.download_packages(release, dest_path=tmp_path, debug=True)
+
+    message = str(excinfo.value)
+    assert "clickhouse-common-static-dbg_" in message
+    assert "not found in the release assets" in message
