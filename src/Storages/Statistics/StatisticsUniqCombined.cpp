@@ -10,7 +10,8 @@
 namespace DB
 {
 
-/// Use uniqCombined with K=12: Small(16 exact) → HashSet(up to 256) → HLL(~3 KB).
+/// Use uniqCombined64 with K=12: Small(16 exact) → HashSet(up to 256) → HLL(~3 KB).
+/// The 64-bit hash avoids collisions for high-cardinality columns (32-bit hashes degrade above ~65K distinct values).
 static constexpr UInt64 UNIQ_COMBINED_PRECISION = 12;
 
 StatisticsUniqCombined::StatisticsUniqCombined(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
@@ -19,7 +20,7 @@ StatisticsUniqCombined::StatisticsUniqCombined(const SingleStatisticsDescription
     arena = std::make_unique<Arena>();
     AggregateFunctionProperties properties;
     collector = AggregateFunctionFactory::instance().get(
-        "uniqCombined", NullsAction::IGNORE_NULLS, {data_type}, Array{UNIQ_COMBINED_PRECISION}, properties);
+        "uniqCombined64", NullsAction::IGNORE_NULLS, {data_type}, Array{UNIQ_COMBINED_PRECISION}, properties);
     data = arena->alignedAlloc(collector->sizeOfData(), collector->alignOfData());
     collector->create(data);
 }
