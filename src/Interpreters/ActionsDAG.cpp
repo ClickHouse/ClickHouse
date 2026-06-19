@@ -1193,6 +1193,10 @@ void ActionsDAG::unwrapMaterializeWrapAtOutput(const std::string & name)
     if (!inner->column || !isColumnConst(*inner->column))
         return;
 
+    /// compute determinism from the subtree, inner can be a FUNCTION folded by `addFunctionImpl`
+    /// whose `is_deterministic_constant` defaulted to true even when a non-det descendant exists
+    bool det = isSubtreeDeterministic(inner);
+
     /// Mutate in place so the output (same Node pointer) becomes the const
     /// The unused inner node stays in the DAG and is cleaned up by `removeUnusedActions`
     root->type = ActionType::COLUMN;
@@ -1200,7 +1204,7 @@ void ActionsDAG::unwrapMaterializeWrapAtOutput(const std::string & name)
     root->children.clear();
     root->function_base.reset();
     root->function.reset();
-    root->is_deterministic_constant = inner->is_deterministic_constant;
+    root->is_deterministic_constant = det;
 }
 
 void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_output_name)
