@@ -2,7 +2,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -20,7 +19,7 @@ namespace ErrorCodes
 }
 
 /// arrayRandomSample(arr, k) - Returns k random elements from the input array
-class FunctionArrayRandomSample final : public IFunction
+class FunctionArrayRandomSample : public IFunction
 {
 public:
     static constexpr auto name = "arrayRandomSample";
@@ -33,8 +32,6 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -75,7 +72,7 @@ public:
         const auto & array_offsets = col_array->getOffsets();
         auto & res_offsets = col_res->getOffsets();
 
-        VectorWithMemoryTracking<size_t> indices;
+        std::vector<size_t> indices;
         size_t prev_array_offset = 0;
         size_t prev_res_offset = 0;
 

@@ -5,6 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
@@ -20,6 +21,7 @@ namespace DB
 
 class ASTFunction;
 class Context;
+class IFunction;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -36,12 +38,7 @@ struct ActionsDAGWithInversionPushDown
     std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * predicate = nullptr;
 
-    /// `boolean_context`: Pass true only when the caller uses `predicate_` as a filter: it tests each row for truthiness
-    /// and discards the value (index analysis of a WHERE/PREWHERE). Then `cloneDAGWithInversionPushDown` may apply
-    /// truthiness-preserving but value-changing rewrites (`tryRewriteCoalesceCondition`, `tryRewriteCoalesceComparison`),
-    /// which can differ from the original (e.g. `NULL` vs `false`) on NULL rows but agree on truthiness.
-    /// There is no correctness cost to passing false, but it may miss some optimization opportunities.
-    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context);
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
 };
 
 
@@ -425,7 +422,6 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         MonotonicFunctionsChain & out_functions_chain,
-        bool & out_chain_is_positive,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
 
@@ -442,8 +438,7 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
-        DataTypePtr & out_type,
-        bool & out_chain_is_positive);
+        DataTypePtr & out_type);
 
     bool canConstantBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
@@ -550,10 +545,10 @@ private:
 
     struct SpaceFillingCurveDescription
     {
-        size_t key_column_pos{};
+        size_t key_column_pos;
         String function_name;
         std::vector<String> arguments;
-        SpaceFillingCurveType type{};
+        SpaceFillingCurveType type;
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
     SpaceFillingCurveDescriptions key_space_filling_curves;

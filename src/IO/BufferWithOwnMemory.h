@@ -155,7 +155,7 @@ template <typename Base>
 class BufferWithOwnMemory : public Base
 {
 protected:
-    Memory<> memory{};
+    Memory<> memory;
     const bool use_existing_memory;
 
 public:
