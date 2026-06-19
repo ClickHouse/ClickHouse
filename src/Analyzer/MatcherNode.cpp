@@ -344,7 +344,10 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
             auto qualified_asterisk = make_intrusive<ASTQualifiedAsterisk>();
 
             auto identifier_parts = qualified_identifier.getParts();
-            qualified_asterisk->qualifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+            auto qualifier_identifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+            if (!qualified_identifier_quote_styles.empty())
+                qualifier_identifier->setQuoteStyles(qualified_identifier_quote_styles);
+            qualified_asterisk->qualifier = qualifier_identifier;
             qualified_asterisk->children.push_back(qualified_asterisk->qualifier);
 
             if (transformers)
@@ -377,7 +380,10 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
             regexp_matcher->setPattern(columns_matcher->pattern());
 
             auto identifier_parts = qualified_identifier.getParts();
-            regexp_matcher->qualifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+            auto qualifier_identifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+            if (!qualified_identifier_quote_styles.empty())
+                qualifier_identifier->setQuoteStyles(qualified_identifier_quote_styles);
+            regexp_matcher->qualifier = qualifier_identifier;
             regexp_matcher->children.push_back(regexp_matcher->qualifier);
 
             if (transformers)
@@ -394,10 +400,13 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
         auto column_list = make_intrusive<ASTExpressionList>();
         column_list->children.reserve(columns_identifiers.size());
 
-        for (const auto & identifier : columns_identifiers)
+        for (size_t i = 0; i < columns_identifiers.size(); ++i)
         {
-            auto identifier_parts = identifier.getParts();
-            column_list->children.push_back(make_intrusive<ASTIdentifier>(std::move(identifier_parts)));
+            auto identifier_parts = columns_identifiers[i].getParts();
+            auto column_identifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+            if (i < columns_identifiers_quote_styles.size() && !columns_identifiers_quote_styles[i].empty())
+                column_identifier->setQuoteStyles(columns_identifiers_quote_styles[i]);
+            column_list->children.push_back(std::move(column_identifier));
         }
 
         if (qualified_identifier.empty())
@@ -419,7 +428,10 @@ ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
             auto columns_list_matcher = make_intrusive<ASTQualifiedColumnsListMatcher>();
 
             auto identifier_parts = qualified_identifier.getParts();
-            columns_list_matcher->qualifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+            auto qualifier_identifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+            if (!qualified_identifier_quote_styles.empty())
+                qualifier_identifier->setQuoteStyles(qualified_identifier_quote_styles);
+            columns_list_matcher->qualifier = qualifier_identifier;
             columns_list_matcher->column_list = std::move(column_list);
             columns_list_matcher->children.push_back(columns_list_matcher->qualifier);
             columns_list_matcher->children.push_back(columns_list_matcher->column_list);

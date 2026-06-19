@@ -75,7 +75,14 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
 void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     if (!alias.empty() && !ignore_aliases)
+    {
         hash_state.update(alias);
+        /// Quoted alias is semantic in `standard` mode (case-sensitive vs case-insensitive),
+        /// so `expr AS "x"` and `expr AS x` must hash distinctly. Only mix in when true so
+        /// non-quoted aliases keep their previous hash.
+        if (alias_is_double_quoted)
+            hash_state.update(true);
+    }
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

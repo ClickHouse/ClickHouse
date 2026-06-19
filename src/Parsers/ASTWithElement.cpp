@@ -3,6 +3,7 @@
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -41,6 +42,18 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     ostr << " AS" << (is_materialized ? " MATERIALIZED" : "");
     ostr << settings.nl_or_ws << indent_str;
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(ostr, settings, state, frame);
+}
+
+void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// CTE name and its quote style are semantic in `standard` mode; otherwise two CTEs that
+    /// differ only by `"X"` vs `X` would hash the same and a QueryResultCache could share entries.
+    hash_state.update(name.size());
+    hash_state.update(name);
+    hash_state.update(is_materialized);
+    if (name_is_double_quoted)
+        hash_state.update(true);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 }

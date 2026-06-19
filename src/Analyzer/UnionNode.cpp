@@ -293,6 +293,9 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
         auto with_element_ast = make_intrusive<ASTWithElement>();
         with_element_ast->name = cte_name;
+        /// Preserve double-quoting of the recursive CTE name so reparsing under standard mode
+        /// keeps the definition case-sensitive.
+        with_element_ast->name_is_double_quoted = cte_name_is_double_quoted;
         with_element_ast->subquery = make_intrusive<ASTSubquery>(std::move(result_query));
         with_element_ast->children.push_back(with_element_ast->subquery);
 

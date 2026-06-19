@@ -515,6 +515,11 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
             auto with_element_ast = make_intrusive<ASTWithElement>();
             with_element_ast->name = with_node_cte_name;
+            /// Preserve double-quoting of the CTE name so reparsing under standard mode keeps
+            /// the definition case-sensitive.
+            with_element_ast->name_is_double_quoted = with_query_node
+                ? with_query_node->isCTENameDoubleQuoted()
+                : with_union_node->isCTENameDoubleQuoted();
             with_element_ast->subquery = std::move(with_node_ast);
             with_element_ast->children.push_back(with_element_ast->subquery);
             with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
