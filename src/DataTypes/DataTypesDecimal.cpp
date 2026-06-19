@@ -494,43 +494,73 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
         /// rather than `max` itself, so the comparison stays correct for widths where the
         /// integer max can't be exactly represented in the source float (e.g. `Int64::max`).
         const FromFieldType max_plus_one = std::ldexp(static_cast<FromFieldType>(1), sizeof(ToNativeType) * 8 - 1);
-        for (size_t i = 0; i < size; ++i)
+        /// Resolve `round` and the rare non-finite-multiplier handling at compile time, and forward
+        /// the `__restrict` pointers, so each instantiation is a branch-free, auto-vectorizable loop.
+        /// (The per-element zero short-circuit and `isFinite(out)` guard otherwise defeat
+        /// vectorization, which regresses throughput vs. the previous truncating conversion.)
+        /// `finite_multiplier` is the common case: a finite multiplier can never turn a finite input
+        /// into `NaN`, and the `max_plus_one` bound already rejects infinite products, so the zero
+        /// short-circuit and `isFinite(out)` guard are only required when the multiplier itself
+        /// overflowed to `+/-inf` (e.g. `Float32` * `10^76` for `Decimal256`).
+        auto convert = [&]<bool do_round, bool finite_multiplier>(
+            const FromFieldType * __restrict from_ptr,
+            typename ToDataType::FieldType * __restrict to_ptr,
+            [[maybe_unused]] ReturnType * __restrict nullmap_ptr)
         {
-            bool overflow = !isFinite(from[i]);
-            /// Short-circuit zero so a `0 * inf` product doesn't trigger the `!isFinite(out)`
-            /// branch as a false-positive overflow (mirrors the scalar path).
-            bool is_zero = from[i] == FromFieldType{};
-            /// Round first so the bounds check accepts values that would round to a representable
-            /// integer (matches the scalar path in `convertToDecimalImpl`). When `round` is false
-            /// (legacy `compatibility` mode), keep the raw product so the `static_cast` below
-            /// truncates toward zero.
-            FromFieldType scaled = is_zero ? FromFieldType{} : from[i] * multiplier;
-            FromFieldType out = round ? std::rint(scaled) : scaled;
-
-            /// `!isFinite(out)` catches `inf` products from finite inputs (e.g. `Float32` ×
-            /// scale-76 multiplier for `Decimal256`), where the bound itself may also be `inf`.
-            overflow |= !isFinite(out) || out >= max_plus_one || out < -max_plus_one;
-
-            if constexpr (has_nullmap)
+            for (size_t i = 0; i < size; ++i)
             {
-                nullmap[i] = overflow;
-                to[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(out);
-            }
-            else
-            {
-                if (overflow)
+                FromFieldType scaled;
+                if constexpr (finite_multiplier)
+                    scaled = from_ptr[i] * multiplier;
+                else
+                    scaled = from_ptr[i] == FromFieldType{} ? FromFieldType{} : from_ptr[i] * multiplier;
+
+                FromFieldType out;
+                if constexpr (do_round)
+                    out = std::rint(scaled);
+                else
+                    out = scaled;
+
+                bool overflow = !isFinite(from_ptr[i]) || out >= max_plus_one || out < -max_plus_one;
+                if constexpr (!finite_multiplier)
+                    overflow = overflow || !isFinite(out);
+
+                if constexpr (has_nullmap)
                 {
-                    if (!isFinite(from[i]))
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                            "{} convert overflow. Cannot convert infinity or NaN to decimal",
-                            ToDataType::family_name);
-                    else
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                            "{} convert overflow. Float is out of Decimal range",
-                            ToDataType::family_name);
+                    nullmap_ptr[i] = overflow;
+                    to_ptr[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(out);
                 }
-                to[i] = static_cast<ToNativeType>(out);
+                else
+                {
+                    if (overflow) [[unlikely]]
+                    {
+                        if (!isFinite(from_ptr[i]))
+                            throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                                "{} convert overflow. Cannot convert infinity or NaN to decimal",
+                                ToDataType::family_name);
+                        else
+                            throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                                "{} convert overflow. Float is out of Decimal range",
+                                ToDataType::family_name);
+                    }
+                    to_ptr[i] = static_cast<ToNativeType>(out);
+                }
             }
+        };
+
+        if (isFinite(multiplier)) [[likely]]
+        {
+            if (round)
+                convert.template operator()<true, true>(from, to, nullmap);
+            else
+                convert.template operator()<false, true>(from, to, nullmap);
+        }
+        else
+        {
+            if (round)
+                convert.template operator()<true, false>(from, to, nullmap);
+            else
+                convert.template operator()<false, false>(from, to, nullmap);
         }
     }
     else
