@@ -78,14 +78,15 @@ struct TopKFilterInfo
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
-/// One primary-key-range layer of a distributed parallel FINAL read: the marks to read, the borders of
-/// the layer's partition span, and the layer's index among them. The worker reads the marks in order,
-/// trims to the interval (borders[index-1], borders[index]] and merge-dedups it. When FINAL does not
-/// merge across partitions each layer stays within one partition, so the borders are that partition's;
-/// otherwise all parts form one span and every layer carries the same global borders.
-struct DistributedFinalLayer
+/// One bucket of a distributed leaf read: the marks this worker reads. `needs_merge` distinguishes a
+/// FINAL intersecting layer -- read in order, trimmed to the interval (borders[index-1], borders[index]]
+/// and merge-deduplicated -- from a plain or non-intersecting read that needs no merge. For a merge layer
+/// the borders are its partition span's (one span per partition when FINAL does not merge across
+/// partitions, otherwise all parts form one span); otherwise the borders are unused.
+struct DistributedReadBucket
 {
     RangesInDataPartsDescription marks;
+    bool needs_merge = false;
     std::vector<std::vector<Field>> borders;
     size_t index = 0;
 };
@@ -600,11 +601,11 @@ private:
     size_t distributed_read_bucket_count = 0;
     /// Coordinator-selected parts a distributed-read worker buckets over. Empty otherwise.
     Names distributed_read_part_names;
-    /// Per-bucket PK-range layers for a parallel FINAL read. On the initiator (producer) this holds every
-    /// layer; each is serialized into the `final_layer` task parameter (not into the shared step). On a
-    /// worker it stays empty; the worker fills `distributed_read_borders` / `distributed_read_layer_index`
-    /// from its own `final_layer` parameter and reads that single layer's marks.
-    std::vector<DistributedFinalLayer> distributed_read_final_layers;
+    /// Per-bucket marks for a distributed read. On the initiator (producer) this holds every bucket; each
+    /// is serialized into the `final_layer` task parameter (not into the shared step). On a worker it
+    /// stays empty; the worker fills `distributed_read_borders` / `distributed_read_layer_index` from its
+    /// own `final_layer` parameter and reads that single bucket's marks.
+    std::vector<DistributedReadBucket> distributed_read_buckets;
     std::vector<std::vector<Field>> distributed_read_borders;
     size_t distributed_read_layer_index = 0;
     /// True on a worker handling a layered FINAL read (set from the serialized flag); the layer arrives

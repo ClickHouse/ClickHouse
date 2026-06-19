@@ -4788,7 +4788,7 @@ size_t ReadFromMergeTree::setupDistributedFinalLayers(size_t max_layers, size_t 
     /// Split each span into PK-range layers, giving it a share of the layer budget proportional to its
     /// marks (at least one layer per span). Each layer keeps its span's borders and its index among them
     /// so the worker can rebuild the trimming filter for its interval.
-    std::vector<DistributedFinalLayer> final_layers;
+    std::vector<DistributedReadBucket> final_layers;
     for (auto & span : spans)
     {
         const size_t span_marks = span.getMarksCountAllParts();
@@ -4796,7 +4796,7 @@ size_t ReadFromMergeTree::setupDistributedFinalLayers(size_t max_layers, size_t 
         auto split = splitIntersectingPartsRangesIntoLayers(
             std::move(span), span_max_layers, primary_key.column_names.size(), *in_reverse_order, log);
         for (size_t i = 0; i < split.layers.size(); ++i)
-            final_layers.push_back({split.layers[i].getDescriptions(), split.borders, i});
+            final_layers.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
     }
 
     /// A single layer has nothing to parallelize and carries no borders to trim by. A per-partition split
@@ -4806,21 +4806,21 @@ size_t ReadFromMergeTree::setupDistributedFinalLayers(size_t max_layers, size_t 
         return 0;
 
     setDistributedRead(final_layers.size());
-    distributed_read_final_layers = std::move(final_layers);
-    return distributed_read_final_layers.size();
+    distributed_read_buckets = std::move(final_layers);
+    return distributed_read_buckets.size();
 }
 
 std::vector<String> ReadFromMergeTree::serializeDistributedFinalLayers() const
 {
     std::vector<String> result;
-    if (distributed_read_final_layers.empty())
+    if (distributed_read_buckets.empty())
         return result;
 
     const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
     DB::FormatSettings format_settings;
 
-    result.reserve(distributed_read_final_layers.size());
-    for (const auto & layer : distributed_read_final_layers)
+    result.reserve(distributed_read_buckets.size());
+    for (const auto & layer : distributed_read_buckets)
     {
         WriteBufferFromOwnString buf;
         layer.marks.serialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
@@ -4932,7 +4932,7 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         /// A parallel FINAL read carries its per-bucket PK-range layers as the `final_layer` task
         /// parameter (set during fan-out), so the shared step holds no per-bucket data; a mark-offset
         /// read pins the coordinator-selected parts so all workers bucket over the same ordered list.
-        const bool layered = !distributed_read_final_layers.empty();
+        const bool layered = !distributed_read_buckets.empty();
         writeBinary(layered, ctx.out);
 
         if (!layered)
