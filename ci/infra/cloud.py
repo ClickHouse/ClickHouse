@@ -45,7 +45,7 @@ CLOUD = CloudInfrastructure.Config(
             ],
             instance_type="mac2-m2pro.metal",
             auto_placement="on",
-            quantity_per_az=3,
+            quantity_per_az=6,
             praktika_resource_tag="mac_m2_pro",
         ),
     ],
