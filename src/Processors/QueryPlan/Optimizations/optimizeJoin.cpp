@@ -266,14 +266,16 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     std::optional<Float64> total_number_of_distinct_values = 1;
+    bool all_group_key_ndvs_known = true;
     RelationStats aggregation_stats;
     for (const auto & key : aggregator_params.keys)
     {
         auto key_stats = input_stats.column_stats.find(key);
-        if (key_stats == input_stats.column_stats.end())
+        if (key_stats == input_stats.column_stats.end() || key_stats->second.num_distinct_values == 0)
         {
             /// Cannot calculate total number of groups if we don't know NDV of any of the aggregation columns
             total_number_of_distinct_values.reset();
+            all_group_key_ndvs_known = false;
             continue;
         }
 
@@ -295,6 +297,11 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
         total_number_of_distinct_values = input_stats.estimated_rows;
 
     aggregation_stats.estimated_rows = total_number_of_distinct_values;
+    /// Only stay trusted when every grouping-key NDV came from real column statistics
+    /// and the input row count itself was trusted. Otherwise the aggregate cardinality
+    /// is partially fabricated (the fallback uses `input_stats.estimated_rows` instead
+    /// of a product of NDVs) and must not cross the trust boundary upstream.
+    aggregation_stats.rows_estimate_trusted = input_stats.rows_estimate_trusted && all_group_key_ndvs_known;
 
     return aggregation_stats;
 }
@@ -316,7 +323,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
-                RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
+                RelationStats stats {
+                    .estimated_rows = relation_profile.rows,
+                    .column_stats = relation_profile.column_stats,
+                    .rows_estimate_trusted = true,
+                    .table_name = table_display_name};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
             }
@@ -358,7 +369,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (has_filter && !is_filtered_by_index)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
-        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
+        return RelationStats{
+            .estimated_rows = analyzed_result->selected_rows,
+            .rows_estimate_trusted = true,
+            .table_name = table_display_name};
     }
 
     if (typeid_cast<const ReadFromObjectStorageStep *>(step))
@@ -368,12 +382,33 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
+        return RelationStats{
+            .estimated_rows = estimated_rows,
+            .rows_estimate_trusted = true,
+            .table_name = table_display_name};
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
         return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
+    }
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    {
+        /// Use the trusted accessor so a fabricated inner estimate cannot mislead
+        /// the outer DP; EXPLAIN keeps reading the raw value.
+        ///
+        /// A parent `FilterStep` predicate is passed down via `filter`, but it is not
+        /// estimated against the join output here. Mirroring the `ReadFromMergeTree`
+        /// branch above (which returns an unknown estimate for an unmodeled filter),
+        /// an unmodeled post-join filter makes the propagated row count and column
+        /// stats untrustworthy for the outer scope, so demote the estimate.
+        bool trusted = join_step->isResultRowsEstimateTrusted() && !filter;
+        return RelationStats{
+            .estimated_rows = trusted ? join_step->getTrustedResultRowsEstimation() : std::optional<UInt64>{},
+            .column_stats = trusted ? join_step->getResultColumnStats() : std::unordered_map<String, ColumnStats>{},
+            .rows_estimate_trusted = trusted,
+            .table_name = join_step->getReadableRelationName()};
     }
 
     if (node.children.size() != 1)
@@ -409,14 +444,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
-    }
-
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
-    {
-        return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = join_step->getResultColumnStats(),
-            .table_name = join_step->getReadableRelationName()};
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
@@ -714,7 +741,12 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
-        stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
+    {
+        /// Cache value is post-runtime-filter `source_rows`; demote trust instead of clamping
+        /// `estimated_rows`, otherwise warm runs can flip the DP ordering vs the cold run.
+        if (num_rows_from_cache.value() < stats.estimated_rows.value_or(MAX_ROWS))
+            stats.rows_estimate_trusted = false;
+    }
 
     if (!label.empty())
         stats.table_name = label;
@@ -1107,9 +1139,15 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             auto lhs_estimation = entry->left->estimated_rows;
             auto rhs_estimation = entry->right->estimated_rows;
 
+            /// Only trust the DP cardinalities when both sides were estimated
+            /// from real stats. An untrusted "small" side is usually much larger
+            /// in reality and would build a huge hash table.
+            bool sides_trustworthy = entry->left->rows_estimate_trusted && entry->right->rows_estimate_trusted;
+
             bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
                 ? optimization_settings.join_swap_table.value()
                 : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
+                    && sides_trustworthy
                     && lhs_estimation.value() < rhs_estimation.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
@@ -1286,7 +1324,23 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
             relation_names[entry->relations] = join_step->getReadableRelationName();
 
-            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats);
+            /// The DP cardinality formula in `estimateJoinCardinality` models `ALL`-join
+            /// semantics (`selectivity * lhs * rhs`); it does not account for join strictness.
+            /// For `ANY` / `SEMI` / `ANTI` joins the real output is bounded differently
+            /// (e.g. `SEMI` / `ANTI` output is a subset of the left side, `ANY` deduplicates
+            /// matches), so the estimate is not representative of the actual cardinality and
+            /// must not cross the trust boundary to upstream optimizers even when every NDV
+            /// along the DP path was known. Demote trust for non-`ALL` strictness here, at the
+            /// point where the real strictness becomes known.
+            bool exposed_trust = entry->rows_estimate_trusted && join_strictness == JoinStrictness::All;
+            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats, exposed_trust);
+
+            LOG_TRACE(getLogger("optimizeJoin"),
+                "Join {} cardinality: {} (trust={}) -> exposed to upstream as {}",
+                join_step->getReadableRelationName(),
+                entry->estimated_rows ? toString(*entry->estimated_rows) : "unknown",
+                exposed_trust,
+                join_step->getTrustedResultRowsEstimation() ? toString(*join_step->getTrustedResultRowsEstimation()) : "unknown");
 
             auto & new_node = nodes.emplace_back();
 

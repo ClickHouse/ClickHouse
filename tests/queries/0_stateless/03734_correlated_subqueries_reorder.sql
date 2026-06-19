@@ -1,3 +1,5 @@
+-- Tags: long
+
 SET enable_analyzer = 1;
 
 SET query_plan_optimize_join_order_limit = 10;
@@ -15,6 +17,8 @@ SET query_plan_convert_any_join_to_semi_or_anti_join = 0; -- SEMI/ANTI join orde
 SET query_plan_convert_outer_join_to_inner_join = 1; -- CI may inject False; correlated subquery produces RIGHT ANY which is normally converted to INNER ALL; without it RIGHT ANY stays in the plan
 SET query_plan_merge_filter_into_join_condition = 1; -- CI may inject False; correlated subquery equality condition not pushed into join ON clause; join stays CROSS with Filter above instead of INNER
 SET query_plan_remove_unused_columns = 1; -- CI may inject False; unused columns not pruned → extra INPUT entries and wider Positions lists in EXPLAIN actions output
+
+SET materialize_statistics_on_insert = 1;
 
 CREATE TABLE lineitem (
     l_orderkey       Int32,
