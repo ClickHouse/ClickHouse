@@ -67,19 +67,22 @@ SELECT '-- MVTEncode: a FixedString property trims its trailing NUL padding (mat
 SELECT MVTEncode('t')((0.0, 0.0)::Point::Geometry, tuple(toFixedString('ab', 4))::Tuple(c1 FixedString(4)))
      = MVTEncode('t')((0.0, 0.0)::Point::Geometry, tuple('ab')::Tuple(c1 String));
 
-SELECT '-- MVTEncode: feature_id_name emits the named integer element as the Feature id and drops it from the tags';
-SELECT MVTEncode('t', 4096, 'fid')((0.0, 0.0)::Point::Geometry, tuple(toUInt64(0), 'x')::Tuple(fid UInt64, name String))
-    != MVTEncode('t')((0.0, 0.0)::Point::Geometry, tuple('x')::Tuple(name String));
-SELECT MVTEncode('t', 4096, 'fid')((0.0, 0.0)::Point::Geometry, tuple(CAST(NULL, 'Nullable(UInt64)'), 'x')::Tuple(fid Nullable(UInt64), name String))
-     = MVTEncode('t')((0.0, 0.0)::Point::Geometry, tuple('x')::Tuple(name String));
+SELECT '-- MVTEncode: feature_id_name emits the named element as the Feature id and drops it from the tags';
+-- One point feature: Feature.id = 42, geometry Point(0, 0), single tag name = 'x' (the id element 'fid' is not a key).
+SELECT hex(MVTEncode('t', 4096, 'fid')((0.0, 0.0)::Point::Geometry, tuple(toUInt64(42), 'x')::Tuple(fid UInt64, name String)));
 
-SELECT '-- MVTEncode: feature_id_name must name an existing integer element';
+SELECT '-- MVTEncode: a NULL feature id is omitted, encoding identically to declaring no id';
+-- Same feature with no Feature.id field: geometry Point(0, 0), single tag name = 'x'.
+SELECT hex(MVTEncode('t', 4096, 'fid')((0.0, 0.0)::Point::Geometry, tuple(CAST(NULL, 'Nullable(UInt64)'), 'x')::Tuple(fid Nullable(UInt64), name String)));
+
+SELECT '-- MVTEncode: feature_id_name must name an existing unsigned-integer element (signed integers are rejected)';
 SELECT MVTEncode('t', 4096, 'missing')((0.0, 0.0)::Point::Geometry, tuple(toUInt64(1))::Tuple(fid UInt64)); -- { serverError BAD_ARGUMENTS }
 SELECT MVTEncode('t', 4096, 'fid')((0.0, 0.0)::Point::Geometry, tuple('s')::Tuple(fid String)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT MVTEncode('t', 4096, 'fid')((0.0, 0.0)::Point::Geometry, tuple(toInt64(1))::Tuple(fid Int64)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT '-- MVTEncode: stringify_unsupported encodes otherwise-unsupported types (e.g. Int128) as their text value';
-SELECT MVTEncode('t', 4096, '', 1)((0.0, 0.0)::Point::Geometry, tuple(toInt128('170141183460469231731687303715884105727'))::Tuple(big Int128))
-     = MVTEncode('t')((0.0, 0.0)::Point::Geometry, tuple('170141183460469231731687303715884105727')::Tuple(big String));
+SELECT '-- MVTEncode: stringify_unsupported encodes otherwise-unsupported types (e.g. Int128) as their decimal text value';
+-- One point feature: single tag big = the Int128 value as a string_value.
+SELECT hex(MVTEncode('t', 4096, '', 1)((0.0, 0.0)::Point::Geometry, tuple(toInt128('170141183460469231731687303715884105727'))::Tuple(big Int128)));
 SELECT MVTEncode('t')((0.0, 0.0)::Point::Geometry, tuple(toInt128(1))::Tuple(big Int128)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- MVTEncode: a sub-pixel line whose vertices round to one point is dropped (no zero-delta command)';

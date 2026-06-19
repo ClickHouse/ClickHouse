@@ -36,12 +36,13 @@ Geometry
 1
 -- MVTEncode: a FixedString property trims its trailing NUL padding (matches the String value)
 1
--- MVTEncode: feature_id_name emits the named integer element as the Feature id and drops it from the tags
-1
-1
--- MVTEncode: feature_id_name must name an existing integer element
--- MVTEncode: stringify_unsupported encodes otherwise-unsupported types (e.g. Int128) as their text value
-1
+-- MVTEncode: feature_id_name emits the named element as the Feature id and drops it from the tags
+1A2278020A0174120D082A18011202000022030900001A046E616D6522030A0178288020
+-- MVTEncode: a NULL feature id is omitted, encoding identically to declaring no id
+1A2078020A0174120B18011202000022030900001A046E616D6522030A0178288020
+-- MVTEncode: feature_id_name must name an existing unsigned-integer element (signed integers are rejected)
+-- MVTEncode: stringify_unsupported encodes otherwise-unsupported types (e.g. Int128) as their decimal text value
+1A4578020A0174120B18011202000022030900001A0362696722290A27313730313431313833343630343639323331373331363837333033373135383834313035373237288020
 -- MVTEncode: a sub-pixel line whose vertices round to one point is dropped (no zero-delta command)
 0
 -- MVTEncode: adjacent duplicate vertices are pruned, but a line with two distinct vertices still encodes
