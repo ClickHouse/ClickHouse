@@ -183,25 +183,29 @@ Settings:
 - `description` — Prints step description. Default: 1.
 - `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. Starting from ClickHouse >= v25.9, this statement only shows reasonable output when used with `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
 - `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-- `actions` — Prints detailed information about step actions. Default: 0. (see the note below).
+- `actions` — Prints detailed information about step actions. Default: 1.
 - `sorting` — Prints the sort description for each plan step that produces sorted output. Default: 0.
 - `keep_logical_steps` — Keeps logical plan steps for joins instead of converting them to physical join implementations. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
 - `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
-- `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Not supported together with `json` or `graph`. Default: 0.
-- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 0(see the note below).
-- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 0 (see the note below).
+- `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Not supported together with `json`. Default: 0.
+- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1.
+- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
 
 :::note
-Starting from ClickHouse 26.6, the setting `explain_query_plan_default` is `pretty` by default. When it is `pretty`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Specifying these options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides this.
+By default, `explain_query_plan_default = 'pretty'`, so `actions`, `compact`, and `pretty` are initialized to `1` and the plan is rendered in the compact, pretty, action-annotated form. Specifying any of these options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides the default.
 
-To restore the pre-26.6 verbose output, either run `SET explain_query_plan_default = 'legacy'` (or pass it in per-query `SETTINGS`), or set the `compatibility` setting to any version older than `26.6`.
+Prior to ClickHouse 26.6 the defaults for `actions`, `compact`, and `pretty` were `0`. You can still get that output by setting `explain_query_plan_default = 'legacy'` (globally or in per-query `SETTINGS`), or by setting `compatibility` to any version older than `26.6`.
 
-The `json` and `distributed` options do not enable the `pretty` defaults (`actions`, `compact`, and `pretty`), even when `explain_query_plan_default = 'pretty'`. So, to include action details in their output, you need to set `actions = 1` manually.
+The combinations of these options control how much detail is shown:
+- `actions = 1, pretty = 0` — shows the internal (machine) names of tables and expressions, and conveys the parent-child relation between steps through indentation instead of line-drawing characters.
+- `actions = 1, compact = 0` — shows the full plan with all expression steps and detailed action info (inputs, functions, aliases, and output positions).
+- `actions = 0` — shows only step descriptions; in this case `compact` has no effect, and `pretty` only switches between line-drawing characters and indentation.
+
+The `json` and `distributed` options do not enable the `pretty` defaults (`actions`, `compact`, and `pretty`), even when `explain_query_plan_default = 'pretty'`. To include action details in their output, set `actions = 1` manually.
 :::
 
-When `json=1` step names will contain an additional suffix with unique step identifier.
 
 Example:
 
@@ -227,7 +231,7 @@ Limit (preliminary LIMIT)
 Step and query cost estimation is not supported.
 :::
 
-When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type` and `Plans`. `Node Type` is a string with a step name. `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings.
+When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type`, `Node Id`, and `Plans`. `Node Type` is a string with the step name, and `Node Id` is a unique step identifier (the step name with a numeric suffix, e.g. `Union_10`). `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings.
 
 Example:
 
