@@ -789,7 +789,7 @@ template <typename TColumns>
 size_t getEqualRangeEndAssumeSorted(const TColumns & columns, size_t begin, size_t end, int nan_direction_hint)
 {
     return detail::equalRangeEndAcrossColumns(
-        columns.size(), begin, end, [&](size_t i) { return columns[i]; }, [&](size_t) { return nan_direction_hint; });
+        columns.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[i]; }, [&](size_t) { return nan_direction_hint; });
 }
 
 /** Same as above, but the key columns are selected from `columns` by `positions` (`columns[positions[k]]` is
@@ -800,7 +800,7 @@ size_t getEqualRangeEndAssumeSorted(
     const TColumns & columns, const std::vector<size_t> & positions, size_t begin, size_t end, int nan_direction_hint)
 {
     return detail::equalRangeEndAcrossColumns(
-        positions.size(), begin, end, [&](size_t i) { return columns[positions[i]]; }, [&](size_t) { return nan_direction_hint; });
+        positions.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[positions[i]]; }, [&](size_t) { return nan_direction_hint; });
 }
 
 /** Same as above, but sort description aware.
@@ -810,6 +810,6 @@ requires requires (const TSortDescription & d) { d.size(); d[0].nulls_direction;
 size_t getEqualRangeEndAssumeSorted(const TColumns & columns, const TSortDescription & descr, size_t begin, size_t end)
 {
     return detail::equalRangeEndAcrossColumns(
-        descr.size(), begin, end, [&](size_t i) { return columns[i]; }, [&](size_t i) { return descr[i].nulls_direction; });
+        descr.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[i]; }, [&](size_t i) { return descr[i].nulls_direction; });
 }
 }
