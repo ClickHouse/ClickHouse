@@ -15,6 +15,8 @@
 #include <Common/thread_local_rng.h>
 #include <csignal>
 
+#include "config.h"
+
 
 namespace CurrentMetrics
 {
@@ -63,7 +65,10 @@ namespace
 #if defined(OS_LINUX)
         if (info)
         {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
             const int overrun_count = info->si_overrun;
+#pragma clang diagnostic pop
 
             /// Quickly drop if signal handler is called too frequently.
             /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
@@ -86,17 +91,17 @@ namespace
         UNUSED(info);
 #endif
 
-        const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         std::optional<StackTrace> stack_trace;
 
-#if defined(SANITIZER)
-        constexpr bool sanitizer = true;
+#if defined(THREAD_SANITIZER)
+        /// Under TSan, use abseil's frame-pointer-based unwinding (via the default
+        /// StackTrace constructor) instead of the ucontext_t constructor which uses libunwind.
+        UNUSED(context);
+        stack_trace.emplace();
 #else
-        constexpr bool sanitizer = false;
-#endif
-
+        const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         asynchronous_stack_unwinding = true;
-        if (sanitizer || 0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
+        if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
         {
             stack_trace.emplace(signal_context);
         }
@@ -105,6 +110,7 @@ namespace
             ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerErrors);
         }
         asynchronous_stack_unwinding = false;
+#endif
 
         if (stack_trace)
             TraceSender::send(trace_type, *stack_trace, {});
@@ -141,11 +147,14 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 #if defined(OS_FREEBSD)
         sev._sigev_un._threadid = static_cast<pid_t>(thread_id);
 #elif defined(USE_MUSL)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         sev.sigev_notify_thread_id = static_cast<pid_t>(thread_id);
+#pragma clang diagnostic pop
 #else
         sev._sigev_un._tid = static_cast<pid_t>(thread_id);
 #endif
-        timer_t local_timer_id;
+        timer_t local_timer_id = nullptr;
         if (timer_create(clock_type, &sev, &local_timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
@@ -235,13 +244,20 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     [[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt64 period, [[maybe_unused]] int pause_signal_)
     : log(getLogger("QueryProfiler")), pause_signal(pause_signal_)
 {
-#if defined(SANITIZER)
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
-#elif defined(SIGEV_THREAD_ID)
-    /// Sanity check.
+#if defined(SIGEV_THREAD_ID)
+    /// Under TSan we use frame-pointer-based unwinding (via abseil) which does not
+    /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed for
+    /// stack capture. Symbolization happens later in a normal thread context.
+#if !defined(THREAD_SANITIZER)
     if (!hasPHDRCache())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache in this build");
+#endif
 
+    /// `sigaction` is `#define sigaction __sigaction` on some platforms, and
+    /// `sigemptyset` / `sigaddset` are similarly macro-defined in <signal.h>,
+    /// so all three trigger `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     struct sigaction sa{};
     sa.sa_sigaction = ProfilerImpl::signalHandler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
@@ -251,6 +267,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
 
     if (sigaddset(&sa.sa_mask, pause_signal))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for query profiler");
+#pragma clang diagnostic pop
 
     if (sigaction(pause_signal, &sa, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for query profiler");
@@ -275,9 +292,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt64 period_)
 {
-#if defined(SANITIZER)
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
-#elif defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID)
     timer.set(period_);
 #else
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler requires SIGEV_THREAD_ID");

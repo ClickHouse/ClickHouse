@@ -34,6 +34,7 @@ class ConditionSelectivityEstimator : public WithContext
 {
     struct ColumnEstimator;
     using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
+
     /// Selectivity of a SQL boolean predicate under three-valued logic (TRUE / NULL / FALSE).
     /// `true_sel` is the fraction of rows where the predicate is TRUE (the usual "selectivity").
     /// `null_sel` is the fraction of rows where the predicate is NULL (input column is NULL).
@@ -50,7 +51,6 @@ class ConditionSelectivityEstimator : public WithContext
         Selectivity applyOr(const Selectivity & other) const;
         Selectivity applyAnd(const Selectivity & other) const;
     };
-
 
     friend class ConditionSelectivityEstimatorBuilder;
 public:
