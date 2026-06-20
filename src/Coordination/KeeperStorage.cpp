@@ -1392,7 +1392,7 @@ void handleSystemNodeModification(const KeeperContext & keeper_context, std::str
 
 }
 
-bool KeeperStorage::checkACL(ACLId acl_id, int32_t permission, int64_t session_id, bool committed)
+bool KeeperStorage::checkACL(ACLId acl_id, int32_t permission, int64_t session_id, bool committed) const
 {
     if (acl_id == 0)
         return true;
@@ -1510,7 +1510,7 @@ static Coordination::Error preprocess(
 {
     auto parent_path = Coordination::parentNodePath(zk_request.path);
     auto parent_node_ref = storage.uncommitted_state.getNode(parent_path);
-    auto parent_node = parent_node_ref.get();
+    const auto * parent_node = parent_node_ref.get();
     if (parent_node == nullptr)
         return Coordination::Error::ZNONODE;
 
@@ -1572,8 +1572,7 @@ static Coordination::Error preprocess(
     else if (parent_cversion > new_parent_stats.cversion)
         new_parent_stats.cversion = parent_cversion;
 
-    if (storage.staging_zxid > new_parent_stats.pzxid)
-        new_parent_stats.pzxid = storage.staging_zxid;
+    new_parent_stats.pzxid = std::max(storage.staging_zxid, new_parent_stats.pzxid);
 
     int32_t new_parent_num_children = parent_node->num_children + 1;
 
@@ -1720,7 +1719,7 @@ static Coordination::Error preprocess(
 
     auto parent_path = Coordination::parentNodePath(zk_request.path);
     auto parent_node_ref = storage.uncommitted_state.getNode(parent_path);
-    auto parent_node = parent_node_ref.get();
+    const auto * parent_node = parent_node_ref.get();
 
     if (!parent_node)
         return zk_request.try_remove ? Coordination::Error::ZOK : Coordination::Error::ZNONODE;
@@ -1735,7 +1734,7 @@ static Coordination::Error preprocess(
         new_parent_stats.pzxid = storage.staging_zxid;
 
     auto node_ref = storage.uncommitted_state.getNode(zk_request.path);
-    auto node = node_ref.get();
+    const auto * node = node_ref.get();
 
     if (!node)
     {
@@ -2014,7 +2013,7 @@ static Coordination::Error preprocess(
 
     auto parent_path = Coordination::parentNodePath(zk_request.path);
     auto parent_node_ref = storage.uncommitted_state.getNode(parent_path);
-    auto parent_node = parent_node_ref.get();
+    const auto * parent_node = parent_node_ref.get();
 
     if (!parent_node)
         return Coordination::Error::ZOK;
@@ -2026,7 +2025,7 @@ static Coordination::Error preprocess(
     int32_t new_parent_num_children = parent_node->num_children;
 
     auto node_ref = storage.uncommitted_state.getNode(zk_request.path);
-    auto node = node_ref.get();
+    const auto * node = node_ref.get();
 
     if (!node)
         return Coordination::Error::ZOK;
@@ -2190,7 +2189,7 @@ static Coordination::Error preprocess(
     }
 
     auto node_ref = storage.uncommitted_state.getNode(zk_request.path);
-    auto node = node_ref.get();
+    const auto * node = node_ref.get();
 
     if (!node)
         return Coordination::Error::ZNONODE;
@@ -2210,7 +2209,7 @@ static Coordination::Error preprocess(
 
     auto parent_path = Coordination::parentNodePath(zk_request.path);
     auto parent_node_ref = storage.uncommitted_state.getNode(parent_path);
-    auto parent_node = parent_node_ref.get();
+    const auto * parent_node = parent_node_ref.get();
     NodeStats new_parent_stats = parent_node->stats;
     ++new_parent_stats.cversion;
     storage.prepareUpdateNodeStat(parent_path, parent_node_ref, new_parent_stats, parent_node->num_children);
@@ -2420,7 +2419,7 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, KeeperStorag
         return &node_it->value.getChildren();
     };
 
-    const auto children = get_children();
+    const auto * const children = get_children();
     response->names.reserve(children->size());
 
     /// Reserve space for optional fields if requested
@@ -2542,7 +2541,7 @@ Coordination::Error preprocess(
     const KeeperContext & /*keeper_context*/)
 {
     auto node_ref = storage.uncommitted_state.getNode(zk_request.path);
-    auto node = node_ref.get();
+    const auto * node = node_ref.get();
 
     /// Make sure to not leak `version` or `stats` information without Read permission.
     /// Revealing the existence of znode is ok; zookeeper already exposes it without permissions,
@@ -2712,7 +2711,7 @@ static Coordination::Error preprocess(
 
     auto & uncommitted_state = storage.uncommitted_state;
     auto node_ref = uncommitted_state.getNode(zk_request.path);
-    auto node = node_ref.get();
+    const auto * node = node_ref.get();
     if (!node)
         return Coordination::Error::ZNONODE;
 
@@ -3410,14 +3409,14 @@ KeeperResponsesForSessions KeeperStorage::processLocalRequests(
 
         /// Workaround for historical nonsense: KeeperResponseForSession.response is ZooKeeperResponsePtr,
         /// but MultiResponse.responses[i] is ResponsePtr. They're compatible but slightly different types.
-        void setResponse(Coordination::ZooKeeperResponsePtr r)
+        void setResponse(Coordination::ZooKeeperResponsePtr r) const
         {
             if (is_base_response_type)
                 *static_cast<Coordination::ResponsePtr *>(response) = std::move(r);
             else
                 *static_cast<Coordination::ZooKeeperResponsePtr *>(response) = std::move(r);
         }
-        const Coordination::Response * getResponse()
+        const Coordination::Response * getResponse() const
         {
             if (is_base_response_type)
                 return static_cast<Coordination::ResponsePtr *>(response)->get();
@@ -4243,7 +4242,7 @@ void KeeperStorage::prepareRemoveEphemeralNodes(const std::unordered_set<std::st
     for (const auto & ephemeral_path : paths)
     {
         auto node = uncommitted_state.getNode(ephemeral_path);
-        auto node_ptr = node.get();
+        const auto * node_ptr = node.get();
 
         /// maybe the node is deleted or recreated with different session_id in the uncommitted state
         if (!node_ptr || node_ptr->stats.ephemeralOwner() != session_id)

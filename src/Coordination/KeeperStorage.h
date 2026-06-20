@@ -556,7 +556,7 @@ public:
 
     /// Used internally by `preprocess` and `processLocal` implementations.
     /// They usually have acl_id readily available, so we don't have to look up the node here.
-    bool checkACL(ACLId acl_id, int32_t permissions, int64_t session_id, bool committed);
+    bool checkACL(ACLId acl_id, int32_t permissions, int64_t session_id, bool committed) const;
 
     /// Used externally. Locks storage mutex and looks up the node.
     bool checkCommittedACL(std::string_view path, int32_t permissions, int64_t session_id);
