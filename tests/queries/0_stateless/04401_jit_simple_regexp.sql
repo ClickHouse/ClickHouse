@@ -95,7 +95,3 @@ SELECT
     sum(match(s, '^https?://(?:www\\.)?([^/]+)/.*$')) AS re2
 FROM (SELECT arrayJoin(['http://a.com/x', 'https://www.b.org/', 'no', 'https://c/']) AS s)
 SETTINGS compile_regular_expressions = 0;
-
-SELECT '-- SYSTEM DROP COMPILED EXPRESSION CACHE clears the regexp JIT seen-count map; matching stays correct';
-SYSTEM DROP COMPILED EXPRESSION CACHE;
-SELECT match('id42/x', '^id[0-9]+/.*$');

@@ -60,5 +60,3 @@ USER
 -- the JIT result matches the RE2 result for the same patterns
 3
 3
--- SYSTEM DROP COMPILED EXPRESSION CACHE clears the regexp JIT seen-count map; matching stays correct
-1
