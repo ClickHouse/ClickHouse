@@ -17,9 +17,9 @@ import kafka.errors
 from kafka.protocol.admin import DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
 
-from helpers.client import QueryRuntimeException
-from helpers.kafka import kafka_pb2, oneof_transaction_pb2, social_pb2
-from helpers.test_tools import TSV
+from ..client import QueryRuntimeException
+from . import kafka_pb2, oneof_transaction_pb2, social_pb2
+from ..test_tools import TSV
 from google.protobuf.internal.encoder import _VarintBytes
 
 
