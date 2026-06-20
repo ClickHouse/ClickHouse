@@ -17,7 +17,11 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-Reads a [GeoJSON](https://geojson.org/) `FeatureCollection` document and produces one row per feature. Each row has the following fixed schema:
+[GeoJSON](https://geojson.org/) data is exchanged as a single [`FeatureCollection`](https://datatracker.ietf.org/doc/html/rfc7946#section-3.3) document, which ClickHouse maps to three columns — `id`, `geometry`, and `properties` — one set per `Feature`. [Reading](#reading-data) a document produces one row per feature; [writing](#writing-data) produces one feature per row.
+
+## Reading data {#reading-data}
+
+Reading a `FeatureCollection` produces one row per feature with the following fixed schema:
 
 | Column       | Type     | Description                                                                                 |
 |--------------|----------|---------------------------------------------------------------------------------------------|
@@ -34,8 +38,6 @@ Other keys in the `FeatureCollection` object (such as `name` or `crs`) and other
 Key ordering is flexible: the top-level `type` may appear before or after the `features` array, and within a geometry object `coordinates` may appear before or after `type`.
 
 Schema inference returns the fixed schema above, so `DESCRIBE` and `SELECT ... FROM format(...)` work without a table definition.
-
-## Example usage {#example-usage}
 
 Given the following GeoJSON file `london.geojson` containing a mix of geometry types:
 
@@ -204,7 +206,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 └────────────┴──────────────────┘
 ```
 
-## Handling unsupported geometry types {#unsupported-geometry}
+### Handling unsupported geometry types {#unsupported-geometry}
 
 Some valid GeoJSON geometry types &mdash; such as `GeometryCollection` and `MultiPoint` &mdash; can't be represented by ClickHouse's `Geometry` type. You can control what happens when such a geometry must be stored in the `geometry` column using the `input_format_geojson_unsupported_geometry_handling` setting. Possible values are:
 
@@ -213,9 +215,9 @@ Some valid GeoJSON geometry types &mdash; such as `GeometryCollection` and `Mult
 
 This handling applies only when the `geometry` column is read. When `geometry` is not a requested output column (for example `SELECT id FROM ...`), an unsupported geometry is still validated for well-formedness but does not trigger the handling — it neither throws nor inserts `NULL`, because no geometry value is materialized.
 
-## Output {#output}
+## Writing data {#writing-data}
 
-The `GeoJSON` format also **writes** a result set as a single GeoJSON [`FeatureCollection`](https://datatracker.ietf.org/doc/html/rfc7946#section-3.3), producing one `Feature` per row.
+Writing a result set produces a single GeoJSON [`FeatureCollection`](https://datatracker.ietf.org/doc/html/rfc7946#section-3.3), one `Feature` per row.
 
 The columns of the result are mapped onto each `Feature` as follows:
 
@@ -240,9 +242,9 @@ The geometry-typed column may be the `Geometry` variant or a specific geo type; 
 
 `Ring` is not a GeoJSON geometry type — a [linear ring](https://datatracker.ietf.org/doc/html/rfc7946#section-3.1.6) is a component of a `Polygon` — so a `Ring` value is written as a single-ring `Polygon`.
 
-### Example usage {#output-example-usage}
+### Examples {#writing-examples}
 
-Continuing with the `london` table [created above](#example-usage), exporting plain attribute columns turns every column other than `id` and `geometry` into a property:
+Continuing with the `london` table [created above](#reading-data), exporting plain attribute columns turns every column other than `id` and `geometry` into a property:
 
 ```sql title="Query"
 SELECT id, geometry, name, feature_type
@@ -285,7 +287,7 @@ SELECT [(0., 0.), (10., 0.), (10., 10.), (0., 0.)]::Ring AS geometry FORMAT GeoJ
 {"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[0,0],[10,0],[10,10],[0,0]]]},"properties":{}}]}
 ```
 
-### Writing to a file {#output-writing-to-a-file}
+### Writing to a file {#writing-to-a-file}
 
 Use `INTO OUTFILE` to write a GeoJSON file from the client:
 
@@ -304,7 +306,7 @@ INSERT INTO FUNCTION file('london_export.geojson', GeoJSON)
 SELECT id, geometry, properties FROM london;
 ```
 
-### Limitations {#output-limitations}
+### Limitations {#writing-limitations}
 
 :::note
 ClickHouse's geo types carry no coordinate reference system, so the output assumes coordinates are already WGS84 longitude/latitude in `[longitude, latitude]` order, as [RFC 7946](https://datatracker.ietf.org/doc/html/rfc7946#section-4) requires. No reprojection or axis swap is performed, so projected coordinates — or data stored as `(latitude, longitude)` — produce structurally valid but non-conformant GeoJSON.
