@@ -311,14 +311,15 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    /// Probe subquery on a clone to resolve column names and detect correlation.
-    auto probe_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-    probe_subquery->setIsSubquery(true);
-    probe_subquery->getProjection().getNodes().push_back(std::make_shared<MatcherNode>());
-    probe_subquery->getJoinTree() = unique_subquery_argument->clone();
-    QueryTreeNodePtr probe_argument = probe_subquery;
+    /// Wrap the subquery as `SELECT * FROM (subquery)` and resolve it once.
+    /// This detects correlation and lets us address every projected column by position.
+    auto inner_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+    inner_subquery->setIsSubquery(true);
+    inner_subquery->getProjection().getNodes().push_back(std::make_shared<MatcherNode>());
+    inner_subquery->getJoinTree() = unique_subquery_argument;
+    QueryTreeNodePtr inner_argument = inner_subquery;
     resolveExpressionNode(
-        probe_argument,
+        inner_argument,
         scope,
         true /*allow_lambda_expression*/,
         true /*allow_table_expression*/,
@@ -326,12 +327,33 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         allow_niladic_functions
     );
 
-    if (probe_subquery->isCorrelated())
+    if (inner_subquery->isCorrelated())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Correlated subqueries are not supported for the UNIQUE predicate. In scope {}",
             scope.scope_node->formatASTForErrorMessage());
 
-    /// Build SELECT count() = uniqExact(*) FROM (subquery).
+    /// Rename every projected column to a unique synthetic name.
+    /// A subquery may expose duplicate column names (e.g. `SELECT t.x, s.x FROM t, s`),
+    /// and referencing them by name in the NULL filter below would bind several filters
+    /// to the same column. Renaming makes the filter address columns by position.
+    /// The matcher-expanded projection nodes keep their (position-correct) column sources,
+    /// so only the output names of the resolved subquery change.
+    auto & inner_projection_nodes = inner_subquery->getProjection().getNodes();
+    const auto inner_projection_columns = inner_subquery->getProjectionColumns();
+    NamesAndTypes renamed_projection_columns;
+    renamed_projection_columns.reserve(inner_projection_columns.size());
+    Names unique_column_names;
+    unique_column_names.reserve(inner_projection_columns.size());
+    for (size_t i = 0; i < inner_projection_columns.size(); ++i)
+    {
+        auto unique_name = "__unique_predicate_column_" + std::to_string(i);
+        inner_projection_nodes[i]->setAlias(unique_name);
+        renamed_projection_columns.emplace_back(unique_name, inner_projection_columns[i].type);
+        unique_column_names.push_back(std::move(unique_name));
+    }
+    inner_subquery->resolveProjectionColumns(std::move(renamed_projection_columns));
+
+    /// Build `SELECT count() = uniqExact(*) FROM (subquery) WHERE isNotNull(c1) AND ...`.
     auto new_unique_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
     new_unique_subquery->setIsSubquery(true);
     auto count_function = std::make_shared<FunctionNode>("count");
@@ -341,14 +363,13 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
     equals_function->getArguments().getNodes().push_back(count_function);
     equals_function->getArguments().getNodes().push_back(uniq_exact_function);
     new_unique_subquery->getProjection().getNodes().push_back(equals_function);
-    new_unique_subquery->getJoinTree() = unique_subquery_argument;
+    new_unique_subquery->getJoinTree() = inner_argument;
 
     /// WHERE isNotNull(c1) AND isNotNull(c2) AND ... — per SQL standard, NULL rows are never duplicates.
-    auto projection_columns = probe_subquery->getProjectionColumns();
     QueryTreeNodePtr where_condition;
-    for (const auto & col : projection_columns)
+    for (const auto & unique_name : unique_column_names)
     {
-        auto col_ref = std::make_shared<IdentifierNode>(Identifier{col.name});
+        auto col_ref = std::make_shared<IdentifierNode>(Identifier{unique_name});
         auto is_not_null_func = std::make_shared<FunctionNode>("isNotNull");
         is_not_null_func->getArguments().getNodes().push_back(std::move(col_ref));
         if (!where_condition)
@@ -390,7 +411,7 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
 
     auto res_col = ColumnUInt8::create();
     res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->getUInt(0)));
-    ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
+    ConstantValue const_value(ColumnConst::create(std::move(res_col), 1), std::make_shared<DataTypeUInt8>());
     auto result_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
     auto res = result_const_node->getValueStringRepresentation();
     node = std::move(result_const_node);
