@@ -1777,7 +1777,9 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
         for (auto & column : block)
         {
             auto field = getFieldForConstVirtualColumn(column.name, *part.data_part);
-            column.column->assumeMutableRef().insert(field);
+            auto mutable_column = IColumn::mutate(std::move(column.column));
+            mutable_column->insert(field);
+            column.column = std::move(mutable_column);
         }
     }
 
@@ -1805,7 +1807,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
         if (!virtual_columns_block.has(input->result_name))
             valid = false;
 
-    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
+    ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context, /* boolean_context */ true);
 
     PartitionPruner partition_pruner(
         metadata_snapshot,
@@ -9010,7 +9012,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             minmax_columns_types = minmax_columns.getTypes();
 
-            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context, /* boolean_context */ true);
             const auto & query_settings = query_context->getSettingsRef();
 
             minmax_idx_condition.emplace(
@@ -9022,7 +9024,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
         if (metadata_snapshot->hasPartitionKey())
         {
-            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context, /* boolean_context */ true);
             const auto & query_settings = query_context->getSettingsRef();
 
             partition_pruner.emplace(
