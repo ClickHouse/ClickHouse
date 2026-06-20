@@ -58,6 +58,15 @@ SELECT
     (SELECT extract(concat('a', char(0xE2, 0x84, 0xAA), 'b'), '(?i)^([a-z]+)') SETTINGS compile_regular_expressions = 1)
   = (SELECT extract(concat('a', char(0xE2, 0x84, 0xAA), 'b'), '(?i)^([a-z]+)') SETTINGS compile_regular_expressions = 0);
 
+SELECT '-- oversized patterns fall back to RE2 before JIT code generation (bounded LLVM compilation)';
+-- A `^` + large literal + `$` is in the supported subset but must not be compiled (one comparison per
+-- byte would make LLVM build an enormous function); it falls back to RE2 and stays correct.
+SELECT match(repeat('a', 2000), concat('^', repeat('a', 2000), '$'));
+SELECT match(concat(repeat('a', 1999), 'b'), concat('^', repeat('a', 2000), '$'));
+SELECT
+    (SELECT match(repeat('a', 2000), concat('^', repeat('a', 2000), '$')) SETTINGS compile_regular_expressions = 1)
+  = (SELECT match(repeat('a', 2000), concat('^', repeat('a', 2000), '$')) SETTINGS compile_regular_expressions = 0);
+
 SELECT '-- empty string and empty match edge cases';
 SELECT match('', '^$');
 SELECT match('x', '^$');

@@ -713,6 +713,24 @@ static bool caseInsensitiveTouchesNonAsciiFold(const std::vector<Op> & ops)
     return false;
 }
 
+/// A proxy for the size of the code the emitter will generate: `emitLiteral` emits one comparison per
+/// literal byte, and every other op emits a bounded number of basic blocks (`{n,m}` is not unrolled).
+/// Used to keep LLVM compilation cost bounded - see `MAX_PROGRAM_SIZE` in `tryCompileToProgram`.
+static size_t programSize(const std::vector<Op> & ops)
+{
+    size_t size = 0;
+    for (const Op & op : ops)
+    {
+        if (op.kind == OpKind::Literal)
+            size += op.literal.size();
+        else if (op.kind == OpKind::Optional)
+            size += 1 + programSize(op.body);
+        else
+            size += 1;
+    }
+    return size;
+}
+
 std::optional<RegexpProgram> tryCompileToProgram(std::string_view pattern, const ParseFlags & flags)
 {
     if (pattern.empty())
@@ -746,6 +764,14 @@ std::optional<RegexpProgram> tryCompileToProgram(std::string_view pattern, const
     /// would be slower, so defer such patterns to the general engine.
     if (!program->anchored_start && !program->anchored_end && program->ops.size() == 1
         && program->ops[0].kind == OpKind::Literal)
+        return std::nullopt;
+
+    /// Bound the generated code size: `emitLiteral` emits one comparison per literal byte, so a pattern
+    /// such as `^` + a very large literal + `$` would otherwise make LLVM compile an enormous function
+    /// once the compile-count threshold is reached. Such patterns gain nothing from the JIT (RE2 already
+    /// searches long literals optimally), so fall back to the general engine.
+    constexpr size_t MAX_PROGRAM_SIZE = 256;
+    if (programSize(program->ops) > MAX_PROGRAM_SIZE)
         return std::nullopt;
 
     /// Mark deterministic quantifiers and bound backtracking to keep matching linear (avoid ReDoS):

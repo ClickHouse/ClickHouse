@@ -37,6 +37,10 @@ USER
 1
 1
 1
+-- oversized patterns fall back to RE2 before JIT code generation (bounded LLVM compilation)
+1
+0
+1
 -- empty string and empty match edge cases
 1
 0
