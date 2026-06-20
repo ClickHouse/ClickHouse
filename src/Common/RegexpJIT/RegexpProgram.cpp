@@ -14,9 +14,13 @@ constexpr uint32_t UNBOUNDED = std::numeric_limits<uint32_t>::max();
 /// Maximum number of `Optional` constructs we are willing to compile. Each one can duplicate the
 /// continuation in the generated code, so without a cap the code size could grow exponentially.
 constexpr int MAX_OPTIONALS = 4;
-/// At most one quantifier may need backtracking (a single O(n) give-back). More than one could give
-/// super-linear matching, so such patterns fall back to the general engine. See `analyzeFirst`.
-constexpr int MAX_NONDET_QUANTIFIERS = 1;
+/// We only JIT-compile patterns that match greedily without any backtracking, so matching is always
+/// linear in the input (never slower than the general engine). A quantifier needs backtracking when
+/// its stop is ambiguous (the following first-byte set overlaps the quantified set and it is not
+/// right-anchored) - e.g. `.*a`; such patterns fall back to the general engine. A quantifier whose
+/// stop is unambiguous - e.g. `.+`, `[^/]+/`, `.*$` - is matched in a single greedy pass.
+/// See `analyzeFirst`.
+constexpr int MAX_NONDET_QUANTIFIERS = 0;
 /// Guard against pathological nesting depth.
 constexpr int MAX_DEPTH = 16;
 
