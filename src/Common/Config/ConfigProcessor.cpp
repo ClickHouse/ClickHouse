@@ -601,17 +601,9 @@ void ConfigProcessor::doIncludesRecursive(
                     return nullptr;
 
                 /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                /// First try parsing as-is to support XML sub-elements in ZooKeeper nodes.
-                /// If parsing fails (e.g. the value contains unescaped XML special characters),
-                /// escape the value and retry as plain text.
-                try
-                {
-                    zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
-                }
-                catch (Poco::Exception &)
-                {
-                    zk_document = dom_parser.parseString("<from_zk>" + escapeForXMLText(znode.contents) + "</from_zk>");
-                }
+                /// Unlike `from_env`, the contents of a ZooKeeper node may be an XML fragment
+                /// (an XML subtree), so they are parsed as XML and must be well-formed.
+                zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
                 return getRootNode(zk_document.get());
             };
 
