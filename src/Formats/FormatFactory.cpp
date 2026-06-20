@@ -53,6 +53,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
 
+    extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
     extern SettingsBool input_format_parallel_parsing;
     extern SettingsBool output_format_parallel_formatting;
     extern SettingsUInt64 output_format_compression_level;
@@ -206,6 +207,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
+    format_settings.always_write_decimal_point_in_float_and_decimal = settings[Setting::output_format_always_write_decimal_point_in_float_and_decimal];
     format_settings.float_precision = settings[Setting::output_format_float_precision];
     format_settings.trim_fixed_string = settings[Setting::output_format_trim_fixed_string];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
@@ -363,6 +365,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
     format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
     format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
+    format_settings.geojson.unsupported_geometry_handling = settings[Setting::input_format_geojson_unsupported_geometry_handling];
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
     format_settings.mysql_dump.map_column_names = settings[Setting::input_format_mysql_dump_map_column_names];
     format_settings.sql_insert.max_batch_size = settings[Setting::output_format_sql_insert_max_batch_size];
