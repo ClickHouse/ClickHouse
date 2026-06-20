@@ -1,0 +1,32 @@
+-- extractAll
+['123','456']
+['1','22','333']
+['test','user']
+[]
+[]
+['a','bb','ccc']
+['key1','key2']
+-- replaceRegexpOne
+hello N world 456
+01/2024-02
+abc
+host.user.com
+-- replaceRegexpAll
+hello N world N
+a/b/c
+path_to_file
+bbbbbb
+[one] [two] [three]
+example.com/p
+x
+|abc|
+-- dot vs newline: replaceRegexp uses RE2 defaults (. does not match newline), extractAll uses RE_DOT_NL (. matches newline)
+X\nX
+['a','\n','b']
+X\nX\nX
+-- vectorized over many rows, JIT path equals RE2
+1
+2000
+-- patterns outside the subset fall back to RE2
+['1','2']
+X X X

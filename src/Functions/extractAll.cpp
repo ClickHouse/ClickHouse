@@ -9,9 +9,13 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/JIT/CompileRegexp.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+
+#include <limits>
+#include <vector>
 
 
 namespace DB
@@ -42,6 +46,12 @@ private:
     OptimizedRegularExpression::MatchVec matches;
     size_t capture{};
 
+    /// Optional JIT-compiled matcher for simple patterns (see `CompileRegexp.h`).
+    RegexpJITMatcher matcher;
+    std::vector<const uint8_t *> capture_starts;
+    std::vector<const uint8_t *> capture_ends;
+    bool use_jit_for_row = false;
+
     Pos pos{};
     Pos end{};
 public:
@@ -64,7 +74,10 @@ public:
 
     static constexpr auto strings_argument_position = 0uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, bool /*max_substrings_includes_remaining_string*/)
+    void init(
+        const ColumnsWithTypeAndName & arguments,
+        bool /*max_substrings_includes_remaining_string*/,
+        size_t regexp_jit_min_count = std::numeric_limits<size_t>::max())
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
 
@@ -72,10 +85,19 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
                 "Must be constant string.", arguments[1].column->getName(), getName());
 
-        re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+        const String pattern = col->getValue<String>();
+        re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(pattern));
         capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
         matches.resize(capture + 1);
+
+        /// `extractAll` builds RE2 with `RE_DOT_NL`, so `.` matches newline.
+        matcher = getRegexpJITMatcher(pattern, /* case_insensitive */ false, /* dot_all */ true, regexp_jit_min_count);
+        if (matcher)
+        {
+            capture_starts.resize(matcher.num_captures);
+            capture_ends.resize(matcher.num_captures);
+        }
     }
 
     /// Called for each next string.
@@ -83,6 +105,10 @@ public:
     {
         pos = pos_;
         end = end_;
+        /// Decide once per row whether the byte-wise JIT matcher agrees with RE2 for this string.
+        use_jit_for_row = static_cast<bool>(matcher)
+            && (!matcher.ascii_fallback
+                || isAsciiData(reinterpret_cast<const uint8_t *>(pos_), reinterpret_cast<const uint8_t *>(end_)));
     }
 
     /// Get the next token, if any, or return false.
@@ -90,6 +116,30 @@ public:
     {
         if (!pos || pos > end)
             return false;
+
+        if (use_jit_for_row)
+        {
+            /// `extractAll` re-anchors `^` at the current position: the subject is the substring `[pos, end)`.
+            const auto * b = reinterpret_cast<const uint8_t *>(pos);
+            const auto * e = reinterpret_cast<const uint8_t *>(end);
+            if (matcher.func(b, e, b, capture_starts.data(), capture_ends.data()) != 1)
+                return false;
+            if (capture_ends[0] == capture_starts[0]) /// empty whole match - stop, like the RE2 path
+                return false;
+
+            if (capture_starts[capture] == nullptr)
+            {
+                token_begin = pos;
+                token_end = pos;
+            }
+            else
+            {
+                token_begin = reinterpret_cast<Pos>(capture_starts[capture]);
+                token_end = reinterpret_cast<Pos>(capture_ends[capture]);
+            }
+            pos = reinterpret_cast<Pos>(capture_ends[0]);
+            return true;
+        }
 
         if (!re->match(pos, end - pos, matches) || !matches[0].length)
             return false;

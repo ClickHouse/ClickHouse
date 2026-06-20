@@ -121,13 +121,14 @@ public:
     {
         auto * i8_ptr = bytePtrTy();
         auto * i8_ptr_ptr = i8_ptr->getPointerTo();
-        auto * func_type = llvm::FunctionType::get(b.getInt8Ty(), {i8_ptr, i8_ptr, i8_ptr_ptr, i8_ptr_ptr}, false);
+        auto * func_type = llvm::FunctionType::get(b.getInt8Ty(), {i8_ptr, i8_ptr, i8_ptr, i8_ptr_ptr, i8_ptr_ptr}, false);
         function = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "regexp_match", module);
 
         begin_arg = function->getArg(0);
         end_arg = function->getArg(1);
-        capture_starts_arg = function->getArg(2);
-        capture_ends_arg = function->getArg(3);
+        search_from_arg = function->getArg(2);
+        capture_starts_arg = function->getArg(3);
+        capture_ends_arg = function->getArg(4);
 
         auto * entry = newBB("entry");
         b.SetInsertPoint(entry);
@@ -142,29 +143,29 @@ public:
         }
 
         auto * ret0 = newBB("no_match");
-        Cont top{&top_ops, 0, nullptr};
-
-        /// Strings with non-ASCII bytes are deferred to RE2 (return value 2) when the program uses
-        /// `.` or a negated class, whose byte-wise meaning only matches RE2's UTF-8 mode on ASCII.
-        if (program.requires_ascii_input)
-            emitAsciiGuard();
         auto * match_entry = b.GetInsertBlock();
+        Cont top{&top_ops, 0, nullptr};
 
         if (program.anchored_start)
         {
+            /// `^` can only match at `begin`, so a search that starts past `begin` finds nothing.
+            auto * at_begin = b.CreateICmpEQ(search_from_arg, begin_arg);
+            auto * body = newBB("anchored_body");
+            b.CreateCondBr(at_begin, body, ret0);
+            b.SetInsertPoint(body);
             match_start = begin_arg;
             initCaptures();
             matchAt(&top, begin_arg, ret0);
         }
         else
         {
-            /// Unanchored match: try every start position from `begin` to `end` (inclusive), leftmost wins.
+            /// Unanchored match: try every start position from `search_from` to `end` (inclusive), leftmost wins.
             auto * loop = newBB("start_loop");
             b.CreateBr(loop);
             b.SetInsertPoint(loop);
 
             auto * start = b.CreatePHI(i8_ptr, 2);
-            start->addIncoming(begin_arg, match_entry);
+            start->addIncoming(search_from_arg, match_entry);
 
             auto * past_end = b.CreateICmpUGT(start, end_arg);
             auto * body = newBB("start_body");
@@ -208,6 +209,7 @@ private:
     llvm::Function * function = nullptr;
     llvm::Value * begin_arg = nullptr;
     llvm::Value * end_arg = nullptr;
+    llvm::Value * search_from_arg = nullptr;
     llvm::Value * capture_starts_arg = nullptr;
     llvm::Value * capture_ends_arg = nullptr;
     llvm::Value * match_start = nullptr;
@@ -279,62 +281,6 @@ private:
             if (set.contains(static_cast<uint8_t>(c)) != complement)
                 members.push_back(static_cast<uint8_t>(c));
         return members;
-    }
-
-    /// If the string contains any byte >= 0x80, return 2 (the caller then uses RE2 for this row).
-    /// Otherwise control falls through with every byte known to be ASCII, so byte-wise matching of
-    /// `.` and negated classes is equivalent to RE2's UTF-8 semantics.
-    void emitAsciiGuard()
-    {
-        auto * vec_type = llvm::FixedVectorType::get(b.getInt8Ty(), 16);
-        auto * non_ascii = newBB("non_ascii");
-        auto * loop = newBB("ascii_loop");
-        auto * simd = newBB("ascii_simd");
-        auto * adv16 = newBB("ascii_adv16");
-        auto * tail = newBB("ascii_tail");
-        auto * test = newBB("ascii_test");
-        auto * adv1 = newBB("ascii_adv1");
-        auto * ok = newBB("ascii_ok");
-
-        auto * pre = b.GetInsertBlock();
-        b.CreateBr(loop);
-        b.SetInsertPoint(loop);
-        auto * p = b.CreatePHI(bytePtrTy(), 3);
-        p->addIncoming(begin_arg, pre);
-
-        auto * remaining = ptrDiff(end_arg, p);
-        auto * has16 = b.CreateICmpUGE(remaining, b.getInt64(16));
-        b.CreateCondBr(has16, simd, tail);
-
-        b.SetInsertPoint(simd);
-        auto * vec = b.CreateAlignedLoad(vec_type, p, llvm::Align(1));
-        auto * high = b.CreateAnd(vec, b.CreateVectorSplat(16, b.getInt8(0x80)));
-        auto * lanes = b.CreateICmpNE(high, llvm::Constant::getNullValue(vec_type));
-        auto * any = b.CreateICmpNE(b.CreateBitCast(lanes, b.getInt16Ty()), b.getInt16(0));
-        b.CreateCondBr(any, non_ascii, adv16);
-
-        b.SetInsertPoint(adv16);
-        auto * p16 = gepByte(p, 16);
-        b.CreateBr(loop);
-        p->addIncoming(p16, adv16);
-
-        b.SetInsertPoint(tail);
-        auto * at_end = b.CreateICmpEQ(p, end_arg);
-        b.CreateCondBr(at_end, ok, test);
-
-        b.SetInsertPoint(test);
-        auto * byte_high = b.CreateICmpNE(b.CreateAnd(loadByte(p), b.getInt8(0x80)), b.getInt8(0));
-        b.CreateCondBr(byte_high, non_ascii, adv1);
-
-        b.SetInsertPoint(adv1);
-        auto * p1 = gepByte(p, 1);
-        b.CreateBr(loop);
-        p->addIncoming(p1, adv1);
-
-        b.SetInsertPoint(non_ascii);
-        b.CreateRet(b.getInt8(2));
-
-        b.SetInsertPoint(ok);
     }
 
     /// Emit a scan that consumes the maximal run of bytes that are in `set`, starting at `cursor`,

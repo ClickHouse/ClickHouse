@@ -183,10 +183,11 @@ struct MatchImpl
                     {
                         const auto * str_begin = reinterpret_cast<const uint8_t *>(haystack_data.data() + prev_offset);
                         const auto * str_end = reinterpret_cast<const uint8_t *>(haystack_data.data() + haystack_offsets[i]);
-                        const UInt8 r = matcher.func(str_begin, str_end, capture_starts.data(), capture_ends.data());
-                        const bool matched = (r == 2)
-                            ? re2_fallback->match(reinterpret_cast<const char *>(str_begin), str_end - str_begin)
-                            : (r == 1);
+                        bool matched;
+                        if (re2_fallback && !isAsciiData(str_begin, str_end))
+                            matched = re2_fallback->match(reinterpret_cast<const char *>(str_begin), str_end - str_begin);
+                        else
+                            matched = matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1;
                         res[i] = negate ^ matched;
                         prev_offset = haystack_offsets[i];
                     }

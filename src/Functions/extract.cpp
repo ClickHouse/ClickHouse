@@ -94,11 +94,10 @@ struct ExtractImpl
                 {
                     const auto * str_begin = reinterpret_cast<const uint8_t *>(data.data() + prev_offset);
                     const auto * str_end = reinterpret_cast<const uint8_t *>(data.data() + offsets[i]);
-                    const UInt8 r = matcher.func(str_begin, str_end, capture_starts.data(), capture_ends.data());
 
                     const uint8_t * src = nullptr;
                     size_t length = 0;
-                    if (r == 2)
+                    if (re2_fallback && !isAsciiData(str_begin, str_end))
                     {
                         /// Non-ASCII string: extract with RE2 to match its UTF-8 semantics.
                         const unsigned count = re2_fallback->match(
@@ -109,7 +108,8 @@ struct ExtractImpl
                             length = matches[group].length;
                         }
                     }
-                    else if (r == 1 && capture_starts[group] != nullptr && capture_ends[group] != nullptr)
+                    else if (matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1
+                             && capture_starts[group] != nullptr && capture_ends[group] != nullptr)
                     {
                         src = capture_starts[group];
                         length = capture_ends[group] - capture_starts[group];
