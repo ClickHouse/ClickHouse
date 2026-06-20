@@ -11,3 +11,7 @@ SELECT CAST(NULL AS LowCardinality(Nullable(String))) AS id, (1.0, 2.0)::Point A
 -- A named Tuple used as the lone `properties` column is always written as an object, even when
 -- `output_format_json_named_tuples_as_objects` is disabled.
 SELECT (1.0, 2.0)::Point AS geometry, (1, 'x')::Tuple(num UInt8, str String) AS properties FORMAT GeoJSON SETTINGS output_format_json_named_tuples_as_objects = 0;
+
+-- A Map used as the lone `properties` column is always written as an object, even when
+-- `output_format_json_map_as_array_of_tuples` is enabled.
+SELECT (1.0, 2.0)::Point AS geometry, map('a', 'b') AS properties FORMAT GeoJSON SETTINGS output_format_json_map_as_array_of_tuples = 1;
