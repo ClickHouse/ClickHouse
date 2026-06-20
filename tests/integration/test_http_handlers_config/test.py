@@ -776,3 +776,117 @@ def test_predefined_handler_whitespace():
         assert result.strip() == "1\ttest"
 
         cluster.instance.query("DROP TABLE test_table")
+
+
+def test_url_prefix_handler():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__), "url_prefix_handler", "test_url_prefix_handler"
+        )
+    ) as cluster:
+        def get(path):
+            return cluster.instance.http_request(path, method="GET")
+
+        # The rule is <url_prefix>/test_prefix</url_prefix>: it must match the base path itself and
+        # anything below it on a path-segment boundary, regardless of the query string.
+        for matching in [
+            "test_prefix",  # the base path itself
+            "test_prefix/",  # the base path with a trailing slash
+            "test_prefix/write",  # a sub-path
+            "test_prefix/a/b/c",  # a deeper sub-path
+            "test_prefix?param=value",  # query string is ignored
+            "test_prefix/write?param=value",
+        ]:
+            response = get(matching)
+            assert response.status_code == 200, f"{matching} -> {response.status_code}"
+            assert response.content == b"prefix handler matched", matching
+
+        # These must NOT match: a textual prefix that is not a path-segment boundary,
+        # or a path that is not under the base at all.
+        for not_matching in [
+            "test_prefixbeta",  # not a segment boundary
+            "test_prefixbeta/write",  # not a segment boundary
+            "test_pre",  # not even a full prefix
+            "other",  # unrelated path
+            "",  # root
+        ]:
+            assert 404 == get(not_matching).status_code, not_matching
+
+
+def test_url_regexp_handler():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__), "url_regexp_handler", "test_url_regexp_handler"
+        )
+    ) as cluster:
+        def get(path):
+            return cluster.instance.http_request(path, method="GET")
+
+        # The rule is <url_regexp>/test_regexp/[0-9]+</url_regexp>: the whole path must match the regular
+        # expression, regardless of the query string.
+        for matching in [
+            "test_regexp/0",  # a single digit
+            "test_regexp/123",  # several digits
+            "test_regexp/123?param=value",  # query string is ignored
+        ]:
+            response = get(matching)
+            assert response.status_code == 200, f"{matching} -> {response.status_code}"
+            assert response.content == b"regex handler matched", matching
+
+        # These must NOT match: the regex must match the whole path.
+        for not_matching in [
+            "test_regexp/abc",  # not digits
+            "test_regexp/",  # no digits
+            "test_regexp/123/extra",  # trailing segment is not part of the match
+            "test_regexp",  # missing the digits segment
+            "other",  # unrelated path
+        ]:
+            assert 404 == get(not_matching).status_code, not_matching
+
+
+def test_headers_regexp_handler():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "headers_regexp_handler",
+            "test_headers_regexp_handler",
+        )
+    ) as cluster:
+        def get(headers):
+            return cluster.instance.http_request(
+                "test_headers_regex", method="GET", headers=headers
+            )
+
+        # The rule is <headers_regexp><XXX>[0-9]+</XXX></headers_regexp>: the value of header XXX must
+        # match the regular expression as a whole.
+        response = get({"XXX": "123"})
+        assert response.status_code == 200
+        assert response.content == b"headers regex handler matched"
+
+        # These must NOT match: the header is absent, empty, or does not match the regex as a whole.
+        for not_matching in [
+            {},  # header absent
+            {"XXX": ""},  # empty value
+            {"XXX": "abc"},  # not digits
+            {"XXX": "12a"},  # not digits as a whole
+        ]:
+            assert 404 == get(not_matching).status_code, not_matching
+
+
+def test_catch_all_handler():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__), "catch_all_handler", "test_catch_all_handler"
+        )
+    ) as cluster:
+        # The single rule has only <handler> and no match conditions, so it must match every request
+        # (any path, with or without a query string) instead of throwing an exception.
+        for path in [
+            "",  # root
+            "anything",
+            "a/b/c",  # a nested path
+            "anything?param=value",  # query string present
+        ]:
+            response = cluster.instance.http_request(path, method="GET")
+            assert response.status_code == 200, f"{path} -> {response.status_code}"
+            assert response.content == b"catch-all matched", path

@@ -82,6 +82,13 @@ public:
         return BitSet(lhs.bitset | rhs.bitset);
     }
 
+    /// Returns this & ~other (set difference).
+    BitSet andNot(const BitSet & other) const
+    {
+        adjustSize(*this, other);
+        return BitSet(bitset & ~other.bitset);
+    }
+
     void shift(size_t pos)
     {
         if (pos == 0)
@@ -116,6 +123,9 @@ public:
 private:
     friend struct std::hash<BitSet>;
 
+    friend bool isSubsetOf(const BitSet & lhs, const BitSet & rhs);
+    friend bool areIntersecting(const BitSet & lhs, const BitSet & rhs);
+
     static void adjustSize(const BitSet & lhs, const BitSet & rhs)
     {
         auto max_size = std::max(lhs.bitset.size(), rhs.bitset.size());
@@ -132,7 +142,29 @@ private:
 
 String toString(const BitSet & bitset);
 
-inline bool isSubsetOf(const BitSet & lhs, const BitSet & rhs) { return (lhs & rhs) == lhs; }
+inline bool isSubsetOf(const BitSet & lhs, const BitSet & rhs)
+{
+    size_t common_size = std::min(lhs.bitset.size(), rhs.bitset.size());
+    for (size_t i = 0; i < common_size; ++i)
+        if (lhs.bitset[i] && !rhs.bitset[i])
+            return false;
+    for (size_t i = common_size; i < lhs.bitset.size(); ++i)
+        if (lhs.bitset[i])
+            return false;
+    return true;
+}
+
+inline bool areIntersecting(const BitSet & lhs, const BitSet & rhs)
+{
+    if (lhs.bitset.size() < rhs.bitset.size())
+        return areIntersecting(rhs, lhs);
+
+    for (size_t i = 0; i < rhs.bitset.size(); ++i)
+        if (lhs.bitset[i] && rhs.bitset[i])
+            return true;
+
+    return false;
+}
 
 class JoinActionRef;
 
@@ -223,7 +255,7 @@ public:
     std::vector<JoinActionRef> getArguments(bool recursive = false) const;
 
     void setSourceRelations(const BitSet & source_relations) const;
-    BitSet getSourceRelations() const;
+    const BitSet & getSourceRelations() const;
     bool fromLeft() const;
     bool fromRight() const;
     bool fromNone() const;

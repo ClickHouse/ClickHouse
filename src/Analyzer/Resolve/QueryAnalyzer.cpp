@@ -1792,10 +1792,16 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 
 /// Columns that resolved from matcher can also match columns from JOIN USING.
 /// In that case we update type to type of column in USING section.
-/// TODO: It's not completely correct for qualified matchers, so t1.* should be resolved to left table column type.
-/// But in planner we do not distinguish such cases.
+///
+/// Unqualified matcher (`*`): the matched column IS the merged USING key, so it takes the
+/// key type as-is. Qualified matcher (`t.*`): the matched column is `t`'s own column, so its
+/// type must equal what the explicit reference `t.col` resolves to. The merged key's type is
+/// not correct here: in a nested JOIN it reflects the outer join's other side, while `t.col`
+/// only follows the joins `t` participates in.
 void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
+    bool is_qualified_matcher,
+    const Identifier & matched_qualified_identifier,
     IdentifierResolveScope & scope)
 {
     auto * nearest_query_scope = scope.getNearestQueryScope();
@@ -1846,12 +1852,32 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                     }
                 }
 
+                auto using_column_type = join_using_column_node.getResultType();
+
+                /// Qualified matcher: the matched column is `t.col`, NOT the merged USING key.
+                /// Resolve the explicit identifier `t.col` and adopt its type, exactly matching
+                /// how an explicit reference is typed (IdentifierResolver::tryResolveIdentifierFromJoin).
+                /// The merged key's type is wrong here: in a nested JOIN it reflects the OUTER
+                /// join's siblings, while `t.col` only follows the joins `t` participates in.
+                if (is_qualified_matcher)
+                {
+                    Identifier explicit_identifier = matched_qualified_identifier;
+                    explicit_identifier.push_back(matched_column_name);
+                    auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+                    IdentifierResolveContext explicit_resolve_settings;
+                    explicit_resolve_settings.allow_to_check_cte = false;
+                    explicit_resolve_settings.allow_to_check_database_catalog = false;
+                    auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
+                    if (explicit_resolve_result.resolved_identifier)
+                        using_column_type = explicit_resolve_result.resolved_identifier->getResultType();
+                }
+
                 auto it = node_to_projection_name.find(matched_column_node);
                 matched_column_node = matched_column_node->clone();
                 if (it != node_to_projection_name.end())
                     node_to_projection_name.emplace(matched_column_node, it->second);
 
-                matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
+                matched_column_node->as<ColumnNode &>().setColumnType(using_column_type);
                 correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
@@ -2012,7 +2038,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         matched_columns,
         scope);
 
-    updateMatchedColumnsFromJoinUsing(result_matched_column_nodes_with_names, scope);
+    updateMatchedColumnsFromJoinUsing(
+        result_matched_column_nodes_with_names, /*is_qualified_matcher=*/ true, matcher_node_typed.getQualifiedIdentifier(), scope);
 
     return result_matched_column_nodes_with_names;
 }
@@ -2267,7 +2294,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression_columns,
             scope);
 
-        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, scope);
+        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, /*is_qualified_matcher=*/ false, {}, scope);
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
