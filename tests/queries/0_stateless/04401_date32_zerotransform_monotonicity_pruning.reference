@@ -1,6 +1,9 @@
 -- toStartOfDay
 4
 4
+-- toStartOfISOYear
+3
+3
 -- toRelativeSecondNum
 4
 4
@@ -22,3 +25,6 @@
 -- toYearNumSinceEpoch
 4
 4
+-- toDaysSinceYearZero (raw out-of-range Date32 keys)
+2
+2
