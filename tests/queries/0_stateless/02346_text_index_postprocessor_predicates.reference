@@ -115,3 +115,8 @@ wo	1
 2
 2
 0
+33. sparseGrams + non-injective postprocessor: sparse-gram compaction runs after postprocessing.
+1
+1
+2
+2

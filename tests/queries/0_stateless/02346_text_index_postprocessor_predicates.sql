@@ -489,4 +489,31 @@ SELECT count() FROM tab WHERE hasAllTokens(val, ['xyz']);          -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
+SELECT '33. sparseGrams + non-injective postprocessor: sparse-gram compaction runs after postprocessing.';
+-- sparseGrams('abcdefgh') = ['abc','bcd','cde','cdef','def','efg','fgh']; 'cde' and 'def' are substrings of
+-- 'cdef', so sparse-gram compaction drops them. With postprocessor substring(val, 1, 1) the dropped 'def'
+-- is the only gram whose first character is 'd', so compacting BEFORE postprocessing loses the token 'd'
+-- from the needle. Row 'abcefgh' stores {a,b,c,e,f} (no 'd'): the correct needle for 'abcdefgh' is
+-- {a,b,c,d,e,f} and must exclude that row, but a compacted-first needle {a,b,c,e,f} would falsely match it.
+-- Compaction now runs after postprocessing, so 'd' is kept and the row is correctly excluded.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = sparseGrams(3, 8), postprocessor = substring(val, 1, 1))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'abcdefgh'), (2, 'abcefgh');
+
+-- Only row 1 has token 'd', so 'abcdefgh' matches just row 1 (a compacted-first needle wrongly returns 2).
+SELECT count() FROM tab WHERE hasAllTokens(val, 'abcdefgh') SETTINGS query_plan_direct_read_from_text_index = 1;  -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, 'abcdefgh') SETTINGS query_plan_direct_read_from_text_index = 0;  -- 1
+-- 'abcefgh' has no dropped discriminator and legitimately matches both rows.
+SELECT count() FROM tab WHERE hasAllTokens(val, 'abcefgh') SETTINGS query_plan_direct_read_from_text_index = 1;   -- 2
+SELECT count() FROM tab WHERE hasAllTokens(val, 'abcefgh') SETTINGS query_plan_direct_read_from_text_index = 0;   -- 2
+
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;
