@@ -913,15 +913,15 @@ private:
     struct DictParamsCandidate
     {
         UInt8 left_bits;
-        std::vector<std::pair<UInt16, UInt16>> left_part_freq; // frequency desc, left part value asc
+        std::vector<std::pair<UInt16, UInt16>> left_part_freq; // frequency desc, left part value asc; STYLE_CHECK_ALLOW_STD_CONTAINERS
         double estimated_size;
     };
 
     struct DictParams
     {
         UInt8 left_bits;
-        std::unordered_map<UInt16, UInt8> map; // left part value → dictionary index
-        std::vector<UInt16> values; // left part value for each dictionary index, sorted by frequency desc (index 0 is most frequent)
+        std::unordered_map<UInt16, UInt8> map; // left part value → dictionary index; STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<UInt16> values; // left part value for each dictionary index, sorted by frequency desc (index 0 is most frequent); STYLE_CHECK_ALLOW_STD_CONTAINERS
     };
 
     struct EncodingException
@@ -940,7 +940,7 @@ private:
         alignas(ALP_BUFFER_ALIGNMENT) Unsigned bitpacked_right[ALP_BLOCK_MAX_FLOAT_COUNT];
         UInt16 bitpacked_right_bytes;
 
-        std::vector<EncodingException> exceptions;
+        std::vector<EncodingException> exceptions; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     };
 
     DictParams dict_params;
@@ -1104,7 +1104,7 @@ private:
         UInt8 right_bits = ALPUtils<T>::calcRdRightBits(left_bits);
 
         // Count frequency of left part values
-        std::unordered_map<UInt16, UInt16> left_part_freq(float_count); // left part value → occurrence count
+        std::unordered_map<UInt16, UInt16> left_part_freq(float_count); // left part value → occurrence count; STYLE_CHECK_ALLOW_STD_CONTAINERS
         for (UInt32 i = 0; i < float_count; ++i)
         {
             Unsigned value = std::bit_cast<Unsigned>(source[i]);
@@ -1181,7 +1181,7 @@ private:
     struct DictParams
     {
         UInt8 left_bits;
-        std::vector<UInt16> values;
+        std::vector<UInt16> values; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     };
 
     struct BlockState
