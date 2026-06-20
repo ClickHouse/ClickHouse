@@ -1,40 +1,38 @@
 #pragma once
 
 #include <deque>
+#include <functional>
 
 #include <Columns/IColumn.h>
-#include <Common/PODArray.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
-#include <Core/ColumnNumbers.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
 namespace DB
 {
 
-/// Shards input rows to N output ports by hash(key) % N.
-/// Hashes the key columns with `IColumn::computeHashInto` and physically splits every column with
-/// `IColumn::scatter` so each output chunk holds only the rows belonging to its shard.
+/// Scatters input rows to N output ports using a caller-supplied selector (named for its original
+/// hash-sharding role; it now routes by whatever selector the caller injects).
+/// For every input chunk the selector decides the destination port of each row, and every column
+/// is physically split with IColumn::scatter so each output chunk holds only the rows of its port.
 ///
-/// Output ports can only accept one chunk at a time (canPush/push). But one input chunk
-/// produces N output chunks (one per shard), and downstream consume them at different rates.
-/// Without queueing, we would have to wait until all N outputs are ready
-/// before splitting an input chunk — one slow shard would stall all others.
+/// Output ports can only accept one chunk at a time (canPush/push). But one input chunk produces up
+/// to N output chunks (one per port), and downstream consume them at different rates. Without
+/// queueing, we would have to wait until all N outputs are ready before splitting an input chunk —
+/// one slow consumer would stall all others.
 ///
-/// So each output port has a FIFO queue. When a shard's port is busy, its chunk waits in
-/// the queue and gets pushed on the next prepare()/work() cycle. This allows other shards
-/// to continue processing without waiting for the slowest one.
-///
-/// TODO(nihalzp): A queue growing much faster than the others means the GROUP BY key
-/// distribution is skewed onto one shard. That means one of the Aggregating hash tables would
-/// be much bigger than the others, essentially serializing the pipeline. In that scenario, we could
-/// potentially detect the skew from queue sizes and switch to a fallback where shard_i sends only to
-/// AggregatingTransform_i % num_shards and then we merge at the end.
+/// So each output port has a FIFO queue. When a port is busy, its chunk waits in the queue and gets
+/// pushed on the next prepare()/work() cycle. This allows other ports to continue processing without
+/// waiting for the slowest one.
 class BufferedShardByHashTransform : public IProcessor
 {
 public:
-    BufferedShardByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_);
+    /// Builds the per-row destination port for an input chunk. It must return a Selector of size
+    /// num_rows with every value in [0, num_outputs); columns are the input chunk's columns.
+    using SelectorBuilder = std::function<IColumn::Selector(const Columns & columns)>;
+
+    BufferedShardByHashTransform(SharedHeader header, size_t num_outputs_, SelectorBuilder selector_builder_);
 
     String getName() const override { return "BufferedShardByHashTransform"; }
 
@@ -48,20 +46,18 @@ private:
     /// the slow consumer drains it. Otherwise, we can have very high memory usage.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
-    size_t num_shards;
-    ColumnNumbers key_columns;
+    size_t num_outputs;
+    SelectorBuilder selector_builder;
 
     /// Input chunk that was pulled in prepare() and will be split in work().
     bool has_pending_input_chunk = false;
     Chunk pending_input_chunk;
 
-    /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
+    /// Per-output FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
     std::vector<std::deque<Chunk>> output_queues;
 
     /// Reused across input chunks to skip per-chunk reallocation.
-    PaddedPODArray<UInt32> hash_buffer;
-    IColumn::Selector selector;
-    std::vector<MutableColumns> shard_columns;
+    std::vector<MutableColumns> output_columns;
 };
 
 }

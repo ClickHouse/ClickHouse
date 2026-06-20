@@ -1,20 +1,21 @@
+#include <algorithm>
+
 #include <Columns/IColumn.h>
+#include <Columns/ColumnSparse.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/MapToRange.h>
 
 namespace DB
 {
 
-BufferedShardByHashTransform::BufferedShardByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_)
-    : IProcessor(InputPorts{header}, OutputPorts{num_shards_, header})
-    , num_shards(num_shards_)
-    , key_columns(std::move(key_columns_))
-    , output_queues(num_shards)
-    , shard_columns(num_shards)
+BufferedShardByHashTransform::BufferedShardByHashTransform(SharedHeader header, size_t num_outputs_, SelectorBuilder selector_builder_)
+    : IProcessor(InputPorts{header}, OutputPorts{num_outputs_, header})
+    , num_outputs(num_outputs_)
+    , selector_builder(std::move(selector_builder_))
+    , output_queues(num_outputs_)
+    , output_columns(num_outputs_)
 {
-    chassert(num_shards > 0);
+    chassert(num_outputs > 0);
 }
 
 IProcessor::Status BufferedShardByHashTransform::prepare()
@@ -24,10 +25,10 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     /// Free queues for outputs closed by downstream
     bool all_finished = true;
     auto output_it = outputs.begin();
-    for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
+    for (size_t out = 0; out < num_outputs; ++out, ++output_it)
     {
         if (output_it->isFinished())
-            output_queues[shard].clear();
+            output_queues[out].clear();
         else
             all_finished = false;
     }
@@ -43,14 +44,14 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         return Status::Ready;
 
     /// Scan queues to decide what to do next.
-    bool has_queued_chunks = false; /// any shard has chunks waiting in its queue
+    bool has_queued_chunks = false; /// any output has chunks waiting in its queue
     bool has_pushable_queued_chunks = false; /// at least one queued chunk can be pushed right now (port is ready)
-    bool any_queue_at_capacity = false; /// at least one shard's queue hit the back-pressure cap
+    bool any_queue_at_capacity = false; /// at least one output's queue hit the back-pressure cap
 
     auto queued_output_it = outputs.begin();
-    for (size_t shard = 0; shard < num_shards; ++shard, ++queued_output_it)
+    for (size_t out = 0; out < num_outputs; ++out, ++queued_output_it)
     {
-        const auto & queue = output_queues[shard];
+        const auto & queue = output_queues[out];
         if (queue.size() >= MAX_QUEUE_LENGTH)
             any_queue_at_capacity = true;
         if (!queue.empty())
@@ -94,7 +95,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     return Status::NeedData;
 }
 
-/// Split pending input chunk into per-shard queues, then drain queues to output ports.
+/// Split pending input chunk into per-output queues, then drain queues to output ports.
 void BufferedShardByHashTransform::work()
 {
     if (has_pending_input_chunk)
@@ -103,11 +104,11 @@ void BufferedShardByHashTransform::work()
         has_pending_input_chunk = false;
     }
 
-    /// Push one queued chunk per shard (if the port can accept it).
+    /// Push one queued chunk per output (if the port can accept it).
     auto output_it = outputs.begin();
-    for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
+    for (size_t out = 0; out < num_outputs; ++out, ++output_it)
     {
-        auto & queue = output_queues[shard];
+        auto & queue = output_queues[out];
 
         if (output_it->isFinished())
         {
@@ -128,42 +129,58 @@ void BufferedShardByHashTransform::work()
 
 void BufferedShardByHashTransform::generateOutputChunks()
 {
-    const auto num_rows = pending_input_chunk.getNumRows();
     auto columns = pending_input_chunk.detachColumns();
 
     chassert(!columns.empty());
 
-    /// Compute a composite 32-bit hash over all key columns into a reusable buffer.
-    /// No allocations: each `computeHashInto` call writes directly into hash_buffer.
-    hash_buffer.assign(static_cast<size_t>(num_rows), WEAK_HASH32_INITIAL_VALUE);
-    for (auto column_number : key_columns)
-        columns[column_number]->computeHashInto(0, num_rows, hash_buffer.data(), false);
+    for (auto & column : columns)
+        column = recursiveRemoveSparse(column);
 
-    selector.resize(num_rows);
-    mapToRange(hash_buffer.data(), num_rows, static_cast<UInt32>(num_shards), selector.data());
+    /// The caller-supplied selector decides the destination port of every row.
+    const IColumn::Selector selector = selector_builder(columns);
 
-    /// Physically split every column into N per-shard mutable columns.
-    for (auto & cols : shard_columns)
+    const size_t num_rows = columns.front()->size();
+
+    /// Fast path: when every row goes to the same output, forward the whole chunk without the
+    /// O(rows * columns) scatter that would otherwise copy every (possibly large) aggregate-state
+    /// column. This is the common case for the residue divert — the hot set is empty, or a chunk
+    /// holds only cold keys — so nothing actually needs to be split off.
+    if (num_rows != 0)
+    {
+        const auto only_output = selector.front();
+        if (std::all_of(selector.begin(), selector.end(), [only_output](auto bucket) { return bucket == only_output; }))
+        {
+            auto output_it = outputs.begin();
+            std::advance(output_it, only_output);
+            if (!output_it->isFinished())
+                output_queues[only_output].push_back(Chunk(std::move(columns), num_rows));
+            return;
+        }
+    }
+
+    /// Physically split every column into N per-output mutable columns.
+    /// Skip outputs that received no rows.
+    for (auto & cols : output_columns)
         cols.clear();
 
     for (const auto & column : columns)
     {
-        auto split = column->scatter(num_shards, selector);
-        for (size_t s = 0; s < num_shards; ++s)
-            shard_columns[s].push_back(std::move(split[s]));
+        auto split = column->scatter(num_outputs, selector);
+        for (size_t out = 0; out < num_outputs; ++out)
+            output_columns[out].push_back(std::move(split[out]));
     }
 
     auto output_it = outputs.begin();
-    for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
+    for (size_t out = 0; out < num_outputs; ++out, ++output_it)
     {
         if (output_it->isFinished())
             continue;
 
-        const size_t shard_rows = shard_columns[shard][0]->size();
-        if (shard_rows == 0)
+        const size_t out_rows = output_columns[out][0]->size();
+        if (out_rows == 0)
             continue;
 
-        output_queues[shard].push_back(Chunk(std::move(shard_columns[shard]), shard_rows));
+        output_queues[out].push_back(Chunk(std::move(output_columns[out]), out_rows));
     }
 }
 
