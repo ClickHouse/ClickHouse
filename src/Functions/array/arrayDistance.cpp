@@ -25,6 +25,18 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
+#if USE_MULTITARGET_CODE
+/// Widen 16 packed `BFloat16` to `Float32` without AVX512-BF16: a `BFloat16` is the upper 16 bits of the
+/// corresponding `Float32`, so zero-extend each 16-bit value to 32 bits and shift it into the high half.
+/// Uses only AVX-512F/BW, so it runs on all `x86-64-v4` CPUs (not just AVX512-BF16 ones), and it is faster
+/// than the native `dpbf16` / BFloat16->Float32 convert instructions, which are throughput-limited.
+X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static inline __m512 loadBFloat16AsFloat32(const BFloat16 * p)
+{
+    const __m256i raw = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(p));
+    return _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(raw), 16));
+}
+#endif
+
 struct L1Distance
 {
     static constexpr auto name = "L1";
@@ -100,7 +112,7 @@ struct L2Distance
 
         constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
             if constexpr (is_float32)
             {
@@ -124,7 +136,7 @@ struct L2Distance
             state.sum = _mm512_reduce_add_pd(sums);
     }
 
-    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
         const BFloat16 * __restrict data_x,
         const BFloat16 * __restrict data_y,
         size_t i_max,
@@ -134,19 +146,12 @@ struct L2Distance
     {
         __m512 sums = _mm512_setzero_ps();
 
-        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
+        constexpr size_t n = sizeof(__m512) / sizeof(Float32);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
-            __m512 x1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
-            __m512 x2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
-            __m512 y1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y)));
-            __m512 y2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y + n / 2)));
-
-            __m512 differences1 = _mm512_sub_ps(x1, y1);
-            __m512 differences2 = _mm512_sub_ps(x2, y2);
-            sums = _mm512_fmadd_ps(differences1, differences1, sums);
-            sums = _mm512_fmadd_ps(differences2, differences2, sums);
+            __m512 differences = _mm512_sub_ps(loadBFloat16AsFloat32(data_x + i_x), loadBFloat16AsFloat32(data_y + i_y));
+            sums = _mm512_fmadd_ps(differences, differences, sums);
         }
 
         state.sum = _mm512_reduce_add_ps(sums);
@@ -298,7 +303,7 @@ struct CosineDistance
 
         constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
             if constexpr (is_float32)
             {
@@ -332,7 +337,7 @@ struct CosineDistance
         }
     }
 
-    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
         const BFloat16 * __restrict data_x,
         const BFloat16 * __restrict data_y,
         size_t i_max,
@@ -344,15 +349,15 @@ struct CosineDistance
         __m512 x_squareds = _mm512_setzero_ps();
         __m512 y_squareds = _mm512_setzero_ps();
 
-        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
+        constexpr size_t n = sizeof(__m512) / sizeof(Float32);
 
-        for (; i_x + n < i_max; i_x += n, i_y += n)
+        for (; i_x + n <= i_max; i_x += n, i_y += n)
         {
-            __m512 x = _mm512_loadu_ps(data_x + i_x);
-            __m512 y = _mm512_loadu_ps(data_y + i_y);
-            dot_products = _mm512_dpbf16_ps(dot_products, x, y);
-            x_squareds = _mm512_dpbf16_ps(x_squareds, x, x);
-            y_squareds = _mm512_dpbf16_ps(y_squareds, y, y);
+            __m512 x = loadBFloat16AsFloat32(data_x + i_x);
+            __m512 y = loadBFloat16AsFloat32(data_y + i_y);
+            dot_products = _mm512_fmadd_ps(x, y, dot_products);
+            x_squareds = _mm512_fmadd_ps(x, x, x_squareds);
+            y_squareds = _mm512_fmadd_ps(y, y, y_squareds);
         }
 
         state.dot_prod = _mm512_reduce_add_ps(dot_products);
@@ -935,7 +940,7 @@ private:
             }
             else if constexpr (std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>)
             {
-                if (isArchSupported(TargetArch::x86_64_sapphirerapids))
+                if (isArchSupported(TargetArch::x86_64_v4))
                 {
                     size_t prev = 0;
                     for (size_t row = 0; row < input_rows_count; ++row)
