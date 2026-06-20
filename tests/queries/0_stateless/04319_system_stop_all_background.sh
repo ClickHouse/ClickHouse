@@ -170,8 +170,9 @@ $CLICKHOUSE_CLIENT -q "
 wait_status d Disabled
 
 # REFRESH while stopped: the request is remembered, the view stays Disabled and empty for now.
+$CLICKHOUSE_CLIENT -q "system refresh d;"
+wait_status d Disabled
 $CLICKHOUSE_CLIENT -q "
-    system refresh d;
     select '<4b: refresh while stopped is deferred>',
         (select count() from d),
         (select status from refreshes where view = 'd');"
