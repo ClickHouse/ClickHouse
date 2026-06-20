@@ -649,6 +649,14 @@ public:
         if (total_bit_num == 0)
             return false;
 
+        /// The value 1 is represented by the single set bit at index `fraction_bit_num`
+        /// (the lowest integer bit). When `integer_bit_num == 0` that bit lies outside
+        /// `data_array` (which has `total_bit_num` entries), so the vector cannot represent
+        /// the value 1, and `getDataArrayAt(fraction_bit_num)` in `pointwiseMultiply` would
+        /// read out of bounds. Such a vector is therefore never all-ones.
+        if (fraction_bit_num >= total_bit_num)
+            return false;
+
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             if (i == fraction_bit_num)
