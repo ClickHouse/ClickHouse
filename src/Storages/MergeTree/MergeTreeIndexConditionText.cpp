@@ -547,8 +547,13 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(con
     {
         tokenizer->stringToTokens(raw.data(), raw.size(), tokens);
     }
-    tokens = tokenizer->compactTokens(tokens);
-    return has_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
+    /// Apply the postprocessor BEFORE compaction. Compacting first is unsound for sparseGrams: it drops a
+    /// shorter gram covered by a longer one, but the postprocessor can map those two grams to different
+    /// tokens, so the dropped token would be absent from the lookup set (under-checking -> false
+    /// positives). Postprocessing first lets compactTokens operate on the final tokens.
+    if (has_postprocessor)
+        tokens = postprocessor->processTokens(std::move(tokens));
+    return tokenizer->compactTokens(tokens);
 }
 
 VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
@@ -563,8 +568,10 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(
         return tokens;
 
     tokenizer->substringToTokens(input.data(), input.size(), tokens, is_prefix, is_suffix);
-    tokens = tokenizer->compactTokens(tokens);
-    return has_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
+    /// See stringToTokens: postprocess before compaction.
+    if (has_postprocessor)
+        tokens = postprocessor->processTokens(std::move(tokens));
+    return tokenizer->compactTokens(tokens);
 }
 
 std::vector<VectorWithMemoryTracking<String>> MergeTreeIndexConditionText::regexpToTokensForQueries(const String & regexp_string) const
@@ -616,8 +623,10 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
     {
         tokenizer->stringLikeToTokens(raw.data(), raw.size(), tokens);
     }
-    tokens = tokenizer->compactTokens(tokens);
-    return has_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
+    /// See stringToTokens: postprocess before compaction.
+    if (has_postprocessor)
+        tokens = postprocessor->processTokens(std::move(tokens));
+    return tokenizer->compactTokens(tokens);
 }
 
 std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const

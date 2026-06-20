@@ -550,6 +550,7 @@ private:
         const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->index->condition);
         auto preprocessor = condition_text.getPreprocessor();
         auto postprocessor = condition_text.getPostprocessor();
+        const bool has_postprocessor = postprocessor && postprocessor->hasActions();
         const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
 
@@ -597,7 +598,11 @@ private:
                 VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
-                needles_array = tokenizer->compactTokens(needles_array);
+                /// Skip compaction when a postprocessor is configured: it is applied to these needle
+                /// tokens below, and compacting before postprocessing is unsound for sparseGrams (it can
+                /// drop a shorter gram covered by a longer one that maps to a different postprocessed token).
+                if (!has_postprocessor)
+                    needles_array = tokenizer->compactTokens(needles_array);
                 needles_field = Array(needles_array.begin(), needles_array.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
@@ -606,7 +611,7 @@ private:
         /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
         /// function still matches when the index isn't read directly (direct read off, or unmaterialized
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
-        if (needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions())
+        if (needApplyPostprocessor(function_name) && has_postprocessor)
         {
             auto haystack_name = getNameWithoutAliases(new_children[0]);
             ActionsDAG::NodeRawConstPtrs merged_outputs;
@@ -663,7 +668,10 @@ private:
                 for (const Field & element : src_array)
                     if (element.getType() == Field::Types::String)
                         tokens.push_back(element.safeGet<String>());
+                /// Postprocess, then compact (compacting before postprocessing was skipped above): this
+                /// keeps the lookup set minimal while staying sound for sparseGrams.
                 tokens = postprocessor->processTokens(std::move(tokens));
+                tokens = tokenizer->compactTokens(tokens);
                 needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
