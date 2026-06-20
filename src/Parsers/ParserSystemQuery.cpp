@@ -17,6 +17,7 @@
 
 #include <base/EnumReflection.h>
 
+#include <algorithm>
 #include <limits>
 
 
@@ -252,25 +253,18 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     bool found = false;
 
-    /// STOP matches also STOP [...], check the more specific forms first.
-    auto is_generic_verb = [](Type type)
-    {
-        switch (type)
-        {
-            case Type::STOP:
-            case Type::START:
-            case Type::PAUSE:
-            case Type::CANCEL:
-            case Type::REFRESH:
-                return true;
-            default:
-                return false;
-        }
+    static constexpr Type background_verbs[] = {
+        Type::STOP,
+        Type::START,
+        Type::PAUSE,
+        Type::CANCEL,
+        Type::REFRESH,
     };
 
     for (const auto & type : magic_enum::enum_values<Type>())
     {
-        if (is_generic_verb(type))
+        /// STOP matches also STOP [...], check the more specific forms first.
+        if (std::ranges::contains(background_verbs, type))
             continue;
         if (ParserKeyword::createDeprecated(ASTSystemQuery::typeToString(type)).ignore(pos, expected))
         {
@@ -326,14 +320,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     if (!found)
     {
-        static const Type background_verbs[] = {
-            Type::STOP,
-            Type::START,
-            Type::PAUSE,
-            Type::CANCEL,
-            Type::REFRESH,
-        };
-
         for (const auto & type : background_verbs)
         {
             if (ParserKeyword::createDeprecated(ASTSystemQuery::typeToString(type)).ignore(pos, expected))

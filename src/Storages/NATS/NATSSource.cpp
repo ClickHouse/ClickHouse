@@ -146,14 +146,12 @@ Chunk NATSSource::generate()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
-    bool aborted = false;
-
     while (true)
     {
         if (storage.isConsumeCancelRequested(cancel_epoch))
         {
-            aborted = true;
-            break;
+            consumption_aborted = true;
+            return {};
         }
 
         if (consumer->isConsumerStopped() || !checkTimeLimit())
@@ -200,12 +198,6 @@ Chunk NATSSource::generate()
             break;
     }
 
-    /// Discard the in-flight block on abort, the rows read this cycle are not pushed to the views.
-    if (aborted)
-    {
-        consumption_aborted = true;
-        return {};
-    }
     if (total_rows == 0)
         return {};
 
