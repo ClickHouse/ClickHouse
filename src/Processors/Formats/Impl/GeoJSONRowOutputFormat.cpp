@@ -368,6 +368,9 @@ void registerOutputFormatGeoJSON(FormatFactory & factory)
         { return std::make_shared<GeoJSONRowOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("GeoJSON");
     factory.setContentType("GeoJSON", "application/geo+json; charset=UTF-8");
+    /// Each output is one complete top-level `FeatureCollection`, so appending to an existing file
+    /// would produce a second collection and a malformed document.
+    factory.markFormatHasNoAppendSupport("GeoJSON");
 }
 
 }
