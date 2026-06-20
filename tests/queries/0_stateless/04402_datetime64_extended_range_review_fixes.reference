@@ -1,0 +1,12 @@
+-- changeYear/changeMonth on DateTime64 cover [0000, 9999], not just [1900, 2299]
+1850-06-15 12:00:00.000	5000-06-15 12:00:00.000	9999-06-15 12:00:00.000	0500-12-15 00:00:00.000
+-- scale 9 keeps working in-range and saturates gracefully out of its narrower tick range
+2100-01-01 00:00:00.000000000	1	1
+-- parseDateTime64 century %C accepts [0, 99]
+1800-03-04 00:00:00.000000	0000-03-04 00:00:00.000000	9900-03-04 00:00:00.000000
+-- addMonths saturates to the upper boundary instead of jumping back a year
+9999-12-31 23:59:59	9999-12-31 23:59:59
+-- dateDiff hour/minute are correct across the 1900 boundary (match the 2250 analog)
+1	1	2
+-- dateDiff week on out-of-range (pre-1900) dates uses floor: matches the in-range analog 400 years later
+1	12

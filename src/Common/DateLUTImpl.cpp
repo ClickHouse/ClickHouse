@@ -343,14 +343,20 @@ DateLUTImpl::Time DateLUTImpl::addMonthsOutOfRange(Time t, Int64 delta) const
     const Int64 capped_delta = std::clamp<Int64>(delta, -12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1), 12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1));
     const Int64 month_index = static_cast<Int64>(cs.year()) * 12 + (cs.month() - 1) + capped_delta;
     const Int64 unclamped_year = month_index >= 0 ? month_index / 12 : -((-month_index + 11) / 12);
+
+    /// If the result leaves the representable calendar, saturate the whole date to the boundary. Clamping only the
+    /// year would keep a wrapped month (e.g. 9999-12-31 + 1 MONTH normalizes to year 10000, month 1, and clamping
+    /// the year back to 9999 would jump to 9999-01-31, i.e. backwards in time).
+    if (unclamped_year > DATE_LUT_MAX_REPRESENTABLE_YEAR)
+        return std::chrono::system_clock::to_time_t(tz.lookup(cctz::civil_second{DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59}).pre);
+    if (unclamped_year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
+        return std::chrono::system_clock::to_time_t(tz.lookup(cctz::civil_second{DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0}).pre);
+
     const int month = static_cast<int>(month_index - unclamped_year * 12) + 1;
-    /// Saturate to the representable calendar so converting the result back to a time point cannot overflow.
-    const Int64 year = std::clamp<Int64>(unclamped_year, DATE_LUT_MIN_REPRESENTABLE_YEAR, DATE_LUT_MAX_REPRESENTABLE_YEAR);
-
     /// Saturate the day of month, e.g. 31 Jan + 1 month = 28/29 Feb.
-    const int day_of_month = std::min<int>(cs.day(), daysInCivilMonth(year, month));
+    const int day_of_month = std::min<int>(cs.day(), daysInCivilMonth(unclamped_year, month));
 
-    const cctz::civil_second target{static_cast<int>(year), month, day_of_month, cs.hour(), cs.minute(), cs.second()};
+    const cctz::civil_second target{static_cast<int>(unclamped_year), month, day_of_month, cs.hour(), cs.minute(), cs.second()};
     return std::chrono::system_clock::to_time_t(tz.lookup(target).pre);
 }
 
@@ -382,11 +388,17 @@ ExtendedDayNum DateLUTImpl::addMonthsOutOfRange(ExtendedDayNum d, Int64 delta) c
     const Int64 capped_delta = std::clamp<Int64>(delta, -12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1), 12 * (DATE_LUT_MAX_REPRESENTABLE_YEAR + 1));
     const Int64 month_index = static_cast<Int64>(cd.year()) * 12 + (cd.month() - 1) + capped_delta;
     const Int64 unclamped_year = month_index >= 0 ? month_index / 12 : -((-month_index + 11) / 12);
-    const int month = static_cast<int>(month_index - unclamped_year * 12) + 1;
-    const Int64 year = std::clamp<Int64>(unclamped_year, DATE_LUT_MIN_REPRESENTABLE_YEAR, DATE_LUT_MAX_REPRESENTABLE_YEAR);
-    const int day_of_month = std::min<int>(cd.day(), daysInCivilMonth(year, month));
 
-    return dayNumOfDayIndex(dayIndexOfCivilDay(cctz::civil_day{static_cast<int>(year), month, day_of_month}));
+    /// Saturate the whole date to the boundary rather than clamping only the year (which would keep a wrapped month).
+    if (unclamped_year > DATE_LUT_MAX_REPRESENTABLE_YEAR)
+        return dayNumOfDayIndex(dayIndexOfCivilDay(cctz::civil_day{DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31}));
+    if (unclamped_year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
+        return dayNumOfDayIndex(dayIndexOfCivilDay(cctz::civil_day{DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1}));
+
+    const int month = static_cast<int>(month_index - unclamped_year * 12) + 1;
+    const int day_of_month = std::min<int>(cd.day(), daysInCivilMonth(unclamped_year, month));
+
+    return dayNumOfDayIndex(dayIndexOfCivilDay(cctz::civil_day{static_cast<int>(unclamped_year), month, day_of_month}));
 }
 
 ExtendedDayNum DateLUTImpl::addYearsOutOfRange(ExtendedDayNum d, Int64 delta) const

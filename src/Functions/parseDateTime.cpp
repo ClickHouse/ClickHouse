@@ -240,8 +240,8 @@ namespace
         [[nodiscard]]
         VoidOrError setCentury(Int32 century)
         {
-            if (century < 19 || century > 21)
-                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for century must be in the range [19, 21]", century)
+            if (century < 0 || century > 99)
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for century must be in the range [0, 99]", century)
 
             year = 100 * century;
             has_year = true;

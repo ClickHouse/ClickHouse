@@ -240,6 +240,38 @@ TEST(DateLUTTest, DayOfYearExtendedDayNumOutOfRange)
     EXPECT_EQ(lut.toYear(ExtendedDayNum{std::numeric_limits<Int32>::max()}), 9999);
 }
 
+/// Interval rounding must floor towards -inf for pre-1970 day numbers: truncating division rounds towards zero,
+/// i.e. forward in time, past the start of the interval. (The result is masked by the narrow Date return type of
+/// the SQL `toStartOfInterval`, so verify the DateLUT primitives directly.)
+TEST(DateLUTTest, StartOfIntervalPreEpochFloor)
+{
+    const DateLUTImpl & lut = DateLUT::instance("UTC");
+
+    struct YMD { int y; int m; int d; };
+    const YMD dates[] = {{1950, 3, 15}, {1905, 11, 30}, {1820, 7, 4}};
+
+    for (const auto & ymd : dates)
+    {
+        const ExtendedDayNum dn{static_cast<Int32>(cctz::civil_day{ymd.y, ymd.m, ymd.d} - cctz::civil_day{1970, 1, 1})};
+        SCOPED_TRACE(std::to_string(ymd.y) + "-" + std::to_string(ymd.m) + "-" + std::to_string(ymd.d));
+
+        for (UInt64 weeks : {2ul, 3ul, 5ul})
+        {
+            const auto start = lut.toStartOfWeekInterval(dn, weeks);
+            EXPECT_LE(start.toUnderType(), dn.toUnderType());                                          // not in the future
+            EXPECT_LT(dn.toUnderType() - start.toUnderType(), static_cast<Int32>(weeks * 7));
+            EXPECT_EQ(lut.toDayOfWeek(start), 1);                                                      // weeks start on Monday
+        }
+
+        for (UInt64 months : {2ul, 7ul, 25ul})
+        {
+            const auto start = lut.toStartOfMonthInterval(dn, months);
+            EXPECT_LE(start.toUnderType(), dn.toUnderType());
+            EXPECT_EQ(lut.toDayOfMonth(start), 1);                                                     // first day of a month
+        }
+    }
+}
+
 /// Week / ISO computations are timezone-independent and repeat every 400 years. Verify the periodicity holds
 /// across the boundary (year Y vs Y + 400) for the out-of-range escape path.
 TEST(DateLUTTest, WeekFunctionsOutOfRangePeriodicity)

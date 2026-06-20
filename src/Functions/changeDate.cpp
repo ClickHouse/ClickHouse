@@ -18,6 +18,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
 
+#include <limits>
 #include <memory>
 
 namespace DB
@@ -225,19 +226,37 @@ public:
         }
         else
         {
-            min_date = DecimalUtils::dateTimeFromComponents(
-                date_lut.makeDateTime(1900, 1, 1, 0, 0, 0),
-                static_cast<Int64>(0),
-                static_cast<UInt32>(scale));
             Int64 deg = 1;
             for (Int64 j = 0; j < scale; ++j)
                 deg *= 10;
-            max_date = DecimalUtils::dateTimeFromComponents(
-                date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
-                static_cast<Int64>(deg - 1),
-                static_cast<UInt32>(scale));
-            min_year = 1900;
-            max_year = 2299;
+
+            /// DateTime64 spans [0000-01-01, 9999-12-31], further limited by what fits in Int64 ticks at this scale
+            /// (precision 8 and 9 cannot reach 9999). Saturate the clamp bounds to the representable window; the
+            /// whole-second calendar boundaries are obtained from makeDateTime so we do not depend on extra constants.
+            const Int64 max_seconds = date_lut.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59);
+            const Int64 min_seconds = date_lut.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0);
+
+            if (max_seconds <= std::numeric_limits<Int64>::max() / deg)
+            {
+                max_date = DecimalUtils::dateTimeFromComponents(max_seconds, deg - 1, static_cast<UInt32>(scale));
+                max_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
+            }
+            else
+            {
+                max_date = std::numeric_limits<Int64>::max();
+                max_year = date_lut.toYear(static_cast<time_t>(std::numeric_limits<Int64>::max() / deg));
+            }
+
+            if (min_seconds >= std::numeric_limits<Int64>::min() / deg)
+            {
+                min_date = DecimalUtils::dateTimeFromComponents(min_seconds, static_cast<Int64>(0), static_cast<UInt32>(scale));
+                min_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
+            }
+            else
+            {
+                min_date = std::numeric_limits<Int64>::min();
+                min_year = date_lut.toYear(static_cast<time_t>(std::numeric_limits<Int64>::min() / deg));
+            }
         }
 
         switch (component)

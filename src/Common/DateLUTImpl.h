@@ -40,7 +40,9 @@ class time_zone;
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
-#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366L * 86400)
+/// It must cover the whole representable range (down to year 0000), otherwise the relative hour/minute helpers below
+/// would feed a negative dividend into C++ truncating division and round pre-1970 values towards zero instead of -inf.
+#define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_REPRESENTABLE_YEAR) * 366L * 86400)
 /// NOLINTEND(modernize-macro-to-enum)
 
 
@@ -967,10 +969,12 @@ public:
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(v)))
             {
-                /// Mirror the in-range formula in day-number space (toDayNum(i + (8 - dow)) / 7).
+                /// Mirror the in-range formula in day-number space (toDayNum(i + (8 - dow)) / 7), using floor
+                /// division so a pre-epoch week number rounds towards -inf; otherwise dateDiff('week', ...) undercounts.
                 const Int64 day_index = outOfRangeDayIndex(v);
                 const UInt8 day_of_week = outOfRangeValues(v).day_of_week;
-                return static_cast<Int32>((day_index + (8 - day_of_week) - daynum_offset_epoch) / 7);
+                const Int64 shifted = day_index + (8 - day_of_week) - daynum_offset_epoch;
+                return static_cast<Int32>(shifted >= 0 ? shifted / 7 : -((-shifted + 6) / 7));
             }
 
         const LUTIndex i = toLUTIndex(v);
@@ -1392,7 +1396,11 @@ public:
                 const Int64 div = static_cast<Int64>(months);
                 const Int64 rounded = (rel >= 0 ? rel / div : -((-rel + div - 1) / div)) * div;
                 const Int64 absolute_month = static_cast<Int64>(DATE_LUT_MIN_YEAR) * 12 + rounded;
-                return makeDayNumOutOfRange(absolute_month / 12, static_cast<UInt8>(absolute_month % 12) + 1, 1);
+                /// Floor-divide so the month stays in [1, 12] for a negative absolute month (the year is saturated
+                /// in makeDayNumOutOfRange); a plain `% 12` would be negative and wrap when cast to UInt8.
+                const Int64 abs_year = absolute_month >= 0 ? absolute_month / 12 : -((-absolute_month + 11) / 12);
+                const Int64 abs_month = absolute_month - abs_year * 12;
+                return makeDayNumOutOfRange(abs_year, static_cast<UInt8>(abs_month) + 1, 1);
             }
 
         const Values & values = lut[toLUTIndex(d)];
@@ -1414,7 +1422,13 @@ public:
         if constexpr (std::is_same_v<Date, DayNum>)
             return DayNum(static_cast<UInt16>(4 + (d - 4) / days * days));
         else
-            return ExtendedDayNum(static_cast<Int32>(4 + (d - 4) / days * days));
+        {
+            /// Floor towards -inf so a pre-1970 day number rounds to the start of its interval, not forward in time.
+            const Int64 idays = static_cast<Int64>(days);
+            const Int64 shifted = static_cast<Int64>(d.toUnderType()) - 4;
+            const Int64 rounded = (shifted >= 0 ? shifted / idays : (shifted + 1 - idays) / idays) * idays;
+            return ExtendedDayNum(static_cast<Int32>(4 + rounded));
+        }
     }
 
     template <typename Date>
