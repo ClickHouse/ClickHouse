@@ -8,8 +8,8 @@ if ! command -v gzip &> /dev/null; then echo "gzip not found" 1>&2; exit 1; fi
 
 # max_generic_compression_threads > 1 makes 'gzip' compression run in parallel. The output must stay a
 # standard gzip stream: decompressible by the system gzip and identical to single-threaded output.
-PAR="${CLICKHOUSE_TMP}/04341_parallel.tsv.gz"
-SEQ="${CLICKHOUSE_TMP}/04341_serial.tsv.gz"
+PAR="${CLICKHOUSE_TMP}/04401_parallel.tsv.gz"
+SEQ="${CLICKHOUSE_TMP}/04401_serial.tsv.gz"
 rm -f "$PAR" "$SEQ"
 
 # 100k rows is ~0.6 MiB of TSV, larger than several 256 KiB blocks, so the parallel path produces multiple
