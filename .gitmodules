@@ -399,3 +399,6 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/nsync"]
+	path = contrib/nsync
+	url = https://github.com/google/nsync

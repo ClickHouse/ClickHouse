@@ -53,6 +53,16 @@ class TSA_CAPABILITY("SelfSharedMutex") SelfSharedMutex final : public SharedMut
 }
 #endif
 
+#if defined(USE_NSYNC) && USE_NSYNC
+
+namespace DB
+{
+class TSA_CAPABILITY("TestNsyncSharedMutex") TestNsyncSharedMutex final : public NsyncSharedMutex
+{
+};
+}
+#endif
+
 
 struct NoCancel {};
 
@@ -285,11 +295,17 @@ void PerfTestSharedMutexRW()
 #ifdef OS_LINUX
 TEST(Threading, SharedMutexSmokeSelf) { TestSharedMutex<DB::SelfSharedMutex>(); }
 #endif
+#if defined(USE_NSYNC) && USE_NSYNC
+TEST(Threading, SharedMutexSmokeNsync) { TestSharedMutex<DB::TestNsyncSharedMutex>(); }
+#endif
 TEST(Threading, SharedMutexSmokeAbsl) { TestSharedMutex<DB::AbslSharedMutex>(); }
 TEST(Threading, SharedMutexSmokeStd) { TestSharedMutex<std::shared_mutex>(); }
 
 #ifdef OS_LINUX
 TEST(Threading, PerfTestSharedMutexReadersOnlySelf) { PerfTestSharedMutexReadersOnly<DB::SelfSharedMutex>(); }
+#endif
+#if defined(USE_NSYNC) && USE_NSYNC
+TEST(Threading, PerfTestSharedMutexReadersOnlyNsync) { PerfTestSharedMutexReadersOnly<DB::TestNsyncSharedMutex>(); }
 #endif
 TEST(Threading, PerfTestSharedMutexReadersOnlyAbsl) { PerfTestSharedMutexReadersOnly<DB::AbslSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexReadersOnlyStd) { PerfTestSharedMutexReadersOnly<std::shared_mutex>(); }
@@ -297,12 +313,17 @@ TEST(Threading, PerfTestSharedMutexReadersOnlyStd) { PerfTestSharedMutexReadersO
 #ifdef OS_LINUX
 TEST(Threading, PerfTestSharedMutexWritersOnlySelf) { PerfTestSharedMutexWritersOnly<DB::SelfSharedMutex>(); }
 #endif
+#if defined(USE_NSYNC) && USE_NSYNC
+TEST(Threading, PerfTestSharedMutexWritersOnlyNsync) { PerfTestSharedMutexWritersOnly<DB::TestNsyncSharedMutex>(); }
+#endif
 TEST(Threading, PerfTestSharedMutexWritersOnlyAbsl) { PerfTestSharedMutexWritersOnly<DB::AbslSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexWritersOnlyStd) { PerfTestSharedMutexWritersOnly<std::shared_mutex>(); }
 
 #ifdef OS_LINUX
 TEST(Threading, PerfTestSharedMutexRWSelf) { PerfTestSharedMutexRW<DB::SelfSharedMutex>(); }
 #endif
+#if defined(USE_NSYNC) && USE_NSYNC
+TEST(Threading, PerfTestSharedMutexRWNsync) { PerfTestSharedMutexRW<DB::TestNsyncSharedMutex>(); }
+#endif
 TEST(Threading, PerfTestSharedMutexRWAbsl) { PerfTestSharedMutexRW<DB::AbslSharedMutex>(); }
 TEST(Threading, PerfTestSharedMutexRWStd) { PerfTestSharedMutexRW<std::shared_mutex>(); }
-

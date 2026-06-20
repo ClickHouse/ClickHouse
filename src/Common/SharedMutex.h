@@ -78,3 +78,40 @@ public:
 }
 
 #endif
+
+#if defined(USE_NSYNC) && USE_NSYNC
+
+#include <nsync_mu.h>
+
+namespace DB
+{
+
+/// Implementation of the `SharedMutex` API based on google/nsync.
+/// Keep it explicit so only write-heavy or mixed read/write contention paths opt into its different performance profile.
+class TSA_CAPABILITY("NsyncSharedMutex") NsyncSharedMutex
+{
+public:
+    NsyncSharedMutex() { nsync::nsync_mu_init(&mutex); }
+    ~NsyncSharedMutex() = default;
+    NsyncSharedMutex(const NsyncSharedMutex &) = delete;
+    NsyncSharedMutex & operator=(const NsyncSharedMutex &) = delete;
+    NsyncSharedMutex(NsyncSharedMutex &&) = delete;
+    NsyncSharedMutex & operator=(NsyncSharedMutex &&) = delete;
+
+    // Exclusive ownership
+    void lock() TSA_ACQUIRE() { nsync::nsync_mu_lock(&mutex); }
+    bool try_lock() TSA_TRY_ACQUIRE(true) { return nsync::nsync_mu_trylock(&mutex); }
+    void unlock() TSA_RELEASE() { nsync::nsync_mu_unlock(&mutex); }
+
+    // Shared ownership
+    void lock_shared() TSA_ACQUIRE_SHARED() { nsync::nsync_mu_rlock(&mutex); }
+    bool try_lock_shared() TSA_TRY_ACQUIRE_SHARED(true) { return nsync::nsync_mu_rtrylock(&mutex); }
+    void unlock_shared() TSA_RELEASE_SHARED() { nsync::nsync_mu_runlock(&mutex); }
+
+private:
+    nsync::nsync_mu mutex;
+};
+
+}
+
+#endif
