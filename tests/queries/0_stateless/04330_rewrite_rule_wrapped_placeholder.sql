@@ -7,11 +7,13 @@
 -- `ASTExpressionList` wrapper instead of the inner node, substituting an extra nesting
 -- layer into the result template. The binding must capture the inner value.
 
-SET query_rules = 1;
-
 CREATE RULE rule_wrapped AS (SELECT {x:String}) REWRITE TO (SELECT {x:String}, 'rewritten');
+
+SET query_rules = 'rule_wrapped';
 
 SET param_x = 'hello';
 SELECT {x:String};
+
+SET query_rules = '';
 
 DROP RULE rule_wrapped;

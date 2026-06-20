@@ -1,8 +1,6 @@
 -- Tags: no-parallel
 -- no-parallel: rule names are global; running in parallel may collide with other tests.
 
-SET query_rules = 1;
-
 -- A result template that references a placeholder not captured by the source template
 -- must be rejected at DDL time, instead of throwing for every matching query later.
 CREATE RULE rule_unknown_param AS (SELECT 1) REWRITE TO (SELECT {missing:String}); -- { serverError REWRITE_RULE_UNKNOWN_QUERY_PARAMETER }

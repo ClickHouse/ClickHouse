@@ -1,8 +1,6 @@
 -- Tags: no-parallel
 -- no-parallel: rule names are global; running in parallel may collide with other tests.
 
-SET query_rules = 1;
-
 -- A rewrite rule template can itself be a CREATE RULE / ALTER RULE statement, whose own
 -- source/result templates live outside `IAST::children`. The matcher and the result
 -- substitution only walk `children`, so a placeholder inside such a nested rule template

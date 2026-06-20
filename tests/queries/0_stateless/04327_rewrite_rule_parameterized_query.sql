@@ -13,8 +13,6 @@ CREATE TABLE rewrite_rule_param_dst (date String, hits UInt32, page String) ENGI
 
 INSERT INTO rewrite_rule_param_dst VALUES ('today', 1337, 'first');
 
-SET query_rules = 1;
-
 CREATE RULE rewrite_rule_param_rule AS
 (
     SELECT date, sum(hits) FROM rewrite_rule_param_src WHERE page = {name:String} GROUP BY date
@@ -24,10 +22,14 @@ REWRITE TO
     SELECT date, hits FROM rewrite_rule_param_dst WHERE page = {name:String}
 );
 
+SET query_rules = 'rewrite_rule_param_rule';
+
 -- Incoming query is itself parameterized with the same placeholder {name:String}.
 -- Before the fix this threw REWRITE_RULE_UNKNOWN_QUERY_PARAMETER.
 SET param_name = 'first';
 SELECT date, sum(hits) FROM rewrite_rule_param_src WHERE page = {name:String} GROUP BY date;
+
+SET query_rules = '';
 
 DROP RULE rewrite_rule_param_rule;
 

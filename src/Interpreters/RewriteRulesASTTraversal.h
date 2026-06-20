@@ -5,7 +5,12 @@
 namespace DB
 {
 
-bool astTraversal(ASTPtr& ast, ContextPtr context);
+/// Applies the rewrite rules listed in the `query_rules` setting to `ast` (matching queries
+/// are rewritten in place or rejected via an exception). The names of the rules that were
+/// applied are appended to `applied_rules`, in application order, so the caller can record
+/// them in `system.query_log` (this also happens before a `REJECT` rule throws). Returns
+/// whether any rules were active.
+bool astTraversal(ASTPtr& ast, ContextPtr context, std::vector<String> & applied_rules);
 void applyRule(ASTPtr& ast, RewriteRuleObjectPtr rule, std::unordered_map<String, ASTPtr>& matching_map);
 
 /// Enforces `max_ast_depth` / `max_ast_elements` on a rewrite rule's source and

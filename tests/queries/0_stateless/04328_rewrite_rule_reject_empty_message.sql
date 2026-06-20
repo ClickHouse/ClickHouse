@@ -1,8 +1,6 @@
 -- Tags: no-parallel
 -- no-parallel: rule names are global; running in parallel may collide with other tests.
 
-SET query_rules = 1;
-
 -- `REJECT WITH ''` is a valid (if unusual) reject rule with an empty message.
 -- Regression: previously the `reject()` predicate inferred the rule kind from
 -- `reject_message.empty()`, so an empty message turned the rule into a silent
@@ -10,7 +8,11 @@ SET query_rules = 1;
 
 CREATE RULE rule_reject_empty_create AS (SELECT 'rule_reject_empty_create_marker') REJECT WITH '';
 
+SET query_rules = 'rule_reject_empty_create';
+
 SELECT 'rule_reject_empty_create_marker'; -- { serverError REWRITE_RULE_REJECTION }
+
+SET query_rules = '';
 
 DROP RULE rule_reject_empty_create;
 
@@ -21,6 +23,10 @@ CREATE RULE rule_reject_empty_alter AS (SELECT 'rule_reject_empty_alter_marker')
 
 ALTER RULE rule_reject_empty_alter AS (SELECT 'rule_reject_empty_alter_marker') REJECT WITH '';
 
+SET query_rules = 'rule_reject_empty_alter';
+
 SELECT 'rule_reject_empty_alter_marker'; -- { serverError REWRITE_RULE_REJECTION }
+
+SET query_rules = '';
 
 DROP RULE rule_reject_empty_alter;

@@ -133,7 +133,6 @@
 #endif
 #include <Storages/System/StorageSystemWasmModules.h>
 #include <Storages/System/StorageSystemRewriteRules.h>
-#include <Storages/System/StorageSystemRewriteRulesLogs.h>
 
 #include <Interpreters/Context.h>
 
@@ -293,7 +292,6 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemUnicode>(context, system_database, "unicode", "Contains all unicode codepoints.");
 #endif
     attachNoDescription<StorageSystemRewriteRules>(context, system_database, "query_rules", "Displays all query rewrite rules");
-    attachNoDescription<StorageSystemRewriteRulesLogs>(context, system_database, "query_rules_log", "Displays all query rewrite rules history");
 
     if (has_zookeeper)
     {

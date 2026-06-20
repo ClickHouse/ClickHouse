@@ -37,21 +37,4 @@ const ASTCreateRewriteRuleQuery& RewriteRuleObject::getCreateQuery() const
     return create_query;
 }
 
-RewriteRuleLog::RewriteRuleLog(
-    const std::string& original_query_,
-    const Array& applied_rules_,
-    const std::string& resulting_query_
-) : original_query(original_query_), applied_rules(applied_rules_), resulting_query(resulting_query_)
-{
-}
-
-MutableRewriteRuleLogPtr RewriteRuleLog::create(
-    const std::string& original_query,
-    const Array& applied_rules,
-    const std::string& resulting_query
-)
-{
-    return std::make_shared<RewriteRuleLog>(original_query, applied_rules, resulting_query);
-}
-
 }

@@ -5,6 +5,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTCreateRewriteRuleQuery.h>
 #include <Parsers/ASTAlterRewriteRuleQuery.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <functional>
@@ -18,7 +19,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool query_rules;
+    extern const SettingsString query_rules;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
 }
@@ -29,20 +30,50 @@ namespace ErrorCodes
     extern const int REWRITE_RULE_DUPLICATED_QUERY_PARAMETER;
     extern const int REWRITE_RULE_UNKNOWN_QUERY_PARAMETER;
     extern const int REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE;
+    extern const int REWRITE_RULE_DOESNT_EXIST;
 }
 
-bool astTraversal(ASTPtr &ast, ContextPtr context)
+bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied_rules)
 {
     const auto& settings = context->getSettingsRef();
-    if (!ast || !settings[Setting::query_rules])
+    if (!ast)
     {
         return false;
     }
 
-    auto original_query = ast->formatForLogging();
-    Array applied_rules;
-    for (const auto& [name, rule] : RewriteRules::instance().getAll())
+    /// `query_rules` lists the names of the active rewrite rules, applied in the listed
+    /// order. By default it is empty and no rules are applied to the query. Check for the
+    /// empty value before parsing: `parseIdentifiersOrStringLiterals` throws on an empty
+    /// string rather than returning an empty list, and this runs for every query.
+    const auto rules_setting = settings[Setting::query_rules].toString();
+    if (rules_setting.empty())
     {
+        return false;
+    }
+    auto active_rule_names = parseIdentifiersOrStringLiterals(rules_setting, settings);
+    if (active_rule_names.empty())
+    {
+        return false;
+    }
+
+    /// Build a name -> rule lookup once, then apply the requested rules in the order they
+    /// are listed in `query_rules`. A listed rule that does not exist is an error, so a
+    /// typo in `query_rules` fails the query instead of silently applying nothing.
+    RewriteRuleObjectsList all_rules = RewriteRules::instance().getAll();
+    std::unordered_map<std::string, RewriteRuleObjectPtr> rules_by_name;
+    rules_by_name.reserve(all_rules.size());
+    for (auto & [rule_name, rule_object] : all_rules)
+        rules_by_name.emplace(rule_name, rule_object);
+
+    for (const auto& name : active_rule_names)
+    {
+        auto rule_it = rules_by_name.find(name);
+        if (rule_it == rules_by_name.end())
+            throw Exception(
+                ErrorCodes::REWRITE_RULE_DOESNT_EXIST,
+                "Rewrite rule `{}` listed in the `query_rules` setting does not exist",
+                name);
+        const auto & rule = rule_it->second;
         const auto& query_rule = rule->getCreateQuery();
         std::queue<ASTPtr> queue_query;
         std::queue<ASTPtr> queue_rule;
@@ -202,21 +233,12 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
         if (is_template)
         {
             applied_rules.push_back(name);
-            /// A `REJECT WITH` rule throws from `applyRule` before the end-of-function
-            /// logging is reached, so the rejection would otherwise never appear in
-            /// `system.query_rules_log`. Record the match first (with an empty
-            /// `resulting_query`, which marks a rejection because a rewrite always
-            /// produces a non-empty resulting query) so operators can audit which rule
-            /// rejected a query.
-            if (query_rule.reject())
-                RewriteRules::instance().addLog(original_query, applied_rules, /* resulting_query */ "");
+            /// `applyRule` rewrites `ast` in place, or throws `REWRITE_RULE_REJECTION` for a
+            /// `REJECT` rule. `applied_rules` already records this rule (a rejecting rule is
+            /// pushed before the throw), so the caller can log it in `system.query_log` even
+            /// for a rejection.
             applyRule(ast, rule, matching_map);
         }
-    }
-
-    if (!applied_rules.empty())
-    {
-        RewriteRules::instance().addLog(original_query, applied_rules, ast->formatForLogging());
     }
 
     return true;

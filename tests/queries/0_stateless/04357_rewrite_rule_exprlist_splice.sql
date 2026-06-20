@@ -8,15 +8,17 @@
 -- produced top-level projection children `[ASTExpressionList(1, 2), 3]` instead of
 -- `[1, 2, 3]`.
 
-SET query_rules = 1;
-
 -- Splicing into a SELECT projection list.
 CREATE RULE rule_exprlist_splice AS (SELECT {l:ExpressionList}) REWRITE TO (SELECT {l:ExpressionList}, 3);
+SET query_rules = 'rule_exprlist_splice';
 SELECT 1, 2;
+SET query_rules = '';
 DROP RULE rule_exprlist_splice;
 
 -- Splicing into a function-argument list: `greatest(1, 2)` must become
 -- `greatest(1, 2, 100)` = 100, not `greatest((1, 2), 100)`.
 CREATE RULE rule_exprlist_func AS (SELECT greatest({l:ExpressionList})) REWRITE TO (SELECT greatest({l:ExpressionList}, 100));
+SET query_rules = 'rule_exprlist_func';
 SELECT greatest(1, 2);
+SET query_rules = '';
 DROP RULE rule_exprlist_func;

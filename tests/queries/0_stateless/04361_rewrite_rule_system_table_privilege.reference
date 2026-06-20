@@ -1,8 +1,4 @@
 rules without grant:
 0
-log without grant:
-0
 rules with grant:
-1
-log with grant:
 1

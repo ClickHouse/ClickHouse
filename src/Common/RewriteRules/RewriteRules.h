@@ -31,14 +31,6 @@ public:
 
     void updateRule(const ASTAlterRewriteRuleQuery & query);
 
-    void addLog(
-        const std::string& original_query,
-        const Array& applied_rules,
-        const std::string& resulting_query
-    );
-
-    std::vector<MutableRewriteRuleLogPtr> getLogs() const;
-
     bool usesReplicatedStorage();
 
     bool loadIfNot();
@@ -50,7 +42,6 @@ public:
 protected:
     mutable RewriteRuleObjectsList loaded_rewrite_rules;
     mutable std::mutex mutex;
-    mutable std::vector<MutableRewriteRuleLogPtr> logs;
 
     bool loadIfNot(std::lock_guard<std::mutex> & lock) const;
 

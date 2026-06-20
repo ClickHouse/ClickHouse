@@ -19,14 +19,16 @@ VALUES (
     'today', 1337, 'first'
 );
 
-SET query_rules = 1;
-
-CREATE RULE rule_1 AS 
+CREATE RULE rule_1 AS
 (
     SELECT date, hits FROM totals WHERE page = {name:String}
-) 
+)
 REJECT WITH 'Was rejected by rule_1';
 
+SET query_rules = 'rule_1';
+
 SELECT date, hits FROM totals WHERE page = 'first'; -- { serverError REWRITE_RULE_REJECTION }
+
+SET query_rules = '';
 
 DROP RULE rule_1;

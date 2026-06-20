@@ -64,6 +64,10 @@ struct QueryLogElement
     String formatted_query;
     UInt64 normalized_query_hash{};
 
+    /// Names of the query rewrite rules (CREATE RULE) applied to this query, in the order
+    /// they were applied. Empty if no rule matched or the feature is not enabled.
+    std::vector<String> applied_rules;
+
     IAST::QueryKind query_kind{};
     std::set<String> query_databases;
     std::set<String> query_tables;

@@ -441,30 +441,6 @@ void RewriteRules::updateRule(const ASTAlterRewriteRuleQuery & query)
     it->second = std::move(ptr);
 }
 
-void RewriteRules::addLog(
-    const std::string& original_query,
-    const Array& applied_rules,
-    const std::string& resulting_query
-)
-{
-    std::lock_guard lock(mutex);
-    if (applied_rules.empty())
-    {
-        return;
-    }
-    /// Bound the log size to avoid unbounded memory growth.
-    static constexpr size_t max_logs = 1024;
-    if (logs.size() >= max_logs)
-        logs.erase(logs.begin(), logs.begin() + (logs.size() - max_logs + 1));
-    logs.push_back(RewriteRuleLog::create(original_query, applied_rules, resulting_query));
-}
-
-std::vector<MutableRewriteRuleLogPtr> RewriteRules::getLogs() const
-{
-    std::lock_guard lock(mutex);
-    return logs;
-}
-
 bool RewriteRules::loadIfNot(std::lock_guard<std::mutex> & lock) const
 {
     if (loaded)

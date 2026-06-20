@@ -161,6 +161,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
 
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
+
+        {"applied_rules", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of the query rewrite rules (see system.query_rules) that were applied to the query, in the order they were applied. Empty if no rule matched."},
     };
 }
 
@@ -343,6 +345,15 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
+
+    {
+        auto & column_applied_rules = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_applied_rules_data = typeid_cast<ColumnString &>(column_applied_rules.getData());
+        for (const auto & rule_name : applied_rules)
+            column_applied_rules_data.insertData(rule_name.data(), rule_name.size());
+        auto & offsets = column_applied_rules.getOffsets();
+        offsets.push_back(offsets.back() + applied_rules.size());
+    }
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

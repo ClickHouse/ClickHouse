@@ -1058,7 +1058,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             query_log_elem = logQueryStart(
                 currentTime(), refresh_context, query_for_logging, normalized_query_hash, refresh_query, pipeline,
                 &interpreter, /*internal*/ internal, view_storage_id.database_name,
-                view_storage_id.table_name, /*async_insert*/ false);
+                view_storage_id.table_name, /*async_insert*/ false, /*applied_rewrite_rules*/ {});
 
             if (!pipeline.completed())
                 throw Exception(
@@ -1126,7 +1126,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         {
             /// Failed when creating new table or when swapping tables.
             logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
-                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal);
+                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal, /*applied_rewrite_rules*/ {});
         }
 
         if (cancelled)

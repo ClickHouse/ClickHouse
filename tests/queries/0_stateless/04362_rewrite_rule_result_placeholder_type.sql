@@ -1,8 +1,6 @@
 -- Tags: no-parallel
 -- no-parallel: rule names are global; running in parallel may collide with other tests.
 
-SET query_rules = 1;
-
 -- The result template is validated at DDL time too, not just the source template. A
 -- placeholder in the result whose type the substitution does not understand (anything other
 -- than String, Int, Expression, ExpressionList, Subquery) is rejected up front, instead of

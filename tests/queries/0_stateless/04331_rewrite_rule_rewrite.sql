@@ -19,41 +19,51 @@ VALUES (
     'today', 1337, 'first'
 );
 
-SET query_rules = 1;
-
-CREATE RULE rule_1 AS 
+CREATE RULE rule_1 AS
 (
     SELECT date, sum(hits) FROM stats WHERE page = {name:String} GROUP BY date
-) 
-REWRITE TO 
+)
+REWRITE TO
 (
     SELECT date, hits FROM totals WHERE page = {name:String}
 );
 
+SET query_rules = 'rule_1';
+
 SELECT date, sum(hits) FROM stats WHERE page = 'first' GROUP BY date;
+
+SET query_rules = '';
 
 ALTER RULE rule_1 AS (
     SELECT date, sum(hits) FROM stats WHERE date = {name2:String} AND page = {name:String} GROUP BY date
 )
-REWRITE TO 
+REWRITE TO
 (
     SELECT date, hits FROM totals WHERE page = {name:String} AND date = {name2:String}
 );
 
+SET query_rules = 'rule_1';
+
 SELECT date, sum(hits) FROM stats WHERE date = 'today' AND page = 'first' GROUP BY date;
 
-CREATE RULE rule_2 AS 
+SET query_rules = '';
+
+CREATE RULE rule_2 AS
 (
     SELECT date, hits FROM totals WHERE page = {name:String} AND date = {name2:String}
-) 
-REWRITE TO 
+)
+REWRITE TO
 (
     SELECT date FROM totals WHERE date = {name:String}
 );
 
+SET query_rules = 'rule_1, rule_2';
+
 SELECT date, sum(hits) FROM stats WHERE date = 'today' AND page = 'first' GROUP BY date;
 
 SELECT * FROM system.query_rules FORMAT VERTICAL;
+
+SET query_rules = '';
 
 DROP RULE rule_1;
 

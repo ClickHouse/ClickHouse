@@ -442,12 +442,14 @@ QueryLogElement logQueryStart(
     bool internal,
     const String & query_database,
     const String & query_table,
-    bool async_insert)
+    bool async_insert,
+    const std::vector<String> & applied_rewrite_rules)
 {
     const Settings & settings = context->getSettingsRef();
 
     QueryLogElement elem;
 
+    elem.applied_rules = applied_rewrite_rules;
     elem.type = QueryLogElementType::QUERY_START;
     elem.event_time = timeInSeconds(query_start_time);
     elem.event_time_microseconds = timeInMicroseconds(query_start_time);
@@ -869,7 +871,8 @@ void logExceptionBeforeStart(
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
-    bool internal)
+    bool internal,
+    const std::vector<String> & applied_rewrite_rules)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -894,6 +897,7 @@ void logExceptionBeforeStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     elem.normalized_query_hash = normalized_query_hash;
+    elem.applied_rules = applied_rewrite_rules;
 
     // Log query_kind if ast is valid
     if (ast)
@@ -1146,6 +1150,9 @@ static BlockIO executeQueryImpl(
 
     String query;
     String query_for_logging;
+    /// Names of the rewrite rules applied to the query (filled by `astTraversal`), recorded in
+    /// the `applied_rules` column of `system.query_log`.
+    std::vector<String> applied_rewrite_rules;
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
@@ -1344,20 +1351,6 @@ static BlockIO executeQueryImpl(
 #endif
         }
 
-        /// Apply query rewrite rules. This runs before `ASTQueryParameter`s are replaced
-        /// and before the query's own `SETTINGS` clause is interpreted
-        /// (`InterpreterSetQuery::applySettingsFromQuery` below), so `query_rules` is a
-        /// session/profile-level setting: `SELECT ... SETTINGS query_rules = ...` does not
-        /// affect whether rules are applied to that query.
-        ///
-        /// Known limitation: because matching happens before parameter substitution, a value
-        /// supplied via a query parameter reaches the matcher as an `ASTQueryParameter` rather
-        /// than the literal it becomes, so a parameterized query is not matched. A `REJECT`
-        /// rule that blocks a literal can therefore be bypassed by passing that literal as a
-        /// query parameter; `REJECT` rules are not a security boundary (documented in
-        /// docs/en/operations/query-rules.md).
-        astTraversal(out_ast, context);
-
         const char * query_end = end;
 
         if (out_ast)
@@ -1402,6 +1395,19 @@ static BlockIO executeQueryImpl(
         }
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+
+        /// Apply query rewrite rules: matching queries are rewritten in place or rejected.
+        /// This runs AFTER `ASTQueryParameter`s were substituted above, so a value supplied
+        /// through a query parameter is matched as the literal it became — a `REJECT` rule
+        /// cannot be bypassed by parameterizing the matched value. It still runs before the
+        /// query's own `SETTINGS` clause is interpreted (`InterpreterSetQuery::applySettingsFromQuery`
+        /// below), so `query_rules` is a session/profile-level setting: `SELECT ... SETTINGS
+        /// query_rules = ...` does not affect whether rules are applied to that query.
+        ///
+        /// `query_for_logging` and `normalized_query_hash` were computed above from the
+        /// original (pre-rewrite) query, so `system.query_log` records the query as the user
+        /// submitted it; the applied rule names are recorded separately in `applied_rules`.
+        astTraversal(out_ast, context, applied_rewrite_rules);
     }
     catch (...)
     {
@@ -1413,7 +1419,7 @@ static BlockIO executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, applied_rewrite_rules);
         throw;
     }
 
@@ -1951,7 +1957,8 @@ static BlockIO executeQueryImpl(
                 internal,
                 query_database,
                 query_table,
-                async_insert);
+                async_insert,
+                applied_rewrite_rules);
 
             /// Also make possible for caller to log successful query finish and exception during execution.
 
@@ -2021,7 +2028,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, applied_rewrite_rules);
 
         throw;
     }
