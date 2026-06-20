@@ -11,6 +11,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnSparse.h>
@@ -154,11 +155,12 @@ size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
     for (size_t i = 0; i < impl.sort_columns.size(); ++i)
     {
         const auto * nm = getNullMapData(impl.null_maps[i]);
+        const bool ref_is_null = nm && (*nm)[start_pos] != 0;
 
         if (nm)
-            run_end = impl.null_maps[i]->getEqualRangeEndAssumeSorted(start_pos, run_end, 1);
+            run_end = findEqualRangeEndAssumeSorted(start_pos, run_end, 16, [&](size_t row) { return ((*nm)[row] != 0) == ref_is_null; });
 
-        if (!nm || !(*nm)[start_pos])
+        if (!ref_is_null)
             run_end = impl.sort_columns[i]->getEqualRangeEndAssumeSorted(start_pos, run_end, 1);
 
         if (run_end <= start_pos + 1)
