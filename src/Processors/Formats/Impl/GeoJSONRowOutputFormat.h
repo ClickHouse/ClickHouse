@@ -75,6 +75,8 @@ private:
     void writePosition(const IColumn & tuple_column, size_t row_num);
 
     FormatSettings settings;
+    /// `settings` with 64-bit-float quoting disabled, used only for coordinates.
+    FormatSettings coordinate_settings;
     WriteBuffer * ostr;
 
     std::optional<size_t> id_col_idx;

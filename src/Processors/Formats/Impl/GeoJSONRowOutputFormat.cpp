@@ -81,10 +81,6 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
           header_, out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
     , settings(settings_)
 {
-    /// GeoJSON coordinates are plain JSON numbers; never quote 64-bit floats regardless of the user
-    /// setting, otherwise coordinates would be emitted as strings, which is not valid GeoJSON.
-    settings.json.quote_64bit_floats = false;
-
     /// A named `Tuple` used as the `properties` object must serialize as a JSON object rather than a
     /// JSON array, so the `properties` member is always a valid GeoJSON object.
     settings.json.write_named_tuples_as_objects = true;
@@ -92,6 +88,12 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     /// A `Map` used as the `properties` object must serialize as a JSON object rather than an array of
     /// key/value tuples, for the same reason.
     settings.json.write_map_as_array_of_tuples = false;
+
+    /// Coordinates are plain JSON numbers and must never be quoted, even when
+    /// `output_format_json_quote_64bit_floats` is enabled — that setting still applies to property
+    /// values, so coordinates are written with a separate settings copy that disables it.
+    coordinate_settings = settings;
+    coordinate_settings.json.quote_64bit_floats = false;
 
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 
@@ -203,8 +205,7 @@ void GeoJSONRowOutputFormat::writeId(const Columns & columns, size_t row_num)
     /// A floating-point id must be finite, since NaN and infinity have no valid JSON representation;
     /// reject them rather than emit `null` or a quoted token as the Feature id.
     if (id_is_float && !std::isfinite(column.getFloat64(row_num)))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "The GeoJSON output format cannot write a non-finite floating-point id");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The GeoJSON output format cannot write a non-finite floating-point id");
 
     writeCString(R"(,"id":)", *ostr);
     serializations[*id_col_idx]->serializeTextJSON(column, row_num, *ostr, settings);
@@ -293,9 +294,9 @@ void GeoJSONRowOutputFormat::writePosition(const IColumn & tuple_column, size_t 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The GeoJSON output format cannot write a non-finite coordinate value");
 
     writeChar('[', *ostr);
-    writeJSONNumber(x, *ostr, settings);
+    writeJSONNumber(x, *ostr, coordinate_settings);
     writeChar(',', *ostr);
-    writeJSONNumber(y, *ostr, settings);
+    writeJSONNumber(y, *ostr, coordinate_settings);
     writeChar(']', *ostr);
 }
 
