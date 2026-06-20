@@ -5,6 +5,7 @@
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <IO/Expect404ResponseScope.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/PackedFilesWriter.h>
@@ -12,6 +13,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadPipeline.h>
 #include <IO/ReadHelpers.h>
+#include <IO/S3Common.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
@@ -1034,7 +1036,22 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
     const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
     auto disk = volume->getDisk();
     if (disk->existsFile(packed_path))
-        skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{});
+    {
+        /// On shared storage another replica may delete skp_idx.packed between the existence check
+        /// above and the open below. A NO_SUCH_KEY then means the archive is gone, not an error, so
+        /// treat the part as having no overlay. Expect404ResponseScope keeps it from being logged or
+        /// counted as a DiskS3NoSuchKeyError (which fails stress tests); catching alone is not enough.
+        Expect404ResponseScope scope;
+        try
+        {
+            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{});
+        }
+        catch (const S3Exception & e)
+        {
+            if (e.getS3ErrorCode() != Aws::S3::S3Errors::NO_SUCH_KEY)
+                throw;
+        }
+    }
 
     skip_indices_packed_probed = true;
     return skip_indices_packed_reader;
