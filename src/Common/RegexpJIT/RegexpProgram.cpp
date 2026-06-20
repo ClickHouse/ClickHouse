@@ -176,7 +176,7 @@ private:
                     Op op;
                     op.kind = OpKind::CharQuant;
                     op.set = set;
-                    if (!applyQuantifierForVariableSet(op))
+                    if (!applyQuantifier(op))
                         bail();
                     else
                         ops.push_back(std::move(op));
@@ -219,7 +219,7 @@ private:
                         Op op;
                         op.kind = OpKind::CharQuant;
                         op.set = shorthand;
-                        if (!applyQuantifierForPositiveSet(op))
+                        if (!applyQuantifier(op))
                             bail();
                         else
                             ops.push_back(std::move(op));
@@ -278,7 +278,7 @@ private:
             op.set.add(byte);
             if (case_insensitive)
                 op.set.foldAsciiCase();
-            if (!applyQuantifierForPositiveSet(op)) /// single positive char: any quantifier is safe.
+            if (!applyQuantifier(op)) /// single ASCII char: any quantifier is safe.
                 bail();
             else
                 ops.push_back(std::move(op));
@@ -289,16 +289,15 @@ private:
         }
     }
 
-    /// Quantifier rules for a *positive*, ASCII-only set (single char or `[...]` / `\d` / ...):
-    /// any quantifier is span-safe, because in-set code points are all single ASCII bytes.
-    bool applyQuantifierForPositiveSet(Op & op) { return applyQuantifier(op, /* allow_fixed */ true); }
-
-    /// Quantifier rules for a *variable* set (`.` or a negated class): the byte- and code-point
-    /// interpretations only agree for maximal runs, so we accept exactly `*` and `+`.
-    bool applyQuantifierForVariableSet(Op & op) { return applyQuantifier(op, /* allow_fixed */ false); }
-
-    bool applyQuantifier(Op & op, bool allow_fixed)
+    /// Apply the quantifier (if any) that follows a `CharQuant` op whose `set` is already filled.
+    /// Fixed counts (`?`, `{n,m}`, or an implicit count of 1) are span-safe only for an ASCII-only set,
+    /// where every member is a single byte. A set that contains any byte >= 0x80 (`.`, a negated class,
+    /// `\D`/`\W`/`\S`, or any class that happens to include a non-ASCII byte) can match a UTF-8
+    /// continuation byte or a fragment of a multi-byte code point, so only the maximal runs `*` and `+`
+    /// stay equivalent to RE2's code-point matching (UTF-8 is self-synchronizing).
+    bool applyQuantifier(Op & op)
     {
+        const bool allow_fixed = op.set.isAsciiOnly();
         char q = peek();
         if (q == '*')
         {
@@ -380,6 +379,11 @@ private:
         if (p >= pattern.size() || pattern[p] != '}')
             return false;
         if (hi != UNBOUNDED && hi < lo)
+            return false;
+        /// RE2 rejects counted repetitions whose bound exceeds `kMaxRepeat` (1000) with a compile-time
+        /// error; accepting them here would turn that error into a successful match. Fall back instead.
+        constexpr uint32_t MAX_REPEAT = 1000;
+        if (lo > MAX_REPEAT || (hi != UNBOUNDED && hi > MAX_REPEAT))
             return false;
         op.min = lo;
         op.max = hi;
@@ -487,6 +491,11 @@ private:
                 break;
             first = false;
 
+            /// POSIX named classes like `[[:alpha:]]` / `[[:^digit:]]` are outside the subset and RE2
+            /// parses them as a single class, not as the literal bytes `[`, `:`, ... - fall back.
+            if (c == '[' && peek(1) == ':')
+                return false;
+
             uint8_t lo_byte = 0;
             if (c == '\\')
             {
@@ -554,11 +563,10 @@ private:
         op.kind = OpKind::CharQuant;
         op.set = set;
 
-        /// A negated class can match a multi-byte code point, so only `*`/`+` are span-safe;
-        /// a positive ASCII class is safe with any quantifier.
-        if (negated)
-            return applyQuantifierForVariableSet(op);
-        return applyQuantifierForPositiveSet(op);
+        /// `applyQuantifier` decides which quantifiers are span-safe from the set itself: a negated class
+        /// (or a class that includes a non-ASCII byte, e.g. via `\D`) can match a multi-byte code point,
+        /// so only `*`/`+` are allowed; a purely ASCII class is safe with any quantifier.
+        return applyQuantifier(op);
     }
 
     /// Parse the escape sequence after a backslash (pos points at '\\'). Returns false to bail.
@@ -573,7 +581,8 @@ private:
 
         auto add_digits = [&](CharSet & s) { s.addRange('0', '9'); };
         auto add_word = [&](CharSet & s) { s.addRange('0', '9'); s.addRange('a', 'z'); s.addRange('A', 'Z'); s.add('_'); };
-        auto add_space = [&](CharSet & s) { s.add(' '); s.add('\t'); s.add('\n'); s.add('\r'); s.add('\f'); s.add('\v'); };
+        /// RE2's Perl `\s` is `[\t\n\f\r ]` and deliberately excludes the vertical tab `\v`.
+        auto add_space = [&](CharSet & s) { s.add(' '); s.add('\t'); s.add('\n'); s.add('\r'); s.add('\f'); };
 
         switch (e)
         {
@@ -589,7 +598,15 @@ private:
             case 't': literal_byte = '\t'; ++pos; return true;
             case 'f': literal_byte = '\f'; ++pos; return true;
             case 'v': literal_byte = '\v'; ++pos; return true;
-            case '0': literal_byte = '\0'; ++pos; return true;
+
+            case '0':
+                /// RE2 parses an octal escape of up to three digits (`\012` is one byte, newline). We only
+                /// handle a bare `\0` (NUL); bail when more octal digits follow so we don't diverge.
+                ++pos;
+                if (peek() >= '0' && peek() <= '7')
+                    return false;
+                literal_byte = '\0';
+                return true;
 
             /// Escaped metacharacters and punctuation -> the literal byte.
             case '.': case '\\': case '/': case '(': case ')': case '[': case ']':
@@ -664,6 +681,38 @@ static CharSet analyzeFirst(std::vector<Op> & ops, const CharSet & follow, int &
     return rest_first[0];
 }
 
+/// RE2 runs case-insensitive matching in UTF-8 mode with Unicode-aware (simple) case folding. The only
+/// ASCII letters whose fold class reaches outside ASCII are `k`/`K` (which also fold to U+212A KELVIN
+/// SIGN) and `s`/`S` (which also fold to U+017F LATIN SMALL LETTER LONG S). Our matcher folds ASCII
+/// only, so a case-insensitive pattern whose matching depends on `k`/`s` - a literal byte, or a
+/// character set that includes one of them - can match (or, for a maximal run, fail to stop at) those
+/// code points differently from RE2. Detect that and fall back to the general engine.
+static bool caseInsensitiveTouchesNonAsciiFold(const std::vector<Op> & ops)
+{
+    for (const Op & op : ops)
+    {
+        switch (op.kind)
+        {
+            case OpKind::Literal:
+                for (uint8_t c : op.literal)
+                    if (c == 'k' || c == 'K' || c == 's' || c == 'S')
+                        return true;
+                break;
+            case OpKind::CharQuant:
+                if (op.set.contains('k') || op.set.contains('K') || op.set.contains('s') || op.set.contains('S'))
+                    return true;
+                break;
+            case OpKind::Optional:
+                if (caseInsensitiveTouchesNonAsciiFold(op.body))
+                    return true;
+                break;
+            default:
+                break;
+        }
+    }
+    return false;
+}
+
 std::optional<RegexpProgram> tryCompileToProgram(std::string_view pattern, const ParseFlags & flags)
 {
     if (pattern.empty())
@@ -678,6 +727,18 @@ std::optional<RegexpProgram> tryCompileToProgram(std::string_view pattern, const
     Parser parser(pattern, flags);
     auto program = parser.parse();
     if (!program)
+        return std::nullopt;
+
+    /// `OptimizedRegularExpression` rejects patterns with more than `MAX_SUBPATTERNS` (1024) capturing
+    /// groups; accepting them here would turn that error into a successful match. `num_captures` counts
+    /// group 0 (the whole match), so the number of capturing groups is `num_captures - 1`.
+    constexpr int MAX_SUBPATTERNS = 1024;
+    if (program->num_captures - 1 > MAX_SUBPATTERNS)
+        return std::nullopt;
+
+    /// See `caseInsensitiveTouchesNonAsciiFold`: a case-insensitive `k`/`s` folds across the ASCII
+    /// boundary in RE2's UTF-8 mode, which our ASCII-only folding cannot reproduce.
+    if (program->case_insensitive && caseInsensitiveTouchesNonAsciiFold(program->ops))
         return std::nullopt;
 
     /// A pure unanchored literal (e.g. `abc`, `\.com`) is already handled optimally by the

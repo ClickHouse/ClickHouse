@@ -67,6 +67,10 @@ struct CharSet
         return n;
     }
 
+    /// True if every member is a single ASCII byte (no byte >= 0x80). Such a set matches the same span
+    /// byte-wise as RE2 matches code-point-wise, so any quantifier (including fixed counts) is safe.
+    bool isAsciiOnly() const { return bitmap[2] == 0 && bitmap[3] == 0; }
+
     /// Fold ASCII case: if a letter is present, add its other case. Used for case-insensitive matching.
     void foldAsciiCase()
     {
