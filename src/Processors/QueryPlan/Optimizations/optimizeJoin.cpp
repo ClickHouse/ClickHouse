@@ -551,14 +551,17 @@ RelationStats estimateReadRowsCount(
 }
 
 /// Walk the plan tree to find the underlying `ReadFromMergeTree` step, then build a
-/// `ConditionSelectivityEstimator` for columns that drive the legacy estimate
-/// (filters along the path plus `prewhere`). Used by `optimizeJoinLegacy` to
-/// restore statistics-backed row estimation without loading stats for all columns.
-static ConditionSelectivityEstimatorPtr buildEstimatorForRelation(QueryPlan::Node & node)
+/// `ConditionSelectivityEstimator` for the columns that drive the row-count estimate
+/// (filters along the path plus `prewhere`). Used to restore statistics-backed row
+/// estimation without loading statistics for every column of the table. Not `static`:
+/// besides `optimizeJoinLegacy`, the distributed-plan strategy choices in
+/// `makeDistributed.cpp` call it (see the forward declaration there).
+ConditionSelectivityEstimatorPtr buildEstimatorForRelation(QueryPlan::Node & node);
+ConditionSelectivityEstimatorPtr buildEstimatorForRelation(QueryPlan::Node & node)
 {
     /// Reuse the same machinery the new join-order path uses so both paths agree
-    /// on which columns must be loaded. The legacy path does not consume per-column
-    /// NDV, so the top-level interest set is empty; `collectStatsColumnsForRelation`
+    /// on which columns must be loaded. These callers do not consume per-column NDV,
+    /// so the top-level interest set is empty; `collectStatsColumnsForRelation`
     /// still picks up columns referenced by `FilterStep`s and `prewhere`.
     StatsColumnsResult stats_columns = collectStatsColumnsForRelation(node, /*top_level_columns=*/ {});
     if (!stats_columns.reading)

@@ -56,9 +56,14 @@ static void validateBucketCount(UInt64 bucket_count, const char * setting_name)
             setting_name, bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
 }
 
-/// Defined in optimizeJoin.cpp. The trailing `estimator` argument selects the statistics-backed
-/// estimation path; callers here pass no estimator and rely on the index-analysis fallback.
+/// Both defined in optimizeJoin.cpp. The trailing `estimator` argument selects the
+/// statistics-backed estimation path; `buildEstimatorForRelation` constructs one for the
+/// filter/prewhere columns on the path to the read step. Passing it keeps the statistics-backed
+/// row estimate driving the distributed-plan strategy choices below (rather than the
+/// no-statistics fallback) while loading statistics for only the columns these heuristics use,
+/// instead of for every column of the table.
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, const ConditionSelectivityEstimatorPtr & estimator = nullptr);
+ConditionSelectivityEstimatorPtr buildEstimatorForRelation(QueryPlan::Node & node);
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -161,7 +166,11 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     QueryPlan::Node * source_a = node.children[0];
     QueryPlan::Node * source_b = node.children[1];
 
-    auto row_count_b = estimateReadRowsCount(*source_b).estimated_rows;
+    /// Broadcast vs shuffle depends on the right side's row count. Build a statistics estimator
+    /// for its filter/prewhere columns so a filtered right side keeps a statistics-backed row
+    /// estimate (the no-estimator path returns no estimate once a filter is present).
+    auto row_count_b = estimateReadRowsCount(
+        *source_b, /*filter=*/ nullptr, buildEstimatorForRelation(*source_b)).estimated_rows;
 
     enum DistributedJoinStrategy
     {
@@ -336,7 +345,11 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     /// Choose Shuffle when the estimated number of groups is high.
     if (!aggregation_keys.empty())
     {
-        auto input_stats = estimateReadRowsCount(*source);
+        /// Build a statistics estimator for the filter/prewhere columns on the path to the read so
+        /// the input row count (and any per-key NDV the estimator can supply) is statistics-backed
+        /// rather than the no-estimator fallback.
+        auto input_stats = estimateReadRowsCount(
+            *source, /*filter=*/ nullptr, buildEstimatorForRelation(*source));
 
         /// Use max NDV among GROUP BY keys as a lower-bound estimate for groups.
         std::optional<UInt64> estimated_groups;
