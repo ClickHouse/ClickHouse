@@ -15,3 +15,8 @@ SELECT (1.0, 2.0)::Point AS geometry, (1, 'x')::Tuple(num UInt8, str String) AS 
 -- A Map used as the lone `properties` column is always written as an object, even when
 -- `output_format_json_map_as_array_of_tuples` is enabled.
 SELECT (1.0, 2.0)::Point AS geometry, map('a', 'b') AS properties FORMAT GeoJSON SETTINGS output_format_json_map_as_array_of_tuples = 1;
+
+-- A geometry column wrapped in Nullable (possible under enable_nullable_tuple_type) is recognized as
+-- the geometry, and a null value is written as a null geometry.
+SELECT CAST((1.0, 2.0), 'Nullable(Point)') AS geometry FORMAT GeoJSON SETTINGS enable_nullable_tuple_type = 1;
+SELECT CAST(NULL AS Nullable(Point)) AS geometry FORMAT GeoJSON SETTINGS enable_nullable_tuple_type = 1;
