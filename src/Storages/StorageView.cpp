@@ -350,16 +350,16 @@ void StorageView::readImpl(
         InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
+
+        /// It's expected that the columns read from storage are not constant.
+        /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+        ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+        materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
+
+        auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
+        materializing->setStepDescription("Materialize constants after VIEW subquery");
+        query_plan.addStep(std::move(materializing));
     }
-
-    /// It's expected that the columns read from storage are not constant.
-    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-    materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
-
-    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
-    materializing->setStepDescription("Materialize constants after VIEW subquery");
-    query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
     const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -379,7 +379,7 @@ void StorageView::readImpl(
             header->getColumnsWithTypeAndName(),
             expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
-            context);
+            context, false, false, nullptr, nullptr, false);
 
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
@@ -533,7 +533,14 @@ void registerStorageView(StorageFactory & factory)
         }
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
-    });
+    },
+    {},
+    Documentation{
+        .description = R"DOCS_MD(
+Used for implementing views (for more information, see the `CREATE VIEW query`). It does not store data, but only stores the specified `SELECT` query. When reading from a table, it runs this query (and deletes all unnecessary columns from the query).
+)DOCS_MD",
+        .syntax = "CREATE VIEW name AS SELECT ...",
+        .related = {"MaterializedView"}});
 }
 
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)

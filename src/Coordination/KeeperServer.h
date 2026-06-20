@@ -81,9 +81,9 @@ private:
 
     const int server_id;
 
-    nuraft::ptr<IKeeperStateMachine> state_machine;
-
     nuraft::ptr<KeeperStateManager> state_manager;
+
+    nuraft::ptr<IKeeperStateMachine> state_machine;
 
     nuraft::ptr<KeeperRaftServer> raft_instance; // TSA_GUARDED_BY(server_write_mutex);
     nuraft::ptr<nuraft::asio_service> asio_service;
@@ -204,6 +204,8 @@ public:
     uint64_t createSnapshot();
 
     KeeperLogInfo getKeeperLogInfo();
+
+    std::vector<KeeperClusterMemberInfo> getClusterMembersInfo() const;
 
     std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
 
