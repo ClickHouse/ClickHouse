@@ -108,6 +108,50 @@ SELECT count() FROM
 )
 SETTINGS join_use_nulls = 0;
 
+-- The USING join `t2` participates in can sit below a non-USING top join (PASTE/CROSS/comma
+-- join, or an outer ON join). The qualified matcher must then still adopt the type of the
+-- explicit reference, since inspecting only the top node would skip the type correction and
+-- leave the matched column with its non-Nullable table type while the runtime column is
+-- Nullable, aborting an aggregate over it with a Bad cast. The type equality must hold and
+-- the aggregate must not crash for every wrapping join shape.
+
+-- PASTE JOIN wrapping the USING join.
+SELECT toTypeName(sipHash64(t2.*)) = toTypeName(sipHash64(t2.id, t2.value))
+FROM t_jn2 AS t2 RIGHT JOIN t_jn3_nullable USING (id) PASTE JOIN numbers(2) AS n
+LIMIT 1
+SETTINGS join_use_nulls = 0;
+
+SELECT count() FROM
+(
+    SELECT anyHeavy(sipHash64(t2.*))
+    FROM t_jn2 AS t2 RIGHT JOIN t_jn3_nullable USING (id) PASTE JOIN numbers(2) AS n
+)
+SETTINGS join_use_nulls = 0;
+
+-- CROSS JOIN wrapping the USING join.
+SELECT count() FROM
+(
+    SELECT anyHeavy(sipHash64(t2.*))
+    FROM t_jn2 AS t2 RIGHT JOIN t_jn3_nullable USING (id) CROSS JOIN numbers(2) AS n
+)
+SETTINGS join_use_nulls = 0;
+
+-- Comma join wrapping the USING join.
+SELECT count() FROM
+(
+    SELECT anyHeavy(sipHash64(t2.*))
+    FROM t_jn2 AS t2 RIGHT JOIN t_jn3_nullable USING (id), numbers(2) AS n
+)
+SETTINGS join_use_nulls = 0;
+
+-- Outer ON join wrapping the USING join.
+SELECT count() FROM
+(
+    SELECT anyHeavy(sipHash64(t2.*))
+    FROM t_jn2 AS t2 RIGHT JOIN t_jn3_nullable USING (id) INNER JOIN t_jn1 ON t2.value = t_jn1.value
+)
+SETTINGS join_use_nulls = 0;
+
 DROP TABLE t_jn1_nullable;
 DROP TABLE t_jn3_nullable;
 

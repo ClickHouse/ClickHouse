@@ -1790,14 +1790,54 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 }
 
 
+/// Collect every JOIN USING node in the join tree that is not currently being resolved.
+/// A qualified matcher (`t.*`) can match a USING key that sits at any JOIN in the tree, not
+/// just the top one: with a PASTE/CROSS/comma join or an outer ON join wrapping the USING join,
+/// the top node is not a USING JoinNode, yet `t` still participates in the nested USING join.
+/// Walking the whole tree lets the qualified matcher find that nested key.
+static void collectUsingJoinNodes(
+    const QueryTreeNodePtr & join_tree_node,
+    const std::unordered_set<const IQueryTreeNode *> & in_resolve_process,
+    std::vector<const JoinNode *> & result)
+{
+    std::stack<const IQueryTreeNode *> stack;
+    stack.push(join_tree_node.get());
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.top();
+        stack.pop();
+
+        if (const auto * join_node = current->as<JoinNode>())
+        {
+            if (!in_resolve_process.contains(join_node) && join_node->isUsingJoinExpression())
+                result.push_back(join_node);
+
+            stack.push(join_node->getLeftTableExpression().get());
+            stack.push(join_node->getRightTableExpression().get());
+        }
+        else if (const auto * cross_join_node = current->as<CrossJoinNode>())
+        {
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+                stack.push(table_expression.get());
+        }
+        else if (const auto * array_join_node = current->as<ArrayJoinNode>())
+        {
+            stack.push(array_join_node->getTableExpression().get());
+        }
+    }
+}
+
 /// Columns that resolved from matcher can also match columns from JOIN USING.
 /// In that case we update type to type of column in USING section.
 ///
 /// Unqualified matcher (`*`): the matched column IS the merged USING key, so it takes the
-/// key type as-is. Qualified matcher (`t.*`): the matched column is `t`'s own column, so its
-/// type must equal what the explicit reference `t.col` resolves to. The merged key's type is
-/// not correct here: in a nested JOIN it reflects the outer join's other side, while `t.col`
-/// only follows the joins `t` participates in.
+/// key type as-is, and only the top USING join applies. Qualified matcher (`t.*`): the matched
+/// column is `t`'s own column, so its type must equal what the explicit reference `t.col`
+/// resolves to. The merged key's type is not correct here: in a nested JOIN it reflects the
+/// outer join's other side, while `t.col` only follows the joins `t` participates in. That
+/// USING join can sit anywhere in the tree (below a PASTE/CROSS/comma join or an outer ON
+/// join), so for the qualified matcher every USING join is examined, not only the top one.
 void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
     bool is_qualified_matcher,
@@ -1817,17 +1857,37 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
     const auto & join_tree = nearest_query_scope_query_node->getJoinTree();
 
-    const auto * join_node = join_tree->as<JoinNode>();
-    bool join_node_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(join_node);
-    if (!join_node_in_resolve_process && join_node && join_node->isUsingJoinExpression())
+    std::vector<const JoinNode *> join_using_source_nodes;
+    if (is_qualified_matcher)
     {
-        const auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
-        const auto & join_using_nodes = join_using_list.getNodes();
+        collectUsingJoinNodes(join_tree, nearest_query_scope->table_expressions_in_resolve_process, join_using_source_nodes);
+    }
+    else
+    {
+        const auto * join_node = join_tree->as<JoinNode>();
+        bool join_node_in_resolve_process = nearest_query_scope->table_expressions_in_resolve_process.contains(join_node);
+        if (!join_node_in_resolve_process && join_node && join_node->isUsingJoinExpression())
+            join_using_source_nodes.push_back(join_node);
+    }
 
-        for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
+    for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
+    {
+        auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
+        const auto & matched_column_name = matched_column_node_typed.getColumnName();
+
+        /// A matched column is retyped from at most one USING join: its name is unique within a
+        /// single USING list, and for the qualified matcher the adopted type comes from resolving
+        /// the explicit identifier `t.col`, which is the same regardless of which USING join in
+        /// the tree carries the same-named key. Stop after the first match to avoid retyping (and
+        /// re-registering) the same column against several joins.
+        bool matched_column_retyped = false;
+        for (const auto * join_node : join_using_source_nodes)
         {
-            auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
-            const auto & matched_column_name = matched_column_node_typed.getColumnName();
+            if (matched_column_retyped)
+                break;
+
+            const auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
+            const auto & join_using_nodes = join_using_list.getNodes();
 
             for (const auto & join_using_node : join_using_nodes)
             {
@@ -1881,6 +1941,9 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                 correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
+
+                matched_column_retyped = true;
+                break;
             }
         }
     }
