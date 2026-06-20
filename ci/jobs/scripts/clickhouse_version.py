@@ -50,16 +50,22 @@ SET(VERSION_STRING {string})
     def get_current_version_as_dict(cls):
         version = cls.get_release_version_as_dict()
         info = Info()
-        try:
-            tweak = int(
-                Shell.get_output(
-                    f"git rev-list --count --first-parent {version['githash']}..HEAD",
-                    verbose=True,
-                )
-            )
-        except (ValueError, Exception):
-            # Shallow checkout or other error
+        if info.pr_number != 0:
+            # Pin tweak in PRs: it is meaningless there and otherwise diverges
+            # across re-runs for the same HEAD, yielding two versions at one
+            # artifact prefix (see commit message).
             tweak = 1
+        else:
+            try:
+                tweak = int(
+                    Shell.get_output(
+                        f"git rev-list --count --first-parent {version['githash']}..HEAD",
+                        verbose=True,
+                    )
+                )
+            except (ValueError, Exception):
+                # Shallow checkout or other error
+                tweak = 1
         version_type = "testing"
         if info.pr_number == 0 and bool(
             re.match(r"^\d{2}\.\d+$", info.git_branch.removeprefix("release/"))

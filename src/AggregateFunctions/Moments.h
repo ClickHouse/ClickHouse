@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cfloat>
+#include <cmath>
 #include <numeric>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -8,7 +9,6 @@
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/students_t.hpp>
 #include <Common/VectorWithMemoryTracking.h>
-
 
 namespace DB
 {
@@ -248,7 +248,7 @@ struct CorrMoments
 
     T NO_SANITIZE_UNDEFINED get() const
     {
-        return (m0 * xy - x1 * y1) / sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
+        return (m0 * xy - x1 * y1) / std::sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
     }
 
     T getSample() const
@@ -338,7 +338,7 @@ struct TTestMoments
         Float64 sx2 = (x2 + nx * mean_x * mean_x - 2 * mean_x * x1) / (nx - 1);
         Float64 sy2 = (y2 + ny * mean_y * mean_y - 2 * mean_y * y1) / (ny - 1);
 
-        return sqrt(sx2 / nx + sy2 / ny);
+        return std::sqrt(sx2 / nx + sy2 / ny);
     }
 
     std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level, Float64 degrees_of_freedom) const
@@ -417,7 +417,7 @@ struct OneSampleTTestMoments
     Float64 getStandardError() const
     {
         Float64 variance = getVariance();
-        return sqrt(variance / n);
+        return std::sqrt(variance / n);
     }
 
     Float64 getTStatistic() const
@@ -520,7 +520,7 @@ struct ZTestMoments
         Float64 mean_y = getMeanY();
 
         Float64 z = boost::math::quantile(boost::math::complement(
-            boost::math::normal(0.0f, 1.0f), (1.0f - confidence_level) / 2.0f));
+            boost::math::normal(0.0, 1.0), (1.0 - confidence_level) / 2.0));
         Float64 se = getStandardError(pop_var_x, pop_var_y);
         Float64 ci_low = (mean_x - mean_y) - z * se;
         Float64 ci_high = (mean_x - mean_y) + z * se;
@@ -661,7 +661,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return 1.0f - boost::math::cdf(boost::math::fisher_f(static_cast<double>(k - 1), static_cast<double>(n - k)), f_statistic);
+        return 1.0 - boost::math::cdf(boost::math::fisher_f(static_cast<double>(k - 1), static_cast<double>(n - k)), f_statistic);
     }
 };
 

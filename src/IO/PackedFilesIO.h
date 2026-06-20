@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/MapWithMemoryTracking.h>
 #include <base/types.h>
 #include <map>
 
@@ -18,7 +19,7 @@ struct FileOffset
     UInt64 size;
 };
 
-using Index = std::map<String, FileOffset>;
+using Index = MapWithMemoryTracking<String, FileOffset>;
 
 }
 

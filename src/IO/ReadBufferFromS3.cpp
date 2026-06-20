@@ -18,6 +18,7 @@
 #include <Common/CurrentThread.h>
 #include <base/sleep.h>
 
+#include <cstdint>
 #include <utility>
 
 
@@ -60,6 +61,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
+}
+
+namespace
+{
+
+/// Diagnostic predicate for the bounds-corruption class of bug tracked in
+/// `https://github.com/ClickHouse/ClickHouse/issues/104692`. Validates that
+/// `inner` is fully contained in `outer` WITHOUT touching `Buffer::size` or
+/// `begin + size` arithmetic on `inner`. If `inner` is corrupt (inverted, or
+/// `begin`/`end` from different allocations), `Buffer::size` would be a huge
+/// unsigned and `begin + size` would overflow before `chassert` ever reports
+/// anything. Compare the four stored pointers as integer addresses instead.
+void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer outer)
+{
+    auto inner_begin = reinterpret_cast<std::uintptr_t>(inner.begin());
+    auto inner_end = reinterpret_cast<std::uintptr_t>(inner.end());
+    auto outer_begin = reinterpret_cast<std::uintptr_t>(outer.begin());
+    auto outer_end = reinterpret_cast<std::uintptr_t>(outer.end());
+    chassert(inner_begin <= inner_end);
+    chassert(inner_begin >= outer_begin);
+    chassert(inner_end <= outer_end);
+}
+
 }
 
 
@@ -142,8 +166,8 @@ bool ReadBufferFromS3::nextImpl()
             * each nextImpl() call we can fill a different buffer.
             */
             impl->set(internal_buffer.begin(), internal_buffer.size());
-            assert(working_buffer.begin() != nullptr);
-            assert(!internal_buffer.empty());
+            chassert(working_buffer.begin() != nullptr);
+            chassert(!internal_buffer.empty());
         }
         else
         {
@@ -173,8 +197,8 @@ bool ReadBufferFromS3::nextImpl()
                 if (use_external_buffer)
                 {
                     impl->set(internal_buffer.begin(), internal_buffer.size());
-                    assert(working_buffer.begin() != nullptr);
-                    assert(!internal_buffer.empty());
+                    chassert(working_buffer.begin() != nullptr);
+                    chassert(!internal_buffer.empty());
                 }
                 else
                 {
@@ -221,6 +245,15 @@ bool ReadBufferFromS3::nextImpl()
         return false;
     }
 
+    /// Diagnostic asserts for the bounds-corruption class of bug tracked in
+    /// `https://github.com/ClickHouse/ClickHouse/issues/104692`. When
+    /// `use_external_buffer` is set, the inner `impl` was told to fill our
+    /// caller-provided `internal_buffer`. If the populated range escapes that
+    /// external buffer, every consumer up the chain
+    /// (`ReadBufferFromRemoteFSGather`, `AsynchronousBoundedReadBuffer`,
+    /// `readMetadataFile`) inherits the corrupt bounds.
+    if (use_external_buffer)
+        assertWorkingBufferContainedIn(impl->buffer(), internal_buffer);
     BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
@@ -385,8 +418,8 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
             && offset_ < offset)
         {
             pos = working_buffer.end() - (offset - offset_);
-            assert(pos >= working_buffer.begin());
-            assert(pos < working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos < working_buffer.end());
 
             return getPosition();
         }
@@ -395,7 +428,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
         if (impl && offset_ > position)
         {
             size_t diff = offset_ - position;
-            if (diff < read_settings.remote_read_min_bytes_for_seek)
+            if (diff < read_settings.remote_fs_settings.min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset_;
@@ -429,9 +462,10 @@ size_t ReadBufferFromS3::getObjectSizeFromS3() const
     return S3::getObjectSize(*client_ptr, bucket, key, version_id);
 }
 
-std::optional<size_t> ReadBufferFromS3::getRemoteFileSize() const
+std::optional<RemoteFileMetadata> ReadBufferFromS3::getRemoteFileMetadata() const
 {
-    return getObjectSizeFromS3();
+    const auto object_info = S3::getObjectInfo(*client_ptr, bucket, key, version_id);
+    return RemoteFileMetadata{.size = object_info.size, .last_modification_time = object_info.last_modification_time};
 }
 
 off_t ReadBufferFromS3::getPosition()
@@ -504,7 +538,7 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
 
-    size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
+    size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_settings.buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
 }
 
