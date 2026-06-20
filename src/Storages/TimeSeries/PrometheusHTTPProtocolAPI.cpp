@@ -6,6 +6,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
@@ -37,6 +39,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsMap tags_to_columns;
 }
 
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
@@ -330,35 +338,93 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 }
 
 
+std::vector<std::pair<String, String>> PrometheusHTTPProtocolAPI::getConfiguredTagColumns() const
+{
+    std::vector<std::pair<String, String>> result;
+    auto settings = time_series_storage->getStorageSettings();
+    const Map & tags_to_columns = (*settings)[TimeSeriesSetting::tags_to_columns];
+    for (const auto & tag_name_and_column_name : tags_to_columns)
+    {
+        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+        const auto & tag_name = tuple.at(0).safeGet<String>();
+        const auto & column_name = tuple.at(1).safeGet<String>();
+        result.emplace_back(tag_name, column_name);
+    }
+    return result;
+}
+
+void PrometheusHTTPProtocolAPI::appendTimeRangeConditions(
+    std::vector<String> & conditions, const StoragePtr & tags_table, const String & start_param, const String & end_param)
+{
+    if (start_param.empty() && end_param.empty())
+        return;
+
+    auto tags_metadata = tags_table->getInMemoryMetadataPtr(getContext(), false);
+    if (!tags_metadata->columns.has(TimeSeriesColumnNames::MinTime) || !tags_metadata->columns.has(TimeSeriesColumnNames::MaxTime))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot apply the 'start'/'end' time range on the Prometheus metadata endpoints because the 'tags' table has no "
+            "'{}'/'{}' columns. Enable the 'store_min_time_and_max_time' setting of the TimeSeries table to use time range filtering",
+            TimeSeriesColumnNames::MinTime,
+            TimeSeriesColumnNames::MaxTime);
+
+    /// `min_time`/`max_time` are `DateTime64(3)`. A series overlaps the requested range [start, end]
+    /// when its `min_time <= end` and `max_time >= start`. NULL bounds mean "unknown", so such rows are
+    /// kept to avoid hiding series whose time bounds are not set.
+    static constexpr UInt32 time_scale = 3;
+
+    if (!start_param.empty())
+    {
+        Int64 start_ms = parseTimeSeriesTimestamp(start_param, time_scale).value;
+        conditions.push_back(fmt::format(
+            "({0} IS NULL OR {0} >= fromUnixTimestamp64Milli(toInt64({1})))", TimeSeriesColumnNames::MaxTime, start_ms));
+    }
+
+    if (!end_param.empty())
+    {
+        Int64 end_ms = parseTimeSeriesTimestamp(end_param, time_scale).value;
+        conditions.push_back(fmt::format(
+            "({0} IS NULL OR {0} <= fromUnixTimestamp64Milli(toInt64({1})))", TimeSeriesColumnNames::MinTime, end_ms));
+    }
+}
+
 /// Implements /api/v1/series: returns time series matching a metric name filter.
 /// Queries the tags table and serializes each series as a JSON object with __name__ and all tag key-value pairs.
 void PrometheusHTTPProtocolAPI::getSeries(
     WriteBuffer & response,
     const String & match_param,
-    const String & /* start_param */,
-    const String & /* end_param */)
+    const String & start_param,
+    const String & end_param)
 {
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_id = tags_table->getStorageID();
 
-    /// Build query: SELECT DISTINCT metric_name, tags FROM <tags_table> [WHERE metric_name = match]
+    /// Tags configured via `tags_to_columns` are stored in dedicated columns instead of the `tags` Map,
+    /// so they must be selected and emitted separately. They are read back as strings and the "absent"
+    /// default is rendered as an empty string.
+    auto tag_columns = getConfiguredTagColumns();
+
+    String select_columns = fmt::format("{}, {}", TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags);
+    for (size_t i = 0; i < tag_columns.size(); ++i)
+        select_columns += fmt::format(", coalesce(toString({}), '') AS `__tsc_{}`", backQuoteIfNeed(tag_columns[i].second), i);
+
+    /// Build query: SELECT DISTINCT metric_name, tags[, <tags_to_columns>] FROM <tags_table> [WHERE ...]
     /// The tags target is usually `AggregatingMergeTree`/`ReplacingMergeTree` and stores a row per write,
     /// so the same series can be present multiple times until parts are merged. `DISTINCT` deduplicates
     /// by series identity (metric name + full label set).
-    String query = fmt::format(
-        "SELECT DISTINCT {}, {} FROM {}",
-        TimeSeriesColumnNames::MetricName,
-        TimeSeriesColumnNames::Tags,
-        tags_table_id.getFullTableName());
+    String query = fmt::format("SELECT DISTINCT {} FROM {}", select_columns, tags_table_id.getFullTableName());
 
+    std::vector<String> conditions;
     if (!match_param.empty())
     {
         /// Simple metric name matching: match[] parameter can be a metric name or {label=value} selector.
         /// For now, support plain metric name matching.
-        query += fmt::format(" WHERE {} = {}",
-            TimeSeriesColumnNames::MetricName,
-            quoteString(match_param));
+        conditions.push_back(fmt::format("{} = {}", TimeSeriesColumnNames::MetricName, quoteString(match_param)));
     }
+    appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
+
+    for (size_t i = 0; i < conditions.size(); ++i)
+        query += (i == 0 ? " WHERE " : " AND ") + conditions[i];
 
     LOG_TRACE(log, "Prometheus series query: {}", query);
 
@@ -377,6 +443,11 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
         const auto & metric_name_col = result_block.getByName(TimeSeriesColumnNames::MetricName).column;
         const auto & tags_col = result_block.getByName(TimeSeriesColumnNames::Tags).column;
+
+        std::vector<const IColumn *> tag_value_cols;
+        tag_value_cols.reserve(tag_columns.size());
+        for (size_t c = 0; c < tag_columns.size(); ++c)
+            tag_value_cols.push_back(result_block.getByName(fmt::format("__tsc_{}", c)).column.get());
 
         for (size_t i = 0; i < result_block.rows(); ++i)
         {
@@ -408,6 +479,19 @@ void PrometheusHTTPProtocolAPI::getSeries(
                 writeJSONString(value_column.getDataAt(j), response, format_settings);
             }
 
+            /// Emit tags that were moved out of the `tags` Map into dedicated columns. An empty value
+            /// means the tag is not set for this series (Prometheus treats it as absent), so skip it.
+            for (size_t c = 0; c < tag_columns.size(); ++c)
+            {
+                auto value = tag_value_cols[c]->getDataAt(i);
+                if (value.empty())
+                    continue;
+                writeString(",", response);
+                writeJSONString(std::string_view{tag_columns[c].first}, response, format_settings);
+                writeString(":", response);
+                writeJSONString(value, response, format_settings);
+            }
+
             writeString("}", response);
         }
     }
@@ -420,25 +504,47 @@ void PrometheusHTTPProtocolAPI::getSeries(
 void PrometheusHTTPProtocolAPI::getLabels(
     WriteBuffer & response,
     const String & match_param,
-    const String & /* start_param */,
-    const String & /* end_param */)
+    const String & start_param,
+    const String & end_param)
 {
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_id = tags_table->getStorageID();
 
-    /// Query distinct label keys from the tags Map column.
-    /// __name__ is always included as a virtual label.
-    String query = fmt::format(
-        "SELECT DISTINCT arrayJoin(mapKeys({})) AS label_key FROM {}",
-        TimeSeriesColumnNames::Tags,
-        tags_table_id.getFullTableName());
+    /// Labels live in two places: keys of the `tags` Map column and, for tags configured via
+    /// `tags_to_columns`, dedicated columns. A configured tag is reported only when at least one series
+    /// has a non-empty value for it.
+    auto tag_columns = getConfiguredTagColumns();
 
-    if (!match_param.empty())
+    String label_keys_expr = fmt::format("mapKeys({})", TimeSeriesColumnNames::Tags);
+    if (!tag_columns.empty())
     {
-        query += fmt::format(" WHERE {} = {}",
-            TimeSeriesColumnNames::MetricName,
-            quoteString(match_param));
+        String configured;
+        for (size_t i = 0; i < tag_columns.size(); ++i)
+        {
+            if (i != 0)
+                configured += ", ";
+            configured += fmt::format(
+                "if(coalesce(toString({}), '') != '', {}, '')",
+                backQuoteIfNeed(tag_columns[i].second),
+                quoteString(tag_columns[i].first));
+        }
+        label_keys_expr = fmt::format(
+            "arrayConcat(arrayMap(k -> toString(k), mapKeys({})), arrayFilter(x -> x != '', [{}]))",
+            TimeSeriesColumnNames::Tags,
+            configured);
     }
+
+    /// Query distinct label keys. __name__ is always included as a virtual label.
+    String query = fmt::format(
+        "SELECT DISTINCT arrayJoin({}) AS label_key FROM {}", label_keys_expr, tags_table_id.getFullTableName());
+
+    std::vector<String> conditions;
+    if (!match_param.empty())
+        conditions.push_back(fmt::format("{} = {}", TimeSeriesColumnNames::MetricName, quoteString(match_param)));
+    appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
+
+    for (size_t i = 0; i < conditions.size(); ++i)
+        query += (i == 0 ? " WHERE " : " AND ") + conditions[i];
 
     query += " ORDER BY label_key";
 
@@ -473,13 +579,14 @@ void PrometheusHTTPProtocolAPI::getLabels(
 }
 
 /// Implements /api/v1/label/<name>/values: returns all distinct values for a given label name.
-/// For "__name__", queries the metric_name column directly; for other labels, extracts values from the tags Map.
+/// For "__name__", queries the metric_name column directly; for tags moved into dedicated columns by
+/// `tags_to_columns`, reads that column; otherwise extracts values from the tags Map.
 void PrometheusHTTPProtocolAPI::getLabelValues(
     WriteBuffer & response,
     const String & label_name,
     const String & match_param,
-    const String & /* start_param */,
-    const String & /* end_param */)
+    const String & start_param,
+    const String & end_param)
 {
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_id = tags_table->getStorageID();
@@ -498,15 +605,36 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     }
     else
     {
-        /// Extract distinct values for a specific key from the tags Map
-        query = fmt::format(
-            "SELECT DISTINCT {}[{}] AS label_value FROM {}",
-            TimeSeriesColumnNames::Tags,
-            quoteString(label_name),
-            tags_table_id.getFullTableName());
-        conditions.push_back(fmt::format("mapContains({}, {})",
-            TimeSeriesColumnNames::Tags,
-            quoteString(label_name)));
+        /// If the label was moved into a dedicated column via `tags_to_columns`, read it from there;
+        /// otherwise it lives in the `tags` Map.
+        String column_name;
+        for (const auto & [tag_name, col_name] : getConfiguredTagColumns())
+        {
+            if (tag_name == label_name)
+            {
+                column_name = col_name;
+                break;
+            }
+        }
+
+        if (!column_name.empty())
+        {
+            String value_expr = fmt::format("coalesce(toString({}), '')", backQuoteIfNeed(column_name));
+            query = fmt::format("SELECT DISTINCT {} AS label_value FROM {}", value_expr, tags_table_id.getFullTableName());
+            conditions.push_back(fmt::format("{} != ''", value_expr));
+        }
+        else
+        {
+            /// Extract distinct values for a specific key from the tags Map
+            query = fmt::format(
+                "SELECT DISTINCT {}[{}] AS label_value FROM {}",
+                TimeSeriesColumnNames::Tags,
+                quoteString(label_name),
+                tags_table_id.getFullTableName());
+            conditions.push_back(fmt::format("mapContains({}, {})",
+                TimeSeriesColumnNames::Tags,
+                quoteString(label_name)));
+        }
     }
 
     if (!match_param.empty())
@@ -515,6 +643,7 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
             TimeSeriesColumnNames::MetricName,
             quoteString(match_param)));
     }
+    appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
 
     for (size_t i = 0; i < conditions.size(); ++i)
         query += (i == 0 ? " WHERE " : " AND ") + conditions[i];

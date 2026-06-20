@@ -92,6 +92,16 @@ private:
     /// Write JSON response for label values
     void writeLabelValuesResponse(WriteBuffer & response, const Block & result_block);
 
+    /// Returns the (tag name -> column name) pairs configured via the `tags_to_columns` setting.
+    /// These tags are stored in dedicated columns of the `tags` table instead of the `tags` Map.
+    std::vector<std::pair<String, String>> getConfiguredTagColumns() const;
+
+    /// Appends `min_time`/`max_time` overlap conditions to `conditions` for the optional `start`/`end`
+    /// parameters of the metadata endpoints. Throws if a time range is requested but the `tags` table
+    /// does not store the time bounds.
+    void appendTimeRangeConditions(
+        std::vector<String> & conditions, const StoragePtr & tags_table, const String & start_param, const String & end_param);
+
     std::shared_ptr<const StorageTimeSeries> time_series_storage;
     FormatSettings format_settings;
     LoggerPtr log;

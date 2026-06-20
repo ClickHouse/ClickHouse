@@ -406,11 +406,15 @@ A `TimeSeries` table can be exposed through a Prometheus-compatible HTTP API con
 |---|---|
 | `/api/v1/series` | Returns the matching series together with their full label set (the metric name as `__name__` plus all tags). |
 | `/api/v1/labels` | Returns all distinct label names, always including the virtual `__name__` label. |
-| `/api/v1/label/<name>/values` | Returns the distinct values of the label `<name>` (the `metric_name` column for `__name__`, otherwise values from the `tags` map). |
+| `/api/v1/label/<name>/values` | Returns the distinct values of the label `<name>` (the `metric_name` column for `__name__`, a dedicated column for a tag moved there via `tags_to_columns`, otherwise values from the `tags` map). |
 
 These endpoints read from the [tags](#tags-table) target table and deduplicate by series identity.
 
 The optional `match[]` parameter restricts the result to a single metric name, for example `/api/v1/series?match[]=cpu_usage`.
+
+Tags moved into separate columns via the `tags_to_columns` setting are included in the results of all three endpoints.
+
+The optional `start` and `end` parameters restrict the result to series whose time range (`min_time`/`max_time`) overlaps the requested interval. They require the table to store the time bounds, which is the default (`store_min_time_and_max_time` = `true`); otherwise a request that specifies `start`/`end` is rejected with an error.
 
 Each endpoint needs a handler of type `query_api`. Because the label-values endpoint contains a variable path component, its rule must use a regular expression (a literal `*` is not a wildcard):
 
@@ -444,7 +448,7 @@ Each endpoint needs a handler of type `query_api`. Because the label-values endp
 ```
 
 :::note
-The metadata endpoints currently return labels and values from the residual `tags` map. Tags moved into separate columns via the `tags_to_columns` setting and the `start`/`end` time-range parameters are not yet taken into account.
+The `match[]` parameter currently supports plain metric-name matching only; `{label=value}` series selectors are not yet parsed.
 :::
 
 # Functions {#functions}

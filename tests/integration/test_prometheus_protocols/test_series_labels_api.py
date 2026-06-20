@@ -194,3 +194,33 @@ def test_series_deduplicated():
         assert data[0]["host"] == "serverX"
     finally:
         node.query("SYSTEM START MERGES")
+
+
+# All test samples are written at t in [1000s, 1030s], so a window that brackets them keeps every
+# series while a window far away excludes them all via the min_time/max_time overlap filter.
+
+
+def test_series_with_start_end_in_range():
+    """GET /api/v1/series with a [start, end] overlapping the data must return the series."""
+    data = get_json_from_api("/api/v1/series?start=500&end=2000")
+    metric_names = {entry["__name__"] for entry in data if "__name__" in entry}
+    assert "cpu_usage" in metric_names
+    assert "memory_usage" in metric_names
+
+
+def test_series_with_start_end_out_of_range():
+    """GET /api/v1/series with a [start, end] not overlapping any series must return nothing."""
+    data = get_json_from_api("/api/v1/series?start=100000&end=200000")
+    assert data == []
+
+
+def test_labels_with_start_end_out_of_range():
+    """GET /api/v1/labels with an out-of-range [start, end] returns only the virtual __name__."""
+    data = get_json_from_api("/api/v1/labels?start=100000&end=200000")
+    assert data == ["__name__"]
+
+
+def test_label_values_with_start_end_out_of_range():
+    """GET /api/v1/label/<name>/values with an out-of-range [start, end] returns nothing."""
+    data = get_json_from_api("/api/v1/label/host/values?start=100000&end=200000")
+    assert data == []
