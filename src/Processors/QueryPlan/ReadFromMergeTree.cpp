@@ -2092,7 +2092,7 @@ void ReadFromMergeTree::buildIndexes(
         if (ignored_index_names.contains(index.name))
             continue;
 
-        auto index_helper = MergeTreeIndexFactory::instance().get(index, *data.getSettings());
+        auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, *data.getSettings());
 
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
@@ -4490,7 +4490,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     }
 
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
-    auto new_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_snapshot->metadata);
+    auto new_metadata = StorageInMemoryMetadata::clone(storage_snapshot->metadata);
 
     for (const auto & [index_name, added_virtual_columns] : added_columns)
     {
@@ -4931,7 +4931,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     MergeTreeData & table = *merge_tree;
     MergeTreeDataSelectExecutor executor(table);
 
-    StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(table.getInMemoryMetadataPtr(ctx.context, false), ctx.context);
+    const auto metadata_snapshot = table.getInMemoryMetadataPtr(ctx.context, false);
+    StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
     auto step = executor.readFromParts(
