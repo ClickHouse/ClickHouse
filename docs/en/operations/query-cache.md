@@ -158,7 +158,7 @@ Entries in the query cache are compressed by default. This reduces the overall m
 from the query cache. To disable compression, use setting [query_cache_compress_entries](/operations/settings/settings#query_cache_compress_entries).
 
 Sometimes it is useful to keep multiple results for the same query cached. This can be achieved using setting
-[query_cache_tag](/operations/settings/settings#query_cache_tag) that acts as as a label (or namespace) for a query cache entries. The query cache
+[query_cache_tag](/operations/settings/settings#query_cache_tag) that acts as a label (or namespace) for a query cache entries. The query cache
 considers results of the same query with different tags different.
 
 Example for creating three different query cache entries for the same query:
