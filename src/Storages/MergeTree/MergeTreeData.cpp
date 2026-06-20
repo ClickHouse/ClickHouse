@@ -5085,12 +5085,20 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "producing duplicate live keys. UNIQUE KEY columns: ({}).",
                     command.column_name, fmt::join(uk_column_names, ", "));
 
-            /// REWRITE PARTS takes the full-part rewrite path, which rebuilds parts without
-            /// preserving the delete_bitmap_*.rbm sidecars — silently resurrecting deleted
-            /// rows once DELETE lands. Reject until the rewrite path is bitmap-aware.
-            if (command.type == MutationCommand::REWRITE_PARTS)
+            /// These commands rebuild whole parts (the full read+rewrite mutation path) and
+            /// drop the delete_bitmap_*.rbm sidecars, silently resurrecting deleted rows once
+            /// DELETE lands. Reject the destructive-rewrite family.
+            /// TODO(unique-key): the other full-rewrite commands on this path
+            /// (MATERIALIZE INDEX / STATISTICS / PROJECTION) need the same bitmap preservation
+            /// or rejection — settle it in the read+delete work where the .rbm machinery lives.
+            if (command.type == MutationCommand::REWRITE_PARTS
+                || command.type == MutationCommand::APPLY_DELETED_MASK
+                || command.type == MutationCommand::APPLY_PATCHES)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... REWRITE PARTS is not supported on tables with UNIQUE KEY");
+                    "ALTER TABLE ... {} is not supported on tables with UNIQUE KEY",
+                    command.type == MutationCommand::REWRITE_PARTS ? "REWRITE PARTS"
+                        : command.type == MutationCommand::APPLY_DELETED_MASK ? "APPLY DELETED MASK"
+                        : "APPLY PATCHES");
         }
     }
 
