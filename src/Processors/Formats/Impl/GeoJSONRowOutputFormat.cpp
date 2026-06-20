@@ -97,14 +97,15 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
 
     const auto & header = getPort(PortKind::Main).getHeader();
 
-    /// A geo type cannot be wrapped in `Nullable` (the type system forbids it), so the column type is
-    /// matched by name directly and the geometry column is never nullable.
     bool found_geometry = false;
     Names property_names;
     for (size_t i = 0; i < header.columns(); ++i)
     {
         const auto & column = header.getByPosition(i);
-        const String type_name = column.type->getName();
+        /// A geo column may be wrapped in `Nullable` (for example `Nullable(Point)` when
+        /// `enable_nullable_tuple_type` is set), so match the type after removing that wrapper.
+        const auto geo_type = removeNullable(column.type);
+        const String type_name = geo_type->getName();
 
         /// `geometryKindFor` returns nullopt for the `Geometry` variant (handled separately below) and
         /// for non-geo columns.
@@ -125,7 +126,7 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
             if (type_name == "Geometry")
             {
                 geometry_is_variant = true;
-                const auto & variant_type = assert_cast<const DataTypeVariant &>(*column.type);
+                const auto & variant_type = assert_cast<const DataTypeVariant &>(*geo_type);
                 for (const auto & entry : geo_type_table)
                     if (auto discr = variant_type.tryGetVariantDiscriminator(entry.ch_name))
                         variant_kind[*discr] = GeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array};
@@ -203,9 +204,23 @@ void GeoJSONRowOutputFormat::writeId(const Columns & columns, size_t row_num)
 
 void GeoJSONRowOutputFormat::writeGeometry(const IColumn & column, size_t row_num)
 {
+    /// A concrete geo column may be `Nullable` (for example `Nullable(Point)`); a null value is written
+    /// as a `null` geometry, and a non-null value is read from the nested column.
+    const IColumn * geo = &column;
+    if (isColumnNullable(column))
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(column);
+        if (nullable.isNullAt(row_num))
+        {
+            writeCString("null", *ostr);
+            return;
+        }
+        geo = &nullable.getNestedColumn();
+    }
+
     if (geometry_is_variant)
     {
-        const auto & variant = assert_cast<const ColumnVariant &>(column);
+        const auto & variant = assert_cast<const ColumnVariant &>(*geo);
         const auto discr = variant.globalDiscriminatorAt(row_num);
         if (discr == ColumnVariant::NULL_DISCRIMINATOR)
         {
@@ -216,7 +231,7 @@ void GeoJSONRowOutputFormat::writeGeometry(const IColumn & column, size_t row_nu
     }
     else
     {
-        writeGeometryObject(concrete_kind, column, row_num);
+        writeGeometryObject(concrete_kind, *geo, row_num);
     }
 }
 
