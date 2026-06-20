@@ -36,6 +36,7 @@ def generate_cluster_def(port):
             <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
         </azure_conf2>
     </named_collections>
+    <keeper_map_path_prefix>/test_backup_restore_azure_blob_storage</keeper_map_path_prefix>
     <storage_configuration>
         <disks>
             <blob_storage_disk>
@@ -166,6 +167,7 @@ def cluster():
             "node",
             main_configs=[path],
             with_azurite=True,
+            with_zookeeper=True,
         )
         cluster.add_instance(
             "node_legacy_native_copy",
@@ -263,6 +265,22 @@ def put_azure_file_content(filename, port, data):
     blob_client = container_client.get_blob_client(filename)
     buf = io.BytesIO(data)
     blob_client.upload_blob(buf)
+
+
+def get_azure_blob_names(port, name_starts_with):
+    connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+        f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+        f"BlobEndpoint=http://127.0.0.1:{port}/devstoreaccount1;"
+    )
+    blob_service_client = BlobServiceClient.from_connection_string(
+        str(connection_string)
+    )
+    container_client = blob_service_client.get_container_client("cont")
+    return {
+        blob.get("name")
+        for blob in container_client.list_blobs(name_starts_with=name_starts_with)
+    }
 
 
 def test_backup_restore(cluster):
@@ -518,6 +536,70 @@ def test_backup_restore_on_merge_tree(cluster):
     )
     azure_query(node, f"DROP TABLE test_simple_merge_tree")
     azure_query(node, f"DROP TABLE test_simple_merge_tree_restored")
+
+
+def test_backup_restore_keeper_map_reference_copy(cluster):
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+    backup_name = new_backup_name()
+    database_name = f"keeper_map_azure_copy_{backup_name}"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{backup_name}')"
+
+    azure_query(node, f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    try:
+        azure_query(node, f"CREATE DATABASE {database_name}")
+        azure_query(
+            node,
+            f"CREATE TABLE {database_name}.keeper1 (key UInt64, value String) Engine=KeeperMap('/{database_name}/shared') PRIMARY KEY key",
+        )
+        azure_query(
+            node,
+            f"CREATE TABLE {database_name}.keeper2 (key UInt64, value String) Engine=KeeperMap('/{database_name}/shared') PRIMARY KEY key",
+        )
+        azure_query(
+            node,
+            f"INSERT INTO {database_name}.keeper1 SELECT number, 'test' || toString(number) FROM numbers(5)",
+        )
+
+        expected_result = "".join(f"{i}\ttest{i}\n" for i in range(5))
+        assert (
+            azure_query(
+                node, f"SELECT key, value FROM {database_name}.keeper2 ORDER BY key"
+            )
+            == expected_result
+        )
+
+        azure_query(
+            node,
+            f"BACKUP DATABASE {database_name} TO {backup_destination} SETTINGS deduplicate_files = 0",
+        )
+
+        expected_blobs = {
+            f"{backup_name}/data/{database_name}/keeper1/data.bin",
+            f"{backup_name}/data/{database_name}/keeper2/data.bin",
+        }
+        blob_names = get_azure_blob_names(
+            port, f"{backup_name}/data/{database_name}/"
+        )
+        assert expected_blobs <= blob_names
+        assert not get_azure_blob_names(port, f"data/{database_name}/")
+
+        azure_query(node, f"DROP DATABASE {database_name} SYNC")
+        azure_query(node, f"RESTORE DATABASE {database_name} FROM {backup_destination}")
+        assert (
+            azure_query(
+                node, f"SELECT key, value FROM {database_name}.keeper1 ORDER BY key"
+            )
+            == expected_result
+        )
+        assert (
+            azure_query(
+                node, f"SELECT key, value FROM {database_name}.keeper2 ORDER BY key"
+            )
+            == expected_result
+        )
+    finally:
+        azure_query(node, f"DROP DATABASE IF EXISTS {database_name} SYNC")
 
 
 def test_backup_restore_correct_block_ids(cluster):
