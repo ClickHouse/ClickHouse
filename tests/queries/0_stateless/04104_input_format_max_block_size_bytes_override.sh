@@ -33,6 +33,7 @@ for _ in $(seq 1 60); do
         SELECT count()
         FROM system.query_log
         WHERE event_date >= yesterday()
+          AND current_database = currentDatabase()
           AND query_id = '${query_id}'
           AND type = 'QueryFinish'")
     [ "$finished" -ge 1 ] && break
