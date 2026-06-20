@@ -74,22 +74,18 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
     }
 }
 
-bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
 {
     const auto & rhs_typed = assert_cast<const ColumnNode &>(rhs);
-    if (column.name != rhs_typed.column.name)
-        return false;
-
-    return !compare_options.compare_types || column.type->equals(*rhs_typed.column.type);
+    return column.name == rhs_typed.column.name && column.type->equals(*rhs_typed.column.type);
 }
 
-void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
+void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
     hash_state.update(column.name.size());
     hash_state.update(column.name);
 
-    if (compare_options.compare_types)
-        column.type->updateHash(hash_state);
+    column.type->updateHash(hash_state);
 }
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
