@@ -485,7 +485,10 @@ void StorageRabbitMQ::initRabbitMQ()
     {
         auto consumer = createConsumer();
         consumer->updateChannel(*connection);
-        consumers_ref.push_back(consumer);
+        {
+            std::lock_guard lock(consumers_mutex);
+            consumers_ref.push_back(consumer);
+        }
         pushConsumer(consumer);
         ++num_created_consumers;
     }
@@ -1018,6 +1021,19 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
 
     /// Also there is no need to cleanup exchanges as they were created with AMQP::autodelete option. Once queues
     /// are removed, exchanges will also be cleaned.
+}
+
+
+void StorageRabbitMQ::cancelBackgroundActivity()
+{
+    IStreamingStorage::cancelBackgroundActivity();
+
+    std::lock_guard lock(consumers_mutex);
+    for (auto & consumer_weak : consumers_ref)
+    {
+        if (auto consumer = consumer_weak.lock())
+            consumer->wakeUp();
+    }
 }
 
 

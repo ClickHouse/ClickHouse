@@ -626,3 +626,50 @@ def test_direct_select_rejected_when_view_attached_while_stopped(rabbitmq_cluste
     instance.query(f"SYSTEM START test.{table}")
     publish(rabbitmq_cluster, exchange, 0, 10)
     wait_dst_count(table, 10)
+
+
+def test_cancel_wakes_flush_wait_promptly(rabbitmq_cluster):
+    # With a long rabbitmq_flush_interval_ms, a source that has read some rows parks in
+    # RabbitMQConsumer::waitForMessages until the flush timeout. SYSTEM CANCEL must wake it and abort
+    # the in-flight block promptly, not leave the unacked block parked for the whole flush interval.
+    table = "rabbitmq_cancel_wake"
+    exchange = "cancel_wake_exchange"
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{exchange}',
+                     rabbitmq_flush_interval_ms = 30000,
+                     rabbitmq_max_block_size = 1000,
+                     rabbitmq_row_delimiter = '\\n';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table};
+        """
+    )
+    instance.wait_for_log_line("Started streaming to 1 attached views")
+
+    # Fewer than a full block: the source reads them, then parks in waitForMessages waiting up to
+    # rabbitmq_flush_interval_ms (30s) for the block to fill.
+    publish(rabbitmq_cluster, exchange, 0, 3)
+    time.sleep(5)  # let the source read the rows and settle into the flush wait
+
+    # CANCEL must wake that wait and abort the in-flight block well within the 30s flush interval.
+    t0 = time.time()
+    instance.query(f"SYSTEM CANCEL test.{table}")
+    instance.wait_for_log_line(
+        f"{table}.*Consumption interrupted: discarding in-flight block",
+        look_behind_lines=5000,
+        timeout=45,
+    )
+    elapsed = time.time() - t0
+    assert elapsed < 10, (
+        f"SYSTEM CANCEL took {elapsed:.1f}s to abort the in-flight block; it should wake the flush "
+        f"wait promptly instead of waiting out rabbitmq_flush_interval_ms"
+    )

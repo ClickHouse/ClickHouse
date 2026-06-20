@@ -360,10 +360,11 @@ Chunk RabbitMQSource::generateImpl()
         }
         if (new_rows == 0)
         {
+            auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
             if (remaining_execution_time)
-                consumer->waitForMessages(remaining_execution_time);
+                consumer->waitForMessages(remaining_execution_time, is_cancelled);
             else
-                consumer->waitForMessages();
+                consumer->waitForMessages(std::nullopt, is_cancelled);
         }
     }
 

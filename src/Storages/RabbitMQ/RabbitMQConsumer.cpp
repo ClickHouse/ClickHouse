@@ -41,6 +41,12 @@ void RabbitMQConsumer::stop()
     cv.notify_one();
 }
 
+void RabbitMQConsumer::wakeUp()
+{
+    std::lock_guard lock(mutex);
+    cv.notify_all();
+}
+
 void RabbitMQConsumer::closeConnections()
 {
     if (consumer_channel)

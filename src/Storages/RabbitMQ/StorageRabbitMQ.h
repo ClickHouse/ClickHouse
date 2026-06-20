@@ -43,6 +43,8 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
+    void cancelBackgroundActivity() override;
+
     void renameInMemory(const StorageID & new_table_id) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
