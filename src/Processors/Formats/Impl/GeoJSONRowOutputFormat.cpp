@@ -6,6 +6,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -128,7 +129,7 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
         {
             /// A GeoJSON Feature id must be a JSON string or number, so the column must be a string or
             /// numeric type (optionally wrapped in `Nullable` or `LowCardinality`).
-            const WhichDataType id_type(removeNullableOrLowCardinalityNullable(column.type));
+            const WhichDataType id_type(removeLowCardinalityAndNullable(column.type));
             if (!id_type.isStringOrFixedString() && !id_type.isNumber())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -136,7 +137,6 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
                     "type, but it has type '{}'",
                     column.type->getName());
             id_col_idx = i;
-            id_is_nullable = column.type->isNullable();
         }
         else
         {
@@ -183,8 +183,9 @@ void GeoJSONRowOutputFormat::write(const Columns & columns, size_t row_num)
 void GeoJSONRowOutputFormat::writeId(const Columns & columns, size_t row_num)
 {
     const auto & column = *columns[*id_col_idx];
-    /// Omit the `id` member for a NULL id (a feature whose GeoJSON `id` was absent or `null`).
-    if (id_is_nullable && assert_cast<const ColumnNullable &>(column).isNullAt(row_num))
+    /// Omit the `id` member for a NULL id. `isNullAt` is virtual on `IColumn`, so this also covers a
+    /// `LowCardinality(Nullable(...))` id, not only a plain `Nullable(...)` one.
+    if (column.isNullAt(row_num))
         return;
     writeCString(R"(,"id":)", *ostr);
     serializations[*id_col_idx]->serializeTextJSON(column, row_num, *ostr, settings);
