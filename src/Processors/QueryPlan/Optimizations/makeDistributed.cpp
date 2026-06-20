@@ -1064,7 +1064,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get());
 
                     /// Ship each MergeTree bucket its authoritative marks as a task parameter (object-storage
-                    /// reads carry no per-bucket marks and keep using only bucket_id/total_buckets).
+                    /// reads carry no per-bucket marks and keep using only `bucket_id` / `total_buckets`).
                     std::vector<String> read_buckets;
                     if (auto * read_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get()))
                         read_buckets = read_merge_tree_step->serializeDistributedReadBuckets();

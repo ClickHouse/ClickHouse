@@ -56,10 +56,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 1;
 /// Version 1 added the initiator's settings changes to the task.
-/// Version 2 ships every distributed leaf-read bucket's marks in the `read_bucket` task parameter; the
-/// step no longer carries part names (plain reads previously re-derived ranges on the worker). The
-/// version check rejects a v2 task on a v1 worker; a v1 task reaching a v2 worker is not detected, so
-/// make_distributed_plan (experimental) requires all nodes on the same version -- no rolling upgrade.
+/// Version 2 ships every distributed leaf-read bucket's marks in the `read_bucket` task parameter
+/// instead of part names. The version check rejects a v2 task on a v1 worker; a v1 task reaching a
+/// v2 worker is not detected, so `make_distributed_plan` (experimental) requires all nodes on the
+/// same version -- no rolling upgrade.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;

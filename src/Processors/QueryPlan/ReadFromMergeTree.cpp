@@ -4740,8 +4740,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
             return 0;
 
         /// Keep every bucket, including empty ones, so the count stays `target_buckets` and matches the
-        /// downstream exchange's bucket count (a worker handed an empty bucket just reads nothing).
-        /// Dropping empties would shrink the count for tiny tables and force an extra shuffle.
+        /// downstream exchange (dropping empties would shrink the count for tiny tables and force a reshuffle).
         std::vector<DistributedReadBucket> buckets;
         for (auto & slice : sliceMarksAcrossBuckets(analysis->parts_with_ranges, target_buckets))
             buckets.push_back({std::move(slice), /*needs_merge=*/ false, {}, 0});
