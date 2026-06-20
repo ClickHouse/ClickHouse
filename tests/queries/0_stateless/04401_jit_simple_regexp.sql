@@ -47,6 +47,17 @@ SELECT match('HeLLo', '(?i)^hello$');
 SELECT match('hella', '(?i)^hello$');
 SELECT extract('USER42', '(?i)^([a-z]+)');
 
+SELECT '-- case-insensitive folding of k/s reaches non-ASCII code points in RE2 (U+212A KELVIN SIGN, U+017F LONG S); JIT must agree (it falls back)';
+SELECT
+    (SELECT match(char(0xE2, 0x84, 0xAA), '(?i)^k$') SETTINGS compile_regular_expressions = 1)
+  = (SELECT match(char(0xE2, 0x84, 0xAA), '(?i)^k$') SETTINGS compile_regular_expressions = 0);
+SELECT
+    (SELECT match(char(0xC5, 0xBF), '(?i)^[s]$') SETTINGS compile_regular_expressions = 1)
+  = (SELECT match(char(0xC5, 0xBF), '(?i)^[s]$') SETTINGS compile_regular_expressions = 0);
+SELECT
+    (SELECT extract(concat('a', char(0xE2, 0x84, 0xAA), 'b'), '(?i)^([a-z]+)') SETTINGS compile_regular_expressions = 1)
+  = (SELECT extract(concat('a', char(0xE2, 0x84, 0xAA), 'b'), '(?i)^([a-z]+)') SETTINGS compile_regular_expressions = 0);
+
 SELECT '-- empty string and empty match edge cases';
 SELECT match('', '^$');
 SELECT match('x', '^$');

@@ -24,9 +24,9 @@ x
 X\nX
 ['a','\n','b']
 X\nX\nX
--- vectorized over many rows, JIT path equals RE2
+-- vectorized over many rows, JIT path equals RE2 (one side compiled, the other forced onto RE2)
 1
-2000
+1
 -- patterns outside the subset fall back to RE2
 ['1','2']
 X X X

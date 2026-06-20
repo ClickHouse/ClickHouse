@@ -35,11 +35,13 @@ SELECT replaceRegexpAll('a\nb', '.', 'X');
 SELECT extractAll('a\nb', '.');
 SELECT replaceRegexpAll('a\nb\nc', '.', 'X');
 
-SELECT '-- vectorized over many rows, JIT path equals RE2';
-SELECT sum(cityHash64(replaceRegexpAll(concat('id', toString(number), '/x', toString(number)), '[0-9]+', '#')))
-     = sum(cityHash64(replaceRegexpAll(concat('id', toString(number), '/x', toString(number)), '[0-9]+', '#')))
-FROM numbers(1000);
-SELECT sum(length(extractAll(concat('a', toString(number), 'b', toString(number % 7)), '[0-9]+'))) FROM numbers(1000);
+SELECT '-- vectorized over many rows, JIT path equals RE2 (one side compiled, the other forced onto RE2)';
+SELECT
+    (SELECT sum(cityHash64(replaceRegexpAll(concat('id', toString(number), '/x', toString(number)), '[0-9]+', '#'))) FROM numbers(1000) SETTINGS compile_regular_expressions = 1)
+  = (SELECT sum(cityHash64(replaceRegexpAll(concat('id', toString(number), '/x', toString(number)), '[0-9]+', '#'))) FROM numbers(1000) SETTINGS compile_regular_expressions = 0);
+SELECT
+    (SELECT sum(length(extractAll(concat('a', toString(number), 'b', toString(number % 7)), '[0-9]+'))) FROM numbers(1000) SETTINGS compile_regular_expressions = 1)
+  = (SELECT sum(length(extractAll(concat('a', toString(number), 'b', toString(number % 7)), '[0-9]+'))) FROM numbers(1000) SETTINGS compile_regular_expressions = 0);
 
 SELECT '-- patterns outside the subset fall back to RE2';
 SELECT extractAll('a1b2', '\\d+?');
