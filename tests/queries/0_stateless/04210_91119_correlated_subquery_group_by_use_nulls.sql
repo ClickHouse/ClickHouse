@@ -67,6 +67,16 @@ GROUP BY number
 WITH ROLLUP
 ORDER BY number NULLS LAST;
 
+-- Multiple GROUP BY keys with CUBE and an aggregate over the correlated key (STID 2672-39ba).
+-- CUBE makes both `number` and `number % 2` Nullable in the extra rows; the correlated
+-- `(SELECT sum(number))` references the outer `number` key. `sum(number)` (a plain
+-- aggregate, not the correlated subquery) is used in ORDER BY for a deterministic order.
+SELECT '-- multi-key CUBE with aggregate over correlated column ---';
+SELECT number, number % 2, (SELECT sum(number))
+FROM numbers(10)
+GROUP BY number % 2, number WITH CUBE
+ORDER BY number, number % 2, sum(number) NULLS LAST;
+
 SELECT '-- HAVING with correlated subquery ---';
 SELECT number, sum(number) AS s
 FROM numbers(3)
