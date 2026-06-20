@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <base/sort.h>
 
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
@@ -269,6 +270,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_TABLE;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -1586,12 +1588,12 @@ static void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
             }
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
@@ -1611,7 +1613,7 @@ static void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<CoalescingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
             }
         }
     };
@@ -2015,7 +2017,7 @@ void ReadFromMergeTree::buildIndexes(
 
     const auto & settings = query_context->getSettingsRef();
 
-    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr), query_context);
+    ActionsDAGWithInversionPushDown filter_dag((filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr), query_context, /* boolean_context */ true);
 
     indexes.emplace(
         ReadFromMergeTree::Indexes{KeyCondition{
@@ -2090,7 +2092,7 @@ void ReadFromMergeTree::buildIndexes(
         if (ignored_index_names.contains(index.name))
             continue;
 
-        auto index_helper = MergeTreeIndexFactory::instance().get(index);
+        auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, *data.getSettings());
 
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
@@ -2169,22 +2171,37 @@ void ReadFromMergeTree::buildIndexes(
             for (const auto & idx : skip_indexes.useful_indices)
             {
                 size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName());
+                auto format = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName(), &part.data_part->getDataPartStorage());
 
                 for (const auto & substream : format.substreams)
                 {
                     String stream_name = idx.index->getFileName() + substream.suffix;
-                    /// Check for both original and hashed filenames
+                    /// Check for both original and hashed filenames in checksums.txt
                     auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, part.data_part->checksums);
                     if (actual_stream_name)
+                    {
                         index_size += part.data_part->getFileSizeOrZero(*actual_stream_name + substream.extension);
+                    }
+                    else
+                    {
+                        /// Packed substreams have no individual checksum entry (only
+                        /// skp_idx.packed does), so the checksums-only lookup above returns
+                        /// nullopt. Ask the storage overlay - DataPartStorageOnDiskFull serves
+                        /// packed virtual-file sizes from the archive index. Without this
+                        /// fallback the cost-based skip-index reordering treats packed indices
+                        /// as free and may evaluate expensive ones before cheap ones.
+                        const String data_file = stream_name + substream.extension;
+                        const auto & storage = part.data_part->getDataPartStorage();
+                        if (storage.existsFile(data_file))
+                            index_size += storage.getFileSize(data_file);
+                    }
                 }
 
                 index_sizes.emplace_back(index_size);
             }
 
             // Move minmax indices to first positions, so they will be applied first as cheapest ones
-            std::stable_sort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
+            ::stableSort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
             {
                 const auto l_index = useful_indices[l].index;
                 const auto r_index = useful_indices[r].index;
@@ -4470,7 +4487,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     }
 
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
-    auto new_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_snapshot->metadata);
+    auto new_metadata = StorageInMemoryMetadata::clone(storage_snapshot->metadata);
 
     for (const auto & [index_name, added_virtual_columns] : added_columns)
     {
@@ -4898,15 +4915,21 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         }
     }
 
+    /// The table could be dropped concurrently after the plan was serialized,
+    /// so a failed lookup is a regular error, not a logical one.
     StorageID table_id(database_name, table_name);
-    auto storage_ptr = DatabaseCatalog::instance().tryGetTable(table_id, ctx.context);
-    if (!storage_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {}.{} not found in catalog", database_name, table_name);
+    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, ctx.context);
 
-    MergeTreeData & table = dynamic_cast<MergeTreeData &>(*storage_ptr);
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(storage_ptr.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE,
+            "Table {} is not a MergeTree table", table_id.getNameForLogs());
+
+    MergeTreeData & table = *merge_tree;
     MergeTreeDataSelectExecutor executor(table);
 
-    StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(table.getInMemoryMetadataPtr(ctx.context, false), ctx.context);
+    const auto metadata_snapshot = table.getInMemoryMetadataPtr(ctx.context, false);
+    StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
     auto step = executor.readFromParts(
