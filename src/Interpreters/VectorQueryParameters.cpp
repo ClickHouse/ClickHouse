@@ -66,6 +66,161 @@ String dataTypePtrToString(const DataTypePtr & type)
     return type->getName();
 }
 
+bool functionCanCache(const String & function_name)
+{
+    String fun_name = Poco::toLower(function_name);
+    // Functions that take type name as string argument - the string changes query structure
+    // and cannot be normalized to a placeholder without causing cache key collisions
+    if (fun_name == "variantelement" ||
+        fun_name == "tupleelement" ||
+        fun_name == "dynamicelement" ||
+        fun_name == "reinterpretasstring" ||
+        fun_name == "reinterpretasint8" ||
+        fun_name == "reinterpretasint16" ||
+        fun_name == "reinterpretasint32" ||
+        fun_name == "reinterpretasint64" ||
+        fun_name == "reinterpretasuint8" ||
+        fun_name == "reinterpretasuint16" ||
+        fun_name == "reinterpretasuint32" ||
+        fun_name == "reinterpretasuint64" ||
+        fun_name == "reinterpretasdate" ||
+        fun_name == "reinterpretasdatetime" ||
+        fun_name == "reinterpretasdatetime64" ||
+        fun_name == "reinterpretastimestamp" ||
+        fun_name == "substringindex" ||
+        fun_name == "bech32" ||
+        fun_name == "tochar" ||
+        fun_name == "format" ||
+        fun_name == "extract" ||
+        fun_name == "dateformat" ||
+        fun_name == "frombase64" ||
+        fun_name == "tobase64" ||
+        fun_name == "hex" ||
+        fun_name == "unhex" ||
+        fun_name == "bitmasktoarray" ||
+        fun_name == "polygon" ||
+        fun_name == "polygonconvexhull" ||
+        fun_name == "polygonarea" ||
+        fun_name == "polygonperimeter" ||
+        fun_name == "polygonpoint" ||
+        fun_name == "polygoncontains" ||
+        fun_name == "geohashencode" ||
+        fun_name == "geohashdecode" ||
+        fun_name == "h3tochildren" ||
+        fun_name == "h3fromchildren" ||
+        fun_name == "geodesyazimuth" ||
+        fun_name == "printf" || 
+        fun_name == "xxhash64" || 
+        fun_name == "xxhash32" || 
+        fun_name == "cityhash64" || 
+        fun_name == "cityhash32" || 
+        fun_name == "cityhash32" ||
+        fun_name == "hasAnyTokens" || 
+        fun_name == "hasAllTokens" || 
+        fun_name == "interval" || 
+        // rand functions
+        fun_name == "rand" || 
+        fun_name == "rand64" || 
+        fun_name == "randCanonical" || 
+        fun_name == "randConstant" || 
+        fun_name == "randUniform" || 
+        fun_name == "randNormal" || 
+        fun_name == "randomString" || 
+        fun_name == "randomStringUTF8" || 
+        fun_name == "randomPrintableASCII" || 
+        fun_name == "randomFixedString" || 
+        // Timezone-related functions - timezone affects query result
+        fun_name == "todate" ||
+        fun_name == "todate32" ||
+        fun_name == "todatetime" ||
+        fun_name == "todatetime64" ||
+        fun_name == "toyyyymm" ||
+        fun_name == "toyyyymmdd" ||
+        fun_name == "toyyyymmddhhmmss" ||
+        fun_name == "tostartofday" ||
+        fun_name == "tostartofweek" ||
+        fun_name == "tostartofmonth" ||
+        fun_name == "tostartofquarter" ||
+        fun_name == "tostartofyear" ||
+        fun_name == "tostartofminute" ||
+        fun_name == "tostartofhour" ||
+        fun_name == "tostartoffiveminute" ||
+        fun_name == "tostartoftenminutes" ||
+        fun_name == "tounixtimestamp" ||
+        fun_name == "timezonehour" ||
+        fun_name == "timezoneminute" ||
+        fun_name == "fromunixtime" ||
+        fun_name == "formatdatetime")
+    {
+        LOG_DEBUG(logger, "fun_name={}", fun_name);
+        return false;
+    }
+    return true;
+}
+
+bool tokenCanCache(Token token)
+{
+    if (token.size() >= 3)
+        return functionCanCache(std::string(token.begin, token.size()));
+    return true;
+}
+
+bool checkFunctionName(const String function_name, bool only_vector)
+{
+    if (only_vector)
+    {
+        if (function_name == COSINEDISTANCE_FUNCTION_NAME ||
+            function_name == L2DISTANCE_FUNCTION_NAME ||
+            function_name == HASTOKEN_FUNCTION_NAME )
+            return true;
+        return false;
+    }
+    return functionCanCache(function_name);
+}
+
+static constexpr int getTypeRank(TypeIndex idx)
+{
+    switch (idx)
+    {
+        case TypeIndex::UInt8: return 1;
+        case TypeIndex::UInt16: return 2;
+        case TypeIndex::UInt32: return 3;
+        case TypeIndex::UInt64: return 4;
+        case TypeIndex::UInt128: return 5;
+        case TypeIndex::UInt256: return 6;
+        case TypeIndex::Int8: return 11;
+        case TypeIndex::Int16: return 12;
+        case TypeIndex::Int32: return 13;
+        case TypeIndex::Int64: return 14;
+        case TypeIndex::Int128: return 15;
+        case TypeIndex::Int256: return 16;
+        case TypeIndex::BFloat16: return 20;
+        case TypeIndex::Float32: return 21;
+        case TypeIndex::Float64: return 22;
+        default: return 0;
+    }
+}
+
+DataTypePtr getType(DataTypePtr data_type_ptr, DataTypePtr result_type)
+{
+    if (isArray(result_type) || !data_type_ptr)
+        return result_type;
+    
+    WhichDataType which_data(data_type_ptr);
+    WhichDataType which_result(result_type);
+    bool data_is_numeric = which_data.isInteger() || which_data.isFloat();
+    bool result_is_numeric = which_result.isInteger() || which_result.isFloat();
+ 
+    if (!data_is_numeric || !result_is_numeric)
+        return result_type;
+ 
+    int data_rank = getTypeRank(data_type_ptr->getColumnType());
+    int result_rank = getTypeRank(result_type->getColumnType());
+ 
+    if (data_rank > result_rank)
+        return data_type_ptr;
+    return result_type;
+}
 
 bool isVectorScanBindingScope(const String & dag_scope)
 {
@@ -427,7 +582,8 @@ void findActionsDAGAndCollectConstants(
     const std::vector<UInt32> & plan_node_path,
     const String & dag_scope,
     Int32 step_type,
-    std::vector<PlanConstantCandidate> & out_candidates)
+    std::vector<PlanConstantCandidate> & out_candidates,
+    bool only_vector)
 {
     if (dag.getOutputs().empty())
         return;
@@ -468,11 +624,14 @@ void findActionsDAGAndCollectConstants(
                 if (node->function_base)
                 {
                     String func_name = Poco::toLower(node->function_base->getName());
-                    function_names.push_back(func_name);
-                    // Recursively traverse children
-                    for (const auto * child : node->children)
-                        traverse_node(child, node, function_names);
-                    function_names.pop_back();
+                    if (checkFunctionName(func_name, only_vector))
+                    {
+                        function_names.push_back(func_name);
+                        // Recursively traverse children
+                        for (const auto * child : node->children)
+                            traverse_node(child, node, function_names);
+                        function_names.pop_back();
+                    }
                 }
                 break;
             }
@@ -648,7 +807,7 @@ bool parseNormalizedParams(
         }
         else if (!only_vector)
             parsed = parseNumberLiteralFast(raw, converted);
-
+            
         if (!parsed)
             converted = raw;
 
@@ -715,6 +874,13 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
         } 
         if (token.isEnd() || token.isError())
             break;
+        if (token.type == TokenType::BareWord && !tokenCanCache(token))
+        {
+            result.hash = 0;
+            result.normalized_sql = "";
+            result.params.clear();
+            return result;
+        }
         if (vector_function_type && token.type == TokenType::BareWord)
             is_bare_word = true;
         if (token.type == TokenType::BareWord && !vector_function_type
@@ -760,7 +926,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
                 )
             )
         {
-            result.normalized_sql += "?";
+            result.normalized_sql += "?:string";
             hash.update("\x00", 1);
             if (vector_complete || vector_function_type == 2)
                 result.params.emplace_back(String(token.begin, token.size()), ParameterInfo::Type::STRING);
@@ -777,6 +943,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             size_t array_depth = 1;
             Token last_significant = token;
             bool valid = true;
+            bool is_function = false;
             
             std::vector<String> string_array;
             const char * element_start = nullptr;
@@ -792,6 +959,9 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
                     break;
                 }
 
+                if (nested.type == TokenType::BareWord)
+                    is_function = true;
+
                 if (!nested.isSignificant())
                     continue;
 
@@ -805,7 +975,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
 
                 last_significant = nested;
             }
-            if (use_cast && array_depth == 1 && (vector_function_type == 1 || vector_function_type == 3))
+            if (use_cast && array_depth == 1  && !is_function && (vector_function_type == 1 || vector_function_type == 3))
             {
                 appendFunctionName(result.new_sql, FunctionNames::CAST);
                 result.new_sql += "('";
@@ -840,8 +1010,8 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             {
                 String original_array(array_begin, static_cast<size_t>(array_end - array_begin));
                 result.new_sql += original_array;
-                if (array_depth == 1 && (vector_function_type == 1 || vector_function_type == 3))
-                    result.normalized_sql += "?";
+                if (array_depth == 1  && !is_function && (vector_function_type == 1 || vector_function_type == 3))
+                    result.normalized_sql += "?:array";
                 else
                     result.normalized_sql += original_array;
                 result.params.emplace_back(original_array, ParameterInfo::Type::NUMERIC_VECTOR);
@@ -852,10 +1022,10 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
 
                 ++num_literals_in_sequence;
 
-                if (use_cast && array_depth == 1 && (vector_function_type == 1 || vector_function_type == 3))
+                if (use_cast && array_depth == 1  && !is_function && (vector_function_type == 1 || vector_function_type == 3))
                 {
                     result.new_sql += "','Array(Float)')";
-                    result.normalized_sql += ",?)";
+                    result.normalized_sql += ",?:string)";
                 }
                 continue;
             }
@@ -926,7 +1096,11 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
                     position_param_count++;
                 }
                 
-                result.normalized_sql += "?";
+                result.normalized_sql += "?:";
+                if (param_type == ParameterInfo::Type::NUMERIC)
+                    result.normalized_sql += "number";
+                else
+                    result.normalized_sql += "string";
                 hash.update("\x00", 1);
                 is_dot = false;
                 continue;
@@ -971,16 +1145,16 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
 }
 
 
-void VectorQueryParameters::replaceConstantsInQueryPlan(
+bool VectorQueryParameters::replaceConstantsInQueryPlan(
     QueryPlan & plan,
     NormalizedQueryResult & parameters,
     const std::vector<VectorQueryPlanCache::PlanConstantBinding> & plan_constant_bindings)
 {
     if (plan_constant_bindings.empty() || parameters.params.empty() || parameters.parsed_params.empty())
-        return;
+        return false;
     auto * root = plan.getRootNode();
     if (!root)
-        return;
+        return false;
 
     auto get_node_by_path = [&](const NodePath & path) -> QueryPlan::Node *
     {
@@ -994,37 +1168,43 @@ void VectorQueryParameters::replaceConstantsInQueryPlan(
         return current;
     };
 
-    auto apply_bindings_to_dag = [&](ActionsDAG & dag, const UInt32 dag_node_index, const UInt32 parameter_index)
+    auto apply_bindings_to_dag = [&](ActionsDAG & dag, const UInt32 dag_node_index, const UInt32 parameter_index, DataTypePtr data_type_ptr)
     {
         if (parameter_index >= parameters.parsed_params.size())
-            return;
-
+            return false;
         auto node_it = dag.getNodes().begin();
         std::advance(node_it, std::min<size_t>(dag_node_index, dag.getNodes().size()));
         if (node_it == dag.getNodes().end())
-            return;
+            return false;
 
         auto & dag_node = const_cast<ActionsDAG::Node &>(*node_it);
         if (dag_node.type != ActionsDAG::ActionType::COLUMN || !dag_node.column || !isColumnConst(*dag_node.column) || !dag_node.result_type)
-            return;
+            return false;
         try
         {
             Field raw_value = parameters.parsed_params[parameter_index];
             if (raw_value.getType() == Field::Types::String && isArray(dag_node.result_type))
-            {
+            {             
                 Field converted;
                 const auto & raw_text = raw_value.safeGet<String>();
                 if (stringToNumericArrayField(raw_text, dag_node.result_type, converted))
                     raw_value = std::move(converted);
             }
+            DataTypePtr final_type = getType(data_type_ptr, dag_node.result_type);
+            if (final_type->getTypeId() != static_cast<TypeIndex>(raw_value.getType()))
+                raw_value = convertFieldToType(raw_value, *final_type);
+
             // ActionsDAG constants are rewritten by replacing the const column payload
             // at the recorded node index with the parsed runtime Field value.
-            ColumnPtr new_column = dag_node.result_type->createColumnConst(1, raw_value);
+            ColumnPtr new_column = final_type->createColumnConst(1, raw_value);
+            const_cast<DataTypePtr &>(dag_node.result_type) = std::move(final_type);
             const_cast<ColumnPtr &>(dag_node.column) = std::move(new_column);
+            return true;
         }
         catch (...)
         {
-            LOG_TRACE(logger, "Exception caught when updating DAG node column: {}", getCurrentExceptionMessage(false));
+            LOG_DEBUG(logger, "Exception caught when updating DAG node column: {}", getCurrentExceptionMessage(false));
+            return false;
         }
     };
 
@@ -1047,16 +1227,19 @@ void VectorQueryParameters::replaceConstantsInQueryPlan(
             if (plan_constant_binding.dag_scope != "FilterStep")
                 continue;
             ActionsDAG & dag = filter_step->getExpression();
-            apply_bindings_to_dag(dag,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index);
+            if (!apply_bindings_to_dag(dag,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index, plan_constant_binding.target_type))
+                return false;
         }
         else if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
         {
             if (plan_constant_binding.dag_scope != "ExpressionStep")
                 continue;
             ActionsDAG & dag = expression_step->getExpression();
-            apply_bindings_to_dag(dag,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index);
+            if (!apply_bindings_to_dag(dag,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index, plan_constant_binding.target_type))
+                return false;
         }
     }
+    return true;
 }
 
 std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::collectASTLiteralPositions(
@@ -1200,6 +1383,12 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
             }
             else if (!only_vector)
             {
+                if (literal_number == 1 && (last_function_name == "and" || last_function_name == "or"))
+                {
+                    LOG_DEBUG(logger, "found {} constant ", last_function_name);
+                    can_cache = false;
+                    return;
+                }
                 if (literal_number >= 2 && (last_function_name == "equals" || last_function_name == "notEquals" ||
                     last_function_name == "less" || last_function_name == "greater" ||
                     last_function_name == "lessOrEquals" || last_function_name == "greaterOrEquals" ||
@@ -1511,6 +1700,7 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
             size_t depth = 1;
             size_t array_depth = 1;
             bool valid = true;
+            bool is_function = false;
 
             while (depth > 0)
             {
@@ -1522,6 +1712,9 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
                     valid = false;
                     break;
                 }
+
+                if (nested.type == TokenType::BareWord)
+                    is_function = true;
 
                 if (!nested.isSignificant())
                     continue;
@@ -1536,7 +1729,7 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
 
             }
             
-            if (array_depth == 1)
+            if (array_depth == 1 && !is_function)
             {
                 appendFunctionName(new_sql, FunctionNames::CAST);
                 new_sql += "('";
@@ -1547,8 +1740,8 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
                 String original_array(array_begin, static_cast<size_t>(array_end - array_begin));
                 
                 new_sql += original_array;
-                
-                new_sql += "','Array(Float)')";
+                if (array_depth == 1 && !is_function)
+                    new_sql += "','Array(Float)')";
                 continue;
             }
         }
@@ -1593,7 +1786,7 @@ bool VectorQueryParameters::parseNormalizedParamsWithPlan(
 std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::CollectQueryPlanConstants(
     QueryPlan & query_plan,
     const std::vector<VectorQueryPlanCache::ASTLiteralPosition> & ast_literal_positions,
-    const NormalizedQueryResult & parameters)
+    const NormalizedQueryResult & parameters, bool only_vector)
 {
     std::vector<VectorQueryPlanCache::PlanConstantBinding> bindings;
     QueryPlan::Node * root = query_plan.getRootNode();
@@ -1622,7 +1815,7 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
                 path,
                 "ExpressionStep",
                 1,
-                candidates);
+                candidates, only_vector);
 
         if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
             findActionsDAGAndCollectConstants(
@@ -1630,7 +1823,7 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
                 path,
                 "FilterStep",
                 2,
-                candidates);
+                candidates, only_vector);
 
         for (size_t i = 0; i < node->children.size(); ++i)
         {

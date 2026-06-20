@@ -449,10 +449,8 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
             for (const auto & value : parameter_values)
                 collected_parameters.params.emplace_back(applyVisitor(FieldVisitorToString(), value));
             std::vector<VectorQueryPlanCache::PlanConstantBinding> plan_constant_bindings;
-            plan_constant_bindings = parameterizer.CollectQueryPlanConstants(
-                query_plan,
-                ast_literal_positions,
-                collected_parameters);
+            plan_constant_bindings = parameterizer.CollectQueryPlanConstants(query_plan, 
+                ast_literal_positions, collected_parameters, vector_query_plan_cache_only_vector);
             if (!ast_literal_positions.empty() && ast_literal_positions.size() == params_size)
             {
                 vector_query_plan_cache_writer.setAst(query_ptr);

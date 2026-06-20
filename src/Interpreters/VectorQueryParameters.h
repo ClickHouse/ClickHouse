@@ -118,7 +118,7 @@ public:
         const std::vector<VectorQueryPlanCache::PlanConstantBinding> * plan_constant_bindings = nullptr,
         bool only_vector = false) const;
 
-    void replaceConstantsInQueryPlan(
+    bool replaceConstantsInQueryPlan(
         QueryPlan & plan,
         NormalizedQueryResult & parameters,
         const std::vector<VectorQueryPlanCache::PlanConstantBinding> & plan_constant_bindings);
@@ -143,7 +143,7 @@ public:
     std::vector<VectorQueryPlanCache::PlanConstantBinding> CollectQueryPlanConstants(
         QueryPlan & query_plan,
         const std::vector<VectorQueryPlanCache::ASTLiteralPosition> & ast_literal_positions,
-        const NormalizedQueryResult & parameters);
+        const NormalizedQueryResult & parameters, bool only_vector = false);
 
 };
 

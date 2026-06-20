@@ -12,6 +12,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -150,6 +151,12 @@ void collectMutationTargets(
     // mutating AST families and returns the precise table/database scopes to clear.
     NameSetForInvalidation seen_tables;
     NameSetForInvalidation seen_databases;
+
+    if (const auto * optimize_query = ast->as<ASTOptimizeQuery>())
+    {
+        if (!optimize_query->getTable().empty())
+            addResolvedTableForInvalidation(table_names, seen_tables, context, StorageID(optimize_query->getDatabase(), optimize_query->getTable()));
+    }
 
     if (const auto * insert_query = ast->as<ASTInsertQuery>())
     {

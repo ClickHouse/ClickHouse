@@ -396,12 +396,12 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                                     &cached_plan_constant_bindings,
                                     vector_query_plan_cache_only_vector);
                             }
-                            parameterizer.replaceConstantsInQueryPlan(
+                            if (!parameterizer.replaceConstantsInQueryPlan(
                                 *result.cached_plan,
                                 parameterized_result,
-                                cached_plan_constant_bindings);
+                                cached_plan_constant_bindings))
+                                result.cached_plan = nullptr;
                             LOG_DEBUG(logger, "Restore QueryPlan from query_plan_cache({})", result.new_query);
-                            result.skip_ast_processing = true;
                         }
                     }
                     else
