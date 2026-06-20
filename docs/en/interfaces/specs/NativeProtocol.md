@@ -105,7 +105,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 
 | Feature                         | Version | Affects                | Wire impact |
 |---------------------------------|---------|------------------------|-------------|
-| BLOCK_INFO                      | 51903   | Block                  | Adds the BlockInfo prefix (`is_overflows`, `bucket_number`) to every Block. |
+| BLOCK_INFO                      | all     | Block                  | Adds the BlockInfo prefix (`is_overflows`, `bucket_number`) to every Block |
 | CLIENT_INFO                     | 54032   | Query                  | Adds the ClientInfo block to the Query body. |
 | TIMEZONE                        | 54058   | ServerHello            | Adds the `timezone` field to ServerHello. |
 | QUOTA_KEY_IN_CLIENT_INFO        | 54060   | ClientInfo             | Adds the `quota_key` field to ClientInfo. |
@@ -475,7 +475,7 @@ Client → Server, gated by `ADDENDUM` (v54458). Sent immediately after the hand
 
 | # | Field             | Type   | Role         | Condition                  | Description |
 |---|-------------------|--------|--------------|----------------------------|-------------|
-| 1 | quota_key         | String | inter-server | always                     | Resource quota identifier. External clients send empty string. |
+| 1 | quota_key         | String | universal    | always                     | Resource quota key for server-side keyed quotas. Clients that do not use a keyed quota send an empty string. |
 | 2 | proto_send_chunked | String | universal   | CHUNKED_PROTOCOL (v54470)  | Client's negotiated outbound chunking: `"chunked"` or `"notchunked"`. Computed against `proto_recv_chunked_srv` from ServerHello. |
 | 3 | proto_recv_chunked | String | universal   | CHUNKED_PROTOCOL (v54470)  | Client's negotiated inbound chunking. Computed against `proto_send_chunked_srv`. |
 | 4 | parallel_replicas_protocol_version | VarUInt | universal | VERSIONED_PARALLEL_REPLICAS_PROTOCOL (v54471) | Client's supported parallel-replicas coordination protocol version. External clients not participating in distributed queries SHOULD still send a valid version (current `7`) so the server's compatibility check succeeds. |
@@ -500,9 +500,7 @@ Server → Client. Sent when the server hits an error during any phase.
 | 2 | name        | String | universal | Exception class (e.g., `"DB::Exception"`) |
 | 3 | message     | String | universal | Human-readable error message |
 | 4 | stack_trace | String | universal | Server-side stack trace |
-| 5 | has_nested  | Bool   | universal | If true, another Exception follows immediately |
-
-When `has_nested` is true, another Exception structure follows (without a packet type prefix), forming a chain of nested exceptions.
+| 5 | has_nested (obsolete) | Bool   | universal | Obsolete compatibility byte. Always written as `false` by the server |
 
 ### Query (packet type 1) {#query}
 
@@ -538,7 +536,7 @@ Client → Server, embedded in the Query body (field 2). Gated by `CLIENT_INFO` 
 | 10 | version_major                | VarUInt | universal    | if interface = TCP                     | Client major version |
 | 11 | version_minor                | VarUInt | universal    | if interface = TCP                     | Client minor version |
 | 12 | protocol_version             | VarUInt | universal    | if interface = TCP                     | The originating client's own TCP protocol version (`DBMS_TCP_PROTOCOL_VERSION`), **not** the negotiated version. The peer revision only decides which fields are present; this value is the initiator's compiled-in version, so on a newer client talking to an older server it can be higher than the negotiated/server revision. |
-| 13 | quota_key                    | String  | inter-server | QUOTA_KEY_IN_CLIENT_INFO (v54060)      | Resource quota key. External clients send empty string. |
+| 13 | quota_key                    | String  | universal    | QUOTA_KEY_IN_CLIENT_INFO (v54060)      | Resource quota key for server-side keyed quotas. Clients that do not use a keyed quota send an empty string. |
 | 14 | distributed_depth            | VarUInt | inter-server | DISTRIBUTED_DEPTH (v54448)             | Distributed query nesting depth. External clients send `0`. |
 | 15 | version_patch                | VarUInt | universal    | VERSION_PATCH (v54401), TCP only       | Client patch version |
 | 16 | open_telemetry               | (below) | client       | OPEN_TELEMETRY (v54442)                | Trace context. Clients without tracing send `0`. |
@@ -735,7 +733,7 @@ The 6 columns:
 | 1 | host_name    | String   | Server hostname |
 | 2 | current_time | DateTime | Event timestamp |
 | 3 | thread_id    | UInt64   | Thread ID |
-| 4 | type         | Int8     | Event type: 1 = Increment (counter), 2 = Gauge |
+| 4 | type         | Enum8    | Event type: 1 = Increment (counter), 2 = Gauge. The underlying storage is one signed byte. |
 | 5 | name         | String   | Event name (e.g., `"Query"`, `"NetworkReceiveBytes"`) |
 | 6 | value        | Int64 or UInt64 | Counter value or gauge reading |
 
