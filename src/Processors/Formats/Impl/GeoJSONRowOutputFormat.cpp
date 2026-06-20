@@ -85,6 +85,10 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     /// setting, otherwise coordinates would be emitted as strings, which is not valid GeoJSON.
     settings.json.quote_64bit_floats = false;
 
+    /// A named `Tuple` used as the `properties` object must serialize as a JSON object rather than a
+    /// JSON array, so the `properties` member is always a valid GeoJSON object.
+    settings.json.write_named_tuples_as_objects = true;
+
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 
     const auto & header = getPort(PortKind::Main).getHeader();
