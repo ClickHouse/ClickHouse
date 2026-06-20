@@ -1,0 +1,31 @@
+<test>
+    <settings>
+        <enable_sharding_aggregator>1</enable_sharding_aggregator>
+    </settings>
+
+    <create_query>CREATE TABLE test_uniform (a UInt64, v Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE test_skew (a UInt64, v Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE test_mega (a UInt64, v Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <!-- Uniform high cardinality. -->
+    <fill_query>INSERT INTO test_uniform SELECT number AS a, number AS v FROM numbers_mt(20000000)</fill_query>
+    <!-- Heavy skew: one key is ~90% of rows, the rest a high-cardinality tail. -->
+    <fill_query>INSERT INTO test_skew SELECT if(number % 10 &lt; 9, 0, number % 200000) AS a, number AS v FROM numbers_mt(20000000)</fill_query>
+    <!-- Few distinct keys: 3 mega-keys. -->
+    <fill_query>INSERT INTO test_mega SELECT number % 3 AS a, number AS v FROM numbers_mt(20000000)</fill_query>
+
+    <!-- Uniform. -->
+    <query>SELECT a, count(), sum(v) FROM test_uniform GROUP BY a FORMAT Null</query>
+
+    <!-- Heavy skew. -->
+    <query>SELECT a, count(), sum(v) FROM test_skew GROUP BY a FORMAT Null</query>
+    <!-- Large-state aggregate under skew. -->
+    <query>SELECT a, uniqExact(v) FROM test_skew GROUP BY a FORMAT Null</query>
+
+    <!-- Few distinct keys. -->
+    <query>SELECT a, count(), sum(v) FROM test_mega GROUP BY a FORMAT Null</query>
+
+    <drop_query>DROP TABLE test_uniform</drop_query>
+    <drop_query>DROP TABLE test_skew</drop_query>
+    <drop_query>DROP TABLE test_mega</drop_query>
+</test>
