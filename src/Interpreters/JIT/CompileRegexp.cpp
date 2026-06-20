@@ -193,9 +193,9 @@ private:
     /// A frame of the continuation: "match `ops[index..]`, then continue with `next`".
     struct Cont
     {
-        const std::vector<Op> * ops;
-        size_t index;
-        const Cont * next;
+        const std::vector<Op> * ops = nullptr;
+        size_t index = 0;
+        const Cont * next = nullptr;
     };
 
     llvm::Module & module;

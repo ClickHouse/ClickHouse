@@ -92,7 +92,7 @@ enum class OpKind : uint8_t
 
 struct Op
 {
-    OpKind kind;
+    OpKind kind = OpKind::Literal;
 
     /// OpKind::Literal
     std::vector<uint8_t> literal;

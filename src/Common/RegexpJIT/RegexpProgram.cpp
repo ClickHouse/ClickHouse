@@ -517,7 +517,7 @@ private:
             if (peek() == '-' && peek(1) != ']' && peek(1) != '\0')
             {
                 ++pos; /// consume '-'.
-                uint8_t hi_byte;
+                uint8_t hi_byte = 0;
                 if (peek() == '\\')
                 {
                     CharSet shorthand;
