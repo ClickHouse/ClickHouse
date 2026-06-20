@@ -157,7 +157,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"http_max_request_header_size", 0, 10485760, "New setting to limit total HTTP request header size before authentication."},
             {"http_headers_read_timeout", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."},
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
-            {"enable_materialized_cte", false, false, "New setting"},
             {"query_plan_optimize_lazy_final", false, false, "New setting to optimize reading with FINAL from ReplacingMergeTree using set-based index analysis"},
             {"max_rows_for_lazy_final", 10000000, 10000000, "New setting for maximum number of rows in the set for lazy FINAL optimization"},
             {"max_bytes_for_lazy_final", 256000000, 256000000, "New setting for maximum number of bytes in the set for lazy FINAL optimization"},
