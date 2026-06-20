@@ -955,45 +955,61 @@ private:
                 continue;
             }
 
-            /// Docusaurus admonition: `:::type [title]` ... `:::`.
+            /// Docusaurus admonition: `:::type [title]` ... `:::`. The fences may use more than three
+            /// colons (e.g. `::::note` ... `::::`), and the close fence must match the open fence's length.
             if (stripped.starts_with(":::"))
             {
-                std::string_view spec = trimView(stripped.substr(3));
-                if (!spec.empty()) /// an opening fence carries a type; a bare `:::` is just the closing one
+                size_t fence_len = 0;
+                while (fence_len < stripped.size() && stripped[fence_len] == ':')
+                    ++fence_len;
+                const std::string_view spec = trimView(stripped.substr(fence_len));
+                ++i; /// always consume the fence line, so a stray close fence cannot stall the loop
+                if (!spec.empty()) /// an opening fence carries a type; a bare colon run is just a close fence
                 {
                     const size_t space = spec.find_first_of(" \t");
                     const std::string_view type = space == std::string_view::npos ? spec : spec.substr(0, space);
                     const std::string_view title = space == std::string_view::npos ? std::string_view{} : trimView(spec.substr(space));
                     std::vector<std::string_view> body_lines;
-                    ++i;
                     while (i < lines.size())
                     {
-                        std::string_view bl = stripCR(lines[i]);
-                        if (trimView(bl) == ":::")
+                        const std::string_view bt = trimView(stripCR(lines[i]));
+                        if (bt.size() == fence_len && bt.find_first_not_of(':') == std::string_view::npos)
                         {
                             ++i;
                             break;
                         }
-                        body_lines.push_back(bl);
+                        body_lines.push_back(stripCR(lines[i]));
                         ++i;
                     }
                     renderAdmonition(type, title, body_lines);
-                    continue;
                 }
+                continue;
             }
 
-            /// Fenced code block.
+            /// Fenced code block. The fence may be longer than three characters, and the info string may
+            /// carry attributes (e.g. ```sql title=Query) — the language is the first token of the info string.
             if (stripped.starts_with("```") || stripped.starts_with("~~~"))
             {
-                char fence = stripped[0];
-                std::string_view lang = trimView(stripped.substr(3));
+                const char fence = stripped[0];
+                size_t fence_len = 0;
+                while (fence_len < stripped.size() && stripped[fence_len] == fence)
+                    ++fence_len;
+
+                std::string_view lang = trimView(stripped.substr(fence_len));
+                const size_t lang_end = lang.find_first_of(" \t");
+                if (lang_end != std::string_view::npos)
+                    lang = lang.substr(0, lang_end);
+
                 std::vector<std::string_view> code_lines;
                 ++i;
                 while (i < lines.size())
                 {
-                    std::string_view code_line = stripCR(lines[i]);
-                    std::string_view cs = code_line.substr(leadingSpaces(code_line));
-                    if (cs.size() >= 3 && cs[0] == fence && cs[1] == fence && cs[2] == fence)
+                    const std::string_view code_line = stripCR(lines[i]);
+                    const std::string_view cs = code_line.substr(leadingSpaces(code_line));
+                    size_t close_len = 0;
+                    while (close_len < cs.size() && cs[close_len] == fence)
+                        ++close_len;
+                    if (close_len >= fence_len && trimView(cs.substr(close_len)).empty())
                     {
                         ++i;
                         break;

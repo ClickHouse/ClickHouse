@@ -132,6 +132,26 @@ TEST(TerminalMarkdownRenderer, AdmonitionWithCustomTitle)
     EXPECT_EQ(plainRenderer().render(":::tip My Tip\nDo it.\n:::"), "My Tip:\nDo it.\n");
 }
 
+TEST(TerminalMarkdownRenderer, AdmonitionFourColons)
+{
+    /// Docusaurus also uses four-colon fences; the close fence must match the open fence's length.
+    EXPECT_EQ(plainRenderer().render("::::note\nBe careful.\n::::"), "NOTE:\nBe careful.\n");
+}
+
+TEST(TerminalMarkdownRenderer, StrayCloseFenceIsDropped)
+{
+    /// A bare colon-run with no opener is dropped, and crucially the loop keeps advancing.
+    EXPECT_EQ(plainRenderer().render("Above\n:::\nBelow"), "Above\nBelow\n");
+}
+
+TEST(TerminalMarkdownRenderer, SqlCodeBlockWithInfoStringAttributes)
+{
+    /// The embedded docs emit fences like ```sql title=Query; the language is the first info-string token.
+    TerminalMarkdownRenderer renderer = plainRenderer();
+    renderer.highlight_sql = [](const String & sql) { return "<<" + sql + ">>"; };
+    EXPECT_EQ(renderer.render("```sql title=Query\nSELECT 1\n```"), "    <<SELECT 1>>\n");
+}
+
 TEST(TerminalMarkdownRenderer, MdxImportIsHidden)
 {
     EXPECT_EQ(plainRenderer().render("import ExperimentalBadge from '@theme/badges/ExperimentalBadge';\n\nReal text."), "Real text.\n");
