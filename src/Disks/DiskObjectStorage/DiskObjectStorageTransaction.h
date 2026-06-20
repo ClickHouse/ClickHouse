@@ -128,8 +128,6 @@ private:
 };
 
 /// Only needed for S3 server side object copy
-/// Inherits enable_shared_from_this only via DiskObjectStorageTransaction; a second
-/// enable_shared_from_this base would make shared_from_this() throw bad_weak_ptr.
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction
 {
     ClusterConfigurationPtr source_cluster;
