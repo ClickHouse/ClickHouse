@@ -154,6 +154,7 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
 
     chassert(pipeline.completed());
     std::lock_guard lock{mutex};
+    combined_num_threads += pipeline.getNumThreads();
     combined_pipeline.addCompletedPipeline(pipeline);
 
     io_holders.push_back(std::move(query_io));
@@ -167,6 +168,10 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
     std::lock_guard lock{mutex};
     if (!combined_pipeline.initialized())
         return; /// `combined_pipeline` is empty, skipping
+
+    /// The branches are independent subgraphs that should run concurrently, so the combined
+    /// pipeline needs the sum of their thread counts (matches QueryPipelineBuilder::uniteImpl).
+    combined_pipeline.setNumThreads(combined_num_threads);
 
     try
     {

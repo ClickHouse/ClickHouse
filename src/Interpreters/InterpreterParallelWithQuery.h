@@ -25,6 +25,7 @@ private:
     ASTPtr query;
     LoggerPtr log;
     QueryPipeline combined_pipeline TSA_GUARDED_BY(mutex);
+    size_t combined_num_threads TSA_GUARDED_BY(mutex) = 0;
 
     std::unique_ptr<ThreadPool> thread_pool;
     std::unique_ptr<ThreadPoolCallbackRunnerLocal<void>> runner;
