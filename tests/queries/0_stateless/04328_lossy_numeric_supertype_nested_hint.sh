@@ -20,6 +20,13 @@ $CH -q "SELECT min([toDecimal64(1, 2), 0.])" 2>&1 | grep -oF "$general" | head -
 $CH -q "SELECT max([toDecimal64(1, 2), 0.])" 2>&1 | grep -oF "$general" | head -n1
 $CH -q "SELECT min(map('a', toDecimal64(1, 2), 'b', 0.))" 2>&1 | grep -oF "$general" | head -n1
 
+# sum/avg also append the hint for a scalar top-level numeric Variant. 04327 only checks the error
+# code for these, so assert the hint text here: present for a float-bearing Variant, absent for an
+# integer-only one (the setting cannot help, so it must not be suggested).
+$CH -q "SELECT sum(if(materialize(1), toDecimal64(1, 2), 0.))" 2>&1 | grep -oF "$general" | head -n1
+$CH -q "SELECT avg(multiIf(materialize(1), toInt64(1), 0.))" 2>&1 | grep -oF "$general" | head -n1
+$CH -q "SELECT sum(if(materialize(toUInt8(1)), toInt64(1), toUInt64(2)))" 2>&1 | grep -cF "$hint"
+
 # No hint when the setting cannot help: a non-numeric branch, or an integer-only set (no float).
 $CH -q "SELECT min([toInt64(1), 'str'::String])" 2>&1 | grep -cF "$hint"
 $CH -q "SELECT min([toInt64(1), toUInt64(2)])" 2>&1 | grep -cF "$hint"
