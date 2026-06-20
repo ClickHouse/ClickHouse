@@ -565,10 +565,14 @@ GeoJSONRowInputFormat::GeoJSONRowInputFormat(
         const auto & col = header.getByPosition(i);
         if (col.name == "id")
         {
-            if (!WhichDataType(col.type).isString())
+            /// Accept both `String` and `Nullable(String)`. Schema inference yields `Nullable(String)`
+            /// so that an absent or `null` GeoJSON `id` becomes NULL (distinct from an explicit empty
+            /// string), mirroring how `properties` is `Nullable(JSON)`.
+            if (!WhichDataType(removeNullable(col.type)).isString())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "The 'id' column of the GeoJSON input format must have type 'String', but it has type '{}'",
+                    "The 'id' column of the GeoJSON input format must have type 'String' or 'Nullable(String)', "
+                    "but it has type '{}'",
                     col.type->getName());
             id_col_idx = i;
         }
@@ -904,7 +908,9 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
 NamesAndTypesList GeoJSONExternalSchemaReader::readSchema()
 {
     return {
-        {"id", std::make_shared<DataTypeString>()},
+        /// `id` is `Nullable` so that a feature with an absent or explicit `"id": null` member is
+        /// stored as NULL, kept distinct from a feature whose `id` is an explicit empty string `""`.
+        {"id", makeNullable(std::make_shared<DataTypeString>())},
         {"geometry", DataTypeFactory::instance().get("Geometry")},
         /// `properties` is `Nullable` so that an explicit GeoJSON `"properties": null` is preserved
         /// as NULL rather than being indistinguishable from a default (empty) JSON object.
