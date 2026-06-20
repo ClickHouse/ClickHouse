@@ -25,6 +25,9 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
+#include <Common/ThreadPool.h>
+#include <IO/SharedThreadPools.h>
+#include <Common/scope_guard_safe.h>
 
 static const char * documentation = R"(
 Simple tool for table data obfuscation.
@@ -91,6 +94,13 @@ try
 {
     using namespace DB;
     namespace po = boost::program_options;
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
 
     registerFormats();
 
