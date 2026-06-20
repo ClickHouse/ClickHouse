@@ -160,6 +160,18 @@ void TraceCollector::run()
             {
                 uintptr_t addr = 0;
                 readPODBinary(addr, in);
+                /// Store the absolute (runtime) virtual address. `SymbolIndex` now indexes symbols
+                /// by absolute virtual address, so this is the representation every consumer
+                /// (`addressToSymbol`, `addressToLine`, `flameGraph`) expects, and it is unambiguous
+                /// across objects (file offsets overlap between the main binary and shared libraries).
+                ///
+                /// Trade-off: unlike the previous main-binary-only file-offset normalization, these
+                /// addresses are ASLR-dependent and not self-describing. They symbolize correctly while
+                /// the process is alive, but rows persisted in `system.trace_log` cannot be re-symbolized
+                /// after a restart of a PIE binary (the load base changes), and the load base leaks into
+                /// the durable table. A representation that is both unambiguous across objects and stable
+                /// across restarts would require storing object identity (e.g. build-id) plus a
+                /// file-relative offset per frame, i.e. a `trace_log` schema change (left as a follow-up).
                 trace.emplace_back(static_cast<UInt64>(addr));
             }
 
