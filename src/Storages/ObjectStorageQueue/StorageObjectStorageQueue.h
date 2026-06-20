@@ -157,11 +157,10 @@ private:
 
     UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
-    std::atomic<bool> shutdown_called = false;
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
 
-    void scheduleStreamingTasks() override;
+    void scheduleStreamingTasksImpl() override;
 
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;

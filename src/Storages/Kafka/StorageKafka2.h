@@ -170,9 +170,8 @@ private:
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
     /// If named_collection is specified.
     String collection_name;
-    std::atomic<bool> shutdown_called = false;
 
-    void scheduleStreamingTasks() override;
+    void scheduleStreamingTasksImpl() override;
 
     /// Number of background streaming threads currently consuming for materialized views.
     /// Prevents direct SELECTs from using consumers concurrently with MV streaming.

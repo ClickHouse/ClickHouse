@@ -112,14 +112,11 @@ private:
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
-    /// Needed for tell MV or producer background tasks
-    /// that they must finish as soon as possible.
-    std::atomic<bool> shutdown_called{false};
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
 
-    void scheduleStreamingTasks() override;
+    void scheduleStreamingTasksImpl() override;
 
     INATSConsumerPtr createConsumer();
     INATSProducerPtr createProducer(String subject);

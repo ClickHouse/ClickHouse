@@ -584,10 +584,8 @@ void StorageKafka2::startup()
     activating_task->activateAndSchedule();
 }
 
-void StorageKafka2::scheduleStreamingTasks()
+void StorageKafka2::scheduleStreamingTasksImpl()
 {
-    if (shutdown_called)
-        return;
     for (auto & task : tasks)
         task->holder->schedule();
 }

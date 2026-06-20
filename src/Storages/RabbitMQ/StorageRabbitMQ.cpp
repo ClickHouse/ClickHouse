@@ -899,10 +899,8 @@ void StorageRabbitMQ::startup()
     StreamingStorageRegistry::instance().registerTable(getStorageID());
 }
 
-void StorageRabbitMQ::scheduleStreamingTasks()
+void StorageRabbitMQ::scheduleStreamingTasksImpl()
 {
-    if (shutdown_called)
-        return;
     streaming_task->schedule();
 }
 

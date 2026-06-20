@@ -532,10 +532,8 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     LOG_TRACE(log, "Shut down storage");
 }
 
-void StorageObjectStorageQueue::scheduleStreamingTasks()
+void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
 {
-    if (shutdown_called)
-        return;
     for (auto & task : streaming_tasks)
         task->schedule();
 }

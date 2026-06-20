@@ -471,10 +471,8 @@ void StorageNATS::startup()
     initialize_consumers_task->activateAndSchedule();
 }
 
-void StorageNATS::scheduleStreamingTasks()
+void StorageNATS::scheduleStreamingTasksImpl()
 {
-    if (shutdown_called)
-        return;
     streaming_task->schedule();
 }
 

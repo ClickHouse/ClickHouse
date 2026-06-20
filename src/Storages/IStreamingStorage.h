@@ -3,6 +3,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StreamingBackgroundControl.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -54,10 +56,20 @@ public:
 protected:
     StreamingBackgroundControl stream_control;
 
+    /// Set when storage starts shutting down, so background tasks finish asap.
+    std::atomic<bool> shutdown_called{false};
+
 private:
-    /// Schedule this engine's background task holder(s) for one out-of-order run. Implementations must
-    /// no-op once the storage is shutting down. This is the only behavior that differs between engines.
-    virtual void scheduleStreamingTasks() = 0;
+    /// Schedule engine streaming task(s) for one out-of-order run, unless shutting down.
+    void scheduleStreamingTasks()
+    {
+        if (shutdown_called)
+            return;
+        scheduleStreamingTasksImpl();
+    }
+
+    /// Schedule engine background task holder(s). The only behavior that differs between engines.
+    virtual void scheduleStreamingTasksImpl() = 0;
 };
 
 }

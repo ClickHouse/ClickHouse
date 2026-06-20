@@ -150,9 +150,6 @@ private:
     /**
      * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
      */
-    /// Needed for tell MV or producer background tasks
-    /// that they must finish as soon as possible.
-    std::atomic<bool> shutdown_called{false};
     /// Counter for producers, needed for channel id.
     /// Needed to generate unique producer identifiers.
     std::atomic<size_t> producer_id = 1;
@@ -162,7 +159,7 @@ private:
     /// to be able to turn off the loop.
     std::atomic<size_t> readers_count = 0;
 
-    void scheduleStreamingTasks() override;
+    void scheduleStreamingTasksImpl() override;
 
     /// In select query we start event loop, but do not stop it
     /// after that select is finished. Then in a thread, which

@@ -155,9 +155,7 @@ private:
     /// If named_collection is specified.
     String collection_name;
 
-    std::atomic<bool> shutdown_called = false;
-
-    void scheduleStreamingTasks() override;
+    void scheduleStreamingTasksImpl() override;
 
     void threadFunc(size_t idx);
 

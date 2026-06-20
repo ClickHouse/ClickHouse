@@ -302,10 +302,8 @@ void StorageKafka::startup()
     StreamingStorageRegistry::instance().registerTable(getStorageID());
 }
 
-void StorageKafka::scheduleStreamingTasks()
+void StorageKafka::scheduleStreamingTasksImpl()
 {
-    if (shutdown_called)
-        return;
     for (auto & task : tasks)
         task->holder->schedule();
 }
