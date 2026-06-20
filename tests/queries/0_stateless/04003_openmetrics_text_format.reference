@@ -53,7 +53,7 @@ h_bucket{le="0.5"} 3
 
 # EOF
 # TYPE s summary
-s{le="0.5"} 3
+s{le="0.5",quantile="0.9"} 3
 
 # EOF
 # TYPE bytes_total counter
@@ -67,14 +67,6 @@ h_sum 9
 # EOF
 # TYPE s summary
 s_count 11
-
-# EOF
-# TYPE h histogram
-h{sum="bytes"} 7
-
-# EOF
-# TYPE s summary
-s{count="oops"} 8
 
 # EOF
 # TYPE req histogram
@@ -94,8 +86,8 @@ m{k="a\nb"} 1
 
 # EOF
 # TYPE lat histogram
-lat_bucket{le="+Inf"} 9 2
 lat_bucket{le="+Inf"} 7 1
+lat_bucket{le="+Inf"} 9 2
 lat_count 7 1
 lat_count 9 2
 

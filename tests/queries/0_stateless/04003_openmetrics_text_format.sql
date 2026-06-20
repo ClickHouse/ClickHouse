@@ -130,14 +130,14 @@ SELECT name, value, labels FROM format(OpenMetrics, concat('# TYPE x histogram',
 SELECT * FROM format(OpenMetrics, concat('# TYPE x histogram', char(10), 'x_sum{sum="bytes"} 5', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, concat('# TYPE x summary', char(10), 'x_count{count="oops"} 7', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 
--- Output: `le -> _bucket` is histogram-only (summary keeps `le`); `sum`/`count` are markers only when the value is empty.
+-- Output: `le -> _bucket` is histogram-only; on a summary `le` stays a normal label (here next to a
+-- valid `quantile` sample). `sum`/`count` are markers only when empty; a non-empty value collides with
+-- the reserved marker and is rejected (see the reviewer-finding cases below).
 SELECT 'h' AS name, 3.0 AS value, '' AS help, 'histogram' AS type, map('le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
-SELECT 's' AS name, 3.0 AS value, '' AS help, 'summary' AS type, map('le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
+SELECT 's' AS name, 3.0 AS value, '' AS help, 'summary' AS type, map('quantile', '0.9', 'le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
 SELECT 'bytes_total' AS name, 1.0 AS value, '' AS help, 'counter' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, 'bytes' AS unit FORMAT OpenMetrics;
 SELECT 'h' AS name, 9.0 AS value, '' AS help, 'histogram' AS type, map('sum', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
 SELECT 's' AS name, 11.0 AS value, '' AS help, 'summary' AS type, map('count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
-SELECT 'h' AS name, 7.0 AS value, '' AS help, 'histogram' AS type, map('sum', 'bytes') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
-SELECT 's' AS name, 8.0 AS value, '' AS help, 'summary' AS type, map('count', 'oops') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;
 
 -- A histogram/summary row must represent exactly one sample kind (bucket/quantile, `_sum`, or `_count`).
 SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('sum', '', 'le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
@@ -153,6 +153,24 @@ SELECT * FROM format(OpenMetrics, concat('# TYPE s summary', char(10), 's_sum{qu
 SELECT * FROM (SELECT 'h' AS name, 1.0 AS value, '' AS help, '' AS type, map('sum', '', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit UNION ALL SELECT 'h', 2.0, '', 'histogram', map('le', '0.5'), CAST(NULL AS Nullable(Int64)), '') ORDER BY value FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 -- Overflowing timestamp tokens are rejected even when `timestamp` is not projected.
 SELECT name FROM format(OpenMetrics, concat('m 1 1e20', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+
+-- ===== Reviewer findings: marker collision, zero-kind rows, duplicate metadata, output type validation =====
+-- (1) A histogram bucket carrying a real non-empty `count`/`sum` label collides with the `_count`/`_sum`
+-- marker synthesized for that series, so it is rejected (was: emitted `_count`/`_sum` for the wrong series).
+SELECT 'h' AS name, 9.0 AS value, '' AS help, 'histogram' AS type, map('count', 'partition', 'le', '+Inf') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 'h' AS name, 9.0 AS value, '' AS help, 'histogram' AS type, map('sum', 'x', 'le', '1') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+-- (2) A typed histogram/summary row with no sample kind (no bucket/quantile, no `_sum`/`_count` marker) is rejected on output and input.
+SELECT 'h' AS name, 3.0 AS value, '' AS help, 'histogram' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 's' AS name, 3.0 AS value, '' AS help, 'summary' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h 3', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE s summary', char(10), 's 3', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+-- (3) Duplicate `# HELP` / `# TYPE` / `# UNIT` for the same family is rejected (order-dependent overwrite).
+SELECT * FROM format(OpenMetrics, concat('# TYPE h counter', char(10), '# TYPE h gauge', char(10), 'h 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# HELP h a', char(10), '# HELP h b', char(10), 'h 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# UNIT h_seconds seconds', char(10), '# UNIT h_seconds ms', char(10), 'h_seconds 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+-- (4) Output `type` is emitted raw in `# TYPE`; reject values with whitespace or control characters that would break the stream.
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'counter garbage' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 'h' AS name, 1.0 AS value, '' AS help, concat('coun', char(10), 'ter') AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 
 -- Histogram `+Inf` / `_count` synthesis preserves non-marker labels per series.
 SELECT 'req' AS name, 10.0 AS value, '' AS help, 'histogram' AS type, map('job', 'api', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit FORMAT OpenMetrics;

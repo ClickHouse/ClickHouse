@@ -49,7 +49,8 @@ using OpenMetricsText::FORMAT_NAME;
 using OpenMetricsText::isValidMetricName;
 using OpenMetricsText::isValidLabelName;
 using OpenMetricsText::isEmptyMarker;
-using OpenMetricsText::hasMultipleSampleKinds;
+using OpenMetricsText::sampleKindCount;
+using OpenMetricsText::hasReservedMarkerLabelWithValue;
 using OpenMetricsText::histogramSeriesLabels;
 using OpenMetricsText::validateLabelValue;
 using OpenMetricsText::writeQuotedLabelValue;
@@ -124,6 +125,21 @@ void validateOpenMetricsLabelName(const String & name)
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid label name '{}' for output format '{}'",
             name, FORMAT_NAME);
+}
+
+/// The `type` value is emitted raw in the `# TYPE <name> <type>` family-metadata line. The reader
+/// parses the type as a single whitespace-delimited token and rejects trailing data, and a newline
+/// would inject extra lines, so a type carrying whitespace or control characters would produce a
+/// stream this writer's own reader rejects. Reject those up front (documented free tokens such as
+/// `untyped` / `unknown` still pass through verbatim).
+void validateOpenMetricsType(const String & type)
+{
+    for (char c : type)
+        if (c == ' ' || c == '\t' || static_cast<unsigned char>(c) < 32)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid type '{}' for output format '{}': it must be a single token without whitespace or control characters",
+                type, FORMAT_NAME);
 }
 
 template <typename Container>
@@ -273,7 +289,18 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
             }
             /// Same bucket bound and/or different series labels: fall back to a total order so
             /// multi-series histogram families are emitted deterministically across platforms.
-            return lhs.labels < rhs.labels;
+            if (lhs.labels != rhs.labels)
+                return lhs.labels < rhs.labels;
+            /// Identical labels (same series + bucket) differing only by timestamp/value: e.g. one
+            /// series sampled at several timestamps, or an original `+Inf`/`_count` row next to its
+            /// synthesized counterpart. Without an explicit tiebreaker their relative order is the
+            /// (chunk-dependent) input order, which diverges under parallel formatting. Order by
+            /// timestamp then value for a deterministic, ascending-by-time output.
+            const Float64 lts = tryParseFloat(lhs.timestamp);
+            const Float64 rts = tryParseFloat(rhs.timestamp);
+            if (lts != rts)
+                return lts < rts;
+            return lhs.value < rhs.value;
         });
 }
 
@@ -288,11 +315,35 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
     if (current_metric.type == "histogram" || current_metric.type == "summary")
     {
         for (const auto & val : current_metric.values)
-            if (hasMultipleSampleKinds(current_metric.type, val.labels))
+        {
+            /// Every row in a histogram/summary family must carry exactly one sample kind: a
+            /// bucket/quantile sample, or a `_sum` / `_count` marker. Zero kinds (an untyped sample
+            /// such as `# TYPE h histogram` + `h 3`) and more than one (combined kinds) are both
+            /// invalid exposition.
+            const size_t kinds = sampleKindCount(current_metric.type, val.labels);
+            if (kinds == 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Row for output format '{}' in a '{}' family must carry exactly one sample kind "
+                    "(a bucket/quantile sample or a '_sum' / '_count' marker), but has none",
+                    FORMAT_NAME, current_metric.type);
+            if (kinds > 1)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Row for output format '{}' cannot combine multiple histogram/summary sample kinds in labels",
                     FORMAT_NAME);
+
+            /// Reject a non-empty `count` / `sum` label: those names are reserved markers in a
+            /// histogram/summary family, so a real value collides with the synthesized `_count` /
+            /// `_sum` counterpart (the writer would otherwise overwrite the real label and emit the
+            /// marker for the wrong series).
+            String offending_key;
+            if (hasReservedMarkerLabelWithValue(val.labels, offending_key))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Label '{}' is a reserved histogram/summary marker for output format '{}' and must have an empty value",
+                    offending_key, FORMAT_NAME);
+        }
     }
 
     auto write_attribute = [this](const char * marker, const String & value)
@@ -323,8 +374,9 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
 
         /// Suffix-marker rewrite. The documented table contract is:
         ///   * `{'sum': ''}` / `{'count': ''}` are marker rows: append `_sum`/`_count` to the
-        ///     family name and drop the marker label. A non-empty value for `sum`/`count` is
-        ///     not a marker — preserve it as a normal label rather than silently dropping it.
+        ///     family name and drop the marker label. A non-empty `sum`/`count` value is rejected
+        ///     up front in `flushCurrentMetric` (reserved marker collision), so by here the guard
+        ///     below only ever fires for the empty-marker case.
         ///   * `{'le': '<bound>'}` is only a histogram bucket. Summaries use `{quantile=...}`
         ///     and a real label named `le` on a summary is just a normal label, so the
         ///     `le` -> `_bucket` rewrite is gated on the histogram type.
@@ -418,7 +470,10 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
     }
 
     if (pos.type.has_value() && !columns[*pos.type]->isNullAt(row_num) && current_metric.type.empty())
+    {
         current_metric.type = getString(columns, row_num, *pos.type);
+        validateOpenMetricsType(current_metric.type);
+    }
 
     std::optional<std::map<String, String>> labels;
     if (pos.labels.has_value())

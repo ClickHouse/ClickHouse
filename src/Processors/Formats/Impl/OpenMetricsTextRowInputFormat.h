@@ -45,6 +45,11 @@ private:
         String help;
         String type;
         String unit;
+        /// Track which descriptors were already seen so a duplicate `# HELP` / `# TYPE` / `# UNIT`
+        /// for the same family is rejected rather than silently overwriting the first.
+        bool has_help = false;
+        bool has_type = false;
+        bool has_unit = false;
     };
 
     std::unordered_map<String, FamilyMeta> family_meta;

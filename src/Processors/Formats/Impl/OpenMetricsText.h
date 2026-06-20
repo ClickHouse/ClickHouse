@@ -66,13 +66,15 @@ inline bool isEmptyMarker(const std::map<String, String> & labels, const String 
     return it != labels.end() && it->second.empty();
 }
 
-/// Histogram/summary rows must represent exactly one sample kind: bucket (`le`) or quantile
-/// (`quantile`), or the `_sum` / `_count` marker - never a combination. Returns true when a row
-/// illegally combines more than one. Callers throw their own format-specific error.
-inline bool hasMultipleSampleKinds(const String & type, const std::map<String, String> & labels)
+/// Number of histogram/summary "sample kinds" a row carries: the bucket/quantile sample (`le`
+/// for histogram, `quantile` for summary) plus the `_sum` / `_count` empty-value markers. Returns
+/// 0 for non histogram/summary families. A well-formed histogram/summary row carries exactly one;
+/// callers reject 0 (an untyped sample under a typed family) and >1 (combined kinds) with their
+/// own format-specific error.
+inline size_t sampleKindCount(const String & type, const std::map<String, String> & labels)
 {
     if (type != "histogram" && type != "summary")
-        return false;
+        return 0;
 
     size_t sample_kinds = 0;
     if (type == "histogram")
@@ -90,7 +92,25 @@ inline bool hasMultipleSampleKinds(const String & type, const std::map<String, S
     if (isEmptyMarker(labels, "count"))
         ++sample_kinds;
 
-    return sample_kinds > 1;
+    return sample_kinds;
+}
+
+/// `count` / `sum` are reserved histogram/summary marker label names: they are only meaningful as
+/// empty-value markers (`{count=""}` / `{sum=""}`) standing in for the `_count` / `_sum` samples.
+/// A non-empty value collides with that marker mechanism (the writer cannot represent, e.g., a
+/// `_count` series that itself carries a `count` label), so such rows are rejected.
+inline bool hasReservedMarkerLabelWithValue(const std::map<String, String> & labels, String & offending_key)
+{
+    for (const auto * key : {"sum", "count"})
+    {
+        auto it = labels.find(key);
+        if (it != labels.end() && !it->second.empty())
+        {
+            offending_key = key;
+            return true;
+        }
+    }
+    return false;
 }
 
 /// Histogram series identity: all labels except bucket/meta markers (`le`, empty `count`, empty `sum`).

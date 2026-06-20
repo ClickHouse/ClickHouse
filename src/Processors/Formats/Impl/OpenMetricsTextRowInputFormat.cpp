@@ -42,7 +42,7 @@ using OpenMetricsText::isValidName;
 using OpenMetricsText::readQuotedLabelValue;
 using OpenMetricsText::isStrictRealNumberToken;
 using OpenMetricsText::secondsTokenToMillis;
-using OpenMetricsText::hasMultipleSampleKinds;
+using OpenMetricsText::sampleKindCount;
 
 void skipAsciiSpaces(std::string_view s, size_t & pos)
 {
@@ -356,10 +356,17 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
 
             String name;
             String rest;
+            /// OpenMetrics allows at most one `# HELP` / `# TYPE` / `# UNIT` per metric family;
+            /// a duplicate descriptor would silently overwrite the first and make the parsed rows
+            /// order-dependent, so reject it.
             if (line.starts_with("# HELP "))
             {
                 parseMetadataLine(line, sizeof("# HELP ") - 1, name, rest);
-                family_meta[name].help = std::move(rest);
+                auto & fm = family_meta[name];
+                if (fm.has_help)
+                    throwIncorrect("Duplicate '# HELP' metadata for a metric family", line);
+                fm.help = std::move(rest);
+                fm.has_help = true;
             }
             else if (line.starts_with("# TYPE "))
             {
@@ -376,12 +383,20 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
                         throwIncorrect("Unexpected trailing data in # TYPE descriptor", line);
                 }
                 rest.resize(end);
-                family_meta[name].type = std::move(rest);
+                auto & fm = family_meta[name];
+                if (fm.has_type)
+                    throwIncorrect("Duplicate '# TYPE' metadata for a metric family", line);
+                fm.type = std::move(rest);
+                fm.has_type = true;
             }
             else if (line.starts_with("# UNIT "))
             {
                 parseMetadataLine(line, sizeof("# UNIT ") - 1, name, rest);
-                family_meta[name].unit = std::move(rest);
+                auto & fm = family_meta[name];
+                if (fm.has_unit)
+                    throwIncorrect("Duplicate '# UNIT' metadata for a metric family", line);
+                fm.unit = std::move(rest);
+                fm.has_unit = true;
             }
             /// Other `#` lines are free-form comments.
             continue;
@@ -463,12 +478,20 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         const auto meta_it = family_meta.find(logical_name);
         const FamilyMeta & fm = (meta_it == family_meta.end()) ? empty_meta : meta_it->second;
 
-        if (hasMultipleSampleKinds(fm.type, labels))
-            throwIncorrect(
-                fmt::format(
-                    "Sample for family '{}' with type '{}' cannot combine multiple histogram/summary sample kinds in labels",
-                    logical_name, fm.type),
-                line);
+        if (fm.type == "histogram" || fm.type == "summary")
+        {
+            /// A histogram/summary sample must carry exactly one sample kind: a bucket/quantile
+            /// sample, or a `_sum` / `_count` marker. Zero kinds (e.g. `# TYPE h histogram` followed
+            /// by a bare `h 3`) and more than one (combined kinds) are both invalid exposition.
+            const size_t kinds = sampleKindCount(fm.type, labels);
+            if (kinds != 1)
+                throwIncorrect(
+                    fmt::format(
+                        "Sample for family '{}' with type '{}' must carry exactly one histogram/summary sample kind "
+                        "(a bucket/quantile sample or a '_sum' / '_count' marker), but has {}",
+                        logical_name, fm.type, kinds),
+                    line);
+        }
 
         ext.read_columns.assign(columns.size(), 0);
 
