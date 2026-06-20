@@ -16,7 +16,9 @@ node2 = cluster.add_instance(
     with_zookeeper=True,
 )
 
-QUERY_RULES = {"query_rules": 1}
+# `query_rules` lists the names of the active rules (applied in order), so activate
+# `rule_repl` by name rather than with the old boolean value.
+QUERY_RULES = {"query_rules": "rule_repl"}
 
 
 @pytest.fixture(scope="module")
@@ -48,5 +50,10 @@ def test_rules_propagate_between_replicas(started_cluster):
     assert node1.query("SELECT 100", settings=QUERY_RULES).strip() == "300"
 
     node1.query("DROP RULE rule_repl")
-    assert_eq_with_retry(node2, "SELECT 100", "100", settings=QUERY_RULES)
+    # Wait for the drop to propagate to node2.
     assert_eq_with_retry(node2, "SELECT count() FROM system.query_rules", "0")
+    # Once `rule_repl` is gone, listing it in `query_rules` raises on node2, which both
+    # proves the drop propagated and shows the rewrite no longer applies.
+    assert "REWRITE_RULE_DOESNT_EXIST" in node2.query_and_get_error(
+        "SELECT 100", settings=QUERY_RULES
+    )
