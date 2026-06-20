@@ -1,0 +1,6 @@
+Multiple hot keys, single-key GROUP BY
+1
+Multiple hot keys, multi-key GROUP BY
+1
+Pipeline contains skew-split transforms
+1
