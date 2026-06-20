@@ -61,6 +61,13 @@ void INATSConsumer::unsubscribe()
     LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
 }
 
+void INATSConsumer::dropBuffered()
+{
+    consumed_messages.clear();
+    MessageData dropped;
+    while (received.tryPop(dropped)) {}
+}
+
 ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
 {
     if (stopped)

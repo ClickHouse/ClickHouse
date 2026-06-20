@@ -47,6 +47,7 @@ public:
 
     void ackConsumed();
     void dropConsumed();
+    void dropBuffered();
 
     size_t subjectsCount() { return subjects.size(); }
 

@@ -339,7 +339,10 @@ void StorageNATS::unsubscribeConsumers()
 {
     std::lock_guard lock(consumers_mutex);
     for (auto & consumer : consumers)
+    {
         consumer->unsubscribe();
+        consumer->dropBuffered();
+    }
 
     consumers_ready.store(false);
 }
