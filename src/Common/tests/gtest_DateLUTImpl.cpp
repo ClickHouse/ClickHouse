@@ -218,6 +218,28 @@ TEST(DateLUTTest, ArithmeticOutOfRange)
     EXPECT_EQ(lut.toYear(lut.addDays(in_range, min_delta)), 0);
 }
 
+/// An extreme Date32 day number (outside the representable [0000, 9999] window) must saturate so that calendar
+/// components stay in range. Regression for a day-of-year that overflowed to 64169 (broke formatDateTime '%j').
+TEST(DateLUTTest, DayOfYearExtendedDayNumOutOfRange)
+{
+    const DateLUTImpl & lut = DateLUT::instance("UTC");
+
+    for (Int32 daynum : {std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max(), -1'000'000'000, 1'000'000'000})
+    {
+        const ExtendedDayNum d{daynum};
+        SCOPED_TRACE("daynum=" + std::to_string(daynum));
+        const auto day_of_year = lut.toDayOfYear(d);
+        EXPECT_GE(day_of_year, 1);
+        EXPECT_LE(day_of_year, 366);
+    }
+
+    /// The negative extreme saturates to 0000-01-01, the positive one to 9999-12-31.
+    EXPECT_EQ(lut.toDayOfYear(ExtendedDayNum{std::numeric_limits<Int32>::min()}), 1);
+    EXPECT_EQ(lut.toYear(ExtendedDayNum{std::numeric_limits<Int32>::min()}), 0);
+    EXPECT_EQ(lut.toDayOfYear(ExtendedDayNum{std::numeric_limits<Int32>::max()}), 365);
+    EXPECT_EQ(lut.toYear(ExtendedDayNum{std::numeric_limits<Int32>::max()}), 9999);
+}
+
 /// Week / ISO computations are timezone-independent and repeat every 400 years. Verify the periodicity holds
 /// across the boundary (year Y vs Y + 400) for the out-of-range escape path.
 TEST(DateLUTTest, WeekFunctionsOutOfRangePeriodicity)

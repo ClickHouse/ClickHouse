@@ -4,6 +4,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 
+#include <algorithm>
 #include <ctime>
 #include <memory>
 #include <optional>
@@ -290,7 +291,12 @@ private:
     /// The day index (number of days since DATE_LUT_MIN_YEAR-01-01, i.e. a non-normalized LUTIndex value)
     /// of an out-of-range value. For day numbers it is plain arithmetic; for time points it needs cctz.
     Int64 outOfRangeDayIndex(Time t) const { return findDayIndexOutOfRange(t); }
-    static Int64 outOfRangeDayIndex(ExtendedDayNum d) { return static_cast<Int64>(d.toUnderType()) + daynum_offset_epoch; }
+    /// Saturate to the representable window so callers stay consistent with valuesForOutOfRangeDayIndex (which also
+    /// clamps); an extreme Date32 day number would otherwise yield a nonsensical day-of-year / start-of-week / etc.
+    static Int64 outOfRangeDayIndex(ExtendedDayNum d)
+    {
+        return std::clamp(static_cast<Int64>(d.toUnderType()) + daynum_offset_epoch, min_representable_day_index, max_representable_day_index);
+    }
 
     /// The Values of the day an out-of-range value belongs to.
     Values outOfRangeValues(Time t) const { return valuesForOutOfRangeDayIndex(findDayIndexOutOfRange(t)); }
