@@ -317,15 +317,6 @@ public:
             return;
         }
 
-        /// The rewrite produces `IN (SELECT ... FROM dictionary(...))`, and the `dictionary()`
-        /// table function requires the `CREATE TEMPORARY TABLE` grant; if it is missing, skip the
-        /// optimization to avoid `ACCESS_DENIED`. Checked only after a rewrite candidate is found:
-        /// getAccess touches the access storage, and query analysis must not depend on it for
-        /// queries without `dictGet` predicates (in particular internal queries, which otherwise
-        /// block whenever the replicated access storage is being refreshed).
-        if (!isCreateTemporaryTableGranted())
-            return;
-
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
         const String dict_name = dictget_function_info.dict_name_node->getValue().safeGet<String>();
@@ -510,6 +501,18 @@ public:
         /// wrong results. Skip optimization for such case.
         if ((getSettings()[Setting::max_rows_in_set] != 0 || getSettings()[Setting::max_bytes_in_set] != 0)
             && getSettings()[Setting::set_overflow_mode] == OverflowMode::BREAK)
+            return;
+
+        /// Only the `IN (SELECT ... FROM dictionary(...))` rewrite below uses the `dictionary()`
+        /// table function, which requires the `CREATE TEMPORARY TABLE` grant; if it is missing, skip
+        /// the optimization to avoid `ACCESS_DENIED`. The constant-fold path above (`key = const`,
+        /// `key IN [..]`, or `0`) does not build a `dictionary()` subquery and only needs the normal
+        /// dictionary access of `dictGetKeys`, so it is intentionally not gated by this grant.
+        /// Checked only here, right before building the subquery: `getAccess` touches the access
+        /// storage, and query analysis must not depend on it for queries that do not reach this path
+        /// (in particular internal queries, which otherwise block whenever the replicated access
+        /// storage is being refreshed).
+        if (!isCreateTemporaryTableGranted())
             return;
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
