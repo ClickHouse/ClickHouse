@@ -9,7 +9,7 @@
 
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https?://([^/]+)'))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https?://(?:www\\.)?([^/]+)/'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '[?&]([^=]+)='))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '[?&amp;]([^=]+)='))</query>
 
     <query>SELECT count() FROM test.hits WHERE match(URL, '^https?://(?:www\\.)?([^/]+)/.*$') SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(Referer, '^https?://([^/]+)')) SETTINGS max_threads = 1</query>

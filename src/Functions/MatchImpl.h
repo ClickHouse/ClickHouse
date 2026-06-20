@@ -3,9 +3,9 @@
 #include <limits>
 #include <optional>
 #include <type_traits>
-#include <vector>
 #include <base/types.h>
 #include <Common/Volnitsky.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
@@ -170,8 +170,9 @@ struct MatchImpl
                 /// `match`/`extract` build RE2 with `RE_DOT_NL` (see `Regexps::createRegexp`), so `.` matches newline.
                 if (auto matcher = getRegexpJITMatcher(needle, case_insensitive, /* dot_all */ true, regexp_jit_min_count))
                 {
-                    std::vector<const uint8_t *> capture_starts(matcher.num_captures);
-                    std::vector<const uint8_t *> capture_ends(matcher.num_captures);
+                    /// Allocated once per call (not per row); reused for every row below.
+                    VectorWithMemoryTracking<const uint8_t *> capture_starts(matcher.num_captures);
+                    VectorWithMemoryTracking<const uint8_t *> capture_ends(matcher.num_captures);
 
                     /// Built only when the matcher may defer non-ASCII strings (see `ascii_fallback`).
                     std::optional<OptimizedRegularExpression> re2_fallback;

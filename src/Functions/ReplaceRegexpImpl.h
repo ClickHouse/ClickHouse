@@ -359,8 +359,9 @@ struct ReplaceRegexpImpl
 
         /// `replace` builds RE2 with default options, so `.` does not match newline (dot_all = false).
         RegexpJITMatcher matcher = getRegexpJITMatcher(needle, /* case_insensitive */ false, /* dot_all */ false, regexp_jit_min_count);
-        std::vector<const uint8_t *> capture_starts;
-        std::vector<const uint8_t *> capture_ends;
+        /// Allocated once per call (not per row); reused by `processStringJIT` for every row.
+        VectorWithMemoryTracking<const uint8_t *> capture_starts;
+        VectorWithMemoryTracking<const uint8_t *> capture_ends;
         if (matcher)
         {
             const size_t n = std::max<size_t>(matcher.num_captures, num_captures);

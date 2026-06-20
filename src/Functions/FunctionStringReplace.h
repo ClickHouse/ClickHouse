@@ -92,10 +92,7 @@ public:
             auto & res_chars = col_res->getChars();
             auto & res_offsets = col_res->getOffsets();
             /// Only impls that opt in (currently `ReplaceRegexpImpl`) take the JIT compile-count threshold.
-            if constexpr (requires {
-                              Impl::vectorConstantConstant(
-                                  col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement,
-                                  res_chars, res_offsets, input_rows_count, regexp_jit_min_count); })
+            if constexpr (requires { Impl::vectorConstantConstant(col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement, res_chars, res_offsets, input_rows_count, regexp_jit_min_count); })
                 Impl::vectorConstantConstant(
                     col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement,
                     res_chars, res_offsets, input_rows_count, regexp_jit_min_count);

@@ -11,11 +11,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
 #include <limits>
-#include <vector>
 
 
 namespace DB
@@ -47,9 +47,10 @@ private:
     size_t capture{};
 
     /// Optional JIT-compiled matcher for simple patterns (see `CompileRegexp.h`).
+    /// The capture arrays are sized once in `init` and reused for every row.
     RegexpJITMatcher matcher;
-    std::vector<const uint8_t *> capture_starts;
-    std::vector<const uint8_t *> capture_ends;
+    VectorWithMemoryTracking<const uint8_t *> capture_starts;
+    VectorWithMemoryTracking<const uint8_t *> capture_ends;
     bool use_jit_for_row = false;
 
     Pos pos{};

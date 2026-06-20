@@ -90,8 +90,7 @@ public:
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
             const String needle = col_needle->getValue<String>();
             /// Only impls that opt in (currently `ExtractImpl`) take the JIT compile-count threshold.
-            if constexpr (requires {
-                              Impl::vector(col->getChars(), col->getOffsets(), needle, vec_res, offsets_res, input_rows_count, regexp_jit_min_count); })
+            if constexpr (requires { Impl::vector(col->getChars(), col->getOffsets(), needle, vec_res, offsets_res, input_rows_count, regexp_jit_min_count); })
                 Impl::vector(col->getChars(), col->getOffsets(), needle, vec_res, offsets_res, input_rows_count, regexp_jit_min_count);
             else
                 Impl::vector(col->getChars(), col->getOffsets(), needle, vec_res, offsets_res, input_rows_count);

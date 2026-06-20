@@ -2,12 +2,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/Regexps.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 
 #include <cstring>
 #include <limits>
 #include <optional>
-#include <vector>
 
 
 namespace DB
@@ -76,8 +76,9 @@ struct ExtractImpl
             {
                 /// Extract the first capturing group, or the whole match if there is none.
                 const int group = matcher.num_captures > 1 ? 1 : 0;
-                std::vector<const uint8_t *> capture_starts(matcher.num_captures);
-                std::vector<const uint8_t *> capture_ends(matcher.num_captures);
+                /// Allocated once per call (not per row); reused for every row below.
+                VectorWithMemoryTracking<const uint8_t *> capture_starts(matcher.num_captures);
+                VectorWithMemoryTracking<const uint8_t *> capture_ends(matcher.num_captures);
 
                 /// Built only when the matcher may defer non-ASCII strings (see `ascii_fallback`).
                 std::optional<OptimizedRegularExpression> re2_fallback;

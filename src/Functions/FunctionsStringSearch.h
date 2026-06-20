@@ -340,10 +340,7 @@ public:
             const auto & haystack_offsets = col_haystack_vector->getOffsets();
             /// Only impls that opt in (currently `MatchImpl`) take the JIT compile-count threshold;
             /// all others keep their original signature.
-            if constexpr (requires {
-                              Impl::vectorConstant(
-                                  haystack_chars, haystack_offsets, needle, column_start_pos,
-                                  vec_res, null_map.get(), input_rows_count, regexp_jit_min_count); })
+            if constexpr (requires { Impl::vectorConstant(haystack_chars, haystack_offsets, needle, column_start_pos, vec_res, null_map.get(), input_rows_count, regexp_jit_min_count); })
                 Impl::vectorConstant(
                     haystack_chars, haystack_offsets, needle, column_start_pos,
                     vec_res, null_map.get(), input_rows_count, regexp_jit_min_count);
