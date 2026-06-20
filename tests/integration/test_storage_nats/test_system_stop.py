@@ -843,3 +843,51 @@ def test_stop_does_not_buffer_backlog(nats_cluster):
     assert (
         leaked == 0
     ), f"{leaked} messages published while stopped were buffered and delivered after START"
+
+
+def test_stop_while_viewless_does_not_drop_after_start(nats_cluster):
+    # A STOP/PAUSE issued while the table is viewless (unsubscribed) must not leave a stale-unsubscribe
+    # armed that fires after START and drops core-NATS messages once the table is streaming again.
+    table = "nats_stale_viewless"
+    subject = "stale_viewless_subject"
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_format = 'JSONEachRow',
+                     nats_flush_interval_ms = 500,
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+        """
+    )
+    time.sleep(3)  # let consumers initialize while viewless
+
+    # STOP while viewless arms the stale-unsubscribe; the bug lets it survive past START.
+    instance.query(f"SYSTEM STOP test.{table}")
+    instance.query(f"SYSTEM START test.{table}")
+
+    # Attach a view: the table subscribes and starts streaming.
+    instance.query(
+        f"""
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table};
+        """
+    )
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+    time.sleep(3)  # let a surviving stale flag fire its spurious unsubscribe + resubscribe
+
+    # Streaming still works once the dust settles.
+    nats_publish(nats_cluster, subject, 0, 10)
+    wait_dst_count_at_least(table, 10)
+
+    # The consumer must have subscribed exactly once. A STOP-while-viewless that left the stale flag
+    # armed forces a spurious unsubscribe + resubscribe after START -- a second subscribe for the subject.
+    subscribes = int(instance.count_in_log(f"Subscribed to subject {subject}"))
+    assert (
+        subscribes == 1
+    ), f"consumer subscribed {subscribes}x; a stale unsubscribe fired after a STOP-while-viewless"

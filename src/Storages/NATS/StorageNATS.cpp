@@ -329,7 +329,10 @@ bool StorageNATS::subscribeConsumers()
 
     const bool are_consumers_initialized = num_initialized == num_created_consumers;
     if (are_consumers_initialized)
+    {
         consumers_ready.store(true);
+        subscription_stale.store(false);
+    }
 
     return are_consumers_initialized;
 }
