@@ -1758,10 +1758,10 @@ public:
     }
     static UInt32 execute(Int32 d, const DateLUTImpl &)
     {
-        /// Cast to `UInt32` so the addition is performed in unsigned arithmetic
-        /// and out-of-range `d` (e.g. fuzzer-supplied values near `INT32_MAX`)
-        /// does not trigger a signed integer overflow.
-        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(d);
+        /// Compute in `Int64` and saturate to `[0, UInt32 max]`. This keeps the result monotonic
+        /// over the whole raw `Date32` domain (it would otherwise wrap for `d` before year 0) and
+        /// avoids signed integer overflow for out-of-range `d` near `INT32_MAX`.
+        return static_cast<UInt32>(std::clamp<Int64>(Int64(DAYS_BETWEEN_YEARS_0_AND_1970) + d, 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl &)
     {
@@ -2030,7 +2030,8 @@ struct ToStartOfISOYearImpl
             return 0;
         Int32 day_num = time_zone.toDayNum(t);
         day_num = std::min(day_num, Int32(DATE_LUT_MAX_DAY_NUM));
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(day_num)));
+        const int res = time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(day_num));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2041,7 +2042,8 @@ struct ToStartOfISOYearImpl
         if (d < 0)
             return 0;
         Int32 safe_day = std::min(d, static_cast<Int32>(DATE_LUT_MAX_DAY_NUM));
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(safe_day)));
+        const int res = time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(safe_day));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
