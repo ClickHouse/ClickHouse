@@ -42,6 +42,15 @@ namespace
     std::mutex regexp_jit_mutex;
     std::shared_ptr<CHJIT> regexp_jit_instance;
 
+    /// Counts how many times each (pattern, flags) key has been seen, so a pattern is compiled only after
+    /// `min_count_to_compile` uses (mirrors `compile_expressions`). It is bounded: cleared wholesale once
+    /// it grows past `MAX_SEEN_COUNTER_ENTRIES`, and also reset by `resetRegexpJITInstance` (i.e. by
+    /// `SYSTEM DROP COMPILED EXPRESSION CACHE`), so the default-enabled path cannot accumulate unbounded
+    /// process-wide state for workloads with many unique patterns.
+    std::mutex regexp_seen_counter_mutex;
+    std::unordered_map<UInt128, UInt64, UInt128Hash> regexp_seen_counter;
+    constexpr size_t MAX_SEEN_COUNTER_ENTRIES = 10000;
+
     /// Members of a set listed individually are only used when the set (or its complement) is small.
     constexpr size_t SIMD_MEMBERS_MAX = 8;
     constexpr uint32_t UNBOUNDED = std::numeric_limits<uint32_t>::max();
@@ -57,8 +66,14 @@ static std::shared_ptr<CHJIT> getRegexpJITInstancePtr()
 
 void resetRegexpJITInstance()
 {
-    std::lock_guard lock(regexp_jit_mutex);
-    regexp_jit_instance.reset();
+    {
+        std::lock_guard lock(regexp_jit_mutex);
+        regexp_jit_instance.reset();
+    }
+    {
+        std::lock_guard lock(regexp_seen_counter_mutex);
+        regexp_seen_counter.clear();
+    }
 }
 
 namespace
@@ -611,10 +626,12 @@ RegexpJITMatcher getRegexpJITMatcher(
     const UInt128 key = computeKey(pattern, case_insensitive, dot_all);
 
     {
-        static std::mutex counter_mutex;
-        static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
-        std::lock_guard lock(counter_mutex);
-        if (counter[key]++ < min_count_to_compile)
+        std::lock_guard lock(regexp_seen_counter_mutex);
+        /// Keep the map bounded: if it is full and this is a new key, drop everything and start over.
+        /// Resetting the counts only delays compilation of the patterns in flight, which is harmless.
+        if (regexp_seen_counter.size() >= MAX_SEEN_COUNTER_ENTRIES && !regexp_seen_counter.contains(key))
+            regexp_seen_counter.clear();
+        if (regexp_seen_counter[key]++ < min_count_to_compile)
             return {};
     }
 
