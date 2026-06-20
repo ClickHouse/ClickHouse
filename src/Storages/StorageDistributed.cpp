@@ -54,7 +54,9 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
@@ -757,32 +759,86 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 namespace
 {
 
-class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
+/// Return a clone of the defining expression of an inlineable ALIAS column node, or nullptr otherwise.
+/// The expression is cloned so each occurrence gets its own copy: this lets us alias one occurrence
+/// (a projection output) without mutating another occurrence (a reference in WHERE/GROUP BY/...).
+QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & node)
 {
-    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
+    const auto * column_node = node->as<ColumnNode>();
+    if (!column_node || !column_node->hasExpression())
+        return nullptr;
+
+    const auto & column_source = column_node->getColumnSourceOrNull();
+    if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                       || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
+                       || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        return nullptr;
+
+    return column_node->getExpression()->clone();
+}
+
+void inlineAliasColumnsForDistributedImpl(QueryTreeNodePtr & node);
+
+/// Inline ALIAS columns inside an expression subtree without assigning any alias. Nested subqueries are
+/// handed back to inlineAliasColumnsForDistributedImpl so their own projection columns keep their names.
+void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
+{
+    if (node->as<QueryNode>() || node->as<UnionNode>())
     {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return nullptr;
-
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-            return nullptr;
-
-        auto column_expression = column_node->getExpression();
-        column_expression->setAlias(column_node->getColumnName());
-        return column_expression;
+        inlineAliasColumnsForDistributedImpl(node);
+        return;
     }
 
-public:
-    void visitImpl(QueryTreeNodePtr & node)
+    while (auto expression = getInlineableAliasColumnExpression(node))
+        node = expression;
+
+    for (auto & child : node->getChildren())
+        if (child)
+            inlineAliasColumnsInExpression(child);
+}
+
+/// Inline ALIAS columns into their defining expressions for shard transport. The defining expression keeps
+/// the column's logical name as an alias only when the ALIAS column is a top-level projection item, so the
+/// mergeable-state output column keeps its name. Inside expression clauses (WHERE/GROUP BY/ORDER BY/HAVING/
+/// JOIN ON) and nested expressions no alias is set; otherwise several same-named ALIAS columns from different
+/// JOIN sources would land in one scope and trigger MULTIPLE_EXPRESSIONS_FOR_ALIAS
+/// (https://github.com/ClickHouse/ClickHouse/issues/107990).
+void inlineAliasColumnsForDistributedImpl(QueryTreeNodePtr & node)
+{
+    if (auto * union_node = node->as<UnionNode>())
     {
-        if (auto column_expression = getColumnNodeAliasExpression(node))
-            node = column_expression;
+        for (auto & query : union_node->getQueries().getNodes())
+            inlineAliasColumnsForDistributedImpl(query);
+        return;
     }
-};
+
+    auto * query_node = node->as<QueryNode>();
+    if (!query_node)
+    {
+        inlineAliasColumnsInExpression(node);
+        return;
+    }
+
+    for (auto & projection_item : query_node->getProjection().getNodes())
+    {
+        const auto * column_node = projection_item->as<ColumnNode>();
+        if (auto expression = getInlineableAliasColumnExpression(projection_item))
+        {
+            const String output_alias = column_node->getColumnName();
+            inlineAliasColumnsInExpression(expression);
+            expression->setAlias(output_alias);
+            projection_item = expression;
+        }
+        else
+        {
+            inlineAliasColumnsInExpression(projection_item);
+        }
+    }
+
+    for (auto & child : query_node->getChildren())
+        if (child && child != query_node->getProjectionNode())
+            inlineAliasColumnsInExpression(child);
+}
 
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
 {
@@ -933,8 +989,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
-    replace_alias_columns_visitor.visit(query_tree_to_modify);
+    inlineAliasColumnsForDistributedImpl(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
 

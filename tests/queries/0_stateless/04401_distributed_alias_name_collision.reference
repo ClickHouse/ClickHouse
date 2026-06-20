@@ -1,0 +1,27 @@
+where
+1
+1
+2
+2
+group_by
+5	50	2
+7	70	2
+order_by
+1
+1
+2
+2
+projection_expr
+55
+55
+77
+77
+global_join_subquery
+1	5	50
+1	5	50
+1	5	50
+1	5	50
+2	7	70
+2	7	70
+2	7	70
+2	7	70
