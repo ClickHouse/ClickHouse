@@ -2454,25 +2454,31 @@ void registerStorageRemote(StorageFactory & factory)
         /// `getStructureOfRemoteTableInShard` runs the table function through
         /// `getActualTableStructureWithAccess`, which performs exactly that check.
         ///
-        /// These access checks validate the user-supplied definition and must run only when it is
-        /// first introduced (`CREATE`, or a user `ATTACH` query that carries a full definition).
-        /// When the table is loaded from already-validated metadata (server startup or `RESTORE`),
-        /// re-running them is unnecessary and harmful: analyzing the table-function target can throw
-        /// if its underlying tables have changed since creation (e.g. the table matched by
-        /// `merge(...)` was dropped), which would make a valid persisted table impossible to load.
-        /// The inference still runs unconditionally when the structure was omitted, because then it
-        /// is the only source of the table's columns.
+        /// These access checks validate the user-supplied definition and must run when it is first
+        /// introduced: a `CREATE`, a user `ATTACH` query that carries a full definition, or a backup
+        /// `RESTORE` (which brings in a new definition under the restoring user). When the table is
+        /// loaded from already-validated metadata that lives on this server (server startup),
+        /// re-running them is unnecessary. The inference still runs unconditionally when the structure
+        /// was omitted, because then it is the only source of the table's columns.
         ///
         /// `isLoadingFromExistingMetadata` covers server startup (`FORCE_ATTACH`) and the legacy
-        /// `force_restore_data` flag (`FORCE_RESTORE`). A normal backup `RESTORE` reaches here with
-        /// `args.mode == SECONDARY_CREATE` and `args.is_restore_from_backup`, so it must be guarded
-        /// explicitly as well: the restored definition was already validated when the table was
-        /// originally created, and its source table-function targets may legitimately be absent in
-        /// the restore environment.
-        const bool loading_from_metadata = isLoadingFromExistingMetadata(args.mode) || args.is_restore_from_backup;
+        /// `force_restore_data` flag (`FORCE_RESTORE`): the definition already lives on disk and was
+        /// validated when it was first created on this server, so no check is re-run.
+        ///
+        /// A backup `RESTORE` is different: it reaches here with `args.mode == SECONDARY_CREATE` and
+        /// `args.is_restore_from_backup`, introducing the definition under a possibly different user.
+        /// The plain local-shard `SELECT`/`INSERT` check must still run for it, otherwise a user who
+        /// can restore could smuggle in `Remote('127.0.0.1', protected_db, protected_table, 'default')`
+        /// and reach a local target they cannot access directly, even though a direct `CREATE` would be
+        /// rejected. Only the table-function re-analysis is additionally skipped on restore, because
+        /// analyzing the target can throw if its underlying tables have changed since creation (e.g. the
+        /// table matched by `merge(...)` was dropped), which would make a valid persisted table
+        /// impossible to restore.
+        const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode);
+        const bool skip_table_function_analysis = loading_from_existing_metadata || args.is_restore_from_backup;
 
         ColumnsDescription columns = args.columns;
-        if (columns.empty() || (has_local_shard && parsed.remote_table_function_ptr && !loading_from_metadata))
+        if (columns.empty() || (has_local_shard && parsed.remote_table_function_ptr && !skip_table_function_analysis))
         {
             ColumnsDescription inferred = getStructureOfRemoteTable(
                 *parsed.cluster,
@@ -2491,8 +2497,8 @@ void registerStorageRemote(StorageFactory & factory)
         /// For a table-function target, `parsed.remote_table_id` is the meaningless parser default
         /// (`system.one`), so checking it would be both wrong and a spurious rejection of harmless
         /// targets like `numbers(...)`; the equivalent validation is performed above by analyzing the
-        /// function itself.
-        if (has_local_shard && !parsed.remote_table_function_ptr && !loading_from_metadata)
+        /// function itself. Unlike the re-analysis above, this check also runs on a backup `RESTORE`.
+        if (has_local_shard && !parsed.remote_table_function_ptr && !loading_from_existing_metadata)
         {
             args.getLocalContext()->checkAccess(AccessType::SELECT, parsed.remote_table_id);
             args.getLocalContext()->checkAccess(AccessType::INSERT, parsed.remote_table_id);
