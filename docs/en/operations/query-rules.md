@@ -40,7 +40,9 @@ A rule template may itself be a `CREATE RULE` / `ALTER RULE` statement, but a `{
 ## Syntax {#syntax}
 
 Query rewrite rules provide three types of queries:
+
 ### CREATE RULE {#create-rule}
+
 Rewrite of rule:
 ```sql
 CREATE RULE rule_name AS 
@@ -62,6 +64,7 @@ REJECT WITH 'Message';
 ```
 
 ### ALTER RULE {#alter-rule}
+
 Rewrite of rule:
 ```sql
 ALTER RULE rule_name AS 
@@ -83,6 +86,7 @@ REJECT WITH 'Message';
 ```
 
 ### DROP RULE {#drop-rule}
+
 ```sql
 DROP RULE rule_name;
 ```
