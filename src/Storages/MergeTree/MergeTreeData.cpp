@@ -5084,6 +5084,13 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "and CLEAR would rewrite stored values without going through UNIQUE KEY dedup, "
                     "producing duplicate live keys. UNIQUE KEY columns: ({}).",
                     command.column_name, fmt::join(uk_column_names, ", "));
+
+            /// REWRITE PARTS takes the full-part rewrite path, which rebuilds parts without
+            /// preserving the delete_bitmap_*.rbm sidecars — silently resurrecting deleted
+            /// rows once DELETE lands. Reject until the rewrite path is bitmap-aware.
+            if (command.type == MutationCommand::REWRITE_PARTS)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... REWRITE PARTS is not supported on tables with UNIQUE KEY");
         }
     }
 

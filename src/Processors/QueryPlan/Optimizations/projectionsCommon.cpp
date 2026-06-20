@@ -45,22 +45,22 @@ namespace QueryPlanOptimizations
 
 bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
-    /// A projection read bypasses the parent table's delete-bitmap filter, so
-    /// logically-deleted rows would resurface. Decline every projection for a
-    /// unique-key table — both an explicit user projection (loadable via
-    /// SECONDARY_CREATE/ATTACH even though CREATE/ALTER reject the combination)
-    /// and the implicit `_minmax_count_projection` / exact-count path, which
-    /// answers count()/min/max from physical part row counts with no bitmap
-    /// applied. Declining here (not throwing) makes the optimizer fall back to
-    /// the correctly-filtered base-table read; an actual projection-part read
-    /// is hard-rejected downstream in MergeTreeDataSelectExecutor.
+    /// Reading through a projection part bypasses the parent table's
+    /// delete-bitmap filter, so logically-deleted rows would resurface. Decline
+    /// the projection for a unique-key table that carries one (CREATE/ALTER
+    /// reject the combination, but SECONDARY_CREATE/ATTACH load it); the
+    /// optimizer then falls back to the correctly-filtered base-table read, and
+    /// an actual projection-part read is hard-rejected downstream in
+    /// MergeTreeDataSelectExecutor. A unique-key table with no projection is
+    /// unaffected.
     /// TODO(unique-key): support reading via projections on UNIQUE KEY tables.
-    /// TODO(unique-key): the trivial-count optimization (supportsTrivialCountOptimization
-    /// → totalRows) is a separate count shortcut that also bypasses the bitmap;
-    /// gate it for UNIQUE KEY alongside delete-bitmap-aware count in the read+delete work.
+    /// TODO(unique-key): count shortcuts that bypass the delete bitmap — the
+    /// implicit _minmax_count_projection here and the trivial-count path
+    /// (supportsTrivialCountOptimization -> totalRows) — are deferred to the
+    /// read+delete work, which makes count() delete-bitmap-aware.
     {
         const auto metadata = reading->getStorageMetadata();
-        if (metadata->hasUniqueKey())
+        if (metadata->hasUniqueKey() && metadata->hasProjections())
             return false;
     }
 
