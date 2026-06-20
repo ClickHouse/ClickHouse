@@ -204,7 +204,9 @@ function wait_for_queries_to_finish()
 function random_str()
 {
     local n=$1 && shift
-    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
+    # LC_ALL=C: macOS `tr` errors with "Illegal byte sequence" on the non-UTF-8
+    # bytes from /dev/urandom under a UTF-8 locale.
+    LC_ALL=C tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }
 
 function query_with_retry()

@@ -21,6 +21,7 @@
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
+#include <Common/FailPoint.h>
 namespace DB
 {
 namespace Setting
@@ -33,6 +34,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char storage_cluster_read_sleep[];
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
@@ -238,7 +244,8 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *current_metadata;
     new_metadata.setDataLakeTableState(*state);
 
     if (configuration->shouldReloadSchemaForConsistency(query_context))
@@ -308,6 +315,11 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     auto callback = std::make_shared<TaskIterator>(
         [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
         {
+            fiu_do_on(FailPoints::storage_cluster_read_sleep,
+            {
+                sleepForSeconds(10);
+            });
+
             auto task = task_distributor->getNextTask(number_of_current_replica);
             if (task)
                 return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
