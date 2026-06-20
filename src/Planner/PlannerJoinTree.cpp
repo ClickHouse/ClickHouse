@@ -1498,7 +1498,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         column = projection_column.type->createColumnConst(0, constant_node->getValue());
 
                 if (column)
-                    source_header.insert(ColumnWithTypeAndName(std::move(column), projection_column.type, projection_column.name));
+                    source_header.insert(ColumnWithTypeAndName(column, projection_column.type, projection_column.name));
                 else
                     source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
             }
