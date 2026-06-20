@@ -1,0 +1,12 @@
+max_threads = 2
+1
+max_threads = 4
+1
+max_threads = 16
+1
+max_threads = 32
+1
+max_threads = 64
+1
+Pipeline engages at a high thread count
+1
