@@ -615,6 +615,12 @@ def test_circular_dependencies_survive_restart(module_setup_tables):
     # are APPEND views such a re-run produces a duplicate row. So max_t is not required to be
     # unique. What must hold: max_t never goes backwards, the distinct waves are exactly the gapless
     # progression 5, 10, 15, ... (no skipped or spurious wave), and every wave has a positive count.
+    #
+    # post_max may have been observed on either replica by _wait_batch_log_max_t, but the invariants
+    # below are read from node1. batch_log is a ReplicatedMergeTree, so node1 may not have fetched
+    # the latest part yet; sync it first so it has caught up to at least post_max. Otherwise the
+    # distinct[-1] >= post_max check could spuriously fail under replication lag.
+    node.query("SYSTEM SYNC REPLICA batch_log")
     rows = node.query(
         "SELECT max_t, n FROM batch_log ORDER BY max_t FORMAT TabSeparated"
     ).strip().split("\n")
