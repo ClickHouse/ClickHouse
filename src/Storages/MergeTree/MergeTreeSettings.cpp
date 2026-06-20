@@ -2726,6 +2726,25 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
     return setting_names;
 }
 
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
+std::string_view MergeTreeSettings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
+}
+
+SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
+}
+
 void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
