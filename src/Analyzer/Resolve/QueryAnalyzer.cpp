@@ -1912,6 +1912,27 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                     }
                 }
 
+                /// A qualified matcher reaches USING joins anywhere in the tree, so a key can match
+                /// `t.col` by name while `t` does not take part in that join. Only retype/register
+                /// against a key the matched column's source actually contributes to, otherwise the
+                /// registration rewrites `t.col` to an unrelated table's column in later replacement.
+                if (is_qualified_matcher)
+                {
+                    bool matched_source_participates = false;
+                    for (const auto & join_using_column_inner_node : join_using_column_nodes)
+                    {
+                        const auto * inner_column_node = join_using_column_inner_node->as<ColumnNode>();
+                        if (inner_column_node
+                            && inner_column_node->getColumnSourceOrNull().get() == matched_column_node_typed.getColumnSource().get())
+                        {
+                            matched_source_participates = true;
+                            break;
+                        }
+                    }
+                    if (!matched_source_participates)
+                        continue;
+                }
+
                 auto using_column_type = join_using_column_node.getResultType();
 
                 /// Qualified matcher: the matched column is `t.col`, NOT the merged USING key.

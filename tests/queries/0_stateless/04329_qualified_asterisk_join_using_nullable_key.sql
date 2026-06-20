@@ -155,6 +155,36 @@ SETTINGS join_use_nulls = 0;
 DROP TABLE t_jn1_nullable;
 DROP TABLE t_jn3_nullable;
 
+-- Examining every USING join in the tree for a qualified matcher must not pick up a USING join
+-- the matched table does not take part in. With `(t_a JOIN t_b USING(id)) CROSS JOIN t_c`,
+-- resolving `t_c.*` reaches the inner `USING(id)` only because the key name `id` coincides with
+-- `t_c.id`. The matched column must not be retyped against, nor registered as changed-type from,
+-- that unrelated key: such a registration rewrites `t_c.id` to `t_a.id` during PREWHERE
+-- replacement (and treats a later unqualified `id` as equal to it instead of ambiguous), giving
+-- wrong PREWHERE results. The column types here are identical, so the only observable effect is
+-- the wrong rewrite; PREWHERE must filter on `t_c.id`, matching the equivalent WHERE.
+DROP TABLE IF EXISTS t_a;
+DROP TABLE IF EXISTS t_b;
+DROP TABLE IF EXISTS t_c;
+CREATE TABLE t_a (id Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_b (id UInt32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_c (id UInt64, v String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_a VALUES (1);
+INSERT INTO t_b VALUES (1);
+INSERT INTO t_c VALUES (1, 'one'), (2, 'two'), (5, 'five');
+
+-- PREWHERE on the non-participating table's key must filter that table, not the unrelated USING key.
+SELECT t_c.* FROM t_a INNER JOIN t_b USING (id) CROSS JOIN t_c PREWHERE t_c.id = 5 SETTINGS join_use_nulls = 0;
+SELECT t_c.* FROM t_a INNER JOIN t_b USING (id) CROSS JOIN t_c PREWHERE t_c.id = 1 SETTINGS join_use_nulls = 0;
+-- Same with a comma join wrapping the USING join.
+SELECT t_c.* FROM t_a INNER JOIN t_b USING (id), t_c PREWHERE t_c.id = 5 SETTINGS join_use_nulls = 0;
+-- The rewrite must match the equivalent WHERE (which is not subject to the changed-type replacement).
+SELECT t_c.* FROM t_a INNER JOIN t_b USING (id) CROSS JOIN t_c WHERE t_c.id = 5 SETTINGS join_use_nulls = 0;
+
+DROP TABLE t_a;
+DROP TABLE t_b;
+DROP TABLE t_c;
+
 DROP TABLE t_jn1;
 DROP TABLE t_jn2;
 DROP TABLE t_jn3;
