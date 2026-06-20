@@ -177,7 +177,7 @@ bool hasEmphasisCloser(std::string_view s, size_t from, char c, size_t need)
 class Renderer
 {
 public:
-    Renderer(const TerminalMarkdownRenderer & config_)
+    explicit Renderer(const TerminalMarkdownRenderer & config_)
         : config(config_)
         , width(std::max<size_t>(config_.width, 20))
         , ansi(config_.ansi)

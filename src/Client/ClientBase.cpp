@@ -3697,12 +3697,14 @@ bool ClientBase::processHelpCommand(const String & word_arg)
 
         /// Nothing matched exactly: offer suggestions by similar name (substring or small edit distance),
         /// and by entities whose documentation mentions the word.
+        /// `lower` (not `lowerUTF8`) is used deliberately: entity names are ASCII, and `lowerUTF8`
+        /// requires ICU, which is not available in every build (e.g. the Fast test build).
         const Block by_name = fetchDocumentation(
             "SELECT DISTINCT name, toString(type) AS type FROM system.documentation "
             "WHERE (lengthUTF8({word:String}) >= 3 AND positionCaseInsensitive(name, {word:String}) > 0) "
-            "   OR editDistanceUTF8(lowerUTF8(name), lowerUTF8({word:String})) "
+            "   OR editDistanceUTF8(lower(name), lower({word:String})) "
             "      <= greatest(1, intDiv(lengthUTF8({word:String}), 3)) "
-            "ORDER BY editDistanceUTF8(lowerUTF8(name), lowerUTF8({word:String})), lengthUTF8(name), name "
+            "ORDER BY editDistanceUTF8(lower(name), lower({word:String})), lengthUTF8(name), name "
             "LIMIT 30",
             word);
 
