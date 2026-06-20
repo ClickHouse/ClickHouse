@@ -29,7 +29,7 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=["configs/named_collections.xml", "configs/schema_cache.xml", "configs/blob_log.xml"],
-            user_configs=["configs/disable_profilers.xml", "configs/users.xml"],
+            user_configs=["configs/disable_profilers.xml", "configs/users.xml", "configs/sync_inserts.xml"],
             with_azurite=True,
         )
         cluster.start()

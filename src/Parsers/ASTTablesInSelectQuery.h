@@ -73,6 +73,9 @@ struct ASTTableJoin : public IAST
     JoinStrictness strictness = JoinStrictness::Unspecified;
     JoinKind kind = JoinKind::Inner;
 
+    /// Set for NATURAL JOIN — the USING columns are derived automatically from the common columns.
+    bool is_natural = false;
+
     /// Condition. One of fields is non-nullptr.
     ASTPtr using_expression_list;
     ASTPtr on_expression;

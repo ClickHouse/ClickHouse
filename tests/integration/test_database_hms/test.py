@@ -26,18 +26,18 @@ def started_cluster():
 
 def test_hive_catalog_url_parsing(started_cluster):
     node = started_cluster.instances["node1"]
-    
+
     password = os.environ.get('MINIO_PASSWORD', '[HIDDEN]')
-    
+
     test_databases = [
         'test_valid_url', 'test_missing_protocol', 'test_missing_port',
         'test_invalid_port', 'test_port_zero', 'test_port_too_large',
         'test_empty_port', 'test_complex_path'
     ]
-    
+
     for db_name in test_databases:
         node.query(f"DROP DATABASE IF EXISTS {db_name}")
-    
+
     try:
         node.query(f"""
             CREATE DATABASE test_hms_support_check ENGINE = DataLakeCatalog('thrift://hive:9083', 'minio', '{password}') 
@@ -71,7 +71,7 @@ def test_hive_catalog_url_parsing(started_cluster):
                      warehouse = 'test_warehouse', 
                      storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
-        node.query("SHOW TABLES FROM test_missing_protocol")
+        node.query("select * FROM test_missing_protocol.abc")
         pytest.fail("Missing protocol separator should fail")
     except Exception as e:
         error_msg = str(e)
@@ -87,7 +87,7 @@ def test_hive_catalog_url_parsing(started_cluster):
                      warehouse = 'test_warehouse', 
                      storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
-        node.query("SHOW TABLES FROM test_missing_port")
+        node.query("select * FROM test_missing_port.abc")
         pytest.fail("Missing port should fail")
     except Exception as e:
         error_msg = str(e)
@@ -103,7 +103,7 @@ def test_hive_catalog_url_parsing(started_cluster):
                      warehouse = 'test_warehouse', 
                      storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
-        node.query("SHOW TABLES FROM test_invalid_port")
+        node.query("select * FROM test_invalid_port.abc")
         pytest.fail("Invalid port should fail")
     except Exception as e:
         error_msg = str(e)
@@ -119,7 +119,7 @@ def test_hive_catalog_url_parsing(started_cluster):
                      warehouse = 'test_warehouse', 
                      storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
-        node.query("SHOW TABLES FROM test_port_zero")
+        node.query("select * FROM test_port_zero.abc")
         pytest.fail("Port zero should fail")
     except Exception as e:
         error_msg = str(e)
@@ -135,7 +135,7 @@ def test_hive_catalog_url_parsing(started_cluster):
                      warehouse = 'test_warehouse', 
                      storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
-        node.query("SHOW TABLES FROM test_port_too_large")
+        node.query("select * FROM test_port_too_large.abc")
         pytest.fail("Port too large should fail")
     except Exception as e:
         error_msg = str(e)
@@ -151,7 +151,7 @@ def test_hive_catalog_url_parsing(started_cluster):
                      warehouse = 'test_warehouse', 
                      storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
-        node.query("SHOW TABLES FROM test_empty_port")
+        node.query("select * FROM test_empty_port.abc")
         pytest.fail("Empty port should fail")
     except Exception as e:
         error_msg = str(e)
@@ -173,3 +173,36 @@ def test_hive_catalog_url_parsing(started_cluster):
             pytest.fail("Complex path URL should not fail URL parsing")
     finally:
         node.query("DROP DATABASE IF EXISTS test_complex_path")
+
+
+def test_check_database(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    password = os.environ.get('MINIO_PASSWORD', '[HIDDEN]')
+
+    node.query(f"DROP DATABASE IF EXISTS test_hms_check_db")
+
+    try:
+        node.query(f"""
+            CREATE DATABASE test_hms_check_db ENGINE = DataLakeCatalog('thrift://hive:9083', 'minio', '{password}') 
+            SETTINGS catalog_type = 'hive', 
+                     warehouse = 'test_warehouse', 
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
+        """)
+        node.query("CHECK DATABASE test_hms_check_db")
+
+        node.query(
+            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+        )
+
+        assert "fault when checking database" in node.query_and_get_error(
+            f"CHECK DATABASE test_hms_check_db"
+        )
+    except Exception as e:
+        if "compiled without USE_HIVE" in str(e) or "compiled without USE_AVRO" in str(e):
+            pytest.skip("HMS catalog not available: ClickHouse compiled without required features")
+        if "Invalid URL format" in str(e):
+            pass
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative")
+        node.query("DROP DATABASE IF EXISTS test_hms_check_db")

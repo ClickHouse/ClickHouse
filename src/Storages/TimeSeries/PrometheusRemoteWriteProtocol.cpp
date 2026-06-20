@@ -579,7 +579,7 @@ void PrometheusRemoteWriteProtocol::writeTimeSeries(const google::protobuf::Repe
     LOG_TRACE(log, "{}: Writing {} time series",
               time_series_storage_id.getNameForLogs(), time_series.size());
 
-    auto time_series_storage_metadata = time_series_storage->getInMemoryMetadataPtr();
+    auto time_series_storage_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto & time_series_settings = time_series_storage->getStorageSettings();
 
     auto blocks = toBlocks(time_series, getContext(), time_series_storage_id, *time_series_storage_metadata, time_series_settings);
@@ -596,7 +596,7 @@ void PrometheusRemoteWriteProtocol::writeMetricsMetadata(const google::protobuf:
     LOG_TRACE(log, "{}: Writing {} metrics metadata",
               time_series_storage_id.getNameForLogs(), metrics_metadata.size());
 
-    auto time_series_storage_metadata = time_series_storage->getInMemoryMetadataPtr();
+    auto time_series_storage_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto & time_series_settings = time_series_storage->getStorageSettings();
 
     auto blocks = toBlocks(metrics_metadata, time_series_storage_id, *time_series_storage_metadata, time_series_settings);

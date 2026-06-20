@@ -147,4 +147,10 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     return std::make_shared<MergeTreeIndexGranularityConstant>(computed_granularity);
 }
 
+size_t MergeTreeIndexGranularity::getMarksCountForSkipIndex(size_t skip_index_granularity) const
+{
+    size_t marks_count = getMarksCountWithoutFinal();
+    return (marks_count + skip_index_granularity - 1) / skip_index_granularity;
+}
+
 }

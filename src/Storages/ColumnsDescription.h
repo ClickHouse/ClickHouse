@@ -11,6 +11,8 @@
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
 
+#include <Parsers/IAST.h>
+
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -24,8 +26,6 @@
 namespace DB
 {
 
-struct IASTFormatState;
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -37,6 +37,13 @@ enum class VirtualsKind : UInt8
     Ephemeral = 1,
     Persistent = 2,
     All = Ephemeral | Persistent,
+};
+
+enum class VirtualsMaterializationPlace : UInt8
+{
+    Reader = 1,
+    Plan = 2,
+    All = Reader | Plan,
 };
 
 struct GetColumnsOptions
@@ -69,14 +76,16 @@ struct GetColumnsOptions
         return *this;
     }
 
-    GetColumnsOptions & withVirtuals(VirtualsKind value = VirtualsKind::All)
+    GetColumnsOptions & withVirtuals(VirtualsKind value, VirtualsMaterializationPlace place)
     {
         virtuals_kind = value;
+        virtuals_place = place;
         return *this;
     }
 
     Kind kind;
     VirtualsKind virtuals_kind = VirtualsKind::None;
+    VirtualsMaterializationPlace virtuals_place = VirtualsMaterializationPlace::All;
 
     bool with_subcolumns = false;
     bool with_dynamic_subcolumns = false;
@@ -107,7 +116,7 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf, IASTFormatState & state, bool include_comment) const;
+    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
     void readText(ReadBuffer & buf);
 };
 
@@ -167,7 +176,7 @@ public:
 
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;
-    bool hasSubcolumn(const String & column_name) const;
+    bool hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
     const ColumnDescription * tryGet(const String & column_name) const;
 
@@ -270,7 +279,7 @@ private:
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
     void removeSubcolumns(const String & name_in_storage);
 
-    std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name) const;
+    std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const;
 };
 
 class ASTColumnDeclaration;

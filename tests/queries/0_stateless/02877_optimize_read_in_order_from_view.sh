@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT -q "$query" --query_id="$query_id" --log_queries=1 --optimize
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-read_rows=$($CLICKHOUSE_CLIENT -q "SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query_id='${query_id}' AND type='QueryFinish'")
+read_rows=$($CLICKHOUSE_CLIENT -q "SELECT read_rows FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query_id='${query_id}' AND type='QueryFinish'")
 
 if [ -z "$read_rows" ]; then
     echo "read_rows:not found"

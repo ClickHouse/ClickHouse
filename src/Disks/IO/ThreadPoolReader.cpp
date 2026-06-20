@@ -9,6 +9,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -58,7 +59,6 @@ namespace ProfileEvents
     extern const Event ThreadPoolReaderPageCacheMissElapsedMicroseconds;
     extern const Event AsynchronousReaderIgnoredBytes;
 
-    extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
@@ -79,7 +79,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-
+    extern const int NOT_IMPLEMENTED;
 }
 
 #if defined(OS_LINUX)
@@ -121,8 +121,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
-        /// (NetlinkMetricsProvider has about 500K RPS).
+        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it.
         Stopwatch watch(CLOCK_MONOTONIC);
 
         SCOPE_EXIT({
@@ -249,6 +248,11 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
         return Result{ .buf = request.buf, .size = bytes_read, .offset = request.ignore, .file_offset_of_buffer_end = request.offset + bytes_read };
     }, request.priority);
+}
+
+IAsynchronousReader::Result ThreadPoolReader::execute(Request /* request */)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for ThreadpoolReader");
 }
 
 void ThreadPoolReader::wait()

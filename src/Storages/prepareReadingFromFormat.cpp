@@ -39,7 +39,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     Strings columns_to_read;
     for (const auto & column_name : requested_columns)
     {
-        if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
+        if (auto virtual_column = storage_snapshot->metadata->virtuals.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
         {
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
         }
@@ -72,12 +72,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
         {
             columns_to_read = filterTupleColumnsToRead(info.requested_columns);
         }
-        else if (columns_to_read.empty())
-        {
-            /// If only virtual columns were requested, just read the smallest column.
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
-        }
-        else
+        else if (!columns_to_read.empty())
         {
             /// We need to replace all subcolumns with their nested columns (e.g `a.b`, `a.b.c`, `x.y` -> `a`, `x`),
             /// because most formats cannot extract subcolumns on their own.
@@ -95,6 +90,12 @@ ReadFromFormatInfo prepareReadingFromFormat(
                 }
             }
             columns_to_read = std::move(new_columns_to_read);
+        }
+
+        /// If only virtual columns were requested, just read the smallest column.
+        if (columns_to_read.empty())
+        {
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
@@ -259,19 +260,23 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
 
 ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
 {
-    chassert(prewhere_info);
+    chassert(prewhere_info || row_level_filter);
 
-    if (info.prewhere_info || info.row_level_filter)
+    if (info.prewhere_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "updateFormatPrewhereInfo called more than once");
 
     ReadFromFormatInfo new_info;
     new_info.prewhere_info = prewhere_info;
+    new_info.row_level_filter = row_level_filter;
 
     /// Removes columns that are only used as prewhere input.
     /// Adds prewhere outputs (the actual prewhere filter column is only added if
     /// !remove_prewhere_column; but there may also be subexpressions computed by prewhere
     /// expression and preserved for use further down the query pipeline).
-    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, row_level_filter, prewhere_info);
+    /// If row_level_filter was already applied in a previous call, don't re-apply it;
+    /// only apply the new prewhere_info on top.
+    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(
+        info.format_header, info.row_level_filter ? nullptr : row_level_filter, prewhere_info);
 
     /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
     /// don't need to replace subcolumns with their nested columns etc.
@@ -312,8 +317,9 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     if (!storage_ptr)
         return SerializationInfoByName{{}};
 
+    const auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
     const auto & our_columns = metadata_snapshot->getColumns();
-    const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
+    const auto & storage_columns = storage_metadata_snapshot->getColumns();
     auto storage_hints = storage_ptr->getSerializationHints();
     SerializationInfoByName res({});
 

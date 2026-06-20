@@ -4,14 +4,12 @@
 
 #if USE_LIBPQXX
 
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <DataTypes/dataTypeToAST.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -466,12 +464,12 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     create_table_query->setTable(table_id.table_name);
     create_table_query->setDatabase(table_id.database_name);
 
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
     {
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         column_declaration->name = column_type_and_name.name;
-        column_declaration->setType(getColumnDeclaration(column_type_and_name.type));
+        column_declaration->setType(dataTypeToAST(column_type_and_name.type));
         columns_expression_list->children.emplace_back(column_declaration);
     }
 
@@ -500,25 +498,6 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     return create_table_query;
 }
 
-
-ASTPtr DatabasePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) const
-{
-    WhichDataType which(data_type);
-
-    if (which.isNullable())
-        return makeASTDataType("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
-
-    if (which.isArray())
-        return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
-
-    if (which.isDateTime64())
-        return makeASTDataType("DateTime64", make_intrusive<ASTLiteral>(static_cast<UInt32>(6)));
-
-    if (which.isDecimal())
-        return makeASTDataType("Decimal", make_intrusive<ASTLiteral>(getDecimalPrecision(*data_type)), make_intrusive<ASTLiteral>(getDecimalScale(*data_type)));
-
-    return makeASTDataType(data_type->getName());
-}
 
 void registerDatabasePostgreSQL(DatabaseFactory & factory)
 {
@@ -598,7 +577,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             use_table_cache,
             args.uuid);
     };
-    factory.registerDatabase("PostgreSQL", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("PostgreSQL", create_fn, {.supports_arguments = true, .is_external = true});
 }
 }
 

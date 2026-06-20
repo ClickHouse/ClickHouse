@@ -4,6 +4,7 @@
 
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <IO/ReadBuffer.h>
@@ -29,6 +30,17 @@ namespace ErrorCodes
 extern const int SERIALIZATION_ERROR;
 extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
 extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+
+UInt128 SerializationQBit::getHash(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
+{
+    SipHash hash;
+    hash.update("QBit");
+    hash.update(nested_->getHash());
+    hash.update(element_size_);
+    hash.update(dimension_);
+    return hash.get128();
 }
 
 static const ColumnTuple & extractNestedColumn(const IColumn & column)
@@ -165,7 +177,9 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
 
     /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
     dst.resize(dimension);
-    writeVectorBinary(dst, ostr);
+    writeVarUInt(dst.size(), ostr);
+    for (const auto & element : dst)
+        writeBinaryLittleEndian(element, ostr);
 }
 
 template <typename FloatType>
@@ -186,7 +200,7 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
 
     for (size_t i = 0; i < dimension; i++)
     {
-        readFloatBinary(v, istr);
+        readBinaryLittleEndian(v, istr);
         std::memcpy(&w, &v, sizeof(Word));
         transposeBits<Word>(w, i, total_bits, plane_ptrs.data());
     }
@@ -276,7 +290,12 @@ void SerializationQBit::deserializeBinary(Field & field, ReadBuffer & istr, cons
 void SerializationQBit::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     /// Lambda to write the vector of floats to the output buffer
-    auto write_binary = [&ostr](const auto & dst) { writeVectorBinary(dst, ostr); };
+    auto write_binary = [&ostr](const auto & dst)
+    {
+        writeVarUInt(dst.size(), ostr);
+        for (const auto & element : dst)
+            writeBinaryLittleEndian(element, ostr);
+    };
 
     dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBit<FloatType>(column, row_num, write_binary); });
 }
@@ -285,7 +304,7 @@ void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, c
 {
     validateAndReadQBitSize(istr, settings);
 
-    auto read_binary = [&]<typename FloatType>(FloatType & v, size_t) { readBinary(v, istr); };
+    auto read_binary = [&]<typename FloatType>(FloatType & v, size_t) { readBinaryLittleEndian(v, istr); };
 
     auto deserialize = [&]() -> bool
     {
@@ -607,6 +626,13 @@ void SerializationQBit::untransposeBitPlane(const UInt8 * __restrict src, T * __
     return TargetSpecific::Default::untransposeBitPlaneImpl(src, dst, stride_len, bit_mask);
 }
 
+SerializationPtr SerializationQBit::create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
+{
+    if (!nested_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationQBit(nested_, element_size_, dimension_));
+    return ISerialization::pooled(getHash(nested_, element_size_, dimension_), [&] { return new SerializationQBit(nested_, element_size_, dimension_); });
+}
+
 
 template void SerializationQBit::transposeBits(UInt16 src, const size_t row_i, const size_t total_bits, char * const * dst);
 template void SerializationQBit::transposeBits(UInt32 src, const size_t row_i, const size_t total_bits, char * const * dst);
@@ -615,4 +641,5 @@ template void SerializationQBit::transposeBits(UInt64 src, const size_t row_i, c
 template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt64 * dst, size_t stride_len, UInt64 bit_mask);
 template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt32 * dst, size_t stride_len, UInt32 bit_mask);
 template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt16 * dst, size_t stride_len, UInt16 bit_mask);
+
 }

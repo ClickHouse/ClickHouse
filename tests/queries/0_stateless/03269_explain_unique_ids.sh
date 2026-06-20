@@ -55,6 +55,6 @@ $CLICKHOUSE_CLIENT -q "
 
   SELECT DISTINCT (replaceRegexpAll(processor_uniq_id, '(\w+)\(.*\)', '\\1'), step_uniq_id)
   FROM system.processors_profile_log
-  WHERE query_id = '$query_id'
+  WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id'
   ORDER BY ALL;
 "

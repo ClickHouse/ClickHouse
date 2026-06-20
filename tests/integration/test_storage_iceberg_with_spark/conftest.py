@@ -1,3 +1,4 @@
+import os
 import os.path as p
 import random
 
@@ -141,3 +142,5 @@ def started_cluster_iceberg_with_spark():
 
     finally:
         cluster.shutdown()
+        if p.exists(filesystem_cache_config_path):
+            os.remove(filesystem_cache_config_path)

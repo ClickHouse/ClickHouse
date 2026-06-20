@@ -37,13 +37,15 @@ function explain_indexes()
     --use_query_condition_cache=0
     --parallel_replicas_for_non_replicated_merge_tree=1
     --parallel_replicas_local_plan=1
+    --use_statistics_for_part_pruning=0
+    --enable_add_distinct_to_in_subqueries=0  # CI may inject True; adds DISTINCT to IN subqueries, changing the logged query string in query_log
   )
 
-  local without_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --allow_experimental_parallel_reading_from_replicas=0 -q "$@" | {
+  local without_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --enable_parallel_replicas=0 -q "$@" | {
     jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
   })"
   $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas"
-  local with_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --allow_experimental_parallel_reading_from_replicas=1 -q "$@" | {
+  local with_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --enable_parallel_replicas=1 --automatic_parallel_replicas_mode=0 -q "$@" | {
     jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
   })"
   if [ "$with_pr" != "$without_pr" ]; then
@@ -69,5 +71,5 @@ explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m)
 $CLICKHOUSE_CLIENT -q "
 system flush logs query_log;
 -- SKIP: current_database = $CLICKHOUSE_DATABASE
-select toUInt64OrZero(Settings['allow_experimental_parallel_reading_from_replicas']), normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() and log_comment like '%' || currentDatabase() || '%' and type = 'QueryStart' and not(has(databases, 'system')) and query_kind in ('Select', 'Explain') order by event_time_microseconds;
+select toUInt64OrZero(Settings['allow_experimental_parallel_reading_from_replicas']), normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 and log_comment like '%' || currentDatabase() || '%' and type = 'QueryStart' and not(has(databases, 'system')) and query_kind in ('Select', 'Explain') order by event_time_microseconds;
 "

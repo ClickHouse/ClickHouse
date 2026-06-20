@@ -1,4 +1,6 @@
+#include <string_view>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -8,7 +10,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -99,7 +103,8 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto streams = pipeline.getNumStreams();
-    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    pipeline.addSimpleTransform([&, query_context](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
     {
         /// Build the filter only from the main stream
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
@@ -117,7 +122,8 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             pass_ratio_threshold_for_disabling,
             blocks_to_skip_before_reenabling,
             max_ratio_of_set_bits_in_bloom_filter,
-            allow_to_use_not_exact_filter);
+            allow_to_use_not_exact_filter,
+            query_context);
     });
 }
 
@@ -188,11 +194,29 @@ QueryPlanStepPtr BuildRuntimeFilterStep::clone() const
 
 void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix(format_settings.offset, format_settings.indent_char);
-    format_settings.out
-        << prefix << "Filter id: " << filter_name << '\n'
-        << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
+    const std::string & prefix = format_settings.detail_prefix;
 
+    std::string_view filter_id_view = filter_name;
+    if (format_settings.pretty)
+    {
+        if (auto it = format_settings.runtime_filter_names.find(filter_name); it != format_settings.runtime_filter_names.end())
+            filter_id_view = it->second.pretty_name;
+    }
+
+    format_settings.out << prefix << "Filter id: " << filter_id_view << '\n';
+
+    if (format_settings.pretty)
+    {
+        if (auto it = format_settings.runtime_filter_names.find(filter_name); it != format_settings.runtime_filter_names.end())
+        {
+            if (!it->second.build_table_name.empty())
+                format_settings.out << prefix << "Source table: " << it->second.build_table_name << '\n';
+        }
+    }
+    else
+    {
+        format_settings.out << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
+    }
 }
 
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry)

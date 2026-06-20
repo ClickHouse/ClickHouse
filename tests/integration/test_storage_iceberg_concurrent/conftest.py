@@ -55,12 +55,6 @@ def get_spark(cluster : ClickHouseCluster):
     builder = (
         pyspark.sql.SparkSession.builder \
             .appName("IcebergS3Example") \
-            .config("spark.jars.repositories", "https://repo1.maven.org/maven2") \
-            .config("spark.jars.packages",
-            f'org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:{iceberg_version},'
-            f'org.apache.spark:spark-avro_2.12:{spark_version},'
-            f'org.apache.hadoop:hadoop-aws:{hadoop_aws_version},'
-            f'com.amazonaws:aws-java-sdk-bundle:{jdk_bundle}')\
             .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
             .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog") \
             .config("spark.sql.catalog.spark_catalog.type", "hadoop") \
@@ -88,9 +82,8 @@ def started_cluster_iceberg():
         cluster.add_instance(
             "node1",
             main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
                 "configs/config.d/named_collections.xml",
+                "configs/config.d/log_level_override.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,

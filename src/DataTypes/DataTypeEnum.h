@@ -72,7 +72,7 @@ public:
     /// Enum('a' = 1, 'b' = 2) -> Enum('a' = 2, 'b' = 1) NOT OK
     bool contains(const IDataType & rhs) const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     void updateHashImpl(SipHash & hash) const override;
 };

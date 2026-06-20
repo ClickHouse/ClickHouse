@@ -8,7 +8,7 @@ services:
       - RUST_LOG=info
     command: ["serve"]
     ports:
-      - 8181:8181
+      - "${ICEBERG_REST_CATALOG_PORT}:8181"
     healthcheck:
       test: ["CMD", "/home/nonroot/lakekeeper", "healthcheck"]
       interval: 1s

@@ -9,6 +9,7 @@ namespace DB
 using Strings = std::vector<String>;
 using DatabaseAndTableName = std::pair<String, String>;
 class ASTFunction;
+class ASTSnapshotQuery;
 
 
 /** BACKUP { TABLE [db.]table_name [AS [db.]table_name_in_backup] [PARTITION[S] partition_expr [,...]] |
@@ -76,6 +77,8 @@ public:
     static void setCurrentDatabase(Elements & elements, const String & current_database);
     void setCurrentDatabase(const String & current_database) { setCurrentDatabase(elements, current_database); }
 
+    static ASTPtr fromSnapshotQuery(const ASTSnapshotQuery & query);
+
     Elements elements;
 
     ASTFunction * backup_name = nullptr;
@@ -85,6 +88,9 @@ public:
     /// Base backup. Only differences made after the base backup will be included in a newly created backup,
     /// so this setting allows to make an incremental backup.
     ASTFunction * base_backup_name = nullptr;
+
+    /// Base snapshot for lightweight snapshot-based backups. Specified using the FROM_SNAPSHOT clause.
+    ASTFunction * base_snapshot_name = nullptr;
 
     /// List of cluster's hosts' IDs if this is a BACKUP/RESTORE ON CLUSTER command.
     ASTPtr cluster_host_ids;
@@ -99,6 +105,7 @@ public:
     {
         f(reinterpret_cast<IAST **>(&backup_name), nullptr);
         f(reinterpret_cast<IAST **>(&base_backup_name), nullptr);
+        f(reinterpret_cast<IAST **>(&base_snapshot_name), nullptr);
     }
 };
 

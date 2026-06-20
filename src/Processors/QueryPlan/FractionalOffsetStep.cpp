@@ -5,6 +5,7 @@
 #include <Processors/OffsetTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -44,7 +45,8 @@ void FractionalOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, co
 
 void FractionalOffsetStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ') << "Fractional Offset " << fractional_offset << '\n';
+    const auto & prefix = settings.detail_prefix;
+    settings.out << prefix << "Fractional Offset " << fractional_offset << '\n';
 }
 
 void FractionalOffsetStep::describeActions(JSONBuilder::JSONMap & map) const

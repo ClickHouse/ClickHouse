@@ -7,11 +7,11 @@ SET mutations_sync = 1;
 
 DROP TABLE IF EXISTS tab;
 
-SET allow_experimental_statistics = 0;
--- Error case: Can't create statistics when allow_experimental_statistics = 0
+SET allow_statistics = 0;
+-- Error case: Can't create statistics when allow_statistics = 0
 CREATE TABLE tab (col Float64 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SET allow_experimental_statistics = 1;
+SET allow_statistics = 1;
 
 -- Error case: Unknown statistics types are rejected
 CREATE TABLE tab (col Float64 STATISTICS(no_statistics_type)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -172,7 +172,7 @@ ALTER TABLE tab DROP STATISTICS IF EXISTS s; -- no-op
 ALTER TABLE tab CLEAR STATISTICS s; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab CLEAR STATISTICS IF EXISTS s; -- no-op
 
--- We don't check systematically that that statistics can only be created via ALTER ADD STATISTICS on columns of specific data types (the
+-- We don't check systematically that statistics can only be created via ALTER ADD STATISTICS on columns of specific data types (the
 -- internal type validation code is tested already above, (*)). Only do a rudimentary check for each statistics type with a data type that
 -- works and one that doesn't work.
 --   tdigest

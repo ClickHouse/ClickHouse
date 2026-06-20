@@ -1,4 +1,5 @@
 #include <Storages/StorageMergeTreeIndex.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -150,7 +151,7 @@ static NameSet getAllPossibleStreamNames(
 ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
     ColumnsDescription columns;
     for (const auto & column : StorageMergeTreeIndex::virtuals_sample_block)
@@ -220,15 +221,13 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeIndex>(
-    {
-        .documentation =
         {
             .description = "Represents the contents of index and marks files of MergeTree tables. It can be used for introspection",
             .examples = {{"mergeTreeIndex", "SELECT * FROM mergeTreeIndex(currentDatabase(), mt_table, with_marks = true, with_minmax = true)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        .allow_readonly = true,
-    });
+        {.allow_readonly = true}
+    );
 }
 
 }

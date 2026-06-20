@@ -14,7 +14,7 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
-#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/FileCache/FileSegment.h>
 
 #include <IO/ReadBufferFromFile.h>
 

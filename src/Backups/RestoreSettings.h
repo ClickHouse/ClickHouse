@@ -111,6 +111,13 @@ struct RestoreSettings
     /// If this flag is false then RESTORE will throw an exception in that case.
     bool skip_unresolved_access_dependencies = false;
 
+    /// If true, RESTORE will not fail when the backup contains users/roles with more permissions
+    /// than the restoring user is allowed to grant. Instead, the restored grants will be limited
+    /// to what the restoring user can grant (similar to GRANT CURRENT GRANTS).
+    /// This is useful for cloud environments where the restoring user may not have all the permissions
+    /// that were present in the original system.
+    bool restore_access_entities_with_current_grants = false;
+
     /// Try to update dependents of restored access entities.
     /// For example: if a backup contains a profile assigned to a user: `CREATE PROFILE p1; CREATE USER u1 SETTINGS PROFILE p1`
     /// and now we're restoring only profile `p1` and user `u1` already exists, then

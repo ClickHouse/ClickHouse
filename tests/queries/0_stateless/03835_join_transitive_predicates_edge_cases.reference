@@ -1,0 +1,125 @@
+-- Case 7: non-INPUT expression
+0	1	1
+1	2	2
+2	3	3
+3	4	4
+4	5	5
+0	1	1
+1	2	2
+2	3	3
+3	4	4
+4	5	5
+-- Case 9: WHERE filter after join
+6	6	6
+7	7	7
+8	8	8
+9	9	9
+6	6	6
+7	7	7
+8	8	8
+9	9	9
+-- Case 10: self-join
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+-- Case 11: subquery input
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+6	6	6
+7	7	7
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+6	6	6
+7	7	7
+-- Case 12: reordering disabled
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+-- Case 13a: mixed integer widths
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+-- Case 13a: plan
+          Clauses: [(__lhs_const) = (__rhs_const)]
+                Clauses: [(_CAST(__table1.x, \'UInt64\'_String)) = (__table2.x)]
+-- Case 13b: same-type Strings
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+-- Case 13b: plan
+        Clauses: [(__table1.x) = (__table2.x)]
+              Clauses: [(__table1.x) = (__table3.x)]
+-- Case 14a: Nullable same type
+1	1	1
+2	2	2
+5	5	5
+1	1	1
+2	2	2
+5	5	5
+-- Case 14a: plan
+        Clauses: [(__table1.x) = (__table2.x)]
+              Clauses: [(__table1.x) = (__table3.x)]
+-- Case 14b: Nullable vs non-Nullable
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+-- Case 14b: plan
+        Clauses: [(_CAST(__table2.x, \'Nullable(UInt32)\'_String)) = (__table3.x)]
+              Clauses: [(__table1.x) = (_CAST(__table2.x, \'Nullable(UInt32)\'_String))]
+-- Case 14c: LowCardinality same type
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+-- Case 14c: plan
+        Clauses: [(__table1.x) = (__table2.x)]
+              Clauses: [(__table1.x) = (__table3.x)]

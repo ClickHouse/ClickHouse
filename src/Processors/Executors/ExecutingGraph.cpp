@@ -117,17 +117,22 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(boost::container
 
     {
         std::lock_guard guard(processors_mutex);
-        /// Do not add new processors to existing list, since the query was already cancelled.
+
+        /// Even if the query was already cancelled, we must still add the new processors to the list
+        /// to keep them alive, because their ports are already connected to existing processors.
+        /// Destroying them here would leave dangling port references, causing use-after-free
+        /// (e.g. pure virtual call in `dumpPipeline`).
+        processors->insert(processors->end(), new_processors.begin(), new_processors.end());
+
+        // Do not consider sources added during pipeline expansion as cancelable to avoid tricky corner cases (e.g. ConvertingAggregatedToChunksWithMergingSource cancellation)
+        source_processors.resize(source_processors.size() + new_processors.size(), false);
+
         if (cancelled)
         {
             for (auto & processor : new_processors)
                 processor->cancel();
             return UpdateNodeStatus::Cancelled;
         }
-        processors->insert(processors->end(), new_processors.begin(), new_processors.end());
-
-        // Do not consider sources added during pipeline expansion as cancelable to avoid tricky corner cases (e.g. ConvertingAggregatedToChunksWithMergingSource cancellation)
-        source_processors.resize(source_processors.size() + new_processors.size(), false);
     }
 
     uint64_t num_processors = processors->size();

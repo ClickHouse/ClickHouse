@@ -36,6 +36,12 @@ struct LiteralTokenInfo
 /// are created and destroyed. The final AST contains only the surviving nodes, so we
 /// use insert_or_assign to ensure the last literal at each address has its token info
 /// recorded (which is the one that survives in the final AST).
-using LiteralTokenMap = absl::flat_hash_map<const ASTLiteral *, LiteralTokenInfo>;
+///
+/// This is a struct (not a type alias) so it can be forward-declared,
+/// avoiding the heavy `absl/container/flat_hash_map.h` include in `IParser.h`.
+struct LiteralTokenMap : absl::flat_hash_map<const ASTLiteral *, LiteralTokenInfo>
+{
+    using absl::flat_hash_map<const ASTLiteral *, LiteralTokenInfo>::flat_hash_map;
+};
 
 }

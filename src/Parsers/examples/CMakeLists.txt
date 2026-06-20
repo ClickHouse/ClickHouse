@@ -11,3 +11,8 @@ target_link_libraries(create_parser PRIVATE dbms)
 
 clickhouse_add_executable(parser_memory_profiler parser_memory_profiler.cpp ${SRCS} "../../Server/ServerType.cpp")
 target_link_libraries(parser_memory_profiler PRIVATE dbms)
+if (OS_LINUX)
+    # Build as non-PIE so jemalloc heap profile addresses are stable across processes,
+    # enabling cross-process batch symbolization with --symbolize-batch.
+    target_link_options(parser_memory_profiler PRIVATE -no-pie -Wl,-no-pie)
+endif()

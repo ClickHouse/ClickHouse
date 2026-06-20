@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# Pre-push hook: prevent pushing commits with default/generic author or committer identities.
+# Install: git config core.hooksPath .githooks
+
+blocked='ubuntu|root|ec2-user|centos|fedora|debian|admin|bitnami|azureuser|gce-user|runner|jenkins|nobody|user|test|default|guest'
+
+failed=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # Skip branch deletions
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        continue
+    fi
+
+    # For new branches, check commits not reachable from any remote branch
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        range="$local_sha --not --remotes"
+    else
+        range="$remote_sha..$local_sha"
+    fi
+
+    for sha in $(git log --format='%H' $range); do
+        author_name=$(git log -1 --format='%an' "$sha")
+        author_full=$(git log -1 --format='%an <%ae>' "$sha")
+        committer_name=$(git log -1 --format='%cn' "$sha")
+        committer_full=$(git log -1 --format='%cn <%ce>' "$sha")
+        for name_and_full in "$author_name|$author_full" "$committer_name|$committer_full"; do
+            name="${name_and_full%%|*}"
+            full="${name_and_full#*|}"
+            if echo "$name" | grep -qiw -E "$blocked"; then
+                echo "ERROR: Commit $sha has a default/generic identity: $full" >&2
+                failed=1
+            fi
+        done
+    done
+done
+
+if [ "$failed" -eq 1 ]; then
+    echo >&2
+    echo "Push blocked. Please fix your git identity with:" >&2
+    echo "  git config user.name \"Your Name\"" >&2
+    echo "  git config user.email \"your@email.com\"" >&2
+    echo "Then amend the affected commits." >&2
+    exit 1
+fi

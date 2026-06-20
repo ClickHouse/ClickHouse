@@ -121,6 +121,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
 
     engine->arguments = std::move(args);
+    engine->setNoEmptyArgs(true);
 
     /// Set new engine for the old query
     create_query->storage->set(create_query->storage->engine, engine->clone());
@@ -470,7 +471,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true});
 }
 
 }

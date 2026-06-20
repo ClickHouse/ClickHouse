@@ -29,35 +29,44 @@
 
                 <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
                 <enable_analyzer>
-                    <readonly/>
+                    <min>1</min>
                 </enable_analyzer>
 
                 <!-- Prevent stack overflow -->
                 <max_ast_depth>
                     <readonly/>
                 </max_ast_depth>
+
             </constraints>
 
             <!-- Allow all experimental features by default -->
+            <allow_create_index_without_type>1</allow_create_index_without_type>
             <allow_custom_error_code_in_throwif>1</allow_custom_error_code_in_throwif>
             <allow_ddl>1</allow_ddl>
             <allow_distributed_ddl>1</allow_distributed_ddl>
             <allow_drop_detached>1</allow_drop_detached>
+            <allow_dynamic_type_in_join_keys>1</allow_dynamic_type_in_join_keys>
+            <allow_experimental_alias_table_engine>1</allow_experimental_alias_table_engine>
             <allow_experimental_bfloat16_type>1</allow_experimental_bfloat16_type>
             <allow_experimental_codecs>1</allow_experimental_codecs>
             <allow_experimental_correlated_subqueries>1</allow_experimental_correlated_subqueries>
             <allow_experimental_database_glue_catalog>1</allow_experimental_database_glue_catalog>
-            <allow_experimental_database_iceberg>1</allow_experimental_database_iceberg>
             <allow_experimental_database_hms_catalog>1</allow_experimental_database_hms_catalog>
+            <allow_experimental_database_iceberg>1</allow_experimental_database_iceberg>
             <allow_experimental_database_materialized_postgresql>1</allow_experimental_database_materialized_postgresql>
+            <allow_experimental_database_paimon_rest_catalog>1</allow_experimental_database_paimon_rest_catalog>
             <allow_experimental_database_unity_catalog>1</allow_experimental_database_unity_catalog>
             <allow_experimental_delta_kernel_rs>1</allow_experimental_delta_kernel_rs>
+            <allow_experimental_delta_lake_writes>1</allow_experimental_delta_lake_writes>
             <allow_experimental_dynamic_type>1</allow_experimental_dynamic_type>
+            <allow_experimental_expire_snapshots>1</allow_experimental_expire_snapshots>
             <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>
             <allow_experimental_hash_functions>1</allow_experimental_hash_functions>
+            <allow_experimental_iceberg_compaction>1</allow_experimental_iceberg_compaction>
             <allow_experimental_inverted_index>1</allow_experimental_inverted_index>
             <allow_experimental_join_condition>1</allow_experimental_join_condition>
             <allow_experimental_join_right_table_sorting>1</allow_experimental_join_right_table_sorting>
+            <allow_experimental_json_lazy_type_hints>1</allow_experimental_json_lazy_type_hints>
             <allow_experimental_json_type>1</allow_experimental_json_type>
             <allow_experimental_kafka_offsets_storage_in_keeper>1</allow_experimental_kafka_offsets_storage_in_keeper>
             <allow_experimental_kusto_dialect>1</allow_experimental_kusto_dialect>
@@ -66,7 +75,10 @@
             <allow_experimental_materialized_postgresql_table>1</allow_experimental_materialized_postgresql_table>
             <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
             <allow_experimental_nullable_tuple_type>1</allow_experimental_nullable_tuple_type>
+            <allow_experimental_object_storage_queue_hive_partitioning>1</allow_experimental_object_storage_queue_hive_partitioning>
+            <allow_experimental_polyglot_dialect>1</allow_experimental_polyglot_dialect>
             <allow_experimental_prql_dialect>1</allow_experimental_prql_dialect>
+            <allow_experimental_query_deduplication>1</allow_experimental_query_deduplication>
             <allow_experimental_shared_set_join>1</allow_experimental_shared_set_join>
             <allow_experimental_statistics>1</allow_experimental_statistics>
             <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
@@ -75,6 +87,10 @@
             <allow_experimental_ts_to_grid_aggregate_function>1</allow_experimental_ts_to_grid_aggregate_function>
             <allow_experimental_variant_type>1</allow_experimental_variant_type>
             <allow_experimental_vector_similarity_index>1</allow_experimental_vector_similarity_index>
+            <allow_experimental_window_view>1</allow_experimental_window_view>
+            <allow_experimental_ytsaurus_dictionary_source>1</allow_experimental_ytsaurus_dictionary_source>
+            <allow_experimental_ytsaurus_table_engine>1</allow_experimental_ytsaurus_table_engine>
+            <allow_experimental_ytsaurus_table_function>1</allow_experimental_ytsaurus_table_function>
             <allow_introspection_functions>1</allow_introspection_functions>
             <allow_materialized_view_with_bad_select>1</allow_materialized_view_with_bad_select>
             <allow_named_collection_override_by_default>1</allow_named_collection_override_by_default>
@@ -95,10 +111,15 @@
             <allow_suspicious_types_in_order_by>1</allow_suspicious_types_in_order_by>
             <allow_suspicious_variant_types>1</allow_suspicious_variant_types>
             <enable_lightweight_delete>1</enable_lightweight_delete>
+            <enable_materialized_cte>1</enable_materialized_cte>
             <enable_order_by_all>1</enable_order_by_all>
             <enable_positional_arguments>1</enable_positional_arguments>
             <enable_time_time64_type>1</enable_time_time64_type>
             <input_format_parquet_allow_geoparquet_parser>1</input_format_parquet_allow_geoparquet_parser>
+            <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+            <allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>
+            <insert_allow_materialized_columns>1</insert_allow_materialized_columns>
+            <parallel_replicas_allow_materialized_views>1</parallel_replicas_allow_materialized_views>
         </default>
     </profiles>
 </clickhouse>

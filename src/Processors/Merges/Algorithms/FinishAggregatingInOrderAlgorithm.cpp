@@ -20,9 +20,18 @@ FinishAggregatingInOrderAlgorithm::State::State(const Chunk & chunk, const SortD
     if (!chunk)
         return;
 
-    sorting_columns.reserve(desc.size());
+    /// sorting_columns must be indexed by column_number (position in the header),
+    /// not by description iteration order, because less() uses elem.column_number
+    /// to index into this array. With the old code (emplace_back), sorting_columns
+    /// was indexed 0..desc.size()-1, but less() used column_number which is the
+    /// header position. When the sort description column order differed from the
+    /// header column order (e.g., GROUP BY a, b on a table ORDER BY b — header has
+    /// a at position 0 and b at position 1, but sort description is [b, a]),
+    /// the wrong columns were compared, corrupting merge group boundaries and
+    /// producing duplicate rows in the aggregation result.
+    sorting_columns.resize(all_columns.size(), nullptr);
     for (const auto & column_desc : desc)
-        sorting_columns.emplace_back(all_columns[column_desc.column_number].get());
+        sorting_columns[column_desc.column_number] = all_columns[column_desc.column_number].get();
 }
 
 FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(

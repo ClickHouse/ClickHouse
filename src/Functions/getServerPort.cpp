@@ -133,15 +133,15 @@ private:
 
 REGISTER_FUNCTION(GetServerPort)
 {
-    FunctionDocumentation::Description description_getServerPort = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the server's port number for a given protocol.
     )";
-    FunctionDocumentation::Syntax syntax_getServerPort = "getServerPort(port_name)";
-    FunctionDocumentation::Arguments arguments_getServerPort = {
+    FunctionDocumentation::Syntax syntax = "getServerPort(port_name)";
+    FunctionDocumentation::Arguments arguments = {
         {"port_name", "The name of the port.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_getServerPort = {"Returns the server port number.", {"UInt16"}};
-    FunctionDocumentation::Examples examples_getServerPort = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the server port number.", {"UInt16"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -154,11 +154,11 @@ SELECT getServerPort('tcp_port');
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_getServerPort = {21, 10};
-    FunctionDocumentation::Category category_getServerPort = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getServerPort = {description_getServerPort, syntax_getServerPort, arguments_getServerPort, {}, returned_value_getServerPort, examples_getServerPort, introduced_in_getServerPort, category_getServerPort};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 10};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<GetServerPortOverloadResolver>(documentation_getServerPort);
+    factory.registerFunction<GetServerPortOverloadResolver>(documentation);
 }
 
 }

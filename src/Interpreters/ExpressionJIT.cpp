@@ -91,7 +91,7 @@ public:
             columns[arguments.size()] = getColumnData(result_column.get());
 
             auto jit_compiled_function = compiled_function_holder->compiled_function.compiled_function;
-            jit_compiled_function(input_rows_count, columns.data());
+            callJITFunction(jit_compiled_function, input_rows_count, columns.data());
 
             #if defined(MEMORY_SANITIZER)
             /// Memory sanitizer doesn't know about stores from JIT-ed code.

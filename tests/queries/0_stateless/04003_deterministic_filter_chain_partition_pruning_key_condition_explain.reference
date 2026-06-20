@@ -1,0 +1,593 @@
+-- { echo }
+
+DROP TABLE IF EXISTS test_simple_key;
+CREATE TABLE test_simple_key (x Int32)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY x
+SETTINGS index_granularity = 1;
+INSERT INTO test_simple_key SELECT number FROM numbers(15);
+EXPLAIN indexes = 1
+SELECT x FROM test_simple_key WHERE x + 2 = 9 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_simple_key)
+        Indexes:
+          Partition Min-Max
+            Keys:
+              x
+            Condition: (plus(x, 2) in [9, 9])
+            Parts: 1/15
+            Granules: 1/15
+          Partition
+            Keys:
+              x
+            Condition: (plus(x, 2) in [9, 9])
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT x FROM test_simple_key WHERE x + 2 > 9 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_simple_key)
+        Indexes:
+          Partition Min-Max
+            Keys:
+              x
+            Condition: (plus(x, 2) in [10, +Inf))
+            Parts: 7/15
+            Granules: 7/15
+          Partition
+            Keys:
+              x
+            Condition: (plus(x, 2) in [10, +Inf))
+            Parts: 7/7
+            Granules: 7/7
+          Ranges: 7
+EXPLAIN indexes = 1
+SELECT x FROM test_simple_key WHERE x + 2 < 9 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_simple_key)
+        Indexes:
+          Partition Min-Max
+            Keys:
+              x
+            Condition: (plus(x, 2) in (-Inf, 8])
+            Parts: 7/15
+            Granules: 7/15
+          Partition
+            Keys:
+              x
+            Condition: (plus(x, 2) in (-Inf, 8])
+            Parts: 7/7
+            Granules: 7/7
+          Ranges: 7
+EXPLAIN indexes = 1
+SELECT x FROM test_simple_key WHERE x + 2 != 9 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_simple_key)
+        Indexes:
+          Partition Min-Max
+            Keys:
+              x
+            Condition: (plus(x, 2) not in [9, 9])
+            Parts: 14/15
+            Granules: 14/15
+          Partition
+            Keys:
+              x
+            Condition: (plus(x, 2) not in [9, 9])
+            Parts: 14/14
+            Granules: 14/14
+          Ranges: 14
+DROP TABLE IF EXISTS test_composite_key;
+CREATE TABLE test_composite_key (x Int32)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY x * x
+SETTINGS index_granularity = 1;
+INSERT INTO test_composite_key SELECT number FROM numbers(15);
+EXPLAIN indexes = 1
+SELECT x FROM test_composite_key WHERE x * x + 2 = 11 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_composite_key)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Partition
+            Keys:
+              multiply(x, x)
+            Condition: (plus(multiply(x, x), 2) in [11, 11])
+            Parts: 1/15
+            Granules: 1/15
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT x FROM test_composite_key WHERE x * x + 2 > 11 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_composite_key)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Partition
+            Keys:
+              multiply(x, x)
+            Condition: (plus(multiply(x, x), 2) in [12, +Inf))
+            Parts: 11/15
+            Granules: 11/15
+          Ranges: 11
+EXPLAIN indexes = 1
+SELECT x FROM test_composite_key WHERE x * x + 2 < 11 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_composite_key)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Partition
+            Keys:
+              multiply(x, x)
+            Condition: (plus(multiply(x, x), 2) in (-Inf, 10])
+            Parts: 3/15
+            Granules: 3/15
+          Ranges: 3
+EXPLAIN indexes = 1
+SELECT x FROM test_composite_key WHERE x * x + 2 != 11 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_composite_key)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Partition
+            Keys:
+              multiply(x, x)
+            Condition: (plus(multiply(x, x), 2) not in [11, 11])
+            Parts: 14/15
+            Granules: 14/15
+          Ranges: 14
+DROP TABLE IF EXISTS test_composite_key2;
+CREATE TABLE test_composite_key2 (x Int32)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(x >= 0, -x, x)
+SETTINGS index_granularity = 1;
+INSERT INTO test_composite_key2 SELECT -number FROM numbers(10);
+INSERT INTO test_composite_key2 SELECT number FROM numbers(10);
+EXPLAIN indexes = 1
+SELECT x FROM test_composite_key2 WHERE if(x >= 0, -x, x) + 2 = 1 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_composite_key2)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 20/20
+            Granules: 20/20
+          Partition
+            Keys:
+              if(greaterOrEquals(x, 0), negate(x), x)
+            Condition: (plus(if(greaterOrEquals(x, 0), negate(x), x), 2) in [1, 1])
+            Parts: 2/20
+            Granules: 2/20
+          Ranges: 2
+EXPLAIN indexes = 1
+SELECT x FROM test_composite_key2 WHERE if(x >= 0, -x, x) + 2 > 1 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_composite_key2)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 20/20
+            Granules: 20/20
+          Partition
+            Keys:
+              if(greaterOrEquals(x, 0), negate(x), x)
+            Condition: (plus(if(greaterOrEquals(x, 0), negate(x), x), 2) in [2, +Inf))
+            Parts: 2/20
+            Granules: 2/20
+          Ranges: 2
+EXPLAIN indexes = 1
+SELECT x FROM test_composite_key2 WHERE if(x >= 0, -x, x) + 2 < -1 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_composite_key2)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 20/20
+            Granules: 20/20
+          Partition
+            Keys:
+              if(greaterOrEquals(x, 0), negate(x), x)
+            Condition: (plus(if(greaterOrEquals(x, 0), negate(x), x), 2) in (-Inf, -2])
+            Parts: 12/20
+            Granules: 12/20
+          Ranges: 12
+EXPLAIN indexes = 1
+SELECT x FROM test_composite_key2 WHERE if(x >= 0, -x, x) + 2 != -1 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_composite_key2)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 20/20
+            Granules: 20/20
+          Partition
+            Keys:
+              if(greaterOrEquals(x, 0), negate(x), x)
+            Condition: (plus(if(greaterOrEquals(x, 0), negate(x), x), 2) not in [-1, -1])
+            Parts: 18/20
+            Granules: 18/20
+          Ranges: 18
+DROP TABLE IF EXISTS test_det_function;
+CREATE TABLE test_det_function (x Int32)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY x
+SETTINGS index_granularity = 1;
+INSERT INTO test_det_function SELECT number FROM numbers(15);
+EXPLAIN indexes = 1
+SELECT x FROM test_det_function WHERE cityHash64(x) % 5 = 3 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_det_function)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Partition
+            Keys:
+              x
+            Condition: (modulo(cityHash64(x), 5) in [3, 3])
+            Parts: 2/15
+            Granules: 2/15
+          Ranges: 2
+EXPLAIN indexes = 1
+SELECT x FROM test_det_function WHERE cityHash64(x) % 5 > 3 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_det_function)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Partition
+            Keys:
+              x
+            Condition: (modulo(cityHash64(x), 5) in [4, +Inf))
+            Parts: 4/15
+            Granules: 4/15
+          Ranges: 4
+EXPLAIN indexes = 1
+SELECT x FROM test_det_function WHERE cityHash64(x) % 5 < 3 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_det_function)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Partition
+            Keys:
+              x
+            Condition: (modulo(cityHash64(x), 5) in (-Inf, 2])
+            Parts: 9/15
+            Granules: 9/15
+          Ranges: 9
+EXPLAIN indexes = 1
+SELECT x FROM test_det_function WHERE cityHash64(x) % 5 != 3 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_det_function)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Partition
+            Keys:
+              x
+            Condition: (modulo(cityHash64(x), 5) not in [3, 3])
+            Parts: 13/15
+            Granules: 13/15
+          Ranges: 13
+EXPLAIN indexes = 1
+SELECT x FROM test_det_function WHERE cityHash64(x) % 5 != cityHash64(3) % 5 ORDER BY x;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_det_function)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Partition
+            Keys:
+              x
+            Condition: (modulo(cityHash64(x), 5) not in [4, 4])
+            Parts: 11/15
+            Granules: 11/15
+          Ranges: 11
+DROP TABLE IF EXISTS test_strings;
+CREATE TABLE test_strings (p String)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY p
+SETTINGS index_granularity = 1;
+INSERT INTO test_strings VALUES ('abc'), ('def'), ('ghi'), ('jkl'), ('mnop'), ('q');
+EXPLAIN indexes = 1
+SELECT p FROM test_strings WHERE reverse(p) = 'cba' ORDER BY p;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_strings)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 6/6
+            Granules: 6/6
+          Partition
+            Keys:
+              p
+            Condition: (reverse(p) in [\'cba\', \'cba\'])
+            Parts: 1/6
+            Granules: 1/6
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT p FROM test_strings WHERE hex(p) > '646566' ORDER BY p;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_strings)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 6/6
+            Granules: 6/6
+          Partition
+            Keys:
+              p
+            Condition: (hex(p) in (\'646566\', +Inf))
+            Parts: 4/6
+            Granules: 4/6
+          Ranges: 4
+EXPLAIN indexes = 1
+SELECT p FROM test_strings WHERE length(p) < 3 ORDER BY p;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_strings)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 6/6
+            Granules: 6/6
+          Partition
+            Keys:
+              p
+            Condition: (length(p) in (-Inf, 2])
+            Parts: 1/6
+            Granules: 1/6
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT p FROM test_strings WHERE length(p) != 3 ORDER BY p;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_strings)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 6/6
+            Granules: 6/6
+          Partition
+            Keys:
+              p
+            Condition: (length(p) not in [3, 3])
+            Parts: 2/6
+            Granules: 2/6
+          Ranges: 2
+EXPLAIN indexes = 1
+SELECT p FROM test_strings WHERE reverse(p) > 'lkj' ORDER BY p;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_strings)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 6/6
+            Granules: 6/6
+          Partition
+            Keys:
+              p
+            Condition: (reverse(p) in (\'lkj\', +Inf))
+            Parts: 2/6
+            Granules: 2/6
+          Ranges: 2
+-- We only support deterministic function chain for now.
+-- Even though it is mathematically correct for any arbitrary dag as well.
+EXPLAIN indexes = 1
+SELECT p FROM test_strings WHERE (left(p, length(p) - length(substringIndex(p, '-', -1)) - 1)) = 'abc';
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_strings)
+    Indexes:
+      Partition Min-Max
+        Condition: true
+        Parts: 6/6
+        Granules: 6/6
+      Partition
+        Condition: true
+        Parts: 6/6
+        Granules: 6/6
+      Ranges: 6
+DROP TABLE IF EXISTS test_monotonic_datetime;
+CREATE TABLE test_monotonic_datetime (d Date, y String)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY d
+SETTINGS index_granularity = 1;
+INSERT INTO test_monotonic_datetime VALUES ('2026-01-01', 'a'), ('2026-01-02', 'b'), ('2026-01-03', 'c');
+SET date_time_overflow_behavior = 'ignore';
+SET session_timezone = 'UTC';
+EXPLAIN indexes = 1
+SELECT d FROM test_monotonic_datetime WHERE toDateTime(d) = toDateTime('2026-01-02');
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_monotonic_datetime)
+    Indexes:
+      Partition Min-Max
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Partition
+        Keys:
+          d
+        Condition: (toDateTime(d) in [1767312000, 1767312000])
+        Parts: 1/3
+        Granules: 1/3
+      Ranges: 1
+DROP TABLE IF EXISTS test_partition_key_to_year_month;
+CREATE TABLE test_partition_key_to_year_month (d Date)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(d)
+SETTINGS index_granularity = 1;
+INSERT INTO test_partition_key_to_year_month VALUES
+    ('2024-01-15'),
+    ('2024-02-15'),
+    ('2024-03-15'),
+    ('2024-04-15');
+EXPLAIN indexes = 1
+SELECT d
+FROM test_partition_key_to_year_month
+WHERE addMonths(toDate(concat(toString(toYYYYMM(d)), '01')), 1) > toDate('2024-03-01')
+ORDER BY d;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_partition_key_to_year_month)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Keys:
+              toYYYYMM(d)
+            Condition: (addMonths(toDate(concat(toString(toYYYYMM(d)), \'01\')), 1) in [19784, +Inf))
+            Parts: 2/4
+            Granules: 2/4
+          Ranges: 2
+EXPLAIN indexes = 1
+SELECT d
+FROM test_partition_key_to_year_month
+WHERE addMonths(toDate(concat(toString(toYYYYMM(d)), '01')), 1) < toDate('2024-04-01')
+ORDER BY d;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_partition_key_to_year_month)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Keys:
+              toYYYYMM(d)
+            Condition: (addMonths(toDate(concat(toString(toYYYYMM(d)), \'01\')), 1) in (-Inf, 19813])
+            Parts: 2/4
+            Granules: 2/4
+          Ranges: 2
+EXPLAIN indexes = 1
+SELECT d
+FROM test_partition_key_to_year_month
+WHERE addMonths(toDate(concat(toString(toYYYYMM(d)), '01')), 1) != toDate('2024-03-01')
+ORDER BY d;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_partition_key_to_year_month)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Keys:
+              toYYYYMM(d)
+            Condition: (addMonths(toDate(concat(toString(toYYYYMM(d)), \'01\')), 1) not in [19783, 19783])
+            Parts: 3/4
+            Granules: 3/4
+          Ranges: 3
+DROP TABLE IF EXISTS test_nondeterministic_function;
+CREATE TABLE test_nondeterministic_function (x Int32)
+ENGINE = MergeTree ORDER BY tuple() PARTITION BY x
+SETTINGS index_granularity = 1;
+INSERT INTO test_nondeterministic_function SELECT number FROM numbers(15);
+-- No atom created for partition pruning
+EXPLAIN indexes = 1
+SELECT count() FROM test_nondeterministic_function WHERE x + rand() = 9;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_nondeterministic_function)
+        Indexes:
+          Partition Min-Max
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Partition
+            Condition: true
+            Parts: 15/15
+            Granules: 15/15
+          Ranges: 15

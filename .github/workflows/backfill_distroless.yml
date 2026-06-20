@@ -1,0 +1,101 @@
+name: BackfillDistroless
+
+"on":
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: 'Space-separated list of versions to build (e.g. "25.3.3.42 25.8.2.100 25.10.1.7525")'
+        required: true
+        type: string
+      dry-run:
+        description: 'Build but do not push to Docker Hub'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: backfill-distroless
+
+env:
+  PYTHONUNBUFFERED: 1
+
+jobs:
+  BackfillDistroless:
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Debug Info
+        uses: ./.github/actions/debug
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Docker Hub
+        if: ${{ inputs.dry-run != true }}
+        uses: docker/login-action@v3
+        with:
+          username: robotclickhouse
+          password: ${{ secrets.DOCKERHUB_ROBOT_PASSWORD }}
+      - name: Build and push distroless images
+        shell: bash
+        env:
+          INPUT_VERSIONS: ${{ inputs.versions }}
+          INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -e
+
+          PUSH_FLAG=""
+          OUTPUT_FLAG="--output=type=docker"
+          if [ "$INPUT_DRY_RUN" != "true" ]; then
+            PUSH_FLAG="--push"
+            OUTPUT_FLAG="--output=type=registry"
+          fi
+
+          GITHUB_RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SHA=$(git rev-parse HEAD)
+
+          for VERSION in $INPUT_VERSIONS; do
+            echo "============================================"
+            echo "Building distroless images for ${VERSION}"
+            echo "============================================"
+
+            # Validate version format
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: Invalid version format: ${VERSION}"
+              exit 1
+            fi
+
+            VERSION_MINOR=${VERSION%.*}
+            VERSION_MAJOR=${VERSION_MINOR%.*}
+
+            for image_config in \
+              "clickhouse/clickhouse-server:docker/server/Dockerfile.distroless:docker/server" \
+              "clickhouse/clickhouse-keeper:docker/keeper/Dockerfile.distroless:docker/keeper"
+            do
+              IMAGE_NAME=${image_config%%:*}
+              rest=${image_config#*:}
+              DOCKERFILE=${rest%%:*}
+              CONTEXT=${rest#*:}
+
+              echo "--- ${IMAGE_NAME}:${VERSION}-distroless ---"
+
+              docker buildx build \
+                --platform=linux/amd64,linux/arm64 \
+                --provenance=true \
+                --sbom=true \
+                ${PUSH_FLAG:-$OUTPUT_FLAG} \
+                --label="build-url=${GITHUB_RUN_URL}" \
+                --label="com.clickhouse.build.githash=${SHA}" \
+                --label="com.clickhouse.build.version=${VERSION}-distroless" \
+                --tag="${IMAGE_NAME}:${VERSION}-distroless" \
+                --build-arg=VERSION="${VERSION}" \
+                --progress=plain \
+                --file="${DOCKERFILE}" \
+                "${CONTEXT}"
+
+              echo "Done: ${IMAGE_NAME}:${VERSION}-distroless"
+            done
+          done
+
+          echo "All versions built successfully."

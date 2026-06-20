@@ -81,6 +81,7 @@ private:
 
     UInt64 jemalloc_flush_profile_interval_bytes = 0;
     bool jemalloc_flush_profile_on_memory_exceeded = false;
+    UInt64 jemalloc_flush_profile_on_memory_exceeded_interval_s = 0;
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
@@ -202,6 +203,11 @@ public:
         jemalloc_flush_profile_on_memory_exceeded = flush;
     }
 
+    void setJemallocFlushProfileOnMemoryExceededSeconds(UInt64 interval_s)
+    {
+        jemalloc_flush_profile_on_memory_exceeded_interval_s = interval_s;
+    }
+
     void setSampleMaxAllocationSize(UInt64 value)
     {
         max_allocation_size_bytes = value;
@@ -284,5 +290,6 @@ public:
 
 extern MemoryTracker total_memory_tracker;
 extern MemoryTracker background_memory_tracker;
+bool isTotalMemoryTrackerInitialized();
 
 bool canEnqueueBackgroundTask();

@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
@@ -8,6 +8,9 @@ insert into t select number from numbers_mt(10000000) settings max_insert_thread
 
 set allow_prefetched_read_pool_for_remote_filesystem = 0;
 set allow_prefetched_read_pool_for_local_filesystem = 0;
+-- Pin to prevent two-level merge from changing pipeline structure when parts > threshold
+-- (randomized 0-100, INSERT with max_insert_threads=8 creates ~8 parts)
+set read_in_order_two_level_merge_threshold = 100;
 
 -- { echo }
 

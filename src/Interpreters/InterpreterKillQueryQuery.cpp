@@ -452,6 +452,9 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (!tmp_block.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block from input stream");
 
+    /// Materialize const columns, because callers use typeid_cast to concrete column types.
+    materializeBlockInplace(res);
+
     return res;
 }
 

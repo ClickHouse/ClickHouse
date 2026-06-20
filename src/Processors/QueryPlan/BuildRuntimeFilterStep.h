@@ -29,6 +29,7 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     const String & getFilterColumnName() const { return filter_column_name; }
+    const String & getFilterName() const { return filter_name; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 

@@ -16,6 +16,7 @@
 
 #include <array>
 #include <condition_variable>
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
@@ -185,6 +186,12 @@ public:
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
 
+    /// Check that all dependent views of a streaming source table are ready.
+    /// Returns the list of ready views, or empty if not all are ready yet.
+    /// During server startup, returns empty to prevent streaming engines from
+    /// processing data before all MV dependencies are registered.
+    std::vector<StorageID> getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const;
+
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
     /// removeUUIDMapping(...) must be called when it detached,
     /// and removeUUIDMappingFinally(...) must be called when table is dropped and its data removed from disk.
@@ -214,7 +221,7 @@ public:
         StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
     void undropTable(StorageID table_id);
 
-    void waitTableFinallyDropped(const UUID & uuid);
+    void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
 
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".

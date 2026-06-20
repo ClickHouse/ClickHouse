@@ -69,6 +69,9 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String service_account;
     String metadata_service;
     String request_token_path;
+    String google_adc_client_id;
+    String google_adc_client_secret;
+    String google_adc_refresh_token;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -247,11 +250,15 @@ private:
     const String service_account;
     const String metadata_service;
     const String request_token_path;
+    const String google_adc_client_id;
+    const String google_adc_client_secret;
+    const String google_adc_refresh_token;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
+    BearerToken requestBearerTokenFromADC() const;
 };
 
 }

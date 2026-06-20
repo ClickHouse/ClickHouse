@@ -5,13 +5,13 @@ if(NOT USE_MONGODB)
 endif()
 
 set(libbson_VERSION_MAJOR 2)
-set(libbson_VERSION_MINOR 1)
+set(libbson_VERSION_MINOR 2)
 set(libbson_VERSION_PATCH 2)
-set(libbson_VERSION 2.1.2)
+set(libbson_VERSION 2.2.2)
 set(libmongoc_VERSION_MAJOR 2)
-set(libmongoc_VERSION_MINOR 1)
+set(libmongoc_VERSION_MINOR 2)
 set(libmongoc_VERSION_PATCH 2)
-set(libmongoc_VERSION 2.1.2)
+set(libmongoc_VERSION 2.2.2)
 
 set(LIBBSON_SOURCES_ROOT "${ClickHouse_SOURCE_DIR}/contrib/mongo-c-driver/src")
 set(LIBBSON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/libbson/src")
@@ -136,6 +136,8 @@ set(UTF8PROC_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/utf8proc-2.8.0")
 set(UTF8PROC_SOURCES "${UTF8PROC_SOURCE_DIR}/utf8proc.c")
 set(UTHASH_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/uthash")
 
+set(MONGOC_CXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
+set(MONGOC_CXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
 configure_file(
         ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config.h.in
         ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-config.h
@@ -143,6 +145,10 @@ configure_file(
 configure_file(
         ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-version.h.in
         ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-version.h
+)
+configure_file(
+        ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config-private.h.in
+        ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-config-private.h
 )
 add_library(_libmongoc ${LIBMONGOC_SOURCES} ${COMMON_SOURCES} ${UTF8PROC_SOURCES})
 add_library(ch_contrib::libmongoc ALIAS _libmongoc)

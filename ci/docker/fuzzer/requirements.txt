@@ -1,3 +1,4 @@
+legacy-cgi==2.6.4
 blinker==1.4
 cryptography==44.0.1
 dbus-python==1.2.18

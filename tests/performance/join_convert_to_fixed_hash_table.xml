@@ -1,0 +1,64 @@
+<test>
+    <create_query>CREATE TABLE build_5k (id0 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE build_10k (id1 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE build_50k (id2 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE probe (id0 Int64, id1 Int64, id2 Int64, id3 Int64, id4 Int64, id5 Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO build_5k SELECT number FROM numbers(5000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO build_10k SELECT number FROM numbers(10000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO build_50k SELECT number FROM numbers(50000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO probe SELECT randUniform(4500, 9500), randUniform(9000, 19000), randUniform(45000, 95000), randUniform(500, 5500), randUniform(1000, 11000), randUniform(5000, 55000) FROM numbers(200000000)</fill_query>
+
+    <!-- LEFT JOIN with low selectivity -->
+    <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <query>SELECT p.id1, b.id1 FROM probe p LEFT JOIN build_10k b ON p.id1 = b.id1 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id1, b.id1 FROM probe p LEFT JOIN build_10k b ON p.id1 = b.id1 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <query>SELECT p.id2, b.id2 FROM probe p LEFT JOIN build_50k b ON p.id2 = b.id2 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id2, b.id2 FROM probe p LEFT JOIN build_50k b ON p.id2 = b.id2 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <!-- INNER JOIN with low selectivity -->
+    <query>SELECT p.id0, b.id0 FROM probe p INNER JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id0, b.id0 FROM probe p INNER JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <query>SELECT p.id1, b.id1 FROM probe p INNER JOIN build_10k b ON p.id1 = b.id1 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id1, b.id1 FROM probe p INNER JOIN build_10k b ON p.id1 = b.id1 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <query>SELECT p.id2, b.id2 FROM probe p INNER JOIN build_50k b ON p.id2 = b.id2 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id2, b.id2 FROM probe p INNER JOIN build_50k b ON p.id2 = b.id2 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <!-- LEFT JOIN with high selectivity -->
+    <query>SELECT p.id3, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id3 = b.id0 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id3, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id3 = b.id0 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <query>SELECT p.id4, b.id1 FROM probe p LEFT JOIN build_10k b ON p.id4 = b.id1 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id4, b.id1 FROM probe p LEFT JOIN build_10k b ON p.id4 = b.id1 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <query>SELECT p.id5, b.id2 FROM probe p LEFT JOIN build_50k b ON p.id5 = b.id2 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id5, b.id2 FROM probe p LEFT JOIN build_50k b ON p.id5 = b.id2 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <!-- INNER JOIN with high selectivity -->
+    <query>SELECT p.id3, b.id0 FROM probe p INNER JOIN build_5k b ON p.id3 = b.id0 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id3, b.id0 FROM probe p INNER JOIN build_5k b ON p.id3 = b.id0 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <query>SELECT p.id4, b.id1 FROM probe p INNER JOIN build_10k b ON p.id4 = b.id1 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id4, b.id1 FROM probe p INNER JOIN build_10k b ON p.id4 = b.id1 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <query>SELECT p.id5, b.id2 FROM probe p INNER JOIN build_50k b ON p.id5 = b.id2 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id5, b.id2 FROM probe p INNER JOIN build_50k b ON p.id5 = b.id2 FORMAT Null SETTINGS join_algorithm = 'hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <!-- Automatic join algorithm -->
+    <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'auto', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'auto', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <!-- Grace hash join algorithm -->
+    <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'grace_hash', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'grace_hash', enable_join_fixed_hash_table_conversion = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS build_5k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS build_10k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS build_50k</drop_query>
+    <drop_query>DROP TABLE IF EXISTS probe</drop_query>
+</test>

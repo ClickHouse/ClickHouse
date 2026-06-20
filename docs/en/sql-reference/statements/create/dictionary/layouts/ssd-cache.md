@@ -14,7 +14,7 @@ import TabItem from '@theme/TabItem';
 
 Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
 
-The dictionary key has the [UInt64](../../../data-types/int-uint.md) type.
+The dictionary key has the [UInt64](/sql-reference/data-types/int-uint.md) type.
 
 <Tabs>
 <TabItem value="ddl" label="DDL" default>
@@ -50,4 +50,4 @@ LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
 
 ## complex_key_ssd_cache {#complex_key_ssd_cache}
 
-This type of storage is for use with composite [keys](../keys-and-fields.md#dictionary-key-and-fields). Similar to `ssd_cache`.
+This type of storage is for use with composite [keys](../attributes.md#composite-key). Similar to `ssd_cache`.

@@ -10,6 +10,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -203,7 +204,12 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 
 void IDisk::startup(bool skip_access_check)
 {
+    auto component_guard = Coordination::setCurrentComponent("IDisk::startup");
+
+    startupImpl();
+
     if (!skip_access_check)
+    try
     {
         if (isReadOnly())
         {
@@ -214,7 +220,12 @@ void IDisk::startup(bool skip_access_check)
         else
             checkAccess();
     }
-    startupImpl();
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        shutdown();
+        throw;
+    }
 }
 
 void IDisk::checkAccess()
@@ -239,17 +250,8 @@ try
     /// write
     {
         auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
-        try
-        {
-            file->write(payload.data(), payload.size());
-            file->finalize();
-        }
-        catch (...)
-        {
-            /// Log current exception, because finalize() can throw a different exception.
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            throw;
-        }
+        file->write(payload.data(), payload.size());
+        file->finalize();
     }
 
     /// read

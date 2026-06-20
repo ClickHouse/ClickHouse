@@ -2,7 +2,6 @@
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -161,6 +160,16 @@ public:
     virtual void merge(
         AggregateDataPtr __restrict /*place*/,
         ConstAggregateDataPtr /*rhs*/,
+        ThreadPool & /*thread_pool*/,
+        std::atomic<bool> & /*is_cancelled*/,
+        Arena * /*arena*/) const;
+
+    /// Batch merge multiple states into the first one in parallel.
+    /// Should be used only if isAbleToParallelizeMerge() returned true.
+    /// Default implementation falls back to pairwise merge with thread pool.
+    /// Override for optimized implementations (e.g. bucket-wise merge).
+    virtual void parallelizeMergeMulti(
+        AggregateDataPtrs & /*places*/,
         ThreadPool & /*thread_pool*/,
         std::atomic<bool> & /*is_cancelled*/,
         Arena * /*arena*/) const;

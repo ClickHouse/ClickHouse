@@ -1,6 +1,11 @@
 -- Tags: no-random-merge-tree-settings
 
 SET send_logs_level = 'fatal';
+-- The PartsSplitter injection (merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability)
+-- causes one extra row to be read on S3 storage when combined with disabled prewhere and query condition cache,
+-- exceeding the tight max_rows_to_read limits in this test. Pin to 0 since this test is about adaptive index
+-- granularity, not the PartsSplitter.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SELECT '----00489----';
 DROP TABLE IF EXISTS pk;
 

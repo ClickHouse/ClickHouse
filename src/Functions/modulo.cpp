@@ -125,7 +125,18 @@ struct ModuloByConstantImpl
             // gcc libdivide doesn't work well for pow2 division
             auto mask = b - 1;
             for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<ResultType>(src[i] & mask);
+            {
+                A a = src[i];
+                ResultType r = static_cast<ResultType>(a & mask);
+                if constexpr (std::is_signed_v<A> && std::is_signed_v<ResultType>)
+                {
+                    /// Sign-extend the result to match the behavior of %, to make the const and non-const
+                    /// versions of the modulo function behave the same way.
+                    ResultType sign_ext = static_cast<ResultType>(-static_cast<ResultType>((a < 0) & (r != 0)));
+                    r |= sign_ext & ~static_cast<ResultType>(mask);
+                }
+                dst[i] = r;
+            }
         }
     }
 
@@ -200,8 +211,8 @@ REGISTER_FUNCTION(Modulo)
     FunctionDocumentation::Example example1 = {"Usage example", "SELECT modulo(5, 2)", "1"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionModulo>(documentation);
     factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
 }
@@ -251,8 +262,8 @@ Returns the difference between `x` and the nearest integer not greater than
     )"};
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT positiveModulo(-1, 10)", "9"}};
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionPositiveModulo>(documentation,
         FunctionFactory::Case::Insensitive);

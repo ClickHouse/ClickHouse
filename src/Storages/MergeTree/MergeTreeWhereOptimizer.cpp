@@ -63,7 +63,7 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
 static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
     GetColumnsOptions options(GetColumnsOptions::All);
-    options.withVirtuals();
+    options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     options.withSubcolumns();
 
     auto columns_list = storage_snapshot->getColumns(options);
@@ -76,7 +76,7 @@ static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, cons
     /// Add also requested subcolumns to known table columns.
     for (const auto & column : queried_columns)
     {
-        if (storage_columns.hasSubcolumn(column))
+        if (storage_columns.hasSubcolumn(options.kind, column))
             table_columns.insert(column);
     }
 
@@ -459,7 +459,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
             /// Keep the original order of conditions in prewhere_conditions.
             position = condition_positions[&(*cond_it)];
             auto prewhere_it = prewhere_conditions.begin();
-            while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
+            while (prewhere_it != prewhere_conditions.end() && condition_positions[&(*prewhere_it)] < position)
                 ++prewhere_it;
             prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
         }

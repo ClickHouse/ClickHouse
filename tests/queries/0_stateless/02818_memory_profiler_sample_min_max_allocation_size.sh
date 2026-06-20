@@ -11,7 +11,7 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --memory_profiler_sample_min_allocat
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS trace_log"
 
 # at least something allocated
-${CLICKHOUSE_CLIENT} --query "SELECT countDistinct(abs(size)) > 0 FROM system.trace_log where query_id='$query_id' and trace_type = 'MemorySample'"
+${CLICKHOUSE_CLIENT} --query "SELECT countDistinct(abs(size)) > 0 FROM system.trace_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id' and trace_type = 'MemorySample'"
 
 # show wrong allocations
-${CLICKHOUSE_CLIENT} --query "SELECT abs(size) FROM system.trace_log where query_id='$query_id' and trace_type = 'MemorySample' and (abs(size) > 16384 or abs(size) < 4096)"
+${CLICKHOUSE_CLIENT} --query "SELECT abs(size) FROM system.trace_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id' and trace_type = 'MemorySample' and (abs(size) > 16384 or abs(size) < 4096)"

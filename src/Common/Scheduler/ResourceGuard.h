@@ -7,7 +7,6 @@
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/Scheduler/ResourceLink.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
@@ -34,11 +33,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int RESOURCE_ACCESS_DENIED;
-}
 
 /*
  * Scoped resource guard.
@@ -126,15 +120,7 @@ public:
             dequeued_cv.notify_one();
         }
 
-        void wait()
-        {
-            CurrentMetrics::Increment scheduled(metrics->scheduled_count);
-            auto timer = CurrentThread::getProfileEvents().timer(metrics->wait_microseconds);
-            std::unique_lock lock(mutex);
-            dequeued_cv.wait(lock, [this] { return state == Dequeued; });
-            if (exception)
-                throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
-        }
+        void wait();
 
         void finish(ResourceCost real_cost_, ResourceLink link_)
         {

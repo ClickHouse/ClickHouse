@@ -610,6 +610,9 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
 
     const char * const original_dst = dst;
     UInt8 bytes_to_skip = uncompressed_size % sizeof(T);
+    if (bytes_to_skip > bytes_size)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data: compressed size ({}) is smaller"
+                        " than the trailing unaligned bytes ({})", bytes_size, static_cast<UInt32>(bytes_to_skip));
     memcpy(dst, src, bytes_to_skip);
 
     uncompressed_size -= bytes_to_skip;
@@ -631,6 +634,9 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
 
     /// Read header
     {
+        if (bytes_size < header_size)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data: compressed size ({}) is too small"
+                            " to contain the min/max header ({} bytes)", bytes_size, header_size);
         memcpy(&min, src, sizeof(MinMaxType));
         memcpy(&max, src + 8, sizeof(MinMaxType));
         src += header_size;

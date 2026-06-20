@@ -236,6 +236,19 @@ bool RPNBuilderTreeNode::isConstant() const
     return node_without_alias->column && isColumnConst(*node_without_alias->column);
 }
 
+bool RPNBuilderTreeNode::isNullable() const
+{
+    if (ast_node)
+    {
+        Field value;
+        DataTypePtr type;
+        return tryGetConstant(value, type) && type && type->isNullable();
+    }
+
+    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    return node_without_alias->result_type && node_without_alias->result_type->isNullable();
+}
+
 bool RPNBuilderTreeNode::isSubqueryOrSet() const
 {
     if (ast_node)
@@ -456,7 +469,7 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
 RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
 {
     const size_t total_arguments = getArgumentsSize();
-    if (index >= total_arguments) /// Bug #52632
+    if (index >= total_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "RPNBuilderFunctionTreeNode has {} arguments, attempted to get argument at index {}",
                 total_arguments, index);

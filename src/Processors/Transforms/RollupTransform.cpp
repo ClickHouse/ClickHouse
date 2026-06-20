@@ -53,14 +53,13 @@ Chunk GroupByModifierTransform::merge(Chunks && chunks, bool is_input, bool fina
 {
     auto header = is_input ? getInputPort().getHeader() : intermediate_header;
 
-    BlocksList blocks;
+    Aggregator::AggregatedChunks agg_chunks;
     for (auto & chunk : chunks)
-        blocks.emplace_back(header.cloneWithColumns(chunk.detachColumns()));
+        agg_chunks.emplace_back(std::move(chunk));
 
     auto & aggregator = is_input ? params->aggregator : *output_aggregator;
-    auto current_block = aggregator.mergeBlocks(blocks, final, is_cancelled);
-    auto num_rows = current_block.rows();
-    return Chunk(current_block.getColumns(), num_rows);
+    auto result = aggregator.mergeBlocks(agg_chunks, final, is_cancelled);
+    return std::move(result.chunk);
 }
 
 MutableColumnPtr GroupByModifierTransform::getColumnWithDefaults(size_t key, size_t n) const

@@ -1,4 +1,6 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
+#include <base/TypeName.h>
 
 #include <Columns/ColumnVector.h>
 #include <IO/ReadHelpers.h>
@@ -128,6 +130,23 @@ bool SerializationDecimal<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     return true;
 }
 
+
+template <typename T>
+UInt128 SerializationDecimal<T>::getHash(UInt32 precision_, UInt32 scale_)
+{
+    SipHash hash;
+    hash.update("Decimal");
+    hash.update(TypeName<T>);
+    hash.update(precision_);
+    hash.update(scale_);
+    return hash.get128();
+}
+
+template <typename T>
+SerializationPtr SerializationDecimal<T>::create(UInt32 precision_, UInt32 scale_)
+{
+    return ISerialization::pooled(getHash(precision_, scale_), [=] { return new SerializationDecimal(precision_, scale_); });
+}
 
 template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;

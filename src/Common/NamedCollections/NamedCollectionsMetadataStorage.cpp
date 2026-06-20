@@ -17,6 +17,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
@@ -219,6 +220,7 @@ public:
         : WithContext(context_)
         , root_path(path_)
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::ZooKeeperStorage");
         if (root_path.empty())
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Collections path cannot be empty");
 
@@ -242,6 +244,7 @@ public:
     /// Return true if children changed.
     bool waitUpdate(size_t timeout) override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::waitUpdate");
         if (!wait_event)
         {
             /// We did not yet made any list() attempt, so do that.
@@ -270,6 +273,7 @@ public:
 
     std::vector<std::string> list() const override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::list");
         if (!wait_event)
             wait_event = std::make_shared<Poco::Event>();
 
@@ -281,11 +285,13 @@ public:
 
     bool exists(const std::string & file_name) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::exists");
         return getClient()->exists(getPath(file_name));
     }
 
     std::string read(const std::string & file_name) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::read");
         auto data = getClient()->get(getPath(file_name));
         return readHook(data);
     }
@@ -297,6 +303,7 @@ public:
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::write");
         auto write_data = writeHook(data);
         if (replace)
         {
@@ -323,11 +330,13 @@ public:
 
     void remove(const std::string & file_name) override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::remove");
         getClient()->remove(getPath(file_name));
     }
 
     bool removeIfExists(const std::string & file_name) override
     {
+        auto component_guard = Coordination::setCurrentComponent("NamedCollectionsMetadataStorage::removeIfExists");
         auto code = getClient()->tryRemove(getPath(file_name));
         if (code == Coordination::Error::ZOK)
             return true;

@@ -2,6 +2,7 @@
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -47,7 +48,7 @@ void NegativeLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const
 
 void NegativeLimitStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Negative Limit " << limit << '\n';
     settings.out << prefix << "Negative Offset " << offset << '\n';
 }

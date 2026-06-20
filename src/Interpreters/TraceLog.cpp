@@ -82,7 +82,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"event_time", std::make_shared<DataTypeDateTime>(), "Timestamp of the sampling moment."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Timestamp of the sampling moment with microseconds precision."},
         {"timestamp_ns", std::make_shared<DataTypeUInt64>(), "Timestamp of the sampling moment in nanoseconds."},
-        {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse server build revision."},
+        {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse server build revision. When connecting to the server by `clickhouse-client`, you see a string similar to `Connected to ClickHouse server version 19.18.1.`. This field contains the `revision`, but not the `version` of a server."},
         {"trace_type", std::make_shared<TraceDataType>(trace_values), "Trace type: "
             "`Real` represents collecting stack traces by wall-clock time. "
             "`CPU` represents collecting stack traces by CPU time. "
@@ -105,7 +105,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"memory_blocked_context", std::make_shared<ContextDataType>(context_values), fmt::format("Context for which memory tracker is blocked (for ClickHouse developers only): {}", context_description)},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "For trace type ProfileEvent is the name of updated profile event, for other trace types is an empty string."},
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},
-        {"symbols", symbolized_type, "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`."},
+        {"symbols", symbolized_type, "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`. Symbolization can be enabled or disabled in the `symbolize` setting under `trace_log` in the server configuration file."},
         {"lines", symbolized_type, "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`."},
         {"function_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "For trace type Instrumentation, ID assigned to the function in xray_instr_map section of elf-binary."},
         {"function_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, name of the instrumented function."},

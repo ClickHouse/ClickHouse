@@ -92,7 +92,7 @@ protected:
             deserializeText(column, istr, settings, whole);
             return true;
         }
-        catch (...)
+        catch (...) // Ok: tryDeserializeText is a try-pattern
         {
             return false;
         }

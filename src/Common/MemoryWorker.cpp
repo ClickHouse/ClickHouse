@@ -39,15 +39,13 @@ namespace ErrorCodes
 namespace
 {
 
-using Metrics = std::map<std::string, uint64_t>;
-
 /// Format is
 ///   kernel 5
 ///   rss 15
 ///   [...]
-Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
+std::map<std::string, uint64_t> readAllMetricsFromStatFile(ReadBufferFromFile & buf)
 {
-    Metrics metrics;
+    std::map<std::string, uint64_t> metrics;
     while (!buf.eof())
     {
         std::string current_key;
@@ -65,10 +63,21 @@ Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
     return metrics;
 }
 
-uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list<std::string_view> keys, std::initializer_list<std::string_view> optional_keys, bool * warnings_printed)
+using Metrics = std::map<std::string_view, uint64_t>;
+
+void readMetricsFromStatFile(
+    ReadBufferFromFile & buf,
+    Metrics & metrics,
+    std::initializer_list<std::string_view> keys,
+    bool * warnings_printed)
 {
-    uint64_t sum = 0;
-    uint64_t found_mask = 0;
+    /// Zero out existing values; keeps map nodes allocated for reuse.
+    for (auto & [_, v] : metrics)
+        v = 0;
+
+    /// Track which keys were actually seen in this pass.
+    uint64_t seen_mask = 0;
+
     bool print_warnings = !*warnings_printed;
     while (!buf.eof())
     {
@@ -80,36 +89,42 @@ uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list
         {
             std::string dummy;
             readStringUntilNewlineInto(dummy, buf);
-            buf.tryIgnore(1); /// skip EOL (if not EOF)
+            buf.tryIgnore(1);
             continue;
         }
-
-        if (print_warnings && (found_mask & (1l << (it - keys.begin()))))
-        {
-            *warnings_printed = true;
-            LOG_ERROR(getLogger("CgroupsReader"), "Duplicate key '{}' in '{}'", current_key, buf.getFileName());
-        }
-        found_mask |= 1ll << (it - keys.begin());
 
         assertChar(' ', buf);
         uint64_t value = 0;
         readIntText(value, buf);
-        sum += value;
-        buf.tryIgnore(1); /// skip EOL (if not EOF)
+        buf.tryIgnore(1);
+
+        uint64_t key_bit = 1ull << (it - keys.begin());
+        if (seen_mask & key_bit)
+        {
+            if (print_warnings)
+            {
+                *warnings_printed = true;
+                LOG_ERROR(getLogger("CgroupsReader"), "Duplicate key '{}' in '{}'", current_key, buf.getFileName());
+            }
+        }
+        seen_mask |= key_bit;
+
+        /// Use the string_view from keys (string literals) as map key.
+        metrics[*it] = value;
     }
 
-    /// Did we see all keys?
-    for (const auto * it = keys.begin(); it != keys.end(); ++it)
+    if (print_warnings)
     {
-        if (print_warnings
-                && !(found_mask & (1l << (it - keys.begin())))
-                && std::find(optional_keys.begin(), optional_keys.end(), *it) == optional_keys.end())
+        for (const auto * it = keys.begin(); it != keys.end(); ++it)
         {
-            *warnings_printed = true;
-            LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
+            uint64_t key_bit = 1ull << (it - keys.begin());
+            if (!(seen_mask & key_bit))
+            {
+                *warnings_printed = true;
+                LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
+            }
         }
     }
-    return sum;
 }
 
 struct CgroupsV1Reader : ICgroupsReader
@@ -120,7 +135,9 @@ struct CgroupsV1Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         buf.rewind();
-        return readMetricsFromStatFile(buf, {"rss"}, {}, &warnings_printed);
+        readMetricsFromStatFile(buf, metrics, {"rss"}, &warnings_printed);
+        auto it = metrics.find("rss");
+        return it != metrics.end() ? it->second : 0;
     }
 
     std::string dumpAllStats() override
@@ -133,6 +150,7 @@ struct CgroupsV1Reader : ICgroupsReader
 private:
     std::mutex mutex;
     ReadBufferFromFile buf TSA_GUARDED_BY(mutex);
+    Metrics metrics TSA_GUARDED_BY(mutex);
     bool warnings_printed TSA_GUARDED_BY(mutex) = false;
 };
 
@@ -144,7 +162,25 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"}, {"kernel"}, &warnings_printed);
+        readMetricsFromStatFile(
+            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable"}, &warnings_printed);
+
+        auto get = [](const Metrics & m, std::string_view key) -> uint64_t
+        {
+            auto it = m.find(key);
+            return it != m.end() ? it->second : 0;
+        };
+
+        /// anon + sock: actual process memory.
+        /// kernel - slab_reclaimable: non-reclaimable kernel memory (pagetables, kernel_stack, slab_unreclaimable).
+        /// slab_reclaimable is excluded because the kernel reclaims it synchronously under memory pressure
+        /// before invoking the OOM killer, so it should not count against the application's memory budget.
+        uint64_t usage = get(metrics, "anon") + get(metrics, "sock");
+        uint64_t kernel = get(metrics, "kernel");
+        uint64_t slab_reclaimable = get(metrics, "slab_reclaimable");
+        if (kernel > slab_reclaimable)
+            usage += kernel - slab_reclaimable;
+        return usage;
     }
 
     std::string dumpAllStats() override
@@ -157,6 +193,7 @@ struct CgroupsV2Reader : ICgroupsReader
 private:
     std::mutex mutex;
     ReadBufferFromFile stat_buf TSA_GUARDED_BY(mutex);
+    Metrics metrics TSA_GUARDED_BY(mutex);
     bool warnings_printed TSA_GUARDED_BY(mutex) = false;
 };
 
@@ -508,14 +545,14 @@ void MemoryWorker::setDirtyDecayForAllArenas(size_t decay_ms)
             {
                 Jemalloc::setValue(arena_path.c_str(), decay_ms);
             }
-            catch (...)
+            catch (...) // Ok: some arenas might not exist or be accessible, skip them
             {
                 /// Some arenas might not exist or be accessible, skip them
                 LOG_TRACE(log, "Failed to set dirty_decay_ms for arena {}", i);
             }
         }
     }
-    catch (...)
+    catch (...) // Ok: jemalloc arena config is best-effort
     {
         tryLogCurrentException(log, "Failed to set dirty_decay_ms");
     }

@@ -113,7 +113,7 @@ public:
     /// use for provide deduplication hash for the chunk with maybe multiple partitions in it
     void setPartWriterHashes(const std::vector<UInt128> & partitions_hashes, size_t count) const;
     /// hash from part writer would be used as user token for dependent views if no user token has been set before
-    void redefineTokensWithDataHash();
+    void redefineTokensWithDataHash(const Block & block);
 
     void setViewID(const StorageID & id);
     void setViewBlockNumber(size_t block_number);
@@ -126,7 +126,11 @@ public:
 private:
     DeduplicationInfo(bool async_insert_, InsertDeduplicationVersions unification_stage_);
 
-    UInt128 calculateDataHash(size_t offset) const;
+    /// Row-major hash: for each row, hash all columns. Used by the old compatibility path.
+    UInt128 calculateDataHashRowWise(size_t offset, const Block & block) const;
+    /// Column-major hash: for each column, hash the row range. Used by the unified path.
+    /// Produces a different hash than row-wise for the same data.
+    UInt128 calculateDataHashColumnWise(size_t offset, const Block & block) const;
     // the old one hash
     DeduplicationHash getBlockHash(size_t offset, const std::string & partition_) const;
     // the new unified hash
@@ -180,6 +184,7 @@ private:
         std::optional<UInt128> by_part_writer;
 
         std::optional<UInt128> data_hash;
+        std::optional<UInt128> data_hash_batch;
 
         struct Extra
         {
@@ -226,7 +231,8 @@ private:
     mutable std::vector<TokenDefinition> tokens;
     std::vector<size_t> offsets; // points to the last row for each offset
 
-    std::shared_ptr<Block> original_block;
+    /// Mutable because getDeduplicationHashes releases columns after caching all hashes.
+    mutable std::shared_ptr<Block> original_block;
     StorageIDMaybeEmpty original_block_view_id;
 
     std::vector<StorageIDMaybeEmpty> visited_views;

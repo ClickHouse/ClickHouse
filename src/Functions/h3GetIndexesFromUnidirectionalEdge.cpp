@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,7 +11,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <h3api.h>
 
 
 namespace DB
@@ -30,7 +29,11 @@ class FunctionH3GetIndexesFromUnidirectionalEdge : public IFunction
 public:
     static constexpr auto name = "h3GetIndexesFromUnidirectionalEdge";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetIndexesFromUnidirectionalEdge>(); }
+    H3Validator validator;
+
+    explicit FunctionH3GetIndexesFromUnidirectionalEdge(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetIndexesFromUnidirectionalEdge>(context); }
 
     std::string getName() const override { return name; }
 
@@ -79,15 +82,18 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 edge = data_hindex_edge[row];
-            // allocate array of size 2
-            // directedEdgeToCells func sets the origin and
-            // destination at [0] and [1] of the input vector
-            std::array<H3Index, 2> res;
-
-            directedEdgeToCells(edge, res.data());
-
-            origin_data[row] = res[0];
-            destination_data[row] = res[1];
+            if (validator.validateEdge(edge))
+            {
+                std::array<H3Index, 2> res{};
+                directedEdgeToCells(edge, res.data());
+                origin_data[row] = res[0];
+                destination_data[row] = res[1];
+            }
+            else
+            {
+                origin_data[row] = 0;
+                destination_data[row] = 0;
+            }
         }
 
         MutableColumns columns;
@@ -110,7 +116,7 @@ Returns the origin and destination hexagon indexes from the given unidirectional
         {"edge", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns a tuple containing the origin and destination hexagon indices from the unidirectional edge, or `(0,0)` if the input is not valid.",
+        "Returns a tuple containing the origin and destination hexagon indices from the unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
         {"Tuple(UInt64, UInt64)"}
     };
     FunctionDocumentation::Examples examples = {

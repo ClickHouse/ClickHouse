@@ -1,12 +1,10 @@
 #pragma once
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <fmt/format.h>
 #include <Common/Base58.h>
 
@@ -24,8 +22,10 @@ template <typename Traits, typename Name>
 struct BaseXXEncode
 {
     static constexpr auto name = Name::name;
+    static constexpr bool has_size_optimization = false;
 
-    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
+    template <bool /* with_size_optimization */>
+    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -55,7 +55,8 @@ struct BaseXXEncode
         dst_data.resize(current_dst_offset);
     }
 
-    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
+    template <bool /* with_size_optimization */>
+    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -91,8 +92,10 @@ template <typename Traits, typename Name, BaseXXDecodeErrorHandling ErrorHandlin
 struct BaseXXDecode
 {
     static constexpr auto name = Name::name;
+    static constexpr bool has_size_optimization = Traits::has_size_optimization;
 
-    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
+    template <bool with_size_optimization>
+    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -113,7 +116,11 @@ struct BaseXXDecode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset;
-            std::optional<size_t> decoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset]);
+            std::optional<size_t> decoded_size = [&]{
+                if constexpr (with_size_optimization)
+                    return Traits::performWithSizeHint({&src[prev_src_offset], src_length}, &dst[current_dst_offset], expected_size);
+                return Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset]);
+            }();
             if (!decoded_size)
             {
                 if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
@@ -134,7 +141,8 @@ struct BaseXXDecode
         dst_data.resize(current_dst_offset);
     }
 
-    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
+    template <bool with_size_optimization>
+    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -151,7 +159,11 @@ struct BaseXXDecode
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            std::optional<size_t> decoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset]);
+            std::optional<size_t> decoded_size = [&]{
+                if constexpr (with_size_optimization)
+                    return Traits::performWithSizeHint({&src[row * N], N}, &dst[current_dst_offset], expected_size);
+                return Traits::perform({&src[row * N], N}, &dst[current_dst_offset]);
+            }();
             if (!decoded_size)
             {
                 if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
@@ -171,20 +183,40 @@ struct BaseXXDecode
 template <typename Func>
 class FunctionBaseXXConversion : public IFunction
 {
+    static constexpr bool has_size_optimization = Func::has_size_optimization;
+
 public:
     static constexpr auto name = Func::name;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBaseXXConversion>(); }
     String getName() const override { return Func::name; }
-    size_t getNumberOfArguments() const override { return 1; }
+    bool isVariadic() const override { return has_size_optimization; }
+    size_t getNumberOfArguments() const override { return has_size_optimization ? 0 : 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        if constexpr (has_size_optimization)
+            return {1};
+        return {};
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-            {"arg", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
-        validateFunctionArguments(*this, arguments, args);
+        if constexpr (has_size_optimization)
+        {
+            FunctionArgumentDescriptors mandatory_args{
+                {"arg", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
+            FunctionArgumentDescriptors optional_args{
+                {"expected_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Native unsigned integer"}};
+            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        }
+        else
+        {
+            FunctionArgumentDescriptors args{
+                {"arg", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
+            validateFunctionArguments(*this, arguments, args);
+        }
 
         return std::make_shared<DataTypeString>();
     }
@@ -193,18 +225,49 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        size_t expected_size = 0;
+        if constexpr (has_size_optimization)
+        {
+            if (arguments.size() > 1)
+            {
+                Field val;
+                arguments[1].column->get(0, val);
+                expected_size = val.safeGet<UInt64>();
+            }
+        }
+
         const ColumnPtr col = arguments[0].column;
 
         if (const ColumnString * col_string = checkAndGetColumn<ColumnString>(col.get()))
         {
             auto col_res = ColumnString::create();
-            Func::processString(*col_string, col_res, input_rows_count);
+            if constexpr (has_size_optimization)
+            {
+                if (expected_size > 0)
+                    Func::template processString<true>(*col_string, col_res, input_rows_count, expected_size);
+                else
+                    Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size);
+            }
+            else
+            {
+                Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size);
+            }
             return col_res;
         }
         else if (const ColumnFixedString * col_fixed_string = checkAndGetColumn<ColumnFixedString>(col.get()))
         {
             auto col_res = ColumnString::create();
-            Func::processFixedString(*col_fixed_string, col_res, input_rows_count);
+            if constexpr (has_size_optimization)
+            {
+                if (expected_size > 0)
+                    Func::template processFixedString<true>(*col_fixed_string, col_res, input_rows_count, expected_size);
+                else
+                    Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size);
+            }
+            else
+            {
+                Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size);
+            }
             return col_res;
         }
 

@@ -143,7 +143,7 @@ Converts a `DateTime` or `DateTime64` to the specified time zone.
 The internal value (number of unix seconds) of the data doesn't change.
 Only the value's time zone attribute and the value's string representation changes.
         )";
-    FunctionDocumentation::Syntax syntax = "toTimeZone(datetime, timezone)";
+    FunctionDocumentation::Syntax syntax = "toTimezone(datetime, timezone)";
     FunctionDocumentation::Arguments arguments =
     {
         {"date", "The value to convert.", {"DateTime", "DateTime64"}},
@@ -155,10 +155,10 @@ Only the value's time zone attribute and the value's string representation chang
 SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
 toTypeName(time_utc) AS type_utc,
 toInt32(time_utc) AS int32utc,
-toTimeZone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
+toTimezone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
 toTypeName(time_yekat) AS type_yekat,
 toInt32(time_yekat) AS int32yekat,
-toTimeZone(time_utc, 'US/Samoa') AS time_samoa,
+toTimezone(time_utc, 'US/Samoa') AS time_samoa,
 toTypeName(time_samoa) AS type_samoa,
 toInt32(time_samoa) AS int32samoa
 FORMAT Vertical;

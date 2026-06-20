@@ -101,7 +101,7 @@ public:
     }
 
     bool hasClientFinished() { return client_runner.has_value() && client_runner->hasFinished(); }
-    int getClientExitCode() { return client_runner.has_value() && client_runner->getExitCode(); }
+    int getClientExitCode() { return client_runner.has_value() ? client_runner->getExitCode() : 0; }
 
 
     DescriptorSet client_input_output;

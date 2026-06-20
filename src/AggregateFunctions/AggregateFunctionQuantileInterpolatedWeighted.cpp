@@ -406,8 +406,8 @@ SELECT quantileInterpolatedWeighted(n, val) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, {}, documentation});
-    factory.registerFunction(NameQuantilesInterpolatedWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesInterpolatedWeighted>, properties });
+    factory.registerFunction(NameQuantileInterpolatedWeighted::name, {createAggregateFunctionQuantile<FuncQuantileInterpolatedWeighted>, documentation});
+    factory.registerFunction(NameQuantilesInterpolatedWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesInterpolatedWeighted>, {}, properties});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianInterpolatedWeighted", NameQuantileInterpolatedWeighted::name);

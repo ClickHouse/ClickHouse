@@ -53,9 +53,8 @@ public:
 
     virtual const String & name() const = 0;
 
-    /// This method can return nullptr if it's Lazy database
-    /// (a database with support for lazy tables loading
-    /// - it maintains a list of tables but tables are loaded lazily).
+    /// This method can return nullptr if table metadata could not be loaded
+    /// (e.g. DataLake database where individual table metadata fetch fails).
     virtual const StoragePtr & table() const = 0;
 
     explicit IDatabaseTablesIterator(const String & database_name_) : database_name(database_name_) { }
@@ -403,6 +402,11 @@ public:
     {
         std::lock_guard lock{mutex};
         return database_name;
+    }
+
+    virtual void checkDatabase() const
+    {
+        //No-op
     }
 
     // Alter comment of database.

@@ -337,7 +337,7 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, {}, documentation});
+    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, documentation});
 }
 
 }

@@ -44,6 +44,13 @@ IProcessor::Status BufferChunksTransform::prepare()
             auto chunk = std::move(chunks.front());
             chunks.pop();
 
+            if (isVirtualRow(chunk))
+            {
+                output.push(std::move(chunk));
+                input.setNotNeeded();
+                return Status::PortFull;
+            }
+
             num_buffered_rows -= chunk.getNumRows();
             num_buffered_bytes -= chunk.bytes();
 
@@ -68,7 +75,7 @@ IProcessor::Status BufferChunksTransform::prepare()
         auto chunk = pullChunk(virtual_row);
         if (virtual_row)
         {
-            output.push(std::move(chunk));
+            chunks.push(std::move(chunk));
             input.setNotNeeded();
             return Status::PortFull;
         }

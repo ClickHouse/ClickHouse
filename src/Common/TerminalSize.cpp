@@ -4,6 +4,7 @@
 #  include <sys/termios.h>
 #endif
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/TerminalSize.h>
 #include <boost/program_options.hpp>
 

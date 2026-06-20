@@ -10,7 +10,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/TransformDateTime64.h>
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -41,7 +40,7 @@ public:
         return true;
     }
 
-    bool hasInformationAboutMonotonicity() const override { return true; }
+    bool hasInformationAboutMonotonicity() const override { return Transform::hasMonotonicity(); }
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {

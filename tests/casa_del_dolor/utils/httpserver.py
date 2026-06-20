@@ -30,7 +30,7 @@ class BackgroundWorker:
             result = future.result()  # This will raise if the task failed
             self.logger.debug(f"Async task completed successfully")
         except Exception as e:
-            self.logger.error(f"Async task failed: {e}")
+            self.logger.exception(f"Async task failed: {e}")
 
     def shutdown(self, wait=True):
         """Shutdown the thread pool"""
@@ -125,11 +125,15 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
 
         except json.JSONDecodeError as e:
             # Handle JSON parsing error
-            self.logger.error(str(e))
+            self.logger.exception(e)
             self._send_error_response(400, f"Invalid JSON: {str(e)}")
+        except BrokenPipeError:
+            self.logger.debug(
+                f"Client disconnected before response was sent: {self.path}"
+            )
         except Exception as e:
             # Handle other errors
-            self.logger.error(str(e))
+            self.logger.exception(e)
             self._send_error_response(500, f"Server error: {str(e)}")
 
     def _process_callback(self, path, data, headers, attachment):
@@ -139,7 +143,7 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
                 return self.callback(path, data, headers, attachment)
             return True
         except Exception as e:
-            self.logger.error(f"Callback error: {e}")
+            self.logger.exception(f"Callback error: {e}")
             return False
 
     def _send_error_response(self, status_code, message):
@@ -214,7 +218,7 @@ class DolorHTTPServer:
         try:
             self.server.serve_forever()
         except Exception as e:
-            self.logger.error(f"Server error: {e}")
+            self.logger.exception(f"Server error: {e}")
         finally:
             self.is_running = False
 

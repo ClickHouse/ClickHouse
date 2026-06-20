@@ -224,20 +224,20 @@ public:
 REGISTER_FUNCTION(GenerateSnowflakeID)
 {
     /// generateSnowflakeID documentation
-    FunctionDocumentation::Description description_generateSnowflakeID = R"(
+    FunctionDocumentation::Description description = R"(
 Generates a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID).
 
 Function `generateSnowflakeID` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
 
 See section ["Snowflake ID generation"](#snowflake-id-generation) for implementation details.
     )";
-    FunctionDocumentation::Syntax syntax_generateSnowflakeID = "generateSnowflakeID([expr, [machine_id]])";
-    FunctionDocumentation::Arguments arguments_generateSnowflakeID = {
+    FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expr, [machine_id]])";
+    FunctionDocumentation::Arguments arguments = {
         {"expr", "An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional."},
         {"machine_id", "A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_generateSnowflakeID = {"Returns the Snowflake ID.", {"UInt64"}};
-    FunctionDocumentation::Examples examples_generateSnowflakeID = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the Snowflake ID.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -278,11 +278,11 @@ SELECT generateSnowflakeID('expr', 1);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_generateSnowflakeID = {24, 6};
-    FunctionDocumentation::Category category_generateSnowflakeID = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation_generateSnowflakeID = {description_generateSnowflakeID, syntax_generateSnowflakeID, arguments_generateSnowflakeID, {}, returned_value_generateSnowflakeID, examples_generateSnowflakeID, introduced_in_generateSnowflakeID, category_generateSnowflakeID};
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionGenerateSnowflakeID>(documentation_generateSnowflakeID);
+    factory.registerFunction<FunctionGenerateSnowflakeID>(documentation);
 
 }
 

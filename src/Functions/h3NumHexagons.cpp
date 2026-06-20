@@ -83,8 +83,9 @@ public:
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(resolution), getName(), MAX_H3_RES);
-            Int64 res = getNumCells(resolution);
-            dst_data[row] = res;
+            int64_t num_cells = 0;
+            getNumCells(resolution, &num_cells);
+            dst_data[row] = num_cells;
         }
 
         return dst;

@@ -64,7 +64,6 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const s
 
 bool UnityCatalog::empty() const
 {
-
     auto all_schemas = getSchemas("");
     for (const auto & schema : all_schemas)
     {

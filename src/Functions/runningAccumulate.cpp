@@ -159,7 +159,7 @@ public:
 
 REGISTER_FUNCTION(RunningAccumulate)
 {
-    FunctionDocumentation::Description description_runningAccumulate = R"(
+    FunctionDocumentation::Description description = R"(
 Accumulates the states of an aggregate function for each row of a data block.
 
 :::warning Deprecated
@@ -168,13 +168,13 @@ Due to this error-prone behavior the function has been deprecated, and you are a
 You can use setting [`allow_deprecated_error_prone_window_functions`](/operations/settings/settings#allow_deprecated_error_prone_window_functions) to allow usage of this function.
 :::
 )";
-    FunctionDocumentation::Syntax syntax_runningAccumulate = "runningAccumulate(agg_state[, grouping])";
-    FunctionDocumentation::Arguments arguments_runningAccumulate = {
+    FunctionDocumentation::Syntax syntax = "runningAccumulate(agg_state[, grouping])";
+    FunctionDocumentation::Arguments arguments = {
         {"agg_state", "State of the aggregate function.", {"AggregateFunction"}},
         {"grouping", "Optional. Grouping key. The state of the function is reset if the `grouping` value is changed. It can be any of the supported data types for which the equality operator is defined.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_runningAccumulate = {"Returns the accumulated result for each row.", {"Any"}};
-    FunctionDocumentation::Examples examples_runningAccumulate = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the accumulated result for each row.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example with initializeAggregation",
         R"(
@@ -196,11 +196,11 @@ FROM numbers(5);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_runningAccumulate = {1, 1};
-    FunctionDocumentation::Category category_runningAccumulate = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_runningAccumulate = {description_runningAccumulate, syntax_runningAccumulate, arguments_runningAccumulate, {}, returned_value_runningAccumulate, examples_runningAccumulate, introduced_in_runningAccumulate, category_runningAccumulate};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionRunningAccumulate>(documentation_runningAccumulate);
+    factory.registerFunction<FunctionRunningAccumulate>(documentation);
 }
 
 }

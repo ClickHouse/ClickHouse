@@ -453,16 +453,16 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
 {
     ObjectStoragePtr object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("test", fs::path{getDirectory()} / "local_blobs", false));
     DiskPtr metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
-    MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator());
+    MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator(), /*persist_removal_queue_=*/true, /*removal_log_compaction_threshold_=*/1000);
 
     std::unordered_map<Location, LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
     std::unordered_map<Location, ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};
 
-    ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>(std::move(cluster_registry));
+    ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>("local_blobs", std::move(cluster_registry));
     ObjectStorageRouterPtr object_storages = std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry));
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
-    auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", std::move(cluster), std::move(metadata_storage), std::move(object_storages), *config, "");
+    auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", std::move(cluster), std::move(metadata_storage), std::move(object_storages), nullptr, *config, "");
 
     makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_blobs);
 

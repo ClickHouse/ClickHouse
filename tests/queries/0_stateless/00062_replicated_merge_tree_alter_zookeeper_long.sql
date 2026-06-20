@@ -88,6 +88,8 @@ DESC TABLE replicated_alter2;
 SHOW CREATE TABLE replicated_alter2;
 SELECT * FROM replicated_alter1 ORDER BY k;
 
+OPTIMIZE TABLE replicated_alter1 FINAL;
+OPTIMIZE TABLE replicated_alter2 FINAL;
 ALTER TABLE replicated_alter1 ADD COLUMN n.s Array(String), ADD COLUMN n.d Array(Date);
 
 DESC TABLE replicated_alter1;

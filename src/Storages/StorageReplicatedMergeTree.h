@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/SyncReplicaMode.h>

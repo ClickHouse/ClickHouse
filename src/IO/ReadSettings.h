@@ -4,8 +4,8 @@
 #include <Core/Defines.h>
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
-#include <Interpreters/Cache/FileCache_fwd.h>
-#include <Interpreters/Cache/FileCacheOriginInfo.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
+#include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/IThrottler.h>

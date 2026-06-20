@@ -17,6 +17,7 @@
                 <!-- never set retry_attempts to 0, as it disables retries on all errors including sporadic timeouts -->
                 <retry_attempts>2</retry_attempts>
                 <skip_access_check>true</skip_access_check>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3>
         </disks>
 

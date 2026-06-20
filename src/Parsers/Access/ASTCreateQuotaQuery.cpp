@@ -52,7 +52,7 @@ namespace
 
     void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << " RENAME TO " << backQuote(new_name);
+        ostr << " RENAME TO " << backQuoteIfNeed(new_name);
     }
 
 

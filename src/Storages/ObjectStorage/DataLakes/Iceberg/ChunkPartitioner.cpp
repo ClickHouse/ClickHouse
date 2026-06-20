@@ -146,7 +146,7 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     {
         if (partitions_count > 1)
         {
-            MutableColumns scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
+            auto scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
             for (size_t i = 0; i < partitions_count; ++i)
                 result_columns[i].second[col] = std::move(scattered[i]);
         }

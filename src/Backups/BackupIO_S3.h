@@ -4,7 +4,6 @@
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_Default.h>
-#include <Common/Logger.h>
 #include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <IO/S3Common.h>
@@ -95,8 +94,9 @@ public:
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
 
     void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) override;
-    void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                          bool copy_encrypted, UInt64 start_pos, UInt64 length) override;
+    void copyFileFromDisk(
+        const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
+        override;
 
     void copyFile(const String & destination, const String & source, size_t size) override;
 

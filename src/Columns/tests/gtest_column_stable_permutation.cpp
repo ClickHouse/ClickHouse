@@ -73,7 +73,7 @@ void printColumn(const IColumn & column)
 }
 
 template <typename ValueTransform>
-void generateRanges(std::vector<std::vector<Field>> & ranges, size_t range_size, ValueTransform value_transform)
+void generateRanges(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & ranges, size_t range_size, ValueTransform value_transform)
 {
     for (auto & range : ranges)
     {
@@ -92,7 +92,7 @@ void generateRanges(std::vector<std::vector<Field>> & ranges, size_t range_size,
     }
 }
 
-void insertRangesIntoColumn(std::vector<std::vector<Field>> & ranges, const std::vector<size_t> & ranges_permutations, IColumn & column)
+void insertRangesIntoColumn(VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & ranges, const VectorWithMemoryTracking<size_t> & ranges_permutations, IColumn & column)
 {
     for (const auto & range_permutation : ranges_permutations)
     {
@@ -141,10 +141,10 @@ template <typename ColumnCreateFunc, typename ValueTransform>
 void assertColumnPermutations(ColumnCreateFunc column_create_func, ValueTransform value_transform)
 {
     static constexpr size_t ranges_size = 3;
-    static const std::vector<size_t> range_sizes = {1, 5, 50, 500};
+    static const VectorWithMemoryTracking<size_t> range_sizes = {1, 5, 50, 500};
 
-    std::vector<std::vector<Field>> ranges(ranges_size);
-    std::vector<size_t> ranges_permutations(ranges_size);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> ranges(ranges_size);
+    VectorWithMemoryTracking<size_t> ranges_permutations(ranges_size);
     iota(ranges_permutations.data(), ranges_size, IColumn::Permutation::value_type(0));
 
     IColumn::Permutation actual_permutation;

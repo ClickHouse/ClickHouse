@@ -9,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -17,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -246,9 +248,20 @@ public:
 
         for (size_t i = 0; i != num_rows; ++i)
         {
-            auto start_timestamp = static_cast<TimestampType>(start_timestamp_column.get64(i) * start_timestamp_multiplier);
-            auto end_timestamp = static_cast<TimestampType>(end_timestamp_column.get64(i) * end_timestamp_multiplier);
-            auto step = static_cast<IntervalType>(step_column.getInt(i) * step_multiplier);
+            Int64 start_timestamp_raw = 0;
+            if (common::mulOverflow(start_timestamp_column.get64(i), start_timestamp_multiplier, start_timestamp_raw))
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
+            auto start_timestamp = static_cast<TimestampType>(start_timestamp_raw);
+
+            Int64 end_timestamp_raw = 0;
+            if (common::mulOverflow(end_timestamp_column.get64(i), end_timestamp_multiplier, end_timestamp_raw))
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
+            auto end_timestamp = static_cast<TimestampType>(end_timestamp_raw);
+
+            Int64 step_raw = 0;
+            if (common::mulOverflow(step_column.getInt(i), step_multiplier, step_raw))
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
+            auto step = static_cast<IntervalType>(step_raw);
 
             if (end_timestamp < start_timestamp)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "End timestamp is less than start timestamp");

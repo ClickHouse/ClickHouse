@@ -159,7 +159,13 @@ def download_build_with_progress(url: str, path: Path) -> None:
                 path.unlink()
 
             if i + 1 < DOWNLOAD_RETRIES_COUNT:
-                time.sleep(3)
+                sleep_time = 3 * (2**i)
+                logger.info(
+                    "Download attempt %i failed, retrying in %i seconds",
+                    i + 1,
+                    sleep_time,
+                )
+                time.sleep(sleep_time)
             else:
                 raise DownloadException(
                     f"Cannot download dataset from {url}, all retries exceeded"

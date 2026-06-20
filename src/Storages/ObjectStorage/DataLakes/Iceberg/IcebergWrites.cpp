@@ -52,7 +52,6 @@
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -97,6 +96,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int DATALAKE_DATABASE_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
@@ -241,7 +241,7 @@ void generateManifestFile(
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
     const std::vector<DataTypePtr> & partition_types,
-    const std::vector<String> & data_file_names,
+    const std::vector<IcebergPathFromMetadata> & data_file_names,
     const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
@@ -271,7 +271,6 @@ void generateManifestFile(
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     int current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
     Poco::JSON::Stringifier::stringify(metadata->getArray(Iceberg::f_schemas)->getObject(current_schema_id), oss, 4);
-
     std::string json_representation = removeEscapedSlashes(oss.str());
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
@@ -279,7 +278,7 @@ void generateManifestFile(
     writer.setMetadata(Iceberg::f_schema, json_representation);
 
     std::ostringstream oss_partition_spec; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec, 4);
+    Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec);
     writer.setMetadata(Iceberg::f_partition_spec, oss_partition_spec.str());
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
     for (const auto & data_file_name : data_file_names)
@@ -322,7 +321,7 @@ void generateManifestFile(
         avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
         if (version > 1)
             data_file.field(Iceberg::f_content) = avro::GenericDatum(static_cast<Int32>(content_type));
-        data_file.field(Iceberg::f_file_path) = avro::GenericDatum(data_file_name);
+        data_file.field(Iceberg::f_file_path) = avro::GenericDatum(data_file_name.serialize());
         data_file.field(Iceberg::f_file_format) = avro::GenericDatum(format);
 
         if (data_file_statistics)
@@ -338,7 +337,7 @@ void generateManifestFile(
                 {
                     avro::GenericDatum record_datum(schema_element);
                     auto & record = record_datum.value<avro::GenericRecord>();
-                    record.field(Iceberg::f_key) = static_cast<Int64>(field_id);
+                    record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
                     record.field(Iceberg::f_value) = dump_function(field_id, value);
                     record_values.value().push_back(record_datum);
                 }
@@ -431,13 +430,13 @@ void generateManifestFile(
 }
 
 void generateManifestList(
-    const FileNamesGenerator & filename_generator,
+    const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
-    const Strings & manifest_entry_names,
+    const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
-    Int64 manifest_length,
+    const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots)
@@ -456,13 +455,13 @@ void generateManifestList(
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
 
-    for (const auto & manifest_entry_name : manifest_entry_names)
+    for (size_t entry_idx = 0; entry_idx < manifest_entry_names.size(); ++entry_idx)
     {
         avro::GenericDatum entry_datum(schema.root());
         avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>();
 
-        entry.field(Iceberg::f_manifest_path) = manifest_entry_name;
-        entry.field(Iceberg::f_manifest_length) = manifest_length;
+        entry.field(Iceberg::f_manifest_path) = manifest_entry_names[entry_idx].serialize();
+        entry.field(Iceberg::f_manifest_length) = manifest_entry_sizes[entry_idx];
         entry.field(Iceberg::f_partition_spec_id) = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
         if (version > 1)
         {
@@ -504,8 +503,8 @@ void generateManifestList(
         else
         {
             entry.field(Iceberg::f_added_files_count) = 1;
-            entry.field(Iceberg::f_existing_files_count)
-                = summary->getValue<Int32>(Iceberg::f_total_data_files);
+            /// This manifest only contains newly added files; no pre-existing entries.
+            entry.field(Iceberg::f_existing_files_count) = 0;
             entry.field(Iceberg::f_deleted_files_count) = 0;
 
             if (summary->has(Iceberg::f_added_position_deletes))
@@ -538,9 +537,10 @@ void generateManifestList(
         {
             if (snapshots->getObject(static_cast<UInt32>(i))->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == parent_snapshot_id)
             {
-                auto manifest_list = snapshots->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_manifest_list);
+                auto manifest_list = Iceberg::IcebergPathFromMetadata::deserialize(
+                    snapshots->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_manifest_list));
 
-                RelativePathWithMetadata relative_path_with_metadata(filename_generator.convertMetadataPathToStoragePath(manifest_list));
+                RelativePathWithMetadata relative_path_with_metadata(path_resolver.resolve(manifest_list));
                 auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger("IcebergWrites"));
 
                 auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
@@ -552,59 +552,60 @@ void generateManifestList(
 
                 while (reader.read(datum))
                 {
-                    if (version == 1)
+                    const avro::GenericRecord & old_entry = datum.value<avro::GenericRecord>();
+                    avro::GenericDatum new_datum(schema.root());
+                    avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
+                    new_entry.field(f_manifest_path) = old_entry.field(Iceberg::f_manifest_path);
+                    new_entry.field(f_manifest_length) = old_entry.field(Iceberg::f_manifest_length);
+                    new_entry.field(f_partition_spec_id) = old_entry.field(Iceberg::f_partition_spec_id);
+                    /// In some version, iceberg-spark has changed the type of field `f_added_snapshot_id`
+                    /// from 'null, long' to 'long'. See https://github.com/apache/iceberg/pull/11626.
+                    /// Just in case that we read the old type 'null, long', we do this conversion: read every field
+                    /// and write it again with new, correct schema.
+                    if (old_entry.hasField(Iceberg::f_added_snapshot_id))
                     {
-                        const avro::GenericRecord & old_entry = datum.value<avro::GenericRecord>();
-                        avro::GenericDatum new_datum(schema.root());
-                        avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
-                        new_entry.field(f_manifest_path) = old_entry.field(Iceberg::f_manifest_path);
-                        new_entry.field(f_manifest_length) = old_entry.field(Iceberg::f_manifest_length);
-                        new_entry.field(f_partition_spec_id) = old_entry.field(Iceberg::f_partition_spec_id);
-                        /// Why do we need this for version 1? In some version, iceberg-spark has changed the type of field `f_added_snapshot_id`
-                        /// from 'null, long' to 'long'. See https://github.com/apache/iceberg/pull/11626.
-                        /// Just in case that we read the old type 'null, long', we do this conversion: read every field
-                        /// and write it again with new, correct schema.
-                        if (old_entry.hasField(Iceberg::f_added_snapshot_id))
+                        const avro::GenericDatum & old_added_snapshot_id_entry = old_entry.field(Iceberg::f_added_snapshot_id);
+                        if (old_added_snapshot_id_entry.isUnion())
                         {
-                            const avro::GenericDatum & old_added_snapshot_id_entry = old_entry.field(Iceberg::f_added_snapshot_id);
-                            if (old_added_snapshot_id_entry.isUnion())
+                            if (old_added_snapshot_id_entry.unionBranch() == 0) /// it means add_snapshot_id is null
                             {
-                                if (old_added_snapshot_id_entry.unionBranch() == 0) /// it means add_snapshot_id is null
-                                {
-                                    /// This only happens when we read data written by a old version of iceberg, which violent the spec of iceberg.
-                                    throw Exception(
-                                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                                        "Manifest list {} has null value for field '{}', but it is required",
-                                        relative_path_with_metadata.getPath(),
-                                        Iceberg::f_added_snapshot_id);
-                                }
+                                /// This only happens when we read data written by a old version of iceberg, which violates the spec of iceberg.
+                                throw Exception(
+                                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                    "Manifest list {} has null value for field '{}', but it is required",
+                                    relative_path_with_metadata.getPath(),
+                                    Iceberg::f_added_snapshot_id);
                             }
-                            new_entry.field(f_added_snapshot_id) = old_added_snapshot_id_entry.value<Int64>();
                         }
-                        else
-                            /// This only happens when we read data written by a old version of iceberg, which violent the spec of iceberg.
-                            throw Exception(
-                                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                                "Manifest list {} has null value for field '{}', but it is required",
-                                relative_path_with_metadata.getPath(),
-                                Iceberg::f_added_snapshot_id);
-                        auto add_field_to_datum = [&](const String & field)
-                        {
-                            if (old_entry.hasField(field))
-                                new_entry.field(field) = old_entry.field(field);
-                        };
-                        add_field_to_datum(Iceberg::f_added_files_count);
-                        add_field_to_datum(Iceberg::f_existing_files_count);
-                        add_field_to_datum(Iceberg::f_deleted_files_count);
-                        add_field_to_datum(Iceberg::f_partitions);
-                        add_field_to_datum(Iceberg::f_added_rows_count);
-                        add_field_to_datum(Iceberg::f_existing_rows_count);
-                        add_field_to_datum(Iceberg::f_deleted_rows_count);
-                        add_field_to_datum(Iceberg::f_key_metadata);
-                        writer.write(new_datum);
+                        new_entry.field(f_added_snapshot_id) = old_added_snapshot_id_entry.value<Int64>();
                     }
                     else
-                        writer.write(datum);
+                        /// This only happens when we read data written by a old version of iceberg, which violates the spec of iceberg.
+                        throw Exception(
+                            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                            "Manifest list {} has null value for field '{}', but it is required",
+                            relative_path_with_metadata.getPath(),
+                            Iceberg::f_added_snapshot_id);
+                    auto add_field_to_datum = [&](const String & field)
+                    {
+                        if (old_entry.hasField(field))
+                            new_entry.field(field) = old_entry.field(field);
+                    };
+                    add_field_to_datum(Iceberg::f_added_files_count);
+                    add_field_to_datum(Iceberg::f_existing_files_count);
+                    add_field_to_datum(Iceberg::f_deleted_files_count);
+                    add_field_to_datum(Iceberg::f_partitions);
+                    add_field_to_datum(Iceberg::f_added_rows_count);
+                    add_field_to_datum(Iceberg::f_existing_rows_count);
+                    add_field_to_datum(Iceberg::f_deleted_rows_count);
+                    add_field_to_datum(Iceberg::f_key_metadata);
+                    if (version == 2)
+                    {
+                        add_field_to_datum(Iceberg::f_content);
+                        add_field_to_datum(Iceberg::f_sequence_number);
+                        add_field_to_datum(Iceberg::f_min_sequence_number);
+                    }
+                    writer.write(new_datum);
                 }
                 break;
             }
@@ -633,8 +634,6 @@ IcebergStorageSink::IcebergStorageSink(
     , persistent_table_components(persistent_table_components_)
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
-    , blob_storage_type_name(configuration_->getTypeName())
-    , blob_storage_namespace_name(configuration_->getNamespace())
 {
     auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
@@ -643,7 +642,9 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.metadata_cache,
         context_,
         log.get(),
-        persistent_table_components.table_uuid);
+        persistent_table_components.table_uuid,
+        persistent_table_components.metadata_compression_method,
+        true);
 
     metadata = getMetadataJSONObject(
         metadata_path,
@@ -654,27 +655,18 @@ IcebergStorageSink::IcebergStorageSink(
         compression_method,
         persistent_table_components.table_uuid);
     metadata_compression_method = compression_method;
-    auto config_path = persistent_table_components.table_path;
-    if (config_path.empty() || config_path.back() != '/')
-        config_path += "/";
-    if (!config_path.starts_with('/'))
-        config_path = '/' + config_path;
-
-    if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
-    {
-        filename_generator = FileNamesGenerator(
-            config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
-    }
-    else
-    {
-        auto bucket = metadata->getValue<String>(Iceberg::f_location);
-        if (bucket.empty() || bucket.back() != '/')
-            bucket += "/";
-        filename_generator = FileNamesGenerator(
-            bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
-    }
+    filename_generator = FileNamesGenerator(
+        persistent_table_components.path_resolver.getTableLocation(),
+        (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
 
     filename_generator.setVersion(last_version + 1);
+
+    if (metadata->has(Iceberg::f_properties))
+    {
+        auto properties = metadata->getObject(Iceberg::f_properties);
+        if (properties && properties->has("write.data.path"))
+            filename_generator.setDataLocation(properties->getValue<String>("write.data.path"));
+    }
 
     partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
     auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
@@ -710,6 +702,11 @@ IcebergStorageSink::IcebergStorageSink(
             break;
         }
     }
+}
+
+IcebergStorageSink::~IcebergStorageSink()
+{
+    cancelBuffers();
 }
 
 void IcebergStorageSink::consume(Chunk & chunk)
@@ -751,6 +748,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
                 context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file],
                 current_schema->getArray(Iceberg::f_fields),
                 filename_generator,
+                persistent_table_components.path_resolver,
                 object_storage,
                 context,
                 format_settings,
@@ -815,7 +813,10 @@ void IcebergStorageSink::consume(Chunk & chunk)
 void IcebergStorageSink::onFinish()
 {
     if (isCancelled())
+    {
+        cancelBuffers();
         return;
+    }
 
     finalizeBuffers();
     releaseBuffers();
@@ -837,13 +838,20 @@ void IcebergStorageSink::finalizeBuffers()
     if (writer_per_partition_key.empty())
         return;
 
+    /// TODO: there's a chance that initializeMetadata() doesn't succeed within MAX_TRANSACTION_RETRIES without throwing, perhaps we should fail in this case
     size_t i = 0;
+    bool successed_write = false;
     while (i < MAX_TRANSACTION_RETRIES)
     {
         if (initializeMetadata())
+        {
+            successed_write = true;
             break;
+        }
         ++i;
     }
+    if (!successed_write)
+        throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Write into iceberg was not successful");
 }
 
 void IcebergStorageSink::releaseBuffers()
@@ -864,7 +872,8 @@ void IcebergStorageSink::cancelBuffers()
 
 bool IcebergStorageSink::initializeMetadata()
 {
-    auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
+    const auto & resolver = persistent_table_components.path_resolver;
+    auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id))
@@ -873,13 +882,22 @@ bool IcebergStorageSink::initializeMetadata()
     Int32 total_data_files = 0;
     for (const auto & [_, writer] : writer_per_partition_key)
         total_data_files += writer.getDataFiles().size();
-    auto [new_snapshot, manifest_list_name, storage_manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
-        filename_generator, metadata_name, parent_snapshot, total_data_files, total_rows, total_chunks_size, total_data_files, /* added_delete_files */0, /* num_deleted_rows */0);
+    auto [new_snapshot, manifest_list_path] = MetadataGenerator(metadata).generateNextMetadata(
+        filename_generator,
+        metadata_info.path,
+        parent_snapshot,
+        total_data_files,
+        total_rows,
+        total_chunks_size,
+        total_data_files,
+        /* added_delete_files */ 0,
+        /* num_deleted_rows */ 0);
+    auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
 
 
     Strings manifest_entries_in_storage;
-    Strings manifest_entries;
-    Int64 manifest_lengths = 0;
+    std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
+    std::vector<Int64> manifest_entry_sizes;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
     {
@@ -896,6 +914,11 @@ bool IcebergStorageSink::initializeMetadata()
 
         if (retry_because_of_metadata_conflict)
         {
+            /// When retrying after a metadata conflict, we must read the actual latest
+            /// metadata version, not the explicitly specified one. If a table was created
+            /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
+            /// loop must still discover the real latest version to advance past it.
+            /// Otherwise the loop keeps regenerating the same target version and fails.
             auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
                 object_storage,
                 persistent_table_components.table_path,
@@ -903,7 +926,10 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites").get(),
-                persistent_table_components.table_uuid);
+                persistent_table_components.table_uuid,
+                persistent_table_components.metadata_compression_method,
+                true,
+                /* ignore_explicit_metadata_file_path */ true);
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
@@ -951,12 +977,12 @@ bool IcebergStorageSink::initializeMetadata()
     {
         for (const auto & [partition_key, writer] : writer_per_partition_key)
         {
-            auto [manifest_entry_name, storage_manifest_entry_name] = filename_generator.generateManifestEntryName();
-            manifest_entries_in_storage.push_back(storage_manifest_entry_name);
-            manifest_entries.push_back(manifest_entry_name);
+            auto manifest_entry_path = filename_generator.generateManifestEntryName();
+            manifest_entries_in_storage.push_back(resolver.resolve(manifest_entry_path));
+            manifest_entries.push_back(manifest_entry_path);
 
             auto buffer_manifest_entry = object_storage->writeObject(
-                StoredObject(storage_manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+                StoredObject(resolver.resolve(manifest_entry_path)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
             try
             {
                 generateManifestFile(
@@ -974,7 +1000,12 @@ bool IcebergStorageSink::initializeMetadata()
                     *buffer_manifest_entry,
                     Iceberg::FileContentType::DATA);
                 buffer_manifest_entry->finalize();
-                manifest_lengths += buffer_manifest_entry->count();
+                auto size = buffer_manifest_entry->count();
+                if (size == 0)
+                {
+                    size = object_storage->getObjectMetadata(resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
+                }
+                manifest_entry_sizes.push_back(size);
             }
             catch (...)
             {
@@ -989,7 +1020,8 @@ bool IcebergStorageSink::initializeMetadata()
             try
             {
                 generateManifestList(
-                    filename_generator, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list, Iceberg::FileContentType::DATA);
+                    persistent_table_components.path_resolver, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_entry_sizes, *buffer_manifest_list, Iceberg::FileContentType::DATA,
+                    /* use_previous_snapshots = */ true);
                 buffer_manifest_list->finalize();
             }
             catch (...)
@@ -1009,32 +1041,29 @@ bool IcebergStorageSink::initializeMetadata()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
             });
 
-            LOG_DEBUG(log, "Writing new metadata file {}", storage_metadata_name);
-            auto hint = filename_generator.generateVersionHint();
+            LOG_DEBUG(log, "Writing new metadata file {}", metadata_info.path);
+            auto hint_path = filename_generator.generateVersionHint();
             if (!writeMetadataFileAndVersionHint(
-                    storage_metadata_name,
+                    persistent_table_components.path_resolver,
+                    metadata_info,
                     json_representation,
-                    hint.path_in_storage,
-                    storage_metadata_name,
+                    hint_path,
                     object_storage,
                     context,
-                    metadata_compression_method,
                     data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
-                LOG_DEBUG(log, "Failed to write metadata {}, retrying", storage_metadata_name);
+                LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
                 cleanup(true);
                 return false;
             }
             else
             {
-                LOG_DEBUG(log, "Metadata file {} written", storage_metadata_name);
+                LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
             }
 
             if (catalog)
             {
-                String catalog_filename = metadata_name;
-                if (!catalog_filename.starts_with(blob_storage_type_name))
-                    catalog_filename = blob_storage_type_name + "://" + blob_storage_namespace_name + "/" + metadata_name;
+                auto catalog_filename = resolver.resolveForCatalog(metadata_info.path);
 
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
@@ -1043,6 +1072,16 @@ bool IcebergStorageSink::initializeMetadata()
                     return false;
                 }
             }
+        }
+
+        if (persistent_table_components.metadata_cache)
+        {
+            /// If there's an active metadata cache
+            /// We can't just cache 'our' written version as latest, because it could've been overwritten by a concurrent catalog update
+            /// This is why, we are safely invalidating the cache, and the very next reader will get the most up-to-date latest version
+            persistent_table_components.metadata_cache->remove(persistent_table_components.table_path);
+            if (persistent_table_components.table_uuid)
+                persistent_table_components.metadata_cache->remove(*persistent_table_components.table_uuid);
         }
     }
     catch (...)

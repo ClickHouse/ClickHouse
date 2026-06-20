@@ -167,7 +167,7 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
 
 void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction(NameAggregateFunctionGroupNumericIndexedVector::name, createAggregateFunctionNumericIndexedVector);
+    factory.registerFunction(NameAggregateFunctionGroupNumericIndexedVector::name, {createAggregateFunctionNumericIndexedVector, {}});
 }
 
 

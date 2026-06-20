@@ -66,6 +66,8 @@ namespace Setting
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
+
+    extern const SettingsBool enable_join_fixed_hash_table_conversion;
 }
 
 namespace QueryPlanSerializationSetting
@@ -110,6 +112,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
     extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
     extern const QueryPlanSerializationSettingsBool use_hash_table_stats_for_join_reordering;
+
+    extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
 }
 
 JoinSettings::JoinSettings(const Settings & query_settings)
@@ -162,6 +166,8 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     if (temporary_files_buffer_size > 1_GiB)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
     use_hash_table_stats_for_join_reordering = query_settings[Setting::use_hash_table_stats_for_join_reordering];
+
+    enable_join_fixed_hash_table_conversion = query_settings[Setting::enable_join_fixed_hash_table_conversion];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -210,6 +216,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
     use_hash_table_stats_for_join_reordering = settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering];
+
+    enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -258,6 +266,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
     settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering] = use_hash_table_stats_for_join_reordering;
+
+    settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
 }
 
 String toString(const JoinActionRef & node)

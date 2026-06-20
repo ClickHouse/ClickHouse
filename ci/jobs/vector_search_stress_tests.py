@@ -26,12 +26,15 @@ VECTOR_COLUMN = "vector_column"
 DISTANCE_METRIC = "distance_metric"
 DIMENSION = "dimension"
 SOURCE_SELECT_LIST = "source_select_list"
+SOURCE_FORMAT = "source_format"
+SOURCE_STRUCTURE = "source_structure"
 FETCH_COLUMNS_LIST = "fetch_columns_list"
 MERGE_TREE_SETTINGS = "merge_tree_settings"
 OTHER_SETTINGS = "other_settings"
 
 LIMIT_N = "limit"
 TRUTH_SET_FILES = "truth_set_files"
+TRUTH_SET_QUERY_SOURCE = "truth_set_query_source"
 QUANTIZATION = "quantization"
 HNSW_M = "hnsw_M"
 HNSW_EF_CONSTRUCTION = "hnsw_ef_construction"
@@ -42,6 +45,9 @@ TRUTH_SET_COUNT = "truth_set_count"
 RECALL_K = "recall_k"
 NEW_TRUTH_SET_FILE = "new_truth_set_file"
 CONCURRENCY_TEST = "concurrency_test"
+
+TRUTH_SET_QUERY_SOURCE_ID = "id"
+TRUTH_SET_QUERY_SOURCE_VECTOR = "vector"
 
 dataset_hackernews_openai = {
     TABLE: "hackernews_openai",
@@ -63,6 +69,24 @@ dataset_hackernews_openai = {
     DISTANCE_METRIC: "cosineDistance",
     DIMENSION: 1536,
     SOURCE_SELECT_LIST: None,
+}
+
+dataset_cohere_wiki_20m = {
+    TABLE: "cohere_wiki_20m",
+    S3_URLS: [
+        "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m.npy",
+    ],
+    SCHEMA: """
+        id            UInt32,
+        vector        Array(Float32)
+     """,
+    ID_COLUMN: "id",
+    VECTOR_COLUMN: "vector",
+    DISTANCE_METRIC: "cosineDistance",
+    DIMENSION: 1024,
+    SOURCE_SELECT_LIST: "toUInt32(rowNumberInAllBlocks()) AS id, vector",
+    SOURCE_FORMAT: "Npy",
+    SOURCE_STRUCTURE: "vector Array(Float32)",
 }
 
 # The full 100M vectors - will take hours to run
@@ -119,6 +143,7 @@ test_params_laion_5b_full_run = {
     HNSW_EF_CONSTRUCTION: 512,
     HNSW_EF_SEARCH: None,  # Default in CH is 256, use higher value for maybe 'b1' indexes
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,  # Set a value for 'b1' indexes
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: False,
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
@@ -135,6 +160,7 @@ test_params_laion_5b_quick_test = {
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: False,
     TRUTH_SET_COUNT: 1000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
@@ -152,6 +178,7 @@ test_params_laion_5b_1m = {
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: True,  # Will take some time!
     TRUTH_SET_COUNT: 10000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
@@ -171,10 +198,31 @@ test_params_hackernews_10m = {
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: False,
     NEW_TRUTH_SET_FILE: None,
     TRUTH_SET_COUNT: 1000,
     RECALL_K: 100,
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: True,
+}
+
+test_params_cohere_wiki_20m = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
+    ],
+    QUANTIZATION: "bf16",
+    HNSW_M: 64,
+    HNSW_EF_CONSTRUCTION: 256,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 25000,
+    RECALL_K: 10,
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
@@ -214,8 +262,10 @@ class RunTest:
         self._query_count = int(test_params[TRUTH_SET_COUNT])
         self._k = int(test_params[RECALL_K])
 
-        self._truth_set = {}
+        self._truth_set = []
         self._result_set = {}
+        self._query_source_warning_logged = False
+        self._vector_serialization_warning_logged = False
 
     def load_data(self):
         logger(f"Begin loading data into {self._table}")
@@ -227,11 +277,21 @@ class RunTest:
             logger(f"Loading rows from location : {url}")
             select_list = "*"
 
-            # Exact columns to read from the source files?
-            if self._dataset[SOURCE_SELECT_LIST] is not None:
-                select_list = self._dataset[SOURCE_SELECT_LIST]
+            # Exact columns to read from the source file?
+            configured_select_list = self._dataset.get(SOURCE_SELECT_LIST)
+            if configured_select_list is not None:
+                select_list = configured_select_list
 
-            insert = f"INSERT INTO {self._table} SELECT {select_list} FROM s3('{url}')"
+            source = f"s3('{url}')"
+            source_format = self._dataset.get(SOURCE_FORMAT)
+            if source_format is not None:
+                source = f"s3('{url}', '{source_format}'"
+                source_structure = self._dataset.get(SOURCE_STRUCTURE)
+                if source_structure is not None:
+                    source = source + f", '{source_structure}'"
+                source = source + ")"
+
+            insert = f"INSERT INTO {self._table} SELECT {select_list} FROM {source}"
 
             if self._test_params[LIMIT_N] is not None:
                 insert = (
@@ -317,7 +377,8 @@ class RunTest:
     def generate_truth_set(self):
         i = 0
         runtime = 0
-        truth_set = {}
+        truth_set = []
+        used_query_ids = set()
 
         # Get the MAX id value
         result = self._chclient.query(
@@ -327,7 +388,7 @@ class RunTest:
 
         while i < self._query_count:
             query_vector_id = random.randint(1, max_id)
-            if query_vector_id in truth_set:  # already used
+            if query_vector_id in used_query_ids:  # already used
                 continue
             subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {query_vector_id})"
 
@@ -349,11 +410,159 @@ class RunTest:
             if distances[int(self._k / 2)] == 0.0:
                 continue
 
-            truth_set[query_vector_id] = (neighbours, distances, (q_end - q_start))
+            truth_set.append(
+                self._make_truth_record(
+                    query_id=query_vector_id,
+                    query_vector=None,
+                    neighbours=neighbours,
+                    distances=distances,
+                    runtime_ms=(q_end - q_start),
+                )
+            )
+            used_query_ids.add(query_vector_id)
             i = i + 1
 
         self._truth_set = truth_set
         logger(f"Runtime for KNN : {runtime / 1000} seconds")
+
+    def _make_truth_record(
+        self, query_id, query_vector, neighbours, distances, runtime_ms
+    ):
+        normalized_query_vector = None
+        if query_vector is not None:
+            normalized_query_vector = np.asarray(query_vector, dtype=np.float32)
+
+        return {
+            "query_id": query_id,
+            "query_vector": normalized_query_vector,
+            "neighbours": np.asarray(neighbours),
+            "distances": np.asarray(distances),
+            "runtime_ms": runtime_ms,
+        }
+
+    def _vector_literal(self, query_vector):
+        values = ",".join(repr(float(value)) for value in query_vector.tolist())
+        return f"CAST([{values}], 'Array(Float32)')"
+
+    def _get_truth_set_query_source(self):
+        return self._test_params.get(
+            TRUTH_SET_QUERY_SOURCE, TRUTH_SET_QUERY_SOURCE_ID
+        )
+
+    def _validate_truth_set_arrays(self, query_values, neighbours, distances):
+        if len(query_values) != len(neighbours) or len(query_values) != len(distances):
+            raise ValueError("Truth set arrays must have the same number of rows")
+
+    def _load_truth_records_from_arrays(self, query_values, neighbours, distances):
+        self._validate_truth_set_arrays(query_values, neighbours, distances)
+
+        truth_set_query_source = self._get_truth_set_query_source()
+        truth_set = []
+        for i in range(len(query_values)):
+            if truth_set_query_source == TRUTH_SET_QUERY_SOURCE_ID:
+                truth_set.append(
+                    self._make_truth_record(
+                        query_id=int(query_values[i]),
+                        query_vector=None,
+                        neighbours=neighbours[i],
+                        distances=distances[i],
+                        runtime_ms=0,
+                    )
+                )
+            elif truth_set_query_source == TRUTH_SET_QUERY_SOURCE_VECTOR:
+                truth_set.append(
+                    self._make_truth_record(
+                        query_id=None,
+                        query_vector=query_values[i],
+                        neighbours=neighbours[i],
+                        distances=distances[i],
+                        runtime_ms=0,
+                    )
+                )
+            else:
+                raise ValueError(
+                    f"Unknown truth set query source: {truth_set_query_source}"
+                )
+
+        return truth_set
+
+    def _materialize_query_vector_if_needed(self, truth_record):
+        if truth_record["query_vector"] is not None:
+            return truth_record["query_vector"]
+
+        if truth_record["query_id"] is None:
+            raise ValueError("Truth record must contain either `query_id` or `query_vector`")
+
+        result = self._chclient.query(
+            f"SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {truth_record['query_id']}"
+        )
+        if not result.result_rows:
+            raise ValueError(
+                f"Failed to materialize query vector for id {truth_record['query_id']}"
+            )
+
+        truth_record["query_vector"] = np.asarray(
+            result.result_rows[0][0], dtype=np.float32
+        )
+        return truth_record["query_vector"]
+
+    def _render_query_source_sql(self, truth_record):
+        if truth_record["query_vector"] is not None:
+            if (
+                truth_record["query_id"] is not None
+                and not self._query_source_warning_logged
+            ):
+                logger(
+                    "Warning: truth record contains both `query_id` and `query_vector`, using `query_vector`"
+                )
+                self._query_source_warning_logged = True
+            return self._vector_literal(truth_record["query_vector"])
+
+        if truth_record["query_id"] is None:
+            raise ValueError("Truth record must contain either `query_id` or `query_vector`")
+
+        return f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {int(truth_record['query_id'])})"
+
+    def _save_truth_records(self, name):
+        if self._truth_set is None:
+            return
+
+        q_array = []
+        n_array = []
+        d_array = []
+
+        serialize_query_vectors = any(
+            truth_record["query_vector"] is not None for truth_record in self._truth_set
+        )
+        if serialize_query_vectors and any(
+            truth_record["query_vector"] is None for truth_record in self._truth_set
+        ):
+            if not self._vector_serialization_warning_logged:
+                logger(
+                    "Warning: truth set contains mixed query sources, serializing `_vectors.npy` as raw query vectors"
+                )
+                self._vector_serialization_warning_logged = True
+
+        for truth_record in self._truth_set:
+            if serialize_query_vectors:
+                q_array.append(self._materialize_query_vector_if_needed(truth_record))
+            else:
+                if truth_record["query_id"] is None:
+                    raise ValueError(
+                        "Cannot serialize truth set as query ids without `query_id`"
+                    )
+                q_array.append(truth_record["query_id"])
+
+            n_array.append(truth_record["neighbours"])
+            d_array.append(truth_record["distances"])
+
+        query_values = np.array(q_array)
+        neighbours = np.array(n_array)
+        distances = np.array(d_array)
+
+        np.save(name + "_vectors", query_values)
+        np.save(name + "_neighbours", neighbours)
+        np.save(name + "_distances", distances)
 
     # Load the truth set from a file (instead of generating at runtime)
     def load_truth_set(self, path):
@@ -381,40 +590,37 @@ class RunTest:
         neighbours = np.load(name + "_neighbours.npy")
         distances = np.load(name + "_distances.npy")
 
-        truth_set = {}
-        for i in range(len(query_vectors)):
-            truth_set[query_vectors[i]] = (neighbours[i], distances[i], 0)
+        truth_set_query_source = self._get_truth_set_query_source()
+        if truth_set_query_source == TRUTH_SET_QUERY_SOURCE_ID:
+            if query_vectors.ndim != 1:
+                raise ValueError(
+                    "Truth set configured for query ids but `_vectors.npy` is not 1-D"
+                )
+        elif truth_set_query_source == TRUTH_SET_QUERY_SOURCE_VECTOR:
+            if query_vectors.ndim != 2:
+                raise ValueError(
+                    "Truth set configured for query vectors but `_vectors.npy` is not 2-D"
+                )
+        else:
+            raise ValueError(
+                f"Unknown truth set query source: {truth_set_query_source}"
+            )
 
+        truth_set = self._load_truth_records_from_arrays(
+            query_vectors, neighbours, distances
+        )
         logger(f"Loaded truth set containing {len(query_vectors)} vectors")
         return truth_set
 
     # Save the current truth set into files in npy format
     def save_truth_set(self, name):
         logger(f"Saving truth set locally {name} ...")
-        if self._truth_set is None:
-            return
-
-        q_array = []
-        n_array = []
-        d_array = []
-
-        for vector_id, result in self._truth_set.items():
-            q_array.append(vector_id)
-            n_array.append(result[0])
-            d_array.append(result[1])
-
-        query_vectors = np.array(q_array)
-        neighbours = np.array(n_array)
-        distances = np.array(d_array)
-
-        np.save(name + "_vectors", query_vectors)
-        np.save(name + "_neighbours", neighbours)
-        np.save(name + "_distances", distances)
+        self._save_truth_records(name)
 
     # Run ANN on the query vectors in the truth set
     def run_search_for_truth_set(self, use_chclient=None):
         runtime = 0
-        result_set = {}
+        result_set = []
         if use_chclient is not None:
             chclient = use_chclient
         else:
@@ -424,10 +630,11 @@ class RunTest:
 
         # First execute a query to load the vector index, could take few minutes
         # We loop because API could timeout and raise exception.(even with higher receive_timeout)
+        warmup_query_source = f"(SELECT {self._vector_column} FROM {self._table} ORDER BY {self._id_column} LIMIT 1)"
+
         while True:
             try:
-                subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = 100)"
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k}"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {warmup_query_source} ) AS distance LIMIT {self._k}"
                 result = chclient.query(ann_search_query)
                 logger(f"Vector indexes have loaded!")
                 break
@@ -435,10 +642,10 @@ class RunTest:
                 logger(f"Waiting for indexes to load...")
                 time.sleep(30)
 
-        for vector_id, result in self._truth_set.items():
-            subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {vector_id})"
+        for truth_record in self._truth_set:
+            query_source = self._render_query_source_sql(truth_record)
             q_start = current_time_ms()
-            ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k} SETTINGS use_skip_indexes = 1, max_parallel_replicas = 1"
+            ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS use_skip_indexes = 1, max_parallel_replicas = 1"
             result = chclient.query(ann_search_query)
             q_end = current_time_ms()
             runtime = runtime + (q_end - q_start)
@@ -451,7 +658,15 @@ class RunTest:
                 neighbours.append(neighbour_id)
                 distances.append(distance)
 
-            result_set[vector_id] = (neighbours, distances, (q_end - q_start))
+            result_set.append(
+                self._make_truth_record(
+                    query_id=None,
+                    query_vector=None,
+                    neighbours=neighbours,
+                    distances=distances,
+                    runtime_ms=(q_end - q_start),
+                )
+            )
 
         # self._result_set = result_set
         logger(f"Runtime for ANN : {runtime / 1000} seconds")
@@ -465,16 +680,21 @@ class RunTest:
     # Calculate the recall using the original truth set and passed in result_set
     def calculate_recall(self, result_set):
         logger("Calculating recall...")
+        if len(self._truth_set) != len(result_set):
+            raise ValueError("Truth set and ANN result set must have the same length")
+
         recall = 0.0
-        for vector_id, result in self._truth_set.items():
-            search_result = result_set[vector_id]
+        for truth_record, search_record in zip(self._truth_set, result_set):
+            truth_neighbours = set(truth_record["neighbours"].tolist())
+            search_neighbours = set(search_record["neighbours"].tolist())
 
             # Recall = How many of the neighbours in the truth set(KNN) do we have in the result set(ANN)?
-            intersection = list(set(result[0]) & set(search_result[0]))
+            intersection = list(truth_neighbours & search_neighbours)
             recall = recall + (len(intersection) / self._k)
 
         # Average
-        recall = recall / self._query_count
+        if self._truth_set:
+            recall = recall / len(self._truth_set)
         logger(f"Recall is {recall}")
         return recall
 
@@ -494,8 +714,17 @@ class RunTest:
         for t in threads:
             t.join()
 
+    def drop_table(self):
+        logger(f"Dropping table {self._table} ...")
+        self._chclient.query(
+            f"DROP TABLE IF EXISTS {self._table} SYNC SETTINGS max_table_size_to_drop = 0"
+        )
+
 
 def run_single_test(test_name, dataset, test_params):
+    chclient = None
+    test_runner = None
+    result = True
     try:
         chclient = get_new_connection()
         test_runner = RunTest(chclient, dataset, test_params)
@@ -529,9 +758,15 @@ def run_single_test(test_name, dataset, test_params):
             test_runner.concurrency_test()
     except Exception as e:
         print(traceback.format_exc(), file=sys.stdout)
-        return False
+        result = False
+    finally:
+        if test_runner is not None:
+            try:
+                test_runner.drop_table()
+            except Exception:
+                print(traceback.format_exc(), file=sys.stdout)
 
-    return True
+    return result
 
 
 def install_and_start_clickhouse():
@@ -601,6 +836,11 @@ TESTS_TO_RUN = [
         "Test using the hackernews dataset",
         dataset_hackernews_openai,
         test_params_hackernews_10m,
+    ),
+    (
+        "Test using the cohere wiki dataset",
+        dataset_cohere_wiki_20m,
+        test_params_cohere_wiki_20m,
     ),
 ]
 

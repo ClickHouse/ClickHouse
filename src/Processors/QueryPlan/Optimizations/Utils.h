@@ -1,7 +1,10 @@
 #pragma once
 
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+
+#include <type_traits>
 
 namespace DB
 {
@@ -57,6 +60,9 @@ bool makeFilterNodeOnTopOf(
 
 bool isPassthroughActions(const ActionsDAG & actions_dag);
 
+namespace QueryPlanOptimizations
+{
+
 enum class FilterResult
 {
     UNKNOWN,
@@ -72,4 +78,45 @@ enum class FilterResult
     const Block & input_stream_header,
     bool allow_unknown_function_arguments = false);
 
+struct NoOp
+{
+};
+
+template <typename Func1, typename Func2 = NoOp>
+void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})
+{
+    stack.clear();
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        if constexpr (!std::is_same_v<Func1, NoOp>)
+        {
+            if (frame.next_child == 0)
+            {
+                on_enter(*frame.node);
+            }
+        }
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        if constexpr (!std::is_same_v<Func2, NoOp>)
+        {
+            on_leave(*frame.node);
+        }
+
+        stack.pop_back();
+    }
+}
+
+}
 }

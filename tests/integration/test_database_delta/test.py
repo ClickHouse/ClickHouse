@@ -7,7 +7,6 @@ import os
 import re
 import random
 import time
-import subprocess
 import uuid
 from datetime import datetime, timedelta
 from helpers.cluster import ClickHouseCluster
@@ -23,6 +22,8 @@ import uuid
 
 from helpers.test_tools import TSV
 
+UC_LOG = "/var/lib/clickhouse/user_files/unitycatalog/uc.log"
+
 
 def start_unity_catalog(node):
     node.exec_in_container(
@@ -32,6 +33,26 @@ def start_unity_catalog(node):
             f"""cp -r /unitycatalog /var/lib/clickhouse/user_files/ && cd /var/lib/clickhouse/user_files/unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
         ]
     )
+    # Wait for Unity Catalog to accept connections on port 8080 before returning.
+    # The 120s timeout matches the UC startup wait in tests/casa_del_dolor/catalogs/datalakes.py.
+    try:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                """for i in $(seq 1 120); do (echo > /dev/tcp/localhost/8080) 2>/dev/null && exit 0; sleep 1; done; echo 'Unity Catalog did not start within 120s' >&2; exit 1""",
+            ]
+        )
+    except Exception as e:
+        print("UC health check failed:", str(e))
+        try:
+            logs = node.exec_in_container(
+                ["tail", "-n", "50", UC_LOG]
+            )
+            print("Last 50 lines of UC log:\n", logs)
+        except Exception as log_e:
+            print(f"Cannot read UC log: {str(log_e)}")
+        raise
 
 
 @pytest.fixture(scope="module")
@@ -102,26 +123,30 @@ def execute_spark_query(node, query_text):
             ],
             timeout=600,
         )
-    except subprocess.CalledProcessError as e:
-        print("Command failed with exit code:", e.returncode)
-        print("Command:", e.cmd)
+    except Exception as e:
+        returncode = getattr(e, "returncode", None)
+        cmd = getattr(e, "cmd", None)
+        if returncode is not None:
+            print("Command failed with exit code:", returncode)
+        if cmd is not None:
+            print("Command:", cmd)
 
-        stdout = e.stdout.decode() if e.stdout else "<no stdout>"
-        stderr = e.stderr.decode() if e.stderr else "<no stderr>"
-        print("STDOUT:\n", stdout)
-        print("STDERR:\n", stderr)
+        stdout_bytes = getattr(e, "stdout", None)
+        stderr_bytes = getattr(e, "stderr", None)
+        if stdout_bytes is not None or stderr_bytes is not None:
+            stdout = stdout_bytes.decode() if stdout_bytes else "<no stdout>"
+            stderr = stderr_bytes.decode() if stderr_bytes else "<no stderr>"
+            print("STDOUT:\n", stdout)
+            print("STDERR:\n", stderr)
+        else:
+            print("Command failed with exception:", str(e))
 
         try:
             logs = node.exec_in_container(
-                [
-                    "tail",
-                    "-n",
-                    "50",
-                    "/var/lib/clickhouse/user_files/unitycatalog/uc.log",
-                ]
+                ["tail", "-n", "50", UC_LOG]
             )
             print("Last 50 lines of UC log:\n", logs)
-        except subprocess.CalledProcessError as log_e:
+        except Exception as log_e:
             print(f"Cannot read log file: {str(log_e)}")
 
         raise
@@ -188,26 +213,84 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
             assert data_clickhouse == data_spark
 
 
+def test_check_database_unity(started_cluster):
+    """
+    Test CHECK DATABASE query on Unity Catalog with a single schema.
+    Creates one schema with multiple tables and verifies CHECK DATABASE works correctly.
+    """
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    node1 = started_cluster.instances["node1"]
+    db_name = f"check_database_{test_uuid}"
+    schema_name = f"test_schema_{test_uuid}"
+
+    # Create multiple tables in the same schema
+    table_configs = [
+        (f"table1_{test_uuid}", "col1 int, col2 double", [(1, 1.0)]),
+        (f"table2_{test_uuid}", "col1 int, col2 double", [(2, 2.0)]),
+        (f"table3_{test_uuid}", "col1 int, col2 double", [(3, 3.0)]),
+    ]
+
+    # Combine schema creation, table creation and inserts into a single
+    # Spark invocation to avoid multiple slow JVM startups.
+    queries = [f"CREATE SCHEMA {schema_name}"]
+    for table_name, table_schema, data_rows in table_configs:
+        queries.append(
+            f"CREATE TABLE {schema_name}.{table_name} ({table_schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
+        )
+        for row in data_rows:
+            queries.append(f"INSERT INTO {schema_name}.{table_name} VALUES {row}")
+    execute_multiple_spark_queries(node1, queries)
+
+    # Create ClickHouse database pointing to Unity Catalog
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
+        settings={"allow_database_unity_catalog": "1"},
+    )
+
+    # Verify tables are visible
+    tables = list(
+        sorted(
+            node1.query(
+                f"SHOW TABLES FROM {db_name} LIKE '{schema_name}.%'",
+                settings={"use_hive_partitioning": "0"},
+            )
+            .strip()
+            .split("\n")
+        )
+    )
+
+    print(f"Found tables: {tables}")
+    assert len(tables) == len(table_configs), f"Expected {len(table_configs)} tables, got {len(tables)}"
+
+    # Run CHECK DATABASE - should succeed without errors
+    node1.query(f"CHECK DATABASE {db_name}")
+
+    try:
+        node1.query(
+            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+        )
+        
+        assert "fault when checking database" in node1.query_and_get_error(
+            f"CHECK DATABASE {db_name}"
+        )
+    finally:
+        node1.query(
+            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+        )
+
 def test_multiple_schemes_tables(started_cluster):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
-    execute_multiple_spark_queries(
-        node1, [f"CREATE SCHEMA test_schema{test_uuid}{i}" for i in range(10)]
-    )
-    execute_multiple_spark_queries(
-        node1,
-        [
-            f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'"
-            for i in range(10)
-        ],
-    )
-    execute_multiple_spark_queries(
-        node1,
-        [
-            f"INSERT INTO test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)"
-            for i in range(10)
-        ],
-    )
+    # Combine schema creation, table creation and inserts into a single
+    # Spark invocation to avoid multiple slow JVM startups.
+    queries = []
+    for i in range(10):
+        queries.extend([
+            f"CREATE SCHEMA test_schema{test_uuid}{i}",
+            f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'",
+            f"INSERT INTO test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)",
+        ])
+    execute_multiple_spark_queries(node1, queries)
 
     node1.query(
         f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
@@ -406,7 +489,6 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=True
 
     # This query will fail if bug exists
     print(node1.query(f"SHOW TABLES FROM {schema_name}"))
-
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_view_with_void(started_cluster, use_delta_kernel):

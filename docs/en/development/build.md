@@ -9,8 +9,8 @@ doc_type: 'guide'
 
 # How to Build ClickHouse on Linux
 
-:::info You don't have to build ClickHouse yourself!
-You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start).
+:::info This build guide is for contributors modifying ClickHouse itself.
+If you are not changing ClickHouse source code, you can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/docs/get-started/quick-start).
 :::
 
 ClickHouse can be build on the following platforms:
@@ -70,8 +70,8 @@ As with C++ dependencies, ClickHouse uses vendoring to control exactly what's in
 Although in release mode any rust modern rustup toolchain version should work with these dependencies, if you plan to enable sanitizers you must use a version that matches the exact same `std` as the one used in CI (for which we vendor the crates):
 
 ```bash
-rustup toolchain install nightly-2025-07-07
-rustup default nightly-2025-07-07
+rustup toolchain install nightly-2026-03-22
+rustup default nightly-2026-03-22
 rustup component add rust-src
 ```
 ## Build ClickHouse {#build-clickhouse}
@@ -119,8 +119,11 @@ ninja
 You can control the number of parallel build jobs using parameter `-j`:
 
 ```sh
-ninja -j 1 clickhouse-server clickhouse-client
+ninja -j 1 clickhouse
 ```
+
+:::note
+`clickhouse-server`, `clickhouse-client`, and similar binaries are symbolic links in the `programs/` directory that point to the `clickhouse` executable after the build is completed.
 
 :::tip
 CMake provides shortcuts for above commands:

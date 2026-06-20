@@ -1,10 +1,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCheckDatabaseQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
@@ -258,7 +260,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterAlterNamedCollectionQuery";
     }
-    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>())
+    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>() || query->as<ASTCheckDatabaseQuery>())
     {
         interpreter_name = "InterpreterCheckQuery";
     }
@@ -342,7 +344,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterTransactionControlQuery";
     }
-    else if (query->as<ASTCreateFunctionQuery>())
+    else if (query->as<ASTCreateSQLFunctionQuery>() || query->as<ASTCreateWasmFunctionQuery>())
     {
         interpreter_name = "InterpreterCreateFunctionQuery";
     }

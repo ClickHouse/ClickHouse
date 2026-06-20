@@ -45,6 +45,10 @@ The `Alias` table does not support explicit column definitions. Columns are auto
 - **`target_db (optional)`** — Name of the database containing the target table.
 - **`target_table`** — Name of the target table.
 
+:::note
+When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
+:::
+
 ## Supported Operations {#supported-operations}
 
 The `Alias` table engine supports all major operations. 

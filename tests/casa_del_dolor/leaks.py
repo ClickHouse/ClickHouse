@@ -93,27 +93,15 @@ class ElOracloDeLeaks:
         if len(self.snapshots) == 0:
             return {}
 
-        tracking_growth = (
-            (snapshot.memory_tracking - self.snapshots[-1].memory_tracking)
-            / self.snapshots[-1].memory_tracking
-            * 100
-        )
+        prev_resident = self.snapshots[-1].memory_resident
         resident_growth = (
-            (snapshot.memory_resident - self.snapshots[-1].memory_resident)
-            / self.snapshots[-1].memory_resident
-            * 100
+            (snapshot.memory_resident - prev_resident) / prev_resident * 100
+            if prev_resident != 0
+            else 0.0
         )
         return {
-            "tracking_growth": tracking_growth,
             "resident_growth": resident_growth,
-            "tracking_mb_delta": (
-                snapshot.memory_tracking - self.snapshots[-1].memory_tracking
-            )
-            / 1024
-            / 1024,
-            "resident_mb_delta": (
-                snapshot.memory_resident - self.snapshots[-1].memory_resident
-            )
+            "resident_mb_delta": (snapshot.memory_resident - prev_resident)
             / 1024
             / 1024,
         }
@@ -131,6 +119,7 @@ class ElOracloDeLeaks:
         if len(self.snapshots) == 0:
             self.logger.error(f"No previous captures exist")
             return
+        leak_detected = False
         try:
             snapshot = self._get_memory_snapshot("Generator iteration", cluster)
             if snapshot is None:
@@ -141,22 +130,22 @@ class ElOracloDeLeaks:
 
             # Print progress
             self.logger.info(
-                f"MemoryTracking: {growth['tracking_growth']:+6.2f}% "
-                f"({growth['tracking_mb_delta']:+7.2f} MB), "
                 f"RSS: {growth['resident_growth']:+6.2f}% "
                 f"({growth['resident_mb_delta']:+7.2f} MB)"
             )
 
-            if growth["tracking_growth"] > leak_threshold_percent:
-                message: str = (
-                    f"⚠️ WARNING: Potential leak detected: MemoryTracking grew by {growth['tracking_growth']:.2f}%"
-                )
-                self.logger.warning(message)
-                raise ValueError(message)
+            leak_detected = growth["resident_growth"] > leak_threshold_percent
         except Exception as ex:
             self.logger.warning(
                 f"Error occurred while fetching metrics from the server: {ex}"
             )
+
+        if leak_detected:
+            message: str = (
+                f"⚠️ WARNING: Potential leak detected: MemoryResident grew by {growth['resident_growth']:.2f}%"
+            )
+            self.logger.warning(message)
+            raise ValueError(message)
 
     def _pause_or_resume_clickhouse_background_tasks(
         self, cmd: str, backupn: int, cluster: ClickHouseCluster, timeout: int = 30

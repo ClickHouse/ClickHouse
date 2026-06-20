@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregateDescription.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -16,11 +17,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
+void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix, size_t additonal_indent) const
 {
-    String prefix(indent, ' ');
+    std::string prefix_with_indent = prefix;
+    prefix_with_indent.append(additonal_indent, ' ');
 
-    out << prefix << column_name << '\n';
+    out << prefix_with_indent << column_name << '\n';
 
     auto dump_params = [&](const Array & arr)
     {
@@ -39,7 +41,7 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
     if (function)
     {
         /// Double whitespace is intentional.
-        out << prefix << "  Function: " << function->getName();
+        out << prefix_with_indent << "  Function: " << function->getName();
 
         const auto & params = function->getParameters();
         if (!params.empty())
@@ -64,16 +66,16 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
         out << ") → " << function->getResultType()->getName() << "\n";
     }
     else
-        out << prefix << "  Function: nullptr\n";
+        out << prefix_with_indent << "  Function: nullptr\n";
 
     if (!parameters.empty())
     {
-        out << prefix << "  Parameters: ";
+        out << prefix_with_indent << "  Parameters: ";
         dump_params(parameters);
         out << '\n';
     }
 
-    out << prefix << "  Arguments: ";
+    out << prefix_with_indent << "  Arguments: ";
 
     if (argument_names.empty())
         out << "none\n";
@@ -90,6 +92,36 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
         }
         out << "\n";
     }
+}
+
+void AggregateDescription::explainPretty(ExplainFormatSettings & settings) const
+{
+    auto & out = settings.out;
+
+    if (function)
+        out << function->getName();
+
+    const Array & aggregate_parameters = function ? function->getParameters() : parameters;
+    bool first_param = true;
+    for (const auto & param : aggregate_parameters)
+    {
+        out << (first_param ? "(" : ", ");
+        first_param = false;
+        out << applyVisitor(FieldVisitorToString(), param);
+    }
+    if (!aggregate_parameters.empty())
+        out << ')';
+
+    out << '(';
+    bool first = true;
+    for (const auto & arg : argument_names)
+    {
+        if (!first)
+            out << ", ";
+        first = false;
+        out << QueryPlanFormat::formatColumnPretty(arg, settings.pretty_names);
+    }
+    out << ')';
 }
 
 void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
@@ -142,7 +174,7 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
         if (argument_types.size() != num_args)
         {
             WriteBufferFromOwnString buf;
-            aggregate.explain(buf, 0);
+            aggregate.explain(buf, "", 0);
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Invalid number of for aggregate function. Expected {}, got {}. Description:\n{}",
                 argument_types.size(), num_args, buf.str());

@@ -2,7 +2,6 @@
 
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ITokenizer.h>
 #include <absl/container/flat_hash_map.h>
 
 namespace DB
@@ -28,6 +27,8 @@ struct HasAllTokensTraits
 
 /// Map needle into a position (for bitmap operations).
 using TokensWithPosition = absl::flat_hash_map<String, UInt64>;
+
+struct ITokenizer;
 
 template <class HasTokensTraits>
 class ExecutableFunctionHasAnyAllTokens : public IExecutableFunction

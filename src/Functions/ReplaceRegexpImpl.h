@@ -5,7 +5,6 @@
 #include <Common/re2.h>
 #include <Functions/Regexps.h>
 #include <Functions/ReplaceStringImpl.h>
-#include <IO/WriteHelpers.h>
 #include <base/types.h>
 
 namespace DB

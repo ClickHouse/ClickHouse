@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
@@ -254,7 +255,7 @@ void ReadFromSystemDatabaseReplicas::initializePipeline(QueryPipelineBuilder & p
 } // anonymous namespace
 
 StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , pools(std::make_shared<TPools>(DEFAULT_THREAD_COUNT))
 {
     ColumnsDescription description
@@ -272,10 +273,19 @@ StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & t
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageSystemDatabaseReplicas::read(
+VirtualColumnsDescription StorageSystemDatabaseReplicas::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemDatabaseReplicas::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

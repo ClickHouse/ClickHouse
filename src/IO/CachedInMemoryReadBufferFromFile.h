@@ -30,6 +30,9 @@ public:
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
 
+    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t m)> & progress_callback) const override;
+    bool supportsReadAt() override;
+
     PageCache::MappedPtr getPageCacheCell() const { return chunk; }
     PageCachePtr getPageCache() const { return cache; }
 

@@ -2,29 +2,32 @@
 
 #include "config.h"
 
-#include <Formats/NativeWriter.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Formats/NativeWriter.h>
 #include <IO/HTTPCommon.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/S3Common.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/ReplicatedFetchList.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/randomDelay.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <base/scope_guard.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <boost/algorithm/string/join.hpp>
 #include <base/sort.h>
+#include <boost/algorithm/string/join.hpp>
+#include <Poco/Net/HTTPRequest.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
+#include <Common/randomDelay.h>
+#include <Common/thread_local_rng.h>
 
 namespace fs = std::filesystem;
 
@@ -284,6 +287,16 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         }
     }
 
+    /// Handle unknown projections: .proj entries in part->checksums that are
+    /// not in getProjectionParts() (e.g. a projection was dropped while the
+    /// part was detached, then re-attached).  Copy their stored checksums to
+    /// data_checksums so that checkEqual below does not fail.
+    for (const auto & [name, checksum] : part->checksums.files)
+    {
+        if (name.ends_with(".proj") && !data_checksums.has(name))
+            data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
+    }
+
     writeBinary(replicated_description.files.size(), out);
     for (const auto & [file_name, desc] : replicated_description.files)
     {
@@ -487,6 +500,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     auto in = BuilderRWBufferFromHTTP(uri)
                   .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+                  .withBypassProxy(true)
                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                   .withTimeouts(timeouts)
                   .withSettings(read_settings)
@@ -851,7 +865,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings());
         new_data_part = builder.withPartFormatFromDisk().build();
 
-        new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+        new_data_part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         new_data_part->is_temp = true;
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
@@ -882,7 +896,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     else
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
+        {
+            /// Handle unknown projections on the fetch side: .proj entries in
+            /// checksums.txt that were not transferred (e.g. a projection was
+            /// dropped while the part was detached, then re-attached on the
+            /// sender).  Copy them to data_checksums so that checkEqual does
+            /// not fail.
+            for (const auto & [name, checksum] : new_data_part->checksums.files)
+            {
+                if (name.ends_with(".proj") && !data_checksums.has(name))
+                    data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
+            }
             new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
+        }
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
 

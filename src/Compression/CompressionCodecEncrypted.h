@@ -110,7 +110,15 @@ public:
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
     bool isEncryption() const override { return true; }
-    String getDescription() const override { return "Encrypts and decrypts blocks with AES-128 in GCM-SIV mode (RFC-8452)."; }
+    String getDescription() const override
+    {
+        switch (encryption_method)
+        {
+            case AES_128_GCM_SIV: return "Encrypts and decrypts blocks with AES-128 in GCM-SIV mode (RFC-8452).";
+            case AES_256_GCM_SIV: return "Encrypts and decrypts blocks with AES-256 in GCM-SIV mode (RFC-8452).";
+            default: return "Encrypts and decrypts blocks with unknown encryption method in GCM-SIV mode (RFC-8452).";
+        }
+    }
 
 protected:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;

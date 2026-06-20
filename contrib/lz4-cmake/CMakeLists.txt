@@ -17,7 +17,7 @@ if(ARCH_S390X)
     target_compile_definitions(_lz4 PRIVATE LZ4_STATIC_LINKING_ONLY_ENDIANNESS_INDEPENDENT_OUTPUT)
 endif()
 
-if (SANITIZE STREQUAL "undefined")
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     target_compile_options (_lz4 PRIVATE -fno-sanitize=undefined)
 endif ()
 target_include_directories(_lz4 PUBLIC "${LIBRARY_DIR}/lib")

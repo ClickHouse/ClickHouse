@@ -4,9 +4,7 @@
 #include <limits>
 #include <base/types.h>
 
-#include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 
@@ -16,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int INCORRECT_DATA;
 }
 
 class DDSketchLogarithmicMapping
@@ -84,11 +83,19 @@ public:
     {
         readBinary(gamma, buf);
         readBinary(offset, buf);
-        if (gamma <= 1.0)
+        if (!std::isfinite(gamma) || gamma <= 1.0)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid gamma value after deserialization: {}", gamma);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid gamma value after deserialization: {}", gamma);
+        }
+        if (!std::isfinite(offset))
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid offset value after deserialization: {}", offset);
         }
         multiplier = 1 / std::log(gamma);
+        if (!std::isfinite(multiplier) || multiplier == 0.0)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid multiplier derived from gamma: {}", gamma);
+        }
         min_possible = std::numeric_limits<Float64>::min() * gamma;
         max_possible = std::numeric_limits<Float64>::max() / gamma;
     }

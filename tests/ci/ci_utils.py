@@ -317,7 +317,7 @@ class Shell:
             proc.wait()
             retcode = proc.returncode
             if strict:
-                assert retcode == 0
+                assert retcode == 0, f"Command failed with exit code {retcode}: {command}"
         return retcode == 0
 
 

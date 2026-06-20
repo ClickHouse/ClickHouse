@@ -146,8 +146,6 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
 {
     int32_t round_bracket_count = 0;
     int32_t square_bracket_count = 0;
-    if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
-        return {};
 
     if (!isValidKQLPos(pos) || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Need more argument(s) in function: {}", fn_name);
@@ -232,7 +230,9 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
         return {};
 
     ++pos;
-    if (const auto type = pos->type; type == DB::TokenType::ClosingRoundBracket || type == DB::TokenType::ClosingSquareBracket)
+    if (const auto type = pos->type;
+        type == DB::TokenType::ClosingRoundBracket || type == DB::TokenType::ClosingSquareBracket
+            || type == DB::TokenType::Comma)
         return {};
 
     if (argument_state == ArgumentState::Parsed)

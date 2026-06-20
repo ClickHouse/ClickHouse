@@ -49,6 +49,16 @@ class _Environment(MetaClasses.Serializable):
     name = "environment"
 
     @classmethod
+    def _load_workflow_job_data(cls) -> dict:
+        if Path(Settings.WORKFLOW_JOB_FILE).is_file():
+            with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
+                return json.load(f)
+        print(
+            f"NOTE: Workflow job file [{Settings.WORKFLOW_JOB_FILE}] does not exist"
+        )
+        return {}
+
+    @classmethod
     def from_env(cls) -> "_Environment":
         WORKFLOW_NAME = os.getenv("GITHUB_WORKFLOW", "")
         JOB_NAME = os.getenv("JOB_NAME", "")
@@ -71,14 +81,7 @@ class _Environment(MetaClasses.Serializable):
         EVENT_TIME = ""
         COMMIT_MESSAGE = ""
 
-        if Path(Settings.WORKFLOW_JOB_FILE).is_file():
-            with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
-                WORKFLOW_JOB_DATA = json.load(f)
-        else:
-            print(
-                f"NOTE: Workflow job file [{Settings.WORKFLOW_JOB_FILE}] does not exist"
-            )
-            WORKFLOW_JOB_DATA = {}
+        WORKFLOW_JOB_DATA = cls._load_workflow_job_data()
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
@@ -282,6 +285,11 @@ class _Environment(MetaClasses.Serializable):
             or ""
         )
 
+        # Override WORKFLOW_JOB_DATA with the current job's data so that
+        # check_run_id refers to this job rather than to the config job whose
+        # serialised environment we loaded above.
+        env_dict["WORKFLOW_JOB_DATA"] = cls._load_workflow_job_data()
+
         return cls.from_dict(env_dict)
 
     def add_info(self, info):
@@ -310,6 +318,25 @@ class _Environment(MetaClasses.Serializable):
         self.JOB_NAME = job_name
         self.dump()
         return self
+
+    def set_pr_labels(self, labels: List[str], reset: bool = False) -> None:
+        if reset:
+            self.PR_LABELS = list(labels)
+        else:
+            for label in labels:
+                if label not in self.PR_LABELS:
+                    self.PR_LABELS.append(label)
+        self.dump()
+
+    def add_pr_label(self, label: str) -> None:
+        if label not in self.PR_LABELS:
+            self.PR_LABELS.append(label)
+            self.dump()
+
+    def remove_pr_label(self, label: str) -> None:
+        if label in self.PR_LABELS:
+            self.PR_LABELS.remove(label)
+            self.dump()
 
     @staticmethod
     def get_needs_statuses():

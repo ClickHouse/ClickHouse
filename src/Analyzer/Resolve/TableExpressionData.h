@@ -69,8 +69,18 @@ struct AnalysisTableExpressionData
 
         buffer << "   Should qualify columns " << should_qualify_columns << "\n";
         buffer << "   Columns size " << column_name_to_column_node.size() << "\n";
+        static constexpr size_t max_columns_to_dump = 10;
+        size_t columns_dumped = 0;
         for (const auto & [column_name, column_node] : column_name_to_column_node)
+        {
+            if (columns_dumped >= max_columns_to_dump)
+            {
+                buffer << "    ... and " << (column_name_to_column_node.size() - max_columns_to_dump) << " more columns\n";
+                break;
+            }
             buffer << "    { " << column_name << " : " << column_node->dumpTree() << " }\n";
+            ++columns_dumped;
+        }
     }
 
     [[maybe_unused]] String dump() const

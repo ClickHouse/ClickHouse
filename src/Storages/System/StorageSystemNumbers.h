@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 #include <optional>
 
@@ -37,7 +37,7 @@ class Context;
   *  the table could give you not exactly 1..limit range, but some arbitrary 'limit' numbers.
   */
 
-class StorageSystemNumbers final : public IStorage
+class StorageSystemNumbers final : public StorageWithCommonVirtualColumns
 {
 public:
     /// Otherwise, streams concurrently increment atomic.
@@ -51,7 +51,9 @@ public:
 
     std::string getName() const override { return "SystemNumbers"; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

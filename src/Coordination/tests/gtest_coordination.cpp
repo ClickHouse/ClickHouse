@@ -935,7 +935,8 @@ TYPED_TEST(CoordinationTest, TestFeatureFlags)
     Storage storage{500, "", this->keeper_context};
     auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = DB::keeper_api_feature_flags_path;
-    auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
+    KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 0, .request = request}};
+    auto responses = storage.processLocalRequests(requests, true);
     const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
     DB::KeeperFeatureFlags feature_flags;
     feature_flags.setFeatureFlags(get_response.data);

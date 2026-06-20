@@ -8,6 +8,8 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
 
+#include <Common/FailPoint.h>
+
 #include <vector>
 
 
@@ -23,8 +25,14 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+namespace FailPoints
+{
+extern const char space_saving_copy_arena_throw[];
 }
 
 /*
@@ -438,9 +446,29 @@ private:
 
         if constexpr (std::is_same_v<TKey, std::string_view>)
         {
-            /// Need to copy the keys into our own arena
-            for (auto & counter : counter_list)
-                counter.key = arena.emplace(counter.key);
+            /// Copy each key into our own arena. If arena.emplace throws
+            /// (e.g. under OOM), keys [copied..end) still reference rhs arena.
+            /// Truncate to the successfully-copied prefix so that
+            /// destroyElements does not double-free the rhs-owned keys.
+            size_t copied = 0;
+            try
+            {
+                for (size_t i = 0; i < counter_list.size(); ++i)
+                {
+                    counter_list[i].key = arena.emplace(counter_list[i].key);
+                    ++copied;
+                    fiu_do_on(FailPoints::space_saving_copy_arena_throw,
+                    {
+                        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY,
+                            "Injected fault in SpaceSaving operator=");
+                    });
+                }
+            }
+            catch (...)
+            {
+                counter_list.resize(copied);
+                throw;
+            }
         }
         truncateIfNeeded(true);
 

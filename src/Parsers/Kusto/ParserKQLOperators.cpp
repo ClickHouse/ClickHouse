@@ -119,8 +119,8 @@ void rebuildSubqueryForInOperator(ASTPtr & node, bool useLowerCase)
         args->children.push_back(selectColumns->children[0]);
         auto func_lower = make_intrusive<ASTFunction>();
         func_lower->name = "lower";
-        func_lower->children.push_back(selectColumns->children[0]);
         func_lower->arguments = args;
+        func_lower->children.push_back(func_lower->arguments);
         if (selectColumns->children[0]->as<ASTIdentifier>())
             func_lower->alias = std::move(selectColumns->children[0]->as<ASTIdentifier>()->alias);
         else if (selectColumns->children[0]->as<ASTFunction>())

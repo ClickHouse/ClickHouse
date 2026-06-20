@@ -7,6 +7,7 @@
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
 #include <Common/StackTrace.h>
 #include <Common/TraceSender.h>
@@ -309,7 +310,7 @@ template class QueryProfilerBase<QueryProfilerReal>;
 template class QueryProfilerBase<QueryProfilerCPU>;
 
 QueryProfilerReal::QueryProfilerReal(UInt64 thread_id, UInt64 period)
-    : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, SIGUSR1)
+    : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, PAUSE_SIGNAL)
 {}
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
@@ -322,7 +323,7 @@ void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 }
 
 QueryProfilerCPU::QueryProfilerCPU(UInt64 thread_id, UInt64 period)
-    : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, SIGUSR2)
+    : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, PAUSE_SIGNAL)
 {}
 
 void QueryProfilerCPU::signalHandler(int sig, siginfo_t * info, void * context)

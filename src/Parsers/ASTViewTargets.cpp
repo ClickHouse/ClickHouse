@@ -3,7 +3,6 @@
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/IAST_erase.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -153,18 +152,17 @@ void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def)
             if (target.inner_engine == new_inner_engine)
                 return;
             if (new_inner_engine)
-                children.push_back(new_inner_engine);
-            if (target.inner_engine)
-                std::erase(children, target.inner_engine);
-            target.inner_engine = new_inner_engine;
+                setOrReplace(target.inner_engine, std::move(new_inner_engine));
+            else
+                reset(target.inner_engine);
             return;
         }
     }
 
     if (new_inner_engine)
     {
-        targets.emplace_back(kind).inner_engine = new_inner_engine;
-        children.push_back(new_inner_engine);
+        auto & new_target = targets.emplace_back(kind);
+        set(new_target.inner_engine, std::move(new_inner_engine));
     }
 }
 
@@ -204,10 +202,7 @@ ASTPtr ASTViewTargets::clone() const
     for (auto & target : res->targets)
     {
         if (target.inner_engine)
-        {
-            target.inner_engine = boost::static_pointer_cast<ASTStorage>(target.inner_engine->clone());
-            res->children.push_back(target.inner_engine);
-        }
+            res->set(target.inner_engine, target.inner_engine->clone());
     }
     return res;
 }

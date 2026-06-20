@@ -43,7 +43,7 @@ for max_threads in 1 7; do
         cat <<EOF | $CLICKHOUSE_CLIENT
 select
     if(peak_threads_usage >= 6, 7, peak_threads_usage),
-from system.query_log where
+from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query_id = '$QUERY_ID'

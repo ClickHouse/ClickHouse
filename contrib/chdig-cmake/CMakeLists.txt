@@ -17,7 +17,7 @@ if (NOT ENABLE_CHDIG OR NOT ENABLE_RUST)
     return()
 endif()
 
-clickhouse_import_crate(MANIFEST_PATH ../chdig/Cargo.toml ALL_FEATURES)
+clickhouse_import_crate(MANIFEST_PATH ../chdig/Cargo.toml)
 clickhouse_config_crate_flags(chdig)
 add_library(ch_rust::chdig ALIAS chdig)
 

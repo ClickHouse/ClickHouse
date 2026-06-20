@@ -1,6 +1,12 @@
--- Tags: long, no-sanitizers
+-- Tags: long, no-sanitizers, no-s3-storage, no-azure-blob-storage
 -- long: times out in private
 -- no-sanitizers: sometimes times out in private :(
+-- no-s3-storage, no-azure-blob-storage: writing 550 small parts to object storage is too slow
+
+SET optimize_on_insert = 1;
+SET optimize_trivial_insert_select = 0;
+SET query_plan_optimize_lazy_materialization = 1;
+SET optimize_use_projections = 1;
 
 DROP TABLE IF EXISTS t;
 
@@ -9,6 +15,8 @@ DROP TABLE IF EXISTS t;
 -- With that said, since `split_parts_ranges_into_intersecting_and_non_intersecting_final` is enabled, we should also detect non-intersecting ranges, so the
 -- resulting number of `AggregatingTransform`-s should be 50 (one per partition) + 5 (for non-intersecting ranges; specific for the given dataset) = 55.
 SET split_parts_ranges_into_intersecting_and_non_intersecting_final = 1, split_intersecting_parts_ranges_into_layers_final = 1, do_not_merge_across_partitions_select_final = 1;
+SET optimize_move_to_prewhere_if_final = 0;
+SET optimize_aggregation_in_order = 0;
 
 CREATE TABLE t
 (

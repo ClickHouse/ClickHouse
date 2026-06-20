@@ -149,13 +149,24 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     if (parse_alter_commands && command.type == ASTAlterCommand::MODIFY_COLUMN && command.remove_property.empty()
         && nullptr == command.settings_changes && nullptr == command.settings_resets)
     {
-        res.type = MutationCommand::Type::READ_COLUMN;
         const auto & ast_col_decl = command.col_decl->as<ASTColumnDeclaration &>();
-        if (nullptr == ast_col_decl.getType())
+
+        if (ast_col_decl.getType() != nullptr)
+        {
+            res.type = MutationCommand::Type::READ_COLUMN;
+            res.column_name = ast_col_decl.name;
+            res.data_type = DataTypeFactory::instance().get(ast_col_decl.getType());
+            return res;
+        }
+
+        const bool metadata_only_modification
+            = ast_col_decl.getDefaultExpression() != nullptr
+            || ast_col_decl.getComment() != nullptr
+            || ast_col_decl.getCodec() != nullptr
+            || ast_col_decl.getTTL() != nullptr;
+
+        if (!metadata_only_modification)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY COLUMN mutation command doesn't specify type: {}", command.formatForErrorMessage());
-        res.column_name = ast_col_decl.name;
-        res.data_type = DataTypeFactory::instance().get(ast_col_decl.getType());
-        return res;
     }
     if (parse_alter_commands && command.type == ASTAlterCommand::DROP_COLUMN)
     {

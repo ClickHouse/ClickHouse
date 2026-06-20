@@ -63,11 +63,11 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
     releaseQuerySlot();
     if (finalize_query_pipeline)
     {
+        /// Keep the same teardown order as in resetPipeline:
+        query_metadata_cache.reset();
         const QueryPipelineFinalizedInfo query_pipeline_finalized_info = finalize_query_pipeline(std::move(pipeline));
         for (const auto & callback : finish_callbacks)
-        {
             callback(query_pipeline_finalized_info, finish_time);
-        }
     }
     else
         resetPipeline(/*cancel=*/false);

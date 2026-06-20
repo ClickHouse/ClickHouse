@@ -60,6 +60,14 @@ struct IObjectIterator
     virtual ObjectInfoPtr next(size_t) = 0;
     virtual size_t estimatedKeysCount() = 0;
     virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
+
+    /// When false, the iterator should not emit ProfileEvents.
+    /// Used when the iterator is created for metadata purposes (e.g. `getPathSample`)
+    /// rather than for actual data reading.
+    bool emit_profile_events = true;
+
+    /// Set `emit_profile_events` flag, propagating to nested iterators if any.
+    virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -79,12 +87,19 @@ public:
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        iterator->setEmitProfileEvents(value);
+    }
+
 private:
     const ObjectIterator iterator;
     const std::string object_namespace;
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;
+    LoggerPtr log = getLogger("ObjectIteratorWithPathAndFileFilter");
 };
 
 class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext

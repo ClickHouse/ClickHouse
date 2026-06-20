@@ -16,6 +16,7 @@
 #include <Poco/XML/XMLWriter.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/NumberParser.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils.h>
@@ -203,6 +204,7 @@ std::string ConfigProcessor::encryptValue(const std::string & codec_name, const 
     auto bytes_written = codec.compress(value.data(), static_cast<UInt32>(value.size()), memory.data());
     std::string encrypted_value(memory.data(), bytes_written);
     std::string hex_value;
+    /// NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
     boost::algorithm::hex(encrypted_value.begin(), encrypted_value.end(), std::back_inserter(hex_value));
     return hex_value;
 }
@@ -909,6 +911,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     bool processed_successfully = false;
     try
     {
+        auto component_guard = Coordination::setCurrentComponent("ConfigProcessor::loadConfigWithZooKeeperIncludes");
         if (zk_node_cache)
             zk_node_cache->sync();
         config_xml = processConfig(&has_zk_includes, zk_node_cache, zk_changed_event, is_config_changed);

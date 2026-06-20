@@ -75,7 +75,7 @@ void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
     buf.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
 }
 
-void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
+void StatisticsCountMinSketch::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
     UInt64 size;
     readIntBinary(size, buf);

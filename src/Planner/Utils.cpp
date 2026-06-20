@@ -38,6 +38,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/WindowNode.h>
 
 #include <Core/Settings.h>
@@ -125,7 +126,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
                             queries_headers[query_number]->dumpNames());
     }
 
-    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
+    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
 
     for (size_t column_number = 0; column_number < columns_size; ++column_number)
     {
@@ -498,6 +499,12 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
     QueryAnalysisPass query_analysis_pass(table_expression);
     query_analysis_pass.run(filter_query_tree, query_context);
 
+    /// Optimize logical expressions in the filter, e.g. convert OR-chains of
+    /// equalities into IN (important for row policies that produce many
+    /// permissive conditions like `x = 1 OR x = 2 OR ... OR x = N`).
+    LogicalExpressionOptimizerPass logical_expression_optimizer_pass;
+    logical_expression_optimizer_pass.run(filter_query_tree, query_context);
+
     return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context, std::move(table_expression_required_names_without_filter));
 }
 
@@ -657,13 +664,17 @@ bool optimizePlanForExists(QueryPlan & query_plan)
             node = node->children[0];
             continue;
         }
-        if (typeid_cast<LimitStep *>(node->step.get()))
+        if (auto * limit_step = typeid_cast<LimitStep *>(node->step.get()))
         {
-            /// TODO: Support LimitStep in decorrelation process.
-            /// For now, we just remove it, because it only increases the number of rows in the result.
-            /// It doesn't affect the result of correlated subquery.
-            node = node->children[0];
-            continue;
+            if (limit_step->getOffset() == 0 && limit_step->getLimit() > 0)
+            {
+                /// TODO: Support LimitStep in decorrelation process.
+                /// For now, we just remove it, because it only increases the number of rows in the result.
+                /// It doesn't affect the result of correlated subquery.
+                node = node->children[0];
+                continue;
+            }
+            break;
         }
         break;
     }

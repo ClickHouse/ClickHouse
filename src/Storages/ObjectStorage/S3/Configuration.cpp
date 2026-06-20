@@ -62,6 +62,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsString google_adc_client_id;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 namespace S3RequestSetting
@@ -1007,6 +1010,13 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     assert(s3_settings != nullptr);
+    if (!biglake_adc_client_id.empty())
+    {
+        s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
+        s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = biglake_adc_client_id;
+        s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = biglake_adc_client_secret;
+        s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = biglake_adc_refresh_token;
+    }
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 }

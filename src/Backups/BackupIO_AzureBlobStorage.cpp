@@ -159,12 +159,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
 }
 
 void BackupWriterAzureBlobStorage::copyFileFromDisk(
-    const String & path_in_backup,
-    DiskPtr src_disk,
-    const String & src_path,
-    bool copy_encrypted,
-    UInt64 start_pos,
-    UInt64 length)
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Use the native copy as a more optimal way to copy a file from AzureBlobStorage to AzureBlobStorage if it's possible.
     auto source_data_source_description = src_disk->getDataSourceDescription();
@@ -172,7 +167,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
     if (source_data_source_description.object_storage_type == ObjectStorageType::Azure
         && source_data_source_description.is_encrypted == copy_encrypted)
     {
-        /// getBlobPath() can return more than 3 elements if the file is stored as multiple objects in AzureBlobStorage container.
+        /// getBlobPath() can return more than 2 elements if the file is stored as multiple objects in AzureBlobStorage container.
         /// In this case we can't use the native copy.
         if (auto src_blob_path = src_disk->getBlobPath(src_path); src_blob_path.size() == 2)
         {

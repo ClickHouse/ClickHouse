@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 #include <Parsers/NullsAction.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {

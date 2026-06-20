@@ -170,33 +170,40 @@ class FTResultsProcessor:
         return s
 
     def run(self, task_name="Tests"):
-        state = Result.Status.SUCCESS
+        state = Result.Status.OK
         s = self._process_test_output()
         test_results = s.test_results
 
         if s.failed != 0 or s.unknown != 0:
-            state = Result.Status.FAILED
+            state = Result.Status.FAIL
 
         info = ""
         if s.hung:
-            state = Result.Status.FAILED
+            state = Result.Status.FAIL
             test_results.append(
-                Result("Some queries hung", "FAIL", info="Some queries hung")
+                Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
         elif s.server_died:
-            state = Result.Status.FAILED
-            for result in test_results:
-                if result.is_failure():
-                    # Promote all individual test failures to ERROR when the server dies,
-                    # so that they can be distinguished from normal test failures in CIDB.
-                    result.status = Result.StatusExtended.ERROR
-            test_results.append(Result("Server died", "FAIL", info="Server died"))
+            state = Result.Status.FAIL
+            failed_results = [r for r in test_results if r.is_failure()]
+            if len(failed_results) > 1:
+                # Multiple tests failed when the server died - this is a parallel
+                # run where we can't tell which test (if any) caused the crash.
+                # Mark them all as UNKNOWN so they don't pollute failure reports.
+                # The actual failure is captured by the "Server died" / LOGICAL_ERROR
+                # entry added from the server log.
+                for result in failed_results:
+                    result.status = Result.Status.UNKNOWN
+            elif len(failed_results) == 1:
+                # Single test failed - sequential run, this test is the culprit.
+                failed_results[0].status = Result.Status.ERROR
+            test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
         elif not s.success_finish:
             state = Result.Status.ERROR
             info = "The test runner was terminated unexpectedly"
         elif s.retries:
             test_results.append(
-                Result("Some tests restarted", "SKIPPED", info="Some tests restarted")
+                Result("Some tests restarted", Result.Status.SKIPPED, info="Some tests restarted")
             )
         else:
             pass
@@ -220,8 +227,9 @@ class FTResultsProcessor:
                 "Timeout": 2,
                 "NOT_FAILED": 3,
                 "BROKEN": 4,
-                "OK": 5,
-                "SKIPPED": 6,
+                "UNKNOWN": 5,
+                "OK": 6,
+                "SKIPPED": 7,
             }
             result.results.sort(key=lambda x: order.get(x.status, -1))
 

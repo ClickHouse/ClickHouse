@@ -200,6 +200,7 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `ALTER MODIFY STATISTICS`
       - `ALTER TTL`
       - `ALTER UPDATE`
+      - `ALTER TABLE EXECUTE`
     - `ALTER VIEW`
       - `ALTER VIEW MODIFY QUERY`
       - `ALTER VIEW REFRESH`
@@ -438,6 +439,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
   - `ALTER MOVE PARTITION`. Level: `TABLE`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
   - `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
   - `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
+  - `ALTER EXECUTE`. Level: `TABLE`. Aliases: `ALTER TABLE EXECUTE`
   - `ALTER VIEW`. Level: `GROUP`
   - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `REFRESH VIEW`
   - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`

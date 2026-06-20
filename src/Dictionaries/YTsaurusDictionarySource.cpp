@@ -144,12 +144,17 @@ YTsarususDictionarySource::~YTsarususDictionarySource() = default;
 BlockIO YTsarususDictionarySource::loadAll()
 {
     BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {
-        .cypress_path = configuration->cypress_path,
-        .settings = configuration->settings,
-        .select_rows_columns = configuration->ytsaurus_columns_description,
-        .check_types_allow_nullable = true,
-    }, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
+          client
+        , configuration->cypress_path
+        , { .settings = configuration->settings,
+            .select_rows_columns = configuration->ytsaurus_columns_description,
+            .check_types_allow_nullable = true,
+        }
+        , sample_block
+        , max_block_size
+        // TODO enable parallelization for reads from dictionary
+        , 1));
     return io;
 }
 
@@ -164,7 +169,15 @@ BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64
     auto block = blockForIds(dict_struct, ids);
 
     BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
+        client
+        , configuration->cypress_path
+        , {.settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}
+        , sample_block
+        , max_block_size
+        // Parallel reads supported only for static tables
+        , 1
+    ));
     return io;
 }
 
@@ -182,7 +195,15 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const V
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
 
     BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
+          client
+        , configuration->cypress_path
+        , {.settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}
+         , sample_block
+         , max_block_size
+         // Parallel reads supported only for static tables
+         , 1
+    ));
     return io;
 }
 

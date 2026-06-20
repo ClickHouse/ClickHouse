@@ -188,7 +188,8 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql},
-     {"promql", Dialect::promql}})
+     {"promql", Dialect::promql},
+     {"polyglot", Dialect::polyglot}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -394,6 +395,19 @@ IMPLEMENT_SETTING_ENUM(
      {"v3", MergeTreeObjectSerializationVersion::V3}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreeMapSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeMapSerializationVersion::BASIC},
+     {"with_buckets", MergeTreeMapSerializationVersion::WITH_BUCKETS}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeMapBucketsStrategy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"constant", MergeTreeMapBucketsStrategy::CONSTANT},
+     {"sqrt", MergeTreeMapBucketsStrategy::SQRT},
+     {"linear", MergeTreeMapBucketsStrategy::LINEAR}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSharedDataSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
@@ -455,4 +469,10 @@ IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
     {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
      {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
      {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
+
+IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"raw", JemallocProfileFormat::Raw},
+     {"symbolized", JemallocProfileFormat::Symbolized},
+     {"collapsed", JemallocProfileFormat::Collapsed}})
+
 }

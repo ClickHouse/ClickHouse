@@ -1,14 +1,5 @@
 #pragma once
 
-#include <string.h>
-
-#include <math.h>
-
-#include <new>
-#include <utility>
-
-#include <boost/noncopyable.hpp>
-
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -19,9 +10,16 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/CacheLine.h>
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
+
+#include <boost/noncopyable.hpp>
+
+#include <utility>
+#include <math.h>
+#include <string.h>
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
@@ -272,7 +270,7 @@ struct HashTableGrower
   * This grower assume 0.5 load factor
   */
 template <size_t initial_size_degree = 8>
-class alignas(64) HashTableGrowerWithPrecalculation
+class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculation
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 
@@ -330,7 +328,7 @@ public:
     }
 };
 
-static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == 64);
+static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_SIZE);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.

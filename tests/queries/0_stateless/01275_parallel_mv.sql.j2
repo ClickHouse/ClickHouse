@@ -58,6 +58,7 @@ select
     Settings['parallel_view_processing'] as parallel_view_processing,
     Settings['optimize_trivial_insert_select'] as optimize_trivial_insert_select
 from system.query_log where
+    event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %'

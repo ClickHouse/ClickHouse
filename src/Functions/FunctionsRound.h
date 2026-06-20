@@ -1,12 +1,9 @@
 #pragma once
 
 #include <Functions/FunctionHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
@@ -756,8 +753,10 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
     {
+        if (isNaNField(left) || isNaNField(right))
+            return {};
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 };

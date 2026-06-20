@@ -36,6 +36,10 @@ public:
 
     bool isExtendedStorageDefinition() const;
 
+    /// Rebuild `children` in canonical order (engine, partition_by, primary_key, order_by, ...).
+    /// Needed after moving primary_key from columns_list because `set()` always appends.
+    void normalizeChildrenOrder();
+
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
         f(reinterpret_cast<IAST **>(&engine), nullptr);

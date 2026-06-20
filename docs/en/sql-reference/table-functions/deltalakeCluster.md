@@ -16,10 +16,10 @@ Allows processing files from [Delta Lake](https://github.com/delta-io/delta) tab
 ## Syntax {#syntax}
 
 ```sql
-deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 deltaLakeCluster(cluster_name, named_collection[, option=value [,..]])
 
-deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
 
 deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
@@ -30,8 +30,8 @@ deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
 ## Arguments {#arguments}
 
 - `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
-
 - Description of all other arguments coincides with description of arguments in equivalent [deltaLake](sql-reference/table-functions/deltalake.md) table function.
+- An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 ## Returned value {#returned_value}
 

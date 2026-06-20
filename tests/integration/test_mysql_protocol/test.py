@@ -226,6 +226,7 @@ def test_mysql_client(started_cluster):
         -e "INSERT INTO table1 VALUES (0), (1), (5);"
         -e "SELECT * FROM table1 ORDER BY column;"
         -e "DROP DATABASE x;"
+        -e "USE default;"
         -e "CREATE TEMPORARY TABLE tmp (tmp_column UInt32);"
         -e "INSERT INTO tmp VALUES (0), (1);"
         -e "SELECT * FROM tmp ORDER BY tmp_column;"

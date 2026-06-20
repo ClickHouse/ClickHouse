@@ -152,23 +152,10 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     if (output.isFinished())
     {
         output_finished = true;
-        if (!always_read_till_end)
+        if (!always_read_till_end || rows_read == 0)
         {
-            input.close();
-            return Status::Finished;
-        }
-
-        /// When always_read_till_end is set and the output is already finished,
-        /// we should only continue reading if the limit was already reached
-        /// (to count remaining rows for rows_before_limit_at_least).
-        /// If the limit hasn't been reached yet, there's no point in continuing
-        /// to read since the output is already closed and the row count won't be used.
-        /// This also prevents a bug where the pipeline shuts down due to a downstream
-        /// constant-false filter, aborting set creation via DelayedPortsProcessor,
-        /// but the Limit keeps pulling data through a FilterTransform that needs the unbuilt set.
-        bool limit_is_unreachable = (limit > std::numeric_limits<UInt64>::max() - offset);
-        if (limit_is_unreachable || rows_read < offset + limit)
-        {
+            /// The rows_read == 0 is a corner case. If no rows were read before the output is closed,
+            /// do not read data even with always_read_till_end to avoid Not-ready Set (sets might not be built).
             input.close();
             return Status::Finished;
         }

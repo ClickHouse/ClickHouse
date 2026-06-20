@@ -45,6 +45,9 @@ namespace ErrorCodes
     DECLARE(String, service_account, "", "", 0) \
     DECLARE(String, metadata_service, "", "", 0) \
     DECLARE(String, request_token_path, "", "", 0) \
+    DECLARE(String, google_adc_client_id, "", "", 0) \
+    DECLARE(String, google_adc_client_secret, "", "", 0) \
+    DECLARE(String, google_adc_refresh_token, "", "", 0) \
 
 #define CLIENT_SETTINGS_LIST(M, ALIAS) \
     CLIENT_SETTINGS(M, ALIAS) \

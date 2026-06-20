@@ -35,8 +35,8 @@ using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String
 struct AggregateFunctionWithProperties
 {
     AggregateFunctionCreator creator;
+    FunctionDocumentation documentation;
     AggregateFunctionProperties properties;
-    FunctionDocumentation documentation = {}; /// TODO remove default initialization ... all aggregate functions should have documentation
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
@@ -44,8 +44,8 @@ struct AggregateFunctionWithProperties
 
     template <typename Creator>
     requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, AggregateFunctionProperties properties_ = {}, FunctionDocumentation documentation_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), properties(std::move(properties_)), documentation(std::move(documentation_))
+    AggregateFunctionWithProperties(Creator creator_, FunctionDocumentation documentation_, AggregateFunctionProperties properties_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
     {
     }
 };

@@ -30,6 +30,7 @@ struct FormatSettings
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
+    bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
     bool try_infer_variant = false;
@@ -48,6 +49,9 @@ struct FormatSettings
     bool try_infer_exponent_floats = false;
 
     bool allow_special_serialization_kinds = false;
+
+    /// tolerates leading zeros during parsing integers
+    bool allow_number_leading_zeros = false;
 
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
     inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
@@ -165,6 +169,7 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
+        bool output_unsupported_types_as_binary = true;
     } arrow{};
 
     struct
@@ -347,6 +352,7 @@ struct FormatSettings
         bool allow_geoparquet_parser = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
+        bool output_unsupported_types_as_binary = false;
     } parquet{};
 
     struct Pretty

@@ -97,7 +97,7 @@ StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionInput(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionInput>();
+    factory.registerFunction<TableFunctionInput>({});
 }
 
 }

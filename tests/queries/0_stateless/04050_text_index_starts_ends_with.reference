@@ -1,0 +1,160 @@
+tokenizer: array
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Ranges: 3
+2	Full-text search is now generally available
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Ranges: 3
+2	Full-text search is now generally available
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Ranges: 3
+1	ClickHouse is a fast analytical database
+tokenizer: splitByString
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Ranges: 3
+2	Full-text search is now generally available
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Ranges: 3
+2	Full-text search is now generally available
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Ranges: 3
+1	ClickHouse is a fast analytical database
+tokenizer: ngrams(3)
+Expression ((Project names + Projection))
+  Expression
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Skip
+        Name: idx_name_fts
+        Description: text GRANULARITY 100000000
+        Condition: (mode: All; tokens: ["Ful", "ull"])
+        Parts: 1/3
+        Granules: 1/3
+      Ranges: 1
+2	Full-text search is now generally available
+Expression ((Project names + Projection))
+  Expression
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Skip
+        Name: idx_name_fts
+        Description: text GRANULARITY 100000000
+        Condition: (mode: All; tokens: ["Ful", "ull"])
+        Parts: 1/3
+        Granules: 1/3
+      Ranges: 1
+2	Full-text search is now generally available
+Expression ((Project names + Projection))
+  Expression
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Skip
+        Name: idx_name_fts
+        Description: text GRANULARITY 100000000
+        Condition: (mode: All; tokens: [" da", "aba", "al ", "aly", "ana", "ase", "ata", "bas", "cal", "dat", "ica", "l d", "lyt", "nal", "tab", "tic", "yti"])
+        Parts: 1/3
+        Granules: 1/3
+      Ranges: 1
+1	ClickHouse is a fast analytical database
+tokenizer: splitByNonAlpha
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Skip
+        Name: idx_name_fts
+        Description: text GRANULARITY 100000000
+        Condition: (mode: All; tokens: [])
+        Parts: 3/3
+        Granules: 3/3
+      Ranges: 3
+2	Full-text search is now generally available
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Skip
+        Name: idx_name_fts
+        Description: text GRANULARITY 100000000
+        Condition: (mode: All; tokens: [])
+        Parts: 3/3
+        Granules: 3/3
+      Ranges: 3
+2	Full-text search is now generally available
+Expression ((Project names + Projection))
+  Expression
+    ReadFromMergeTree (default.test_fts)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 3/3
+      Skip
+        Name: idx_name_fts
+        Description: text GRANULARITY 100000000
+        Condition: (mode: All; tokens: ["database"])
+        Parts: 1/3
+        Granules: 1/3
+      Ranges: 1
+1	ClickHouse is a fast analytical database

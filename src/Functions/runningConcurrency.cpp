@@ -204,7 +204,7 @@ namespace DB
 
     REGISTER_FUNCTION(RunningConcurrency)
     {
-        FunctionDocumentation::Description description_runningConcurrency = R"(
+        FunctionDocumentation::Description description = R"(
 Calculates the number of concurrent events.
 Each event has a start time and an end time.
 The start time is included in the event, while the end time is excluded.
@@ -222,13 +222,13 @@ If events from different data blocks overlap then they can not be processed corr
 It is advised to use [window functions](/sql-reference/window-functions) instead.
 :::
 )";
-        FunctionDocumentation::Syntax syntax_runningConcurrency = "runningConcurrency(start, end)";
-        FunctionDocumentation::Arguments arguments_runningConcurrency = {
+        FunctionDocumentation::Syntax syntax = "runningConcurrency(start, end)";
+        FunctionDocumentation::Arguments arguments = {
             {"start", "A column with the start time of events.", {"Date", "DateTime", "DateTime64"}},
             {"end", "A column with the end time of events.", {"Date", "DateTime", "DateTime64"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value_runningConcurrency = {"Returns the number of concurrent events at each event start time.", {"UInt32"}};
-        FunctionDocumentation::Examples examples_runningConcurrency = {
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of concurrent events at each event start time.", {"UInt32"}};
+        FunctionDocumentation::Examples examples = {
         {
             "Usage example",
             R"(
@@ -244,10 +244,10 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
             )"
         }
         };
-        FunctionDocumentation::IntroducedIn introduced_in_runningConcurrency = {21, 3};
-        FunctionDocumentation::Category category_runningConcurrency = FunctionDocumentation::Category::Other;
-        FunctionDocumentation documentation_runningConcurrency = {description_runningConcurrency, syntax_runningConcurrency, arguments_runningConcurrency, {}, returned_value_runningConcurrency, examples_runningConcurrency, introduced_in_runningConcurrency, category_runningConcurrency};
+        FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-        factory.registerFunction<RunningConcurrencyOverloadResolver>(documentation_runningConcurrency);
+        factory.registerFunction<RunningConcurrencyOverloadResolver>(documentation);
     }
 }

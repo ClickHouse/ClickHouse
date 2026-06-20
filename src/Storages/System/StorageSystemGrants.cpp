@@ -13,7 +13,7 @@
 #include <Access/User.h>
 #include <Interpreters/Context.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
-
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -49,6 +49,8 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
     const auto & access_control = context->getAccessControl();
     if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
         context->checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
+
+    bool is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
 
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
@@ -148,16 +150,24 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
             const auto * database = element.anyDatabase() ? nullptr : &element.database;
             const auto * table = element.anyTable() ? nullptr : &element.table;
 
+            String access_object = element.parameter;
+            if (element.hasFilter() && is_enabled_read_write_grants)
+            {
+                WriteBufferFromOwnString buf;
+                element.formatFilter(buf);
+                access_object += buf.str();
+            }
+
             if (element.anyColumn())
             {
                 for (const auto & access_type : access_types)
-                    add_row(grantee_name, grantee_type, access_type, element.parameter, database, table, nullptr, element.is_partial_revoke, element.grant_option);
+                    add_row(grantee_name, grantee_type, access_type, access_object, database, table, nullptr, element.is_partial_revoke, element.grant_option);
             }
             else
             {
                 for (const auto & access_type : access_types)
                     for (const auto & column : element.columns)
-                        add_row(grantee_name, grantee_type, access_type, element.parameter, database, table, &column, element.is_partial_revoke, element.grant_option);
+                        add_row(grantee_name, grantee_type, access_type, access_object, database, table, &column, element.is_partial_revoke, element.grant_option);
             }
         }
     };

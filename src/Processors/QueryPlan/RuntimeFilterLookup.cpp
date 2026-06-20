@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>

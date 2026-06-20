@@ -61,7 +61,7 @@ FROM series LIMIT 1
     FunctionDocumentation::Category covarSamp_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn covarSamp_introduced_in = {1, 1};
     FunctionDocumentation covarSamp_documentation = {covarSamp_description, covarSamp_syntax, covarSamp_arguments, covarSamp_parameters, covarSamp_returned_value, covarSamp_examples, covarSamp_introduced_in, covarSamp_category};
-    factory.registerFunction("covarSamp", {createAggregateFunctionStatisticsBinary<AggregateFunctionCovar, StatisticsFunctionKind::covarSamp>, {}, covarSamp_documentation});
+    factory.registerFunction("covarSamp", {createAggregateFunctionStatisticsBinary<AggregateFunctionCovar, StatisticsFunctionKind::covarSamp>, covarSamp_documentation});
 
     FunctionDocumentation::Description covarPop_description = R"(
 Calculates the population covariance:
@@ -105,7 +105,7 @@ FROM series
     FunctionDocumentation::IntroducedIn covarPop_introduced_in = {1, 1};
     FunctionDocumentation covarPop_documentation = {covarPop_description, covarPop_syntax, covarPop_arguments, covarPop_parameters, covarPop_returned_value, covarPop_examples, covarPop_introduced_in, covarPop_category};
 
-    factory.registerFunction("covarPop", {createAggregateFunctionStatisticsBinary<AggregateFunctionCovar, StatisticsFunctionKind::covarPop>, {}, covarPop_documentation});
+    factory.registerFunction("covarPop", {createAggregateFunctionStatisticsBinary<AggregateFunctionCovar, StatisticsFunctionKind::covarPop>, covarPop_documentation});
 
     /// Synonyms for compatibility.
     factory.registerAlias("COVAR_SAMP", "covarSamp", AggregateFunctionFactory::Case::Insensitive);

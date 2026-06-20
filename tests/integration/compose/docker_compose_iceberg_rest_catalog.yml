@@ -11,16 +11,12 @@ services:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password
       - AWS_REGION=us-east-1
-    ports:
-      - 8080:8080
-      - 10002:10000
-      - 10003:10001
     stop_grace_period: 5s
     cpus: 3
   rest:
     image: tabulario/iceberg-rest:1.6.0
     ports:
-      - 8182:8181
+      - "${ICEBERG_REST_CATALOG_PORT}:8181"
     environment:
       - AWS_ACCESS_KEY_ID=minio
       - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd

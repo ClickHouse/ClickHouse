@@ -33,7 +33,15 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.
-MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
+/// Also registers the dictionary as a dependency of the named collection, so that
+/// DROP NAMED COLLECTION is blocked while the dictionary exists.
+/// The dictionary's identity is derived from config_prefix, which has the form
+/// "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse"); the first
+/// component is used as the dictionary root to call StorageID::fromDictionaryConfig.
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    ContextPtr context);
 
 /// Parses the ast as a key-value pair.
 /// Throws an exception if the key cannot be parsed as a string literal.

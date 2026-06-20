@@ -240,6 +240,14 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         nullptr);
 
     auto join_output_actions_dag = cloneSubDAGWithHeader(output_header, JoinExpressionActions::getSubDAG(join_output_actions));
+
+    /// Materialize constant columns in the join output actions DAG.
+    /// JoinStepLogical materializes the `__join_result_dummy` constant column in its output header,
+    /// but the replacement ExpressionStep does not, causing a block structure mismatch.
+    for (auto & output_node : join_output_actions_dag.getOutputs())
+        if (output_node->column && isColumnConst(*output_node->column))
+            output_node = &join_output_actions_dag.materializeNode(*output_node, /*materialize_sparse=*/ false);
+
     creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimization");
     parent = std::move(creating_sets_step);
     parent_node->children = {lhs_in_node};

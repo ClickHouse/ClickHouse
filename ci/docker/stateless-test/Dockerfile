@@ -38,8 +38,6 @@ RUN apt-get update -y \
         odbcinst \
         openssl \
         postgresql-client \
-        python3 \
-        python3-pip \
         qemu-user-static \
         sqlite3 \
         tree \
@@ -69,7 +67,7 @@ RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PR
     && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
 COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cd /tmp/clickhouse-odbc-tmp \
@@ -104,7 +102,7 @@ ENV HOME="/home"
 
 # Download azurite-rs (Azure Blob Storage emulator in Rust)
 # https://github.com/ClickHouse/azurite-rs
-ARG AZURITE_RS_VERSION=v0.1.0-28a2afc
+ARG AZURITE_RS_VERSION=v0.1.0-3a51c3f
 RUN arch=${TARGETARCH:-amd64} \
     && curl -fsSL "https://github.com/ClickHouse/azurite-rs/releases/download/${AZURITE_RS_VERSION}/azurite-rs-linux-${arch}.tar.gz" | tar -xz -C /usr/local/bin/ \
     && mv /usr/local/bin/azurite-rs-linux-${arch} /usr/local/bin/azurite-rs \

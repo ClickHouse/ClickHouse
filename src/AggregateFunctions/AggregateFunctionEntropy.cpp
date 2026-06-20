@@ -207,7 +207,7 @@ SELECT entropy(vals), entropy(strings) FROM entropy
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("entropy", {createAggregateFunctionEntropy, {}, documentation});
+    factory.registerFunction("entropy", {createAggregateFunctionEntropy, documentation, {}});
 }
 
 }

@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 # Dictionary table engine
 
-The `Dictionary` engine displays the [dictionary](../../../sql-reference/statements/create/dictionary/index.md) data as a ClickHouse table.
+The `Dictionary` engine displays the [dictionary](../../../sql-reference/statements/create/dictionary/overview.md) data as a ClickHouse table.
 
 ## Example {#example}
 

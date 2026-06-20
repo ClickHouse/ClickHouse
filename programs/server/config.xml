@@ -863,12 +863,12 @@
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 
+        <!-- Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). -->
+        <allow_impersonate_user>true</allow_impersonate_user>
+
         <!-- By default, for backward compatibility creating table with a specific table engine ignores grant,
              however you can change this behaviour by setting this to true -->
         <table_engines_require_grant>false</table_engines_require_grant>
-
-        <!-- Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). -->
-        <allow_impersonate_user>false</allow_impersonate_user>
 
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>

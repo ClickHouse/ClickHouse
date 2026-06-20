@@ -8,7 +8,6 @@
 #include <Common/setThreadName.h>
 #include <Common/SharedMutex.h>
 #include <Core/NamesAndAliases.h>
-#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 

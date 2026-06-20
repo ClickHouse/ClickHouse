@@ -107,7 +107,7 @@ public:
     void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept;
 
     /// Returns CSN if transaction with specified ID was committed and UnknownCSN if it was not.
-    /// Returns PrehistoricCSN for PrehistoricTID without creating a TransactionLog instance as a special case.
+    /// Returns NonTransactionalCSN for NonTransactionalTID without creating a TransactionLog instance as a special case.
     /// Some time a transaction could be committed concurrently, in order to resolve it provide failback_with_strict_load_csn
     static CSN getCSN(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
     static CSN getCSN(const TIDHash & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);

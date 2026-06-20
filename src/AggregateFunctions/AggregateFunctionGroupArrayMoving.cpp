@@ -357,7 +357,7 @@ FROM t;
     FunctionDocumentation::Category category_sum = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_sum = {description_sum, syntax_sum, arguments_sum, parameters_sum, returned_value_sum, examples_sum, introduced_in_sum, category_sum};
 
-    factory.registerFunction("groupArrayMovingSum", { createAggregateFunctionMoving<MovingSumTemplate>, properties, documentation_sum });
+    factory.registerFunction("groupArrayMovingSum", { createAggregateFunctionMoving<MovingSumTemplate>, documentation_sum, properties });
 
     FunctionDocumentation::Description description = R"(
 Calculates the moving average of input values.
@@ -424,7 +424,7 @@ FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupArrayMovingAvg", { createAggregateFunctionMoving<MovingAvgTemplate>, properties, documentation });
+    factory.registerFunction("groupArrayMovingAvg", { createAggregateFunctionMoving<MovingAvgTemplate>, documentation, properties });
 }
 
 }

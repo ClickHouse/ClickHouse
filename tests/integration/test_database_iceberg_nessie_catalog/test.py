@@ -24,7 +24,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.test_tools import TSV, csv_compare
 
-BASE_URL_LOCAL = "http://localhost:19120/iceberg/"
 BASE_URL = "http://nessie:19120/iceberg/"
 CATALOG_NAME = "demo"
 WAREHOUSE_NAME = "warehouse"
@@ -94,14 +93,17 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     assert "HIDDEN" in show_result
 
 
+def get_nessie_local_url(cluster):
+    return f"http://localhost:{cluster.iceberg_rest_catalog_port}/iceberg/"
+
+
 def load_catalog_impl(started_cluster):
-    minio_ip = started_cluster.get_instance_ip('minio')
-    s3_endpoint = f"http://{minio_ip}:9002"
+    s3_endpoint = f"http://127.0.0.1:{started_cluster.iceberg_minio_port}"
 
     return RestCatalog(
         name="my_catalog",
         warehouse=WAREHOUSE_NAME,
-        uri=BASE_URL_LOCAL,
+        uri=get_nessie_local_url(started_cluster),
         token="dummy",
         **{
             "s3.endpoint": s3_endpoint,
@@ -296,7 +298,7 @@ def test_hide_sensitive_info(started_cluster):
         started_cluster,
         node,
         CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
+        additional_settings={"auth_header": "Authorization: SECRET_2"},
     )
     show_result = node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
     assert "SECRET_2" not in show_result
@@ -502,3 +504,22 @@ def test_drop_table(started_cluster):
 
     result = node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
     assert test_table_name not in result
+
+
+def test_invalid_auth_header_format(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            SET allow_experimental_database_iceberg = 1;
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'warehouse',
+                auth_header = 'wrong.header'
+            """
+        )
+    assert "Invalid auth header format" in str(err.value)

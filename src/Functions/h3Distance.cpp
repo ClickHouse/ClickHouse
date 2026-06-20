@@ -28,7 +28,11 @@ class FunctionH3Distance : public IFunction
 public:
     static constexpr auto name = "h3Distance";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3Distance>(); }
+    H3Validator validator;
+
+    explicit FunctionH3Distance(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3Distance>(context); }
 
     std::string getName() const override { return name; }
 
@@ -97,12 +101,16 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
+            Int64 res = -1;
 
-            validateH3Cell(start);
-            validateH3Cell(end);
+            if (validator.validateCell(start) && validator.validateCell(end))
+            {
+                int64_t distance = 0;
+                if (!gridDistance(start, end, &distance))
+                    res = distance;
+            }
 
-            auto size = gridPathCellsSize(start, end);
-            dst_data[row] = size;
+            dst_data[row] = res;
         }
 
         return dst;

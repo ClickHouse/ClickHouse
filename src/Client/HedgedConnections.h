@@ -127,6 +127,8 @@ public:
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
 
+    void setDistributedFanout(size_t total_connections) override { distributed_fanout = total_connections; }
+
     void setAsyncCallback(AsyncCallback async_callback) override;
 
 private:
@@ -195,6 +197,9 @@ private:
     /// New replica may not support two-level aggregation due to version incompatibility.
     /// If we didn't disabled it, we need to skip this replica.
     bool disable_two_level_aggregation = false;
+
+    /// Total number of remote connections across all shards in the distributed query.
+    size_t distributed_fanout = 0;
 
     /// We will save replica with last received packet
     /// (except cases when packet type is EndOfStream or Exception)
