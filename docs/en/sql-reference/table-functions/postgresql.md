@@ -28,7 +28,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 | `schema`      | Non-default table schema. Optional.                                        |
 | `on_conflict` | Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. |
 
-Arguments also can be passed using [named collections](operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 ## Returned value {#returned_value}
 
@@ -99,7 +99,7 @@ Selecting data from ClickHouse using plain arguments:
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
 ```
 
-Or using [named collections](operations/named-collections.md):
+Or using [named collections](/operations/named-collections.md):
 
 ```sql
 CREATE NAMED COLLECTION mypg AS
