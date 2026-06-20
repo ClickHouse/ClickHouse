@@ -105,7 +105,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 
 | Feature                         | Version | Affects                | Wire impact |
 |---------------------------------|---------|------------------------|-------------|
-| BLOCK_INFO                      | all     | Block                  | Adds the BlockInfo prefix (`is_overflows`, `bucket_number`) to every Block |
+| BLOCK_INFO                      | all     | Block                  | Adds the BlockInfo prefix (`is_overflows`, `bucket_number`) to every Block. |
 | CLIENT_INFO                     | 54032   | Query                  | Adds the ClientInfo block to the Query body. |
 | TIMEZONE                        | 54058   | ServerHello            | Adds the `timezone` field to ServerHello. |
 | QUOTA_KEY_IN_CLIENT_INFO        | 54060   | ClientInfo             | Adds the `quota_key` field to ClientInfo. |
@@ -735,7 +735,7 @@ The 6 columns:
 | 3 | thread_id    | UInt64   | Thread ID |
 | 4 | type         | Enum8    | Event type: 1 = Increment (counter), 2 = Gauge. The underlying storage is one signed byte. |
 | 5 | name         | String   | Event name (e.g., `"Query"`, `"NetworkReceiveBytes"`) |
-| 6 | value        | Int64 or UInt64 | Counter value or gauge reading |
+| 6 | value        | Int64    | Counter value or gauge reading |
 
 :::note
 The `value` column's element type is not fixed across packets — older servers emit `UInt64`, newer ones `Int64`. Read the column's type string from the block header rather than assuming one width.
