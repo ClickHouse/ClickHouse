@@ -12,8 +12,7 @@
 namespace DB
 {
 
-/// Scatters input rows to N output ports using a caller-supplied selector (named for its original
-/// hash-sharding role; it now routes by whatever selector the caller injects).
+/// Scatters input rows to N output ports using a caller-supplied selector.
 /// For every input chunk the selector decides the destination port of each row, and every column
 /// is physically split with IColumn::scatter so each output chunk holds only the rows of its port.
 ///
@@ -25,16 +24,16 @@ namespace DB
 /// So each output port has a FIFO queue. When a port is busy, its chunk waits in the queue and gets
 /// pushed on the next prepare()/work() cycle. This allows other ports to continue processing without
 /// waiting for the slowest one.
-class BufferedShardByHashTransform : public IProcessor
+class BufferedScatterTransform : public IProcessor
 {
 public:
     /// Builds the per-row destination port for an input chunk. It must return a Selector of size
     /// num_rows with every value in [0, num_outputs); columns are the input chunk's columns.
     using SelectorBuilder = std::function<IColumn::Selector(const Columns & columns)>;
 
-    BufferedShardByHashTransform(SharedHeader header, size_t num_outputs_, SelectorBuilder selector_builder_);
+    BufferedScatterTransform(SharedHeader header, size_t num_outputs_, SelectorBuilder selector_builder_);
 
-    String getName() const override { return "BufferedShardByHashTransform"; }
+    String getName() const override { return "BufferedScatterTransform"; }
 
     Status prepare() override;
     void work() override;

@@ -3,12 +3,12 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnSparse.h>
 #include <Processors/Port.h>
-#include <Processors/Transforms/BufferedShardByHashTransform.h>
+#include <Processors/Transforms/BufferedScatterTransform.h>
 
 namespace DB
 {
 
-BufferedShardByHashTransform::BufferedShardByHashTransform(SharedHeader header, size_t num_outputs_, SelectorBuilder selector_builder_)
+BufferedScatterTransform::BufferedScatterTransform(SharedHeader header, size_t num_outputs_, SelectorBuilder selector_builder_)
     : IProcessor(InputPorts{header}, OutputPorts{num_outputs_, header})
     , num_outputs(num_outputs_)
     , selector_builder(std::move(selector_builder_))
@@ -18,7 +18,7 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(SharedHeader header, 
     chassert(num_outputs > 0);
 }
 
-IProcessor::Status BufferedShardByHashTransform::prepare()
+IProcessor::Status BufferedScatterTransform::prepare()
 {
     auto & input = getInputs().front();
 
@@ -96,7 +96,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
 }
 
 /// Split pending input chunk into per-output queues, then drain queues to output ports.
-void BufferedShardByHashTransform::work()
+void BufferedScatterTransform::work()
 {
     if (has_pending_input_chunk)
     {
@@ -127,7 +127,7 @@ void BufferedShardByHashTransform::work()
     }
 }
 
-void BufferedShardByHashTransform::generateOutputChunks()
+void BufferedScatterTransform::generateOutputChunks()
 {
     auto columns = pending_input_chunk.detachColumns();
 
