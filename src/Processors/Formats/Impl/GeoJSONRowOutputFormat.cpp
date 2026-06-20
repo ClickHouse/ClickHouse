@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/GeoJSONRowOutputFormat.h>
 
+#include <cmath>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -250,12 +252,19 @@ void GeoJSONRowOutputFormat::writeCoordinates(const IColumn & column, size_t row
 void GeoJSONRowOutputFormat::writePosition(const IColumn & tuple_column, size_t row_num)
 {
     const auto & tuple = assert_cast<const ColumnTuple &>(tuple_column);
-    const auto & x = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
-    const auto & y = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
+    const Float64 x = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
+    const Float64 y = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
+
+    /// A GeoJSON position must consist of JSON numbers; NaN and infinity have no valid JSON
+    /// representation, so reject them rather than emit `null` or a quoted token that would not be a
+    /// valid coordinate.
+    if (!std::isfinite(x) || !std::isfinite(y))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The GeoJSON output format cannot write a non-finite coordinate value");
+
     writeChar('[', *ostr);
-    writeJSONNumber(x[row_num], *ostr, settings);
+    writeJSONNumber(x, *ostr, settings);
     writeChar(',', *ostr);
-    writeJSONNumber(y[row_num], *ostr, settings);
+    writeJSONNumber(y, *ostr, settings);
     writeChar(']', *ostr);
 }
 
