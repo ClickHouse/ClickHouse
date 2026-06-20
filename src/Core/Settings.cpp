@@ -7461,6 +7461,9 @@ Enable Kusto Query Language (KQL) - an alternative to SQL.
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_substrait, false, R"(
+Allow EXPLAIN SUBSTRAIT queries which serialize query plans to the Substrait format.
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
