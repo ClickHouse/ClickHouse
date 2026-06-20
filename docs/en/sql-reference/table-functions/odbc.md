@@ -25,7 +25,7 @@ odbc(named_collection)
 | `external_database` | Name of a database in an external DBMS.                                |
 | `external_table`    | Name of a table in the `external_database`.                            |
 
-These parameters can also be passed using [named collections](operations/named-collections.md).
+These parameters can also be passed using [named collections](/operations/named-collections.md).
 
 To safely implement ODBC connections, ClickHouse uses a separate program `clickhouse-odbc-bridge`. If the ODBC driver is loaded directly from `clickhouse-server`, driver problems can crash the ClickHouse server. ClickHouse automatically starts `clickhouse-odbc-bridge` when it is required. The ODBC bridge program is installed from the same package as the `clickhouse-server`.
 
