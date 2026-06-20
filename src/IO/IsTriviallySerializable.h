@@ -12,6 +12,10 @@
 namespace DB
 {
 
+/// A type is trivially serializable if its binary representation is a sequence of POD bytes,
+/// i.e. it is serialized by simply copying `sizeof(T)` bytes of its in-memory layout (without
+/// endianness conversion, indirection, or any element-wise transformation). This allows a
+/// contiguous container of such elements to be (de)serialized with a single bulk memory copy.
 template <typename T>
 concept is_trivially_serializable =
     is_arithmetic_v<T>
