@@ -126,6 +126,15 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
         }
         else if (column.name == "id")
         {
+            /// A GeoJSON Feature id must be a JSON string or number, so the column must be a string or
+            /// numeric type (optionally wrapped in `Nullable` or `LowCardinality`).
+            const WhichDataType id_type(removeNullableOrLowCardinalityNullable(column.type));
+            if (!id_type.isStringOrFixedString() && !id_type.isNumber())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The 'id' column of the GeoJSON output format must be a String, FixedString, or numeric "
+                    "type, but it has type '{}'",
+                    column.type->getName());
             id_col_idx = i;
             id_is_nullable = column.type->isNullable();
         }
