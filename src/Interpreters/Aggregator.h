@@ -180,6 +180,12 @@ public:
             new_params.keys = keys_;
             new_params.keys_size = keys_.size();
             new_params.only_merge = only_merge_;
+            /// Reapply the `!keys.empty()` invariant from the constructor: a clone may receive an empty key list
+            /// (e.g. `AggregatingStep` clones the params for every grouping set, and `GROUP BY GROUPING SETS ((k), ())`
+            /// produces a `()` set with no keys). Keyless aggregation has a single group, so the per-block flush must
+            /// stay disabled there; otherwise the empty set would emit one grand-total row per block instead of the
+            /// single fully merged keyless aggregate row.
+            new_params.group_by_each_block_no_merge = new_params.group_by_each_block_no_merge && !new_params.keys.empty();
             return new_params;
         }
 
