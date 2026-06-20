@@ -1714,26 +1714,34 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), columns_to_restore);
     }
 
-    if (distributed_read_needs_merge)
+    if (distributed_read_bucket_count > 0)
     {
-        /// Distributed parallel FINAL: this worker's parts are exactly one PK-range layer of its span
-        /// (its marks, span borders, and index arrived in the `read_bucket` parameter). Read it in order
-        /// and merge-dedup it, trimming the boundary granules to the layer's two-sided range. No re-split
-        /// -- parallelism is across buckets, one layer each.
-        Pipe pipe = read(
-            std::move(parts_with_ranges), index_build_context, column_names, ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache);
-        pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
-                                { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
+        /// Distributed parallel FINAL: build one pipe per lane and unite them as single-node FINAL does, so the
+        /// node parallelizes the merge across its lanes instead of running one merge per task.
+        std::unordered_map<String, RangesInDataPart> parts_by_name;
+        for (const auto & part : parts_with_ranges)
+            parts_by_name.emplace(part.data_part->info.getPartNameV1(), part);
+
+        auto resolve_lane_parts = [&](const RangesInDataPartsDescription & marks)
+        {
+            RangesInDataParts lane_parts;
+            lane_parts.reserve(marks.size());
+            for (const auto & part_desc : marks)
+            {
+                auto found_part = parts_by_name.find(part_desc.info.getPartNameV1());
+                if (found_part == parts_by_name.end())
+                    throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                        "Distributed read: part {} selected by the coordinator is not available on this replica "
+                        "(diverged by merge or replication lag); retry the query", part_desc.info.getPartNameV1());
+                RangesInDataPart lane_part = found_part->second;
+                lane_part.ranges = part_desc.ranges;
+                lane_parts.push_back(std::move(lane_part));
+            }
+            return lane_parts;
+        };
 
         const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
         auto in_reverse_order = deriveReverseOrder(primary_key, storage_snapshot->metadata->getSortingKey());
-        if (!in_reverse_order)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Distributed FINAL got primary-key-range layers for a table whose primary key cannot be range-split");
-        addLayerRangeFilterToPipe(pipe, primary_key, distributed_read_borders, distributed_read_layer_index, *in_reverse_order, context);
-
-        if (!out_projection)
-            out_projection = createProjection(pipe.getHeader());
 
         Names sort_columns = storage_snapshot->metadata->getSortingKeyColumns();
         std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
@@ -1744,19 +1752,65 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         for (size_t i = 0; i < sort_columns.size(); ++i)
             sort_description.emplace_back(sort_columns[i], (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1);
 
-        addMergingFinal(pipe, sort_description, data.merging_params, storage_snapshot->metadata, block_size.max_block_size_rows, enable_vertical_final);
-        return pipe;
-    }
+        Pipes final_merge_pipes;
+        RangesInDataParts non_intersecting_parts;
+        for (const auto & lane : distributed_read_task_buckets)
+        {
+            RangesInDataParts lane_parts = resolve_lane_parts(lane.marks);
+            if (!lane.needs_merge)
+            {
+                for (auto & part : lane_parts)
+                    non_intersecting_parts.push_back(std::move(part));
+                continue;
+            }
 
-    if (distributed_read_bucket_count > 0)
-    {
-        /// Distributed non-intersecting FINAL bucket: read its ranges without a merge (only the engine
-        /// filter), no re-split. The downstream gather reconciles the header to the read step's output.
-        Pipe pipe = readNonIntersectingWithEngineFilter(
-            std::move(parts_with_ranges), index_build_context, num_streams, origin_column_names);
-        if (!out_projection)
-            out_projection = createProjection(pipe.getHeader());
-        return pipe;
+            if (!in_reverse_order)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Distributed FINAL got primary-key-range layers for a table whose primary key cannot be range-split");
+
+            /// One read stream per lane: parallelism is across lanes, as in single-node FINAL.
+            Pipe pipe = read(
+                std::move(lane_parts), index_build_context, column_names, ReadType::InOrder, 1, 0, info.use_uncompressed_cache);
+            pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
+                                    { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
+            addLayerRangeFilterToPipe(pipe, primary_key, lane.borders, lane.index, *in_reverse_order, context);
+            if (!out_projection)
+                out_projection = createProjection(pipe.getHeader());
+            addMergingFinal(pipe, sort_description, data.merging_params, storage_snapshot->metadata, block_size.max_block_size_rows, enable_vertical_final);
+            final_merge_pipes.emplace_back(std::move(pipe));
+        }
+
+        Pipes final_non_merge_pipes;
+        if (!non_intersecting_parts.empty())
+            final_non_merge_pipes.emplace_back(readNonIntersectingWithEngineFilter(
+                std::move(non_intersecting_parts), index_build_context, num_streams, origin_column_names));
+
+        if (!final_merge_pipes.empty() && !final_non_merge_pipes.empty())
+        {
+            out_projection = {}; /// Projection happens via the converting transform below.
+            Pipes pipes;
+            pipes.resize(2);
+            pipes[0] = Pipe::unitePipes(std::move(final_merge_pipes));
+            pipes[1] = Pipe::unitePipes(std::move(final_non_merge_pipes));
+            auto conversion_action = ActionsDAG::makeConvertingActions(
+                pipes[0].getHeader().getColumnsWithTypeAndName(),
+                pipes[1].getHeader().getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                context);
+            auto converting_expr = std::make_shared<ExpressionActions>(std::move(conversion_action));
+            pipes[0].addSimpleTransform([converting_expr](const SharedHeader & header)
+                                        { return std::make_shared<ExpressionTransform>(header, converting_expr); });
+            return Pipe::unitePipes(std::move(pipes));
+        }
+
+        if (final_merge_pipes.empty())
+        {
+            Pipe pipe = Pipe::unitePipes(std::move(final_non_merge_pipes));
+            if (!out_projection)
+                out_projection = createProjection(pipe.getHeader());
+            return pipe;
+        }
+        return Pipe::unitePipes(std::move(final_merge_pipes));
     }
 
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
@@ -3546,45 +3600,60 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// to local parts by name; a missing part is a retryable error (the replica diverged by merge or lag).
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
+        /// Read this task's lanes from the `read_bucket` parameter, in the layout
+        /// `serializeDistributedReadBuckets` wrote.
         String blob = settings.parameter_lookup->getParameter("read_bucket").safeGet<String>();
         ReadBufferFromString buf(blob);
-        RangesInDataPartsDescription bucket_marks;
-        bucket_marks.deserialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-        readBinary(distributed_read_needs_merge, buf);
-
-        if (distributed_read_needs_merge)
+        const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+        DB::FormatSettings format_settings;
+        size_t num_lanes = 0;
+        readVarUInt(num_lanes, buf);
+        distributed_read_task_buckets.clear();
+        distributed_read_task_buckets.reserve(num_lanes);
+        for (size_t lane = 0; lane < num_lanes; ++lane)
         {
-            /// FINAL merge layer: the span's borders and this layer's index among them, for the trimming filter.
-            const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-            size_t border_arity = 0;
-            readVarUInt(border_arity, buf);
-            size_t num_borders = 0;
-            readVarUInt(num_borders, buf);
-            DB::FormatSettings format_settings;
-            distributed_read_borders.assign(num_borders, std::vector<Field>(border_arity));
-            for (auto & border : distributed_read_borders)
-                for (size_t i = 0; i < border_arity; ++i)
-                    primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], buf, format_settings);
-            readVarUInt(distributed_read_layer_index, buf);
+            DistributedReadBucket bucket;
+            bucket.marks.deserialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+            readBinary(bucket.needs_merge, buf);
+            if (bucket.needs_merge)
+            {
+                size_t border_arity = 0;
+                readVarUInt(border_arity, buf);
+                size_t num_borders = 0;
+                readVarUInt(num_borders, buf);
+                bucket.borders.assign(num_borders, std::vector<Field>(border_arity));
+                for (auto & border : bucket.borders)
+                    for (size_t i = 0; i < border_arity; ++i)
+                        primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], buf, format_settings);
+                readVarUInt(bucket.index, buf);
+            }
+            distributed_read_task_buckets.push_back(std::move(bucket));
         }
 
-        std::unordered_map<String, RangesInDataPart> parts_by_name;
-        for (auto & part : result.parts_with_ranges)
-            parts_by_name.emplace(part.data_part->info.getPartNameV1(), std::move(part));
-        RangesInDataParts bucket_parts;
-        bucket_parts.reserve(bucket_marks.size());
-        for (const auto & part_desc : bucket_marks)
+        /// A FINAL worker keeps all local parts and resolves each lane's marks against them in
+        /// `spreadMarkRangesAmongStreamsFinal`. A non-FINAL read has one bucket: pin its marks here so the
+        /// plain read path reads exactly them.
+        if (!isQueryWithFinal())
         {
-            auto it = parts_by_name.find(part_desc.info.getPartNameV1());
-            if (it == parts_by_name.end())
-                throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
-                    "Distributed read: part {} selected by the coordinator is not available on this replica "
-                    "(diverged by merge or replication lag); retry the query", part_desc.info.getPartNameV1());
-            RangesInDataPart part = std::move(it->second);
-            part.ranges = part_desc.ranges;
-            bucket_parts.push_back(std::move(part));
+            const auto & bucket_marks = distributed_read_task_buckets.front().marks;
+            std::unordered_map<String, RangesInDataPart> parts_by_name;
+            for (auto & part : result.parts_with_ranges)
+                parts_by_name.emplace(part.data_part->info.getPartNameV1(), std::move(part));
+            RangesInDataParts bucket_parts;
+            bucket_parts.reserve(bucket_marks.size());
+            for (const auto & part_desc : bucket_marks)
+            {
+                auto it = parts_by_name.find(part_desc.info.getPartNameV1());
+                if (it == parts_by_name.end())
+                    throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                        "Distributed read: part {} selected by the coordinator is not available on this replica "
+                        "(diverged by merge or replication lag); retry the query", part_desc.info.getPartNameV1());
+                RangesInDataPart part = std::move(it->second);
+                part.ranges = part_desc.ranges;
+                bucket_parts.push_back(std::move(part));
+            }
+            result.parts_with_ranges = std::move(bucket_parts);
         }
-        result.parts_with_ranges = std::move(bucket_parts);
 
         /// Cannot cache PREWHERE results when ranges are pinned per bucket.
         reader_settings.use_query_condition_cache = false;
@@ -4752,6 +4821,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         if (buckets.empty() || buckets.size() > max_total_buckets)
             return 0;
 
+        distributed_read_lanes_per_task = 1;
         setDistributedRead(buckets.size());
         distributed_read_buckets = std::move(buckets);
         return distributed_read_buckets.size();
@@ -4803,6 +4873,11 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     for (const auto & span : spans)
         total_marks += span.getMarksCountAllParts();
 
+    /// Lanes (merge layers) per task, matching single-node FINAL's parallelism
+    /// `min(requested_num_streams, max_final_threads)`.
+    const size_t lanes_per_task
+        = std::max<size_t>(1, std::min<size_t>(requested_num_streams, context->getSettingsRef()[Setting::max_final_threads]));
+
     /// Split each span by primary key into non-intersecting ranges (each owned by a single level>0 part,
     /// already deduplicated, so read without a merge) and intersecting ranges (overlapping across parts,
     /// merged in PK-range layers). Each gets a share of the span's bucket budget proportional to its marks;
@@ -4814,7 +4889,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     for (auto & span : spans)
     {
         const size_t span_marks = span.getMarksCountAllParts();
-        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, target_buckets * span_marks / total_marks);
+        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, target_buckets * lanes_per_task * span_marks / total_marks);
 
         RangesInDataParts intersecting;
         if (split_non_intersecting)
@@ -4851,14 +4926,17 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         }
     }
 
-    /// A single bucket has nothing to parallelize; a per-partition split can also exceed the bucket-count
-    /// limit (a table with many partitions). Read serially rather than under-parallelize or exceed it.
-    if (buckets.size() <= 1 || buckets.size() > max_total_buckets)
+    /// Group `lanes_per_task` consecutive virtual buckets into each task. A single task has nothing to
+    /// distribute, and a per-partition split with many partitions can exceed the task limit. Read serially
+    /// rather than under-parallelize or exceed it.
+    const size_t tasks = (buckets.size() + lanes_per_task - 1) / lanes_per_task;
+    if (tasks <= 1 || tasks > max_total_buckets)
         return 0;
 
-    setDistributedRead(buckets.size());
+    distributed_read_lanes_per_task = lanes_per_task;
     distributed_read_buckets = std::move(buckets);
-    return distributed_read_buckets.size();
+    setDistributedRead(tasks);
+    return tasks;
 }
 
 std::vector<String> ReadFromMergeTree::serializeDistributedReadBuckets() const
@@ -4870,23 +4948,31 @@ std::vector<String> ReadFromMergeTree::serializeDistributedReadBuckets() const
     const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
     DB::FormatSettings format_settings;
 
-    result.reserve(distributed_read_buckets.size());
-    for (const auto & bucket : distributed_read_buckets)
+    /// Each task gets `distributed_read_lanes_per_task` consecutive virtual buckets (lanes): a count, then
+    /// for each lane its marks, its merge flag, and (for a merge lane) the span borders + its index among
+    /// them so the worker can rebuild the trimming filter. Borders are concrete PK values (the producer
+    /// gates on `isSafePrimaryKey`).
+    const size_t lanes_per_task = std::max<size_t>(1, distributed_read_lanes_per_task);
+    for (size_t start = 0; start < distributed_read_buckets.size(); start += lanes_per_task)
     {
+        const size_t end = std::min(start + lanes_per_task, distributed_read_buckets.size());
         WriteBufferFromOwnString buf;
-        bucket.marks.serialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-        writeBinary(bucket.needs_merge, buf);
-        /// A merge layer also carries its span borders and its index among them so the worker can rebuild
-        /// the trimming filter. Borders are concrete PK values (the producer gates on `isSafePrimaryKey`).
-        if (bucket.needs_merge)
+        writeVarUInt(end - start, buf);
+        for (size_t i = start; i < end; ++i)
         {
-            const size_t border_arity = bucket.borders.empty() ? 0 : bucket.borders.front().size();
-            writeVarUInt(border_arity, buf);
-            writeVarUInt(bucket.borders.size(), buf);
-            for (const auto & border : bucket.borders)
-                for (size_t i = 0; i < border_arity; ++i)
-                    primary_key.data_types[i]->getDefaultSerialization()->serializeBinary(border[i], buf, format_settings);
-            writeVarUInt(bucket.index, buf);
+            const auto & bucket = distributed_read_buckets[i];
+            bucket.marks.serialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+            writeBinary(bucket.needs_merge, buf);
+            if (bucket.needs_merge)
+            {
+                const size_t border_arity = bucket.borders.empty() ? 0 : bucket.borders.front().size();
+                writeVarUInt(border_arity, buf);
+                writeVarUInt(bucket.borders.size(), buf);
+                for (const auto & border : bucket.borders)
+                    for (size_t j = 0; j < border_arity; ++j)
+                        primary_key.data_types[j]->getDefaultSerialization()->serializeBinary(border[j], buf, format_settings);
+                writeVarUInt(bucket.index, buf);
+            }
         }
         result.push_back(buf.str());
     }

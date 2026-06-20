@@ -78,11 +78,11 @@ struct TopKFilterInfo
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
-/// One bucket of a distributed leaf read: the marks this worker reads. `needs_merge` distinguishes a
-/// FINAL intersecting layer -- read in order, trimmed to the interval (borders[index-1], borders[index]]
-/// and merge-deduplicated -- from a plain or non-intersecting read that needs no merge. For a merge layer
-/// the borders are its partition span's (one span per partition when FINAL does not merge across
-/// partitions, otherwise all parts form one span); otherwise the borders are unused.
+/// One bucket (lane) of a distributed leaf read: the marks this worker reads.
+/// When `needs_merge`, it is a FINAL intersecting layer -- read in order, trimmed to the interval
+/// (borders[index-1], borders[index]], and merge-deduplicated; `borders` are its span's layer borders and
+/// `index` is its position among them. Otherwise it is a plain or non-intersecting read with no merge, and
+/// `borders`/`index` are unused.
 struct DistributedReadBucket
 {
     RangesInDataPartsDescription marks;
@@ -601,20 +601,16 @@ private:
 
     std::optional<TopKFilterInfo> top_k_filter_info;
     ProjectionIndexReadDescription projection_index_read_desc;
-    /// Set when this step is part of a distributed query plan executed in a distributed manner. Each
-    /// worker reads the single bucket described by its `read_bucket` task parameter.
+    /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its
+    /// `read_bucket` parameter.
     size_t distributed_read_bucket_count = 0;
-    /// Per-bucket marks for a distributed read. On the initiator (producer) this holds every bucket; each
-    /// is serialized into its own `read_bucket` task parameter (not into the shared step). On a worker it
-    /// stays empty; the worker fills the members below from its own `read_bucket` parameter and reads that
-    /// bucket's marks.
+    /// Initiator side: every virtual bucket across all tasks; `serializeDistributedReadBuckets` groups
+    /// `distributed_read_lanes_per_task` of them into each task's `read_bucket` parameter. Empty on a worker.
     std::vector<DistributedReadBucket> distributed_read_buckets;
-    /// Worker-side state for the one bucket this worker reads, filled from its `read_bucket` parameter.
-    /// `distributed_read_needs_merge` selects a FINAL merge of the layer (trimmed to the borders at the
-    /// index); otherwise the marks are read without a merge.
-    bool distributed_read_needs_merge = false;
-    std::vector<std::vector<Field>> distributed_read_borders;
-    size_t distributed_read_layer_index = 0;
+    size_t distributed_read_lanes_per_task = 1;
+    /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its `read_bucket`
+    /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
+    std::vector<DistributedReadBucket> distributed_read_task_buckets;
 };
 
 }
