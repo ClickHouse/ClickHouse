@@ -25,6 +25,7 @@ public:
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
+        Substrait, /// 'EXPLAIN SUBSTRAIT SELECT ...'
     };
 
     static String toString(ExplainKind kind)
@@ -39,6 +40,7 @@ public:
             case QueryEstimates: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
+            case Substrait: return "EXPLAIN SUBSTRAIT";
         }
     }
 
@@ -60,6 +62,8 @@ public:
             return TableOverride;
         if (str == "EXPLAIN CURRENT TRANSACTION")
             return CurrentTransaction;
+        if (str == "EXPLAIN SUBSTRAIT")
+            return Substrait;
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown explain kind '{}'", str);
     }

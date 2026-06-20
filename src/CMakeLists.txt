@@ -338,6 +338,10 @@ add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
+if (TARGET ch_contrib::substrait)
+    add_subdirectory(Processors/Substrait)
+endif()
+
 # Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
 # TUs where libcxx hardening needs to be disabled are specified here.
 set_property(SOURCE
@@ -359,6 +363,10 @@ add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
+endif()
+
+if (TARGET ch_contrib::substrait)
+    target_link_libraries(dbms PRIVATE clickhouse_processors_substrait)
 endif()
 
 target_include_directories (dbms PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")

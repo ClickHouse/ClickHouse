@@ -378,3 +378,6 @@
 [submodule "contrib/libcotp"]
 	path = contrib/libcotp
 	url = https://github.com/paolostivanin/libcotp.git
+[submodule "contrib/substrait"]
+	path = contrib/substrait
+	url = https://github.com/substrait-io/substrait.git
