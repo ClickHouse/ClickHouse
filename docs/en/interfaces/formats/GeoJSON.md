@@ -33,8 +33,6 @@ Each geometry is stored in ClickHouse's `Geometry` type (a `Variant`). The suppo
 
 The document's structure is validated: the top-level `type` must be `FeatureCollection` and every element of `features` must have `type` `Feature`. Coordinates must satisfy the GeoJSON shape invariants — a `LineString` (and each line of a `MultiLineString`) must have at least two positions, and a `Polygon` ring (and each ring of a `MultiPolygon`) must be closed and have at least four positions. Malformed documents are rejected rather than silently loaded.
 
-Other keys in the `FeatureCollection` object (such as `name` or `crs`) and other keys inside each `Feature` object (such as `bbox`) are ignored.
-
 Key ordering is flexible: the top-level `type` may appear before or after the `features` array, and within a geometry object `coordinates` may appear before or after `type`.
 
 Schema inference returns the fixed schema above, so `DESCRIBE` and `SELECT ... FROM format(...)` work without a table definition.
@@ -215,6 +213,16 @@ Some valid GeoJSON geometry types &mdash; such as `GeometryCollection` and `Mult
 
 This handling applies only when the `geometry` column is read. When `geometry` is not a requested output column (for example `SELECT id FROM ...`), an unsupported geometry is still validated for well-formedness but does not trigger the handling — it neither throws nor inserts `NULL`, because no geometry value is materialized.
 
+### Limitations {#reading-limitations}
+
+Reading reflects only what fits the fixed schema, so some GeoJSON information is not preserved:
+
+- Only `id`, `geometry`, and `properties` are produced; other document structure is not exposed as columns.
+- A position's third (elevation) coordinate, and any beyond it, are dropped — positions become `[longitude, latitude]`.
+- `bbox` and foreign members (such as a top-level `name` or `crs`, or extra members inside a `Feature`) are ignored.
+- A numeric `id` is stored as text, so the string-vs-number distinction is lost; an absent or `null` `id` becomes `NULL`.
+- `GeometryCollection` and `MultiPoint` cannot be represented — see [Handling unsupported geometry types](#unsupported-geometry).
+
 ## Writing data {#writing-data}
 
 Writing a result set produces a single GeoJSON [`FeatureCollection`](https://datatracker.ietf.org/doc/html/rfc7946#section-3.3), one `Feature` per row.
@@ -312,11 +320,9 @@ SELECT id, geometry, properties FROM london;
 ClickHouse's geo types carry no coordinate reference system, so the output assumes coordinates are already WGS84 longitude/latitude in `[longitude, latitude]` order, as [RFC 7946](https://datatracker.ietf.org/doc/html/rfc7946#section-4) requires. No reprojection or axis swap is performed, so projected coordinates — or data stored as `(latitude, longitude)` — produce structurally valid but non-conformant GeoJSON.
 :::
 
-The output reflects only what ClickHouse stores, so some GeoJSON information cannot be reproduced:
+The output reflects only what ClickHouse stores:
 
-- A position's third (elevation) and any further coordinates are not stored, so output positions are always `[longitude, latitude]`.
-- `bbox` members and foreign members (such as a top-level `name` or `crs`, or extra `Feature` members) are not stored and are not emitted.
-- An `id` read by the input format is stored as `Nullable(String)`, so on a round-trip it is re-emitted as a JSON string even when the source GeoJSON used a number.
+- Information dropped when reading — a position's elevation, `bbox`, foreign members, and an `id`'s string-vs-number distinction — cannot be reproduced; see [Reading limitations](#reading-limitations).
 - Coordinates are written from `Float64` values using their shortest round-trippable representation.
 - A `properties` object taken directly from a `JSON` column is emitted in the `JSON` type's canonical key order, which may differ from the input.
 
