@@ -31,7 +31,7 @@ else
 fi
 
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "
-    SELECT count() >= 1, countIf(user != currentUser())
+    SELECT count() >= 1, countIf(if(initial_user != '', initial_user, user) != currentUser())
     FROM system.user_query_log
     WHERE event_date >= yesterday()
       AND current_database = currentDatabase()
@@ -42,5 +42,5 @@ ${CLICKHOUSE_CLIENT} --user "${user}" --query "
     FROM system.user_query_log
     WHERE event_date >= yesterday()
       AND current_database = currentDatabase()
-      AND throwIf(user != currentUser()) = 0
+      AND throwIf(if(initial_user != '', initial_user, user) != currentUser()) = 0
     LIMIT 1"

@@ -16,6 +16,7 @@ ${CLICKHOUSE_CLIENT} --query "
         create_table_query != '',
         position(create_table_query, 'SQL SECURITY NONE') > 0,
         position(as_select, 'currentUser()') > 0,
+        position(as_select, 'initial_user') > 0,
         definer = ''
     FROM system.tables
     WHERE database = 'system' AND name = 'user_query_log'"

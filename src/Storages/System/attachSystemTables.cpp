@@ -290,7 +290,8 @@ void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
                 DatabaseCatalog::SYSTEM_DATABASE,
                 USER_QUERY_LOG_TABLE_NAME);
 
-        select_query = "SELECT * FROM " + query_log_table_id.getFullTableName() + " PREWHERE user = currentUser()";
+        select_query = "SELECT * FROM " + query_log_table_id.getFullTableName()
+            + " PREWHERE if(initial_user != '', initial_user, user) = currentUser()";
         ast = parseSystemViewCreateQuery(USER_QUERY_LOG_TABLE_NAME, select_query);
         expected_create_query = &ast->as<ASTCreateQuery &>();
     }

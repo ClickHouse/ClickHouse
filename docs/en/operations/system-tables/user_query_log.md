@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-The `system.user_query_log` table is a view over the query log table configured by the `query_log.database` and `query_log.table` server configuration parameters. By default, this is `system.query_log`. The view returns only rows where the `user` column is equal to the result of `currentUser()`.
+The `system.user_query_log` table is a view over the query log table configured by the `query_log.database` and `query_log.table` server configuration parameters. By default, this is `system.query_log`. The view returns only rows where the initiating user is equal to the result of `currentUser()`. For distributed query log rows, the initiating user is stored in `initial_user`; otherwise, `user` is used.
 
 The view is created with `SQL SECURITY NONE`, so its inner query uses internal access to the configured query log table instead of a `DEFINER` user. This lets a user read their own query log rows through `system.user_query_log` without being granted direct access to the configured query log table. Users do not need an explicit `SELECT` grant on `system.user_query_log`.
 
