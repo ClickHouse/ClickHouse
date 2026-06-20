@@ -764,13 +764,6 @@ def test_backup_with_fs_cache(
         assert restore_events["CachedWriteBufferCacheWriteBytes"] <= 1
 
 
-def test_backup_to_zip(cluster):
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
-    check_backup_and_restore(cluster, storage_policy, backup_destination)
-
-
 def test_backup_to_tar(cluster):
     storage_policy = "default"
     backup_name = new_backup_name()
@@ -1186,5 +1179,23 @@ def test_backup_to_s3_zip_not_supported(cluster):
         backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', '{minio_secret_key}')"
         error = node.query_and_get_error(f"BACKUP TABLE data TO {backup_destination}")
         assert "Zip archive format is not supported for S3 backups" in error, error
+    finally:
+        node.query("DROP TABLE data SYNC;")
+
+
+def test_backup_to_object_storage_disk_zip_not_supported(cluster):
+    # A `Disk` destination backed by object storage (here the `s3`-typed `disk_s3`) has the same
+    # seek-heavy zip read path as a direct `S3(...)` destination, so it must be rejected too (issue #53483).
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    node.query("DROP TABLE IF EXISTS data SYNC;")
+    node.query(
+        "CREATE TABLE data (key UInt64, value String) Engine=MergeTree() ORDER BY tuple();"
+    )
+    node.query("INSERT INTO data SELECT number, toString(number) FROM numbers(10);")
+    try:
+        backup_destination = f"Disk('disk_s3', '{backup_name}.zip')"
+        error = node.query_and_get_error(f"BACKUP TABLE data TO {backup_destination}")
+        assert "Zip archive format is not supported for backups on disk" in error, error
     finally:
         node.query("DROP TABLE data SYNC;")
