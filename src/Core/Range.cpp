@@ -38,7 +38,7 @@ Range Range::createWholeUniverseWithoutNull()
     return Range(NEGATIVE_INFINITY, false, POSITIVE_INFINITY, false);
 }
 
-Range Range::createTypeAwareWholeUniverse(const DataTypePtr & type)
+Range Range::createWholeUniverseTypeAware(const DataTypePtr & type)
 {
     return isNullableOrLowCardinalityNullable(type) ? createWholeUniverse() : createWholeUniverseWithoutNull();
 }

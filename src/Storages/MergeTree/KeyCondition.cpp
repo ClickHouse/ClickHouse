@@ -4426,7 +4426,7 @@ static BoolMask forAnySparseHyperrectangle(
         chassert(key_col_to_sparse_pos[key_index] >= 0);
         size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_index]);
 
-        sparse_hyperrectangle[sparse_pos] = Range::createTypeAwareWholeUniverse(sparse_data_types[sparse_pos]);
+        sparse_hyperrectangle[sparse_pos] = Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]);
     }
 
     auto result = BoolMask::combine(initial_mask, callback(sparse_hyperrectangle));
@@ -4547,7 +4547,7 @@ BoolMask KeyCondition::checkInRange(
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
     {
         chassert(sparse_pos < sparse_data_types.size());
-        sparse_key_ranges.emplace_back(Range::createTypeAwareWholeUniverse(sparse_data_types[sparse_pos]));
+        sparse_key_ranges.emplace_back(Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]));
     }
 
     const size_t key_size = equal_boundaries_mask.size();
