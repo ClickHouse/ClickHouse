@@ -167,10 +167,12 @@ void AutocompleteModel::deleteDuplicatesKeepOrder(std::vector<std::string> & rec
 
 std::vector<std::string> AutocompleteModel::predictNextWords(DB::Lexer & lexer)
 {
-    if (processed_queries_cnt < 1)
-    {
-        return {};
-    }
+    /// Do not gate predictions on `processed_queries_cnt`: the transformer is a pre-trained embedded
+    /// model and can predict without any seeded history. This matters for `clickhouse-local` and
+    /// embedded clients (marked ready via `Autocomplete::markLoaded`) and for a fresh session whose
+    /// history load failed. The Markov models still require history, but every path that reads them
+    /// below (`postprocessRecs`, the `markov_all` block, `replaceWithMarkovPredictions`) already
+    /// guards on `KneserNey::empty`, so an empty history simply yields transformer-only completions.
 
     auto [preprocessed_for_tf, preprocessed_for_markov] = preprocessTokens(lexer);
 
@@ -244,8 +246,6 @@ void AutocompleteModel::addQuery(DB::Lexer & lexer)
     markov_identifiers.incTimestamp();
     markov_operators.incTimestamp();
     markov_all.incTimestamp();
-
-    processed_queries_cnt++;
 }
 
 bool AutocompleteModel::isBareWordEqualToString(const DB::Token & token, const std::string & str) const

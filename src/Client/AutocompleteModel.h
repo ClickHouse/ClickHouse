@@ -15,7 +15,6 @@ class AutocompleteModel
 private:
     /// TODO: construct markov models with given order
     size_t markov_order = 4;
-    size_t processed_queries_cnt = 0;
 
     KneserNey markov_all = KneserNey(markov_order);
     KneserNey markov_literals = KneserNey(markov_order);
