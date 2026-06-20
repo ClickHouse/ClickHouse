@@ -79,6 +79,20 @@ TEST(TerminalMarkdownRenderer, LinkShowsTextOnly)
     EXPECT_EQ(plainRenderer().render("See [the docs](https://example.com) now."), "See the docs now.\n");
 }
 
+TEST(TerminalMarkdownRenderer, SpacedOperatorIsLiteral)
+{
+    /// A lone `*`/`_` surrounded by spaces is not emphasis and must be rendered literally, otherwise the
+    /// marker would be dropped and the rest of the text silently turned into emphasis.
+    EXPECT_EQ(plainRenderer().render("SELECT * FROM t"), "SELECT * FROM t\n");
+    EXPECT_EQ(plainRenderer().render("a * b and c _ d"), "a * b and c _ d\n");
+}
+
+TEST(TerminalMarkdownRenderer, UnbalancedEmphasisIsLiteral)
+{
+    /// An opening marker with no matching closer is kept literal rather than leaking emphasis to the end.
+    EXPECT_EQ(plainRenderer().render("**unterminated bold"), "**unterminated bold\n");
+}
+
 TEST(TerminalMarkdownRenderer, EntryBannerAndNoAnsiInPlainMode)
 {
     const String out = plainRenderer(30).renderEntry("plus", "Function", "Adds two numbers.");
@@ -101,4 +115,30 @@ TEST(TerminalMarkdownRenderer, AnsiModeEmitsEscapeSequences)
 TEST(TerminalMarkdownRenderer, ParagraphsSeparatedByBlankLine)
 {
     EXPECT_EQ(plainRenderer().render("First.\n\nSecond."), "First.\n\nSecond.\n");
+}
+
+TEST(TerminalMarkdownRenderer, HeaderAnchorIsStripped)
+{
+    EXPECT_EQ(plainRenderer().render("## Projections {#projections}\n\nText."), "Projections\n-----------\n\nText.\n");
+}
+
+TEST(TerminalMarkdownRenderer, AdmonitionNote)
+{
+    EXPECT_EQ(plainRenderer().render(":::note\nBe careful.\n:::"), "NOTE:\nBe careful.\n");
+}
+
+TEST(TerminalMarkdownRenderer, AdmonitionWithCustomTitle)
+{
+    EXPECT_EQ(plainRenderer().render(":::tip My Tip\nDo it.\n:::"), "My Tip:\nDo it.\n");
+}
+
+TEST(TerminalMarkdownRenderer, MdxImportIsHidden)
+{
+    EXPECT_EQ(plainRenderer().render("import ExperimentalBadge from '@theme/badges/ExperimentalBadge';\n\nReal text."), "Real text.\n");
+}
+
+TEST(TerminalMarkdownRenderer, BadgeComponentRendered)
+{
+    EXPECT_EQ(plainRenderer().render("<ExperimentalBadge/>"), "[Experimental]\n");
+    EXPECT_EQ(plainRenderer().render("<CloudNotSupportedBadge/>"), "[Not supported in ClickHouse Cloud]\n");
 }

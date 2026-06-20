@@ -3,6 +3,7 @@
 #include <Common/UTF8Helpers.h>
 
 #include <algorithm>
+#include <cctype>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -67,14 +68,108 @@ size_t leadingSpaces(std::string_view s)
     return n;
 }
 
+bool isInlineSpace(char c)
+{
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
 std::string_view trimView(std::string_view s)
 {
-    auto is_space = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
-    while (!s.empty() && is_space(s.front()))
+    while (!s.empty() && isInlineSpace(s.front()))
         s.remove_prefix(1);
-    while (!s.empty() && is_space(s.back()))
+    while (!s.empty() && isInlineSpace(s.back()))
         s.remove_suffix(1);
     return s;
+}
+
+/// Whether a line is an MDX import statement (e.g. `import X from '@theme/badges/ExperimentalBadge';`).
+/// These appear in documentation sources but are website-only and should not be shown in the terminal.
+bool isMdxImport(std::string_view line)
+{
+    line = trimView(line);
+    if (!line.starts_with("import "))
+        return false;
+    return line.find(" from '") != std::string_view::npos || line.find(" from \"") != std::string_view::npos || line.starts_with("import '")
+        || line.starts_with("import \"");
+}
+
+/// Human-readable text for an MDX badge component such as `<ExperimentalBadge/>`. Known badges get a
+/// descriptive label; any other `*Badge` component falls back to its name with the camel case split.
+String badgeLabel(std::string_view name)
+{
+    if (name == "ExperimentalBadge")
+        return "Experimental";
+    if (name == "BetaBadge")
+        return "Beta";
+    if (name == "CloudNotSupportedBadge")
+        return "Not supported in ClickHouse Cloud";
+    if (name == "CloudAvailableBadge")
+        return "Available in ClickHouse Cloud";
+    if (name == "CloudOnlyBadge")
+        return "ClickHouse Cloud only";
+    if (name == "PrivatePreviewBadge")
+        return "Private Preview";
+
+    std::string_view stem = name;
+    if (stem.ends_with("Badge"))
+        stem.remove_suffix(5);
+    String result;
+    for (size_t i = 0; i < stem.size(); ++i)
+    {
+        if (i > 0 && stem[i] >= 'A' && stem[i] <= 'Z' && !(stem[i - 1] >= 'A' && stem[i - 1] <= 'Z'))
+            result += ' ';
+        result += stem[i];
+    }
+    return result;
+}
+
+/// Removes a trailing explicit anchor such as `{#projections}` from a header's text. Documentation
+/// headers carry these anchors for the website; they are noise in the terminal.
+std::string_view stripHeaderAnchor(std::string_view text)
+{
+    text = trimView(text);
+    if (!text.empty() && text.back() == '}')
+    {
+        const size_t open = text.rfind("{#");
+        if (open != std::string_view::npos)
+            text = trimView(text.substr(0, open));
+    }
+    return text;
+}
+
+/// The ANSI color of an admonition (`:::note`, `:::warning`, ...) label, chosen by its kind.
+std::string_view admonitionColor(std::string_view type)
+{
+    if (type == "tip" || type == "success")
+        return "\033[32m"; /// green
+    if (type == "warning" || type == "caution")
+        return "\033[33m"; /// yellow
+    if (type == "danger" || type == "important" || type == "error")
+        return "\033[31m"; /// red
+    return "\033[36m"; /// note / info and anything else: cyan
+}
+
+/// Whether a closing emphasis delimiter for `c` exists at or after `from`: a run of `c` of length at
+/// least `need` that is immediately preceded by a non-space character (i.e. that can close emphasis).
+/// Used so that a lone `*`/`_` with no matching partner — e.g. the `*` in `SELECT * FROM t` — is rendered
+/// literally instead of silently turning the rest of the text into emphasis.
+bool hasEmphasisCloser(std::string_view s, size_t from, char c, size_t need)
+{
+    for (size_t k = from; k < s.size();)
+    {
+        if (s[k] != c)
+        {
+            ++k;
+            continue;
+        }
+        size_t run = 0;
+        while (k + run < s.size() && s[k + run] == c)
+            ++run;
+        if (run >= need && k > 0 && !isInlineSpace(s[k - 1]))
+            return true;
+        k += run;
+    }
+    return false;
 }
 
 
@@ -312,17 +407,30 @@ private:
                         continue;
                     }
 
-                    flush_word();
-                    if (n >= 2)
-                    {
-                        bold = bold > 0 ? 0 : 1;
-                        i += 2;
-                    }
+                    /// A run of two or more markers is bold; a single marker is italic.
+                    const size_t need = n >= 2 ? 2 : 1;
+                    int & flag = n >= 2 ? bold : italic;
+
+                    /// A delimiter can close emphasis only if it is not preceded by whitespace, and can open
+                    /// it only if it is not followed by whitespace (a relaxation of the CommonMark flanking
+                    /// rules). An opener is honored only when a matching closer is present, so unbalanced
+                    /// markers are left as literal text rather than corrupting the rest of the document.
+                    const bool can_close = before != '\0' && !isInlineSpace(before);
+                    const bool can_open = after != '\0' && !isInlineSpace(after);
+
+                    if (flag > 0 && can_close)
+                        flag = 0;
+                    else if (can_open && hasEmphasisCloser(s, i + n, c, need))
+                        flag = 1;
                     else
                     {
-                        italic = italic > 0 ? 0 : 1;
-                        i += 1;
+                        append(s.substr(i, n), current_style());
+                        i += n;
+                        continue;
                     }
+
+                    flush_word();
+                    i += need;
                     continue;
                 }
 
@@ -339,6 +447,29 @@ private:
                             scan(link_text);
                             --underline;
                             i = close_paren + 1;
+                            continue;
+                        }
+                    }
+                    append(s.substr(i, 1), current_style());
+                    ++i;
+                    continue;
+                }
+
+                /// MDX badge component, e.g. `<ExperimentalBadge/>`: render its human-readable label.
+                if (c == '<')
+                {
+                    const size_t close = s.find('>', i + 1);
+                    if (close != std::string_view::npos && close > i + 1 && s[close - 1] == '/')
+                    {
+                        size_t p = i + 1;
+                        const size_t name_begin = p;
+                        while (p < close && ((s[p] >= 'A' && s[p] <= 'Z') || (s[p] >= 'a' && s[p] <= 'z') || (s[p] >= '0' && s[p] <= '9')))
+                            ++p;
+                        const std::string_view name = s.substr(name_begin, p - name_begin);
+                        if (name.size() > 5 && name[0] >= 'A' && name[0] <= 'Z' && name.ends_with("Badge"))
+                        {
+                            append("[" + badgeLabel(name) + "]", Style{.bold = true});
+                            i = close + 1;
                             continue;
                         }
                     }
@@ -501,6 +632,44 @@ private:
                 out += ANSI_RESET;
             out += '\n';
         }
+    }
+
+    /// Renders a Docusaurus admonition (`:::note`, `:::tip`, `:::warning`, ...): a colored label followed
+    /// by the admonition body rendered as ordinary Markdown.
+    void renderAdmonition(std::string_view type, std::string_view title, const std::vector<std::string_view> & body_lines)
+    {
+        String label;
+        if (!title.empty())
+            label = String(title);
+        else
+        {
+            label = String(type);
+            std::transform(label.begin(), label.end(), label.begin(), [](char c) { return std::toupper(static_cast<unsigned char>(c)); });
+        }
+
+        out += '\n';
+        if (ansi)
+        {
+            out += ANSI_BOLD;
+            out += admonitionColor(type);
+            out += label;
+            out += ANSI_RESET;
+        }
+        else
+        {
+            out += label;
+            out += ':';
+        }
+        out += '\n';
+
+        String body;
+        for (size_t k = 0; k < body_lines.size(); ++k)
+        {
+            if (k)
+                body += '\n';
+            body += body_lines[k];
+        }
+        renderDocument(body);
     }
 
     static bool isTableSeparator(std::string_view line)
@@ -737,6 +906,10 @@ private:
             return true;
         if (stripped.starts_with(">"))
             return true;
+        if (stripped.starts_with(":::"))
+            return true;
+        if (isMdxImport(stripped))
+            return true;
         size_t ml = 0;
         String marker;
         bool ordered = false;
@@ -774,6 +947,40 @@ private:
 
             size_t indent = leadingSpaces(line);
             std::string_view stripped = line.substr(indent);
+
+            /// MDX import/export statements (e.g. `import X from '@theme/...';`) are website-only; drop them.
+            if (isMdxImport(stripped))
+            {
+                ++i;
+                continue;
+            }
+
+            /// Docusaurus admonition: `:::type [title]` ... `:::`.
+            if (stripped.starts_with(":::"))
+            {
+                std::string_view spec = trimView(stripped.substr(3));
+                if (!spec.empty()) /// an opening fence carries a type; a bare `:::` is just the closing one
+                {
+                    const size_t space = spec.find_first_of(" \t");
+                    const std::string_view type = space == std::string_view::npos ? spec : spec.substr(0, space);
+                    const std::string_view title = space == std::string_view::npos ? std::string_view{} : trimView(spec.substr(space));
+                    std::vector<std::string_view> body_lines;
+                    ++i;
+                    while (i < lines.size())
+                    {
+                        std::string_view bl = stripCR(lines[i]);
+                        if (trimView(bl) == ":::")
+                        {
+                            ++i;
+                            break;
+                        }
+                        body_lines.push_back(bl);
+                        ++i;
+                    }
+                    renderAdmonition(type, title, body_lines);
+                    continue;
+                }
+            }
 
             /// Fenced code block.
             if (stripped.starts_with("```") || stripped.starts_with("~~~"))
@@ -820,8 +1027,7 @@ private:
                 size_t level = 0;
                 while (level < stripped.size() && stripped[level] == '#')
                     ++level;
-                std::string_view text = trimView(stripped.substr(level));
-                renderHeader(level, text);
+                renderHeader(level, stripHeaderAnchor(stripped.substr(level)));
                 ++i;
                 continue;
             }

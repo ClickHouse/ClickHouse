@@ -3570,6 +3570,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
         return "";
     }
 }
+#endif
 
 Block ClientBase::fetchDocumentation(const String & query, const String & word)
 {
@@ -3582,7 +3583,7 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
         "", /// query_id
         QueryProcessingStage::Complete,
         nullptr, /// settings
-        nullptr, /// client_info
+        &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
         false, /// with_pending_data
         {}, /// external_roles
         {} /// process_progress_callback
@@ -3626,7 +3627,7 @@ bool ClientBase::processHelpCommand(const String & word_arg)
 
     if (word.empty())
     {
-        output_stream << "Usage: help <name>   (also: /help <name>, man <name>, /man <name>)\n"
+        output_stream << "\nUsage: help <name>   (also: /help <name>, man <name>, /man <name>)\n"
                          "\n"
                          "Searches the embedded documentation (the system.documentation table) for <name> and\n"
                          "renders it in the terminal, formatted from Markdown. When several entities share the\n"
@@ -3634,7 +3635,7 @@ bool ClientBase::processHelpCommand(const String & word_arg)
                          "entities whose documentation mentions the word are listed.\n"
                          "\n"
                          "Examples: help MergeTree, help domainWithoutWWW, help max_threads\n"
-                      << std::flush;
+                      << std::endl;
         return true;
     }
 
@@ -3650,18 +3651,22 @@ bool ClientBase::processHelpCommand(const String & word_arg)
     {
         try
         {
+            /// Wrap to the real terminal width (the renderer clamps very narrow terminals to a minimum).
             const uint16_t detected_width = getTerminalWidth();
             if (detected_width >= 20)
-                renderer.width = std::min<uint16_t>(detected_width, 100);
+                renderer.width = detected_width;
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
-            /// Could not determine the terminal width; the default is fine.
+            /// Ok: if the terminal width cannot be determined, the default is used.
         }
     }
 #if USE_REPLXX
+    /// Documentation snippets are often query fragments, not complete queries, so fall back to
+    /// lexer-based highlighting when the parser cannot parse them.
     if (renderer.ansi && client_context)
-        renderer.highlight_sql = [this](const String & sql) { return highlighted(sql, *client_context, false); };
+        renderer.highlight_sql = [this](const String & sql)
+        { return highlighted(sql, *client_context, /*rainbow_parentheses=*/false, /*lexer_fallback=*/true); };
 #endif
 
     try
@@ -3676,9 +3681,16 @@ bool ClientBase::processHelpCommand(const String & word_arg)
             const auto & names = typeid_cast<const ColumnString &>(*exact.getByName("name").column);
             const auto & types = typeid_cast<const ColumnString &>(*exact.getByName("type").column);
             const auto & descriptions = typeid_cast<const ColumnString &>(*exact.getByName("description").column);
+            /// Frame the output with blank lines (before, between entries, and after) for readability.
+            output_stream << '\n';
             for (size_t i = 0; i < exact.rows(); ++i)
+            {
+                if (i)
+                    output_stream << '\n';
                 output_stream << renderer.renderEntry(
                     String(names.getDataAt(i)), String(types.getDataAt(i)), String(descriptions.getDataAt(i)));
+            }
+            output_stream << '\n';
             output_stream << std::flush;
             return true;
         }
@@ -3701,7 +3713,7 @@ bool ClientBase::processHelpCommand(const String & word_arg)
             "ORDER BY name LIMIT 30",
             word);
 
-        output_stream << "No documentation found for '" << word << "'.\n";
+        output_stream << "\nNo documentation found for '" << word << "'.\n";
 
         std::unordered_set<String> shown_names;
         auto print_suggestions = [&](const Block & block, std::string_view header, bool record)
@@ -3743,6 +3755,7 @@ bool ClientBase::processHelpCommand(const String & word_arg)
         if (!any_name && !any_content)
             output_stream << "Nothing similar found. Try the name of a function, table engine, data type, format or setting.\n";
 
+        output_stream << '\n';
         output_stream << std::flush;
     }
     catch (...)
@@ -3753,6 +3766,7 @@ bool ClientBase::processHelpCommand(const String & word_arg)
     return true;
 }
 
+#if USE_CLIENT_AI
 bool ClientBase::checkAIProviderAcknowledgment()
 {
     // If API key came from environment and user hasn't acknowledged yet, ask for confirmation
