@@ -1991,7 +1991,22 @@ AzureURLParts parseAzureURL(const String & url)
 
     String scheme = url.substr(0, scheme_pos);
     boost::to_lower(scheme);
-    const String rest = url.substr(scheme_pos + 3);
+    String rest = url.substr(scheme_pos + 3);
+
+    /// Split off the query string (a SAS token such as `?sp=...&sig=...`) before parsing the host and
+    /// path. `AzureBlobStorage::processURL` recovers the SAS only from the connection/account URL — it
+    /// splits the `account_url` argument on `?` — so the query must ride on `account_url`, not on the
+    /// blob path. Leaving it on the blob path would drop authentication for SAS-protected links (the
+    /// delegate would try to read a blob whose name literally contains `?sp=...`). Stripping the query
+    /// first is also required for correct parsing: a SAS `sig=` value is base64 and contains `/` and
+    /// `+`, so a `?`-bearing URL would otherwise have its container/blob split on a slash inside the
+    /// signature.
+    String query;
+    if (auto query_pos = rest.find('?'); query_pos != String::npos)
+    {
+        query = rest.substr(query_pos); /// includes the leading `?`
+        rest = rest.substr(0, query_pos);
+    }
 
     AzureURLParts parts;
 
@@ -2013,7 +2028,7 @@ AzureURLParts parseAzureURL(const String & url)
 
         auto dot_pos = host.find('.');
         const String account = (dot_pos == String::npos) ? host : host.substr(0, dot_pos);
-        parts.account_url = "https://" + account + ".blob.core.windows.net";
+        parts.account_url = "https://" + account + ".blob.core.windows.net" + query;
         return parts;
     }
 
@@ -2030,7 +2045,7 @@ AzureURLParts parseAzureURL(const String & url)
             "Use the `azureBlobStorage` table function for connection-string based access.",
             scheme, scheme, url);
 
-    parts.account_url = "https://" + host;
+    parts.account_url = "https://" + host + query;
     auto path_slash = path.find('/');
     parts.container = (path_slash == String::npos) ? path : path.substr(0, path_slash);
     parts.blob_path = (path_slash == String::npos) ? "" : path.substr(path_slash + 1);
