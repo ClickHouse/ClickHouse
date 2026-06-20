@@ -14,4 +14,11 @@ SELECT DISTINCT count(*) OVER () FROM (SELECT 0 FROM t_window_const);
 SELECT DISTINCT count(*) OVER () FROM (SELECT 0 AS c, s FROM t_window_const);
 SELECT DISTINCT count(*) OVER (), 1 AS a, 'z' AS b FROM (SELECT 0, 5 FROM t_window_const);
 
+-- UNION ALL subquery: each branch is delegated to the replicas as a plain projection
+-- (SELECT 0 FROM t) while the Union/Window run on the coordinator, so the window is not
+-- pushed into a const-projecting mergeable-state read and the header cannot diverge here.
+SELECT count(*) OVER () FROM (SELECT 0 FROM t_window_const UNION ALL SELECT 0 FROM t_window_const) ORDER BY 1 LIMIT 1;
+SELECT DISTINCT count(*) OVER () FROM (SELECT 0 AS c FROM t_window_const UNION ALL SELECT 1 AS c FROM t_window_const);
+SELECT DISTINCT count(*) OVER () FROM (SELECT 0 AS c, s FROM t_window_const UNION ALL SELECT 0 AS c, s FROM t_window_const);
+
 DROP TABLE t_window_const;
