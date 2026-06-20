@@ -145,6 +145,15 @@ struct Settings
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;
 
+    /// Returns true if the `QueryConditionCache` may be safely written from a query running with
+    /// these settings. Refuses writes when the context has any non-default setting whose name
+    /// starts with `allow_suspicious_`, contains `relaxed`, or starts with `allow_experimental_`
+    /// and is currently in any non-`Production` tier (i.e. `Beta` or `Experimental`). Aliases
+    /// of changed settings are also checked, so an `allow_experimental_*` alias of a non-
+    /// `Production` canonical setting (e.g. `allow_experimental_lightweight_update`) is blocked
+    /// too. See issue #104203.
+    bool isQueryConditionCacheWritable() const;
+
     void set(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 

@@ -89,6 +89,9 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;
+    /// Whether the QueryConditionCache may be written from this context. Independent from
+    /// `use_query_condition_cache`: reads are allowed even when this is false. See issue #104203.
+    bool query_condition_cache_writable;
     bool read_in_order_through_join;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;

@@ -8724,6 +8724,90 @@ SettingsTierType Settings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
+bool Settings::isQueryConditionCacheWritable() const
+{
+    /// The `QueryConditionCache` is keyed by the action-graph hash of the filter expression. That hash
+    /// captures the predicate's structure but not the evaluation profile. If a query runs under
+    /// settings that change `PREWHERE` / `WHERE` evaluation outcomes (type coercion, constant folding,
+    /// data-skipping decisions, etc.) and writes a verdict to the cache, a subsequent query whose
+    /// filter hashes to the same key may read back that verdict and return silently wrong rows.
+    ///
+    /// To avoid this, refuse writes from any context that has a setting whose current value differs
+    /// from its default and matches one of the following name patterns — explicit opt-ins to
+    /// "suspicious" / "relaxed" / "experimental" semantics, per the directive on issue #104203:
+    ///   - `allow_suspicious_*` — bypasses safety checks (suspicious type combinations, suspicious
+    ///     indices, suspicious primary keys, etc.);
+    ///   - any name containing `relaxed` — type-coercion or other validity relaxations;
+    ///   - `allow_experimental_*` UNLESS the setting is currently in `Production` tier. Some
+    ///     `allow_experimental_*` settings have been promoted to `Production` (e.g.
+    ///     `allow_experimental_analyzer`) but kept their name for backward compatibility — those
+    ///     are stable and must not block writes from ordinary queries that just enable them.
+    ///     `Beta` and `Experimental` tiers (e.g. `allow_experimental_correlated_subqueries`,
+    ///     `allow_experimental_database_iceberg`, the `allow_experimental_lightweight_update`
+    ///     alias) have non-production semantics and remain candidates for cache poisoning.
+    ///
+    /// We deliberately do NOT block by tier alone (`Beta`, `Experimental`): many tier-flagged
+    /// settings — `session_timezone`, `parallel_replicas_*`, `automatic_parallel_replicas_*`,
+    /// `enable_join_runtime_filters`, `low_priority_query_wait_time_ms`, etc. — are routinely set
+    /// by ordinary queries and tests, and blocking writes for any of them would gut the cache.
+    /// The actual cause of the cache poisoning in #104203 was AST-fuzzer queries flipping
+    /// `allow_experimental_*` and `allow_suspicious_*` flags wholesale; the name-pattern check
+    /// targets exactly that class without false positives.
+    ///
+    /// Comparing current value to default (rather than relying on the `is_changed` flag) is necessary
+    /// because tests and applications routinely call `SET name = default_value`, which sets the
+    /// internal `is_changed` flag without actually changing behaviour.
+    ///
+    /// We also check aliases of each changed setting: some settings have an `allow_experimental_*`
+    /// alias pointing to a canonical name that doesn't (e.g. `allow_experimental_lightweight_update`
+    /// is an alias of `enable_lightweight_update`). Without this, setting either name would slip
+    /// through the canonical-only check.
+    ///
+    /// See https://github.com/ClickHouse/ClickHouse/issues/104203.
+    auto matchesGate = [](std::string_view candidate_name, SettingsTierType candidate_tier)
+    {
+        if (candidate_name.starts_with("allow_suspicious_") || candidate_name.find("relaxed") != std::string_view::npos)
+            return true;
+        /// Block `allow_experimental_*` for any non-`Production` tier (i.e. `Beta` and `Experimental`).
+        /// Settings promoted to `Production` while keeping the legacy `allow_experimental_*` name
+        /// (such as `allow_experimental_analyzer`) are stable and do not poison the cache.
+        if (candidate_name.starts_with("allow_experimental_") && candidate_tier != SettingsTierType::PRODUCTION)
+            return true;
+        return false;
+    };
+
+    const auto & aliases_map = SettingsTraits::settingsToAliases();
+
+    for (const auto & setting : impl->allChanged())
+    {
+        /// Skip settings that were explicitly set but to their default value.
+        if (setting.getValueString() == setting.getDefaultValueString())
+            continue;
+
+        const auto tier = setting.getTier();
+        /// `Obsolete` settings have no effect at runtime and can never affect predicate evaluation.
+        if (tier == SettingsTierType::OBSOLETE)
+            continue;
+
+        const auto & name = setting.getName();
+        if (matchesGate(name, tier))
+            return false;
+
+        /// Also check aliases — e.g. `allow_experimental_lightweight_update` is an alias of
+        /// canonical `enable_lightweight_update`, so checking only the canonical name lets the
+        /// alias slip through. Aliases inherit the canonical setting's tier.
+        if (auto it = aliases_map.find(std::string_view(name)); it != aliases_map.end())
+        {
+            for (const auto & alias : it->second)
+            {
+                if (matchesGate(alias, tier))
+                    return false;
+            }
+        }
+    }
+    return true;
+}
+
 bool Settings::tryGet(std::string_view name, Field & value) const
 {
     return impl->tryGet(name, value);

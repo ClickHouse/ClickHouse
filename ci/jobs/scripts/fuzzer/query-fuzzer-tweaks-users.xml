@@ -5,6 +5,16 @@
             <max_memory_usage>10G</max_memory_usage>
 
             <!--
+                Disable the QueryConditionCache for fuzzer queries: they run with relaxed
+                semantics (many `allow_experimental_*` and `allow_suspicious_*` flags set
+                via this profile), and the cache key does not capture those settings. A
+                "no marks match" verdict produced under fuzzer settings would otherwise
+                poison the cache for ordinary queries that happen to hash to the same key.
+                See https://github.com/ClickHouse/ClickHouse/issues/104203.
+            -->
+            <use_query_condition_cache>0</use_query_condition_cache>
+
+            <!--
                 Otherwise we will get the TOO_MANY_SIMULTANEOUS_QUERIES errors,
                 they are ok, but complicate debugging.
             -->

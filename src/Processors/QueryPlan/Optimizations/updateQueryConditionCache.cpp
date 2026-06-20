@@ -23,7 +23,10 @@ namespace DB::QueryPlanOptimizations
 ///
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (!optimization_settings.use_query_condition_cache)
+    /// Skip both when the cache is disabled and when the current context isn't safe to write
+    /// from (relaxed / experimental settings). Reads are still served by the lookup-side path
+    /// in `MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache`. See issue #104203.
+    if (!optimization_settings.use_query_condition_cache || !optimization_settings.query_condition_cache_writable)
         return;
 
     const auto & frame = stack.back();

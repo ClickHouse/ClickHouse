@@ -392,6 +392,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             if (!task || algorithm->needNewTask(*task))
             {
                 /// Update the query condition cache for filters in PREWHERE stage.
+                /// Skip the write if the current context is not safe for the QCC (e.g. queries running
+                /// with `allow_experimental_*` / `allow_suspicious_*` settings, see issue #104203).
                 /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
                 /// could have filtered marks before PREWHERE saw them, to avoid attributing those
                 /// marks to the PREWHERE predicate hash. See Issue #104781.
@@ -399,7 +401,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 /// A row-level security filter is also prepended before PREWHERE, yet this write keys
                 /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
                 /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
-                if (reader_settings.use_query_condition_cache && task && prewhere_info
+                if (reader_settings.use_query_condition_cache && reader_settings.query_condition_cache_writable
+                    && task && prewhere_info
                     && !task->readersChainCanSkipMarksBeforePrewhere()
                     && !task->appliesMutationsBeforePrewhere()
                     && !row_level_filter)

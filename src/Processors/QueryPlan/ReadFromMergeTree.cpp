@@ -2747,9 +2747,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
-        /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
-        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
-                && !vector_search_parameters.has_value())
+        /// Only fill the cache from contexts that are safe to write to it (see `isQueryConditionCacheWritable`
+        /// and issue #104203). Vector search filters through the ORDER BY, so excluded ranges are not described
+        /// by the WHERE DAG hash alone.
+        if (reader_settings.use_query_condition_cache && reader_settings.query_condition_cache_writable
+            && query_info_.filter_actions_dag && !query_info_.isFinal()
+            && !vector_search_parameters.has_value())
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))

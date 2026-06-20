@@ -1,0 +1,12 @@
+--- baseline: writes happen for normal contexts
+1
+--- writes are disabled when allow_suspicious_low_cardinality_types is set
+0
+--- writes are disabled when an experimental setting is enabled
+0
+--- writes are disabled when a Beta-tier allow_experimental_* setting is enabled (canonical name)
+0
+--- writes are disabled when a Beta-tier allow_experimental_* alias is set (allow_experimental_lightweight_update -> enable_lightweight_update)
+0
+--- reads are still served when the current context is not writable
+1

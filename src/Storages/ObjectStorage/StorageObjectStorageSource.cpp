@@ -526,8 +526,12 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
-        else if (format_filter_info->condition_hash)
+        else if (format_filter_info->condition_hash && format_filter_info->query_condition_cache_writable)
         {
+            /// Skip the write when the current context is not safe to write from
+            /// (relaxed / experimental settings). Reads through `condition_hash` are
+            /// still served below. See `Settings::isQueryConditionCacheWritable` and
+            /// issue #104203.
             const auto & object_info = reader.getObjectInfo();
             try
             {

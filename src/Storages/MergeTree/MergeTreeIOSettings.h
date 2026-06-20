@@ -65,6 +65,10 @@ struct MergeTreeReaderSettings
     bool use_query_condition_cache = false;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
+    /// If we may write to the query condition cache from this query context. Reads are still
+    /// permitted when this is false (entries written by safe contexts remain readable).
+    /// See `isQueryConditionCacheWritable` and issue #104203.
+    bool query_condition_cache_writable = false;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
     bool secondary_indices_enable_bulk_filtering = true;

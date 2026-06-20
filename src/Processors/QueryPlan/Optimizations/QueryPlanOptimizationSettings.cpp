@@ -195,6 +195,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
+    /// See `Settings::isQueryConditionCacheWritable` and issue #104203.
+    query_condition_cache_writable = use_query_condition_cache && from.isQueryConditionCacheWritable();
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];

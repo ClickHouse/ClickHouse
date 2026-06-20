@@ -68,12 +68,20 @@ FormatFilterInfo::FormatFilterInfo(
     , prewhere_info(std::move(prewhere_info_))
     , column_mapper(column_mapper_)
 {
-    bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
+    const auto & settings = context_->getSettingsRef();
+    bool use_query_condition_cache = settings[Setting::use_query_condition_cache];
     if (use_query_condition_cache && filter_actions_dag)
     {
         const auto & outputs = filter_actions_dag->getOutputs();
         if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
+        {
             condition_hash = filter_actions_dag->getHash();
+            /// Reads through `condition_hash` are still served (lookup-side path stays
+            /// open). Writes are refused from contexts running with relaxed / experimental
+            /// settings — otherwise object-storage queries with such settings can poison
+            /// the cache for queries running with default settings. See issue #104203.
+            query_condition_cache_writable = settings.isQueryConditionCacheWritable();
+        }
     }
 }
 

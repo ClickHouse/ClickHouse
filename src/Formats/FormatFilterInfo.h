@@ -73,6 +73,13 @@ struct FormatFilterInfo
     ColumnMapperPtr column_mapper;
 
     std::optional<size_t> condition_hash;
+    /// Mirrors `MergeTreeReaderSettings::query_condition_cache_writable`. The query condition
+    /// cache must not be written from contexts that have non-default `allow_suspicious_*`,
+    /// `relaxed`, or non-`Production` `allow_experimental_*` settings, otherwise queries
+    /// running with default settings can be served poisoned mark-filter verdicts. See
+    /// `Settings::isQueryConditionCacheWritable` and issue #104203. Reads through
+    /// `condition_hash` are still served (the lookup-side path remains unguarded).
+    bool query_condition_cache_writable = false;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
