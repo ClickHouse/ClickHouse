@@ -1055,12 +1055,13 @@ private:
         const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
         const Block & input_header = *input_header_ptr;
 
-        // Convert grouping keys
+        // All keys belong to the same grouping set.
+        auto * grouping = params.keys.empty() ? nullptr : agg_rel->add_groupings();
         for (const auto & key : params.keys)
         {
             int field_index = findColumnIndex(input_header, key, fmt::format("Grouping key {}", key));
 
-            auto * grouping_expr = agg_rel->add_groupings()->add_grouping_expressions();
+            auto * grouping_expr = grouping->add_grouping_expressions();
             buildFieldSelection(grouping_expr, field_index);
         }
 
@@ -1347,12 +1348,13 @@ private:
         const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
         const Block & input_header = *input_header_ptr;
 
-        // Convert grouping keys
+        // All keys belong to the same grouping set.
+        auto * grouping = params.keys.empty() ? nullptr : agg_rel->add_groupings();
         for (const auto & key : params.keys)
         {
             int field_index = findColumnIndex(input_header, key, fmt::format("Grouping key {}", key));
 
-            auto * grouping_expr = agg_rel->add_groupings()->add_grouping_expressions();
+            auto * grouping_expr = grouping->add_grouping_expressions();
             buildFieldSelection(grouping_expr, field_index);
         }
 
