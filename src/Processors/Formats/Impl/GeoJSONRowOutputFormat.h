@@ -78,6 +78,7 @@ private:
     WriteBuffer * ostr;
 
     std::optional<size_t> id_col_idx;
+    bool id_is_float = false;
 
     /// Always set after construction (the constructor rejects a header without exactly one geo column).
     size_t geometry_col_idx = 0;

@@ -148,6 +148,7 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
                     "type, but it has type '{}'",
                     column.type->getName());
             id_col_idx = i;
+            id_is_float = id_type.isFloat();
         }
         else
         {
@@ -198,6 +199,13 @@ void GeoJSONRowOutputFormat::writeId(const Columns & columns, size_t row_num)
     /// `LowCardinality(Nullable(...))` id, not only a plain `Nullable(...)` one.
     if (column.isNullAt(row_num))
         return;
+
+    /// A floating-point id must be finite, since NaN and infinity have no valid JSON representation;
+    /// reject them rather than emit `null` or a quoted token as the Feature id.
+    if (id_is_float && !std::isfinite(column.getFloat64(row_num)))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "The GeoJSON output format cannot write a non-finite floating-point id");
+
     writeCString(R"(,"id":)", *ostr);
     serializations[*id_col_idx]->serializeTextJSON(column, row_num, *ostr, settings);
 }
