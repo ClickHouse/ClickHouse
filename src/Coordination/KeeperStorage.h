@@ -28,6 +28,19 @@ struct KeeperSnapshotReader;
 
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 
+/// Iterator over nodes in KeeperStorage, frozen at the moment in time when
+/// KeeperNodeStreamForSnapshot was created. Creation locks storage_mutex but is relatively fast,
+/// then the long-running iteration can proceed after the mutex is unlocked.
+struct KeeperNodeStreamForSnapshot
+{
+    /// Total number of nodes that `next` will report. Storage must provide it in advance.
+    size_t node_count = 0;
+
+    virtual bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) = 0;
+
+    virtual ~KeeperNodeStreamForSnapshot() { chassert(node_count == 0); }
+};
+
 /// KeeperMemNode should have as minimal size as possible to reduce memory footprint
 /// of stored nodes
 /// New fields should be added to the struct only if it's really necessary
@@ -438,6 +451,14 @@ public:
         }
     };
 
+    struct NodeStreamForSnapshot : public KeeperNodeStreamForSnapshot
+    {
+        size_t next_node_idx = 0;
+        KeeperStorage::Container::const_iterator it;
+
+        bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override;
+    };
+
     UncommittedState uncommitted_state{*this};
 
     /// 0 if no uncommitted requests.
@@ -473,6 +494,13 @@ public:
     /// TODO: When we have chunked snapshots, probably pass a ThreadPool here.
     void loadNodesFromSnapshot(KeeperSnapshotReader & reader) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
+    /// Caller must hold storage mutex.
+    /// At most one stream can exist at any given time.
+    /// Stream must be destroyed using finishWritingSnapshot (with storage mutex held), otherwise
+    /// destructor fails assert.
+    std::unique_ptr<KeeperNodeStreamForSnapshot> beginWritingSnapshot();
+    void finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream);
+
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
     KeeperResponsesForSessions processRequest(
@@ -493,19 +521,6 @@ public:
         std::optional<KeeperDigest> digest = std::nullopt,
         int64_t log_idx = 0);
     void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
-
-    /// Set of methods for creating snapshots
-
-    /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode(size_t up_to_version);
-
-    /// Turn off snapshot mode.
-    void disableSnapshotMode();
-
-    Container::const_iterator getSnapshotIteratorBegin() const;
-
-    /// Clear outdated data from internal container.
-    void clearGarbageAfterSnapshot();
 
     KeeperResponsesForSessions setWatches(
         int64_t last_zxid,

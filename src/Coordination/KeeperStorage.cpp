@@ -3671,28 +3671,38 @@ SessionAndTimeout KeeperStorage::getActiveSessions() const
     return session_and_timeout;
 }
 
-/// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-void KeeperStorage::enableSnapshotMode(size_t up_to_version)
+std::unique_ptr<KeeperNodeStreamForSnapshot> KeeperStorage::beginWritingSnapshot()
 {
-    container.enableSnapshotMode(up_to_version);
+    auto res = std::make_unique<NodeStreamForSnapshot>();
+    auto [size, ver] = container.snapshotSizeWithVersion();
+    container.enableSnapshotMode(ver);
+    res->node_count = size;
+    res->it = container.begin();
+    return res;
 }
 
-/// Turn off snapshot mode.
-void KeeperStorage::disableSnapshotMode()
+void KeeperStorage::finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream)
 {
+    stream->node_count = 0;
     container.disableSnapshotMode();
-}
-
-KeeperStorage::Container::const_iterator KeeperStorage::getSnapshotIteratorBegin() const
-{
-    return container.begin();
-}
-
-/// Clear outdated data from internal container.
-void KeeperStorage::clearGarbageAfterSnapshot()
-{
     container.clearOutdatedNodes();
     stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
+}
+
+bool KeeperStorage::NodeStreamForSnapshot::next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats)
+{
+    if (next_node_idx >= node_count)
+        return false;
+
+    out_path = it->key;
+    out_data = it->value.getData();
+    out_stats = it->value.stats;
+
+    ++next_node_idx;
+    if (next_node_idx < node_count) // don't move the iterator past the end of immutable range
+        ++it;
+
+    return true;
 }
 
 /// Introspection functions mostly used in 4-letter commands

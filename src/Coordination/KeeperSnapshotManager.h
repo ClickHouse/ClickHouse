@@ -153,7 +153,7 @@ struct SnapshotDeserializationResult
 ///  * At most one instance of KeeperStorageSnapshot can exist at a time, for a given KeeperStorage.
 ///    NuRaft guarantees that at most one snapshotting operation can be in progress (create_snapshot
 ///    is not called again until when_done callback is called).
-///  * Destructor must be called with storage mutex held (for the disableSnapshotMode() call).
+///  * Destructor must be called with storage mutex held (for the finishWritingSnapshot() call).
 struct KeeperStorageSnapshot
 {
 public:
@@ -176,11 +176,7 @@ public:
     SnapshotMetadataPtr snapshot_meta;
     /// Max session id
     int64_t session_id;
-    /// Size of snapshot container in amount of nodes after begin iterator
-    /// so we have for loop for (i = 0; i < snapshot_container_size; ++i) { doSmth(begin + i); }
-    size_t snapshot_container_size;
-    /// Iterator to the start of the storage
-    KeeperStorage::Container::const_iterator begin;
+    std::unique_ptr<KeeperNodeStreamForSnapshot> node_stream;
     /// Active sessions and their timeouts
     SessionAndTimeout session_and_timeout;
     /// Sessions credentials

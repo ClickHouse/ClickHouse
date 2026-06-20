@@ -1181,9 +1181,8 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
             /// Destroy snapshot with lock
             KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             LOG_TRACE(log, "Clearing garbage after snapshot");
-            /// Turn off "snapshot mode" and clear outdate part of storage state
+            /// Turn off "snapshot mode" and clear outdated part of storage state
             snapshot.reset();
-            storage->clearGarbageAfterSnapshot();
             LOG_TRACE(log, "Cleared garbage after snapshot");
         }
 

@@ -469,7 +469,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
 
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
     EXPECT_EQ(snapshot.session_id, 7);
-    EXPECT_EQ(snapshot.snapshot_container_size, 6);
+    EXPECT_EQ(snapshot.node_stream->node_count, 6);
     EXPECT_EQ(snapshot.session_and_timeout.size(), 2);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -528,7 +528,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
 
     DB::KeeperStorageSnapshot snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 50);
-    EXPECT_EQ(snapshot.snapshot_container_size, 54);
+    EXPECT_EQ(snapshot.node_stream->node_count, 54);
 
     for (size_t i = 50; i < 100; ++i)
     {
@@ -637,7 +637,6 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
     }
     EXPECT_TRUE(fs::exists(fmt::format("./snapshots/snapshot_50.bin{}", this->extension)));
     EXPECT_EQ(storage.container.size(), 29);
-    storage.clearGarbageAfterSnapshot();
     EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 29);
     for (size_t i = 0; i < 50; ++i)
     {
