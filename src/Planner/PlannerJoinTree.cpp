@@ -1480,9 +1480,28 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         if (select_query_options.only_analyze)
         {
             auto projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+
+            /// Keep constant projections as ColumnConst so this analyze-only header matches real
+            /// execution (which emits a ColumnConst). Otherwise the header may diverge for an unused
+            /// constant column and break parallel-replicas reading.
+            const QueryTreeNodes * projection_nodes = nullptr;
+            if (query_node)
+                projection_nodes = &query_node->getProjection().getNodes();
+
             Block source_header;
-            for (auto & projection_column : projection_columns)
-                source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+            {
+                const auto & projection_column = projection_columns[i];
+                ColumnPtr column;
+                if (projection_nodes && i < projection_nodes->size())
+                    if (const auto * constant_node = (*projection_nodes)[i]->as<ConstantNode>())
+                        column = projection_column.type->createColumnConst(0, constant_node->getValue());
+
+                if (column)
+                    source_header.insert(ColumnWithTypeAndName(std::move(column), projection_column.type, projection_column.name));
+                else
+                    source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
+            }
 
             auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(source_header));
             read_nothing->setStepDescription("Read from NullSource");
