@@ -201,7 +201,7 @@ test_params_hackernews_10m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
     ],
-    QUANTIZATION: "e8",
+    QUANTIZATION: "b1",
     VECTOR_INDEX_TYPE: "fastknn",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
@@ -223,7 +223,7 @@ test_params_cohere_wiki_20m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
     ],
-    QUANTIZATION: "e8",
+    QUANTIZATION: "b1",
     VECTOR_INDEX_TYPE: "fastknn",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
@@ -375,7 +375,7 @@ class RunTest:
         index_type = self._test_params[VECTOR_INDEX_TYPE]
 
         if index_type == "fastknn":
-            hnsw_M = 16
+            hnsw_M = 0
             hnsw_ef_C = 0
 
         add_index = f"ALTER TABLE {self._table} ADD INDEX vector_index {self._vector_column} TYPE vector_similarity('{index_type}','{self._distance_metric}', {self._dimension}, {quantization}, {hnsw_M}, {hnsw_ef_C})"
