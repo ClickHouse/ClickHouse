@@ -16,10 +16,14 @@ check_batches()
     local format="$1"
     local filename="$TMP_DIR/out_${format}.arrow"
 
-    "${CLICKHOUSE_CLIENT}" --query "
+    # CLICKHOUSE_CLIENT intentionally contains the binary plus test-runner options.
+    # shellcheck disable=SC2086
+    ${CLICKHOUSE_CLIENT} --query "
         SELECT number
         FROM numbers(5)
-        SETTINGS output_format_arrow_row_group_size = 2
+        SETTINGS
+            max_block_size = 5,
+            output_format_arrow_row_group_size = 2
         FORMAT ${format}
     " > "$filename"
 
@@ -48,7 +52,9 @@ PY
 check_batches ArrowStream
 check_batches Arrow
 
-"${CLICKHOUSE_CLIENT}" --query "
+# CLICKHOUSE_CLIENT intentionally contains the binary plus test-runner options.
+# shellcheck disable=SC2086
+${CLICKHOUSE_CLIENT} --query "
     SELECT number
     FROM numbers(1)
     SETTINGS output_format_arrow_row_group_size = 0
