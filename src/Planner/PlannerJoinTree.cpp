@@ -114,6 +114,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool extremes;
+    extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -876,6 +877,16 @@ void pushOrderByIntoView(
     /// view would truncate the stream first, so the outer `ExtremesStep` would
     /// only see the top-N rows and could report wrong min/max values.
     if (query_context->getSettingsRef()[Setting::extremes])
+        return;
+
+    /// Skip when `exact_rows_before_limit` is enabled. This setting promises an
+    /// exact `rows_before_limit_at_least` counter by reading the full pre-`LIMIT`
+    /// stream. The pushed inner `LIMIT` becomes a child `LimitTransform` under the
+    /// outer `LimitTransform`, and `initRowsBeforeLimit` intentionally ignores
+    /// child limits once it finds the outer limit, so the counter would be
+    /// attached above the already-truncated view output and report only the
+    /// per-shard top-N instead of the full pre-`LIMIT` row count.
+    if (query_context->getSettingsRef()[Setting::exact_rows_before_limit])
         return;
 
     /// Skip when `prefer_column_name_to_alias` is enabled. The injected inner
