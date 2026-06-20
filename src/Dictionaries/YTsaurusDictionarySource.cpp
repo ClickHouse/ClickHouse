@@ -46,22 +46,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_ytsaurus_dictionary_source;
 }
 
-template <typename T>
-static VectorWithMemoryTracking<VectorWithMemoryTracking<T>> divideVectorByChunkSize(const VectorWithMemoryTracking<T>& vec, size_t chunk_size)
-{
-    if (!chunk_size)
-        return {vec};
-
-    VectorWithMemoryTracking<VectorWithMemoryTracking<T>> result;
-    for (size_t i = 0; i < vec.size(); i += chunk_size)
-    {
-        auto start = vec.begin() + i;
-        auto end = (i + chunk_size < vec.size()) ? start + chunk_size : vec.end();
-        result.emplace_back(start, end);
-    }
-    return result;
-}
-
 void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory);
 void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 {
