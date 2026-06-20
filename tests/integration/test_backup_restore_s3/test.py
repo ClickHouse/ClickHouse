@@ -1,3 +1,4 @@
+import io
 import os
 import uuid
 from typing import Dict
@@ -382,6 +383,19 @@ def test_backup_to_s3(cluster):
     check_system_tables(cluster, backup_events["query_id"])
 
 
+def test_backup_to_s3_ignores_prefixed_backup_metadata(cluster):
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_key = f"data/backups/{backup_name}"
+    data = b"not a backup"
+    cluster.minio_client.put_object(
+        "root", f"{backup_key}/.backup.tmp", io.BytesIO(data), len(data)
+    )
+
+    backup_destination = f"S3('http://minio1:9001/root/{backup_key}', 'minio', '{minio_secret_key}')"
+    check_backup_and_restore(cluster, storage_policy, backup_destination)
+
+
 def test_backup_to_s3_named_collection(cluster):
     storage_policy = "default"
     backup_name = new_backup_name()
@@ -764,6 +778,26 @@ def test_backup_with_fs_cache(
         assert restore_events["CachedWriteBufferCacheWriteBytes"] <= 1
 
 
+def test_restore_from_s3_archive_ignores_prefixed_archive(cluster):
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    # Use a tar archive here: zip backups on S3 are now rejected up front (see
+    # test_backup_to_s3_zip_not_supported), and this test only needs some archive whose
+    # exact object key must not be confused with a similarly-prefixed sibling object.
+    archive_key = f"data/backups/{backup_name}.tar"
+    data = b"not a backup archive"
+    cluster.minio_client.put_object(
+        "root", f"{archive_key}.tmp", io.BytesIO(data), len(data)
+    )
+
+    backup_destination = f"S3('http://minio1:9001/root/{archive_key}', 'minio', '{minio_secret_key}')"
+    error = node.query_and_get_error(
+        f"RESTORE TABLE data AS data_restored FROM {backup_destination}"
+    )
+
+    assert "BACKUP_NOT_FOUND" in error, error
+
+
 def test_backup_to_tar(cluster):
     storage_policy = "default"
     backup_name = new_backup_name()
@@ -813,6 +847,9 @@ def test_user_specific_auth(cluster):
         node.query(f"CREATE USER {user}")
         node.query(f"GRANT CURRENT GRANTS ON *.* TO {user}")
 
+    def assert_access_denied(error):
+        assert "Access Denied" in error or "ACCESS_DENIED" in error, error
+
     create_user("superuser1")
     create_user("superuser2")
     create_user("regularuser")
@@ -831,7 +868,7 @@ def test_user_specific_auth(cluster):
         restore_query = f"RESTORE TABLE specific_auth {on_cluster_clause} FROM {backup}"
 
         if should_fail:
-            assert "Access" in node.query_and_get_error(backup_query, user=user)
+            assert_access_denied(node.query_and_get_error(backup_query, user=user))
         else:
             node.query(backup_query, user=user)
             node.query("DROP TABLE specific_auth SYNC")
@@ -854,9 +891,11 @@ def test_user_specific_auth(cluster):
 
     backup_restore(f"S3('{backup2_path}')", user="superuser2", should_fail=False)
 
-    assert "Access" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth FROM S3('{backup1_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth FROM S3('{backup1_path}')",
+            user="regularuser",
+        )
     )
 
     node.query("INSERT INTO specific_auth VALUES (2)")
@@ -875,9 +914,11 @@ def test_user_specific_auth(cluster):
         base_backup=f"S3('{backup1_path}')",
     )
 
-    assert "Access" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth FROM S3('{backup1_inc_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth FROM S3('{backup1_inc_path}')",
+            user="regularuser",
+        )
     )
 
     assert "Access Denied" in node.query_and_get_error(
@@ -904,9 +945,11 @@ def test_user_specific_auth(cluster):
         on_cluster=True,
     )
 
-    assert "Access Denied" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_path}')",
+            user="regularuser",
+        )
     )
 
     node.query("INSERT INTO specific_auth VALUES (3)")
@@ -927,9 +970,11 @@ def test_user_specific_auth(cluster):
         base_backup=f"S3('{backup3_path}')",
     )
 
-    assert "Access Denied" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_inc_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_inc_path}')",
+            user="regularuser",
+        )
     )
 
     assert "Access Denied" in node.query_and_get_error(
