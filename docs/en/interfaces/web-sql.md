@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 The Web SQL UI (Play) is the built-in, in-browser query interface for ClickHouse. It is served from any ClickHouse HTTP port at the `/play` path (for example, `http://localhost:8123/play`). It lets you write and run queries, view results as a table or a chart, and share a query by copying its URL.
 
-The whole interface is contained in `programs/server/play.html`, a single self-contained page served directly from the ClickHouse binary, with no frameworks, build step, or third-party CDNs.
+The whole interface is contained in `programs/server/play.html`, a single self-contained page served directly from the ClickHouse binary, with no frameworks or build step. The one exception is chart rendering: the `uPlot` charting library is lazy-loaded from a third-party CDN the first time a result is displayed as a chart, so charts are unavailable in offline or egress-restricted deployments.
 
 ## Query tabs {#query-tabs}
 

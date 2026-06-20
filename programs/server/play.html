@@ -5059,10 +5059,14 @@ tabs = [makeTab(undefined, query_area.value)];
 activeTabId = tabs[0].id;
 
 const url_tab_name = current_url.searchParams.get('tab');
+/// Whether the URL actually carries a query fragment (`#<base64>`), as opposed to no
+/// fragment or a bare `#`. `url_query` is '' in all those cases, so we must not treat an
+/// absent query the same as an empty one: a bare `?tab=Name` must not wipe the saved query.
+const has_url_query = window.location.hash.length > 1;
 const url_query = query_area.value;          /// already decoded from the hash; may be ''
 /// When the URL carries a query, defer the auto-run until after IndexedDB reconciliation,
 /// so it runs in the right tab (a switch would otherwise abort an in-flight run).
-const defer_run_for_reconcile = run_immediately && !!url_query;
+const defer_run_for_reconcile = run_immediately && has_url_query;
 
 /// Reconcile the freshly loaded URL (query + tab name) against tabs saved in IndexedDB.
 async function reconcileStartup() {
@@ -5086,18 +5090,19 @@ async function reconcileStartup() {
         }
 
         tabs = savedTabs;
-        if (!url_query && !url_tab_name) {
+        if (!has_url_query && !url_tab_name) {
             /// Plain load: restore the saved workspace as-is.
             activeTabId = (loaded.meta && savedTabs.some(t => t.id === loaded.meta.activeTabId))
                 ? loaded.meta.activeTabId : savedTabs[0].id;
         } else {
             let match = url_tab_name ? savedTabs.find(t => t.title === url_tab_name) : null;
             if (match) {
-                /// Named URL: substitute the URL query into that tab; drop a stale result if it changed.
-                if (match.query !== url_query) { match.query = url_query; match.result = null; }
+                /// Named URL: substitute the URL query into that tab ONLY when the URL carries
+                /// a query; a bare ?tab=Name just activates the tab and keeps its saved query.
+                if (has_url_query && match.query !== url_query) { match.query = url_query; match.result = null; }
                 activeTabId = match.id;
-            } else if (!url_tab_name && (match = savedTabs.find(t => t.query === url_query))) {
-                /// Unnamed URL: a tab already holds this exact query, so switch to it (keep its result).
+            } else if (has_url_query && !url_tab_name && (match = savedTabs.find(t => t.query === url_query))) {
+                /// Unnamed URL with a query: a tab already holds this exact query, switch to it.
                 activeTabId = match.id;
             } else {
                 /// Not found: open a new tab carrying the name (if any) and query.
