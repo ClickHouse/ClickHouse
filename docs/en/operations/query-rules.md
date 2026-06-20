@@ -17,6 +17,8 @@ Query Rewrite Rules provide capabilities to create, alter and drop rules which a
 
 These rules reuse query parameter feature for query matching which allow substitutions in queries source and resulting templates.
 
+Matching is structural and **ignores aliases**: a rule whose source template is `SELECT 1 AS a` also matches `SELECT 1 AS b`. This is intentional — the source template matches the shape of a query rather than its output column names. The aliases in the result template still determine the rewritten query's output names.
+
 The rules are being applied in the order of their creation.
 
 A `{name:Type}` placeholder uses the query parameter syntax, but here `Type` is a small matching vocabulary rather than an ordinary ClickHouse data type. The supported placeholder types are:
