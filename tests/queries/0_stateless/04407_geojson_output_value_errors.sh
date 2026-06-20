@@ -14,3 +14,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT (nan, 2.0)::Point AS geometry FORMAT GeoJSO
     && echo "nan coordinate accepted" || echo "nan coordinate rejected"
 ${CLICKHOUSE_CLIENT} --query "SELECT (1.0, inf)::Point AS geometry FORMAT GeoJSON SETTINGS output_format_json_quote_denormals = 1" >/dev/null 2>&1 \
     && echo "inf coordinate accepted" || echo "inf coordinate rejected"
+
+# A floating-point feature id must be finite; a non-finite id is rejected rather than written as null.
+${CLICKHOUSE_CLIENT} --query "SELECT nan AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON" >/dev/null 2>&1 \
+    && echo "nan id accepted" || echo "nan id rejected"
