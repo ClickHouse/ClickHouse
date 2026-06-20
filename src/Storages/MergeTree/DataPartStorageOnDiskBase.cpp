@@ -5,11 +5,15 @@
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <IO/HashingWriteBuffer.h>
+#include <IO/PackedFilesReader.h>
+#include <IO/PackedFilesWriter.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadPipeline.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Storages/MergeTree/Backup.h>
@@ -17,6 +21,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
@@ -146,7 +151,7 @@ String DataPartStorageOnDiskBase::getPartDirForPrefix(const String & prefix, boo
         res += part_dir;
 
     if (try_no)
-        res += "_try" + DB::toString(try_no);
+        res += DetachedPartInfo::TRY_N_SUFFIX + DB::toString(try_no);
 
     return res;
 }
@@ -203,6 +208,11 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 void DataPartStorageOnDiskBase::setRelativePath(const std::string & path)
 {
     part_dir = path;
+    {
+        std::lock_guard lock(skip_indices_packed_mutex);
+        skip_indices_packed_probed = false;
+        skip_indices_packed_reader.reset();
+    }
 }
 
 std::string DataPartStorageOnDiskBase::getPartDirectory() const
@@ -682,6 +692,15 @@ void DataPartStorageOnDiskBase::rename(
 
     part_dir = new_part_dir;
     root_path = new_root_path;
+
+    /// The cached skp_idx.packed reader (if any) was constructed with the old absolute path and
+    /// would keep reading from there even after the directory move. Drop it so the next access
+    /// reloads from the new location.
+    {
+        std::lock_guard lock(skip_indices_packed_mutex);
+        skip_indices_packed_probed = false;
+        skip_indices_packed_reader.reset();
+    }
 }
 
 void DataPartStorageOnDiskBase::remove(
@@ -963,6 +982,12 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
         --dst_size;
 
     root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
+
+    {
+        std::lock_guard lock(skip_indices_packed_mutex);
+        skip_indices_packed_probed = false;
+        skip_indices_packed_reader.reset();
+    }
 }
 
 SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
@@ -998,6 +1023,158 @@ bool DataPartStorageOnDiskBase::hasActiveTransaction() const
 bool DataPartStorageOnDiskBase::isCaseInsensitive() const
 {
     return getDisk()->isCaseInsensitive();
+}
+
+const PackedFilesReader * DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const
+{
+    std::lock_guard lock(skip_indices_packed_mutex);
+    if (skip_indices_packed_probed)
+        return skip_indices_packed_reader.get();
+
+    auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskBase::getSkipIndicesPackedReader");
+
+    const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+    auto disk = volume->getDisk();
+    if (disk->existsFile(packed_path))
+        skip_indices_packed_reader = std::make_unique<PackedFilesReader>(disk, packed_path, ReadSettings{});
+
+    skip_indices_packed_probed = true;
+    return skip_indices_packed_reader.get();
+}
+
+void DataPartStorageOnDiskBase::seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const
+{
+    std::lock_guard lock(skip_indices_packed_mutex);
+    const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+    skip_indices_packed_reader = std::make_unique<PackedFilesReader>(volume->getDisk(), packed_path, index);
+    skip_indices_packed_probed = true;
+}
+
+void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartStorage & source) const
+{
+    const auto * source_disk = dynamic_cast<const DataPartStorageOnDiskBase *>(&source);
+    if (!source_disk)
+        return;
+
+    /// Same-class access to the protected probe is allowed; this also triggers the source's lazy
+    /// load if it hasn't been read yet.
+    const auto * source_archive = source_disk->getSkipIndicesPackedReader();
+    if (!source_archive)
+        return;
+
+    seedSkipIndicesPackedReader(source_archive->getIndex());
+}
+
+bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::string & name) const
+{
+    const auto * reader = getSkipIndicesPackedReader();
+    return reader != nullptr && reader->exists(name);
+}
+
+bool DataPartStorageOnDiskBase::hasSkipIndicesPackedArchive() const
+{
+    return getSkipIndicesPackedReader() != nullptr;
+}
+
+void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
+    const NameSet & file_names,
+    PackedFilesWriter & target,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings) const
+{
+    if (file_names.empty())
+        return;
+
+    const auto * source_archive = getSkipIndicesPackedReader();
+    if (!source_archive)
+        return;
+
+    /// Route reads through readFile (a virtual on the storage), not source_archive->readFile.
+    /// Equivalent on full storage today (the existing looksLikePackedSkipIndexFile overlay ends
+    /// up calling the same archive reader), but storage subclasses where skp_idx.packed isn't a
+    /// flat disk file need this entry point so the virtual readFile can compose the read
+    /// correctly. Keeps the helper subclass-friendly without adding behavioural risk here.
+    for (const auto & file_name : file_names)
+    {
+        if (!source_archive->exists(file_name))
+            continue;
+
+        const auto file_size = source_archive->getFileSize(file_name);
+        auto src = readFile(file_name, read_settings, file_size);
+        auto dst = target.writeFile(file_name, write_settings);
+        copyData(*src, *dst);
+        dst->finalize();
+    }
+}
+
+void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
+    const NameSet & dropped_skip_index_archive_file_names,
+    IDataPartStorage & new_storage,
+    const WriteSettings & write_settings,
+    const ReadSettings & read_settings,
+    MergeTreeDataPartChecksums & checksums,
+    bool sync) const
+{
+    const auto * source_archive = getSkipIndicesPackedReader();
+    if (!source_archive)
+        return;
+
+    const String packed_filename{SKIP_INDICES_PACKED_FILENAME};
+    /// Drop the inherited archive entry up front; we either re-add it below with the new
+    /// contents or, if all virtual files were dropped, leave it removed so the new part
+    /// reflects "no skip-index archive at all".
+    checksums.remove(packed_filename);
+
+    PackedFilesWriter writer;
+    bool any_kept = false;
+
+    for (const auto & file_name : source_archive->getFileNames())
+    {
+        /// Exact match: dropped_skip_index_archive_file_names lists the full virtual filenames inside the
+        /// archive, not name prefixes. This is what prevents an index named "a" from also
+        /// dropping files belonging to "a.b" when escape_index_filenames is off.
+        if (dropped_skip_index_archive_file_names.contains(file_name))
+            continue;
+
+        any_kept = true;
+        const auto file_size = source_archive->getFileSize(file_name);
+        /// See copyPackedSkipIndicesFilesInto: go through the storage's readFile so subclasses
+        /// that need to compose the read (e.g. archive-in-archive) get a chance to intervene.
+        auto src = readFile(file_name, read_settings, file_size);
+        auto dst = writer.writeFile(file_name, write_settings);
+        copyData(*src, *dst);
+        dst->finalize();
+    }
+
+    if (!any_kept)
+        return;
+
+    auto out = new_storage.writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    HashingWriteBuffer hashing(*out);
+    auto [packed_index, _] = writer.finalize(hashing);
+    hashing.finalize();
+
+    auto & checksum = checksums.files[packed_filename];
+    checksum.file_size = hashing.count();
+    checksum.file_hash = hashing.getHash();
+
+    out->finalize();
+    /// Match the rest of the mutated part's durability: with need_sync=true the caller fsyncs
+    /// other on-disk artifacts (checksums.txt, column streams), so the rewritten archive must
+    /// reach the device too. Otherwise a crash between finalize and checksum publication could
+    /// leave the new part referencing an archive whose contents weren't flushed.
+    if (sync)
+        out->sync();
+
+    /// Seed new_storage's reader from the in-memory index, mirroring fillSkipIndicesChecksums.
+    /// On object-storage disks with a non-fake transaction (Keeper metadata) the archive's
+    /// metadata isn't committed until the part transaction commits, which happens after
+    /// finalizeMutatedPart. With columns_and_secondary_indices_sizes_lazy_calculation=0 the
+    /// size accounting runs inside finalizeMutatedPart, before that commit; without this seed
+    /// getSkipIndicesPackedReader probes the disk, misses the not-yet-committed archive, caches
+    /// nullptr, and the surviving packed index's size is latched at zero.
+    if (auto * disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&new_storage))
+        disk_storage->seedSkipIndicesPackedReader(packed_index);
 }
 
 }
