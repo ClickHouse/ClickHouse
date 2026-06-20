@@ -341,7 +341,10 @@ public:
                 /// E.g. SELECT 1 SETTINGS use_query_cache = true
                 /// and SET use_query_cache = true; SELECT 1;
                 /// will match.
-                if (set_clause->changes.empty())
+                /// Keep it when `default_settings` (i.e. `SETTINGS x = DEFAULT`) is non-empty: such
+                /// overrides are never query-cache-related, are not stripped above, and must remain
+                /// part of the cache key (see `ASTSetQuery::updateTreeHashImpl`).
+                if (set_clause->changes.empty() && set_clause->default_settings.empty())
                     select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
         }
