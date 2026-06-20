@@ -43,8 +43,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-
 namespace
 {
     void moveSnapshotBetweenDisks(
