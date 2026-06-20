@@ -742,10 +742,78 @@ def test_refresh_on_stopped_viewless_table_does_not_leak(nats_cluster):
     wait_dst_count_at_least(table, 10)
 
 
+def test_refresh_after_detach_reattach_does_not_leak(nats_cluster):
+    # A table that HAD a view and then loses it keeps polling via the streaming task (not the
+    # initialize task). SYSTEM REFRESH while viewless must still consume the one-shot grant so it
+    # cannot fire when a new view is attached and bypass the STOP. JetStream retains messages, so a
+    # leaked refresh would surface them in the re-attached view -- we assert nothing until START.
+    stream = "js_reattach_stream"
+    subject = "js_reattach_subject"
+    durable = "js_reattach_durable"
+    table = "nats_refresh_reattach"
+
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=30)
+
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table};
+        """
+    )
+    # The table starts with a view, so streaming runs via the streaming task.
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+
+    # First batch is consumed and acked normally.
+    jetstream_publish(nats_cluster, subject, 0, 10)
+    wait_dst_count_at_least(table, 10)
+
+    # Drop the view: the table becomes viewless but keeps polling via the streaming task.
+    instance.query(f"DROP TABLE test.{table}_mv SYNC")
+    time.sleep(3)  # let the streaming task observe the detach and drop the subscription
+
+    # Messages retained by JetStream that a leaked refresh could later stream into a new view.
+    jetstream_publish(nats_cluster, subject, 100, 10)
+
+    # STOP, then REFRESH while viewless: the one-shot request must be consumed, not left armed.
+    instance.query(f"SYSTEM STOP test.{table}")
+    instance.query(f"SYSTEM REFRESH test.{table}")
+    time.sleep(3)  # let the streaming task consume the pending one-shot refresh
+
+    # Re-attach a view while stopped. A leaked refresh would now run one cycle into the new view.
+    instance.query(
+        f"""
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table};
+        """
+    )
+
+    # STOP holds: nothing new is consumed into the view.
+    assert_dst_count_stable(table, 10, seconds=8)
+
+    # START resumes and consumes the retained messages, proving they were available all along.
+    instance.query(f"SYSTEM START test.{table}")
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+    wait_dst_count_at_least(table, 20)
+
+
 def test_stop_does_not_buffer_backlog(nats_cluster):
-    # While STOPped, a core-NATS table must drop its subscription, not keep buffering. Core NATS has
-    # no backlog, so messages published while stopped must be dropped, not delivered after START. We
-    # publish a distinct key range while stopped and assert none of it ever reaches the view.
+    # While STOPped, a core-NATS table must not let messages buffered locally during the stop be
+    # delivered after START. We never sleep after STOP: each cycle publishes a distinct range and
+    # STARTs immediately, racing the lazy unsubscribe. Several cycles make the race reliable.
     table = "nats_no_backlog"
     subject = "no_backlog_subject"
     setup_consuming_table(table, subject)
@@ -753,26 +821,25 @@ def test_stop_does_not_buffer_backlog(nats_cluster):
     nats_publish(nats_cluster, subject, 0, 10)
     wait_dst_count_at_least(table, 10)
 
-    instance.query(f"SYSTEM STOP test.{table}")
-    time.sleep(3)  # let the background task observe STOP and drop the subscription
+    # STOP -> publish a distinct range -> START with no sleep after STOP, repeated to reliably hit
+    # the window where the subscription is still alive while stopped.
+    for i in range(8):
+        base = 1000 + i * 100
+        instance.query(f"SYSTEM STOP test.{table}")
+        nats_publish(nats_cluster, subject, base, 20)
+        instance.query(f"SYSTEM START test.{table}")
 
-    # Distinct key range published while stopped: with no subscriber these must be dropped.
-    nats_publish(nats_cluster, subject, 1000, 20)
+    # Let the stream resume on a fresh subscription before publishing a final, post-stop range.
     time.sleep(3)
-
-    instance.query(f"SYSTEM START test.{table}")
-    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
-
-    # Fresh messages after START are consumed normally (a third distinct range).
-    nats_publish(nats_cluster, subject, 2000, 10)
+    nats_publish(nats_cluster, subject, 9000, 10)
     wait_dst_count_at_least(table, 20)
-    time.sleep(3)  # let any (incorrectly buffered) backlog flush before asserting its absence
+    time.sleep(3)  # let any incorrectly buffered stopped-interval messages flush before asserting
 
-    assert (
-        int(
-            instance.query(
-                f"SELECT count() FROM test.{table}_dst WHERE key >= 1000 AND key < 2000"
-            )
+    leaked = int(
+        instance.query(
+            f"SELECT count() FROM test.{table}_dst WHERE key >= 1000 AND key < 9000"
         )
-        == 0
-    ), "messages published while stopped were buffered and delivered as a backlog after START"
+    )
+    assert (
+        leaked == 0
+    ), f"{leaked} messages published while stopped were buffered and delivered after START"

@@ -476,6 +476,14 @@ void StorageNATS::scheduleStreamingTasksImpl()
     streaming_task->schedule();
 }
 
+ActionLock StorageNATS::getActionLock(StorageActionBlockType action_type)
+{
+    auto lock = IStreamingStorage::getActionLock(action_type);
+    if (action_type == ActionLocks::StreamConsume)
+        subscription_stale.store(true);
+    return lock;
+}
+
 
 void StorageNATS::shutdown(bool /* is_drop */)
 {
@@ -623,9 +631,14 @@ void StorageNATS::threadFunc()
 
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
 
+    if (consumers_ready && subscription_stale.exchange(false))
+        unsubscribeConsumers();
+
+    const bool run_cycle = stream_control.claimCycle();
+
     try
     {
-        if (num_views && consumers_connection && consumers_connection->isConnected() && stream_control.claimCycle())
+        if (num_views && consumers_connection && consumers_connection->isConnected() && run_cycle)
         {
             /// Re-subscribe if a previous STOP/PAUSE dropped the subscription
             if (!consumers_ready)

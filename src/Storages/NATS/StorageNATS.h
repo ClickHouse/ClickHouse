@@ -46,6 +46,7 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
@@ -112,6 +113,9 @@ private:
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
+
+    /// One-shot request from STOP/PAUSE: unsubscribe and drop buffered messages.
+    std::atomic<bool> subscription_stale{false};
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
