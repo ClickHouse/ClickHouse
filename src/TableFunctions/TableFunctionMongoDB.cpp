@@ -128,7 +128,7 @@ std::pair<String, ASTPtr> getKeyValueMongoDBArgument(const ASTFunction * ast_fun
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}", ast_func->formatForErrorMessage());
 
     const auto & arg_name = function_args[0]->as<ASTIdentifier>()->name();
-    if (arg_name == "structure" || arg_name == "options")
+    if (arg_name == "structure" || arg_name == "options" || arg_name == "oid_columns")
         return std::make_pair(arg_name, function_args[1]);
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument, got {}", ast_func->formatForErrorMessage());
