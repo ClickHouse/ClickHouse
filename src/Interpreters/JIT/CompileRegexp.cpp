@@ -68,14 +68,12 @@ namespace
 class CompiledRegexpHolder : public CompiledExpressionCacheEntry
 {
 public:
-    CompiledRegexpHolder(
-        CHJIT::CompiledModule module_, std::shared_ptr<CHJIT> jit_, JITRegexpMatcherFunc func_, int num_captures_, bool ascii_fallback_)
+    CompiledRegexpHolder(CHJIT::CompiledModule module_, std::shared_ptr<CHJIT> jit_, JITRegexpMatcherFunc func_, int num_captures_)
         : CompiledExpressionCacheEntry(module_.size)
         , module(module_)
         , jit(std::move(jit_))
         , func(func_)
         , num_captures(num_captures_)
-        , ascii_fallback(ascii_fallback_)
     {
     }
 
@@ -95,7 +93,6 @@ public:
     std::shared_ptr<CHJIT> jit;
     JITRegexpMatcherFunc func = nullptr;
     int num_captures = 1;
-    bool ascii_fallback = false;
 };
 
 /// Emits LLVM IR for the per-string matcher described by a `RegexpProgram`.
@@ -445,9 +442,10 @@ private:
             b.SetInsertPoint(ok);
         }
 
-        if (op.min == op.max)
+        if (op.min == op.max || op.deterministic)
         {
-            /// Fixed count: `hi` is exactly `cursor + min` (and we already checked `count >= min`).
+            /// No backtracking needed: a fixed count, or a quantifier whose stop is unambiguous
+            /// (disjoint successor / right-anchored). The rest can only match at the greedy stop `hi`.
             matchAt(rest, hi, fail);
             return;
         }
@@ -585,8 +583,7 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
     }
 
     auto func = reinterpret_cast<JITRegexpMatcherFunc>(it->second);
-    return std::make_shared<CompiledRegexpHolder>(
-        compiled_module, std::move(jit), func, program.num_captures, program.requires_ascii_input);
+    return std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
 }
 
 }
@@ -638,7 +635,6 @@ RegexpJITMatcher getRegexpJITMatcher(
     RegexpJITMatcher result;
     result.func = holder->func;
     result.num_captures = holder->num_captures;
-    result.ascii_fallback = holder->ascii_fallback;
     result.keep_alive = std::move(holder);
     return result;
 }

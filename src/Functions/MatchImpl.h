@@ -1,11 +1,11 @@
 #pragma once
 
 #include <limits>
-#include <optional>
 #include <type_traits>
 #include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/isValidUTF8.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
@@ -134,8 +134,12 @@ struct MatchImpl
         {
             const char * data = reinterpret_cast<const char *>(&haystack_data[prev_offset]);
             const size_t size = haystack_offsets[i] - prev_offset;
-            const bool re2_match = regexp.match(data, size);
-            chassert(res[i] == static_cast<UInt8>(negate ^ re2_match));
+            /// Byte-wise matching only matches RE2 (UTF-8 mode) on valid UTF-8; invalid UTF-8 may differ.
+            if (UTF8::isValidUTF8(&haystack_data[prev_offset], size))
+            {
+                const bool re2_match = regexp.match(data, size);
+                chassert(res[i] == static_cast<UInt8>(negate ^ re2_match));
+            }
             prev_offset = haystack_offsets[i];
         }
     }
@@ -174,21 +178,12 @@ struct MatchImpl
                     VectorWithMemoryTracking<const uint8_t *> capture_starts(matcher.num_captures);
                     VectorWithMemoryTracking<const uint8_t *> capture_ends(matcher.num_captures);
 
-                    /// Built only when the matcher may defer non-ASCII strings (see `ascii_fallback`).
-                    std::optional<OptimizedRegularExpression> re2_fallback;
-                    if (matcher.ascii_fallback)
-                        re2_fallback.emplace(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
-
                     size_t prev_offset = 0;
                     for (size_t i = 0; i < input_rows_count; ++i)
                     {
                         const auto * str_begin = reinterpret_cast<const uint8_t *>(haystack_data.data() + prev_offset);
                         const auto * str_end = reinterpret_cast<const uint8_t *>(haystack_data.data() + haystack_offsets[i]);
-                        bool matched;
-                        if (re2_fallback && !isAsciiData(str_begin, str_end))
-                            matched = re2_fallback->match(reinterpret_cast<const char *>(str_begin), str_end - str_begin);
-                        else
-                            matched = matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1;
+                        const bool matched = matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1;
                         res[i] = negate ^ matched;
                         prev_offset = haystack_offsets[i];
                     }

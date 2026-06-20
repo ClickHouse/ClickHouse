@@ -30,3 +30,9 @@ X\nX\nX
 -- patterns outside the subset fall back to RE2
 ['1','2']
 X X X
+-- ReDoS-shaped patterns must fall back (no exponential backtracking) and stay correct/fast
+0
+1
+0
+0
+1

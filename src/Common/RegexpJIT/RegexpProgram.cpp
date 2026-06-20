@@ -14,6 +14,9 @@ constexpr uint32_t UNBOUNDED = std::numeric_limits<uint32_t>::max();
 /// Maximum number of `Optional` constructs we are willing to compile. Each one can duplicate the
 /// continuation in the generated code, so without a cap the code size could grow exponentially.
 constexpr int MAX_OPTIONALS = 4;
+/// At most one quantifier may need backtracking (a single O(n) give-back). More than one could give
+/// super-linear matching, so such patterns fall back to the general engine. See `analyzeFirst`.
+constexpr int MAX_NONDET_QUANTIFIERS = 1;
 /// Guard against pathological nesting depth.
 constexpr int MAX_DEPTH = 16;
 
@@ -601,23 +604,60 @@ private:
 
 }
 
-/// Does any `CharQuant` in the program match a byte >= 0x80 (i.e. is it `.` or a negated class)?
-static bool anyCharQuantMatchesHighByte(const std::vector<Op> & ops)
+/// Compute, for each position, the set of bytes that the continuation can begin with, and use it to
+/// mark every `CharQuant` as `deterministic` (its stop is unambiguous: the following first-byte set
+/// is disjoint from the quantified set, or it is right-anchored - the following set is empty).
+/// A deterministic quantifier matches in a single greedy pass with no backtracking.
+/// Side effects: counts variable quantifiers that are NOT deterministic (`nondet_quant`, each of
+/// which needs an O(n) give-back) and `Optional` groups (`fork_count`, a bounded 2-way choice).
+/// Returns the first-byte set of `ops`, given that what follows them can begin with `follow`.
+static CharSet analyzeFirst(std::vector<Op> & ops, const CharSet & follow, int & nondet_quant, int & fork_count)
 {
-    for (const auto & op : ops)
+    const size_t n = ops.size();
+    std::vector<CharSet> rest_first(n + 1);
+    rest_first[n] = follow;
+
+    for (size_t i = n; i-- > 0;)
     {
-        if (op.kind == OpKind::CharQuant)
+        Op & op = ops[i];
+        const CharSet & after = rest_first[i + 1];
+        switch (op.kind)
         {
-            for (unsigned c = 0x80; c < 256; ++c)
-                if (op.set.contains(static_cast<uint8_t>(c)))
-                    return true;
-        }
-        else if (op.kind == OpKind::Optional && anyCharQuantMatchesHighByte(op.body))
-        {
-            return true;
+            case OpKind::Literal:
+            {
+                CharSet first;
+                if (!op.literal.empty())
+                    first.add(op.literal[0]);
+                rest_first[i] = first; /// a literal is not nullable
+                break;
+            }
+            case OpKind::CharQuant:
+            {
+                op.deterministic = !op.set.intersects(after);
+                if (!op.deterministic && op.min < op.max)
+                    ++nondet_quant;
+                rest_first[i] = op.set;
+                if (op.min == 0) /// can match zero characters, so the continuation is also possible here
+                    rest_first[i].unite(after);
+                break;
+            }
+            case OpKind::SuffixAnchor:
+            case OpKind::PrefixAnchor:
+            case OpKind::CaptureStart:
+            case OpKind::CaptureEnd:
+                rest_first[i] = after; /// zero-width
+                break;
+            case OpKind::Optional:
+            {
+                ++fork_count;
+                rest_first[i] = analyzeFirst(op.body, after, nondet_quant, fork_count);
+                rest_first[i].unite(after); /// the body may be skipped
+                break;
+            }
         }
     }
-    return false;
+
+    return rest_first[0];
 }
 
 std::optional<RegexpProgram> tryCompileToProgram(std::string_view pattern, const ParseFlags & flags)
@@ -643,7 +683,15 @@ std::optional<RegexpProgram> tryCompileToProgram(std::string_view pattern, const
         && program->ops[0].kind == OpKind::Literal)
         return std::nullopt;
 
-    program->requires_ascii_input = anyCharQuantMatchesHighByte(program->ops);
+    /// Mark deterministic quantifiers and bound backtracking to keep matching linear (avoid ReDoS):
+    /// at most one non-deterministic quantifier (a single O(n) give-back) and a small number of
+    /// optional groups (a constant 2^k factor). Anything heavier falls back to the general engine.
+    int nondet_quant = 0;
+    int fork_count = 0;
+    analyzeFirst(program->ops, /* follow */ CharSet{}, nondet_quant, fork_count);
+    if (nondet_quant > MAX_NONDET_QUANTIFIERS || fork_count > MAX_OPTIONALS)
+        return std::nullopt;
+
     return program;
 }
 

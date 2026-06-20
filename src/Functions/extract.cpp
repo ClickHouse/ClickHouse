@@ -3,11 +3,11 @@
 #include <Functions/Regexps.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/isValidUTF8.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 
 #include <cstring>
 #include <limits>
-#include <optional>
 
 
 namespace DB
@@ -36,19 +36,24 @@ struct ExtractImpl
         {
             const char * d = reinterpret_cast<const char *>(&data[prev_offset]);
             const size_t size = offsets[i] - prev_offset;
-            unsigned count = regexp.match(d, size, matches, capture + 1);
 
-            const char * expected_ptr = nullptr;
-            size_t expected_len = 0;
-            if (count > capture && matches[capture].offset != std::string::npos)
+            /// Byte-wise matching only matches RE2 (UTF-8 mode) on valid UTF-8; invalid UTF-8 may differ.
+            if (UTF8::isValidUTF8(&data[prev_offset], size))
             {
-                expected_ptr = d + matches[capture].offset;
-                expected_len = matches[capture].length;
-            }
+                unsigned count = regexp.match(d, size, matches, capture + 1);
 
-            const size_t jit_len = res_offsets[i] - res_prev_offset;
-            chassert(jit_len == expected_len);
-            chassert(jit_len == 0 || 0 == memcmp(&res_data[res_prev_offset], expected_ptr, expected_len));
+                const char * expected_ptr = nullptr;
+                size_t expected_len = 0;
+                if (count > capture && matches[capture].offset != std::string::npos)
+                {
+                    expected_ptr = d + matches[capture].offset;
+                    expected_len = matches[capture].length;
+                }
+
+                const size_t jit_len = res_offsets[i] - res_prev_offset;
+                chassert(jit_len == expected_len);
+                chassert(jit_len == 0 || 0 == memcmp(&res_data[res_prev_offset], expected_ptr, expected_len));
+            }
 
             res_prev_offset = res_offsets[i];
             prev_offset = offsets[i];
@@ -80,15 +85,6 @@ struct ExtractImpl
                 VectorWithMemoryTracking<const uint8_t *> capture_starts(matcher.num_captures);
                 VectorWithMemoryTracking<const uint8_t *> capture_ends(matcher.num_captures);
 
-                /// Built only when the matcher may defer non-ASCII strings (see `ascii_fallback`).
-                std::optional<OptimizedRegularExpression> re2_fallback;
-                OptimizedRegularExpression::MatchVec matches;
-                if (matcher.ascii_fallback)
-                {
-                    re2_fallback.emplace(Regexps::createRegexp<false, false, false>(pattern));
-                    matches.reserve(group + 1);
-                }
-
                 size_t prev_offset = 0;
                 size_t res_offset = 0;
                 for (size_t i = 0; i < input_rows_count; ++i)
@@ -98,19 +94,8 @@ struct ExtractImpl
 
                     const uint8_t * src = nullptr;
                     size_t length = 0;
-                    if (re2_fallback && !isAsciiData(str_begin, str_end))
-                    {
-                        /// Non-ASCII string: extract with RE2 to match its UTF-8 semantics.
-                        const unsigned count = re2_fallback->match(
-                            reinterpret_cast<const char *>(str_begin), str_end - str_begin, matches, group + 1);
-                        if (count > static_cast<unsigned>(group) && matches[group].offset != std::string::npos)
-                        {
-                            src = str_begin + matches[group].offset;
-                            length = matches[group].length;
-                        }
-                    }
-                    else if (matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1
-                             && capture_starts[group] != nullptr && capture_ends[group] != nullptr)
+                    if (matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1
+                        && capture_starts[group] != nullptr && capture_ends[group] != nullptr)
                     {
                         src = capture_starts[group];
                         length = capture_ends[group] - capture_starts[group];

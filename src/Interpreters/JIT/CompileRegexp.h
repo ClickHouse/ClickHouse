@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <cstring>
 #include <memory>
 #include <string>
 
@@ -28,6 +27,12 @@ namespace DB
 /// every group `g` in `[0, num_captures)` (group 0 is the whole match); a group that did not
 /// participate is reported as `nullptr`. The caller must provide arrays of at least `num_captures`
 /// elements. The matcher never reads the capture arrays.
+///
+/// Matching is byte-wise. For the supported subset this matches RE2 (which runs in UTF-8 mode)
+/// exactly on valid UTF-8 input: the subset only allows `.` and negated classes with `*`/`+`
+/// (maximal runs whose stop byte is ASCII, hence at a code-point boundary), and char classes are
+/// ASCII-only, so the byte- and code-point interpretations have the same match span. On invalid
+/// UTF-8 the results may differ from RE2, which is implementation-specific and acceptable.
 using JITRegexpMatcherFunc = uint8_t (*)(
     const uint8_t * begin, const uint8_t * end, const uint8_t * search_from,
     const uint8_t ** capture_starts, const uint8_t ** capture_ends);
@@ -36,33 +41,11 @@ struct RegexpJITMatcher
 {
     JITRegexpMatcherFunc func = nullptr;
     int num_captures = 1;
-    /// If true, the matcher does byte-wise matching of `.`/negated classes, which only agrees with
-    /// RE2's UTF-8 mode on ASCII input; the caller must evaluate non-ASCII rows with RE2 instead
-    /// (see `isAsciiData`).
-    bool ascii_fallback = false;
     /// Keeps the compiled module (and its `CHJIT` instance) alive while the caller holds this handle.
     std::shared_ptr<void> keep_alive;
 
     explicit operator bool() const { return func != nullptr; }
 };
-
-/// Are all bytes in `[begin, end)` ASCII (< 0x80)? Used to decide, per row, whether the byte-wise
-/// JIT matcher agrees with RE2's UTF-8 semantics for `ascii_fallback` patterns.
-inline bool isAsciiData(const uint8_t * begin, const uint8_t * end)
-{
-    const uint8_t * pos = begin;
-    for (; pos + 8 <= end; pos += 8)
-    {
-        uint64_t word;
-        memcpy(&word, pos, sizeof(word));
-        if (word & 0x8080808080808080ULL)
-            return false;
-    }
-    for (; pos < end; ++pos)
-        if (*pos & 0x80)
-            return false;
-    return true;
-}
 
 /// Get a JIT matcher for `pattern` with the given flags, compiling and caching it on demand.
 /// Returns an empty handle (`func == nullptr`) if the pattern is not in the supported subset, if

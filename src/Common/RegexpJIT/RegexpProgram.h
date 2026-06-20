@@ -45,6 +45,20 @@ struct CharSet
             word = ~word;
     }
 
+    void unite(const CharSet & other)
+    {
+        for (size_t i = 0; i < 4; ++i)
+            bitmap[i] |= other.bitmap[i];
+    }
+
+    bool intersects(const CharSet & other) const
+    {
+        for (size_t i = 0; i < 4; ++i)
+            if (bitmap[i] & other.bitmap[i])
+                return true;
+        return false;
+    }
+
     size_t count() const
     {
         size_t n = 0;
@@ -88,6 +102,10 @@ struct Op
     uint32_t min = 1;
     uint32_t max = 1;                       /// UINT32_MAX means unbounded.
     bool greedy = true;
+    /// True if the stop position is unambiguous (the following first-byte set is disjoint from `set`,
+    /// or the quantifier is right-anchored), so it can be matched in a single greedy pass with no
+    /// backtracking. Filled by `tryCompileToProgram`. See the no-backtracking analysis there.
+    bool deterministic = true;
 
     /// OpKind::CaptureStart / CaptureEnd
     int capture_index = -1;
@@ -105,11 +123,6 @@ struct RegexpProgram
     bool anchored_end = false;     /// Whole pattern ends with `$`.
     bool case_insensitive = false;
     bool dot_all = false;          /// `(?s)` - `.` matches newline too.
-
-    /// True if the program contains `.` or a negated class, i.e. a `CharQuant` whose set can match a
-    /// byte >= 0x80. Byte-wise matching of such constructs only matches the UTF-8 engine (RE2) on
-    /// pure-ASCII input, so the compiled matcher must defer non-ASCII strings back to RE2.
-    bool requires_ascii_input = false;
 };
 
 struct ParseFlags

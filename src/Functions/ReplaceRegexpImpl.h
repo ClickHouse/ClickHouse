@@ -376,10 +376,7 @@ struct ReplaceRegexpImpl
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
             const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
 
-            const bool use_jit = matcher
-                && (!matcher.ascii_fallback
-                    || isAsciiData(reinterpret_cast<const uint8_t *>(hs_data), reinterpret_cast<const uint8_t *>(hs_data) + hs_length));
-            if (use_jit)
+            if (matcher)
                 processStringJIT(hs_data, hs_length, res_data, res_offset, matcher, capture_starts.data(), capture_ends.data(), instructions);
             else
                 processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);

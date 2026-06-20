@@ -51,7 +51,6 @@ private:
     RegexpJITMatcher matcher;
     VectorWithMemoryTracking<const uint8_t *> capture_starts;
     VectorWithMemoryTracking<const uint8_t *> capture_ends;
-    bool use_jit_for_row = false;
 
     Pos pos{};
     Pos end{};
@@ -106,10 +105,6 @@ public:
     {
         pos = pos_;
         end = end_;
-        /// Decide once per row whether the byte-wise JIT matcher agrees with RE2 for this string.
-        use_jit_for_row = static_cast<bool>(matcher)
-            && (!matcher.ascii_fallback
-                || isAsciiData(reinterpret_cast<const uint8_t *>(pos_), reinterpret_cast<const uint8_t *>(end_)));
     }
 
     /// Get the next token, if any, or return false.
@@ -118,7 +113,7 @@ public:
         if (!pos || pos > end)
             return false;
 
-        if (use_jit_for_row)
+        if (matcher)
         {
             /// `extractAll` re-anchors `^` at the current position: the subject is the substring `[pos, end)`.
             const auto * b = reinterpret_cast<const uint8_t *>(pos);

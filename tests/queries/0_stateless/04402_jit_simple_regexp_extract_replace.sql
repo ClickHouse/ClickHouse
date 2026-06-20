@@ -44,3 +44,12 @@ SELECT sum(length(extractAll(concat('a', toString(number), 'b', toString(number 
 SELECT '-- patterns outside the subset fall back to RE2';
 SELECT extractAll('a1b2', '\\d+?');
 SELECT replaceRegexpAll('cat dog cat', 'cat|dog', 'X');
+
+SELECT '-- ReDoS-shaped patterns must fall back (no exponential backtracking) and stay correct/fast';
+-- If the no-backtracking gate were broken, JIT-compiling these and matching the long inputs below
+-- would blow up exponentially and time out; they must fall back to RE2 and return instantly.
+SELECT match(repeat('a', 64), 'a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?b');
+SELECT match(concat(repeat('a', 64), 'b'), 'a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?b');
+SELECT match(repeat('x', 100000), '.*.*.*.*y');
+SELECT match(repeat('x', 100000), '^(a*)*b$');
+SELECT replaceRegexpAll(repeat('a', 1000), 'a?a?a?a?a?a?a?a?b', 'Z') = repeat('a', 1000);
