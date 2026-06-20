@@ -72,6 +72,23 @@ inline bool integerDivisionLeadsToFPE(A a, B b)
         return divisionLeadsToFPE(static_cast<CastA>(a), static_cast<CastB>(b));
 }
 
+/// Whether modulo of `a` by `b` is the FPE-like case that the `*OrNull` modulo functions must turn
+/// into `NULL`. Unlike integer division, floating-point modulo never raises a floating-point
+/// exception: `INT_MIN % -1` is a finite remainder and `a % 0` yields `NaN`, so only division by zero
+/// is treated as the null case (matching `divideOrNull`). The plain `divisionLeadsToFPE(a, b)` cannot
+/// be used for floating operands because `Float32`/`Float64` are signed and
+/// `std::numeric_limits<Float>::min()` is the smallest positive value, so it would wrongly flag e.g.
+/// `moduloOrNull(toFloat32(1.17549435e-38), toFloat32(-1))`. Integer modulo keeps the full check
+/// because the `idiv` instruction computes the quotient too, so `INT_MIN % -1` raises just like division.
+template <typename A, typename B>
+inline bool moduloLeadsToFPE(A a, B b)
+{
+    if constexpr (is_floating_point<typename NumberTraits::ResultOfModulo<A, B>::Type>)
+        return b == 0;
+    else
+        return divisionLeadsToFPE(a, b);
+}
+
 template <typename A, typename B>
 inline auto checkedDivision(A a, B b)
 {
@@ -251,7 +268,7 @@ struct ModuloOrNullImpl : ModuloImpl<A, B>
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        if (unlikely(divisionLeadsToFPE(a, b)))
+        if (unlikely(moduloLeadsToFPE(a, b)))
             return 0;
         else
             return ModuloImpl<A, B>::apply(a, b);
@@ -312,7 +329,7 @@ struct PositiveModuloOrNullImpl : PositiveModuloImpl<A, B>
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        if (unlikely(divisionLeadsToFPE(a, b)))
+        if (unlikely(moduloLeadsToFPE(a, b)))
             return 0;
         else
             return PositiveModuloImpl<A, B>::apply(a, b);
