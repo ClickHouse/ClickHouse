@@ -123,7 +123,10 @@ ORDER BY (id, user_id); -- { serverError SUPPORT_IS_DISABLED }
 -- The streaming source does not apply the delete-bitmap filter; reject rather
 -- than serve logically-deleted rows.
 SET enable_streaming_queries = 1;
-SELECT * FROM uk_t STREAM; -- { serverError NOT_IMPLEMENTED }
+-- On Linux the UK guard rejects with NOT_IMPLEMENTED; on macOS streaming is
+-- disabled platform-wide (SUPPORT_IS_DISABLED) and fires first. Either way STREAM
+-- on a UK table is rejected.
+SELECT * FROM uk_t STREAM; -- { serverError NOT_IMPLEMENTED, SUPPORT_IS_DISABLED }
 SET enable_streaming_queries = 0;
 
 -- 10c. A unique-key table that also carries a projection must never read
@@ -157,6 +160,23 @@ SET optimize_use_projections = 0;
 -- fails closed for a UNIQUE KEY parent.
 SELECT * FROM mergeTreeProjection(currentDatabase(), uk_t_attach_proj, p); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE uk_t_attach_proj SYNC;
+
+-- 10e. The implicit _minmax_count_projection / exact-count optimization needs no
+-- user projection: it answers count() from physical part row counts, bypassing
+-- the delete-bitmap filter. It must be declined for a UNIQUE KEY table even with
+-- no projection. Trivial-count off isolates this path. Plan must read the base
+-- table (ReadFromMergeTree), not a prepared _minmax_count_projection source.
+CREATE TABLE uk_count_implicit (id UInt64, v UInt32)
+ENGINE = MergeTree UNIQUE KEY (id) ORDER BY (id)
+SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO uk_count_implicit VALUES (1, 10), (2, 20);
+SET optimize_use_implicit_projections = 1;
+SET optimize_trivial_count_query = 0;
+SELECT count() FROM (EXPLAIN SELECT count() FROM uk_count_implicit) WHERE explain LIKE '%ReadFromMergeTree%';  -- 1
+SELECT count() FROM (EXPLAIN SELECT count() FROM uk_count_implicit) WHERE explain LIKE '%_minmax_count_projection%';  -- 0
+SET optimize_trivial_count_query = 1;
+SET optimize_use_implicit_projections = 0;
+DROP TABLE uk_count_implicit;
 
 -- 11. ALTER MODIFY ORDER BY on a unique-key table -> error.
 ALTER TABLE uk_t MODIFY ORDER BY (id); -- { serverError SUPPORT_IS_DISABLED }

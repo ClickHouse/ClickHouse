@@ -14,6 +14,8 @@ SETTINGS index_granularity = 8192
 3	20
 10	2
 20	1
+1
+0
 CREATE TABLE default.uk_t_rt
 (
     `id` UInt64,
