@@ -89,6 +89,7 @@ class Result(MetaClasses.Serializable):
         SETTING_VALUE = "setting"
         FLAKY = "flaky"
         REPRODUCIBLE = "reproducible"
+        LOG_CHECK = "log_check"
 
     # Default hints rendered as a hover tooltip in json.html.
     # Looked up automatically when set_label is called without an explicit hint.
@@ -103,6 +104,7 @@ class Result(MetaClasses.Serializable):
         Label.SETTING_VALUE: "Failure caused by a specific randomized setting value",
         Label.FLAKY: "Failure is reproducible in less than 100% of reruns",
         Label.REPRODUCIBLE: "Failure is reproducible in 100% of reruns",
+        Label.LOG_CHECK: "Server-log / runner health check, not a test case (excluded from bugfix-validation inversion)",
     }
 
     name: str
