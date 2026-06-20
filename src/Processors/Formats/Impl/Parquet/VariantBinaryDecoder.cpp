@@ -386,53 +386,112 @@ void storeScalarPrimitiveValue(ScalarExactValue & result, ScalarExactValue::Prim
 }
 
 template <typename T>
-T loadScalarPrimitiveValue(const ScalarExactValue & value)
+T loadScalarPrimitiveValue(ScalarExactValue::PrimitiveKind /*kind*/, UInt64 bits)
 {
     T result {};
-    static_assert(sizeof(T) <= sizeof(value.primitive_bits));
-    memcpy(&result, &value.primitive_bits, sizeof(T));
+    static_assert(sizeof(T) <= sizeof(bits));
+    memcpy(&result, &bits, sizeof(T));
     return result;
 }
 
-ColumnPtr materializeScalarExactValueColumn(const ScalarExactValue & value)
+/// Materialize one primitive POD (`kind`, `bits`) of the matching ClickHouse type as a 1-row column.
+ColumnPtr materializeScalarPrimitivePOD(
+    ScalarExactValue::PrimitiveKind primitive_kind, UInt64 primitive_bits, const DataTypePtr & exact_type)
 {
-    if (value.exact_column)
-        return value.exact_column;
-
-    if (value.exact_string_view.has_value())
-        return makeSingleStringColumn(value.exact_type, *value.exact_string_view);
-
-    switch (value.primitive_kind)
+    switch (primitive_kind)
     {
         case ScalarExactValue::PrimitiveKind::UInt8:
-            return makeSingleValueColumn<ColumnUInt8>(value.exact_type, loadScalarPrimitiveValue<UInt8>(value));
+            return makeSingleValueColumn<ColumnUInt8>(exact_type, loadScalarPrimitiveValue<UInt8>(primitive_kind, primitive_bits));
         case ScalarExactValue::PrimitiveKind::Int8:
-            return makeSingleValueColumn<ColumnInt8>(value.exact_type, loadScalarPrimitiveValue<Int8>(value));
+            return makeSingleValueColumn<ColumnInt8>(exact_type, loadScalarPrimitiveValue<Int8>(primitive_kind, primitive_bits));
         case ScalarExactValue::PrimitiveKind::Int16:
-            return makeSingleValueColumn<ColumnInt16>(value.exact_type, loadScalarPrimitiveValue<Int16>(value));
+            return makeSingleValueColumn<ColumnInt16>(exact_type, loadScalarPrimitiveValue<Int16>(primitive_kind, primitive_bits));
         case ScalarExactValue::PrimitiveKind::Int32:
-            return makeSingleValueColumn<ColumnInt32>(value.exact_type, loadScalarPrimitiveValue<Int32>(value));
+            return makeSingleValueColumn<ColumnInt32>(exact_type, loadScalarPrimitiveValue<Int32>(primitive_kind, primitive_bits));
         case ScalarExactValue::PrimitiveKind::Int64:
-            return makeSingleValueColumn<ColumnInt64>(value.exact_type, loadScalarPrimitiveValue<Int64>(value));
+            return makeSingleValueColumn<ColumnInt64>(exact_type, loadScalarPrimitiveValue<Int64>(primitive_kind, primitive_bits));
         case ScalarExactValue::PrimitiveKind::Float32:
-            return makeSingleValueColumn<ColumnFloat32>(value.exact_type, loadScalarPrimitiveValue<Float32>(value));
+            return makeSingleValueColumn<ColumnFloat32>(exact_type, loadScalarPrimitiveValue<Float32>(primitive_kind, primitive_bits));
         case ScalarExactValue::PrimitiveKind::Float64:
-            return makeSingleValueColumn<ColumnFloat64>(value.exact_type, loadScalarPrimitiveValue<Float64>(value));
+            return makeSingleValueColumn<ColumnFloat64>(exact_type, loadScalarPrimitiveValue<Float64>(primitive_kind, primitive_bits));
         case ScalarExactValue::PrimitiveKind::Date32:
-            return makeSingleValueColumn<ColumnDate32>(value.exact_type, loadScalarPrimitiveValue<Int32>(value));
+            return makeSingleValueColumn<ColumnDate32>(exact_type, loadScalarPrimitiveValue<Int32>(primitive_kind, primitive_bits));
         case ScalarExactValue::PrimitiveKind::DateTime64:
-            return makeSingleValueColumn<ColumnDateTime64>(value.exact_type, static_cast<DateTime64>(loadScalarPrimitiveValue<Int64>(value)));
+            return makeSingleValueColumn<ColumnDateTime64>(exact_type, static_cast<DateTime64>(loadScalarPrimitiveValue<Int64>(primitive_kind, primitive_bits)));
         case ScalarExactValue::PrimitiveKind::Time64:
-            return makeSingleValueColumn<ColumnTime64>(value.exact_type, static_cast<Time64>(loadScalarPrimitiveValue<Int64>(value)));
+            return makeSingleValueColumn<ColumnTime64>(exact_type, static_cast<Time64>(loadScalarPrimitiveValue<Int64>(primitive_kind, primitive_bits)));
         case ScalarExactValue::PrimitiveKind::Decimal32:
-            return makeSingleValueColumn<ColumnDecimal<Decimal32>>(value.exact_type, Decimal32(loadScalarPrimitiveValue<Int32>(value)));
+            return makeSingleValueColumn<ColumnDecimal<Decimal32>>(exact_type, Decimal32(loadScalarPrimitiveValue<Int32>(primitive_kind, primitive_bits)));
         case ScalarExactValue::PrimitiveKind::Decimal64:
-            return makeSingleValueColumn<ColumnDecimal<Decimal64>>(value.exact_type, Decimal64(loadScalarPrimitiveValue<Int64>(value)));
+            return makeSingleValueColumn<ColumnDecimal<Decimal64>>(exact_type, Decimal64(loadScalarPrimitiveValue<Int64>(primitive_kind, primitive_bits)));
         case ScalarExactValue::PrimitiveKind::None:
             break;
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot materialize `Parquet` `VARIANT` scalar exact value without payload");
+}
+
+/// True when the exact value is carried directly as a `ScalarExactValue` POD primitive
+/// (plain primitive / temporal / decimal32-64 / bool) rather than a 1-row `exact_column`.
+bool variantValueHasPrimitivePOD(const VariantValue & value)
+{
+    return value.exact_primitive_kind != ScalarExactValue::PrimitiveKind::None;
+}
+
+/// Insert the primitive POD value directly into a column of the matching ClickHouse type,
+/// avoiding any per-scalar 1-row `IColumn` allocation.
+void insertPrimitivePODIntoColumn(
+    IColumn & column, ScalarExactValue::PrimitiveKind primitive_kind, UInt64 primitive_bits)
+{
+    switch (primitive_kind)
+    {
+        case ScalarExactValue::PrimitiveKind::UInt8:
+            assert_cast<ColumnUInt8 &>(column).insertValue(loadScalarPrimitiveValue<UInt8>(primitive_kind, primitive_bits));
+            return;
+        case ScalarExactValue::PrimitiveKind::Int8:
+            assert_cast<ColumnInt8 &>(column).insertValue(loadScalarPrimitiveValue<Int8>(primitive_kind, primitive_bits));
+            return;
+        case ScalarExactValue::PrimitiveKind::Int16:
+            assert_cast<ColumnInt16 &>(column).insertValue(loadScalarPrimitiveValue<Int16>(primitive_kind, primitive_bits));
+            return;
+        case ScalarExactValue::PrimitiveKind::Int32:
+            assert_cast<ColumnInt32 &>(column).insertValue(loadScalarPrimitiveValue<Int32>(primitive_kind, primitive_bits));
+            return;
+        case ScalarExactValue::PrimitiveKind::Int64:
+            assert_cast<ColumnInt64 &>(column).insertValue(loadScalarPrimitiveValue<Int64>(primitive_kind, primitive_bits));
+            return;
+        case ScalarExactValue::PrimitiveKind::Float32:
+            assert_cast<ColumnFloat32 &>(column).insertValue(loadScalarPrimitiveValue<Float32>(primitive_kind, primitive_bits));
+            return;
+        case ScalarExactValue::PrimitiveKind::Float64:
+            assert_cast<ColumnFloat64 &>(column).insertValue(loadScalarPrimitiveValue<Float64>(primitive_kind, primitive_bits));
+            return;
+        case ScalarExactValue::PrimitiveKind::Date32:
+            assert_cast<ColumnDate32 &>(column).insertValue(loadScalarPrimitiveValue<Int32>(primitive_kind, primitive_bits));
+            return;
+        case ScalarExactValue::PrimitiveKind::DateTime64:
+            assert_cast<ColumnDateTime64 &>(column).insertValue(static_cast<DateTime64>(loadScalarPrimitiveValue<Int64>(primitive_kind, primitive_bits)));
+            return;
+        case ScalarExactValue::PrimitiveKind::Time64:
+            assert_cast<ColumnTime64 &>(column).insertValue(static_cast<Time64>(loadScalarPrimitiveValue<Int64>(primitive_kind, primitive_bits)));
+            return;
+        case ScalarExactValue::PrimitiveKind::Decimal32:
+            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(Decimal32(loadScalarPrimitiveValue<Int32>(primitive_kind, primitive_bits)));
+            return;
+        case ScalarExactValue::PrimitiveKind::Decimal64:
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(Decimal64(loadScalarPrimitiveValue<Int64>(primitive_kind, primitive_bits)));
+            return;
+        case ScalarExactValue::PrimitiveKind::None:
+            break;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert `Parquet` `VARIANT` primitive scalar value without payload");
+}
+
+/// Convenience wrapper: insert the primitive POD carried by a `VariantValue`.
+void insertPrimitivePODIntoColumn(IColumn & column, const VariantValue & value)
+{
+    insertPrimitivePODIntoColumn(column, value.exact_primitive_kind, value.exact_primitive_bits);
 }
 
 VariantValue makeExactValue(ColumnPtr exact_column, DataTypePtr exact_type, size_t exact_row_num = 0)
@@ -458,12 +517,17 @@ VariantValue makeExactScalarValue(ScalarExactValue exact_value)
 {
     VariantValue value;
     value.kind = VariantValue::Kind::ExactValue;
-    const bool has_string_view = exact_value.exact_string_view.has_value();
-    if (!has_string_view)
-        value.exact_column = materializeScalarExactValueColumn(exact_value);
     value.exact_type = std::move(exact_value.exact_type);
-    value.exact_row_num = 0;
+    value.exact_row_num = exact_value.exact_row_num;
     value.exact_string_view = exact_value.exact_string_view;
+    value.exact_primitive_kind = exact_value.primitive_kind;
+    value.exact_primitive_bits = exact_value.primitive_bits;
+    // For plain primitive/temporal/decimal32/64/bool leaves the value is carried directly as the
+    // `ScalarExactValue` POD (`exact_primitive_kind` / `exact_primitive_bits`) and no per-scalar
+    // 1-row `IColumn` is allocated. Types that need a real 1-row column irreducibly
+    // (`UUID` / `Decimal128` / `Binary`, which keep `primitive_kind == None` and a
+    // non-null `exact_column`) keep carrying their `exact_column`.
+    value.exact_column = std::move(exact_value.exact_column);
     return value;
 }
 
@@ -979,55 +1043,6 @@ DecodedVariantValue decodeValueImpl(const VariantMetadata & metadata, const UInt
 
 void writeVariantValueAsJSON(const VariantValue & value, WriteBuffer & out, const FormatSettings & format_settings, size_t depth);
 
-const VariantValue * tryGetSubcolumnValueImpl(const VariantValue & value, const ParsedVariantPath & path, const FormatSettings & format_settings, size_t depth, size_t step_idx)
-{
-    checkVariantReadDepth(format_settings, depth);
-
-    if (step_idx >= path.steps.size())
-        return &value;
-
-    const auto & step = path.steps[step_idx];
-    const bool has_nested_path = hasNestedPathComponent(path, step_idx);
-
-    if (value.isObject())
-    {
-        auto exact_it = value.object_fields.find(step.remaining_path);
-        if (exact_it != value.object_fields.end())
-            return &exact_it->second;
-
-        auto it = value.object_fields.find(step.key);
-        if (it == value.object_fields.end())
-            return nullptr;
-
-        if (!has_nested_path)
-            return &it->second;
-
-        return tryGetSubcolumnValueImpl(it->second, path, format_settings, depth + 1, step_idx + 1);
-    }
-
-    if (value.isTuple())
-    {
-        for (const auto & [field_name, child] : value.tuple_elements)
-        {
-            if (field_name == step.remaining_path)
-                return &child;
-        }
-
-        for (const auto & [field_name, child] : value.tuple_elements)
-        {
-            if (field_name != step.key)
-                continue;
-
-            if (!has_nested_path)
-                return &child;
-
-            return tryGetSubcolumnValueImpl(child, path, format_settings, depth + 1, step_idx + 1);
-        }
-    }
-
-    return nullptr;
-}
-
 std::optional<VariantValue> extractSubcolumnValueImpl(const VariantValue & value, const ParsedVariantPath & path, const FormatSettings & format_settings, size_t depth, size_t step_idx)
 {
     checkVariantReadDepth(format_settings, depth);
@@ -1168,6 +1183,13 @@ void writeVariantValueAsJSON(const VariantValue & value, WriteBuffer & out, cons
                 return;
             }
 
+            if (variantValueHasPrimitivePOD(value))
+            {
+                auto materialized = materializeScalarPrimitivePOD(value.exact_primitive_kind, value.exact_primitive_bits, value.exact_type);
+                value.exact_type->getDefaultSerialization()->serializeTextJSON(*materialized, 0, out, format_settings);
+                return;
+            }
+
             if (!value.exact_column)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize `Parquet` `VARIANT` exact value without payload");
 
@@ -1216,6 +1238,13 @@ MutableColumnPtr materializeSingleExactValueColumn(const VariantValue & value)
 {
     if (!value.exact_type)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot materialize `Parquet` `VARIANT` exact value without payload");
+
+    if (variantValueHasPrimitivePOD(value))
+    {
+        auto column = value.exact_type->createColumn();
+        insertPrimitivePODIntoColumn(*column, value);
+        return column;
+    }
 
     auto column = value.exact_type->createColumn();
     if (value.exact_column)
@@ -1365,6 +1394,13 @@ void insertVariantValueIntoTypedColumn(
     {
         auto & dynamic_column = assert_cast<ColumnDynamic &>(column);
 
+        if (value.exact_type && !value.exact_string_view.has_value() && variantValueHasPrimitivePOD(value))
+        {
+            auto materialized = materializeSingleExactValueColumn(value);
+            dynamic_column.insertTypedValueFrom(*materialized, value.exact_type, 0);
+            return;
+        }
+
         if (value.exact_type && !value.exact_string_view.has_value() && value.exact_column)
         {
             dynamic_column.insertTypedValueFrom(*value.exact_column, value.exact_type, value.exact_row_num);
@@ -1383,6 +1419,13 @@ void insertVariantValueIntoTypedColumn(
         if (auto discr = variant_type->tryGetVariantDiscriminator(source_type->getName()))
         {
             auto & variant_column = assert_cast<ColumnVariant &>(column);
+            if (value.exact_type && !value.exact_string_view.has_value() && variantValueHasPrimitivePOD(value) && source_type->equals(*value.exact_type))
+            {
+                auto materialized = materializeSingleExactValueColumn(value);
+                variant_column.insertIntoVariantFrom(*discr, *materialized, 0);
+                return;
+            }
+
             if (value.exact_type && !value.exact_string_view.has_value() && value.exact_column && source_type->equals(*value.exact_type))
             {
                 variant_column.insertIntoVariantFrom(*discr, *value.exact_column, value.exact_row_num);
@@ -1420,7 +1463,10 @@ void insertVariantValueIntoTypedColumn(
 
         if (value.exact_type->equals(*type))
         {
-            column.insertFrom(*value.exact_column, value.exact_row_num);
+            if (variantValueHasPrimitivePOD(value))
+                insertPrimitivePODIntoColumn(column, value);
+            else
+                column.insertFrom(*value.exact_column, value.exact_row_num);
             return;
         }
 
@@ -1502,6 +1548,36 @@ MutableColumnPtr materializeVariantValueColumnImpl(const VariantValue & value, c
     return column;
 }
 
+}
+
+void insertExactValueIntoColumn(IColumn & column, const VariantValue & value, const FormatSettings & format_settings)
+{
+    if (!value.exact_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert `Parquet` `VARIANT` value without exact type directly");
+
+    if (value.exact_string_view.has_value())
+    {
+        assert_cast<ColumnString &>(column).insertData(value.exact_string_view->data(), value.exact_string_view->size());
+        return;
+    }
+
+    /// Plain primitive/temporal/decimal32-64/bool leaves are carried as a POD in
+    /// `exact_primitive_kind` / `exact_primitive_bits`; insert them directly without a per-scalar
+    /// 1-row `IColumn`. The caller guarantees the output column type matches `value.exact_type`.
+    if (variantValueHasPrimitivePOD(value))
+    {
+        insertPrimitivePODIntoColumn(column, value);
+        return;
+    }
+
+    if (!value.exact_column)
+    {
+        auto source_column = materializeExactValueColumn(value, format_settings);
+        column.insertFrom(*source_column, 0);
+        return;
+    }
+
+    column.insertFrom(*value.exact_column, value.exact_row_num);
 }
 
 const VariantMetadata & VariantMetadataCache::get(std::string_view metadata_blob, const FormatSettings & format_settings)
@@ -1627,26 +1703,125 @@ DecodedVariantValue decodeValue(const VariantMetadata & metadata, std::string_vi
     return value;
 }
 
-static bool tryDecodeValueByPathImpl(
+/// Status of a scalar-leaf-only traversal through `tryDecodeValueByPathGeneric` is reported through
+/// the public `ScalarExactPathStatus` enum. In scalar-leaf-only mode the walker never materializes
+/// array/object members: at a scalar leaf it reports `Exact`/`Null`, when the path is absent it
+/// reports `Missing`, and at an object/array leaf (or an array encountered while still descending)
+/// it reports `Unsupported` so the caller can fall back to the full tree decode.
+
+/// Matcher for the string-keyed `ParsedVariantPath` walk. Each object node matches a path step by
+/// the parsed key strings (`remaining_path` for the exact match, `key` for the nested descent).
+struct ParsedVariantPathMatcher
+{
+    static const ParsedVariantPath & parsedPathOf(const ParsedVariantPath & path)
+    {
+        return path;
+    }
+
+    static bool canMatchExact(const ParsedVariantPath &, size_t)
+    {
+        return true;
+    }
+
+    static bool matchesExact(const ParsedVariantPath & path, size_t step_idx, UInt64, std::string_view field_name)
+    {
+        return field_name == path.steps[step_idx].remaining_path;
+    }
+
+    static bool canMatchNested(const ParsedVariantPath &, size_t, bool has_nested_path)
+    {
+        return has_nested_path;
+    }
+
+    static bool matchesNested(const ParsedVariantPath & path, size_t step_idx, UInt64, std::string_view field_name)
+    {
+        return field_name == path.steps[step_idx].key;
+    }
+};
+
+/// Matcher for the field-id-keyed `ResolvedVariantPath` walk. Each object node matches a path step
+/// by the resolved field ids (`exact_match_field_id` for the exact match, `nested_key_field_id` for
+/// the nested descent); a missing resolution disables that match.
+struct ResolvedVariantPathMatcher
+{
+    static const ParsedVariantPath & parsedPathOf(const ResolvedVariantPath & path)
+    {
+        return path.parsed_path;
+    }
+
+    static bool canMatchExact(const ResolvedVariantPath & path, size_t step_idx)
+    {
+        return path.steps[step_idx].exact_match_field_id.has_value();
+    }
+
+    static bool matchesExact(const ResolvedVariantPath & path, size_t step_idx, UInt64 field_id, std::string_view)
+    {
+        return field_id == *path.steps[step_idx].exact_match_field_id;
+    }
+
+    static bool canMatchNested(const ResolvedVariantPath & path, size_t step_idx, bool has_nested_path)
+    {
+        return has_nested_path && path.steps[step_idx].nested_key_field_id.has_value();
+    }
+
+    static bool matchesNested(const ResolvedVariantPath & path, size_t step_idx, UInt64 field_id, std::string_view)
+    {
+        return field_id == *path.steps[step_idx].nested_key_field_id;
+    }
+};
+
+/// Single recursive by-path object walker shared by both the string-keyed (`ParsedVariantPath`) and
+/// the field-id-keyed (`ResolvedVariantPath`) reads. `Matcher` abstracts the only difference between
+/// the two — how a path step is matched against a child field at an object node. `scalar_leaf_only`
+/// is a compile-time flag: when true the walker takes the scalar fast path (never building members)
+/// and reports its outcome through `*scalar_status`; the dead branches compile out otherwise.
+template <typename Matcher, typename PathType, bool scalar_leaf_only>
+static bool tryDecodeValueByPathGeneric(
     const VariantMetadata & metadata,
     const UInt8 * begin,
     const UInt8 * end,
-    const ParsedVariantPath & path,
+    const PathType & path,
     VariantValue & result,
     const FormatSettings & format_settings,
     size_t depth,
-    size_t step_idx)
+    size_t step_idx,
+    ScalarExactPathStatus * scalar_status)
 {
     checkVariantReadDepth(format_settings, depth);
 
     if (step_idx >= path.steps.size())
     {
-        const UInt8 * ptr = begin;
-        auto value = decodeValueImpl(metadata, ptr, end, format_settings, depth);
-        if (ptr != end)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid child size while decoding path");
-        result = std::move(value.value);
-        return true;
+        if constexpr (scalar_leaf_only)
+        {
+            const UInt8 * ptr = begin;
+            ScalarExactValue scalar;
+            auto decode_status = tryDecodeScalarExactValueImpl(ptr, end, scalar, format_settings);
+            if (decode_status == ScalarExactDecodeStatus::Unsupported)
+            {
+                *scalar_status = ScalarExactPathStatus::Unsupported;
+                return false;
+            }
+            if (ptr != end)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid child size while decoding scalar path");
+            if (decode_status == ScalarExactDecodeStatus::Null)
+            {
+                result.clear();
+                *scalar_status = ScalarExactPathStatus::Null;
+                return false;
+            }
+            result = makeExactScalarValue(std::move(scalar));
+            *scalar_status = ScalarExactPathStatus::Exact;
+            return true;
+        }
+        else
+        {
+            const UInt8 * ptr = begin;
+            auto value = decodeValueImpl(metadata, ptr, end, format_settings, depth);
+            if (ptr != end)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid child size while decoding path");
+            result = std::move(value.value);
+            return true;
+        }
     }
 
     ensureVariantRemaining(begin, end, 1, "`VARIANT` value header");
@@ -1658,45 +1833,53 @@ static bool tryDecodeValueByPathImpl(
 
     if (basic_type == VariantBasicType::Array)
     {
-        size_t field_offset_size = (value_header & VARIANT_FIELD_OFFSET_SIZE_MINUS_ONE_MASK) + 1;
-        bool is_large = ((value_header >> VARIANT_ARRAY_IS_LARGE_SHIFT) & 0x01) != 0;
-        UInt64 num_elements = is_large ? readVariantPOD<UInt32>(ptr, end, "`VARIANT` array element count") : readVariantPOD<UInt8>(ptr, end, "`VARIANT` array element count");
-        checkVariantArraySize(format_settings, num_elements);
-
-        const UInt8 * field_offsets = ptr;
-        size_t field_offsets_bytes = checkedVariantByteSizeWithSentinel(num_elements, field_offset_size, "`array offsets`");
-        ensureVariantRemaining(field_offsets, end, field_offsets_bytes, "`VARIANT` array offsets");
-        ptr += field_offsets_bytes;
-
-        const UInt8 * values = ptr;
-        const UInt8 * offsets_ptr = field_offsets;
-        UInt64 previous_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` array offset");
-
-        if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid array child offset");
-
-        std::vector<VariantValue> projected_elements;
-        projected_elements.reserve(static_cast<size_t>(num_elements));
-        for (UInt64 i = 0; i < num_elements; ++i)
+        if constexpr (scalar_leaf_only)
         {
-            UInt64 next_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` array offset");
-            if (next_offset < previous_offset || next_offset > static_cast<UInt64>(end - values))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid array child size");
-
-            const UInt8 * child_begin = values + previous_offset;
-            const UInt8 * child_end = values + next_offset;
-
-            VariantValue child_result;
-            bool decoded = tryDecodeValueByPathImpl(metadata, child_begin, child_end, path, child_result, format_settings, depth + 1, step_idx);
-            projected_elements.emplace_back(decoded ? std::move(child_result) : VariantValue {});
-            previous_offset = next_offset;
+            *scalar_status = ScalarExactPathStatus::Unsupported;
+            return false;
         }
+        else
+        {
+            size_t field_offset_size = (value_header & VARIANT_FIELD_OFFSET_SIZE_MINUS_ONE_MASK) + 1;
+            bool is_large = ((value_header >> VARIANT_ARRAY_IS_LARGE_SHIFT) & 0x01) != 0;
+            UInt64 num_elements = is_large ? readVariantPOD<UInt32>(ptr, end, "`VARIANT` array element count") : readVariantPOD<UInt8>(ptr, end, "`VARIANT` array element count");
+            checkVariantArraySize(format_settings, num_elements);
 
-        checkVariantCollectionPayloadSize(previous_offset, values, end, "`array`");
+            const UInt8 * field_offsets = ptr;
+            size_t field_offsets_bytes = checkedVariantByteSizeWithSentinel(num_elements, field_offset_size, "`array offsets`");
+            ensureVariantRemaining(field_offsets, end, field_offsets_bytes, "`VARIANT` array offsets");
+            ptr += field_offsets_bytes;
 
-        DataTypePtr exact_array_type = tryBuildExactArrayType(projected_elements);
-        result = makeArrayValue(std::move(projected_elements), std::move(exact_array_type));
-        return true;
+            const UInt8 * values = ptr;
+            const UInt8 * offsets_ptr = field_offsets;
+            UInt64 previous_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` array offset");
+
+            if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid array child offset");
+
+            std::vector<VariantValue> projected_elements;
+            projected_elements.reserve(static_cast<size_t>(num_elements));
+            for (UInt64 i = 0; i < num_elements; ++i)
+            {
+                UInt64 next_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` array offset");
+                if (next_offset < previous_offset || next_offset > static_cast<UInt64>(end - values))
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid array child size");
+
+                const UInt8 * child_begin = values + previous_offset;
+                const UInt8 * child_end = values + next_offset;
+
+                VariantValue child_result;
+                bool decoded = tryDecodeValueByPathGeneric<Matcher, PathType, false>(metadata, child_begin, child_end, path, child_result, format_settings, depth + 1, step_idx, nullptr);
+                projected_elements.emplace_back(decoded ? std::move(child_result) : VariantValue {});
+                previous_offset = next_offset;
+            }
+
+            checkVariantCollectionPayloadSize(previous_offset, values, end, "`array`");
+
+            DataTypePtr exact_array_type = tryBuildExactArrayType(projected_elements);
+            result = makeArrayValue(std::move(projected_elements), std::move(exact_array_type));
+            return true;
+        }
     }
 
     if (basic_type != VariantBasicType::Object)
@@ -1705,6 +1888,8 @@ static bool tryDecodeValueByPathImpl(
         decodeValueImpl(metadata, value_ptr, end, format_settings, depth);
         if (value_ptr != end)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid value size while decoding path");
+        if constexpr (scalar_leaf_only)
+            *scalar_status = ScalarExactPathStatus::Missing;
         return false;
     }
 
@@ -1732,8 +1917,9 @@ static bool tryDecodeValueByPathImpl(
     if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child offset");
 
-    const auto & step = path.steps[step_idx];
-    const bool has_nested_path = hasNestedPathComponent(path, step_idx);
+    const bool has_nested_path = hasNestedPathComponent(Matcher::parsedPathOf(path), step_idx);
+    const bool can_match_exact = Matcher::canMatchExact(path, step_idx);
+    const bool can_match_nested = Matcher::canMatchNested(path, step_idx, has_nested_path);
 
     const UInt8 * nested_begin = nullptr;
     const UInt8 * nested_end = nullptr;
@@ -1754,13 +1940,13 @@ static bool tryDecodeValueByPathImpl(
         const UInt8 * child_end = values + next_offset;
         std::string_view field_name = metadata.strings[field_id];
 
-        if (!exact_begin && field_name == step.remaining_path)
+        if (!exact_begin && can_match_exact && Matcher::matchesExact(path, step_idx, field_id, field_name))
         {
             exact_begin = child_begin;
             exact_end = child_end;
         }
 
-        if (!nested_begin && has_nested_path && field_name == step.key)
+        if (!nested_begin && can_match_nested && Matcher::matchesNested(path, step_idx, field_id, field_name))
         {
             nested_begin = child_begin;
             nested_end = child_end;
@@ -1772,294 +1958,14 @@ static bool tryDecodeValueByPathImpl(
     checkVariantCollectionPayloadSize(previous_offset, values, end, "`object`");
 
     if (exact_begin)
-        return tryDecodeValueByPathImpl(metadata, exact_begin, exact_end, path, result, format_settings, depth + 1, path.steps.size());
+        return tryDecodeValueByPathGeneric<Matcher, PathType, scalar_leaf_only>(metadata, exact_begin, exact_end, path, result, format_settings, depth + 1, path.steps.size(), scalar_status);
 
     if (nested_begin)
-        return tryDecodeValueByPathImpl(metadata, nested_begin, nested_end, path, result, format_settings, depth + 1, step_idx + 1);
+        return tryDecodeValueByPathGeneric<Matcher, PathType, scalar_leaf_only>(metadata, nested_begin, nested_end, path, result, format_settings, depth + 1, step_idx + 1, scalar_status);
 
+    if constexpr (scalar_leaf_only)
+        *scalar_status = ScalarExactPathStatus::Missing;
     return false;
-}
-
-static bool tryDecodeValueByPathImpl(
-    const VariantMetadata & metadata,
-    const UInt8 * begin,
-    const UInt8 * end,
-    const ResolvedVariantPath & path,
-    VariantValue & result,
-    const FormatSettings & format_settings,
-    size_t depth,
-    size_t step_idx)
-{
-    checkVariantReadDepth(format_settings, depth);
-
-    if (step_idx >= path.steps.size())
-    {
-        const UInt8 * ptr = begin;
-        auto value = decodeValueImpl(metadata, ptr, end, format_settings, depth);
-        if (ptr != end)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid child size while decoding path");
-        result = std::move(value.value);
-        return true;
-    }
-
-    ensureVariantRemaining(begin, end, 1, "`VARIANT` value header");
-    const UInt8 * ptr = begin;
-    UInt8 header = *ptr++;
-
-    VariantBasicType basic_type = decodeVariantBasicType(header);
-    UInt8 value_header = header >> VARIANT_VALUE_HEADER_SHIFT;
-
-    if (basic_type == VariantBasicType::Array)
-    {
-        size_t field_offset_size = (value_header & VARIANT_FIELD_OFFSET_SIZE_MINUS_ONE_MASK) + 1;
-        bool is_large = ((value_header >> VARIANT_ARRAY_IS_LARGE_SHIFT) & 0x01) != 0;
-        UInt64 num_elements = is_large ? readVariantPOD<UInt32>(ptr, end, "`VARIANT` array element count") : readVariantPOD<UInt8>(ptr, end, "`VARIANT` array element count");
-        checkVariantArraySize(format_settings, num_elements);
-
-        const UInt8 * field_offsets = ptr;
-        size_t field_offsets_bytes = checkedVariantByteSizeWithSentinel(num_elements, field_offset_size, "`array offsets`");
-        ensureVariantRemaining(field_offsets, end, field_offsets_bytes, "`VARIANT` array offsets");
-        ptr += field_offsets_bytes;
-
-        const UInt8 * values = ptr;
-        const UInt8 * offsets_ptr = field_offsets;
-        UInt64 previous_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` array offset");
-
-        if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid array child offset");
-
-        std::vector<VariantValue> projected_elements;
-        projected_elements.reserve(static_cast<size_t>(num_elements));
-        for (UInt64 i = 0; i < num_elements; ++i)
-        {
-            UInt64 next_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` array offset");
-            if (next_offset < previous_offset || next_offset > static_cast<UInt64>(end - values))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid array child size");
-
-            const UInt8 * child_begin = values + previous_offset;
-            const UInt8 * child_end = values + next_offset;
-
-            VariantValue child_result;
-            bool decoded = tryDecodeValueByPathImpl(metadata, child_begin, child_end, path, child_result, format_settings, depth + 1, step_idx);
-            projected_elements.emplace_back(decoded ? std::move(child_result) : VariantValue {});
-            previous_offset = next_offset;
-        }
-
-        checkVariantCollectionPayloadSize(previous_offset, values, end, "`array`");
-
-        DataTypePtr exact_array_type = tryBuildExactArrayType(projected_elements);
-        result = makeArrayValue(std::move(projected_elements), std::move(exact_array_type));
-        return true;
-    }
-
-    if (basic_type != VariantBasicType::Object)
-    {
-        const UInt8 * value_ptr = begin;
-        decodeValueImpl(metadata, value_ptr, end, format_settings, depth);
-        if (value_ptr != end)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid value size while decoding path");
-        return false;
-    }
-
-    size_t field_offset_size = (value_header & VARIANT_FIELD_OFFSET_SIZE_MINUS_ONE_MASK) + 1;
-    size_t field_id_size = ((value_header >> VARIANT_FIELD_ID_SIZE_MINUS_ONE_SHIFT) & VARIANT_FIELD_ID_SIZE_MINUS_ONE_MASK) + 1;
-    bool is_large = ((value_header >> VARIANT_OBJECT_IS_LARGE_SHIFT) & 0x01) != 0;
-    UInt64 num_elements = is_large ? readVariantPOD<UInt32>(ptr, end, "`VARIANT` object field count") : readVariantPOD<UInt8>(ptr, end, "`VARIANT` object field count");
-    checkVariantObjectFieldCount(format_settings, num_elements);
-
-    const UInt8 * field_ids = ptr;
-    size_t field_ids_bytes = checkedVariantByteSize(num_elements, field_id_size, "`object field ids`");
-    ensureVariantRemaining(field_ids, end, field_ids_bytes, "`VARIANT` object field ids");
-    ptr += field_ids_bytes;
-
-    const UInt8 * field_offsets = ptr;
-    size_t field_offsets_bytes = checkedVariantByteSizeWithSentinel(num_elements, field_offset_size, "`object field offsets`");
-    ensureVariantRemaining(field_offsets, end, field_offsets_bytes, "`VARIANT` object field offsets");
-    ptr += field_offsets_bytes;
-
-    const UInt8 * values = ptr;
-    const UInt8 * field_ids_ptr = field_ids;
-    const UInt8 * offsets_ptr = field_offsets;
-    UInt64 previous_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
-
-    if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child offset");
-
-    const auto & step = path.steps[step_idx];
-    const bool has_nested_path = hasNestedPathComponent(path.parsed_path, step_idx);
-    const bool can_match_exact = step.exact_match_field_id.has_value();
-    const bool can_match_nested = has_nested_path && step.nested_key_field_id.has_value();
-
-    const UInt8 * nested_begin = nullptr;
-    const UInt8 * nested_end = nullptr;
-    const UInt8 * exact_begin = nullptr;
-    const UInt8 * exact_end = nullptr;
-
-    std::unordered_set<UInt64> seen_field_ids;
-    seen_field_ids.reserve(static_cast<size_t>(num_elements));
-    for (UInt64 i = 0; i < num_elements; ++i)
-    {
-        UInt64 field_id = readVariantLittleEndianVariable(field_ids_ptr, field_ids + field_ids_bytes, field_id_size, "`VARIANT` object field id");
-        UInt64 next_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
-        if (next_offset < previous_offset || next_offset > static_cast<UInt64>(end - values) || field_id >= metadata.strings.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child metadata");
-        checkUniqueObjectFieldId(seen_field_ids, field_id);
-
-        const UInt8 * child_begin = values + previous_offset;
-        const UInt8 * child_end = values + next_offset;
-
-        if (!exact_begin && can_match_exact && field_id == *step.exact_match_field_id)
-        {
-            exact_begin = child_begin;
-            exact_end = child_end;
-        }
-
-        if (!nested_begin && can_match_nested && field_id == *step.nested_key_field_id)
-        {
-            nested_begin = child_begin;
-            nested_end = child_end;
-        }
-
-        previous_offset = next_offset;
-    }
-
-    checkVariantCollectionPayloadSize(previous_offset, values, end, "`object`");
-
-    if (exact_begin)
-        return tryDecodeValueByPathImpl(metadata, exact_begin, exact_end, path, result, format_settings, depth + 1, path.steps.size());
-
-    if (nested_begin)
-        return tryDecodeValueByPathImpl(metadata, nested_begin, nested_end, path, result, format_settings, depth + 1, step_idx + 1);
-
-    return false;
-}
-
-enum class ScalarPathDecodeStatus
-{
-    Missing,
-    Null,
-    Exact,
-    Unsupported,
-};
-
-static ScalarPathDecodeStatus tryDecodeScalarExactValueByPathImpl(
-    const VariantMetadata & metadata,
-    const UInt8 * begin,
-    const UInt8 * end,
-    const ResolvedVariantPath & path,
-    ScalarExactValue & result,
-    const FormatSettings & format_settings,
-    size_t depth,
-    size_t step_idx)
-{
-    checkVariantReadDepth(format_settings, depth);
-
-    if (step_idx >= path.steps.size())
-    {
-        const UInt8 * ptr = begin;
-        auto decode_status = tryDecodeScalarExactValueImpl(ptr, end, result, format_settings);
-        if (decode_status == ScalarExactDecodeStatus::Unsupported)
-            return ScalarPathDecodeStatus::Unsupported;
-        if (ptr != end)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid child size while decoding scalar path");
-        return decode_status == ScalarExactDecodeStatus::Null ? ScalarPathDecodeStatus::Null : ScalarPathDecodeStatus::Exact;
-    }
-
-    ensureVariantRemaining(begin, end, 1, "`VARIANT` value header");
-    const UInt8 * ptr = begin;
-    UInt8 header = *ptr++;
-
-    VariantBasicType basic_type = decodeVariantBasicType(header);
-    UInt8 value_header = header >> VARIANT_VALUE_HEADER_SHIFT;
-
-    if (basic_type == VariantBasicType::Array)
-        return ScalarPathDecodeStatus::Unsupported;
-
-    if (basic_type != VariantBasicType::Object)
-    {
-        const UInt8 * value_ptr = begin;
-        decodeValueImpl(metadata, value_ptr, end, format_settings, depth);
-        if (value_ptr != end)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid value size while decoding scalar path");
-        return ScalarPathDecodeStatus::Missing;
-    }
-
-    size_t field_offset_size = (value_header & VARIANT_FIELD_OFFSET_SIZE_MINUS_ONE_MASK) + 1;
-    size_t field_id_size = ((value_header >> VARIANT_FIELD_ID_SIZE_MINUS_ONE_SHIFT) & VARIANT_FIELD_ID_SIZE_MINUS_ONE_MASK) + 1;
-    bool is_large = ((value_header >> VARIANT_OBJECT_IS_LARGE_SHIFT) & 0x01) != 0;
-    UInt64 num_elements = is_large ? readVariantPOD<UInt32>(ptr, end, "`VARIANT` object field count") : readVariantPOD<UInt8>(ptr, end, "`VARIANT` object field count");
-    checkVariantObjectFieldCount(format_settings, num_elements);
-
-    const UInt8 * field_ids = ptr;
-    size_t field_ids_bytes = checkedVariantByteSize(num_elements, field_id_size, "`object field ids`");
-    ensureVariantRemaining(field_ids, end, field_ids_bytes, "`VARIANT` object field ids");
-    ptr += field_ids_bytes;
-
-    const UInt8 * field_offsets = ptr;
-    size_t field_offsets_bytes = checkedVariantByteSizeWithSentinel(num_elements, field_offset_size, "`object field offsets`");
-    ensureVariantRemaining(field_offsets, end, field_offsets_bytes, "`VARIANT` object field offsets");
-    ptr += field_offsets_bytes;
-
-    const UInt8 * values = ptr;
-    const UInt8 * field_ids_ptr = field_ids;
-    const UInt8 * offsets_ptr = field_offsets;
-    UInt64 previous_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
-
-    if (previous_offset != 0 || previous_offset > static_cast<UInt64>(end - values))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child offset");
-
-    const auto & step = path.steps[step_idx];
-    const bool has_nested_path = hasNestedPathComponent(path.parsed_path, step_idx);
-    const bool can_match_exact = step.exact_match_field_id.has_value();
-    const bool can_match_nested = has_nested_path && step.nested_key_field_id.has_value();
-
-    const UInt8 * nested_begin = nullptr;
-    const UInt8 * nested_end = nullptr;
-    const UInt8 * exact_begin = nullptr;
-    const UInt8 * exact_end = nullptr;
-
-    std::unordered_set<UInt64> seen_field_ids;
-    seen_field_ids.reserve(static_cast<size_t>(num_elements));
-    for (UInt64 i = 0; i < num_elements; ++i)
-    {
-        UInt64 field_id = readVariantLittleEndianVariable(field_ids_ptr, field_ids + field_ids_bytes, field_id_size, "`VARIANT` object field id");
-        UInt64 next_offset = readVariantLittleEndianVariable(offsets_ptr, field_offsets + field_offsets_bytes, field_offset_size, "`VARIANT` object field offset");
-        if (next_offset < previous_offset || next_offset > static_cast<UInt64>(end - values) || field_id >= metadata.strings.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid object child metadata");
-        checkUniqueObjectFieldId(seen_field_ids, field_id);
-
-        const UInt8 * child_begin = values + previous_offset;
-        const UInt8 * child_end = values + next_offset;
-
-        if (!exact_begin && can_match_exact && field_id == *step.exact_match_field_id)
-        {
-            exact_begin = child_begin;
-            exact_end = child_end;
-        }
-
-        if (!nested_begin && can_match_nested && field_id == *step.nested_key_field_id)
-        {
-            nested_begin = child_begin;
-            nested_end = child_end;
-        }
-
-        previous_offset = next_offset;
-    }
-
-    checkVariantCollectionPayloadSize(previous_offset, values, end, "`object`");
-
-    if (exact_begin)
-        return tryDecodeScalarExactValueByPathImpl(metadata, exact_begin, exact_end, path, result, format_settings, depth + 1, path.steps.size());
-
-    if (nested_begin)
-        return tryDecodeScalarExactValueByPathImpl(metadata, nested_begin, nested_end, path, result, format_settings, depth + 1, step_idx + 1);
-
-    return ScalarPathDecodeStatus::Missing;
-}
-
-bool tryDecodeValueByPath(const VariantMetadata & metadata, std::string_view value_blob, std::string_view path, VariantValue & result, const FormatSettings & format_settings, size_t depth)
-{
-    return tryDecodeValueByPath(metadata, value_blob, parseVariantPath(path), result, format_settings, depth);
 }
 
 bool tryDecodeValueByPath(const VariantMetadata & metadata, std::string_view value_blob, const ParsedVariantPath & path, VariantValue & result, const FormatSettings & format_settings, size_t depth)
@@ -2067,7 +1973,7 @@ bool tryDecodeValueByPath(const VariantMetadata & metadata, std::string_view val
     checkVariantPayloadSize(format_settings, value_blob.size(), "`value` blob");
     const auto * begin = reinterpret_cast<const UInt8 *>(value_blob.data());
     const auto * end = begin + value_blob.size();
-    return tryDecodeValueByPathImpl(metadata, begin, end, path, result, format_settings, depth, 0);
+    return tryDecodeValueByPathGeneric<ParsedVariantPathMatcher, ParsedVariantPath, false>(metadata, begin, end, path, result, format_settings, depth, 0, nullptr);
 }
 
 bool tryDecodeValueByPath(const VariantMetadata & metadata, std::string_view value_blob, const ResolvedVariantPath & path, VariantValue & result, const FormatSettings & format_settings, size_t depth)
@@ -2075,28 +1981,34 @@ bool tryDecodeValueByPath(const VariantMetadata & metadata, std::string_view val
     checkVariantPayloadSize(format_settings, value_blob.size(), "`value` blob");
     const auto * begin = reinterpret_cast<const UInt8 *>(value_blob.data());
     const auto * end = begin + value_blob.size();
-    return tryDecodeValueByPathImpl(metadata, begin, end, path, result, format_settings, depth, 0);
+    return tryDecodeValueByPathGeneric<ResolvedVariantPathMatcher, ResolvedVariantPath, false>(metadata, begin, end, path, result, format_settings, depth, 0, nullptr);
 }
 
-ScalarExactPathStatus tryDecodeScalarExactValue(
+ScalarExactPathStatus tryDecodeScalarLeafByPath(
+    const VariantMetadata & metadata,
     std::string_view value_blob,
-    ScalarExactValue & result,
+    const ResolvedVariantPath & path,
+    VariantValue & result,
     const FormatSettings & format_settings,
     size_t depth)
 {
-    checkVariantReadDepth(format_settings, depth);
     checkVariantPayloadSize(format_settings, value_blob.size(), "`value` blob");
     const auto * begin = reinterpret_cast<const UInt8 *>(value_blob.data());
     const auto * end = begin + value_blob.size();
-    const UInt8 * ptr = begin;
+    ScalarExactPathStatus scalar_status = ScalarExactPathStatus::Missing;
+    tryDecodeValueByPathGeneric<ResolvedVariantPathMatcher, ResolvedVariantPath, true>(metadata, begin, end, path, result, format_settings, depth, 0, &scalar_status);
+    return scalar_status;
+}
 
-    auto status = tryDecodeScalarExactValueImpl(ptr, end, result, format_settings);
-    if (status == ScalarExactDecodeStatus::Unsupported)
-        return ScalarExactPathStatus::Unsupported;
-    if (ptr != end)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT`: invalid scalar child size");
-
-    return status == ScalarExactDecodeStatus::Null ? ScalarExactPathStatus::Null : ScalarExactPathStatus::Exact;
+ScalarExactPathStatus tryDecodeScalarLeaf(
+    const VariantMetadata & metadata,
+    std::string_view value_blob,
+    VariantValue & result,
+    const FormatSettings & format_settings,
+    size_t depth)
+{
+    static const ResolvedVariantPath empty_path;
+    return tryDecodeScalarLeafByPath(metadata, value_blob, empty_path, result, format_settings, depth);
 }
 
 void collectObjectFieldSlicesByResolvedIds(
@@ -2180,44 +2092,6 @@ void collectObjectFieldSlicesByResolvedIds(
     }
 
     checkVariantCollectionPayloadSize(previous_offset, values, end, "`object`");
-}
-
-ScalarExactPathStatus tryDecodeScalarExactValueByPath(
-    const VariantMetadata & metadata,
-    std::string_view value_blob,
-    const ResolvedVariantPath & path,
-    ScalarExactValue & result,
-    const FormatSettings & format_settings,
-    size_t depth)
-{
-    checkVariantPayloadSize(format_settings, value_blob.size(), "`value` blob");
-    const auto * begin = reinterpret_cast<const UInt8 *>(value_blob.data());
-    const auto * end = begin + value_blob.size();
-    auto status = tryDecodeScalarExactValueByPathImpl(metadata, begin, end, path, result, format_settings, depth, 0);
-    switch (status)
-    {
-        case ScalarPathDecodeStatus::Missing:
-            return ScalarExactPathStatus::Missing;
-        case ScalarPathDecodeStatus::Null:
-            return ScalarExactPathStatus::Null;
-        case ScalarPathDecodeStatus::Exact:
-            return ScalarExactPathStatus::Exact;
-        case ScalarPathDecodeStatus::Unsupported:
-            return ScalarExactPathStatus::Unsupported;
-    }
-
-    UNREACHABLE();
-}
-
-
-const VariantValue * tryGetSubcolumnValue(const VariantValue & value, std::string_view path, const FormatSettings & format_settings, size_t depth)
-{
-    return tryGetSubcolumnValue(value, parseVariantPath(path), format_settings, depth);
-}
-
-const VariantValue * tryGetSubcolumnValue(const VariantValue & value, const ParsedVariantPath & path, const FormatSettings & format_settings, size_t depth)
-{
-    return tryGetSubcolumnValueImpl(value, path, format_settings, depth, 0);
 }
 
 std::optional<VariantValue> extractSubcolumnValue(const VariantValue & value, const ParsedVariantPath & path, const FormatSettings & format_settings, size_t depth)

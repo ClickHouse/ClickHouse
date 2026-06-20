@@ -47,10 +47,4 @@ bool areDynamicSubcolumnTypesCompatible(const DataTypePtr & lhs, const DataTypeP
 /// distinct stored `Dynamic` variants.
 bool areDynamicStorageTypesCompatible(const DataTypePtr & existing_type, const DataTypePtr & inserted_type);
 
-/// Find a matching variant discriminator for requested Dynamic subcolumn type.
-/// Exact name matches win; otherwise we fall back to compatible nested `JSON` types.
-std::optional<ColumnVariant::Discriminator> findVariantDiscriminatorForDynamicSubcolumn(
-    const DataTypeVariant & variant_type,
-    const DataTypePtr & requested_type);
-
 }

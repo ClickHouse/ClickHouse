@@ -194,15 +194,6 @@ size_t preserveModeIndex(bool preserve_empty_containers)
     return preserve_empty_containers ? 1 : 0;
 }
 
-template <typename T>
-T loadScalarPrimitiveValue(const ScalarExactValue & value)
-{
-    T result {};
-    static_assert(sizeof(T) <= sizeof(value.primitive_bits));
-    memcpy(&result, &value.primitive_bits, sizeof(T));
-    return result;
-}
-
 size_t typedOutputCacheKey(const Reader::VariantSourceInfo & source_info)
 {
     return source_info.typed_value_output_idx;
@@ -269,6 +260,22 @@ void rebuildMetadataByRow(MetadataState & state, const FormatSettings & format_s
     }
 }
 
+/// Resolve the `metadata` dictionary for a given output row. Nested values (e.g. array elements)
+/// reuse their enclosing value's dictionary, so a consuming output can have more rows than
+/// `metadata_by_row` (which is sized per top-level row). When the dictionary is shared across rows
+/// it is identical for every nested row, so resolve it directly instead of indexing out of bounds.
+const VariantMetadata * getRowMetadata(const MetadataState & state, size_t row)
+{
+    if (state.metadata_is_shared_across_rows)
+        return state.shared_metadata_storage ? &*state.shared_metadata_storage : nullptr;
+    if (row >= state.metadata_by_row.size())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Malformed `Parquet` `VARIANT`: nested row {} has no parent-row metadata mapping for non-shared `metadata`",
+            row);
+    return state.metadata_by_row[row];
+}
+
 const Reader::OutputColumnInfo * getTypedValueOutputInfo(const Reader & reader, const Reader::VariantSourceInfo & source_info)
 {
     if (source_info.typed_value_output_idx == UINT64_MAX)
@@ -303,6 +310,27 @@ bool shouldPreserveEmptyContainers(
         || (typed_value_output_info && typed_value_output_info->variant_preserve_empty_typed_fields);
 }
 
+/// True when every one of the first `num_rows` rows has a resolved metadata dictionary. The columnar
+/// fast paths require this: a null-metadata row with a non-null payload is malformed (the per-row
+/// path reports it), so they only run when no row is missing metadata.
+bool allRowsHaveMetadata(const SourceState & state, size_t num_rows)
+{
+    if (!state.metadata_state || state.metadata_state->metadata_by_row.size() < num_rows)
+        return false;
+    for (size_t row = 0; row < num_rows; ++row)
+        if (!state.metadata_state->metadata_by_row[row])
+            return false;
+    return true;
+}
+
+/// True when the output should be produced as a per-row JSON string (the only output that needs the
+/// `VariantValue` tree). Everything else (`Dynamic`, exact `Nullable`/scalar, etc.) is columnar.
+bool useJsonStringOutput(const Reader::OutputColumnInfo & output_info, const Reader::VariantSourceInfo & source_info)
+{
+    return isNullableStringType(output_info.output_type.get())
+        && (source_info.string_output_uses_json || output_info.source_subcolumn_name.empty());
+}
+
 struct PreparedRowValue
 {
     const VariantValue * borrowed_value = nullptr;
@@ -330,7 +358,7 @@ PreparedRowValue prepareRowValue(
     PreparedRowValue prepared;
     const auto & row_value = state.value_values[row];
     chassert(state.metadata_state);
-    const VariantMetadata * row_metadata = state.metadata_state->metadata_by_row[row];
+    const VariantMetadata * row_metadata = getRowMetadata(*state.metadata_state, row);
     const ConvertedTypedValue * prepared_typed_row = typed_value_rows ? &typed_value_rows->at(row) : nullptr;
     const bool typed_value_present = prepared_typed_row && prepared_typed_row->present;
 
@@ -387,10 +415,52 @@ std::vector<ConvertedTypedValue> & getOrPrepareTypedValueRows(
     ColumnPtr typed_value_column = getTypedValueColumn(reader, row_subgroup, source_info, num_rows);
     if (typed_value_column)
     {
+        const VariantMetadata * const * metadata_by_row = state.metadata_state->metadata_by_row.data();
+        std::vector<const VariantMetadata *> replicated_metadata;
+        if (source_info.typed_value_requires_parent_metadata_mapping)
+        {
+            /// Nested `typed_value` rows need a parent-row-to-element-row metadata mapping. When the
+            /// metadata dictionary is shared, every element can reuse the same dictionary. With
+            /// non-shared metadata there is no parent mapping here, so fail instead of indexing the
+            /// wrong row's dictionary.
+            if (!state.metadata_state->metadata_is_shared_across_rows)
+            {
+                if (num_rows != 0)
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Cannot decode nested `Parquet` `VARIANT` typed values with non-shared `metadata` without parent-row metadata mapping");
+                }
+            }
+            else
+            {
+                const VariantMetadata * shared
+                    = state.metadata_state->shared_metadata_storage ? &*state.metadata_state->shared_metadata_storage : nullptr;
+                replicated_metadata.assign(num_rows, shared);
+                metadata_by_row = replicated_metadata.data();
+            }
+        }
+        else if (num_rows > state.metadata_state->metadata_by_row.size())
+        {
+            if (state.metadata_state->metadata_is_shared_across_rows)
+            {
+                const VariantMetadata * shared
+                    = state.metadata_state->shared_metadata_storage ? &*state.metadata_state->shared_metadata_storage : nullptr;
+                replicated_metadata.assign(num_rows, shared);
+                metadata_by_row = replicated_metadata.data();
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Cannot decode nested `Parquet` `VARIANT` typed values with non-shared `metadata` without parent-row metadata mapping");
+            }
+        }
+
         typed_value_rows = convertTypedColumnRange(
             *typed_value_column,
             typed_value_output_info->input_type,
-            state.metadata_state->metadata_by_row.data(),
+            metadata_by_row,
             num_rows,
             0,
             reader.options.format,
@@ -431,14 +501,8 @@ MutableColumnPtr tryFormTypedValueFastPath(
     if (state.value_column_is_all_null && typed_value_input_type)
     {
         chassert(state.metadata_state);
-        if (!state.metadata_state || state.metadata_state->metadata_by_row.size() < num_rows)
+        if (!allRowsHaveMetadata(state, num_rows))
             return {};
-
-        for (size_t row = 0; row < num_rows; ++row)
-        {
-            if (!state.metadata_state->metadata_by_row[row])
-                return {};
-        }
 
         if (auto result = materializeNullableTypedValueAsLowCardinality(typed_value_column, typed_value_input_type, output_info.output_type))
             return result;
@@ -627,89 +691,6 @@ static const VariantValue * getOutputValue(
     return value;
 }
 
-static void insertExactValueIntoColumn(
-    IColumn & column,
-    const VariantValue & value,
-    const FormatSettings & format_settings)
-{
-    if (!value.exact_type)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert `Parquet` `VARIANT` value without exact type directly");
-
-    if (value.exact_string_view.has_value())
-    {
-        assert_cast<ColumnString &>(column).insertData(value.exact_string_view->data(), value.exact_string_view->size());
-        return;
-    }
-
-    if (!value.exact_column)
-    {
-        auto source_column = materializeExactValueColumn(value, format_settings);
-        column.insertFrom(*source_column, 0);
-        return;
-    }
-
-    column.insertFrom(*value.exact_column, value.exact_row_num);
-}
-
-static void insertScalarExactValueIntoColumn(IColumn & column, const ScalarExactValue & value)
-{
-    if (!value.exact_type)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert `Parquet` `VARIANT` scalar value without exact type directly");
-
-    if (value.exact_string_view.has_value())
-    {
-        assert_cast<ColumnString &>(column).insertData(value.exact_string_view->data(), value.exact_string_view->size());
-        return;
-    }
-
-    switch (value.primitive_kind)
-    {
-        case ScalarExactValue::PrimitiveKind::UInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(loadScalarPrimitiveValue<UInt8>(value));
-            return;
-        case ScalarExactValue::PrimitiveKind::Int8:
-            assert_cast<ColumnInt8 &>(column).insertValue(loadScalarPrimitiveValue<Int8>(value));
-            return;
-        case ScalarExactValue::PrimitiveKind::Int16:
-            assert_cast<ColumnInt16 &>(column).insertValue(loadScalarPrimitiveValue<Int16>(value));
-            return;
-        case ScalarExactValue::PrimitiveKind::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(loadScalarPrimitiveValue<Int32>(value));
-            return;
-        case ScalarExactValue::PrimitiveKind::Int64:
-            assert_cast<ColumnInt64 &>(column).insertValue(loadScalarPrimitiveValue<Int64>(value));
-            return;
-        case ScalarExactValue::PrimitiveKind::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(loadScalarPrimitiveValue<Float32>(value));
-            return;
-        case ScalarExactValue::PrimitiveKind::Float64:
-            assert_cast<ColumnFloat64 &>(column).insertValue(loadScalarPrimitiveValue<Float64>(value));
-            return;
-        case ScalarExactValue::PrimitiveKind::Date32:
-            assert_cast<ColumnDate32 &>(column).insertValue(loadScalarPrimitiveValue<Int32>(value));
-            return;
-        case ScalarExactValue::PrimitiveKind::DateTime64:
-            assert_cast<ColumnDateTime64 &>(column).insertValue(static_cast<DateTime64>(loadScalarPrimitiveValue<Int64>(value)));
-            return;
-        case ScalarExactValue::PrimitiveKind::Time64:
-            assert_cast<ColumnTime64 &>(column).insertValue(static_cast<Time64>(loadScalarPrimitiveValue<Int64>(value)));
-            return;
-        case ScalarExactValue::PrimitiveKind::Decimal32:
-            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(Decimal32(loadScalarPrimitiveValue<Int32>(value)));
-            return;
-        case ScalarExactValue::PrimitiveKind::Decimal64:
-            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(Decimal64(loadScalarPrimitiveValue<Int64>(value)));
-            return;
-        case ScalarExactValue::PrimitiveKind::None:
-            break;
-    }
-
-    if (!value.exact_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert `Parquet` `VARIANT` scalar value without payload directly");
-
-    column.insertFrom(*value.exact_column, value.exact_row_num);
-}
-
 static MutableColumnPtr materializeDynamicExactColumn(
     MutableColumnPtr materialized_column,
     const DataTypePtr & common_exact_type,
@@ -800,6 +781,112 @@ static MutableColumnPtr finalizeExactOutputColumn(
 
     auto casted = castColumn({std::move(materialized_column), common_exact_type, output_info.name}, output_info.output_type);
     return IColumn::mutate(casted->convertToFullColumnIfConst());
+}
+
+/// Returns the normalized plain scalar exact type for `type` (peeling `Nullable`), but only when it
+/// is a genuine scalar leaf (number/string/temporal/decimal/bool/etc.) — i.e. not a container,
+/// `Dynamic`, `Variant`, or `LowCardinality`. Returns nullptr otherwise. This is the set of typed
+/// values that `convertTypedColumnRange` turns into a plain `makeExactValue` with no empty-container
+/// dropping or per-row merge, so the whole columnar `typed_value` column maps directly to the
+/// output without the per-row loop.
+static DataTypePtr tryGetScalarLeafExactType(const DataTypePtr & type)
+{
+    const IDataType * normalized = type.get();
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(normalized))
+        normalized = nullable->getNestedType().get();
+
+    if (isComplexVariantExactOutputType(normalized->getPtr())
+        || typeid_cast<const DataTypeLowCardinality *>(normalized)
+        || typeid_cast<const DataTypeNullable *>(normalized))
+        return {};
+
+    return normalized->getPtr();
+}
+
+/// All-null-residual columnar fast path for a scalar-leaf typed value.
+///
+/// When the residual `value` blob is null for every row, the merged value for each row is exactly the
+/// shredded typed value (no `mergeValues`). When that typed value is a plain scalar leaf, the whole
+/// columnar `typed_value` Parquet column maps directly to the output: split out the non-null rows
+/// (compacted) and the `null_rows` mask, then reuse the same `finalizeExactOutputColumn` machinery
+/// that the direct-subcolumn exact path uses (`Dynamic` wrap / `Nullable` / cast). This replaces a
+/// per-row `insertValueIntoOutput` loop with whole-column operations and is value-identical to it for
+/// scalar leaves.
+static MutableColumnPtr tryFormAllNullResidualScalarTypedValue(
+    SourceState & state,
+    Reader & reader,
+    Reader::RowSubgroup & row_subgroup,
+    const Reader::OutputColumnInfo & output_info,
+    const Reader::VariantSourceInfo & source_info,
+    size_t num_rows)
+{
+    if (!state.value_column_is_all_null)
+        return {};
+
+    /// A null-metadata row with a non-null payload is malformed; a null-metadata row with no payload
+    /// produces a default/null output. The per-row loop reports the malformed case as an exception,
+    /// so only take this path when every row has metadata (matching the existing typed-value path).
+    chassert(state.metadata_state);
+    if (!allRowsHaveMetadata(state, num_rows))
+        return {};
+
+    /// Only the JSON-string output path needs the per-row `VariantValue` tree; everything else
+    /// (`Dynamic`, exact `Nullable`/scalar, etc.) is produced columnar here.
+    if (useJsonStringOutput(output_info, source_info))
+        return {};
+
+    /// Subcolumn projection through the typed value is handled by the per-row path.
+    if (!output_info.source_subcolumn_name.empty())
+        return {};
+
+    const auto * typed_value_output_info = getTypedValueOutputInfo(reader, source_info);
+    if (!typed_value_output_info || !typed_value_output_info->input_type)
+        return {};
+
+    DataTypePtr scalar_exact_type = tryGetScalarLeafExactType(typed_value_output_info->input_type);
+    if (!scalar_exact_type)
+        return {};
+
+    ColumnPtr typed_value_column = getTypedValueColumn(reader, row_subgroup, source_info, num_rows);
+    if (!typed_value_column || typed_value_column->size() != num_rows)
+        return {};
+
+    PaddedPODArray<UInt8> null_rows;
+    null_rows.resize_fill(num_rows, UInt8(0));
+
+    MutableColumnPtr materialized_column;
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(typed_value_column.get()))
+    {
+        const auto & null_map = nullable_column->getNullMapData();
+        const bool has_nulls = !memoryIsZero(null_map.data(), 0, null_map.size());
+        if (!has_nulls)
+        {
+            materialized_column = IColumn::mutate(nullable_column->getNestedColumnPtr());
+        }
+        else
+        {
+            /// Compact to the non-null rows in order (the `ColumnVariant`/exact builders expect the
+            /// materialized column to contain only the present rows).
+            IColumn::Filter non_null_filter(num_rows);
+            for (size_t row = 0; row < num_rows; ++row)
+            {
+                null_rows[row] = null_map[row];
+                non_null_filter[row] = null_map[row] ? UInt8(0) : UInt8(1);
+            }
+            materialized_column = IColumn::mutate(nullable_column->getNestedColumn().filter(non_null_filter, -1));
+        }
+    }
+    else
+    {
+        materialized_column = IColumn::mutate(typed_value_column);
+    }
+
+    return finalizeExactOutputColumn(
+        std::move(materialized_column),
+        scalar_exact_type,
+        null_rows,
+        num_rows,
+        output_info);
 }
 
 struct DirectExactOutputCandidate
@@ -975,10 +1062,13 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
         candidate.null_rows.reserve(num_rows);
 
     SequentialNullableStringAccessor value_accessor(value_subchunk);
+    /// One scalar `VariantValue` reused across rows and candidates: each scalar-leaf decode
+    /// `.clear()`s and refills it, so no per-row allocation is paid for plain scalar leaves.
+    VariantValue scalar_value;
     for (size_t row = 0; row < num_rows; ++row)
     {
         auto value_blob = value_accessor.get(row);
-        const VariantMetadata * row_metadata = metadata_state.metadata_by_row[row];
+        const VariantMetadata * row_metadata = getRowMetadata(metadata_state, row);
         if (!row_metadata || !value_blob.has_value())
         {
             if (!row_metadata && value_blob.has_value())
@@ -1015,14 +1105,16 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
         {
             if (shared_metadata)
             {
-                ScalarExactValue scalar_value;
                 std::optional<ScalarExactPathStatus> batched_scalar_status;
 
                 if (candidate.exact_root_field_slice_idx.has_value())
                 {
                     const auto & root_slice = shared_root_field_slices[*candidate.exact_root_field_slice_idx];
                     if (root_slice.has_value())
-                        batched_scalar_status = tryDecodeScalarExactValue(*root_slice, scalar_value, format_settings, 2);
+                    {
+                        scalar_value.clear();
+                        batched_scalar_status = tryDecodeScalarLeaf(metadata, *root_slice, scalar_value, format_settings, 2);
+                    }
                 }
 
                 if (!batched_scalar_status.has_value() && candidate.nested_root_batch_group_idx.has_value() && candidate.nested_root_batch_field_slice_idx.has_value())
@@ -1031,9 +1123,15 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
                     if (*candidate.nested_root_batch_field_slice_idx < group.field_slices.size())
                     {
                         const auto & nested_field_slice = group.field_slices[*candidate.nested_root_batch_field_slice_idx];
-                        batched_scalar_status = nested_field_slice.has_value()
-                            ? tryDecodeScalarExactValue(*nested_field_slice, scalar_value, format_settings, 3)
-                            : ScalarExactPathStatus::Missing;
+                        if (nested_field_slice.has_value())
+                        {
+                            scalar_value.clear();
+                            batched_scalar_status = tryDecodeScalarLeaf(metadata, *nested_field_slice, scalar_value, format_settings, 3);
+                        }
+                        else
+                        {
+                            batched_scalar_status = ScalarExactPathStatus::Missing;
+                        }
                     }
                 }
 
@@ -1041,7 +1139,10 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
                 {
                     const auto & nested_root_slice = shared_root_field_slices[*candidate.nested_root_field_slice_idx];
                     if (nested_root_slice.has_value())
-                        batched_scalar_status = tryDecodeScalarExactValueByPath(metadata, *nested_root_slice, *candidate.nested_root_tail_path, scalar_value, format_settings, 2);
+                    {
+                        scalar_value.clear();
+                        batched_scalar_status = tryDecodeScalarLeafByPath(metadata, *nested_root_slice, *candidate.nested_root_tail_path, scalar_value, format_settings, 2);
+                    }
                 }
 
                 if (!batched_scalar_status.has_value() && (candidate.exact_root_field_slice_idx.has_value() || candidate.nested_root_field_slice_idx.has_value()))
@@ -1060,7 +1161,7 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
                         return {};
                     }
 
-                    insertScalarExactValueIntoColumn(*candidate.materialized_column, scalar_value);
+                    insertExactValueIntoColumn(*candidate.materialized_column, scalar_value, format_settings);
                     candidate.null_rows.push_back(UInt8(0));
                     continue;
                 }
@@ -1074,8 +1175,8 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
 
             if (candidate.resolved_path)
             {
-                ScalarExactValue scalar_value;
-                auto scalar_status = tryDecodeScalarExactValueByPath(metadata, *value_blob, *candidate.resolved_path, scalar_value, format_settings);
+                scalar_value.clear();
+                auto scalar_status = tryDecodeScalarLeafByPath(metadata, *value_blob, *candidate.resolved_path, scalar_value, format_settings);
                 if (scalar_status == ScalarExactPathStatus::Exact)
                 {
                     if (!candidate.common_exact_type)
@@ -1089,7 +1190,7 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
                         return {};
                     }
 
-                    insertScalarExactValueIntoColumn(*candidate.materialized_column, scalar_value);
+                    insertExactValueIntoColumn(*candidate.materialized_column, scalar_value, format_settings);
                     candidate.null_rows.push_back(UInt8(0));
                     continue;
                 }
@@ -1173,13 +1274,15 @@ MutableColumnPtr formOutputColumn(
 
     if (auto result = tryFormTypedValueFastPath(state, reader, row_subgroup, output_info, source_info, num_rows))
         return result;
+
+    if (auto result = tryFormAllNullResidualScalarTypedValue(state, reader, row_subgroup, output_info, source_info, num_rows))
+        return result;
     const auto & typed_value_rows = getOrPrepareTypedValueRows(state, reader, row_subgroup, output_info, source_info, num_rows);
     const std::vector<ConvertedTypedValue> * typed_value_rows_ptr = typed_value_rows.empty() ? nullptr : &typed_value_rows;
 
     MutableColumnPtr result = output_info.output_type->createColumn();
     auto serialization = output_info.output_type->getDefaultSerialization();
-    const bool use_json_string_output = isNullableStringType(output_info.output_type.get())
-        && (source_info.string_output_uses_json || output_info.source_subcolumn_name.empty());
+    const bool use_json_string_output = useJsonStringOutput(output_info, source_info);
     const OutputMode output_mode
         = use_json_string_output ? OutputMode::NullableString
         : isDynamicLikeVariantOutputType(output_info.output_type.get()) ? OutputMode::Dynamic

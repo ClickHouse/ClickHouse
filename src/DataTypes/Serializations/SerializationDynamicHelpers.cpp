@@ -426,25 +426,4 @@ bool areDynamicStorageTypesCompatible(const DataTypePtr & existing_type, const D
         && dynamicStorageTypesHaveCompatibleIdentity(*existing_type, *inserted_type);
 }
 
-std::optional<ColumnVariant::Discriminator> findVariantDiscriminatorForDynamicSubcolumn(
-    const DataTypeVariant & variant_type,
-    const DataTypePtr & requested_type)
-{
-    if (auto discr = variant_type.tryGetVariantDiscriminator(requested_type->getName()))
-        return discr;
-
-    auto shared_variant_discr = variant_type.tryGetVariantDiscriminator(ColumnDynamic::getSharedVariantTypeName());
-    const auto & variants = variant_type.getVariants();
-    for (ColumnVariant::Discriminator discr = 0; discr != variants.size(); ++discr)
-    {
-        if (shared_variant_discr && discr == *shared_variant_discr)
-            continue;
-
-        if (areDynamicSubcolumnTypesCompatible(variants[discr], requested_type))
-            return discr;
-    }
-
-    return std::nullopt;
-}
-
 }

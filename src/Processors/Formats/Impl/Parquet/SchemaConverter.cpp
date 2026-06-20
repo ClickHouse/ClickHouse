@@ -741,7 +741,8 @@ size_t SchemaConverter::addVariantSource(
     size_t metadata_primitive_idx,
     size_t value_primitive_idx,
     size_t typed_value_output_idx,
-    bool string_output_uses_json)
+    bool string_output_uses_json,
+    bool typed_value_requires_parent_metadata_mapping)
 {
     std::optional<size_t> state_slot_idx;
     std::optional<size_t> metadata_state_slot_idx;
@@ -762,7 +763,8 @@ size_t SchemaConverter::addVariantSource(
             state_slot_idx = source.state_slot_idx;
 
         if (source.typed_value_output_idx == typed_value_output_idx
-            && source.string_output_uses_json == string_output_uses_json)
+            && source.string_output_uses_json == string_output_uses_json
+            && source.typed_value_requires_parent_metadata_mapping == typed_value_requires_parent_metadata_mapping)
         {
             return source_idx;
         }
@@ -781,6 +783,7 @@ size_t SchemaConverter::addVariantSource(
     source.state_slot_idx = *state_slot_idx;
     source.metadata_state_slot_idx = *metadata_state_slot_idx;
     source.string_output_uses_json = string_output_uses_json;
+    source.typed_value_requires_parent_metadata_mapping = typed_value_requires_parent_metadata_mapping;
     return source_idx;
 }
 
@@ -1232,7 +1235,12 @@ bool SchemaConverter::processSubtreeVariant(TraversalNode & node, size_t depth)
         output.input_type = output_type;
         output.output_type = output_type;
         output.source_kind = OutputColumnInfo::SourceKind::Variant;
-        output.source_idx = addVariantSource(metadata_primitive_idx, value_primitive_idx, typed_value_output_idx, /*string_output_uses_json=*/ true);
+        output.source_idx = addVariantSource(
+            metadata_primitive_idx,
+            value_primitive_idx,
+            typed_value_output_idx,
+            /*string_output_uses_json=*/ true,
+            /*typed_value_requires_parent_metadata_mapping=*/ false);
         addPrimitiveDependency(output, metadata_primitive_idx);
         addPrimitiveDependency(output, value_primitive_idx);
         if (typed_value_output_idx != UINT64_MAX)
@@ -1243,7 +1251,12 @@ bool SchemaConverter::processSubtreeVariant(TraversalNode & node, size_t depth)
 
     if (need_variant_subcolumn_outputs)
     {
-        size_t source_idx = addVariantSource(metadata_primitive_idx, value_primitive_idx, typed_value_output_idx, /*string_output_uses_json=*/ false);
+        size_t source_idx = addVariantSource(
+            metadata_primitive_idx,
+            value_primitive_idx,
+            typed_value_output_idx,
+            /*string_output_uses_json=*/ false,
+            /*typed_value_requires_parent_metadata_mapping=*/ false);
         for (const auto & [idx_in_output_block, subcolumn_name] : residual_variant_subcolumns)
         {
             const auto & requested_column = sample_block->getByPosition(idx_in_output_block);
@@ -1409,6 +1422,10 @@ bool SchemaConverter::processSubtreeVariantTypedWrapper(TraversalNode & node, si
         else
             metadata_primitive_idx = getOrAddVariantMetadataPrimitive(node, node.name + ".__variant_metadata");
 
+        bool typed_value_requires_parent_metadata_mapping = false;
+        if (typed_value_output_idx != UINT64_MAX && node.variant && !node.variant->metadata_levels.empty())
+            typed_value_requires_parent_metadata_mapping = levels.back().rep > node.variant->metadata_levels.back().rep;
+
         node.output_idx = output_columns.size();
         OutputColumnInfo & output = output_columns.emplace_back();
         DataTypePtr output_type = node.type_hint ? node.type_hint : std::make_shared<DataTypeDynamic>();
@@ -1418,7 +1435,12 @@ bool SchemaConverter::processSubtreeVariantTypedWrapper(TraversalNode & node, si
         output.input_type = output_type;
         output.output_type = output_type;
         output.source_kind = OutputColumnInfo::SourceKind::Variant;
-        output.source_idx = addVariantSource(metadata_primitive_idx, value_primitive_idx, typed_value_output_idx, /*string_output_uses_json=*/ false);
+        output.source_idx = addVariantSource(
+            metadata_primitive_idx,
+            value_primitive_idx,
+            typed_value_output_idx,
+            /*string_output_uses_json=*/ false,
+            typed_value_requires_parent_metadata_mapping);
         addPrimitiveDependency(output, metadata_primitive_idx);
         addPrimitiveDependency(output, value_primitive_idx);
         if (typed_value_output_idx != UINT64_MAX)

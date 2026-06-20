@@ -486,31 +486,6 @@ std::optional<VariantWrapperLayout> tryGetVariantWrapperLayout(const DataTypePtr
     };
 }
 
-const DataTypeObject * tryGetObjectLikeVariantOutputType(const IDataType * type)
-{
-    while (type)
-    {
-        if (const auto * object = typeid_cast<const DataTypeObject *>(type))
-            return object;
-
-        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type))
-        {
-            type = nullable->getNestedType().get();
-            continue;
-        }
-
-        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type))
-        {
-            type = low_cardinality->getDictionaryType().get();
-            continue;
-        }
-
-        break;
-    }
-
-    return nullptr;
-}
-
 bool isObjectLikeVariantOutputType(const IDataType * type)
 {
     if (!type)

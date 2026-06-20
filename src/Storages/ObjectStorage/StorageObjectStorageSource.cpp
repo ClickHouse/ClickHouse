@@ -917,6 +917,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// `FilterTransform`s further down can evaluate `c0 > 10` etc. Re-add any missing
         /// input columns of the stripped DAGs to the reader's sample header.
         ///
+        /// Independently of stripping, also re-add `additional_columns` (filter inputs the
+        /// format reader needs for its own `KeyCondition`) and `format_filter_input_header`
+        /// (filter-only inputs that `updateFormatPrewhereInfo` kept out of `format_header`).
+        ///
         /// Skip this for the schema-changed path: there `initial_header` was set above to
         /// the FULL underlying file schema (`sample_header` from `getInitialSchemaByPath`),
         /// so all file-side columns — including the file-side counterparts of the filter
@@ -1112,7 +1116,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// the engine:
         ///   - `SourceStepWithFilter::applyPrewhereActions`
         ///   - `MergeTreeSelectProcessor::getPrewhereActions`
-        ///   - `Parquet::Reader::initializePrewhere`
+        ///   - `Parquet::Reader::preparePrewhere`
         /// `PREWHERE` actions drop their input columns from the block via `updateHeader`
         /// (the DAG outputs the synthetic filter column plus only what is needed
         /// downstream). If `PREWHERE` ran first, a row-policy expression that references
@@ -1122,7 +1126,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// lets `PREWHERE` drop them as the planner intended.
         ///
         /// The query planner puts row policies into `row_level_filter` when
-        /// `storage->supportsPrewhere()` (`PlannerJoinTree.cpp:1012`), but individual
+        /// `storage->supportsPrewhere()` (see `PlannerJoinTree.cpp`), but individual
         /// files in mixed-format tables may not support it at format level.
         if (stripped_row_level_filter)
         {

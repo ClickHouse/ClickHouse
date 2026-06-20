@@ -485,7 +485,7 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
-        /// Check if we have this variant and deserialize value into variant from shared variant data.
+        /// Check if we have a compatible variant and deserialize value into it from shared variant data.
         if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ false))
         {
             if (variant_info.variant_names[*discr] == type_name)
@@ -868,7 +868,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
-        /// Check if we have this variant and deserialize value into variant from shared variant data.
+        /// Check if we have a compatible variant and deserialize value into it from shared variant data.
         if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ false))
         {
             /// Deserialize value into temporary column and use it in insertManyIntoVariantFrom.

@@ -249,6 +249,7 @@ struct Reader
         size_t state_slot_idx = UINT64_MAX;
         size_t metadata_state_slot_idx = UINT64_MAX;
         bool string_output_uses_json = true;
+        bool typed_value_requires_parent_metadata_mapping = false;
     };
 
     struct RowSet
@@ -570,8 +571,9 @@ struct Reader
     /// Returns mutable column because some of the recursive calls require it,
     /// e.g. ColumnArray::create does assumeMutable() on the nested columns.
     /// Moves the column out of ColumnSubchunk-s, leaving nullptrs in ColumnSubchunk::column.
-    /// The caller is responsible for caching the result (in RowSubGroup::output) to make sure this
-    /// is not called again for the moved-out columns.
+    /// Caches the result in RowSubgroup::formed_output_columns (and RowSubgroup::output when the
+    /// output has a block slot), so a second call for the same output returns the cached column
+    /// instead of re-forming the moved-out subchunks.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows, bool skip_cast = false);
     void cacheOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, const ColumnPtr & column);
     void releaseVariantSourceInputsIfDone(RowSubgroup & row_subgroup, const OutputColumnInfo & output_info);

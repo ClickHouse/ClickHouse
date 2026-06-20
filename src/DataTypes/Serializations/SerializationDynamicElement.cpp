@@ -222,7 +222,7 @@ void SerializationDynamicElement::enumerateStreams(
         return;
 
     auto * deserialize_state = checkAndGetState<DeserializeBinaryBulkStateDynamicElement>(data.deserialize_state);
-    /// If we don't have any compatible variants, no need to enumerate streams for them as we won't read from any stream.
+    /// If we don't have any compatible variants and won't read the shared variant, there are no streams to enumerate.
     if (deserialize_state->variant_readers.empty() && !deserialize_state->shared_variant_serialization)
         return;
 

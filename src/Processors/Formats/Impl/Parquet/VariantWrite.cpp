@@ -4,12 +4,18 @@
 #include <Processors/Formats/Impl/Parquet/VariantUtils.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <Columns/ColumnVector.h>
 #include <Common/Exception.h>
 #include <Core/Field.h>
 #include <Core/UUID.h>
@@ -22,6 +28,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -35,9 +42,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <deque>
+#include <functional>
 #include <limits>
 #include <map>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace DB::ErrorCodes
@@ -63,11 +73,6 @@ struct VariantEncodingContext
     std::unordered_map<String, UInt32> dictionary;
 };
 
-struct VariantTransformResult
-{
-    std::optional<String> residual_value;
-    std::optional<Field> typed_value;
-};
 
 const DataTypePtr & getVariantBoolType()
 {
@@ -141,100 +146,8 @@ size_t addVariantEncodingSizesOrThrow(size_t lhs, size_t rhs, std::string_view w
     return lhs;
 }
 
-/// Keyed by `IDataType *` that stays alive for one `prepareVariantColumnsForWrite`
-/// call. This cache is row-group local and must not outlive the encoding pass.
-using VariantTransformScratch = std::unordered_map<const IDataType *, std::unordered_set<String>>;
-
-struct VariantBuildStats
-{
-    std::unordered_set<String> * keys = nullptr;
-    VariantWriteAnalysisNode * analysis = nullptr;
-};
-
 void addVariantAnalyzeScalarType(VariantWriteAnalysisNode & node, const DataTypePtr & type);
 DataTypePtr getVariantAnalyzeScalarType(const Field & field, const DataTypePtr & type_hint);
-
-VariantBuildStats makeVariantObjectChildStats(VariantBuildStats stats, const String & key)
-{
-    if (stats.keys)
-        stats.keys->emplace(key);
-
-    if (stats.analysis)
-        stats.analysis = &stats.analysis->object_fields[key];
-
-    return stats;
-}
-
-VariantBuildStats makeVariantArrayChildStats(VariantBuildStats stats)
-{
-    if (stats.analysis)
-    {
-        if (!stats.analysis->array_child)
-            stats.analysis->array_child = std::make_unique<VariantWriteAnalysisNode>();
-        stats.analysis = stats.analysis->array_child.get();
-    }
-
-    return stats;
-}
-
-template <typename BuildChild>
-bool buildVariantArrayField(
-    size_t size,
-    VariantBuildStats stats,
-    Field & out,
-    BuildChild && build_child)
-{
-    if (stats.analysis)
-    {
-        ++stats.analysis->value_count;
-        ++stats.analysis->array_count;
-        if (!stats.analysis->array_child)
-            stats.analysis->array_child = std::make_unique<VariantWriteAnalysisNode>();
-    }
-
-    Array result;
-    result.reserve(size);
-    for (size_t i = 0; i < size; ++i)
-    {
-        Field child;
-        if (!build_child(i, makeVariantArrayChildStats(stats), child))
-            return false;
-
-        result.emplace_back(std::move(child));
-    }
-
-    out = std::move(result);
-    return true;
-}
-
-template <typename BuildChild>
-bool buildVariantObjectField(
-    size_t size,
-    VariantBuildStats stats,
-    Field & out,
-    BuildChild && build_child)
-{
-    if (stats.analysis)
-    {
-        ++stats.analysis->value_count;
-        ++stats.analysis->object_count;
-    }
-
-    Object result;
-    for (size_t i = 0; i < size; ++i)
-    {
-        String key;
-        Field child;
-        if (!build_child(i, key, child))
-            return false;
-
-        if (!result.emplace(key, std::move(child)).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key {} while preparing `Parquet` `VARIANT` object", key);
-    }
-
-    out = std::move(result);
-    return true;
-}
 
 void checkVariantWriteDepth(const FormatSettings & format_settings, size_t depth)
 {
@@ -245,24 +158,6 @@ void checkVariantWriteDepth(const FormatSettings & format_settings, size_t depth
             "Maximum parse depth ({}) exceeded while encoding `Parquet` `VARIANT`. Consider raising `max_parser_depth` setting.",
             format_settings.max_parser_depth);
     }
-}
-
-DataTypePtr getArrayChildTypeHint(const DataTypePtr & parent_type_hint, size_t index)
-{
-    DataTypePtr normalized_parent = unwrapVariantTypeHint(parent_type_hint);
-    if (!normalized_parent)
-        return nullptr;
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(normalized_parent.get()))
-        return array_type->getNestedType();
-
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_parent.get()))
-    {
-        if (index < tuple_type->getElements().size())
-            return tuple_type->getElement(index);
-    }
-
-    return nullptr;
 }
 
 const SerializationPtr & getVariantDynamicSerialization()
@@ -278,145 +173,6 @@ Field deserializeVariantObjectSharedDataValue(const ColumnString * shared_data_v
     Field value;
     getVariantDynamicSerialization()->deserializeBinary(value, buf, FormatSettings());
     return value;
-}
-
-template <typename T>
-Field readVariantSharedNumberField(ReadBuffer & buf)
-{
-    T value = 0;
-    readBinaryLittleEndian(value, buf);
-    return Field(NearestFieldType<T>(value));
-}
-
-bool tryDeserializeVariantObjectSharedDataScalarFast(const ColumnString * shared_data_values, size_t index, Field & value)
-{
-    auto value_data = shared_data_values->getDataAt(index);
-    ReadBufferFromMemory buf(value_data);
-
-    UInt8 type_index = 0;
-    readBinary(type_index, buf);
-    switch (static_cast<BinaryTypeIndex>(type_index))
-    {
-        case BinaryTypeIndex::Nothing:
-            value = Null();
-            return true;
-        case BinaryTypeIndex::Bool:
-        {
-            UInt8 raw = 0;
-            readBinaryLittleEndian(raw, buf);
-            value = Field(raw != 0);
-            return true;
-        }
-        case BinaryTypeIndex::Int8:
-            value = readVariantSharedNumberField<Int8>(buf);
-            return true;
-        case BinaryTypeIndex::Int16:
-            value = readVariantSharedNumberField<Int16>(buf);
-            return true;
-        case BinaryTypeIndex::Int32:
-        case BinaryTypeIndex::Date32:
-            value = readVariantSharedNumberField<Int32>(buf);
-            return true;
-        case BinaryTypeIndex::Int64:
-            value = readVariantSharedNumberField<Int64>(buf);
-            return true;
-        case BinaryTypeIndex::UInt8:
-            value = readVariantSharedNumberField<UInt8>(buf);
-            return true;
-        case BinaryTypeIndex::UInt16:
-        case BinaryTypeIndex::Date:
-            value = readVariantSharedNumberField<UInt16>(buf);
-            return true;
-        case BinaryTypeIndex::UInt32:
-            value = readVariantSharedNumberField<UInt32>(buf);
-            return true;
-        case BinaryTypeIndex::UInt64:
-            value = readVariantSharedNumberField<UInt64>(buf);
-            return true;
-        case BinaryTypeIndex::Float32:
-            value = readVariantSharedNumberField<Float32>(buf);
-            return true;
-        case BinaryTypeIndex::Float64:
-            value = readVariantSharedNumberField<Float64>(buf);
-            return true;
-        case BinaryTypeIndex::String:
-        {
-            UInt64 size = 0;
-            readVarUInt(size, buf);
-            String str;
-            str.resize(size);
-            buf.readStrict(str.data(), size);
-            value = std::move(str);
-            return true;
-        }
-        default:
-            return false;
-    }
-}
-
-bool tryInsertVariantObjectFlatPath(
-    Object & object,
-    std::string_view path,
-    Field value,
-    const FormatSettings & format_settings,
-    size_t depth)
-{
-    checkVariantWriteDepth(format_settings, depth);
-
-    auto [head, tail] = Nested::splitName(path);
-    String key = unescapeDotInJSONKey(String(head));
-
-    if (tail.empty())
-        return object.try_emplace(std::move(key), std::move(value)).second;
-
-    auto [it, inserted] = object.try_emplace(key, Object{});
-    if (!inserted && it->second.getType() != Field::Types::Object)
-        return false;
-
-    return tryInsertVariantObjectFlatPath(it->second.safeGet<Object>(), tail, std::move(value), format_settings, depth + 1);
-}
-
-bool tryBuildNestedObjectFieldFromColumnObject(
-    const ColumnObject & object_column,
-    size_t row,
-    const FormatSettings & format_settings,
-    size_t depth,
-    Field & nested_object_field)
-{
-    checkVariantWriteDepth(format_settings, depth);
-
-    Object nested_object;
-    for (const auto & [path, column] : object_column.getTypedPaths())
-    {
-        if (!tryInsertVariantObjectFlatPath(nested_object, path, (*column)[row], format_settings, depth))
-            return false;
-    }
-
-    for (const auto & [path, column] : object_column.getDynamicPathsPtrs())
-    {
-        if (!column->isNullAt(row) && !tryInsertVariantObjectFlatPath(nested_object, path, (*column)[row], format_settings, depth))
-            return false;
-    }
-
-    const auto & shared_data_offsets = object_column.getSharedDataOffsets();
-    const auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();
-    size_t begin = row == 0 ? 0 : shared_data_offsets[row - 1];
-    size_t end = shared_data_offsets[row];
-    for (size_t i = begin; i != end; ++i)
-    {
-        if (!tryInsertVariantObjectFlatPath(
-                nested_object,
-                shared_data_paths->getDataAt(i),
-                deserializeVariantObjectSharedDataValue(shared_data_values, i),
-                format_settings,
-                depth))
-        {
-            return false;
-        }
-    }
-
-    nested_object_field = std::move(nested_object);
-    return true;
 }
 
 void collectVariantObjectKeysFromField(
@@ -600,237 +356,28 @@ std::vector<String> splitVariantObjectPath(std::string_view path)
     return segments;
 }
 
-bool getRelativeVariantObjectPath(
-    std::string_view path,
-    const std::vector<String> & prefix,
-    std::vector<String> & relative_path)
-{
-    std::vector<String> segments = splitVariantObjectPath(path);
-    if (segments.size() < prefix.size())
-        return false;
-
-    for (size_t i = 0; i < prefix.size(); ++i)
-    {
-        if (segments[i] != prefix[i])
-            return false;
-    }
-
-    relative_path.assign(segments.begin() + static_cast<ssize_t>(prefix.size()), segments.end());
-    return !relative_path.empty();
-}
-
-bool tryInsertVariantObjectPathSegments(Object & object, const std::vector<String> & segments, size_t pos, Field value)
-{
-    if (pos >= segments.size())
-        return false;
-
-    const String & key = segments[pos];
-    if (pos + 1 == segments.size())
-        return object.try_emplace(key, std::move(value)).second;
-
-    auto [it, inserted] = object.try_emplace(key, Object{});
-    if (!inserted && it->second.getType() != Field::Types::Object)
-        return false;
-
-    return tryInsertVariantObjectPathSegments(it->second.safeGet<Object>(), segments, pos + 1, std::move(value));
-}
-
-String variantObjectPathSegmentsToString(const std::vector<String> & segments)
-{
-    WriteBufferFromOwnString out;
-    for (size_t i = 0; i < segments.size(); ++i)
-    {
-        if (i != 0)
-            writeChar('.', out);
-        writeString(segments[i], out);
-    }
-    return out.str();
-}
-
-void insertVariantObjectPathSegments(
-    Object & object,
-    const std::vector<String> & segments,
-    Field value)
-{
-    if (!tryInsertVariantObjectPathSegments(object, segments, 0, std::move(value)))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot prepare `Object` path {} for `Parquet` `VARIANT` writing because it conflicts with another residual value",
-            variantObjectPathSegmentsToString(segments));
-}
-
-bool shouldKeepVariantResidualPath(
-    std::string_view path,
-    const std::vector<String> & prefix,
-    const std::unordered_set<String> & excluded_fields,
-    std::vector<String> & relative_path)
-{
-    if (!getRelativeVariantObjectPath(path, prefix, relative_path))
-        return false;
-
-    return !excluded_fields.contains(relative_path.front());
-}
-
-struct VariantResidualPathInfo
-{
-    std::optional<std::vector<String>> relative_path;
-    DataTypePtr type_hint;
-    bool type_hint_initialized = false;
-};
-
-DataTypePtr getObjectChildTypeHint(
-    const DataTypePtr & parent_type_hint,
-    const DataTypeObject * object_type,
-    std::string_view child_path,
-    std::string_view child_name);
-
-DataTypePtr getVariantObjectLeafTypeHint(
-    const DataTypePtr & object_type,
-    const DataTypeObject * object_data_type,
-    std::string_view full_path,
-    const std::vector<String> & relative_path);
-
-struct VariantResidualPathCache
-{
-    const std::vector<String> & prefix;
-    const std::unordered_set<String> & excluded_fields;
-    const FormatSettings & format_settings;
-    std::unordered_map<std::string_view, VariantResidualPathInfo> cache;
-
-    VariantResidualPathInfo * getInfo(std::string_view path)
-    {
-        auto [it, inserted] = cache.try_emplace(path);
-        if (inserted)
-        {
-            std::vector<String> parsed_path;
-            if (shouldKeepVariantResidualPath(it->first, prefix, excluded_fields, parsed_path))
-            {
-                checkVariantWriteDepth(format_settings, prefix.size() + parsed_path.size() + 1);
-                it->second.relative_path = std::move(parsed_path);
-            }
-        }
-
-        return &it->second;
-    }
-
-    const std::vector<String> * get(std::string_view path)
-    {
-        VariantResidualPathInfo * info = getInfo(path);
-        if (!info->relative_path.has_value())
-            return nullptr;
-
-        return &*info->relative_path;
-    }
-
-    const VariantResidualPathInfo * getResidualInfo(
-        std::string_view path,
-        const DataTypePtr & object_type,
-        const DataTypeObject * object_data_type)
-    {
-        VariantResidualPathInfo * info = getInfo(path);
-        if (!info->relative_path.has_value())
-            return nullptr;
-
-        if (!info->type_hint_initialized)
-        {
-            info->type_hint = getVariantObjectLeafTypeHint(object_type, object_data_type, path, *info->relative_path);
-            info->type_hint_initialized = true;
-        }
-
-        return info;
-    }
-};
-
-size_t getVariantScalarEncodedSize(const Field & field, const DataTypePtr & type_hint);
-void writeVariantScalarToBuffer(const Field & field, const DataTypePtr & type_hint, char *& out);
+size_t getVariantScalarEncodedSizeFromColumn(
+    const IColumn & column, size_t row, const IDataType & value_type, bool from_dynamic, const DataTypePtr & type_hint);
+void writeVariantScalarFromColumnToBuffer(
+    const IColumn & column, size_t row, const IDataType & value_type, bool from_dynamic, const DataTypePtr & type_hint, char *& out);
 size_t getVariantEncodedStringSize(std::string_view value);
 void writeVariantStringPayloadToBuffer(std::string_view value, char *& out);
 template <typename T>
 void writeVariantPODToBuffer(T value, char *& out);
 void writeVariantLittleEndianToBuffer(UInt64 value, UInt8 size, char *& out);
 
-enum class DirectVariantResidualValueKind
-{
-    Field,
-    Null,
-    Bool,
-    Int64,
-    UInt64,
-    Float64,
-    StringView,
-};
-
-struct DirectVariantResidualEntry
-{
-    const std::vector<String> * path = nullptr;
-    DirectVariantResidualValueKind value_kind = DirectVariantResidualValueKind::Field;
-    Field value;
-    bool bool_value = false;
-    Int64 int64_value = 0;
-    UInt64 uint64_value = 0;
-    Float64 float64_value = 0;
-    std::string_view string_value;
-    DataTypePtr type_hint;
-    size_t value_size = 0;
-};
-
-size_t getDirectVariantResidualScalarEncodedSize(const DirectVariantResidualEntry & entry);
-void writeDirectVariantResidualEntryToBuffer(const DirectVariantResidualEntry & entry, char *& out);
-
-struct DirectVariantResidualColumn
-{
-    const IColumn * column = nullptr;
-    const std::vector<String> * path = nullptr;
-    DataTypePtr type_hint;
-    bool skip_nulls = false;
-};
-
-struct DirectVariantSharedPathSlot
-{
-    std::string_view path;
-    const VariantResidualPathInfo * info = nullptr;
-    bool initialized = false;
-};
-
-struct DirectVariantObjectEncoding;
-
-struct DirectVariantObjectChild
-{
-    UInt32 field_id = 0;
-    size_t child_size = 0;
-    size_t entry_index = 0;
-    DirectVariantObjectEncoding * nested = nullptr;
-};
-
-struct DirectVariantObjectEncoding
-{
-    UInt8 field_id_size = 0;
-    UInt8 field_offset_size = 0;
-    bool is_large = false;
-    size_t total_children_size = 0;
-    size_t total_size = 0;
-    std::vector<DirectVariantObjectChild> children;
-};
-
-struct DirectVariantObjectEncodingScratch
-{
-    DirectVariantObjectEncoding root;
-    std::vector<std::unique_ptr<DirectVariantObjectEncoding>> nested_encodings;
-    size_t next_nested_encoding = 0;
-
-    void reset()
-    {
-        next_nested_encoding = 0;
-    }
-
-    DirectVariantObjectEncoding & acquireNested()
-    {
-        if (next_nested_encoding == nested_encodings.size())
-            nested_encodings.emplace_back(std::make_unique<DirectVariantObjectEncoding>());
-
-        return *nested_encodings[next_nested_encoding++];
-    }
-};
+/// The columnar residual-object encoder (defined alongside the columnar cursor below). Encodes the
+/// residual `value` blob for one `ColumnObject` row directly from its leaves, descending into
+/// `prefix` first and excluding the shredded top-level keys (`excluded_fields`). Returns
+/// `std::nullopt` when nothing remains in the residual. `dictionary` resolves key field ids.
+std::optional<String> encodeVariantColumnarObjectResidualForRow(
+    const ColumnObject & object_column,
+    const DataTypeObject & object_data_type,
+    size_t row,
+    const std::vector<String> & prefix,
+    const std::unordered_set<String> & excluded_fields,
+    const std::unordered_map<String, UInt32> & dictionary,
+    const FormatSettings & format_settings);
 
 void finishVariantObjectEncodingHeader(
     size_t num_children,
@@ -912,401 +459,6 @@ void writeVariantObjectHeaderAndChildren(
         write_child(child);
 }
 
-bool isVariantDirectResidualScalar(const Field & value)
-{
-    return value.getType() != Field::Types::Object && value.getType() != Field::Types::Array;
-}
-
-DataTypePtr getVariantObjectLeafTypeHint(
-    const DataTypePtr & object_type,
-    const DataTypeObject * object_data_type,
-    std::string_view full_path,
-    const std::vector<String> & relative_path)
-{
-    if (relative_path.empty())
-        return nullptr;
-
-    return getObjectChildTypeHint(object_type, object_data_type, full_path, relative_path.back());
-}
-
-bool measureDirectVariantObjectEncoding(
-    const std::vector<DirectVariantResidualEntry> & entries,
-    size_t begin,
-    size_t end,
-    size_t depth,
-    size_t base_depth,
-    const FormatSettings & format_settings,
-    const std::unordered_map<String, UInt32> & dictionary,
-    DirectVariantObjectEncodingScratch & scratch,
-    DirectVariantObjectEncoding & encoding)
-{
-    checkVariantWriteDepth(format_settings, base_depth + depth);
-
-    encoding.total_children_size = 0;
-    encoding.total_size = 0;
-    encoding.children.clear();
-    encoding.children.reserve(end - begin);
-
-    UInt32 highest_field_id = 0;
-    for (size_t pos = begin; pos < end;)
-    {
-        const auto & path = *entries[pos].path;
-        if (depth >= path.size())
-            return false;
-
-        const String & key = path[depth];
-        size_t next = pos + 1;
-        while (next < end && (*entries[next].path)[depth] == key)
-            ++next;
-
-        auto dictionary_it = dictionary.find(key);
-        if (dictionary_it == dictionary.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing `Parquet` `VARIANT` dictionary entry for key {}", key);
-
-        DirectVariantObjectChild child;
-        child.field_id = dictionary_it->second;
-        highest_field_id = std::max(highest_field_id, child.field_id);
-
-        if (path.size() == depth + 1)
-        {
-            if (next != pos + 1)
-                return false;
-
-            child.entry_index = pos;
-            child.child_size = entries[pos].value_size;
-        }
-        else
-        {
-            child.nested = &scratch.acquireNested();
-            if (!measureDirectVariantObjectEncoding(entries, pos, next, depth + 1, base_depth, format_settings, dictionary, scratch, *child.nested))
-                return false;
-
-            child.child_size = child.nested->total_size;
-        }
-
-        addVariantEncodingSizeOrThrow(encoding.total_children_size, child.child_size, "`object` children");
-        encoding.children.emplace_back(std::move(child));
-        pos = next;
-    }
-
-    finishVariantObjectEncodingHeader(
-        encoding.children.size(),
-        highest_field_id,
-        encoding.total_children_size,
-        encoding.field_id_size,
-        encoding.field_offset_size,
-        encoding.is_large,
-        encoding.total_size);
-    return true;
-}
-
-void writeDirectVariantObjectToBuffer(
-    const std::vector<DirectVariantResidualEntry> & entries,
-    const DirectVariantObjectEncoding & encoding,
-    char *& out)
-{
-    writeVariantObjectHeaderAndChildren(
-        encoding.children,
-        encoding.field_id_size,
-        encoding.field_offset_size,
-        encoding.is_large,
-        out,
-        [&](const DirectVariantObjectChild & child)
-        {
-            if (child.nested)
-            {
-                writeDirectVariantObjectToBuffer(entries, *child.nested, out);
-            }
-            else
-            {
-                const auto & entry = entries[child.entry_index];
-                writeDirectVariantResidualEntryToBuffer(entry, out);
-            }
-        });
-}
-
-bool addDirectVariantResidualEntry(
-    std::vector<DirectVariantResidualEntry> & entries,
-    const std::vector<String> * relative_path,
-    DataTypePtr type_hint,
-    Field value)
-{
-    if (!relative_path || !isVariantDirectResidualScalar(value))
-        return false;
-
-    DirectVariantResidualEntry entry;
-    entry.path = relative_path;
-    entry.value = std::move(value);
-    entry.type_hint = std::move(type_hint);
-    entry.value_size = getVariantScalarEncodedSize(entry.value, entry.type_hint);
-    entries.emplace_back(std::move(entry));
-    return true;
-}
-
-template <typename T>
-T readVariantSharedNumberValue(ReadBuffer & buf)
-{
-    T value = 0;
-    readBinaryLittleEndian(value, buf);
-    return value;
-}
-
-bool addDirectVariantResidualSharedDataScalarEntry(
-    std::vector<DirectVariantResidualEntry> & entries,
-    const std::vector<String> * relative_path,
-    DataTypePtr type_hint,
-    const ColumnString * shared_data_values,
-    size_t index)
-{
-    if (!relative_path)
-        return false;
-
-    if (type_hint)
-    {
-        Field value;
-        if (!tryDeserializeVariantObjectSharedDataScalarFast(shared_data_values, index, value))
-            value = deserializeVariantObjectSharedDataValue(shared_data_values, index);
-
-        return addDirectVariantResidualEntry(entries, relative_path, std::move(type_hint), std::move(value));
-    }
-
-    auto value_data = shared_data_values->getDataAt(index);
-    ReadBufferFromMemory buf(value_data);
-
-    DirectVariantResidualEntry entry;
-    entry.path = relative_path;
-
-    UInt8 type_index = 0;
-    readBinary(type_index, buf);
-    switch (static_cast<BinaryTypeIndex>(type_index))
-    {
-        case BinaryTypeIndex::Nothing:
-            entry.value_kind = DirectVariantResidualValueKind::Null;
-            break;
-        case BinaryTypeIndex::Bool:
-            entry.value_kind = DirectVariantResidualValueKind::Bool;
-            entry.bool_value = readVariantSharedNumberValue<UInt8>(buf) != 0;
-            break;
-        case BinaryTypeIndex::Int8:
-            entry.value_kind = DirectVariantResidualValueKind::Int64;
-            entry.int64_value = readVariantSharedNumberValue<Int8>(buf);
-            break;
-        case BinaryTypeIndex::Int16:
-            entry.value_kind = DirectVariantResidualValueKind::Int64;
-            entry.int64_value = readVariantSharedNumberValue<Int16>(buf);
-            break;
-        case BinaryTypeIndex::Int32:
-        case BinaryTypeIndex::Date32:
-            entry.value_kind = DirectVariantResidualValueKind::Int64;
-            entry.int64_value = readVariantSharedNumberValue<Int32>(buf);
-            break;
-        case BinaryTypeIndex::Int64:
-            entry.value_kind = DirectVariantResidualValueKind::Int64;
-            entry.int64_value = readVariantSharedNumberValue<Int64>(buf);
-            break;
-        case BinaryTypeIndex::UInt8:
-            entry.value_kind = DirectVariantResidualValueKind::UInt64;
-            entry.uint64_value = readVariantSharedNumberValue<UInt8>(buf);
-            break;
-        case BinaryTypeIndex::UInt16:
-        case BinaryTypeIndex::Date:
-            entry.value_kind = DirectVariantResidualValueKind::UInt64;
-            entry.uint64_value = readVariantSharedNumberValue<UInt16>(buf);
-            break;
-        case BinaryTypeIndex::UInt32:
-            entry.value_kind = DirectVariantResidualValueKind::UInt64;
-            entry.uint64_value = readVariantSharedNumberValue<UInt32>(buf);
-            break;
-        case BinaryTypeIndex::UInt64:
-            entry.value_kind = DirectVariantResidualValueKind::UInt64;
-            entry.uint64_value = readVariantSharedNumberValue<UInt64>(buf);
-            break;
-        case BinaryTypeIndex::Float32:
-            entry.value_kind = DirectVariantResidualValueKind::Float64;
-            entry.float64_value = static_cast<Float64>(readVariantSharedNumberValue<Float32>(buf));
-            break;
-        case BinaryTypeIndex::Float64:
-            entry.value_kind = DirectVariantResidualValueKind::Float64;
-            entry.float64_value = readVariantSharedNumberValue<Float64>(buf);
-            break;
-        case BinaryTypeIndex::String:
-        {
-            size_t size = 0;
-            readVarUInt(size, buf);
-            if (unlikely(size > DEFAULT_MAX_STRING_SIZE))
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
-
-            entry.value_kind = DirectVariantResidualValueKind::StringView;
-            entry.string_value = std::string_view(buf.position(), size);
-            buf.ignore(size);
-            break;
-        }
-        default:
-            return false;
-    }
-
-    entry.value_size = getDirectVariantResidualScalarEncodedSize(entry);
-    entries.emplace_back(std::move(entry));
-    return true;
-}
-
-bool directVariantResidualEntryLess(const DirectVariantResidualEntry & left, const DirectVariantResidualEntry & right)
-{
-    return std::lexicographical_compare(
-        left.path->begin(),
-        left.path->end(),
-        right.path->begin(),
-        right.path->end());
-}
-
-const VariantResidualPathInfo * getCachedDirectVariantSharedPathInfo(
-    std::string_view path,
-    const DataTypePtr & object_type,
-    const DataTypeObject * object_data_type,
-    VariantResidualPathCache & path_cache,
-    DirectVariantSharedPathSlot & slot)
-{
-    if (!slot.initialized || slot.path != path)
-    {
-        slot.path = path;
-        slot.info = path_cache.getResidualInfo(path, object_type, object_data_type);
-        slot.initialized = true;
-    }
-
-    return slot.info;
-}
-
-bool tryEncodeDirectVariantObjectResidualForRow(
-    const ColumnObject & object_column,
-    size_t row,
-    const DataTypePtr & object_type,
-    const DataTypeObject * object_data_type,
-    VariantResidualPathCache & path_cache,
-    const std::unordered_map<String, UInt32> & dictionary,
-    const std::vector<DirectVariantResidualColumn> & residual_columns,
-    std::vector<DirectVariantResidualEntry> & entries,
-    std::vector<DirectVariantSharedPathSlot> & shared_path_slots,
-    DirectVariantObjectEncodingScratch & encoding_scratch,
-    std::optional<String> & out)
-{
-    entries.clear();
-
-    for (const auto & residual_column : residual_columns)
-    {
-        if (residual_column.skip_nulls && residual_column.column->isNullAt(row))
-            continue;
-
-        if (!addDirectVariantResidualEntry(
-                entries,
-                residual_column.path,
-                residual_column.type_hint,
-                (*residual_column.column)[row]))
-        {
-            return false;
-        }
-    }
-
-    const auto & shared_data_offsets = object_column.getSharedDataOffsets();
-    const auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();
-    size_t begin = row == 0 ? 0 : shared_data_offsets[row - 1];
-    size_t end = shared_data_offsets[row];
-    entries.reserve(entries.size() + end - begin);
-    for (size_t i = begin; i != end; ++i)
-    {
-        auto full_path = shared_data_paths->getDataAt(i);
-        size_t slot_index = i - begin;
-        if (slot_index >= shared_path_slots.size())
-            shared_path_slots.resize(slot_index + 1);
-
-        const auto * info = getCachedDirectVariantSharedPathInfo(
-            full_path,
-            object_type,
-            object_data_type,
-            path_cache,
-            shared_path_slots[slot_index]);
-        if (!info)
-            continue;
-
-        if (!addDirectVariantResidualSharedDataScalarEntry(
-                entries,
-                &*info->relative_path,
-                info->type_hint,
-                shared_data_values,
-                i))
-        {
-            return false;
-        }
-    }
-
-    if (entries.empty())
-    {
-        out = std::nullopt;
-        return true;
-    }
-
-    if (!std::is_sorted(entries.begin(), entries.end(), directVariantResidualEntryLess))
-        std::sort(entries.begin(), entries.end(), directVariantResidualEntryLess);
-
-    encoding_scratch.reset();
-    if (!measureDirectVariantObjectEncoding(
-            entries,
-            0,
-            entries.size(),
-            0,
-            path_cache.prefix.size() + 1,
-            path_cache.format_settings,
-            dictionary,
-            encoding_scratch,
-            encoding_scratch.root))
-        return false;
-
-    out = String(encoding_scratch.root.total_size, '\0');
-    char * out_pos = out->data();
-    writeDirectVariantObjectToBuffer(entries, encoding_scratch.root, out_pos);
-    chassert(out_pos == out->data() + out->size());
-    return true;
-}
-
-Object buildVariantObjectResidualForRow(
-    const ColumnObject & object_column,
-    size_t row,
-    VariantResidualPathCache & path_cache)
-{
-    Object residual;
-
-    for (const auto & [path, column] : object_column.getTypedPaths())
-    {
-        if (const auto * relative_path = path_cache.get(path))
-            insertVariantObjectPathSegments(residual, *relative_path, (*column)[row]);
-    }
-
-    for (const auto & [path, column] : object_column.getDynamicPathsPtrs())
-    {
-        if (!column->isNullAt(row))
-        {
-            if (const auto * relative_path = path_cache.get(path))
-                insertVariantObjectPathSegments(residual, *relative_path, (*column)[row]);
-        }
-    }
-
-    const auto & shared_data_offsets = object_column.getSharedDataOffsets();
-    const auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();
-    size_t begin = row == 0 ? 0 : shared_data_offsets[row - 1];
-    size_t end = shared_data_offsets[row];
-    for (size_t i = begin; i != end; ++i)
-    {
-        if (const auto * relative_path = path_cache.get(shared_data_paths->getDataAt(i)))
-        {
-            insertVariantObjectPathSegments(
-                residual,
-                *relative_path,
-                deserializeVariantObjectSharedDataValue(shared_data_values, i));
-        }
-    }
-
-    return residual;
-}
-
 std::unordered_set<String> getVariantTupleFieldNames(const DataTypeTuple & tuple_type)
 {
     std::unordered_set<String> field_names;
@@ -1317,28 +469,10 @@ std::unordered_set<String> getVariantTupleFieldNames(const DataTypeTuple & tuple
     return field_names;
 }
 
-void encodeVariantObject(
-    const Field & value,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const std::unordered_map<String, UInt32> & dictionary,
-    std::optional<String> & out,
-    const std::unordered_set<String> * excluded_fields);
-
-void normalizeVariantFieldForUntypedResidual(
-    Field & field,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const FormatSettings & format_settings,
-    size_t depth);
-
 MutableColumnPtr buildVariantResidualValueColumnForObject(
     const ColumnObject & object_column,
     const DataTypePtr & object_type,
     const std::vector<String> & prefix,
-    std::string_view prefix_path,
     const std::unordered_set<String> & excluded_fields,
     const FormatSettings & format_settings,
     const VariantEncodingContext & context)
@@ -1352,90 +486,15 @@ MutableColumnPtr buildVariantResidualValueColumnForObject(
     null_map.reserve(object_column.size());
 
     const auto * object_data_type = typeid_cast<const DataTypeObject *>(object_type.get());
-    VariantResidualPathCache path_cache
-    {
-        .prefix = prefix,
-        .excluded_fields = excluded_fields,
-        .format_settings = format_settings,
-        .cache = {},
-    };
-    path_cache.cache.reserve(object_column.getTypedPaths().size() + object_column.getDynamicPathsPtrs().size() + 32);
-
-    std::vector<DirectVariantResidualColumn> direct_residual_columns;
-    direct_residual_columns.reserve(object_column.getTypedPaths().size() + object_column.getDynamicPathsPtrs().size());
-    for (const auto & [path, column] : object_column.getTypedPaths())
-    {
-        if (const auto * info = path_cache.getResidualInfo(path, object_type, object_data_type))
-        {
-            direct_residual_columns.emplace_back(DirectVariantResidualColumn
-            {
-                .column = column.get(),
-                .path = &*info->relative_path,
-                .type_hint = info->type_hint,
-                .skip_nulls = false,
-            });
-        }
-    }
-
-    for (const auto & [path, column] : object_column.getDynamicPathsPtrs())
-    {
-        if (const auto * info = path_cache.getResidualInfo(path, object_type, object_data_type))
-        {
-            direct_residual_columns.emplace_back(DirectVariantResidualColumn
-            {
-                .column = column,
-                .path = &*info->relative_path,
-                .type_hint = info->type_hint,
-                .skip_nulls = true,
-            });
-        }
-    }
-
-    std::vector<DirectVariantResidualEntry> direct_entries;
-    direct_entries.reserve(direct_residual_columns.size());
-    std::vector<DirectVariantSharedPathSlot> shared_path_slots;
-    DirectVariantObjectEncodingScratch direct_encoding_scratch;
+    chassert(object_data_type);
 
     for (size_t row = 0; row < object_column.size(); ++row)
     {
-        std::optional<String> encoded_value;
-        if (tryEncodeDirectVariantObjectResidualForRow(
-                object_column,
-                row,
-                object_type,
-                object_data_type,
-                path_cache,
-                context.dictionary,
-                direct_residual_columns,
-                direct_entries,
-                shared_path_slots,
-                direct_encoding_scratch,
-                encoded_value))
-        {
-            if (!encoded_value.has_value())
-            {
-                nested_value.insertDefault();
-                null_map.push_back(UInt8(1));
-            }
-            else
-            {
-                nested_value.insertData(encoded_value->data(), encoded_value->size());
-                null_map.push_back(UInt8(0));
-            }
-            continue;
-        }
+        /// Encode the residual `value` blob columnar from the object's leaves through the cursor,
+        /// descending into `prefix` and excluding the shredded top-level keys.
+        std::optional<String> encoded_value = encodeVariantColumnarObjectResidualForRow(
+            object_column, *object_data_type, row, prefix, excluded_fields, context.dictionary, format_settings);
 
-        Object residual = buildVariantObjectResidualForRow(object_column, row, path_cache);
-        if (residual.empty())
-        {
-            nested_value.insertDefault();
-            null_map.push_back(UInt8(1));
-            continue;
-        }
-
-        Field residual_field(std::move(residual));
-        normalizeVariantFieldForUntypedResidual(residual_field, object_type, object_data_type, prefix_path, format_settings, prefix.size() + 1);
-        encodeVariantObject(residual_field, object_type, object_data_type, prefix_path, context.dictionary, encoded_value, nullptr);
         if (!encoded_value.has_value())
         {
             nested_value.insertDefault();
@@ -1482,7 +541,6 @@ ColumnPtr buildVariantObjectWrapperColumnFast(
             object_column,
             object_type,
             prefix,
-            path,
             getVariantTupleFieldNames(*tuple_type),
             format_settings,
             context);
@@ -1556,6 +614,8 @@ ColumnPtr buildVariantObjectTypedValueColumnFast(
 
     return nested_column;
 }
+
+std::optional<Field> tryConvertVariantScalarToShreddedField(const Field & field, const DataTypePtr & type);
 
 ColumnPtr buildVariantMetadataColumn(size_t num_rows, std::string_view metadata)
 {
@@ -1704,7 +764,6 @@ std::optional<PreparedVariantColumns> tryPrepareObjectVariantColumnsFast(
         *object_column,
         type,
         {},
-        {},
         getVariantTupleFieldNames(tuple_type),
         format_settings,
         shared_context);
@@ -1719,83 +778,27 @@ std::optional<PreparedVariantColumns> tryPrepareObjectVariantColumnsFast(
     return result;
 }
 
+template <typename Target, typename Source>
+bool tryConvertNativeIntegralValue(Source source, Target & value);
+
+/// Range-checks and narrows an integral `Field` into `value`.
 template <typename T>
 bool tryConvertIntegralFieldValue(const Field & field, T & value)
 {
     switch (field.getType())
     {
         case Field::Types::Int64:
-        {
-            Int64 source = field.safeGet<Int64>();
-            if constexpr (std::numeric_limits<T>::is_signed)
-            {
-                if (source < static_cast<Int64>(std::numeric_limits<T>::min()) || source > static_cast<Int64>(std::numeric_limits<T>::max()))
-                    return false;
-            }
-            else
-            {
-                if (source < 0 || static_cast<UInt64>(source) > static_cast<UInt64>(std::numeric_limits<T>::max()))
-                    return false;
-            }
-            value = static_cast<T>(source);
-            return true;
-        }
+            return tryConvertNativeIntegralValue(field.safeGet<Int64>(), value);
         case Field::Types::UInt64:
-        {
-            UInt64 source = field.safeGet<UInt64>();
-            if (source > static_cast<UInt64>(std::numeric_limits<T>::max()))
-                return false;
-            value = static_cast<T>(source);
-            return true;
-        }
+            return tryConvertNativeIntegralValue(field.safeGet<UInt64>(), value);
         case Field::Types::Int128:
-        {
-            Int128 source = field.safeGet<Int128>();
-            if constexpr (std::numeric_limits<T>::is_signed)
-            {
-                if (source < static_cast<Int128>(std::numeric_limits<T>::min()) || source > static_cast<Int128>(std::numeric_limits<T>::max()))
-                    return false;
-            }
-            else
-            {
-                if (source < 0 || static_cast<UInt128>(source) > static_cast<UInt128>(std::numeric_limits<T>::max()))
-                    return false;
-            }
-            value = static_cast<T>(source);
-            return true;
-        }
+            return tryConvertNativeIntegralValue(field.safeGet<Int128>(), value);
         case Field::Types::UInt128:
-        {
-            UInt128 source = field.safeGet<UInt128>();
-            if (source > static_cast<UInt128>(std::numeric_limits<T>::max()))
-                return false;
-            value = static_cast<T>(source);
-            return true;
-        }
+            return tryConvertNativeIntegralValue(field.safeGet<UInt128>(), value);
         case Field::Types::Int256:
-        {
-            Int256 source = field.safeGet<Int256>();
-            if constexpr (std::numeric_limits<T>::is_signed)
-            {
-                if (source < static_cast<Int256>(std::numeric_limits<T>::min()) || source > static_cast<Int256>(std::numeric_limits<T>::max()))
-                    return false;
-            }
-            else
-            {
-                if (source < 0 || static_cast<UInt256>(source) > static_cast<UInt256>(std::numeric_limits<T>::max()))
-                    return false;
-            }
-            value = static_cast<T>(source);
-            return true;
-        }
+            return tryConvertNativeIntegralValue(field.safeGet<Int256>(), value);
         case Field::Types::UInt256:
-        {
-            UInt256 source = field.safeGet<UInt256>();
-            if (source > static_cast<UInt256>(std::numeric_limits<T>::max()))
-                return false;
-            value = static_cast<T>(source);
-            return true;
-        }
+            return tryConvertNativeIntegralValue(field.safeGet<UInt256>(), value);
         default:
             return false;
     }
@@ -1852,42 +855,6 @@ std::optional<Field> tryNormalizeVariantTemporalScalarToString(
     }
 
     return Field(std::move(json));
-}
-
-DataTypePtr getObjectChildTypeHint(
-    const DataTypePtr & parent_type_hint,
-    const DataTypeObject * object_type,
-    std::string_view child_path,
-    std::string_view child_name)
-{
-    if (object_type)
-    {
-        const auto & typed_paths = object_type->getTypedPaths();
-        auto it = typed_paths.find(String(child_path));
-        if (it != typed_paths.end())
-            return it->second;
-    }
-
-    DataTypePtr normalized_parent = unwrapVariantTypeHint(parent_type_hint);
-    if (!normalized_parent)
-        return nullptr;
-
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_parent.get()))
-    {
-        if (!tuple_type->hasExplicitNames())
-            return nullptr;
-
-        auto position = tuple_type->tryGetPositionByName(child_name);
-        if (!position.has_value())
-            return nullptr;
-
-        return tuple_type->getElement(*position);
-    }
-
-    if (const auto * map_type = typeid_cast<const DataTypeMap *>(normalized_parent.get()))
-        return map_type->getValueType();
-
-    return nullptr;
 }
 
 std::optional<Field> tryConvertVariantScalarToShreddedField(const Field & field, const DataTypePtr & type)
@@ -1970,448 +937,6 @@ std::optional<Field> tryConvertVariantScalarToShreddedField(const Field & field,
     }
 }
 
-bool buildVariantField(
-    const Field & field,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const FormatSettings & format_settings,
-    size_t depth,
-    VariantBuildStats stats,
-    Field & out);
-
-bool buildVariantFieldFromColumn(
-    const IColumn & column,
-    const DataTypePtr & type,
-    size_t row,
-    const FormatSettings & format_settings,
-    size_t depth,
-    VariantBuildStats stats,
-    Field & out,
-    DataTypePtr * out_value_type_hint = nullptr);
-
-bool buildVariantFieldFromDynamicSharedVariant(
-    const ColumnDynamic & dynamic_column,
-    size_t row,
-    const FormatSettings & format_settings,
-    size_t depth,
-    VariantBuildStats stats,
-    Field & out,
-    DataTypePtr * out_value_type_hint)
-{
-    const auto & variant_column = dynamic_column.getVariantColumn();
-    const auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row));
-
-    ReadBufferFromMemory buf(value);
-    auto nested_type = decodeDataType(buf);
-    auto nested_column = nested_type->createColumn();
-    nested_type->getDefaultSerialization()->deserializeBinary(*nested_column, buf, FormatSettings());
-
-    return buildVariantFieldFromColumn(*nested_column, nested_type, 0, format_settings, depth + 1, stats, out, out_value_type_hint);
-}
-
-bool buildVariantField(
-    const Field & field,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const FormatSettings & format_settings,
-    size_t depth,
-    VariantBuildStats stats,
-    Field & out)
-{
-    checkVariantWriteDepth(format_settings, depth);
-
-    DataTypePtr normalized_type_hint = unwrapVariantTypeHint(type_hint);
-
-    switch (field.getType())
-    {
-        case Field::Types::Object:
-        {
-            const auto & object = field.safeGet<Object>();
-            auto it = object.begin();
-            return buildVariantObjectField(
-                object.size(),
-                stats,
-                out,
-                [&](size_t, String & key, Field & child)
-                {
-                    const auto & [object_key, object_value] = *it;
-                    ++it;
-                    key = object_key;
-                    String child_path = appendVariantJSONPath(current_path, key);
-                    return buildVariantField(
-                        object_value,
-                        getObjectChildTypeHint(normalized_type_hint, object_type, child_path, key),
-                        object_type,
-                        child_path,
-                        format_settings,
-                        depth + 1,
-                        makeVariantObjectChildStats(stats, key),
-                        child);
-                });
-        }
-        case Field::Types::Array:
-        {
-            const auto & array = field.safeGet<Array>();
-            return buildVariantArrayField(
-                array.size(),
-                stats,
-                out,
-                [&](size_t i, VariantBuildStats child_stats, Field & child)
-                {
-                    return buildVariantField(
-                        array[i],
-                        getArrayChildTypeHint(normalized_type_hint, i),
-                        object_type,
-                        current_path,
-                        format_settings,
-                        depth + 1,
-                        child_stats,
-                        child);
-                });
-        }
-        case Field::Types::Tuple:
-        {
-            const auto & tuple = field.safeGet<Tuple>();
-            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_type_hint.get());
-            if (tuple_type && tuple_type->hasExplicitNames())
-            {
-                return buildVariantObjectField(
-                    tuple.size(),
-                    stats,
-                    out,
-                    [&](size_t i, String & key, Field & child)
-                    {
-                        key = tuple_type->getNameByPosition(i + 1);
-                        String child_path = appendVariantJSONPath(current_path, key);
-                        return buildVariantField(
-                            tuple[i],
-                            tuple_type->getElement(i),
-                            object_type,
-                            child_path,
-                            format_settings,
-                            depth + 1,
-                            makeVariantObjectChildStats(stats, key),
-                            child);
-                    });
-            }
-
-            return buildVariantArrayField(
-                tuple.size(),
-                stats,
-                out,
-                [&](size_t i, VariantBuildStats child_stats, Field & child)
-                {
-                    return buildVariantField(
-                        tuple[i],
-                        getArrayChildTypeHint(normalized_type_hint, i),
-                        object_type,
-                        current_path,
-                        format_settings,
-                        depth + 1,
-                        child_stats,
-                        child);
-                });
-        }
-        case Field::Types::Map:
-        {
-            const auto & map = field.safeGet<Map>();
-            return buildVariantObjectField(
-                map.size(),
-                stats,
-                out,
-                [&](size_t i, String & key, Field & child)
-                {
-                    const auto & entry = map[i];
-                    if (entry.getType() != Field::Types::Tuple)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected `Map` entry type {} while preparing `Parquet` `VARIANT`", entry.getTypeName());
-
-                    const auto & tuple = entry.safeGet<Tuple>();
-                    if (tuple.size() != 2)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected `Map` entry size {} while preparing `Parquet` `VARIANT`", tuple.size());
-
-                    if (tuple[0].getType() != Field::Types::String)
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `Map(String, T)` can be written as `Parquet` `VARIANT`");
-
-                    key = tuple[0].safeGet<String>();
-                    String child_path = appendVariantJSONPath(current_path, key);
-                    return buildVariantField(
-                        tuple[1],
-                        getObjectChildTypeHint(normalized_type_hint, object_type, child_path, key),
-                        object_type,
-                        child_path,
-                        format_settings,
-                        depth + 1,
-                        makeVariantObjectChildStats(stats, key),
-                        child);
-                });
-        }
-        default:
-            if (object_type)
-            {
-                if (auto normalized_field = tryNormalizeVariantTemporalScalarToString(
-                        field,
-                        normalized_type_hint,
-                        format_settings,
-                        [](const DataTypePtr & normalized_type)
-                        {
-                            return isTime(normalized_type) || isTime64(normalized_type);
-                        }))
-                {
-                    out = std::move(*normalized_field);
-                    normalized_type_hint = getVariantStringType();
-                }
-                else
-                {
-                    out = field;
-                }
-            }
-            else
-            {
-                out = field;
-            }
-
-            if (stats.analysis)
-            {
-                ++stats.analysis->value_count;
-                if (auto scalar_type = getVariantAnalyzeScalarType(out, normalized_type_hint))
-                    addVariantAnalyzeScalarType(*stats.analysis, scalar_type);
-            }
-            return true;
-    }
-}
-
-bool buildVariantFieldFromColumn(
-    const IColumn & column,
-    const DataTypePtr & type,
-    size_t row,
-    const FormatSettings & format_settings,
-    size_t depth,
-    VariantBuildStats stats,
-    Field & out,
-    DataTypePtr * out_value_type_hint)
-{
-    checkVariantWriteDepth(format_settings, depth);
-
-    DataTypePtr normalized_type = unwrapVariantTypeHint(type);
-    if (typeid_cast<const DataTypeDynamic *>(normalized_type.get()))
-    {
-        const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(&column);
-        if (!dynamic_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected `ColumnDynamic` while preparing nested `Dynamic` value for `Parquet` `VARIANT`");
-
-        auto nested_type = dynamic_column->getTypeAt(row);
-        if (!nested_type)
-        {
-            if (stats.analysis)
-                ++stats.analysis->value_count;
-            if (out_value_type_hint)
-                out_value_type_hint->reset();
-            out = Field();
-            return true;
-        }
-
-        const auto & variant_column = dynamic_column->getVariantColumn();
-        auto discr = variant_column.globalDiscriminatorAt(row);
-        if (discr != dynamic_column->getSharedVariantDiscriminator())
-        {
-            const auto & nested_column = variant_column.getVariantByGlobalDiscriminator(discr);
-            return buildVariantFieldFromColumn(nested_column, nested_type, variant_column.offsetAt(row), format_settings, depth + 1, stats, out, out_value_type_hint);
-        }
-
-        return buildVariantFieldFromDynamicSharedVariant(*dynamic_column, row, format_settings, depth, stats, out, out_value_type_hint);
-    }
-
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_type.get()))
-    {
-        const auto * tuple_column = typeid_cast<const ColumnTuple *>(&column);
-        if (!tuple_column)
-        {
-            if (out_value_type_hint)
-                *out_value_type_hint = normalized_type;
-            return buildVariantField(column[row], normalized_type, nullptr, std::string_view{}, format_settings, depth, stats, out);
-        }
-
-        if (out_value_type_hint)
-            *out_value_type_hint = normalized_type;
-
-        if (tuple_type->hasExplicitNames())
-        {
-            return buildVariantObjectField(
-                tuple_type->getElements().size(),
-                stats,
-                out,
-                [&](size_t i, String & key, Field & child)
-                {
-                    key = tuple_type->getNameByPosition(i + 1);
-                    return buildVariantFieldFromColumn(
-                        tuple_column->getColumn(i),
-                        tuple_type->getElement(i),
-                        row,
-                        format_settings,
-                        depth + 1,
-                        makeVariantObjectChildStats(stats, key),
-                        child);
-                });
-        }
-
-        return buildVariantArrayField(
-            tuple_type->getElements().size(),
-            stats,
-            out,
-            [&](size_t i, VariantBuildStats child_stats, Field & child)
-            {
-                return buildVariantFieldFromColumn(
-                    tuple_column->getColumn(i),
-                    tuple_type->getElement(i),
-                    row,
-                    format_settings,
-                    depth + 1,
-                    child_stats,
-                    child);
-            });
-    }
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(normalized_type.get()))
-    {
-        const auto * array_column = typeid_cast<const ColumnArray *>(&column);
-        if (!array_column)
-        {
-            if (out_value_type_hint)
-                *out_value_type_hint = normalized_type;
-            return buildVariantField(column[row], normalized_type, nullptr, std::string_view{}, format_settings, depth, stats, out);
-        }
-
-        if (out_value_type_hint)
-            *out_value_type_hint = normalized_type;
-
-        const auto & offsets = array_column->getOffsets();
-        size_t begin = row == 0 ? 0 : offsets[row - 1];
-        size_t end = offsets[row];
-        return buildVariantArrayField(
-            end - begin,
-            stats,
-            out,
-            [&](size_t i, VariantBuildStats child_stats, Field & child)
-            {
-                return buildVariantFieldFromColumn(
-                    array_column->getData(),
-                    array_type->getNestedType(),
-                    begin + i,
-                    format_settings,
-                    depth + 1,
-                    child_stats,
-                    child);
-            });
-    }
-
-    if (const auto * map_type = typeid_cast<const DataTypeMap *>(normalized_type.get()))
-    {
-        const auto * map_column = typeid_cast<const ColumnMap *>(&column);
-        if (!map_column)
-        {
-            if (out_value_type_hint)
-                *out_value_type_hint = normalized_type;
-            return buildVariantField(column[row], normalized_type, nullptr, std::string_view{}, format_settings, depth, stats, out);
-        }
-
-        if (out_value_type_hint)
-            *out_value_type_hint = normalized_type;
-
-        const auto & offsets = map_column->getNestedColumn().getOffsets();
-        size_t begin = row == 0 ? 0 : offsets[row - 1];
-        size_t end = offsets[row];
-        const auto & nested_data = map_column->getNestedData();
-        const auto & keys_column = *nested_data.getColumnPtr(0);
-        const auto & values_column = *nested_data.getColumnPtr(1);
-        return buildVariantObjectField(
-            end - begin,
-            stats,
-            out,
-            [&](size_t i, String & key, Field & child)
-            {
-                Field key_field = keys_column[begin + i];
-                if (key_field.getType() != Field::Types::String)
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `Map(String, T)` can be written as `Parquet` `VARIANT`");
-
-                key = key_field.safeGet<String>();
-                return buildVariantFieldFromColumn(
-                    values_column,
-                    map_type->getValueType(),
-                    begin + i,
-                    format_settings,
-                    depth + 1,
-                    makeVariantObjectChildStats(stats, key),
-                    child);
-            });
-    }
-
-    if (out_value_type_hint)
-        *out_value_type_hint = normalized_type;
-    return buildVariantField(column[row], normalized_type, nullptr, std::string_view{}, format_settings, depth, stats, out);
-}
-
-void normalizeVariantFieldForUntypedResidual(
-    Field & field,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const FormatSettings & format_settings,
-    size_t depth)
-{
-    checkVariantWriteDepth(format_settings, depth);
-
-    DataTypePtr normalized_type_hint = unwrapVariantTypeHint(type_hint);
-
-    if (field.getType() == Field::Types::Object)
-    {
-        auto & object = field.safeGet<Object>();
-        for (auto & [key, child] : object)
-        {
-            String child_path = appendVariantJSONPath(current_path, key);
-            normalizeVariantFieldForUntypedResidual(
-                child,
-                getObjectChildTypeHint(normalized_type_hint, object_type, child_path, key),
-                object_type,
-                child_path,
-                format_settings,
-                depth + 1);
-        }
-        return;
-    }
-
-    if (field.getType() == Field::Types::Array)
-    {
-        auto & array = field.safeGet<Array>();
-        for (size_t i = 0; i < array.size(); ++i)
-        {
-            normalizeVariantFieldForUntypedResidual(
-                array[i],
-                getArrayChildTypeHint(normalized_type_hint, i),
-                object_type,
-                current_path,
-                format_settings,
-                depth + 1);
-        }
-        return;
-    }
-
-    if (auto normalized_field = tryNormalizeVariantTemporalScalarToString(
-            field,
-            normalized_type_hint,
-            format_settings,
-            [](const DataTypePtr & normalized_type)
-            {
-                return isDateOrDate32(normalized_type)
-                    || isDateTimeOrDateTime64(normalized_type)
-                    || isTime(normalized_type)
-                    || isTime64(normalized_type);
-            }))
-    {
-        field = std::move(*normalized_field);
-    }
-}
 
 void addVariantAnalyzeScalarType(VariantWriteAnalysisNode & node, const DataTypePtr & type)
 {
@@ -2758,16 +1283,94 @@ void writeVariantSignedIntegralPrimitive(VariantPrimitiveType type, T value, Sin
     sink.writePOD(value);
 }
 
-template <typename Sink, typename T>
-void writeVariantDecimalPrimitive(VariantPrimitiveType type, const DecimalField<T> & value, Sink & sink)
+/// Native twin of `tryConvertIntegralFieldValue`. `Source` is the `NearestFieldType` representation
+/// of the source column value (`Int64`/`UInt64`/`Int128`/`UInt128`/`Int256`/`UInt256`), so the
+/// branch selected here matches the corresponding `Field`-type case in `tryConvertIntegralFieldValue`.
+template <typename Target, typename Source>
+bool tryConvertNativeIntegralValue(Source source, Target & value)
 {
-    sink.writePrimitiveHeader(type);
-    sink.writePOD(static_cast<UInt8>(value.getScale()));
-    sink.writePOD(value.getValue());
+    if constexpr (std::numeric_limits<Source>::is_signed)
+    {
+        if constexpr (std::numeric_limits<Target>::is_signed)
+        {
+            if (source < static_cast<Source>(std::numeric_limits<Target>::min())
+                || source > static_cast<Source>(std::numeric_limits<Target>::max()))
+                return false;
+        }
+        else
+        {
+            using UnsignedSource = ::make_unsigned_t<Source>;
+            if (source < 0 || static_cast<UnsignedSource>(source) > static_cast<UnsignedSource>(std::numeric_limits<Target>::max()))
+                return false;
+        }
+    }
+    else
+    {
+        if (source > static_cast<Source>(std::numeric_limits<Target>::max()))
+            return false;
+    }
+
+    value = static_cast<Target>(source);
+    return true;
 }
 
+/// Reads the column's element value and returns it widened to its `NearestFieldType` integral
+/// representation, mirroring the value that `(*column)[row]` would store inside a `Field`.
+template <typename ColumnElement>
+auto readColumnNearestFieldIntegral(const IColumn & column, size_t row)
+{
+    using FieldType = NearestFieldType<ColumnElement>;
+    return static_cast<FieldType>(assert_cast<const ColumnVector<ColumnElement> &>(column).getData()[row]);
+}
+
+template <typename Target>
+bool tryReadColumnIntegralValue(const IColumn & column, size_t row, const IDataType & value_type, Target & value)
+{
+    switch (value_type.getTypeId())
+    {
+        case TypeIndex::Int8:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<Int8>(column, row), value);
+        case TypeIndex::Int16:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<Int16>(column, row), value);
+        case TypeIndex::Int32:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<Int32>(column, row), value);
+        case TypeIndex::Date32:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<Int32>(column, row), value);
+        case TypeIndex::Time:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<Int32>(column, row), value);
+        case TypeIndex::Int64:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<Int64>(column, row), value);
+        case TypeIndex::UInt8:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<UInt8>(column, row), value);
+        case TypeIndex::UInt16:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<UInt16>(column, row), value);
+        case TypeIndex::Date:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<UInt16>(column, row), value);
+        case TypeIndex::UInt32:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<UInt32>(column, row), value);
+        case TypeIndex::DateTime:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<UInt32>(column, row), value);
+        case TypeIndex::UInt64:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<UInt64>(column, row), value);
+        case TypeIndex::Int128:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<Int128>(column, row), value);
+        case TypeIndex::UInt128:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<UInt128>(column, row), value);
+        case TypeIndex::Int256:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<Int256>(column, row), value);
+        case TypeIndex::UInt256:
+            return tryConvertNativeIntegralValue(readColumnNearestFieldIntegral<UInt256>(column, row), value);
+        default:
+            return false;
+    }
+}
+
+/// Type-hint stage of the columnar scalar encoder: reads the value from `(column, row)` and, when the
+/// type hint pins a concrete temporal/integral/float `VARIANT` primitive, encodes it directly through
+/// `sink`. Returns false when no hint applies, leaving the fallback dispatch to encode the value.
 template <typename Sink>
-bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr & type_hint, Sink & sink)
+bool tryEncodeVariantScalarFromColumnUsingTypeHint(
+    const IColumn & column, size_t row, const IDataType & value_type, const DataTypePtr & type_hint, Sink & sink)
 {
     if (!type_hint)
         return false;
@@ -2781,7 +1384,8 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         case TypeIndex::Date:
         {
             UInt64 converted = 0;
-            if (!tryConvertIntegralFieldValue(field, converted) || converted > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
+            if (!tryReadColumnIntegralValue(column, row, value_type, converted)
+                || converted > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
                 return false;
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Date, static_cast<Int32>(converted), sink);
             return true;
@@ -2789,7 +1393,7 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         case TypeIndex::Date32:
         {
             Int32 converted = 0;
-            if (!tryConvertIntegralFieldValue(field, converted))
+            if (!tryReadColumnIntegralValue(column, row, value_type, converted))
                 return false;
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Date, converted, sink);
             return true;
@@ -2797,7 +1401,8 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         case TypeIndex::DateTime:
         {
             UInt64 converted = 0;
-            if (!tryConvertIntegralFieldValue(field, converted) || converted > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            if (!tryReadColumnIntegralValue(column, row, value_type, converted)
+                || converted > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
                 return false;
 
             Int64 micros = 0;
@@ -2805,9 +1410,6 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode `DateTime` value as `Parquet` `VARIANT` timestamp");
 
             const auto & date_time_type = assert_cast<const DataTypeDateTime &>(*normalized_type);
-            /// `DateTime` with an explicit time zone is an instant in time, so it maps to the
-            /// adjusted-to-UTC `VARIANT` timestamp. Plain `DateTime` keeps "wall clock" semantics
-            /// and uses the NTZ timestamp tag instead.
             writeVariantSignedIntegralPrimitive(
                 date_time_type.hasExplicitTimeZone() ? VariantPrimitiveType::TimestampMicros : VariantPrimitiveType::TimestampNtzMicros,
                 micros,
@@ -2816,17 +1418,15 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         }
         case TypeIndex::DateTime64:
         {
-            if (field.getType() != Field::Types::Decimal64)
+            if (value_type.getTypeId() != TypeIndex::DateTime64)
                 return false;
 
-            const auto & decimal = field.safeGet<DecimalField<DateTime64>>();
             const auto & date_time_type = assert_cast<const DataTypeDateTime64 &>(*normalized_type);
-            /// `Variant` timestamps only support microseconds and nanoseconds, so
-            /// scales `0..6` map to `6` and scales `7..9` map to `9`.
+            DateTime64 raw = assert_cast<const ColumnDecimal<DateTime64> &>(column).getData()[row];
             UInt32 target_scale = date_time_type.getScale() <= 6 ? 6 : 9;
 
             Int64 scaled = 0;
-            if (!tryRescaleVariantTemporalValue(decimal.getValue().value, date_time_type.getScale(), target_scale, scaled))
+            if (!tryRescaleVariantTemporalValue(raw.value, date_time_type.getScale(), target_scale, scaled))
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode `DateTime64` value as `Parquet` `VARIANT` timestamp");
 
             const VariantPrimitiveType primitive_type = target_scale == 6
@@ -2839,7 +1439,7 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         case TypeIndex::Time:
         {
             Int64 converted = 0;
-            if (!tryConvertIntegralFieldValue(field, converted))
+            if (!tryReadColumnIntegralValue(column, row, value_type, converted))
                 return false;
 
             Int64 micros = 0;
@@ -2851,14 +1451,14 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         }
         case TypeIndex::Time64:
         {
-            if (field.getType() != Field::Types::Decimal64)
+            if (value_type.getTypeId() != TypeIndex::Time64)
                 return false;
 
-            const auto & decimal = field.safeGet<DecimalField<Time64>>();
             const auto & time_type = assert_cast<const DataTypeTime64 &>(*normalized_type);
+            Time64 raw = assert_cast<const ColumnDecimal<Time64> &>(column).getData()[row];
 
             Int64 micros = 0;
-            if (!tryRescaleVariantTemporalValue(decimal.getValue().value, time_type.getScale(), 6, micros))
+            if (!tryRescaleVariantTemporalValue(raw.value, time_type.getScale(), 6, micros))
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode `Time64` value as `Parquet` `VARIANT` time");
 
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::TimeNtzMicros, micros, sink);
@@ -2867,7 +1467,7 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         case TypeIndex::Int8:
         {
             Int8 value = 0;
-            if (!tryConvertIntegralFieldValue(field, value))
+            if (!tryReadColumnIntegralValue(column, row, value_type, value))
                 return false;
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int8, value, sink);
             return true;
@@ -2875,7 +1475,7 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         case TypeIndex::Int16:
         {
             Int16 value = 0;
-            if (!tryConvertIntegralFieldValue(field, value))
+            if (!tryReadColumnIntegralValue(column, row, value_type, value))
                 return false;
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int16, value, sink);
             return true;
@@ -2883,7 +1483,7 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         case TypeIndex::Int32:
         {
             Int32 value = 0;
-            if (!tryConvertIntegralFieldValue(field, value))
+            if (!tryReadColumnIntegralValue(column, row, value_type, value))
                 return false;
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int32, value, sink);
             return true;
@@ -2891,7 +1491,7 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         case TypeIndex::UInt8:
         {
             Int16 value = 0;
-            if (!tryConvertIntegralFieldValue(field, value))
+            if (!tryReadColumnIntegralValue(column, row, value_type, value))
                 return false;
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int16, value, sink);
             return true;
@@ -2899,7 +1499,7 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         case TypeIndex::UInt16:
         {
             Int32 value = 0;
-            if (!tryConvertIntegralFieldValue(field, value))
+            if (!tryReadColumnIntegralValue(column, row, value_type, value))
                 return false;
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int32, value, sink);
             return true;
@@ -2907,17 +1507,23 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
         case TypeIndex::UInt32:
         {
             Int64 value = 0;
-            if (!tryConvertIntegralFieldValue(field, value))
+            if (!tryReadColumnIntegralValue(column, row, value_type, value))
                 return false;
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, value, sink);
             return true;
         }
         case TypeIndex::Float32:
         {
-            if (field.getType() != Field::Types::Float64)
+            /// Both `Float32` and `Float64` columns are accepted here because both widen to a `Float64`
+            /// value (`NearestFieldType<Float32> == Float64`).
+            Float64 value;
+            if (value_type.getTypeId() == TypeIndex::Float32)
+                value = static_cast<Float64>(assert_cast<const ColumnVector<Float32> &>(column).getData()[row]);
+            else if (value_type.getTypeId() == TypeIndex::Float64)
+                value = assert_cast<const ColumnVector<Float64> &>(column).getData()[row];
+            else
                 return false;
 
-            Float64 value = field.safeGet<Float64>();
             if (!std::isfinite(value))
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode non-finite `Parquet` `VARIANT` `FLOAT`");
 
@@ -2930,47 +1536,88 @@ bool tryEncodeVariantScalarUsingTypeHint(const Field & field, const DataTypePtr 
     }
 }
 
-template <typename Sink>
-void encodeVariantScalarField(const Field & field, const DataTypePtr & type_hint, Sink & sink)
+template <typename T, typename Sink>
+void writeVariantDecimalFromColumn(VariantPrimitiveType type, const IColumn & column, size_t row, UInt32 scale, Sink & sink)
 {
-    if (tryEncodeVariantScalarUsingTypeHint(field, type_hint, sink))
+    /// Writes a decimal primitive header, the scale (taken from the TYPE), then the raw value.
+    const auto & decimal_column = assert_cast<const ColumnDecimal<T> &>(column);
+    sink.writePrimitiveHeader(type);
+    sink.writePOD(static_cast<UInt8>(scale));
+    sink.writePOD(decimal_column.getData()[row]);
+}
+
+/// Encodes one residual scalar value read directly from `(column, row)`: first the type-hint stage
+/// (`tryEncodeVariantScalarFromColumnUsingTypeHint`), then a fallback dispatch on the column's concrete
+/// value type, mapping each through `NearestFieldType` to the matching `VARIANT` primitive.
+template <typename Sink>
+void encodeVariantScalarFromColumn(
+    const IColumn & column, size_t row, const IDataType & value_type, bool from_dynamic, const DataTypePtr & type_hint, Sink & sink)
+{
+    /// `Bool` is `UInt8` under the hood. A value resolved from a `ColumnDynamic` whose declared type is
+    /// `Bool` must encode as a boolean primitive, whereas a plain typed-path `UInt8`/`Bool` column falls
+    /// through to the generic dispatch below and encodes as `Int64`. So the boolean encoding only applies
+    /// to dynamic-resolved values.
+    if (from_dynamic && value_type.getName() == "Bool")
+    {
+        bool value = assert_cast<const ColumnVector<UInt8> &>(column).getData()[row] != 0;
+        sink.writePrimitiveHeader(value ? VariantPrimitiveType::BooleanTrue : VariantPrimitiveType::BooleanFalse);
+        return;
+    }
+
+    if (tryEncodeVariantScalarFromColumnUsingTypeHint(column, row, value_type, type_hint, sink))
         return;
 
-    switch (field.getType())
+    switch (value_type.getTypeId())
     {
-        case Field::Types::Null:
-            sink.writePrimitiveHeader(VariantPrimitiveType::Null);
-            return;
-        case Field::Types::Bool:
-            sink.writePrimitiveHeader(field.safeGet<bool>() ? VariantPrimitiveType::BooleanTrue : VariantPrimitiveType::BooleanFalse);
-            return;
-        case Field::Types::Int64:
-            writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, field.safeGet<Int64>(), sink);
-            return;
-        case Field::Types::UInt64:
+        case TypeIndex::Int8:
+        case TypeIndex::Int16:
+        case TypeIndex::Int32:
+        case TypeIndex::Int64:
+        case TypeIndex::Date32:
+        case TypeIndex::Time:
         {
-            UInt64 source = field.safeGet<UInt64>();
+            /// All of these produce an `Int64` `Field`; encode as `Int64`.
+            Int64 value = 0;
+            tryReadColumnIntegralValue(column, row, value_type, value);
+            writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, value, sink);
+            return;
+        }
+        case TypeIndex::UInt8:
+        case TypeIndex::UInt16:
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+        case TypeIndex::Date:
+        case TypeIndex::DateTime:
+        {
+            /// All of these produce a `UInt64` `Field`; encode as `Int64` with the same overflow check.
+            UInt64 source = 0;
+            tryReadColumnIntegralValue(column, row, value_type, source);
             if (source > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode integer {} as `Parquet` `VARIANT` `INT64`", source);
 
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, static_cast<Int64>(source), sink);
             return;
         }
-        case Field::Types::Int128:
-        case Field::Types::UInt128:
-        case Field::Types::Int256:
-        case Field::Types::UInt256:
+        case TypeIndex::Int128:
+        case TypeIndex::UInt128:
+        case TypeIndex::Int256:
+        case TypeIndex::UInt256:
         {
             Int64 converted = 0;
-            if (!tryConvertIntegralFieldValue(field, converted))
+            if (!tryReadColumnIntegralValue(column, row, value_type, converted))
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode integer value as `Parquet` `VARIANT` `INT64`");
 
             writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, converted, sink);
             return;
         }
-        case Field::Types::Float64:
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
         {
-            Float64 source = field.safeGet<Float64>();
+            /// A `Float32` column yields a `Float64` `Field` (`NearestFieldType<Float32> == Float64`),
+            /// so both widen to `Float64` and encode as `Double`.
+            Float64 source = value_type.getTypeId() == TypeIndex::Float32
+                ? static_cast<Float64>(assert_cast<const ColumnVector<Float32> &>(column).getData()[row])
+                : assert_cast<const ColumnVector<Float64> &>(column).getData()[row];
             if (!std::isfinite(source))
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode non-finite `Parquet` `VARIANT` `DOUBLE`");
 
@@ -2978,37 +1625,52 @@ void encodeVariantScalarField(const Field & field, const DataTypePtr & type_hint
             sink.writePOD(source);
             return;
         }
-        case Field::Types::String:
-            sink.writeString(field.safeGet<String>());
-            return;
-        case Field::Types::UUID:
+        case TypeIndex::String:
         {
-            sink.writePrimitiveHeader(VariantPrimitiveType::UUID);
-            sink.writeUUID(field.safeGet<UUID>());
+            sink.writeString(assert_cast<const ColumnString &>(column).getDataAt(row));
             return;
         }
-        case Field::Types::Decimal32:
-            writeVariantDecimalPrimitive(VariantPrimitiveType::Decimal4, field.safeGet<DecimalField<Decimal32>>(), sink);
+        case TypeIndex::FixedString:
+        {
+            sink.writeString(assert_cast<const ColumnFixedString &>(column).getDataAt(row));
             return;
-        case Field::Types::Decimal64:
-            writeVariantDecimalPrimitive(VariantPrimitiveType::Decimal8, field.safeGet<DecimalField<Decimal64>>(), sink);
+        }
+        case TypeIndex::UUID:
+        {
+            sink.writePrimitiveHeader(VariantPrimitiveType::UUID);
+            sink.writeUUID(assert_cast<const ColumnVector<UUID> &>(column).getData()[row]);
             return;
-        case Field::Types::Decimal128:
-            writeVariantDecimalPrimitive(VariantPrimitiveType::Decimal16, field.safeGet<DecimalField<Decimal128>>(), sink);
+        }
+        case TypeIndex::Decimal32:
+            writeVariantDecimalFromColumn<Decimal32>(VariantPrimitiveType::Decimal4, column, row, getDecimalScale(value_type), sink);
             return;
-        case Field::Types::IPv4:
-        case Field::Types::IPv6:
+        case TypeIndex::Decimal64:
+            writeVariantDecimalFromColumn<Decimal64>(VariantPrimitiveType::Decimal8, column, row, getDecimalScale(value_type), sink);
+            return;
+        case TypeIndex::DateTime64:
+            /// A `DateTime64` value is a `Decimal64` under the hood, so with no applicable type hint it is
+            /// encoded as a `Decimal8` with the type's scale.
+            writeVariantDecimalFromColumn<DateTime64>(VariantPrimitiveType::Decimal8, column, row, getDecimalScale(value_type), sink);
+            return;
+        case TypeIndex::Time64:
+            writeVariantDecimalFromColumn<Time64>(VariantPrimitiveType::Decimal8, column, row, getDecimalScale(value_type), sink);
+            return;
+        case TypeIndex::Decimal128:
+            writeVariantDecimalFromColumn<Decimal128>(VariantPrimitiveType::Decimal16, column, row, getDecimalScale(value_type), sink);
+            return;
+        case TypeIndex::IPv4:
+        case TypeIndex::IPv6:
         {
             WriteBufferFromOwnString wb;
-            if (field.getType() == Field::Types::IPv4)
-                writeText(field.safeGet<IPv4>(), wb);
+            if (value_type.getTypeId() == TypeIndex::IPv4)
+                writeText(assert_cast<const ColumnVector<IPv4> &>(column).getData()[row], wb);
             else
-                writeText(field.safeGet<IPv6>(), wb);
+                writeText(assert_cast<const ColumnVector<IPv6> &>(column).getData()[row], wb);
             String text = wb.str();
             sink.writeString(text);
             return;
         }
-        case Field::Types::Decimal256:
+        case TypeIndex::Decimal256:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot encode `Decimal256` as `Parquet` `VARIANT`");
         default:
             break;
@@ -3017,368 +1679,1472 @@ void encodeVariantScalarField(const Field & field, const DataTypePtr & type_hint
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value while encoding `Parquet` `VARIANT`");
 }
 
-template <typename Sink>
-void encodeVariantScalarValue(const Field & field, const DataTypePtr & type_hint, Sink & sink)
+/// Returns whether the unwrapped column value type is a residual scalar that `encodeVariantScalarFromColumn`
+/// can encode. When it returns false the columnar cursor reports the value as unencodable instead of
+/// emitting a scalar.
+bool isSupportedDirectVariantResidualScalarColumnType(const IDataType & value_type)
 {
-    encodeVariantScalarField(field, type_hint, sink);
+    switch (value_type.getTypeId())
+    {
+        case TypeIndex::Int8:
+        case TypeIndex::Int16:
+        case TypeIndex::Int32:
+        case TypeIndex::Int64:
+        case TypeIndex::Int128:
+        case TypeIndex::Int256:
+        case TypeIndex::UInt8:
+        case TypeIndex::UInt16:
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+        case TypeIndex::UInt128:
+        case TypeIndex::UInt256:
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+        case TypeIndex::DateTime:
+        case TypeIndex::DateTime64:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
+        case TypeIndex::String:
+        case TypeIndex::FixedString:
+        case TypeIndex::UUID:
+        case TypeIndex::IPv4:
+        case TypeIndex::IPv6:
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+            return true;
+        default:
+            return false;
+    }
 }
 
-size_t getVariantScalarEncodedSize(const Field & field, const DataTypePtr & type_hint)
+size_t getVariantScalarEncodedSizeFromColumn(
+    const IColumn & column, size_t row, const IDataType & value_type, bool from_dynamic, const DataTypePtr & type_hint)
 {
     VariantScalarMeasureSink sink;
-    encodeVariantScalarValue(field, type_hint, sink);
+    encodeVariantScalarFromColumn(column, row, value_type, from_dynamic, type_hint, sink);
     return sink.size;
 }
 
-void writeVariantScalarToBuffer(const Field & field, const DataTypePtr & type_hint, char *& out)
+void writeVariantScalarFromColumnToBuffer(
+    const IColumn & column, size_t row, const IDataType & value_type, bool from_dynamic, const DataTypePtr & type_hint, char *& out)
 {
     VariantScalarWriteSink sink(out);
-    encodeVariantScalarValue(field, type_hint, sink);
+    encodeVariantScalarFromColumn(column, row, value_type, from_dynamic, type_hint, sink);
 }
 
-size_t getDirectVariantResidualScalarEncodedSize(const DirectVariantResidualEntry & entry)
+/// The types below implement the columnar `value`-payload cursor (`measureVariantColumnarValue` /
+/// `writeVariantColumnarValue`). The cursor reads the binary `value` directly from `(column, type, row)`
+/// and its sub-columns, without materializing a per-row `Field`/`Object`/`Array` tree. It encodes every
+/// shape: scalars, nested `Object`/`Tuple`/`Map`/`Array`/`Variant`/`Dynamic`, and the genuinely per-row
+/// heterogeneous cases (shared-`Variant` binary blobs, `ColumnConst`/`ColumnSparse`) which it
+/// resolves without building a full row value tree. Object children (named `Tuple`,
+/// `Map(String, T)`, reconstructed `ColumnObject` keys) are emitted in lexicographic key order.
+///
+/// A row-group-local arena that owns transient columns the cursor materializes for the genuinely
+/// per-row heterogeneous cases (shared-`Variant` binary blobs and cached full sparse columns).
+/// The cursor measures and writes a value in two passes that both re-resolve the source, so a value
+/// canonicalized into a transient column must survive between them; this arena keeps every such column
+/// alive for the whole encode and caches the decode by `(column pointer, row)` so it is paid once.
+struct VariantSharedBlobCacheKey
 {
-    switch (entry.value_kind)
+    const ColumnString * column = nullptr;
+    size_t row = 0;
+
+    bool operator==(const VariantSharedBlobCacheKey & other) const
     {
-        case DirectVariantResidualValueKind::Field:
-            return getVariantScalarEncodedSize(entry.value, entry.type_hint);
-        case DirectVariantResidualValueKind::Null:
-        case DirectVariantResidualValueKind::Bool:
-            return 1;
-        case DirectVariantResidualValueKind::Int64:
-        case DirectVariantResidualValueKind::UInt64:
-        case DirectVariantResidualValueKind::Float64:
-            return 1 + sizeof(UInt64);
-        case DirectVariantResidualValueKind::StringView:
-            return getVariantEncodedStringSize(entry.string_value);
+        return column == other.column && row == other.row;
     }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected direct `Parquet` `VARIANT` residual value kind");
-}
-
-void writeDirectVariantResidualEntryToBuffer(const DirectVariantResidualEntry & entry, char *& out)
-{
-    VariantScalarWriteSink sink(out);
-    switch (entry.value_kind)
-    {
-        case DirectVariantResidualValueKind::Field:
-            writeVariantScalarToBuffer(entry.value, entry.type_hint, out);
-            return;
-        case DirectVariantResidualValueKind::Null:
-            sink.writePrimitiveHeader(VariantPrimitiveType::Null);
-            return;
-        case DirectVariantResidualValueKind::Bool:
-            sink.writePrimitiveHeader(entry.bool_value ? VariantPrimitiveType::BooleanTrue : VariantPrimitiveType::BooleanFalse);
-            return;
-        case DirectVariantResidualValueKind::Int64:
-            writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, entry.int64_value, sink);
-            return;
-        case DirectVariantResidualValueKind::UInt64:
-        {
-            if (entry.uint64_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode integer {} as `Parquet` `VARIANT` `INT64`", entry.uint64_value);
-
-            writeVariantSignedIntegralPrimitive(VariantPrimitiveType::Int64, static_cast<Int64>(entry.uint64_value), sink);
-            return;
-        }
-        case DirectVariantResidualValueKind::Float64:
-        {
-            if (!std::isfinite(entry.float64_value))
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Cannot encode non-finite `Parquet` `VARIANT` `DOUBLE`");
-
-            sink.writePrimitiveHeader(VariantPrimitiveType::Double);
-            sink.writePOD(entry.float64_value);
-            return;
-        }
-        case DirectVariantResidualValueKind::StringView:
-            sink.writeString(entry.string_value);
-            return;
-    }
-}
-
-struct MeasuredVariantObjectChild
-{
-    UInt32 field_id = 0;
-    const Field * child = nullptr;
-    DataTypePtr type_hint;
-    String path;
-    size_t child_size = 0;
 };
 
-struct MeasuredVariantObjectEncoding
+struct VariantSharedBlobCacheKeyHash
 {
-    bool omitted = false;
+    size_t operator()(const VariantSharedBlobCacheKey & key) const
+    {
+        size_t result = std::hash<const void *>{}(key.column);
+        result ^= std::hash<size_t>{}(key.row) + 0x9e3779b97f4a7c15ULL + (result << 6) + (result >> 2);
+        return result;
+    }
+};
+
+struct VariantColumnarTransientArena
+{
+    std::deque<ColumnPtr> owned_columns;
+    std::unordered_map<VariantSharedBlobCacheKey, std::pair<const IColumn *, DataTypePtr>, VariantSharedBlobCacheKeyHash> shared_variant_cache;
+    std::unordered_map<const IColumn *, ColumnPtr> full_sparse_columns;
+};
+
+struct VariantColumnarCursorContext
+{
+    const std::unordered_map<String, UInt32> & dictionary;
+    const FormatSettings & format_settings;
+    VariantColumnarTransientArena * arena = nullptr;
+};
+
+DataTypePtr getVariantColumnarScalarTypeHint(const DataTypePtr & type_hint, const DataTypePtr & resolved_type)
+{
+    DataTypePtr normalized_hint = unwrapVariantTypeHint(type_hint);
+    if (!normalized_hint
+        || typeid_cast<const DataTypeDynamic *>(normalized_hint.get())
+        || normalized_hint->getTypeId() == TypeIndex::Variant)
+        return resolved_type;
+
+    return type_hint;
+}
+
+[[noreturn]] void throwCannotEncodeVariantColumnarValue(const DataTypePtr & type)
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Cannot encode value of type {} as `Parquet` `VARIANT`",
+        type ? type->getName() : String("unknown"));
+}
+
+/// One object child entry, sortable by key for lexicographic emission. Carries the recursion target
+/// (`column`, `type`, `row`, `type_hint`, `from_dynamic`) so the write pass can re-emit the child
+/// value without re-resolving the parent.
+struct VariantColumnarObjectChild
+{
+    String key;
+    UInt32 field_id = 0;
+    size_t child_size = 0;
+    const IColumn * column = nullptr;
+    DataTypePtr type;
+    size_t row = 0;
+    DataTypePtr type_hint;
+    bool from_dynamic = false;
+};
+
+bool measureVariantColumnarValue(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    const DataTypePtr & type_hint,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    size_t & out_size);
+
+void writeVariantColumnarValue(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    const DataTypePtr & type_hint,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    char *& out);
+
+bool tryEncodeVariantColumnarValue(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    String & out);
+
+std::pair<const IColumn *, DataTypePtr> materializeVariantSharedBlob(
+    const ColumnString & shared_values, size_t index, VariantColumnarTransientArena & arena);
+
+/// One flat leaf of a `ColumnObject` row: the dot-separated path segments relative to the encoded
+/// sub-object, plus the resolved `(column, type, row)` source to encode the leaf value from. Shared-data
+/// leaves are materialized into the arena so they look like an ordinary typed leaf here.
+struct VariantColumnarObjectLeaf
+{
+    std::vector<String> segments;
+    const IColumn * column = nullptr;
+    DataTypePtr type;
+    size_t row = 0;
+    /// Whether the leaf value originates from a source with no declared type (a dynamic path or a
+    /// shared-data entry), exactly like a `Dynamic` value. This drives the scalar encoder's
+    /// `Bool`->boolean-primitive vs `Bool`->`Int64` decision: an untyped `Bool` must encode as the
+    /// boolean primitive, while a declared-`Bool` typed path encodes as `Int64`.
+    bool from_dynamic = false;
+};
+
+/// Collects every flat leaf present in `object_column` at `row` (typed paths, dynamic paths, and
+/// shared-data entries decoded into the arena), splitting each stored path into segments. The typed-path
+/// value types come from `object_data_type`; dynamic and shared-data leaves resolve their concrete type
+/// per row through the cursor (so their `type` is `Dynamic` / the decoded blob type).
+void collectVariantColumnarObjectLeaves(
+    const ColumnObject & object_column,
+    const DataTypeObject & object_data_type,
+    size_t row,
+    const VariantColumnarCursorContext & context,
+    std::vector<VariantColumnarObjectLeaf> & out)
+{
+    out.clear();
+    static const DataTypePtr dynamic_type = std::make_shared<DataTypeDynamic>();
+    const auto & declared_typed_paths = object_data_type.getTypedPaths();
+
+    for (const auto & [path, column] : object_column.getTypedPaths())
+    {
+        auto it = declared_typed_paths.find(path);
+        VariantColumnarObjectLeaf leaf;
+        leaf.segments = splitVariantObjectPath(path);
+        leaf.column = column.get();
+        leaf.type = it != declared_typed_paths.end() ? it->second : dynamic_type;
+        leaf.row = row;
+        out.emplace_back(std::move(leaf));
+    }
+
+    for (const auto & [path, column] : object_column.getDynamicPathsPtrs())
+    {
+        if (column->isNullAt(row))
+            continue;
+        VariantColumnarObjectLeaf leaf;
+        leaf.segments = splitVariantObjectPath(path);
+        leaf.column = column;
+        leaf.type = dynamic_type;
+        leaf.row = row;
+        leaf.from_dynamic = true;
+        out.emplace_back(std::move(leaf));
+    }
+
+    const auto & shared_data_offsets = object_column.getSharedDataOffsets();
+    const auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();
+    size_t begin = row == 0 ? 0 : shared_data_offsets[row - 1];
+    size_t end = shared_data_offsets[row];
+    for (size_t i = begin; i != end; ++i)
+    {
+        chassert(context.arena);
+        auto [blob_column, blob_type] = materializeVariantSharedBlob(*shared_data_values, i, *context.arena);
+        VariantColumnarObjectLeaf leaf;
+        leaf.segments = splitVariantObjectPath(shared_data_paths->getDataAt(i));
+        leaf.column = blob_column;
+        leaf.type = blob_type;
+        leaf.row = 0;
+        /// Shared-data blobs are materialized into a concrete typed column, so the cursor's
+        /// `resolveVariantColumnarSource` no longer sees a `Dynamic` to set `from_dynamic`. The value
+        /// has no declared type (it lived in the shared-data store), so mark it dynamic here, otherwise
+        /// a shared-data `Bool` would be mis-encoded as `Int64`.
+        leaf.from_dynamic = true;
+        out.emplace_back(std::move(leaf));
+    }
+}
+
+/// A node of the nested object tree reconstructed from a `ColumnObject` row's flat leaves: either a
+/// scalar/array/object leaf source `(column, type, row)` to recurse the cursor into, or a sub-object
+/// with its own children. Children carry their encoded size for the two-pass measure/write.
+struct VariantColumnarObjectColumnChild
+{
+    String key;
+    UInt32 field_id = 0;
+    size_t child_size = 0;
+    const VariantColumnarObjectLeaf * leaf = nullptr;
+    bool is_object = false;
+    std::vector<VariantColumnarObjectColumnChild> children;
     UInt8 field_id_size = 0;
     UInt8 field_offset_size = 0;
     bool is_large = false;
-    size_t total_children_size = 0;
-    size_t total_size = 0;
-    std::vector<MeasuredVariantObjectChild> children;
 };
 
-struct MeasuredVariantArrayEncoding
+/// Measures the encoded size of one reconstructed object level over `leaves[begin, end)` (already sorted
+/// by segments) at `depth`, filling `out_children`/header widths and returning the total object size.
+/// `excluded_top_keys`, when set and at `depth == 0`, skips those top-level keys (used to carve the
+/// shredded fields out of the residual object).
+size_t measureVariantColumnarObjectColumnLevel(
+    const std::vector<VariantColumnarObjectLeaf> & leaves,
+    size_t begin,
+    size_t end,
+    size_t depth,
+    size_t object_depth,
+    const VariantColumnarCursorContext & context,
+    std::vector<VariantColumnarObjectColumnChild> & out_children,
+    UInt8 & out_field_id_size,
+    UInt8 & out_field_offset_size,
+    bool & out_is_large,
+    const std::unordered_set<String> * excluded_top_keys = nullptr)
 {
-    UInt8 field_offset_size = 0;
-    bool is_large = false;
-    size_t total_children_size = 0;
-    size_t total_size = 0;
-    std::vector<size_t> child_sizes;
-};
-
-size_t measureVariantValueEncodedSize(
-    const Field & value,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const std::unordered_map<String, UInt32> & dictionary,
-    const std::unordered_set<String> * excluded_fields = nullptr);
-
-MeasuredVariantObjectEncoding measureVariantObjectEncoding(
-    const Field & value,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const std::unordered_map<String, UInt32> & dictionary,
-    const std::unordered_set<String> * excluded_fields = nullptr)
-{
-    chassert(value.getType() == Field::Types::Object);
-    const auto & object = value.safeGet<Object>();
-
-    MeasuredVariantObjectEncoding encoding;
-    encoding.children.reserve(object.size());
-
+    out_children.clear();
     UInt32 highest_field_id = 0;
-    for (const auto & [key, child_value] : object)
-    {
-        if (excluded_fields && excluded_fields->contains(key))
-            continue;
+    size_t total_children_size = 0;
 
-        auto it = dictionary.find(key);
-        if (it == dictionary.end())
+    for (size_t pos = begin; pos < end;)
+    {
+        checkVariantWriteDepth(context.format_settings, object_depth + depth + 1);
+
+        /// A residual leaf whose path ends above this level while a sibling descends through the same
+        /// key means a key is used both as a scalar and as a sub-object (e.g. `{"b":1,"b":{"c":2}}`),
+        /// which cannot be represented. Reject it rather than reading `segments[depth]` out of bounds.
+        if (leaves[pos].segments.size() <= depth)
+        {
+            String conflicting_path;
+            for (const String & segment : leaves[pos].segments)
+            {
+                if (!conflicting_path.empty())
+                    conflicting_path += '.';
+                conflicting_path += segment;
+            }
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot prepare `Object` path {} for `Parquet` `VARIANT` writing because it conflicts with another residual value",
+                conflicting_path);
+        }
+
+        const String & key = leaves[pos].segments[depth];
+        size_t next = pos + 1;
+        while (next < end && leaves[next].segments.size() > depth && leaves[next].segments[depth] == key)
+            ++next;
+
+        if (depth == 0 && excluded_top_keys && excluded_top_keys->contains(key))
+        {
+            pos = next;
+            continue;
+        }
+
+        auto dict_it = context.dictionary.find(key);
+        if (dict_it == context.dictionary.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing `Parquet` `VARIANT` dictionary entry for key {}", key);
 
-        String child_path = appendVariantJSONPath(current_path, key);
-        DataTypePtr child_type_hint = getObjectChildTypeHint(type_hint, object_type, child_path, key);
-        size_t child_size = measureVariantValueEncodedSize(child_value, child_type_hint, object_type, child_path, dictionary);
-        highest_field_id = std::max(highest_field_id, it->second);
-        addVariantEncodingSizeOrThrow(encoding.total_children_size, child_size, "`object` children");
-        encoding.children.emplace_back(MeasuredVariantObjectChild
+        VariantColumnarObjectColumnChild child;
+        child.key = key;
+        child.field_id = dict_it->second;
+        highest_field_id = std::max(highest_field_id, child.field_id);
+
+        if (leaves[pos].segments.size() == depth + 1 && next == pos + 1)
         {
-            .field_id = it->second,
-            .child = &child_value,
-            .type_hint = std::move(child_type_hint),
-            .path = std::move(child_path),
-            .child_size = child_size,
-        });
+            child.leaf = &leaves[pos];
+            if (!measureVariantColumnarValue(
+                    *child.leaf->column,
+                    child.leaf->type,
+                    child.leaf->row,
+                    child.leaf->type,
+                    child.leaf->from_dynamic,
+                    context,
+                    object_depth + depth + 1,
+                    child.child_size))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to measure `Parquet` `VARIANT` object leaf");
+        }
+        else
+        {
+            /// A key that is both a leaf and a sub-object prefix cannot exist in a valid `ColumnObject`
+            /// row; treat the whole span as a nested object.
+            child.is_object = true;
+            child.child_size = measureVariantColumnarObjectColumnLevel(
+                leaves, pos, next, depth + 1, object_depth, context, child.children,
+                child.field_id_size, child.field_offset_size, child.is_large);
+        }
+
+        addVariantEncodingSizeOrThrow(total_children_size, child.child_size, "`object` children");
+        out_children.emplace_back(std::move(child));
+        pos = next;
     }
 
-    if (!object.empty() && encoding.children.empty())
-    {
-        encoding.omitted = true;
-        return encoding;
-    }
-
+    size_t total_size = 0;
     finishVariantObjectEncodingHeader(
-        encoding.children.size(),
-        highest_field_id,
-        encoding.total_children_size,
-        encoding.field_id_size,
-        encoding.field_offset_size,
-        encoding.is_large,
-        encoding.total_size);
-    return encoding;
+        out_children.size(), highest_field_id, total_children_size,
+        out_field_id_size, out_field_offset_size, out_is_large, total_size);
+    return total_size;
 }
 
-MeasuredVariantArrayEncoding measureVariantArrayEncoding(
-    const Field & value,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const std::unordered_map<String, UInt32> & dictionary)
+/// Writes one reconstructed object level previously measured by `measureVariantColumnarObjectColumnLevel`.
+void writeVariantColumnarObjectColumnLevel(
+    const std::vector<VariantColumnarObjectColumnChild> & children,
+    UInt8 field_id_size,
+    UInt8 field_offset_size,
+    bool is_large,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    char *& out)
 {
-    chassert(value.getType() == Field::Types::Array);
-    const auto & array = value.safeGet<Array>();
+    checkVariantWriteDepth(context.format_settings, depth);
+    writeVariantObjectHeaderAndChildren(
+        children, field_id_size, field_offset_size, is_large, out,
+        [&](const VariantColumnarObjectColumnChild & child)
+        {
+            if (child.is_object)
+                writeVariantColumnarObjectColumnLevel(child.children, child.field_id_size, child.field_offset_size, child.is_large, context, depth + 1, out);
+            else
+                writeVariantColumnarValue(*child.leaf->column, child.leaf->type, child.leaf->row, child.leaf->type, child.leaf->from_dynamic, context, depth + 1, out);
+        });
+}
 
-    MeasuredVariantArrayEncoding encoding;
-    encoding.child_sizes.reserve(array.size());
-    for (size_t i = 0; i < array.size(); ++i)
+/// Sorts the collected leaves of a `ColumnObject` row by segments so equal first-segments are contiguous
+/// at every depth, matching the lexicographic object emission order.
+void sortVariantColumnarObjectLeaves(std::vector<VariantColumnarObjectLeaf> & leaves)
+{
+    std::sort(leaves.begin(), leaves.end(), [](const auto & lhs, const auto & rhs)
     {
-        size_t child_size = measureVariantValueEncodedSize(array[i], getArrayChildTypeHint(type_hint, i), object_type, current_path, dictionary);
-        addVariantEncodingSizeOrThrow(encoding.total_children_size, child_size, "`array` children");
-        encoding.child_sizes.emplace_back(child_size);
-    }
+        return lhs.segments < rhs.segments;
+    });
+}
 
-    encoding.field_offset_size = variantByteLength(encoding.total_children_size);
-    if (encoding.field_offset_size > 4)
+/// Computes the encoded size of an array (header plus offset table) given its children sizes.
+bool measureVariantColumnarArraySize(const std::vector<size_t> & child_sizes, size_t & out_size)
+{
+    size_t total_children_size = 0;
+    for (size_t child_size : child_sizes)
+        addVariantEncodingSizeOrThrow(total_children_size, child_size, "`array` children");
+
+    UInt8 field_offset_size = variantByteLength(total_children_size);
+    if (field_offset_size > 4)
     {
         throw Exception(
             ErrorCodes::LIMIT_EXCEEDED,
             "Cannot encode `Parquet` `VARIANT` array header requiring offset size {}; maximum supported header width is 4 bytes",
-            static_cast<UInt32>(encoding.field_offset_size));
+            static_cast<UInt32>(field_offset_size));
     }
 
-    if (encoding.child_sizes.size() > std::numeric_limits<UInt32>::max())
+    if (child_sizes.size() > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Cannot encode `Parquet` `VARIANT` array with more than {} elements", std::numeric_limits<UInt32>::max());
 
-    encoding.is_large = encoding.child_sizes.size() > std::numeric_limits<UInt8>::max();
+    bool is_large = child_sizes.size() > std::numeric_limits<UInt8>::max();
     size_t total_size = 1;
-    addVariantEncodingSizeOrThrow(total_size, encoding.is_large ? sizeof(UInt32) : sizeof(UInt8), "`array` header");
+    addVariantEncodingSizeOrThrow(total_size, is_large ? sizeof(UInt32) : sizeof(UInt8), "`array` header");
     addVariantEncodingSizeOrThrow(
         total_size,
         multiplyVariantEncodingSizeOrThrow(
-            addVariantEncodingSizesOrThrow(encoding.child_sizes.size(), size_t{1}, "`array` offset table size"),
-            encoding.field_offset_size,
+            addVariantEncodingSizesOrThrow(child_sizes.size(), size_t{1}, "`array` offset table size"),
+            field_offset_size,
             "`array` field offset table"),
         "`array` total size");
-    addVariantEncodingSizeOrThrow(total_size, encoding.total_children_size, "`array` total size");
-    encoding.total_size = total_size;
-    return encoding;
+    addVariantEncodingSizeOrThrow(total_size, total_children_size, "`array` total size");
+    out_size = total_size;
+    return true;
 }
 
-size_t measureVariantValueEncodedSize(
-    const Field & value,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const std::unordered_map<String, UInt32> & dictionary,
-    const std::unordered_set<String> * excluded_fields)
+/// Writes the array header and offset table (not the children).
+void writeVariantColumnarArrayHeader(const std::vector<size_t> & child_sizes, char *& out)
 {
-    if (value.getType() != Field::Types::Object && value.getType() != Field::Types::Array)
-        return getVariantScalarEncodedSize(value, type_hint);
+    size_t total_children_size = 0;
+    for (size_t child_size : child_sizes)
+        total_children_size += child_size;
 
-    if (value.getType() == Field::Types::Object)
-        return measureVariantObjectEncoding(value, type_hint, object_type, current_path, dictionary, excluded_fields).total_size;
-
-    return measureVariantArrayEncoding(value, type_hint, object_type, current_path, dictionary).total_size;
-}
-
-void writeVariantEncodedValueToBuffer(
-    const Field & value,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const std::unordered_map<String, UInt32> & dictionary,
-    char *& out);
-
-void writeVariantObjectToBuffer(
-    const DataTypeObject * object_type,
-    const std::unordered_map<String, UInt32> & dictionary,
-    const MeasuredVariantObjectEncoding & encoding,
-    char *& out)
-{
-    chassert(!encoding.omitted);
-
-    writeVariantObjectHeaderAndChildren(
-        encoding.children,
-        encoding.field_id_size,
-        encoding.field_offset_size,
-        encoding.is_large,
-        out,
-        [&](const MeasuredVariantObjectChild & child)
-        {
-            writeVariantEncodedValueToBuffer(*child.child, child.type_hint, object_type, child.path, dictionary, out);
-        });
-}
-
-void writeVariantArrayToBuffer(
-    const Field & value,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const std::unordered_map<String, UInt32> & dictionary,
-    const MeasuredVariantArrayEncoding & encoding,
-    char *& out)
-{
-    chassert(value.getType() == Field::Types::Array);
-    const auto & array = value.safeGet<Array>();
+    UInt8 field_offset_size = variantByteLength(total_children_size);
+    bool is_large = child_sizes.size() > std::numeric_limits<UInt8>::max();
 
     UInt8 header = static_cast<UInt8>(VariantBasicType::Array);
-    header |= static_cast<UInt8>(encoding.field_offset_size - 1) << VARIANT_VALUE_HEADER_SHIFT;
-    header |= static_cast<UInt8>(encoding.is_large) << (VARIANT_VALUE_HEADER_SHIFT + VARIANT_ARRAY_IS_LARGE_SHIFT);
+    header |= static_cast<UInt8>(field_offset_size - 1) << VARIANT_VALUE_HEADER_SHIFT;
+    header |= static_cast<UInt8>(is_large) << (VARIANT_VALUE_HEADER_SHIFT + VARIANT_ARRAY_IS_LARGE_SHIFT);
     *out = static_cast<char>(header);
     ++out;
 
-    if (encoding.is_large)
-        writeVariantPODToBuffer(static_cast<UInt32>(encoding.child_sizes.size()), out);
+    if (is_large)
+        writeVariantPODToBuffer(static_cast<UInt32>(child_sizes.size()), out);
     else
     {
-        *out = static_cast<char>(static_cast<UInt8>(encoding.child_sizes.size()));
+        *out = static_cast<char>(static_cast<UInt8>(child_sizes.size()));
         ++out;
     }
 
     UInt64 offset = 0;
-    for (size_t child_size : encoding.child_sizes)
+    for (size_t child_size : child_sizes)
     {
-        writeVariantLittleEndianToBuffer(offset, encoding.field_offset_size, out);
+        writeVariantLittleEndianToBuffer(offset, field_offset_size, out);
         addVariantEncodingUInt64OrThrow(offset, static_cast<UInt64>(child_size), "`array` child offsets");
     }
-    writeVariantLittleEndianToBuffer(offset, encoding.field_offset_size, out);
-
-    for (size_t i = 0; i < array.size(); ++i)
-        writeVariantEncodedValueToBuffer(array[i], getArrayChildTypeHint(type_hint, i), object_type, current_path, dictionary, out);
+    writeVariantLittleEndianToBuffer(offset, field_offset_size, out);
 }
 
-void writeVariantEncodedValueToBuffer(
-    const Field & value,
+/// Decodes a shared-`Variant` binary blob (the per-row payload `ColumnDynamic` stores in its shared
+/// `ColumnString`) into a single-row typed column owned by the arena, caching the decode by
+/// `(values column, index)` so the measure and write passes share it. Returns the materialized
+/// `(column, type)` to recurse into.
+std::pair<const IColumn *, DataTypePtr> materializeVariantSharedBlob(
+    const ColumnString & shared_values, size_t index, VariantColumnarTransientArena & arena)
+{
+    VariantSharedBlobCacheKey key{.column = &shared_values, .row = index};
+    auto it = arena.shared_variant_cache.find(key);
+    if (it != arena.shared_variant_cache.end())
+        return it->second;
+
+    ReadBufferFromMemory buf(shared_values.getDataAt(index));
+    auto nested_type = decodeDataType(buf);
+    auto nested_column = nested_type->createColumn();
+    nested_type->getDefaultSerialization()->deserializeBinary(*nested_column, buf, FormatSettings());
+
+    arena.owned_columns.emplace_back(std::move(nested_column));
+    std::pair<const IColumn *, DataTypePtr> resolved{arena.owned_columns.back().get(), std::move(nested_type)};
+    arena.shared_variant_cache.emplace(key, resolved);
+    return resolved;
+}
+
+/// Resolves a `(column, type, row)` to the underlying source the cursor should recurse into:
+/// peels `Nullable`/`LowCardinality`/`Const`/`Sparse`, and for `Dynamic` resolves the per-row concrete
+/// variant sub-column. A shared-`Variant` binary blob is canonicalized into a transient typed column in
+/// the context arena and resolved from there, so no per-row `Field` tree is needed.
+/// On a per-row `Null` (Nullable null, or `Dynamic` with no type), sets `out_is_null = true`.
+bool resolveVariantColumnarSource(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    const VariantColumnarCursorContext & context,
+    const IColumn *& out_column,
+    DataTypePtr & out_type,
+    size_t & out_row,
+    bool & out_from_dynamic,
+    bool & out_is_null)
+{
+    const IColumn * current_column = &column;
+    DataTypePtr current_type = unwrapVariantTypeHint(type);
+    size_t current_row = row;
+    bool from_dynamic = out_from_dynamic;
+
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(current_column))
+    {
+        return resolveVariantColumnarSource(
+            column_const->getDataColumn(), current_type, 0, context,
+            out_column, out_type, out_row, out_from_dynamic, out_is_null);
+    }
+
+    if (current_column->isSparse())
+    {
+        chassert(context.arena);
+        auto [it, inserted] = context.arena->full_sparse_columns.emplace(current_column, nullptr);
+        if (inserted)
+            it->second = current_column->convertToFullIfNeeded();
+
+        return resolveVariantColumnarSource(
+            *it->second, current_type, current_row, context,
+            out_column, out_type, out_row, out_from_dynamic, out_is_null);
+    }
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(current_column))
+    {
+        if (nullable->isNullAt(current_row))
+        {
+            out_is_null = true;
+            return true;
+        }
+        current_column = &nullable->getNestedColumn();
+    }
+
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(current_column))
+    {
+        current_row = low_cardinality->getIndexAt(current_row);
+        current_column = low_cardinality->getDictionary().getNestedColumn().get();
+        if (const auto * nested_nullable = typeid_cast<const ColumnNullable *>(current_column))
+        {
+            if (nested_nullable->isNullAt(current_row))
+            {
+                out_is_null = true;
+                return true;
+            }
+            current_column = &nested_nullable->getNestedColumn();
+        }
+    }
+
+    if (typeid_cast<const DataTypeDynamic *>(current_type.get()))
+    {
+        const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(current_column);
+        if (!dynamic_column)
+            return false;
+
+        auto nested_type = dynamic_column->getTypeAt(current_row);
+        if (!nested_type)
+        {
+            out_is_null = true;
+            return true;
+        }
+
+        const auto & variant_column = dynamic_column->getVariantColumn();
+        auto global_discr = variant_column.globalDiscriminatorAt(current_row);
+        if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            out_is_null = true;
+            return true;
+        }
+
+        /// Shared-variant values are binary blobs in a `ColumnString`; canonicalize the one value into
+        /// a transient typed column in the arena and resolve from there.
+        if (global_discr == dynamic_column->getSharedVariantDiscriminator())
+        {
+            chassert(context.arena);
+            auto [blob_column, blob_type] = materializeVariantSharedBlob(
+                dynamic_column->getSharedVariant(), variant_column.offsetAt(current_row), *context.arena);
+            out_from_dynamic = true;
+            return resolveVariantColumnarSource(
+                *blob_column, blob_type, 0, context,
+                out_column, out_type, out_row, out_from_dynamic, out_is_null);
+        }
+
+        out_from_dynamic = true;
+        return resolveVariantColumnarSource(
+            variant_column.getVariantByGlobalDiscriminator(global_discr),
+            nested_type,
+            variant_column.offsetAt(current_row),
+            context,
+            out_column,
+            out_type,
+            out_row,
+            out_from_dynamic,
+            out_is_null);
+    }
+
+    if (current_type->getTypeId() == TypeIndex::Variant)
+    {
+        const auto * variant_column = typeid_cast<const ColumnVariant *>(current_column);
+        if (!variant_column)
+            return false;
+
+        auto global_discr = variant_column->globalDiscriminatorAt(current_row);
+        if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            out_is_null = true;
+            return true;
+        }
+
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*current_type);
+        return resolveVariantColumnarSource(
+            variant_column->getVariantByGlobalDiscriminator(global_discr),
+            variant_type.getVariant(global_discr),
+            variant_column->offsetAt(current_row),
+            context,
+            out_column,
+            out_type,
+            out_row,
+            out_from_dynamic,
+            out_is_null);
+    }
+
+    out_column = current_column;
+    out_type = current_type;
+    out_row = current_row;
+    out_from_dynamic = from_dynamic;
+    return true;
+}
+
+/// Collects an object child set (named `Tuple` or `Map`) into `children` sorted lexicographically by
+/// key, recording each child's recursion target and encoded size, and computes the object's total
+/// encoded size and header widths. Returns false on decline (any child the cursor cannot handle).
+template <typename EmitChildren>
+bool collectVariantColumnarObjectChildren(
+    std::vector<VariantColumnarObjectChild> & children,
+    size_t & out_total_size,
+    UInt8 & out_field_id_size,
+    UInt8 & out_field_offset_size,
+    bool & out_is_large,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    EmitChildren && emit_children)
+{
+    checkVariantWriteDepth(context.format_settings, depth);
+    children.clear();
+
+    /// `add_child` measures a single child value and records its key, field id, size and recursion target.
+    auto add_child = [&](const String & key, const IColumn & child_column, const DataTypePtr & child_type, size_t child_row, const DataTypePtr & child_type_hint, bool child_from_dynamic) -> bool
+    {
+        auto it = context.dictionary.find(key);
+        if (it == context.dictionary.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing `Parquet` `VARIANT` dictionary entry for key {}", key);
+
+        size_t child_size = 0;
+        if (!measureVariantColumnarValue(child_column, child_type, child_row, child_type_hint, child_from_dynamic, context, depth + 1, child_size))
+            return false;
+
+        children.emplace_back(VariantColumnarObjectChild
+        {
+            .key = key,
+            .field_id = it->second,
+            .child_size = child_size,
+            .column = &child_column,
+            .type = child_type,
+            .row = child_row,
+            .type_hint = child_type_hint,
+            .from_dynamic = child_from_dynamic,
+        });
+        return true;
+    };
+
+    if (!emit_children(add_child))
+        return false;
+
+    std::sort(children.begin(), children.end(), [](const auto & lhs, const auto & rhs) { return lhs.key < rhs.key; });
+
+    UInt32 highest_field_id = 0;
+    size_t total_children_size = 0;
+    for (const auto & child : children)
+    {
+        highest_field_id = std::max(highest_field_id, child.field_id);
+        addVariantEncodingSizeOrThrow(total_children_size, child.child_size, "`object` children");
+    }
+
+    finishVariantObjectEncodingHeader(
+        children.size(), highest_field_id, total_children_size,
+        out_field_id_size, out_field_offset_size, out_is_large, out_total_size);
+    return true;
+}
+
+/// Writes an object value (header, field-id table, offset table, children) for the write pass,
+/// collecting the children with `emit_children` (must not decline here — already validated by the
+/// measure pass) and recursing each sorted child via `writeVariantColumnarValue`.
+template <typename EmitChildren>
+void writeVariantColumnarObject(char *& out, const VariantColumnarCursorContext & context, size_t depth, EmitChildren && emit_children)
+{
+    checkVariantWriteDepth(context.format_settings, depth);
+    std::vector<VariantColumnarObjectChild> children;
+    size_t total_size = 0;
+    UInt8 field_id_size = 0;
+    UInt8 field_offset_size = 0;
+    bool is_large = false;
+    bool ok = collectVariantColumnarObjectChildren(
+        children, total_size, field_id_size, field_offset_size, is_large, context, depth, emit_children);
+    if (!ok)
+        throwCannotEncodeVariantColumnarValue({});
+
+    writeVariantObjectHeaderAndChildren(
+        children,
+        field_id_size,
+        field_offset_size,
+        is_large,
+        out,
+        [&](const VariantColumnarObjectChild & child)
+        {
+            writeVariantColumnarValue(*child.column, child.type, child.row, child.type_hint, child.from_dynamic, context, depth + 1, out);
+        });
+}
+
+/// Iterates the children of a named `Tuple` source column, invoking `add_child` per element.
+template <typename AddChild>
+bool emitVariantColumnarNamedTupleChildren(
+    const ColumnTuple & tuple_column,
+    const DataTypeTuple & tuple_type,
+    size_t row,
+    bool from_dynamic,
+    AddChild && add_child)
+{
+    for (size_t i = 0; i < tuple_type.getElements().size(); ++i)
+    {
+        const String & key = tuple_type.getNameByPosition(i + 1);
+        if (!add_child(key, tuple_column.getColumn(i), tuple_type.getElement(i), row, tuple_type.getElement(i), from_dynamic))
+            return false;
+    }
+    return true;
+}
+
+/// Iterates the entries of a `Map(String, T)` source column for one row, invoking `add_child` per entry.
+/// Throws for a non-`String`-keyed map and for a duplicate key within the row.
+template <typename AddChild>
+bool emitVariantColumnarMapChildren(
+    const ColumnMap & map_column,
+    const DataTypeMap & map_type,
+    size_t row,
+    bool from_dynamic,
+    AddChild && add_child)
+{
+    const auto & offsets = map_column.getNestedColumn().getOffsets();
+    size_t begin = row == 0 ? 0 : offsets[row - 1];
+    size_t end = offsets[row];
+    const auto & nested_data = map_column.getNestedData();
+    const auto & keys_column = nested_data.getColumn(0);
+    const auto & values_column = nested_data.getColumn(1);
+    const DataTypePtr & value_type = map_type.getValueType();
+
+    const auto * keys_string = typeid_cast<const ColumnString *>(&keys_column);
+    if (!keys_string)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `Map(String, T)` can be written as `Parquet` `VARIANT`");
+
+    std::unordered_set<std::string_view> seen_keys;
+    seen_keys.reserve(end - begin);
+    for (size_t i = begin; i != end; ++i)
+    {
+        std::string_view key_view = keys_string->getDataAt(i);
+        if (!seen_keys.emplace(key_view).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key {} while preparing `Parquet` `VARIANT` object", String(key_view));
+
+        String key(key_view);
+        if (!add_child(key, values_column, value_type, i, value_type, from_dynamic))
+            return false;
+    }
+    return true;
+}
+
+bool measureVariantColumnarValue(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
     const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const std::unordered_map<String, UInt32> & dictionary,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    size_t & out_size)
+{
+    checkVariantWriteDepth(context.format_settings, depth);
+
+    const IColumn * resolved_column = nullptr;
+    DataTypePtr resolved_type;
+    size_t resolved_row = 0;
+    bool resolved_from_dynamic = from_dynamic;
+    bool is_null = false;
+    if (!resolveVariantColumnarSource(
+            column, type, row, context, resolved_column, resolved_type, resolved_row, resolved_from_dynamic, is_null))
+        return false;
+
+    if (is_null)
+    {
+        /// `Null` primitive: 1-byte header.
+        out_size = 1;
+        return true;
+    }
+
+    DataTypePtr normalized_type = unwrapVariantTypeHint(resolved_type);
+
+    if (const auto * object_data_type = typeid_cast<const DataTypeObject *>(normalized_type.get()))
+    {
+        const auto * object_column = typeid_cast<const ColumnObject *>(resolved_column);
+        if (!object_column)
+            return false;
+
+        std::vector<VariantColumnarObjectLeaf> leaves;
+        collectVariantColumnarObjectLeaves(*object_column, *object_data_type, resolved_row, context, leaves);
+        sortVariantColumnarObjectLeaves(leaves);
+        std::vector<VariantColumnarObjectColumnChild> children;
+        UInt8 fid = 0, fos = 0;
+        bool large = false;
+        out_size = measureVariantColumnarObjectColumnLevel(leaves, 0, leaves.size(), 0, depth, context, children, fid, fos, large);
+        return true;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_type.get()))
+    {
+        const auto * tuple_column = typeid_cast<const ColumnTuple *>(resolved_column);
+        if (!tuple_column)
+            return false;
+
+        if (tuple_type->hasExplicitNames())
+        {
+            std::vector<VariantColumnarObjectChild> children;
+            UInt8 field_id_size = 0;
+            UInt8 field_offset_size = 0;
+            bool is_large = false;
+            return collectVariantColumnarObjectChildren(
+                children, out_size, field_id_size, field_offset_size, is_large, context, depth, [&](auto && add_child)
+                {
+                    return emitVariantColumnarNamedTupleChildren(*tuple_column, *tuple_type, resolved_row, resolved_from_dynamic, add_child);
+                });
+        }
+
+        /// Unnamed tuple -> array of its elements.
+        size_t element_count = tuple_type->getElements().size();
+        std::vector<size_t> child_sizes(element_count);
+        for (size_t i = 0; i < element_count; ++i)
+        {
+            if (!measureVariantColumnarValue(
+                    tuple_column->getColumn(i), tuple_type->getElement(i), resolved_row,
+                    tuple_type->getElement(i), resolved_from_dynamic, context, depth + 1, child_sizes[i]))
+                return false;
+        }
+        return measureVariantColumnarArraySize(child_sizes, out_size);
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(normalized_type.get()))
+    {
+        const auto * array_column = typeid_cast<const ColumnArray *>(resolved_column);
+        if (!array_column)
+            return false;
+
+        const auto & offsets = array_column->getOffsets();
+        size_t begin = resolved_row == 0 ? 0 : offsets[resolved_row - 1];
+        size_t end = offsets[resolved_row];
+        std::vector<size_t> child_sizes(end - begin);
+        for (size_t i = begin; i != end; ++i)
+        {
+            if (!measureVariantColumnarValue(
+                    array_column->getData(), array_type->getNestedType(), i,
+                    array_type->getNestedType(), resolved_from_dynamic, context, depth + 1, child_sizes[i - begin]))
+                return false;
+        }
+        return measureVariantColumnarArraySize(child_sizes, out_size);
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(normalized_type.get()))
+    {
+        const auto * map_column = typeid_cast<const ColumnMap *>(resolved_column);
+        if (!map_column)
+            return false;
+
+        std::vector<VariantColumnarObjectChild> children;
+        UInt8 field_id_size = 0;
+        UInt8 field_offset_size = 0;
+        bool is_large = false;
+        return collectVariantColumnarObjectChildren(
+            children, out_size, field_id_size, field_offset_size, is_large, context, depth, [&](auto && add_child)
+            {
+                return emitVariantColumnarMapChildren(*map_column, *map_type, resolved_row, resolved_from_dynamic, add_child);
+            });
+    }
+
+    if (!normalized_type || !isSupportedDirectVariantResidualScalarColumnType(*normalized_type))
+        return false;
+
+    DataTypePtr scalar_type_hint = getVariantColumnarScalarTypeHint(type_hint, resolved_type);
+    out_size = getVariantScalarEncodedSizeFromColumn(
+        *resolved_column, resolved_row, *normalized_type, resolved_from_dynamic, scalar_type_hint);
+    return true;
+}
+
+void writeVariantColumnarValue(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    const DataTypePtr & type_hint,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
     char *& out)
 {
-    if (value.getType() != Field::Types::Object && value.getType() != Field::Types::Array)
+    checkVariantWriteDepth(context.format_settings, depth);
+
+    const IColumn * resolved_column = nullptr;
+    DataTypePtr resolved_type;
+    size_t resolved_row = 0;
+    bool resolved_from_dynamic = from_dynamic;
+    bool is_null = false;
+    bool resolved = resolveVariantColumnarSource(
+        column, type, row, context, resolved_column, resolved_type, resolved_row, resolved_from_dynamic, is_null);
+    if (!resolved)
+        throwCannotEncodeVariantColumnarValue(type);
+
+    if (is_null)
     {
-        writeVariantScalarToBuffer(value, type_hint, out);
+        VariantScalarWriteSink sink(out);
+        sink.writePrimitiveHeader(VariantPrimitiveType::Null);
         return;
     }
 
-    if (value.getType() == Field::Types::Object)
+    DataTypePtr normalized_type = unwrapVariantTypeHint(resolved_type);
+
+    if (const auto * object_data_type = typeid_cast<const DataTypeObject *>(normalized_type.get()))
     {
-        auto encoding = measureVariantObjectEncoding(value, type_hint, object_type, current_path, dictionary);
-        writeVariantObjectToBuffer(object_type, dictionary, encoding, out);
+        const auto * object_column = assert_cast<const ColumnObject *>(resolved_column);
+        std::vector<VariantColumnarObjectLeaf> leaves;
+        collectVariantColumnarObjectLeaves(*object_column, *object_data_type, resolved_row, context, leaves);
+        sortVariantColumnarObjectLeaves(leaves);
+        std::vector<VariantColumnarObjectColumnChild> children;
+        UInt8 fid = 0, fos = 0;
+        bool large = false;
+        measureVariantColumnarObjectColumnLevel(leaves, 0, leaves.size(), 0, depth, context, children, fid, fos, large);
+        writeVariantColumnarObjectColumnLevel(children, fid, fos, large, context, depth, out);
         return;
     }
 
-    auto encoding = measureVariantArrayEncoding(value, type_hint, object_type, current_path, dictionary);
-    writeVariantArrayToBuffer(value, type_hint, object_type, current_path, dictionary, encoding, out);
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_type.get()))
+    {
+        const auto * tuple_column = assert_cast<const ColumnTuple *>(resolved_column);
+        if (tuple_type->hasExplicitNames())
+        {
+            writeVariantColumnarObject(out, context, depth, [&](auto && add_child)
+            {
+                return emitVariantColumnarNamedTupleChildren(*tuple_column, *tuple_type, resolved_row, resolved_from_dynamic, add_child);
+            });
+            return;
+        }
+
+        size_t element_count = tuple_type->getElements().size();
+        std::vector<size_t> child_sizes(element_count);
+        for (size_t i = 0; i < element_count; ++i)
+        {
+            bool ok = measureVariantColumnarValue(
+                tuple_column->getColumn(i), tuple_type->getElement(i), resolved_row,
+                tuple_type->getElement(i), resolved_from_dynamic, context, depth + 1, child_sizes[i]);
+            if (!ok)
+                throwCannotEncodeVariantColumnarValue(tuple_type->getElement(i));
+        }
+        writeVariantColumnarArrayHeader(child_sizes, out);
+        for (size_t i = 0; i < element_count; ++i)
+            writeVariantColumnarValue(
+                tuple_column->getColumn(i), tuple_type->getElement(i), resolved_row,
+                tuple_type->getElement(i), resolved_from_dynamic, context, depth + 1, out);
+        return;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(normalized_type.get()))
+    {
+        const auto * array_column = assert_cast<const ColumnArray *>(resolved_column);
+        const auto & offsets = array_column->getOffsets();
+        size_t begin = resolved_row == 0 ? 0 : offsets[resolved_row - 1];
+        size_t end = offsets[resolved_row];
+        std::vector<size_t> child_sizes(end - begin);
+        for (size_t i = begin; i != end; ++i)
+        {
+            bool ok = measureVariantColumnarValue(
+                array_column->getData(), array_type->getNestedType(), i,
+                array_type->getNestedType(), resolved_from_dynamic, context, depth + 1, child_sizes[i - begin]);
+            if (!ok)
+                throwCannotEncodeVariantColumnarValue(array_type->getNestedType());
+        }
+        writeVariantColumnarArrayHeader(child_sizes, out);
+        for (size_t i = begin; i != end; ++i)
+            writeVariantColumnarValue(
+                array_column->getData(), array_type->getNestedType(), i,
+                array_type->getNestedType(), resolved_from_dynamic, context, depth + 1, out);
+        return;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(normalized_type.get()))
+    {
+        const auto * map_column = assert_cast<const ColumnMap *>(resolved_column);
+        writeVariantColumnarObject(out, context, depth, [&](auto && add_child)
+        {
+            return emitVariantColumnarMapChildren(*map_column, *map_type, resolved_row, resolved_from_dynamic, add_child);
+        });
+        return;
+    }
+
+    if (!normalized_type || !isSupportedDirectVariantResidualScalarColumnType(*normalized_type))
+        throwCannotEncodeVariantColumnarValue(resolved_type);
+
+    DataTypePtr scalar_type_hint = getVariantColumnarScalarTypeHint(type_hint, resolved_type);
+    writeVariantScalarFromColumnToBuffer(
+        *resolved_column, resolved_row, *normalized_type, resolved_from_dynamic, scalar_type_hint, out);
 }
 
-void encodeVariantObject(
-    const Field & value,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const std::unordered_map<String, UInt32> & dictionary,
-    std::optional<String> & out,
-    const std::unordered_set<String> * excluded_fields = nullptr)
+
+struct VariantShreddedColumnarResult
 {
-    chassert(value.getType() == Field::Types::Object);
-    auto encoding = measureVariantObjectEncoding(value, type_hint, object_type, current_path, dictionary, excluded_fields);
-    if (encoding.omitted)
+    std::optional<String> residual_value;
+    std::optional<Field> typed_value;
+};
+
+void encodeVariantShreddedTypedValueColumnar(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    bool from_dynamic,
+    const DataTypePtr & shredded_type,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    VariantShreddedColumnarResult & out);
+
+/// Builds the `{value, typed_value}` wrapper `Field` for one shredded child by recursing the columnar
+/// shredded encoder on `(column, type, row)` against the child `typed_value` type. `from_dynamic` marks
+/// a source with no declared type (a dynamic-path or shared-data leaf), so an untyped `Bool` spilling to
+/// the residual encodes as the boolean primitive rather than `Int64`.
+Field buildVariantShreddedWrapperFieldColumnar(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    bool from_dynamic,
+    const DataTypePtr & wrapper_type,
+    const VariantColumnarCursorContext & context,
+    size_t depth)
+{
+    const IDataType & wrapper_data_type = typeid_cast<const DataTypeNullable *>(wrapper_type.get())
+        ? *assert_cast<const DataTypeNullable &>(*wrapper_type).getNestedType()
+        : *wrapper_type;
+    const auto & tuple_type = assert_cast<const DataTypeTuple &>(wrapper_data_type);
+    auto typed_pos = tuple_type.tryGetPositionByName("typed_value").value();
+    auto value_pos = tuple_type.tryGetPositionByName("value").value();
+    DataTypePtr typed_nested = tuple_type.getElement(typed_pos);
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(typed_nested.get()))
+        typed_nested = nullable->getNestedType();
+
+    VariantShreddedColumnarResult transformed;
+    encodeVariantShreddedTypedValueColumnar(column, type, row, from_dynamic, typed_nested, context, depth, transformed);
+
+    Tuple result(tuple_type.getElements().size());
+    result[value_pos] = transformed.residual_value ? Field(*transformed.residual_value) : Field();
+    result[typed_pos]
+        = transformed.typed_value.has_value() ? *transformed.typed_value : tuple_type.getElement(typed_pos)->getDefault();
+    return result;
+}
+
+/// Builds a single shredded child `Field` from a contiguous span of `ColumnObject` leaves whose first
+/// segment is the field name. When the span is one leaf ending at the field, the child is that leaf's
+/// value; otherwise the field is a sub-object and the leaves (with the leading segment stripped) become
+/// a transient nested `ColumnObject`-free encoding via the cursor. Here we recurse the shredded encoder
+/// on the leaf source: a single-leaf field uses its `(column, type, row)`; a multi-leaf field is a plain
+/// JSON sub-object that no shredded sub-tree covers, so it spills entirely to the wrapper residual.
+Field buildVariantShreddedObjectChildFromLeaves(
+    const std::vector<VariantColumnarObjectLeaf> & leaves,
+    size_t begin,
+    size_t end,
+    const DataTypePtr & wrapper_type,
+    const VariantColumnarCursorContext & context,
+    size_t depth);
+
+/// Encodes the residual `value` for one row with the cursor.
+std::optional<String> encodeVariantResidualColumnar(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth)
+{
+    String encoded;
+    bool ok = tryEncodeVariantColumnarValue(column, type, row, from_dynamic, context, depth, encoded);
+    if (!ok)
+        throwCannotEncodeVariantColumnarValue(type);
+    return encoded;
+}
+
+/// Collects object-like leaves from any source the shredded object branch accepts: a `ColumnObject`
+/// (multi-segment flat leaves), a named `Tuple`, or a `Map(String, T)` (single-segment leaves). Returns
+/// false if the source is not object-like.
+bool collectVariantShreddedSourceLeaves(
+    const IColumn & resolved_column,
+    const DataTypePtr & resolved_normalized,
+    size_t resolved_row,
+    const VariantColumnarCursorContext & context,
+    std::vector<VariantColumnarObjectLeaf> & out)
+{
+    out.clear();
+    if (const auto * object_data_type = typeid_cast<const DataTypeObject *>(resolved_normalized.get()))
     {
-        out = std::nullopt;
+        collectVariantColumnarObjectLeaves(
+            assert_cast<const ColumnObject &>(resolved_column), *object_data_type, resolved_row, context, out);
+        return true;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(resolved_normalized.get()))
+    {
+        if (!tuple_type->hasExplicitNames())
+            return false;
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(resolved_column);
+        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+        {
+            VariantColumnarObjectLeaf leaf;
+            leaf.segments = {tuple_type->getNameByPosition(i + 1)};
+            leaf.column = &tuple_column.getColumn(i);
+            leaf.type = tuple_type->getElement(i);
+            leaf.row = resolved_row;
+            out.emplace_back(std::move(leaf));
+        }
+        return true;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(resolved_normalized.get()))
+    {
+        const auto & map_column = assert_cast<const ColumnMap &>(resolved_column);
+        const auto & offsets = map_column.getNestedColumn().getOffsets();
+        size_t begin = resolved_row == 0 ? 0 : offsets[resolved_row - 1];
+        size_t end = offsets[resolved_row];
+        const auto & nested_data = map_column.getNestedData();
+        const auto * keys_string = typeid_cast<const ColumnString *>(&nested_data.getColumn(0));
+        if (!keys_string)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `Map(String, T)` can be written as `Parquet` `VARIANT`");
+        const auto & values_column = nested_data.getColumnPtr(1);
+        std::unordered_set<std::string_view> seen;
+        for (size_t i = begin; i != end; ++i)
+        {
+            std::string_view key_view = keys_string->getDataAt(i);
+            if (!seen.emplace(key_view).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key {} while preparing `Parquet` `VARIANT` object", String(key_view));
+            VariantColumnarObjectLeaf leaf;
+            leaf.segments = {String(key_view)};
+            leaf.column = values_column.get();
+            leaf.type = map_type->getValueType();
+            leaf.row = i;
+            out.emplace_back(std::move(leaf));
+        }
+        return true;
+    }
+
+    return false;
+}
+
+/// Encodes an object residual `value` from the sorted leaves, excluding the shredded top-level keys.
+/// Returns `std::nullopt` when nothing remains (the object is fully shredded or empty).
+std::optional<String> encodeVariantShreddedResidualObjectFromLeaves(
+    const std::vector<VariantColumnarObjectLeaf> & sorted_leaves,
+    const std::unordered_set<String> & shredded_field_names,
+    const VariantColumnarCursorContext & context,
+    size_t depth)
+{
+    std::vector<VariantColumnarObjectColumnChild> children;
+    UInt8 fid = 0, fos = 0;
+    bool large = false;
+    size_t total = measureVariantColumnarObjectColumnLevel(
+        sorted_leaves, 0, sorted_leaves.size(), 0, depth, context, children, fid, fos, large, &shredded_field_names);
+    if (children.empty())
+        return std::nullopt;
+
+    String out(total, '\0');
+    char * out_pos = out.data();
+    writeVariantColumnarObjectColumnLevel(children, fid, fos, large, context, depth, out_pos);
+    chassert(out_pos == out.data() + out.size());
+    return out;
+}
+
+std::optional<String> encodeVariantColumnarObjectResidualForRow(
+    const ColumnObject & object_column,
+    const DataTypeObject & object_data_type,
+    size_t row,
+    const std::vector<String> & prefix,
+    const std::unordered_set<String> & excluded_fields,
+    const std::unordered_map<String, UInt32> & dictionary,
+    const FormatSettings & format_settings)
+{
+    VariantColumnarTransientArena arena;
+    const VariantColumnarCursorContext context{.dictionary = dictionary, .format_settings = format_settings, .arena = &arena};
+
+    std::vector<VariantColumnarObjectLeaf> leaves;
+    collectVariantColumnarObjectLeaves(object_column, object_data_type, row, context, leaves);
+
+    /// Keep only leaves under `prefix`, stripping the matched prefix segments so the residual is
+    /// encoded relative to the sub-object. Empty residual segments (the path is exactly the prefix)
+    /// cannot occur in a valid `ColumnObject` row.
+    std::vector<VariantColumnarObjectLeaf> residual_leaves;
+    residual_leaves.reserve(leaves.size());
+    for (auto & leaf : leaves)
+    {
+        if (leaf.segments.size() <= prefix.size())
+            continue;
+        bool under_prefix = true;
+        for (size_t i = 0; i < prefix.size(); ++i)
+        {
+            if (leaf.segments[i] != prefix[i])
+            {
+                under_prefix = false;
+                break;
+            }
+        }
+        if (!under_prefix)
+            continue;
+
+        /// Enforce the write-depth limit on the residual object's nesting (one level per path
+        /// segment, plus one for the enclosing object).
+        checkVariantWriteDepth(format_settings, leaf.segments.size() + 1);
+
+        leaf.segments.erase(leaf.segments.begin(), leaf.segments.begin() + static_cast<ssize_t>(prefix.size()));
+        residual_leaves.emplace_back(std::move(leaf));
+    }
+
+    sortVariantColumnarObjectLeaves(residual_leaves);
+    return encodeVariantShreddedResidualObjectFromLeaves(residual_leaves, excluded_fields, context, prefix.size() + 1);
+}
+
+Field buildVariantShreddedObjectChildFromLeaves(
+    const std::vector<VariantColumnarObjectLeaf> & leaves,
+    size_t begin,
+    size_t end,
+    const DataTypePtr & wrapper_type,
+    const VariantColumnarCursorContext & context,
+    size_t depth)
+{
+    /// A single leaf whose path ends at this field: recurse the shredded encoder on its source.
+    if (end == begin + 1 && leaves[begin].segments.size() == 1)
+        return buildVariantShreddedWrapperFieldColumnar(
+            *leaves[begin].column, leaves[begin].type, leaves[begin].row, leaves[begin].from_dynamic, wrapper_type, context, depth + 1);
+
+    /// A sub-object field (multiple leaves, or a deeper single leaf). The shredded sub-type for this
+    /// field must be an object `Tuple`; encode its shredded children from the stripped sub-leaves and the
+    /// rest into the wrapper residual. Strip the leading segment from each leaf to get the sub-object.
+    const IDataType & wrapper_data_type = typeid_cast<const DataTypeNullable *>(wrapper_type.get())
+        ? *assert_cast<const DataTypeNullable &>(*wrapper_type).getNestedType()
+        : *wrapper_type;
+    const auto & wrapper_tuple = assert_cast<const DataTypeTuple &>(wrapper_data_type);
+    auto typed_pos = wrapper_tuple.tryGetPositionByName("typed_value").value();
+    auto value_pos = wrapper_tuple.tryGetPositionByName("value").value();
+    DataTypePtr typed_nested = wrapper_tuple.getElement(typed_pos);
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(typed_nested.get()))
+        typed_nested = nullable->getNestedType();
+
+    std::vector<VariantColumnarObjectLeaf> sub_leaves;
+    sub_leaves.reserve(end - begin);
+    for (size_t i = begin; i != end; ++i)
+    {
+        VariantColumnarObjectLeaf leaf = leaves[i];
+        leaf.segments.assign(leaves[i].segments.begin() + 1, leaves[i].segments.end());
+        sub_leaves.emplace_back(std::move(leaf));
+    }
+
+    Tuple result(wrapper_tuple.getElements().size());
+
+    if (const auto * sub_tuple_type = typeid_cast<const DataTypeTuple *>(unwrapVariantTypeHint(typed_nested).get()))
+    {
+        std::unordered_set<String> sub_shredded_names;
+        Tuple typed_fields(sub_tuple_type->getElements().size());
+        for (size_t i = 0; i < sub_tuple_type->getElements().size(); ++i)
+        {
+            const String & field_name = sub_tuple_type->getNameByPosition(i + 1);
+            sub_shredded_names.emplace(field_name);
+            size_t fbegin = sub_leaves.size();
+            size_t fend = sub_leaves.size();
+            for (size_t j = 0; j < sub_leaves.size(); ++j)
+            {
+                if (!sub_leaves[j].segments.empty() && sub_leaves[j].segments[0] == field_name)
+                {
+                    if (fbegin == sub_leaves.size())
+                        fbegin = j;
+                    fend = j + 1;
+                }
+            }
+            if (fbegin == sub_leaves.size())
+                typed_fields[i] = Field();
+            else
+                typed_fields[i] = buildVariantShreddedObjectChildFromLeaves(
+                    sub_leaves, fbegin, fend, sub_tuple_type->getElement(i), context, depth + 1);
+        }
+        result[typed_pos] = Field(std::move(typed_fields));
+        result[value_pos] = encodeVariantShreddedResidualObjectFromLeaves(sub_leaves, sub_shredded_names, context, depth + 1)
+            .transform([](String s) { return Field(std::move(s)); })
+            .value_or(Field());
+        return result;
+    }
+
+    /// The shredded sub-type is not an object: the whole sub-object spills to the wrapper residual.
+    result[typed_pos] = wrapper_tuple.getElement(typed_pos)->getDefault();
+    result[value_pos] = encodeVariantShreddedResidualObjectFromLeaves(sub_leaves, {}, context, depth + 1)
+        .transform([](String s) { return Field(std::move(s)); })
+        .value_or(Field());
+    return result;
+}
+
+void encodeVariantShreddedTypedValueColumnar(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    bool from_dynamic,
+    const DataTypePtr & shredded_type,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    VariantShreddedColumnarResult & out)
+{
+    checkVariantWriteDepth(context.format_settings, depth);
+
+    DataTypePtr normalized_shredded = unwrapVariantTypeHint(shredded_type);
+
+    const IColumn * resolved_column = nullptr;
+    DataTypePtr resolved_type;
+    size_t resolved_row = 0;
+    bool resolved_from_dynamic = from_dynamic;
+    bool is_null = false;
+    bool resolved = resolveVariantColumnarSource(
+        column, type, row, context, resolved_column, resolved_type, resolved_row, resolved_from_dynamic, is_null);
+    if (!resolved)
+        throwCannotEncodeVariantColumnarValue(type);
+    DataTypePtr resolved_normalized = is_null ? DataTypePtr{} : unwrapVariantTypeHint(resolved_type);
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_shredded.get()))
+    {
+        std::vector<VariantColumnarObjectLeaf> leaves;
+        if (is_null
+            || !collectVariantShreddedSourceLeaves(*resolved_column, resolved_normalized, resolved_row, context, leaves))
+        {
+            out.residual_value = encodeVariantResidualColumnar(column, type, row, from_dynamic, context, depth);
+            out.typed_value = std::nullopt;
+            return;
+        }
+
+        sortVariantColumnarObjectLeaves(leaves);
+        std::unordered_set<String> shredded_field_names;
+        Tuple object_fields(tuple_type->getElements().size());
+        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+        {
+            const String & field_name = tuple_type->getNameByPosition(i + 1);
+            shredded_field_names.emplace(field_name);
+            size_t begin = leaves.size();
+            size_t end = leaves.size();
+            for (size_t j = 0; j < leaves.size(); ++j)
+            {
+                if (!leaves[j].segments.empty() && leaves[j].segments[0] == field_name)
+                {
+                    if (begin == leaves.size())
+                        begin = j;
+                    end = j + 1;
+                }
+            }
+            if (begin == leaves.size())
+                object_fields[i] = Field();
+            else
+                object_fields[i] = buildVariantShreddedObjectChildFromLeaves(
+                    leaves, begin, end, tuple_type->getElement(i), context, depth + 1);
+        }
+
+        out.residual_value = encodeVariantShreddedResidualObjectFromLeaves(leaves, shredded_field_names, context, depth);
+        out.typed_value = Field(std::move(object_fields));
         return;
     }
 
-    out = String(encoding.total_size, '\0');
-    char * out_pos = out->data();
-    writeVariantObjectToBuffer(object_type, dictionary, encoding, out_pos);
-    chassert(out_pos == out->data() + out->size());
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(normalized_shredded.get()))
+    {
+        const auto * array_data_type = is_null ? nullptr : typeid_cast<const DataTypeArray *>(resolved_normalized.get());
+        const auto * unnamed_tuple = is_null ? nullptr : typeid_cast<const DataTypeTuple *>(resolved_normalized.get());
+        if (!array_data_type && !(unnamed_tuple && !unnamed_tuple->hasExplicitNames()))
+        {
+            out.residual_value = encodeVariantResidualColumnar(column, type, row, from_dynamic, context, depth);
+            out.typed_value = std::nullopt;
+            return;
+        }
+
+        Array values;
+        if (array_data_type)
+        {
+            const auto * array_column = assert_cast<const ColumnArray *>(resolved_column);
+            const auto & offsets = array_column->getOffsets();
+            size_t begin = resolved_row == 0 ? 0 : offsets[resolved_row - 1];
+            size_t end = offsets[resolved_row];
+            values.reserve(end - begin);
+            for (size_t i = begin; i != end; ++i)
+                values.emplace_back(buildVariantShreddedWrapperFieldColumnar(
+                    array_column->getData(), array_data_type->getNestedType(), i, resolved_from_dynamic, array_type->getNestedType(), context, depth + 1));
+        }
+        else
+        {
+            const auto * tuple_column = assert_cast<const ColumnTuple *>(resolved_column);
+            values.reserve(unnamed_tuple->getElements().size());
+            for (size_t i = 0; i < unnamed_tuple->getElements().size(); ++i)
+                values.emplace_back(buildVariantShreddedWrapperFieldColumnar(
+                    tuple_column->getColumn(i), unnamed_tuple->getElement(i), resolved_row, resolved_from_dynamic, array_type->getNestedType(), context, depth + 1));
+        }
+
+        out.residual_value = std::nullopt;
+        out.typed_value = Field(std::move(values));
+        return;
+    }
+
+    /// Scalar shredded type: convert the resolved leaf, else spill to residual.
+    if (!is_null)
+    {
+        /// A `Bool` column yields a `UInt64` `Field` from `operator[]` (unless wrapped by a
+        /// `ColumnDynamic`, whose `operator[]` runs `convertFieldToType`); reconstruct the `Bool`
+        /// `Field` so it converts to a `Bool` shredded leaf instead of spilling to the residual.
+        Field leaf = isBool(resolved_normalized)
+            ? Field(assert_cast<const ColumnVector<UInt8> &>(*resolved_column).getData()[resolved_row] != 0)
+            : (*resolved_column)[resolved_row];
+        if (auto typed_scalar = tryConvertVariantScalarToShreddedField(leaf, normalized_shredded))
+        {
+            out.residual_value = std::nullopt;
+            out.typed_value = std::move(typed_scalar);
+            return;
+        }
+    }
+
+    out.residual_value = encodeVariantResidualColumnar(column, type, row, from_dynamic, context, depth);
+    out.typed_value = std::nullopt;
 }
 
-void encodeVariantValue(
-    const Field & value,
-    const DataTypePtr & type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const std::unordered_map<String, UInt32> & dictionary,
+/// Encodes the full `value` payload for one row columnar. Unsupported reachable shapes throw;
+/// false means the root value could not be resolved.
+bool tryEncodeVariantColumnarValue(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
     String & out)
 {
-    size_t total_size = measureVariantValueEncodedSize(value, type_hint, object_type, current_path, dictionary);
+    checkVariantWriteDepth(context.format_settings, depth);
+
+    /// At the root, the type hint is the resolved concrete type of the top-level value. For a nested
+    /// `Dynamic` element the hint stays the declared `Dynamic` element type instead, which is why the
+    /// hint is threaded explicitly rather than re-derived from the concrete type.
+    const IColumn * resolved_column = nullptr;
+    DataTypePtr root_type_hint;
+    size_t resolved_row = 0;
+    bool resolved_from_dynamic = from_dynamic;
+    bool is_null = false;
+    if (!resolveVariantColumnarSource(column, type, row, context, resolved_column, root_type_hint, resolved_row, resolved_from_dynamic, is_null))
+        return false;
+    if (is_null)
+        root_type_hint = type;
+
+    size_t total_size = 0;
+    if (!measureVariantColumnarValue(column, type, row, root_type_hint, from_dynamic, context, depth, total_size))
+        throwCannotEncodeVariantColumnarValue(root_type_hint ? root_type_hint : type);
+
     out.resize(total_size);
     char * out_pos = out.data();
-    writeVariantEncodedValueToBuffer(value, type_hint, object_type, current_path, dictionary, out_pos);
+    writeVariantColumnarValue(column, type, row, root_type_hint, from_dynamic, context, depth, out_pos);
     chassert(out_pos == out.data() + out.size());
+    return true;
 }
 
 VariantEncodingContext buildVariantEncodingContext(const std::unordered_set<String> & unique_keys)
@@ -3425,270 +3191,325 @@ VariantEncodingContext buildVariantEncodingContext(const std::unordered_set<Stri
     return context;
 }
 
-bool transformVariantElement(
-    const Field & value,
-    const DataTypePtr & value_type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const DataTypePtr & shredded_type,
-    const VariantEncodingContext & context,
-    VariantTransformScratch & scratch,
-    VariantTransformResult & out);
-
-bool transformVariantElement(
-    const Field & value,
-    const DataTypePtr & value_type_hint,
-    const DataTypeObject * object_type,
-    std::string_view current_path,
-    const DataTypePtr & shredded_type,
-    const VariantEncodingContext & context,
-    VariantTransformScratch & scratch,
-    VariantTransformResult & out)
-{
-    DataTypePtr normalized_shredded_type = unwrapVariantTypeHint(shredded_type);
-    auto build_wrapper_field = [&](const Field & nested_value, const DataTypePtr & nested_value_type_hint, const DataTypePtr & wrapper_type, std::string_view nested_path, Field & wrapped_field)
-    {
-        const IDataType & wrapper_data_type = typeid_cast<const DataTypeNullable *>(wrapper_type.get())
-            ? *assert_cast<const DataTypeNullable &>(*wrapper_type).getNestedType()
-            : *wrapper_type;
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(wrapper_data_type);
-        auto typed_pos = tuple_type.tryGetPositionByName("typed_value").value();
-        DataTypePtr typed_nested = tuple_type.getElement(typed_pos);
-        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(typed_nested.get()))
-            typed_nested = nullable->getNestedType();
-
-        VariantTransformResult transformed;
-        if (!transformVariantElement(nested_value, nested_value_type_hint, object_type, nested_path, typed_nested, context, scratch, transformed))
-            return false;
-
-        auto value_pos = tuple_type.tryGetPositionByName("value").value();
-        Tuple result(tuple_type.getElements().size());
-        result[value_pos] = transformed.residual_value ? Field(*transformed.residual_value) : Field();
-        if (transformed.typed_value.has_value())
-            result[typed_pos] = *transformed.typed_value;
-        else
-        {
-            if (!typeid_cast<const DataTypeNullable *>(tuple_type.getElement(typed_pos).get()))
-                return false;
-            result[typed_pos] = tuple_type.getElement(typed_pos)->getDefault();
-        }
-        wrapped_field = std::move(result);
-        return true;
-    };
-    auto get_shredded_object_field_names = [&](const DataTypeTuple & tuple_type) -> const std::unordered_set<String> &
-    {
-        const IDataType * key = &tuple_type;
-        auto it = scratch.find(key);
-        if (it != scratch.end())
-            return it->second;
-
-        std::unordered_set<String> field_names;
-        field_names.reserve(tuple_type.getElements().size());
-        for (size_t i = 0; i < tuple_type.getElements().size(); ++i)
-            field_names.emplace(tuple_type.getNameByPosition(i + 1));
-
-        return scratch.emplace(key, std::move(field_names)).first->second;
-    };
-
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_shredded_type.get()))
-    {
-        if (value.getType() != Field::Types::Object)
-        {
-            String residual_value;
-            encodeVariantValue(value, value_type_hint, object_type, current_path, context.dictionary, residual_value);
-
-            out = {
-                .residual_value = std::move(residual_value),
-                .typed_value = std::nullopt,
-            };
-            return true;
-        }
-
-        const auto & object = value.safeGet<Object>();
-        Tuple object_fields;
-
-        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
-        {
-            const String & field_name = tuple_type->getNameByPosition(i + 1);
-            auto child_it = object.find(field_name);
-            if (child_it == object.end())
-            {
-                object_fields.emplace_back(Field());
-                continue;
-            }
-
-            String child_path = appendVariantJSONPath(current_path, field_name);
-            Field wrapped_field;
-            if (!build_wrapper_field(
-                    child_it->second,
-                    getObjectChildTypeHint(value_type_hint, object_type, child_path, field_name),
-                    tuple_type->getElement(i),
-                    child_path,
-                    wrapped_field))
-            {
-                return false;
-            }
-
-            object_fields.emplace_back(std::move(wrapped_field));
-        }
-
-        std::optional<String> residual_value;
-        if (object.empty())
-        {
-            String encoded_object;
-            encodeVariantValue(value, value_type_hint, object_type, current_path, context.dictionary, encoded_object);
-            residual_value = std::move(encoded_object);
-        }
-        else
-        {
-            encodeVariantObject(value, value_type_hint, object_type, current_path, context.dictionary, residual_value, &get_shredded_object_field_names(*tuple_type));
-        }
-
-        out = {
-            .residual_value = std::move(residual_value),
-            .typed_value = Field(object_fields),
-        };
-        return true;
-    }
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(normalized_shredded_type.get()))
-    {
-        if (value.getType() != Field::Types::Array)
-        {
-            String residual_value;
-            encodeVariantValue(value, value_type_hint, object_type, current_path, context.dictionary, residual_value);
-
-            out = {
-                .residual_value = std::move(residual_value),
-                .typed_value = std::nullopt,
-            };
-            return true;
-        }
-
-        const auto & array = value.safeGet<Array>();
-        Array values;
-        values.reserve(array.size());
-
-        for (size_t i = 0; i < array.size(); ++i)
-        {
-            Field wrapped_field;
-            if (!build_wrapper_field(
-                    array[i],
-                    getArrayChildTypeHint(value_type_hint, i),
-                    array_type->getNestedType(),
-                    current_path,
-                    wrapped_field))
-            {
-                return false;
-            }
-
-            values.emplace_back(std::move(wrapped_field));
-        }
-
-        out = {
-            .residual_value = std::nullopt,
-            .typed_value = Field(values),
-        };
-        return true;
-    }
-
-    if (auto typed_scalar = tryConvertVariantScalarToShreddedField(value, normalized_shredded_type))
-    {
-        out = {
-            .residual_value = std::nullopt,
-            .typed_value = std::move(typed_scalar),
-        };
-        return true;
-    }
-
-    String residual_value;
-    encodeVariantValue(value, value_type_hint, object_type, current_path, context.dictionary, residual_value);
-
-    out = {
-        .residual_value = std::move(residual_value),
-        .typed_value = std::nullopt,
-    };
-    return true;
-}
-
-void buildVariantRowForWrite(
+/// Fast columnar encoder for the simplest shredded case: a top-level `Dynamic` column whose inferred or
+/// declared shredded type is a single scalar. For each row the leaf scalar is read directly from the
+/// resolved sub-column and converted to the shredded type via `tryConvertVariantScalarToShreddedField`.
+/// The whole column declines (returns `std::nullopt`) the moment any row neither converts to the scalar
+/// nor is a plain `Null` (the generic per-row columnar encoder then handles it). On the accepted shapes
+/// there are never any object keys, so the shared `metadata` is the empty dictionary.
+std::optional<PreparedVariantColumns> tryPrepareScalarShreddedVariantColumns(
     const IColumn & full_column,
     const DataTypePtr & type,
     const FormatSettings & format_settings,
-    size_t row,
-    VariantBuildStats stats,
-    Field & row_value,
-    DataTypePtr & row_type_hint)
+    const DataTypePtr & shredded_type)
 {
-    const auto * object_type = typeid_cast<const DataTypeObject *>(type.get());
+    if (!shredded_type || !typeid_cast<const DataTypeDynamic *>(type.get()))
+        return std::nullopt;
 
-    if (object_type)
-    {
-        if (object_type->getSchemaFormat() != DataTypeObject::SchemaFormat::JSON)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `JSON` `Object` columns can be written as `Parquet` `VARIANT`");
+    DataTypePtr scalar_shredded = unwrapVariantTypeHint(shredded_type);
+    if (!scalar_shredded
+        || typeid_cast<const DataTypeTuple *>(scalar_shredded.get())
+        || typeid_cast<const DataTypeArray *>(scalar_shredded.get())
+        || typeid_cast<const DataTypeMap *>(scalar_shredded.get()))
+        return std::nullopt;
 
-        const auto * object_column = typeid_cast<const ColumnObject *>(&full_column);
-        if (!object_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected `ColumnObject` while preparing `Parquet` `VARIANT` write columns");
-
-        Field nested_row;
-        if (!tryBuildNestedObjectFieldFromColumnObject(*object_column, row, format_settings, 1, nested_row))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert `Object` row {} to nested JSON shape for `Parquet` `VARIANT` writing", row);
-
-        if (!buildVariantField(nested_row, object_type->getPtr(), object_type, std::string_view{}, format_settings, 1, stats, row_value))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot prepare `Object` row {} for `Parquet` `VARIANT` writing", row);
-
-        row_type_hint = type;
-        return;
-    }
-
-    if (typeid_cast<const DataTypeDynamic *>(type.get()))
-    {
-        if (!buildVariantFieldFromColumn(full_column, type, row, format_settings, 1, stats, row_value, &row_type_hint))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot prepare `Parquet` `VARIANT` write value for row {}", row);
-        return;
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type {} while preparing `Parquet` `VARIANT` write columns", type->getName());
-}
-
-void collectVariantRowsForWrite(
-    const IColumn & full_column,
-    const DataTypePtr & type,
-    const FormatSettings & format_settings,
-    std::unordered_set<String> * out_unique_keys,
-    VariantWriteAnalysisNode * out_analysis,
-    std::vector<Field> * out_rows,
-    std::vector<DataTypePtr> * out_row_type_hints)
-{
     const size_t num_rows = full_column.size();
 
-    if (out_rows)
-        out_rows->reserve(num_rows);
-    if (out_row_type_hints)
-        out_row_type_hints->reserve(num_rows);
+    static const std::unordered_map<String, UInt32> empty_dictionary;
+    VariantColumnarTransientArena arena;
+    const VariantColumnarCursorContext columnar_context{.dictionary = empty_dictionary, .format_settings = format_settings, .arena = &arena};
+
+    auto typed_value_type = std::make_shared<DataTypeNullable>(shredded_type);
+    auto typed_nested = typed_value_type->createColumn();
+    auto & typed_nullable = assert_cast<ColumnNullable &>(*typed_nested);
+    auto & typed_inner = typed_nullable.getNestedColumn();
+    auto & typed_null_map = typed_nullable.getNullMapData();
+    typed_inner.reserve(num_rows);
+    typed_null_map.reserve(num_rows);
+
+    /// The residual `value` is `Nullable(String)`. For an accepted row that converts to the scalar the
+    /// residual is absent (null); for a plain `Null` row it is the 1-byte `Null` primitive.
+    auto value_type = std::make_shared<DataTypeNullable>(getVariantStringType());
+    auto value_column = value_type->createColumn();
+    auto & value_nullable = assert_cast<ColumnNullable &>(*value_column);
+    auto & value_inner = assert_cast<ColumnString &>(value_nullable.getNestedColumn());
+    auto & value_null_map = value_nullable.getNullMapData();
+    value_inner.reserve(num_rows);
+    value_null_map.reserve(num_rows);
+
+    char null_primitive = 0;
+    {
+        char * out = &null_primitive;
+        VariantScalarWriteSink sink(out);
+        sink.writePrimitiveHeader(VariantPrimitiveType::Null);
+    }
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        Field row_value;
-        DataTypePtr row_type_hint;
-        buildVariantRowForWrite(
-            full_column,
-            type,
-            format_settings,
-            row,
-            VariantBuildStats
-            {
-                .keys = out_unique_keys,
-                .analysis = out_analysis,
-            },
-            row_value,
-            row_type_hint);
+        const IColumn * resolved_column = nullptr;
+        DataTypePtr resolved_type;
+        size_t resolved_row = 0;
+        bool resolved_from_dynamic = false;
+        bool is_null = false;
+        if (!resolveVariantColumnarSource(full_column, type, row, columnar_context, resolved_column, resolved_type, resolved_row, resolved_from_dynamic, is_null))
+            return std::nullopt;
 
-        if (out_rows)
-            out_rows->emplace_back(std::move(row_value));
-        if (out_row_type_hints)
-            out_row_type_hints->emplace_back(std::move(row_type_hint));
+        if (is_null)
+        {
+            /// `Null` -> residual is the `Null` primitive, `typed_value` is the default.
+            value_inner.insertData(&null_primitive, 1);
+            value_null_map.push_back(UInt8(0));
+            typed_inner.insertDefault();
+            typed_null_map.push_back(UInt8(1));
+            continue;
+        }
+
+        /// A `Bool` column yields a `UInt64` `Field` from `operator[]`; reconstruct the `Bool` `Field`
+        /// so it converts to a `Bool` shredded leaf instead of declining to the generic path.
+        DataTypePtr resolved_normalized = unwrapVariantTypeHint(resolved_type);
+        Field leaf = isBool(resolved_normalized)
+            ? Field(assert_cast<const ColumnVector<UInt8> &>(*resolved_column).getData()[resolved_row] != 0)
+            : (*resolved_column)[resolved_row];
+        auto converted = tryConvertVariantScalarToShreddedField(leaf, scalar_shredded);
+        if (!converted.has_value())
+            return std::nullopt;
+
+        typed_inner.insert(*converted);
+        typed_null_map.push_back(UInt8(0));
+        value_inner.insertDefault();
+        value_null_map.push_back(UInt8(1));
+    }
+
+    VariantEncodingContext shared_context = buildVariantEncodingContext({});
+
+    PreparedVariantColumns result;
+    result.metadata_type = getVariantStringType();
+    result.metadata_column = buildVariantMetadataColumn(num_rows, shared_context.metadata);
+    result.value_type = std::move(value_type);
+    result.value_column = std::move(value_column);
+    result.typed_value_type = std::move(typed_value_type);
+    result.typed_value_column = std::move(typed_nested);
+    return result;
+}
+
+
+
+
+/// Columnar analysis walk: visits
+/// `(column, type, row)` directly, recording shredding statistics into `node` and (when `keys` is set)
+/// the union of object keys. The structure mirrors the residual cursor's value walk, except it descends
+/// into nested `Object`/`Variant`/`Dynamic` and aggregates per-path scalar types instead of encoding.
+void analyzeVariantColumnarValue(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    VariantWriteAnalysisNode * node,
+    std::unordered_set<String> * keys);
+
+/// Bumps the array statistics on `node` and recurses each element into the (single) array-child node.
+void analyzeVariantColumnarArray(
+    const IColumn & data_column,
+    const DataTypePtr & element_type,
+    size_t begin,
+    size_t end,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    VariantWriteAnalysisNode * node,
+    std::unordered_set<String> * keys)
+{
+    checkVariantWriteDepth(context.format_settings, depth);
+
+    if (node)
+    {
+        ++node->value_count;
+        ++node->array_count;
+        if (!node->array_child)
+            node->array_child = std::make_unique<VariantWriteAnalysisNode>();
+    }
+    VariantWriteAnalysisNode * child_node = node ? node->array_child.get() : nullptr;
+    for (size_t i = begin; i != end; ++i)
+        analyzeVariantColumnarValue(data_column, element_type, i, from_dynamic, context, depth + 1, child_node, keys);
+}
+
+/// Bumps the object statistics on `node` and recurses one named child into `object_fields[key]`.
+void analyzeVariantColumnarObjectChild(
+    const String & key,
+    const IColumn & child_column,
+    const DataTypePtr & child_type,
+    size_t child_row,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    VariantWriteAnalysisNode * node,
+    std::unordered_set<String> * keys)
+{
+    if (keys)
+        keys->emplace(key);
+    VariantWriteAnalysisNode * child_node = node ? &node->object_fields[key] : nullptr;
+    analyzeVariantColumnarValue(child_column, child_type, child_row, from_dynamic, context, depth + 1, child_node, keys);
+}
+
+void analyzeVariantColumnarValue(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t row,
+    bool from_dynamic,
+    const VariantColumnarCursorContext & context,
+    size_t depth,
+    VariantWriteAnalysisNode * node,
+    std::unordered_set<String> * keys)
+{
+    checkVariantWriteDepth(context.format_settings, depth);
+
+    const IColumn * resolved_column = nullptr;
+    DataTypePtr resolved_type;
+    size_t resolved_row = 0;
+    bool resolved_from_dynamic = from_dynamic;
+    bool is_null = false;
+    bool resolved = resolveVariantColumnarSource(
+        column, type, row, context, resolved_column, resolved_type, resolved_row, resolved_from_dynamic, is_null);
+    if (!resolved)
+        throwCannotEncodeVariantColumnarValue(type);
+
+    if (is_null)
+    {
+        if (node)
+            ++node->value_count;
+        return;
+    }
+
+    DataTypePtr normalized_type = unwrapVariantTypeHint(resolved_type);
+
+    if (const auto * object_data_type = typeid_cast<const DataTypeObject *>(normalized_type.get()))
+    {
+        const auto & object_column = assert_cast<const ColumnObject &>(*resolved_column);
+        std::vector<VariantColumnarObjectLeaf> leaves;
+        collectVariantColumnarObjectLeaves(object_column, *object_data_type, resolved_row, context, leaves);
+        sortVariantColumnarObjectLeaves(leaves);
+
+        if (node)
+        {
+            ++node->value_count;
+            ++node->object_count;
+        }
+        /// Walk the reconstructed object tree, recursing each top-level key span.
+        std::function<void(const std::vector<VariantColumnarObjectLeaf> &, size_t, size_t, size_t, VariantWriteAnalysisNode *)> walk;
+        walk = [&](const std::vector<VariantColumnarObjectLeaf> & lvs, size_t b, size_t e, size_t object_level, VariantWriteAnalysisNode * obj_node)
+        {
+            for (size_t pos = b; pos < e;)
+            {
+                checkVariantWriteDepth(context.format_settings, depth + object_level + 1);
+
+                const String & key = lvs[pos].segments[object_level];
+                size_t next = pos + 1;
+                while (next < e && lvs[next].segments.size() > object_level && lvs[next].segments[object_level] == key)
+                    ++next;
+
+                if (keys)
+                    keys->emplace(key);
+                VariantWriteAnalysisNode * child_node = obj_node ? &obj_node->object_fields[key] : nullptr;
+                if (lvs[pos].segments.size() == object_level + 1 && next == pos + 1)
+                {
+                    analyzeVariantColumnarValue(
+                        *lvs[pos].column, lvs[pos].type, lvs[pos].row, false, context, depth + object_level + 1, child_node, keys);
+                }
+                else
+                {
+                    if (child_node)
+                    {
+                        ++child_node->value_count;
+                        ++child_node->object_count;
+                    }
+                    walk(lvs, pos, next, object_level + 1, child_node);
+                }
+                pos = next;
+            }
+        };
+        walk(leaves, 0, leaves.size(), 0, node);
+        return;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(normalized_type.get()))
+    {
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(*resolved_column);
+        if (tuple_type->hasExplicitNames())
+        {
+            if (node)
+            {
+                ++node->value_count;
+                ++node->object_count;
+            }
+            for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+                analyzeVariantColumnarObjectChild(
+                    tuple_type->getNameByPosition(i + 1), tuple_column.getColumn(i), tuple_type->getElement(i),
+                    resolved_row, resolved_from_dynamic, context, depth, node, keys);
+            return;
+        }
+
+        /// Unnamed tuple is an array of its elements.
+        if (node)
+        {
+            ++node->value_count;
+            ++node->array_count;
+            if (!node->array_child)
+                node->array_child = std::make_unique<VariantWriteAnalysisNode>();
+        }
+        VariantWriteAnalysisNode * child_node = node ? node->array_child.get() : nullptr;
+        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+            analyzeVariantColumnarValue(
+                tuple_column.getColumn(i), tuple_type->getElement(i), resolved_row,
+                resolved_from_dynamic, context, depth + 1, child_node, keys);
+        return;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(normalized_type.get()))
+    {
+        const auto & array_column = assert_cast<const ColumnArray &>(*resolved_column);
+        const auto & offsets = array_column.getOffsets();
+        size_t begin = resolved_row == 0 ? 0 : offsets[resolved_row - 1];
+        size_t end = offsets[resolved_row];
+        analyzeVariantColumnarArray(
+            array_column.getData(), array_type->getNestedType(), begin, end,
+            resolved_from_dynamic, context, depth, node, keys);
+        return;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(normalized_type.get()))
+    {
+        const auto & map_column = assert_cast<const ColumnMap &>(*resolved_column);
+        const auto & moffsets = map_column.getNestedColumn().getOffsets();
+        size_t begin = resolved_row == 0 ? 0 : moffsets[resolved_row - 1];
+        size_t end = moffsets[resolved_row];
+        const auto & nested_data = map_column.getNestedData();
+        const auto & keys_column = assert_cast<const ColumnString &>(nested_data.getColumn(0));
+        const auto & values_column = nested_data.getColumn(1);
+        if (node)
+        {
+            ++node->value_count;
+            ++node->object_count;
+        }
+        for (size_t i = begin; i != end; ++i)
+            analyzeVariantColumnarObjectChild(
+                String(keys_column.getDataAt(i)), values_column, map_type->getValueType(), i,
+                resolved_from_dynamic, context, depth, node, keys);
+        return;
+    }
+
+    /// Scalar leaf. The analyze hint is the resolved concrete type: for a typed leaf it equals the
+    /// declared `type_hint`, and for a `Dynamic`/`Variant`-resolved leaf it is the per-row concrete type
+    /// (so e.g. a `Dynamic` `UInt8` is analyzed as `UInt8`, not widened to the `UInt64` `Field` type).
+    if (node)
+    {
+        ++node->value_count;
+        Field leaf = isBool(normalized_type)
+            ? Field(assert_cast<const ColumnVector<UInt8> &>(*resolved_column).getData()[resolved_row] != 0)
+            : (*resolved_column)[resolved_row];
+        if (auto scalar_type = getVariantAnalyzeScalarType(leaf, normalized_type))
+            addVariantAnalyzeScalarType(*node, scalar_type);
     }
 }
 
@@ -3711,20 +3532,22 @@ PreparedVariantColumns prepareVariantColumnsForWrite(
     {
         if (auto prepared = tryPrepareObjectVariantColumnsFast(full_column, type, format_settings, shredded_type))
             return *prepared;
+        if (auto prepared = tryPrepareScalarShreddedVariantColumns(full_column, type, format_settings, shredded_type))
+            return *prepared;
     }
 
-    std::vector<Field> rows;
-    std::vector<DataTypePtr> row_type_hints;
+    /// Collect the object-key union (for the metadata dictionary) and, when inferring, the shredding
+    /// statistics — both directly from the columns, with no per-row `Field` tree.
     std::unordered_set<String> unique_keys;
     VariantWriteAnalysisNode analysis;
-    collectVariantRowsForWrite(
-        full_column,
-        type,
-        format_settings,
-        &unique_keys,
-        need_inference ? &analysis : nullptr,
-        &rows,
-        &row_type_hints);
+    {
+        VariantColumnarTransientArena analyze_arena;
+        static const std::unordered_map<String, UInt32> empty_dictionary;
+        const VariantColumnarCursorContext analyze_context{.dictionary = empty_dictionary, .format_settings = format_settings, .arena = &analyze_arena};
+        for (size_t row = 0; row < num_rows; ++row)
+            analyzeVariantColumnarValue(
+                full_column, type, row, false, analyze_context, 1, need_inference ? &analysis : nullptr, &unique_keys);
+    }
 
     if (need_inference)
     {
@@ -3738,6 +3561,19 @@ PreparedVariantColumns prepareVariantColumnsForWrite(
             shredded_type = constructShreddedType(analysis);
         }
         *out_shredded_type = shredded_type;
+    }
+
+    /// The columnar preparers handle the common declared/inferred shredded shapes wholesale; if none
+    /// applies, the generic per-row columnar encoder below covers every remaining shape.
+    if (shredded_type)
+    {
+        if (object_type)
+        {
+            if (auto prepared = tryPrepareObjectVariantColumnsFast(full_column, type, format_settings, shredded_type))
+                return *prepared;
+        }
+        else if (auto prepared = tryPrepareScalarShreddedVariantColumns(full_column, type, format_settings, shredded_type))
+            return *prepared;
     }
 
     VariantEncodingContext shared_context = buildVariantEncodingContext(unique_keys);
@@ -3772,32 +3608,30 @@ PreparedVariantColumns prepareVariantColumnsForWrite(
     auto & metadata_string_column = assert_cast<ColumnString &>(*metadata);
     size_t metadata_row_size = addVariantEncodingSizesOrThrow(shared_context.metadata.size(), 1, "`metadata` row size");
     metadata_string_column.getChars().reserve(multiplyVariantEncodingSizeOrThrow(metadata_row_size, num_rows, "`metadata` column size"));
-    VariantTransformScratch transform_scratch;
 
-    auto encode_row = [&](Field row_value, DataTypePtr row_type_hint)
+    /// The columnar cursor encodes the whole `value` payload (and, for the shredded case, the residual
+    /// plus the `typed_value` tree) directly from `(full_column, type, row)` and its sub-columns,
+    /// materializing only the genuinely per-row heterogeneous values (shared-variant blobs and cached
+    /// full sparse columns) into transient arena columns. It handles every input.
+    VariantColumnarTransientArena cursor_arena;
+    const VariantColumnarCursorContext columnar_context{.dictionary = shared_context.dictionary, .format_settings = format_settings, .arena = &cursor_arena};
+
+    auto encode_row = [&](size_t row)
     {
-        row_type_hint = row_type_hint ? row_type_hint : type;
-
         metadata_string_column.insertData(shared_context.metadata.data(), shared_context.metadata.size());
 
         if (!shredded_type)
         {
-            /// `Dynamic` carries a per-row type hint, so untyped residual payloads can still
-            /// preserve explicit temporal tags instead of flattening them to strings.
-            /// Keep the older normalization only for `Object`/`JSON`, where untyped residuals
-            /// still follow the wider JSON-oriented mapping policy.
-            if (object_type)
-                normalizeVariantFieldForUntypedResidual(row_value, row_type_hint, object_type, std::string_view{}, format_settings, 1);
-
             String encoded_value;
-            encodeVariantValue(row_value, row_type_hint, object_type, std::string_view{}, shared_context.dictionary, encoded_value);
+            bool ok = tryEncodeVariantColumnarValue(full_column, type, row, /* from_dynamic */ false, columnar_context, 1, encoded_value);
+            if (!ok)
+                throwCannotEncodeVariantColumnarValue(type);
             assert_cast<ColumnString &>(*value).insertData(encoded_value.data(), encoded_value.size());
             return;
         }
 
-        VariantTransformResult transformed;
-        if (!transformVariantElement(row_value, row_type_hint, object_type, std::string_view{}, shredded_type, shared_context, transform_scratch, transformed))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported shredded value while encoding `Parquet` `VARIANT`");
+        VariantShreddedColumnarResult transformed;
+        encodeVariantShreddedTypedValueColumnar(full_column, type, row, /* from_dynamic */ false, shredded_type, columnar_context, 1, transformed);
 
         auto & nullable_value = assert_cast<ColumnNullable &>(*value);
         auto & nested_value = assert_cast<ColumnString &>(nullable_value.getNestedColumn());
@@ -3815,8 +3649,8 @@ PreparedVariantColumns prepareVariantColumnsForWrite(
         typed_value->insert(transformed.typed_value.has_value() ? *transformed.typed_value : default_typed_value);
     };
 
-    for (size_t row = 0; row < rows.size(); ++row)
-        encode_row(std::move(rows[row]), std::move(row_type_hints[row]));
+    for (size_t row = 0; row < num_rows; ++row)
+        encode_row(row);
 
     result.metadata_column = std::move(metadata);
     result.value_column = std::move(value);
@@ -3833,7 +3667,13 @@ void analyzeVariantColumnForWrite(
     if (!out_analysis.source_type)
         out_analysis.source_type = type;
 
-    collectVariantRowsForWrite(column, type, format_settings, nullptr, &out_analysis.analysis, nullptr, nullptr);
+    ColumnPtr full_column_ptr = column.convertToFullColumnIfLowCardinality();
+    VariantColumnarTransientArena arena;
+    static const std::unordered_map<String, UInt32> empty_dictionary;
+    const VariantColumnarCursorContext context{.dictionary = empty_dictionary, .format_settings = format_settings, .arena = &arena};
+    const size_t num_rows = full_column_ptr->size();
+    for (size_t row = 0; row < num_rows; ++row)
+        analyzeVariantColumnarValue(*full_column_ptr, type, row, false, context, 1, &out_analysis.analysis, nullptr);
 }
 
 DataTypePtr inferVariantShreddedTypeForWrite(const VariantWriteAnalysisEntry & analysis)

@@ -393,14 +393,11 @@ ConvertedTypedValue combineConvertedValues(
     std::optional<DecodedVariantValue> residual_value,
     ConvertedTypedValue typed_result,
     const FormatSettings & format_settings,
-    size_t depth,
     std::optional<std::string_view> field_name,
     const VariantMetadata & metadata,
     bool metadata_is_shared_across_rows,
     bool preserve_empty_containers_in_shared_metadata)
 {
-    (void) depth;
-
     ConvertedTypedValue result;
     if (residual_value.has_value())
     {
@@ -600,7 +597,6 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
                 std::move(residual_value),
                 std::move(typed_result),
                 format_settings,
-                depth,
                 field_name,
                 *metadata_by_row[i],
                 metadata_is_shared_across_rows,

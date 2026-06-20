@@ -163,7 +163,12 @@ private:
     size_t schemaIdxAfterSubtree(size_t idx, size_t depth) const;
     size_t getOrAddVariantMetadataPrimitive(const TraversalNode & node, const String & name);
     size_t addParsedObjectSource(size_t primitive_idx, String storage_name, DataTypePtr parsed_object_type);
-    size_t addVariantSource(size_t metadata_primitive_idx, size_t value_primitive_idx, size_t typed_value_output_idx, bool string_output_uses_json);
+    size_t addVariantSource(
+        size_t metadata_primitive_idx,
+        size_t value_primitive_idx,
+        size_t typed_value_output_idx,
+        bool string_output_uses_json,
+        bool typed_value_requires_parent_metadata_mapping);
     static void addPrimitiveDependency(OutputColumnInfo & output, size_t primitive_idx);
     void addOutputDependencies(OutputColumnInfo & output, const OutputColumnInfo & dependency_output);
     size_t addVariantPrimitiveColumnAt(

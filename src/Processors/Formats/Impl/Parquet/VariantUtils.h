@@ -53,7 +53,6 @@ struct VariantWrapperLayout
 
 std::optional<VariantWrapperLayout> tryGetVariantWrapperLayout(const DataTypePtr & type);
 
-const DataTypeObject * tryGetObjectLikeVariantOutputType(const IDataType * type);
 bool isObjectLikeVariantOutputType(const IDataType * type);
 bool isDynamicLikeVariantOutputType(const IDataType * type);
 bool isComplexVariantExactOutputType(const DataTypePtr & type);

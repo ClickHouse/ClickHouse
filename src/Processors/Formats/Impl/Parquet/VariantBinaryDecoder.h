@@ -126,6 +126,8 @@ struct VariantValue
     ColumnPtr exact_column;
     size_t exact_row_num = 0;
     std::optional<std::string_view> exact_string_view;
+    ScalarExactValue::PrimitiveKind exact_primitive_kind = ScalarExactValue::PrimitiveKind::None;
+    UInt64 exact_primitive_bits = 0;
     std::vector<VariantValue> array_elements;
     std::map<String, VariantValue> object_fields;
     std::vector<std::pair<String, VariantValue>> tuple_elements;
@@ -136,6 +138,20 @@ struct VariantValue
     bool isObject() const { return kind == Kind::Object; }
     bool isTuple() const { return kind == Kind::Tuple; }
     bool isObjectLike() const { return isObject() || isTuple(); }
+
+    void clear()
+    {
+        kind = Kind::Null;
+        exact_type.reset();
+        exact_column.reset();
+        exact_row_num = 0;
+        exact_string_view.reset();
+        exact_primitive_kind = ScalarExactValue::PrimitiveKind::None;
+        exact_primitive_bits = 0;
+        array_elements.clear();
+        object_fields.clear();
+        tuple_elements.clear();
+    }
 };
 
 struct DecodedVariantValue
@@ -180,19 +196,26 @@ struct SourceState
 DecodedVariantValue decodeValue(const VariantMetadata & metadata, std::string_view value_blob, const FormatSettings & format_settings);
 ParsedVariantPath parseVariantPath(std::string_view path);
 ResolvedVariantPath resolveVariantPath(const VariantMetadata & metadata, const ParsedVariantPath & path);
-bool tryDecodeValueByPath(const VariantMetadata & metadata, std::string_view value_blob, std::string_view path, VariantValue & result, const FormatSettings & format_settings, size_t depth = 1);
 bool tryDecodeValueByPath(const VariantMetadata & metadata, std::string_view value_blob, const ParsedVariantPath & path, VariantValue & result, const FormatSettings & format_settings, size_t depth = 1);
 bool tryDecodeValueByPath(const VariantMetadata & metadata, std::string_view value_blob, const ResolvedVariantPath & path, VariantValue & result, const FormatSettings & format_settings, size_t depth = 1);
-ScalarExactPathStatus tryDecodeScalarExactValueByPath(
+/// Decode the value at `path` (following an already-resolved field-id path) but only when it
+/// resolves to a plain scalar leaf. Returns `Exact`/`Null` and fills `result` (carrying the scalar
+/// as a POD in `VariantValue::exact_primitive_kind` / `exact_primitive_bits`), `Missing` when the
+/// path is absent, or `Unsupported` when the leaf is an object/array that the caller must decode
+/// through the full tree path. Shares the generic `tryDecodeValueByPathGeneric` traversal; it merely
+/// fast-exits at the leaf without materializing array/object members.
+ScalarExactPathStatus tryDecodeScalarLeafByPath(
     const VariantMetadata & metadata,
     std::string_view value_blob,
     const ResolvedVariantPath & path,
-    ScalarExactValue & result,
+    VariantValue & result,
     const FormatSettings & format_settings,
     size_t depth = 1);
-ScalarExactPathStatus tryDecodeScalarExactValue(
+/// Same as above with an empty path: decode `value_blob` directly when it is a plain scalar leaf.
+ScalarExactPathStatus tryDecodeScalarLeaf(
+    const VariantMetadata & metadata,
     std::string_view value_blob,
-    ScalarExactValue & result,
+    VariantValue & result,
     const FormatSettings & format_settings,
     size_t depth = 1);
 void collectObjectFieldSlicesByResolvedIds(
@@ -202,12 +225,13 @@ void collectObjectFieldSlicesByResolvedIds(
     std::vector<std::optional<std::string_view>> & result_slices,
     const FormatSettings & format_settings,
     size_t depth = 1);
-const VariantValue * tryGetSubcolumnValue(const VariantValue & value, std::string_view path, const FormatSettings & format_settings, size_t depth = 1);
-const VariantValue * tryGetSubcolumnValue(const VariantValue & value, const ParsedVariantPath & path, const FormatSettings & format_settings, size_t depth = 1);
 std::optional<VariantValue> extractSubcolumnValue(const VariantValue & value, const ParsedVariantPath & path, const FormatSettings & format_settings, size_t depth = 1);
 void fillVariantValueJSON(const VariantValue & value, String & out, const FormatSettings & format_settings);
 VariantValue mergeValues(VariantValue base, const VariantValue & patch, const FormatSettings & format_settings);
 MutableColumnPtr materializeExactValueColumn(const VariantValue & value, const FormatSettings & format_settings);
+/// Insert one decoded scalar `VariantValue` directly into `column` (whose type must match
+/// `value.exact_type`): a string view, a primitive POD, or a materialized/borrowed 1-row column.
+void insertExactValueIntoColumn(IColumn & column, const VariantValue & value, const FormatSettings & format_settings);
 bool isTypedArrayDefaultFiller(const ConvertedTypedValue & typed_value);
 VariantValue mergeResidualValueWithTypedValue(
     DecodedVariantValue residual_value,

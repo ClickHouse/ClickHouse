@@ -139,8 +139,8 @@ TEST(ParquetVariantBinaryDecoder, PathDecodeRejectsTrailingObjectPayload)
     EXPECT_THROW(tryDecodeValueByPath(metadata, value, parsed_path, value_result, format_settings), DB::Exception);
     EXPECT_THROW(tryDecodeValueByPath(metadata, value, resolved_missing_path, value_result, format_settings), DB::Exception);
 
-    ScalarExactValue scalar_result;
-    EXPECT_THROW(tryDecodeScalarExactValueByPath(metadata, value, resolved_missing_path, scalar_result, format_settings), DB::Exception);
+    VariantValue scalar_result;
+    EXPECT_THROW(tryDecodeScalarLeafByPath(metadata, value, resolved_missing_path, scalar_result, format_settings), DB::Exception);
 
     std::vector<std::optional<std::string_view>> slices;
     EXPECT_THROW(collectObjectFieldSlicesByResolvedIds(metadata, value, std::vector<UInt64>{0}, slices, format_settings), DB::Exception);
@@ -170,8 +170,8 @@ TEST(ParquetVariantBinaryDecoder, ObjectDecodersRejectDuplicateFieldIds)
     EXPECT_THROW(tryDecodeValueByPath(metadata, value, parsed_path, value_result, format_settings), DB::Exception);
     EXPECT_THROW(tryDecodeValueByPath(metadata, value, resolved_path, value_result, format_settings), DB::Exception);
 
-    ScalarExactValue scalar_result;
-    EXPECT_THROW(tryDecodeScalarExactValueByPath(metadata, value, resolved_path, scalar_result, format_settings), DB::Exception);
+    VariantValue scalar_result;
+    EXPECT_THROW(tryDecodeScalarLeafByPath(metadata, value, resolved_path, scalar_result, format_settings), DB::Exception);
 
     std::vector<std::optional<std::string_view>> slices;
     EXPECT_THROW(collectObjectFieldSlicesByResolvedIds(metadata, value, std::vector<UInt64>{0}, slices, format_settings), DB::Exception);
@@ -222,8 +222,8 @@ TEST(ParquetVariantBinaryDecoder, MissingScalarPathRejectsTrailingPayload)
     EXPECT_THROW(tryDecodeValueByPath(metadata, value, parsed_path, value_result, format_settings), DB::Exception);
     EXPECT_THROW(tryDecodeValueByPath(metadata, value, resolved_path, value_result, format_settings), DB::Exception);
 
-    ScalarExactValue scalar_result;
-    EXPECT_THROW(tryDecodeScalarExactValueByPath(metadata, value, resolved_path, scalar_result, format_settings), DB::Exception);
+    VariantValue scalar_result;
+    EXPECT_THROW(tryDecodeScalarLeafByPath(metadata, value, resolved_path, scalar_result, format_settings), DB::Exception);
 }
 
 #endif

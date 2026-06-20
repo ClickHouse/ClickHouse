@@ -8,8 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 OBJECT_FILE="${CLICKHOUSE_TMP}/04132_parquet_variant_writer_contracts_object.parquet"
 JSON_FILE="${CLICKHOUSE_TMP}/04132_parquet_variant_writer_contracts_json.parquet"
+UNSUPPORTED_FILE="${CLICKHOUSE_TMP}/04132_parquet_variant_writer_contracts_unsupported.parquet"
 
-rm -f "$OBJECT_FILE" "$JSON_FILE"
+rm -f "$OBJECT_FILE" "$JSON_FILE" "$UNSUPPORTED_FILE"
 
 $CLICKHOUSE_LOCAL -q "
     SET use_variant_as_common_type = 1;
@@ -61,3 +62,21 @@ print(f"json_root_value_is_null={row['value'] is None}")
 print(f"json_typed_value={row['typed_value']['a']['typed_value']}")
 print(f"json_typed_column={column.physical_type} {column.logical_type}")
 PY
+
+unsupported_out=$($CLICKHOUSE_LOCAL -q "
+    SET allow_experimental_dynamic_type = 1;
+    SET engine_file_truncate_on_insert = 1;
+    SET output_format_parquet_use_custom_encoder = 1;
+    SET input_format_parquet_use_native_reader_v3 = 1;
+
+    SELECT CAST([CAST(toDecimal256(1, 0), 'Dynamic')], 'Dynamic') AS d
+    INTO OUTFILE '$UNSUPPORTED_FILE'
+    FORMAT Parquet;" 2>&1) && unsupported_status=0 || unsupported_status=$?
+
+if [[ $unsupported_status -ne 0 ]] && grep -q 'NOT_IMPLEMENTED' <<< "$unsupported_out" && [[ ! -s "$UNSUPPORTED_FILE" ]]; then
+    echo "unsupported_nested_scalar_rejected=1"
+else
+    echo "unsupported_nested_scalar_rejected=0"
+    echo "$unsupported_out"
+    exit 1
+fi

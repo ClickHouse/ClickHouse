@@ -7,7 +7,7 @@
 #include <bit>
 
 /// Shared constants and types for the Parquet Variant (V3) binary encoding format.
-/// Used by both the read path (Reader.cpp) and write path (VariantWrite.cpp).
+/// Used by both the read path (`VariantBinaryDecoder.cpp`) and write path (`VariantWrite.cpp`).
 
 namespace DB::Parquet
 {
@@ -32,7 +32,6 @@ enum class VariantBasicType : UInt8
 };
 
 /// Full set of primitive type tags defined by the Parquet Variant spec.
-/// The write path only uses a subset (Null, BooleanTrue/False, Int64, Double, String).
 enum class VariantPrimitiveType : UInt8
 {
     Null = 0,
