@@ -21,6 +21,6 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT count() >= 1
 FROM system.query_log
-WHERE has(applied_rules, 'rule_reject_log');
+WHERE current_database = currentDatabase() AND has(applied_rules, 'rule_reject_log');
 
 DROP RULE rule_reject_log;
