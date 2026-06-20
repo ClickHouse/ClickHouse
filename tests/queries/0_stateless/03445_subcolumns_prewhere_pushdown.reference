@@ -13,12 +13,11 @@ Positions: 4 0 1 2
            INPUT : 1 -> n Nullable(UInt32) : 1
            INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
            INPUT : 3 -> json JSON : 3
-           INPUT :: 4 -> n.null UInt8 : 4
-           ALIAS x :: 0 -> __table1.x UInt64 : 5
+           ALIAS x :: 0 -> __table1.x UInt64 : 4
            ALIAS n :: 1 -> __table1.n Nullable(UInt32) : 0
            ALIAS t :: 2 -> __table1.t Tuple(a UInt32, b UInt32) : 1
            ALIAS json :: 3 -> __table1.json JSON : 2
-  Positions: 5 0 1 2
+  Positions: 4 0 1 2
     ReadFromMergeTree (default.test)
     ReadType: Default
     Parts: 1
@@ -28,8 +27,8 @@ Positions: 4 0 1 2
       Prewhere filter
       Prewhere filter column: __table1.n.null (removed)
       Actions: INPUT : 0 -> n.null UInt8 : 0
-               ALIAS n.null : 0 -> __table1.n.null UInt8 : 1
-      Positions: 0 1
+               ALIAS n.null :: 0 -> __table1.n.null UInt8 : 1
+      Positions: 1
 0	\N	(0,0)	{"a":0,"b":0}
 1	\N	(1,1)	{"a":1,"b":1}
 2	\N	(2,2)	{"a":2,"b":2}
@@ -80,12 +79,11 @@ Positions: 4 0 1 2
            INPUT : 1 -> n Nullable(UInt32) : 1
            INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
            INPUT : 3 -> json JSON : 3
-           INPUT :: 4 -> t.a UInt32 : 4
-           ALIAS x :: 0 -> __table1.x UInt64 : 5
+           ALIAS x :: 0 -> __table1.x UInt64 : 4
            ALIAS n :: 1 -> __table1.n Nullable(UInt32) : 0
            ALIAS t :: 2 -> __table1.t Tuple(a UInt32, b UInt32) : 1
            ALIAS json :: 3 -> __table1.json JSON : 2
-  Positions: 5 0 1 2
+  Positions: 4 0 1 2
     ReadFromMergeTree (default.test)
     ReadType: Default
     Parts: 1
@@ -96,8 +94,8 @@ Positions: 4 0 1 2
       Prewhere filter column: less(__table1.t.a, 4_UInt8) (removed)
       Actions: INPUT : 0 -> t.a UInt32 : 0
                COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
-               FUNCTION less(t.a : 0, 4_UInt8 :: 1) -> less(__table1.t.a, 4_UInt8) UInt8 : 2
-      Positions: 0 2
+               FUNCTION less(t.a :: 0, 4_UInt8 :: 1) -> less(__table1.t.a, 4_UInt8) UInt8 : 2
+      Positions: 2
 0	\N	(0,0)	{"a":0,"b":0}
 1	\N	(1,1)	{"a":1,"b":1}
 2	\N	(2,2)	{"a":2,"b":2}
@@ -149,12 +147,11 @@ Positions: 4 0 1 2
            INPUT : 1 -> n Nullable(UInt32) : 1
            INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
            INPUT : 3 -> json JSON : 3
-           INPUT :: 4 -> json.a Dynamic : 4
-           ALIAS x :: 0 -> __table1.x UInt64 : 5
+           ALIAS x :: 0 -> __table1.x UInt64 : 4
            ALIAS n :: 1 -> __table1.n Nullable(UInt32) : 0
            ALIAS t :: 2 -> __table1.t Tuple(a UInt32, b UInt32) : 1
            ALIAS json :: 3 -> __table1.json JSON : 2
-  Positions: 5 0 1 2
+  Positions: 4 0 1 2
     ReadFromMergeTree (default.test)
     ReadType: Default
     Parts: 1
@@ -166,9 +163,9 @@ Positions: 4 0 1 2
       Actions: INPUT : 0 -> json.a Dynamic : 0
                COLUMN Const(String) -> \'Int64\'_String String : 1
                COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 2
-               FUNCTION CAST(json.a : 0, \'Int64\'_String :: 1) -> CAST(__table1.json.a, \'Int64\'_String) Int64 : 3
+               FUNCTION CAST(json.a :: 0, \'Int64\'_String :: 1) -> CAST(__table1.json.a, \'Int64\'_String) Int64 : 3
                FUNCTION less(CAST(__table1.json.a, \'Int64\'_String) :: 3, 4_UInt8 :: 2) -> less(CAST(__table1.json.a, \'Int64\'_String), 4_UInt8) UInt8 : 1
-      Positions: 0 1
+      Positions: 1
 0	\N	(0,0)	{"a":0,"b":0}
 1	\N	(1,1)	{"a":1,"b":1}
 2	\N	(2,2)	{"a":2,"b":2}

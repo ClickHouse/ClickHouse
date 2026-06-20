@@ -49,7 +49,7 @@ function wait_for_queries_start()
 }
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS session_log"
-${CLICKHOUSE_CLIENT} -q "DELETE FROM system.session_log WHERE user = '${TEST_USER}'"
+${CLICKHOUSE_CLIENT} -q "DELETE FROM system.session_log WHERE user = '${TEST_USER}' SETTINGS lightweight_deletes_sync = 0"
 
 # DROP USE CASE
 ${CLICKHOUSE_CLIENT} -q "CREATE USER IF NOT EXISTS ${TEST_USER}"

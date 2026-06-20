@@ -250,7 +250,7 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
        /** If there is an alias for the whole expression we wrap the ON clause in parens in two cases:
          *  1. collapse_identical_nodes_to_aliases is true (meaning old analyzer is being used) AND the alias was
          *     defined earlier in the query
-         *  2. collapse_identical_nodes_to_aliases is false (new analyzer) - because we will not make any substitutions
+         *  2. collapse_identical_nodes_to_aliases is false (the analyzer) - because we will not make any substitutions
          */
         bool on_need_parens = false;
         auto on_alias = on_expression->tryGetAlias();

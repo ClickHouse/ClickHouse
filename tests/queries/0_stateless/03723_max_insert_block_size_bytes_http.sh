@@ -31,7 +31,14 @@ echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&qu
 echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+test_min_insert_rows_sh+FORMAT+TSV&max_insert_block_size_bytes=1000000&max_insert_block_size=1000000&min_insert_block_size_rows=4&min_insert_block_size_bytes=0" --data-binary @-
 echo -ne '1\n2\n3\n4\n5\n6\n7\n8' | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+test_min_insert_bytes_sh+FORMAT+TSV&max_insert_block_size_bytes=1000000&max_insert_block_size=1000000&min_insert_block_size_rows=0&min_insert_block_size_bytes=32" --data-binary @-
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, part_log;"
+# Wait for all HTTP insert queries to appear in query_log.
+# There is a race between HTTP response being sent and the query_log entry being written.
+for _ in $(seq 1 60); do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, part_log"
+    count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE 'INSERT INTO test_m%_insert_%_sh FORMAT TSV%' AND type = 'QueryFinish'")
+    [ "$count" -ge 4 ] && break
+    sleep 0.5
+done
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.part_log WHERE table = 'test_max_insert_bytes_sh' AND event_type = 'NewPart' AND (query_id = (SELECT argMax(query_id, event_time) FROM system.query_log WHERE query LIKE '%INSERT INTO test_max_insert_bytes_sh FORMAT T%' AND current_database = currentDatabase()))"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.part_log WHERE table = 'test_min_insert_rows_bytes_sh' AND event_type = 'NewPart' AND (query_id = (SELECT argMax(query_id, event_time) FROM system.query_log WHERE query LIKE '%INSERT INTO test_min_insert_rows_bytes_sh FORMAT TSV%' AND current_database = currentDatabase()))"

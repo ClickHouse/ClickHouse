@@ -29,6 +29,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
 #include <Common/Stopwatch.h>
@@ -78,6 +79,7 @@ namespace ErrorCodes
 
 namespace DatabaseMetadataDiskSetting
 {
+extern const DatabaseMetadataDiskSettingsBool lazy_load_tables;
 extern const DatabaseMetadataDiskSettingsString disk;
 }
 
@@ -358,6 +360,12 @@ void DatabaseOrdinary::loadTableFromMetadata(
     assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
+    if (shouldLazyLoad(query, mode))
+    {
+        loadTableLazy(local_context, name, ast, mode);
+        return;
+    }
+
     LOG_TRACE(log, "Loading table {}", name.getFullName());
 
     constexpr size_t max_tries = 3;
@@ -401,6 +409,71 @@ void DatabaseOrdinary::loadTableFromMetadata(
             throw;
         }
     }
+}
+
+bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const
+{
+    if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
+        return false;
+
+    if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
+        || query.isParameterizedView() || query.is_window_view)
+        return false;
+
+    /// Already handled by `StorageTableFunctionProxy`.
+    if (query.as_table_function)
+        return false;
+
+    if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
+        return false;
+
+    return true;
+}
+
+void DatabaseOrdinary::loadTableLazy(
+    ContextMutablePtr local_context,
+    const QualifiedTableName & name,
+    const ASTPtr & ast,
+    LoadingStrictnessLevel mode)
+{
+    const auto & query = ast->as<const ASTCreateQuery &>();
+
+    LOG_TRACE(log, "Lazy-loading table {}", name.getFullName());
+
+    ColumnsDescription columns;
+    if (query.columns_list && query.columns_list->columns)
+        columns = InterpreterCreateQuery::getColumnsDescription(
+            *query.columns_list->columns, local_context, mode);
+
+    StorageID table_id(name.database, query.getTable(), query.uuid);
+    String table_data_path = getTableDataPath(query);
+
+    auto get_nested = [query_str = ast->formatWithSecretsMultiLine(),
+                        db_name = name.database,
+                        table_data_path,
+                        global_context = local_context->getGlobalContext(),
+                        mode]() -> StoragePtr
+    {
+        auto load_context = Context::createCopy(global_context);
+        ParserCreateQuery parser;
+        ASTPtr parsed_ast = parseQuery(
+            parser,
+            query_str.data(),
+            query_str.data() + query_str.size(),
+            "lazy load",
+            0,
+            load_context->getSettingsRef()[Setting::max_parser_depth],
+            load_context->getSettingsRef()[Setting::max_parser_backtracks]);
+        const auto & create_query = parsed_ast->as<const ASTCreateQuery &>();
+        auto [_, table] = createTableFromAST(
+            create_query, db_name, table_data_path, load_context, mode);
+        return table;
+    };
+
+    auto proxy = std::make_shared<StorageTableProxy>(
+        table_id, std::move(get_nested), std::move(columns));
+
+    attachTable(local_context, query.getTable(), proxy, table_data_path);
 }
 
 LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(

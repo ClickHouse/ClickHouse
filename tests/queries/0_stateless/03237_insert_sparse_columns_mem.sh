@@ -61,9 +61,18 @@ $MY_CLICKHOUSE_CLIENT --query "
     SELECT serialization_kind, count() FROM system.parts_columns
     WHERE table = 't_insert_mem' AND database = '$CLICKHOUSE_DATABASE'
     GROUP BY serialization_kind ORDER BY serialization_kind;
+"
 
-    SYSTEM FLUSH LOGS query_log;
+# Wait for all INSERT query_log entries to appear.
+# There is a race between HTTP response being sent and the query_log entry being written.
+for _ in $(seq 1 60); do
+    $MY_CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    count=$($MY_CLICKHOUSE_CLIENT --query "SELECT count() FROM system.query_log WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'")
+    [ "$count" -ge 4 ] && break
+    sleep 0.5
+done
 
+$MY_CLICKHOUSE_CLIENT --query "
     SELECT written_bytes <= 10000000 FROM system.query_log
     WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'
     ORDER BY event_time_microseconds;

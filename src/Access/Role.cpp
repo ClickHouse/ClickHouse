@@ -10,7 +10,7 @@ bool Role::equal(const IAccessEntity & other) const
     if (!IAccessEntity::equal(other))
         return false;
     const auto & other_role = typeid_cast<const Role &>(other);
-    return (access == other_role.access) && (granted_roles == other_role.granted_roles) && (settings == other_role.settings);
+    return (access == other_role.access) && (granted_roles == other_role.granted_roles) && (settings == other_role.settings) && (fetched_from_remote_at_ms == other_role.fetched_from_remote_at_ms);
 }
 
 std::vector<UUID> Role::findDependencies() const
@@ -51,6 +51,7 @@ void Role::clearAllExceptDependencies()
 {
     access = {};
     settings.removeSettingsKeepProfiles();
+    fetched_from_remote_at_ms = std::nullopt;
 }
 
 }

@@ -20,15 +20,18 @@ static const auto compressSetting = CHSetting(
     {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
     false);
 
-static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false);
+static const auto bytesRangeSetting
+    = CHSetting(bytesRange, {"0", "1", "2", "4", "8", "32", "1024", "2048", "4096", "16384", "'10M'"}, false);
 
-static const auto highRangeSetting = CHSetting(highRange, {"0", "4", "8", "32", "64", "1024", "4096", "16384", "'10M'"}, false);
+static const auto highRangeSetting
+    = CHSetting(highRange, {"0", "1", "2", "4", "8", "32", "64", "1024", "2048", "4096", "16384", "'10M'"}, false);
 
-static const auto rowsRangeSetting = CHSetting(rowsRange, {"0", "4", "8", "32", "64", "4096", "16384", "'10M'"}, false);
+static const auto rowsRangeSetting
+    = CHSetting(rowsRange, {"0", "1", "2", "4", "8", "32", "64", "1024", "2048", "4096", "16384", "'10M'"}, false);
 
 static const auto bucketsRangeSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16)); },
-    {"0", "2", "4", "8", "16"},
+    {"0", "1", "2", "4", "8", "16"},
     false);
 
 static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {

@@ -5,6 +5,9 @@
 #include <Interpreters/InterpreterUndropQuery.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTUndropQuery.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 #include "config.h"
 
@@ -62,6 +65,14 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
             ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot undrop table, {} already exists", table_id);
 
     database->checkMetadataFilenameAvailability(table_id.table_name);
+
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::shouldReplicateQuery(getContext(), query_ptr))
+    {
+        SharedDatabaseCatalog::instance().undropTable(database->getUUID(), table_id.table_name);
+        return {};
+    }
+#endif
 
     DatabaseCatalog::instance().undropTable(table_id);
     return {};

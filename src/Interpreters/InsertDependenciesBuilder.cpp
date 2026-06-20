@@ -605,7 +605,8 @@ private:
 
         if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            InterpreterSelectQueryAnalyzer interpreter(select_query, local_context,local_context->getViewSource(), SelectQueryOptions().ignoreAccessCheck());
+            InterpreterSelectQueryAnalyzer interpreter(
+                select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
             pipeline = interpreter.buildQueryPipeline();
         }
         else
@@ -1626,6 +1627,8 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
         result = Chain::concat(std::move(result), createPreSink(view_id));
         ++it;
     }
+    else if (it == path.begin())
+        ++it;
 
     for (; it != path.end(); ++it)
     {

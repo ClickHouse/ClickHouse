@@ -1,6 +1,5 @@
 -- Tags: no-fasttest, no-parallel-replicas
 
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET allow_prefetched_read_pool_for_remote_filesystem = 1;
 SET remote_filesystem_read_prefetch = 1;

@@ -25,8 +25,12 @@ def get_run_command(
     image: DockerImage,
     buzzhouse: bool,
 ) -> str:
+    from ci.jobs.ci_utils import is_extended_run
+
+    minutes = 60 if is_extended_run() else 30
     envs = [
         f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
+        f"-e FUZZ_TIME_LIMIT='{minutes}m'",
     ]
 
     env_str = " ".join(envs)

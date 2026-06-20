@@ -18,12 +18,12 @@ def test_full_drop(started_cluster_iceberg_schema_evolution, format_version, sto
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_schema_evolution, "(x Nullable(Int32))", format_version)
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);", settings={"allow_experimental_insert_into_iceberg": 1})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);", settings={"allow_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n'
 
     create_iceberg_table(storage_type, instance, TABLE_NAME_2, started_cluster_iceberg_schema_evolution, "(x Nullable(Int32))", format_version)
     assert instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL") == ''
-    instance.query(f"INSERT INTO {TABLE_NAME_2} VALUES (777);", settings={"allow_experimental_insert_into_iceberg": 1})
+    instance.query(f"INSERT INTO {TABLE_NAME_2} VALUES (777);", settings={"allow_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL") == '777\n'
 
     instance.query(f"DROP TABLE {TABLE_NAME}")

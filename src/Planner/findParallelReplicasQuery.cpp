@@ -29,6 +29,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace ErrorCodes
@@ -490,7 +491,7 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
 
     auto context = query_node ? query_node->getContext() : union_node->getContext();
 
-    if (!context->canUseParallelReplicasOnFollower())
+    if (!context->getSettingsRef()[Setting::serialize_query_plan] && !context->canUseParallelReplicasOnFollower())
         return nullptr;
 
     return findTableForParallelReplicas(query_tree_node.get(), context);

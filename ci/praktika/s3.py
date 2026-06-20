@@ -2,6 +2,7 @@ import dataclasses
 import json
 import mimetypes
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import quote
@@ -36,6 +37,28 @@ class S3:
                 print(f"WARNING: Failed to initialize boto3 client: {e}")
                 return None
         return cls._boto3_client
+
+    @classmethod
+    def _retry_on_no_credentials(cls, func, retries=3, delay=5):
+        """
+        Retries a boto3 operation on NoCredentialsError.
+        Credentials from the instance metadata service (IMDS) can be
+        temporarily unavailable, so we reset the cached client and wait
+        before each retry to give IMDS time to recover.
+        """
+        for attempt in range(retries):
+            try:
+                return func()
+            except NoCredentialsError:
+                if attempt + 1 < retries:
+                    print(
+                        f"WARNING: No AWS credentials available (attempt {attempt + 1}/{retries}), "
+                        f"retrying in {delay}s..."
+                    )
+                    cls._boto3_client = None
+                    time.sleep(delay)
+                else:
+                    raise
 
     @dataclasses.dataclass
     class Object:
@@ -89,11 +112,7 @@ class S3:
             s3_full_path = f"{s3_path}/{Path(local_path).name}"
 
         # Use boto3 if available, otherwise fall back to AWS CLI
-        client = None
-        if BOTO3_AVAILABLE:
-            client = cls._get_boto3_client()
-
-        if client:
+        if BOTO3_AVAILABLE and cls._get_boto3_client():
             try:
                 s3_full_path_clean = str(s3_full_path).removeprefix("s3://")
                 bucket, key = s3_full_path_clean.split("/", maxsplit=1)
@@ -114,20 +133,22 @@ class S3:
                 if content_encoding:
                     extra_args["ContentEncoding"] = content_encoding
 
-                # Upload file
-                if extra_args:
-                    client.upload_file(
-                        str(local_path), bucket, key, ExtraArgs=extra_args
-                    )
-                else:
-                    client.upload_file(str(local_path), bucket, key)
+                def _upload():
+                    client = cls._get_boto3_client()
+                    if extra_args:
+                        client.upload_file(
+                            str(local_path), bucket, key, ExtraArgs=extra_args
+                        )
+                    else:
+                        client.upload_file(str(local_path), bucket, key)
+                    if tags:
+                        tag_set = [{"Key": k, "Value": v} for k, v in tags.items()]
+                        client.put_object_tagging(
+                            Bucket=bucket, Key=key, Tagging={"TagSet": tag_set}
+                        )
 
-                # Apply tags if provided
-                if tags:
-                    tag_set = [{"Key": k, "Value": v} for k, v in tags.items()]
-                    client.put_object_tagging(
-                        Bucket=bucket, Key=key, Tagging={"TagSet": tag_set}
-                    )
+                # Retry on transient credential failures
+                cls._retry_on_no_credentials(_upload)
 
             except NoCredentialsError as e:
                 print(
@@ -282,8 +303,7 @@ class S3:
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
 
         if BOTO3_AVAILABLE and not recursive and not include_pattern:
-            client = cls._get_boto3_client()
-            if client:
+            if cls._get_boto3_client():
                 try:
                     s3_path_clean = str(s3_path).removeprefix("s3://")
                     bucket, key = s3_path_clean.split("/", maxsplit=1)
@@ -299,7 +319,12 @@ class S3:
 
                     local_file.parent.mkdir(parents=True, exist_ok=True)
 
-                    client.download_file(bucket, key, str(local_file))
+                    def _download():
+                        client = cls._get_boto3_client()
+                        client.download_file(bucket, key, str(local_file))
+
+                    # Retry on transient credential failures
+                    cls._retry_on_no_credentials(_download)
 
                     if not _skip_download_counter:
                         StorageUsage.add_downloaded(local_file)
@@ -454,25 +479,23 @@ class S3:
         :return: Version number from object metadata (guaranteed to match downloaded content)
         """
         # Use boto3 if available, otherwise AWS CLI
-        if BOTO3_AVAILABLE:
-            client = cls._get_boto3_client()
-            if client:
-                # boto3 approach: use get_object for atomic metadata+content read
-                s3_path_clean = str(s3_path).removeprefix("s3://")
-                bucket, key = s3_path_clean.split("/", maxsplit=1)
+        if BOTO3_AVAILABLE and cls._get_boto3_client():
+            s3_path_clean = str(s3_path).removeprefix("s3://")
+            bucket, key = s3_path_clean.split("/", maxsplit=1)
 
-                # Use get_object to atomically read metadata and content
-                # This prevents race condition where object changes between HEAD and GET
+            def _download():
+                client = cls._get_boto3_client()
                 response = client.get_object(Bucket=bucket, Key=key)
                 version = int(response.get("Metadata", {}).get("version", "0"))
-
-                # Stream body to file
                 Path(local_path).parent.mkdir(parents=True, exist_ok=True)
                 with open(local_path, "wb") as f:
                     f.write(response["Body"].read())
-
-                print(f"Downloaded file from S3 with version {version} using boto3")
                 return version
+
+            # Retry on transient credential failures (IMDS temporarily unreachable)
+            version = cls._retry_on_no_credentials(_download)
+            print(f"Downloaded file from S3 with version {version} using boto3")
+            return version
 
         # AWS CLI approach: use get-object for atomic metadata+content download
         s3_path_clean = str(s3_path).removeprefix("s3://")
@@ -525,14 +548,14 @@ class S3:
             )
 
         # Use boto3 if available, otherwise AWS CLI
-        if BOTO3_AVAILABLE:
-            client = cls._get_boto3_client()
-            if client:
-                # boto3 approach: single file with version in metadata
-                s3_path_clean = str(s3_path).removeprefix("s3://")
-                bucket, key = s3_path_clean.split("/", maxsplit=1)
+        if BOTO3_AVAILABLE and cls._get_boto3_client():
+            s3_path_clean = str(s3_path).removeprefix("s3://")
+            bucket, key = s3_path_clean.split("/", maxsplit=1)
 
-                try:
+            try:
+
+                def _upload_versioned():
+                    client = cls._get_boto3_client()
                     extra_args = {
                         "ContentType": (
                             "text/plain" if text else "application/octet-stream"
@@ -551,61 +574,58 @@ class S3:
                     else:
                         # For version > 0, use conditional PUT with If-Match (ETag check)
                         # First get current ETag
-                        try:
-                            head_response = client.head_object(Bucket=bucket, Key=key)
-                            current_etag = head_response.get("ETag", "").strip('"')
-                            current_version = int(
-                                head_response.get("Metadata", {}).get("version", "0")
+                        head_response = client.head_object(Bucket=bucket, Key=key)
+                        current_etag = head_response.get("ETag", "").strip('"')
+                        current_version = int(
+                            head_response.get("Metadata", {}).get("version", "0")
+                        )
+
+                        # Verify we're updating from expected version
+                        if current_version != version - 1:
+                            print(
+                                f"Version mismatch: expected {version - 1}, found {current_version} (concurrent write detected)"
                             )
+                            return False
 
-                            # Verify we're updating from expected version
-                            if current_version != version - 1:
-                                print(
-                                    f"Version mismatch: expected {version - 1}, found {current_version} (concurrent write detected)"
-                                )
-                                return False
-
-                            # Stream file content for put_object (needed for If-Match)
-                            with open(local_path, "rb") as f:
-                                client.put_object(
-                                    Bucket=bucket,
-                                    Key=key,
-                                    Body=f,
-                                    ContentType=(
-                                        "text/plain"
-                                        if text
-                                        else "application/octet-stream"
-                                    ),
-                                    Metadata={"version": str(version)},
-                                    IfMatch=current_etag,
-                                )
-                        except ClientError as e:
-                            error_code = e.response.get("Error", {}).get("Code", "")
-                            if error_code == "PreconditionFailed":
-                                print(
-                                    f"Precondition failed: object was modified by another process"
-                                )
-                                return False
-                            raise
-
-                    print(f"Uploaded file with version {version} using boto3")
-                    StorageUsage.add_uploaded(local_path)
+                        # Stream file content for put_object (needed for If-Match)
+                        with open(local_path, "rb") as f:
+                            client.put_object(
+                                Bucket=bucket,
+                                Key=key,
+                                Body=f,
+                                ContentType=(
+                                    "text/plain"
+                                    if text
+                                    else "application/octet-stream"
+                                ),
+                                Metadata={"version": str(version)},
+                                IfMatch=current_etag,
+                            )
                     return True
 
-                except ClientError as e:
-                    error_code = e.response.get("Error", {}).get("Code", "")
-                    if error_code == "PreconditionFailed":
-                        print("Precondition failed (concurrent write detected)")
-                        return False
-                    print(f"ERROR: Failed to upload file using boto3: {error_code}")
-                    if not no_strict:
-                        raise
+                # Retry on transient credential failures
+                result = cls._retry_on_no_credentials(_upload_versioned)
+                if result is False:
                     return False
-                except Exception as e:
-                    print(f"ERROR: Failed to upload file using boto3: {e}")
-                    if not no_strict:
-                        raise
+
+                print(f"Uploaded file with version {version} using boto3")
+                StorageUsage.add_uploaded(local_path)
+                return True
+
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code", "")
+                if error_code == "PreconditionFailed":
+                    print("Precondition failed (concurrent write detected)")
                     return False
+                print(f"ERROR: Failed to upload file using boto3: {error_code}")
+                if not no_strict:
+                    raise
+                return False
+            except Exception as e:
+                print(f"ERROR: Failed to upload file using boto3: {e}")
+                if not no_strict:
+                    raise
+                return False
 
         # AWS CLI approach: single file with version in metadata
         s3_path_clean = str(s3_path).removeprefix("s3://")

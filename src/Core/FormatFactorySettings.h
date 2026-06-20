@@ -1402,6 +1402,9 @@ Use Arrow FIXED_SIZE_BINARY type instead of Binary for FixedString columns.
     DECLARE(ArrowCompression, output_format_arrow_compression_method, "lz4_frame", R"(
 Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, none (uncompressed)
 )", 0) \
+    DECLARE(Bool, output_format_arrow_date_as_uint16, false, R"(
+Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
+)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
@@ -1514,6 +1517,20 @@ Set the quoting style for identifiers in SHOW CREATE query
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
+)", 0) \
+    DECLARE(UInt64, input_format_max_block_wait_ms, 0, R"(
+Limits the maximum time in milliseconds to wait before emitting a block during parsing in row-based input formats. 0 means no limit.
+
+:::note
+This option only works if `input_format_connection_handling` is enabled. Setting a value also disables parallel parsing and makes deduplication impossible.
+:::
+)", 0) \
+    DECLARE(Bool, input_format_connection_handling, false, R"(
+    When this option is enabled, if the connection closes unexpectedly, any remaining data in the buffer will be parsed and processed instead of being treated as an error
+
+:::note
+Enabling this option disables parallel parsing and makes deduplication impossible
+:::
 )", 0) \
     DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column

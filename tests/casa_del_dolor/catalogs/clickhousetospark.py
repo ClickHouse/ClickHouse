@@ -18,6 +18,13 @@ from pyiceberg.transforms import (
     VoidTransform,
 )
 
+try:
+    from pyspark.sql.types import VariantType
+
+    HAS_VARIANT_TYPE = True
+except ImportError:
+    HAS_VARIANT_TYPE = False
+
 
 class ClickHouseMapping(Enum):
     Unkown = 0
@@ -92,9 +99,6 @@ class ClickHouseTypeMapper:
             # IP addresses
             "IPv4": ("STRING", sp.StringType(), it.StringType()),
             "IPv6": ("STRING", sp.StringType(), it.StringType()),
-            # JSON and Dynamic
-            "JSON": ("STRING", sp.StringType(), it.StringType()),
-            "Dynamic": ("STRING", sp.StringType(), it.StringType()),
         }
 
     def reset(self):
@@ -330,16 +334,59 @@ class ClickHouseTypeMapper:
             inner_type = self._extract_nested_content(ch_type, "LowCardinality")
             return self.clickhouse_to_spark(inner_type, inside_nullable, mapping)
 
-        # Handle types not covered by Spark
-        # Spark 4.0.0 has Variant type, maybe worth to try
-        for val in ["Enum", "Variant", "JSON", "Dynamic"]:
-            if ch_type.startswith(val):
-                is_text = random.randint(1, 2) == 1
+        # Handle Variant(T1, T2, ...) → Spark VariantType / Iceberg Struct with nullable fields
+        if ch_type.startswith("Variant("):
+            if HAS_VARIANT_TYPE and mapping == ClickHouseMapping.Spark:
+                return ("VARIANT", inside_nullable, sp.VariantType())
+
+            # Iceberg has no Variant type; expand into a Struct with nullable fields
+            content = self._extract_nested_content(ch_type, "Variant")
+            elements = self._parse_tuple_elements(content)
+            current_id = self.field_id
+
+            if elements:
+                spark_elements = []
+                struct_fields = []
+                for i, elem in enumerate(elements):
+                    self.increment()
+                    elem = elem.strip()
+                    inner_str, _, inner_tp = self.clickhouse_to_spark(
+                        elem, True, mapping
+                    )
+                    field_name = f"v{i}_{re.split(r'[^a-zA-Z0-9_]', elem)[0]}"
+                    spark_elements.append(f"{field_name}: {inner_str}")
+                    struct_fields.append(
+                        it.NestedField(
+                            field_id=current_id + i,
+                            name=field_name,
+                            field_type=inner_tp,
+                            required=False,
+                        )
+                    )
+
                 return (
-                    "STRING" if is_text else "BINARY",
+                    f'STRUCT<{", ".join(spark_elements)}>',
                     inside_nullable,
-                    (module.StringType() if is_text else module.BinaryType()),
+                    it.StructType(*struct_fields),
                 )
+            return ("STRING", inside_nullable, it.StringType())
+
+        # Handle JSON, Dynamic → Spark 4.0 VariantType (untyped semi-structured)
+        for val in ["JSON", "Dynamic", "Enum"]:
+            if ch_type.startswith(val):
+                if (
+                    HAS_VARIANT_TYPE
+                    and val != "Enum"
+                    and mapping == ClickHouseMapping.Spark
+                ):
+                    return ("VARIANT", inside_nullable, sp.VariantType())
+                else:
+                    is_text = random.randint(1, 2) == 1
+                    return (
+                        "STRING" if is_text else "BINARY",
+                        inside_nullable,
+                        (module.StringType() if is_text else module.BinaryType()),
+                    )
 
         # Handle AggregateFunction
         for val in ["AggregateFunction", "SimpleAggregateFunction"]:
@@ -532,7 +579,7 @@ class ClickHouseTypeMapper:
             return random.choice(primitive_types)
 
         # Choose between primitive and complex types
-        type_choice = random.choice(["primitive", "array", "map", "struct"])
+        type_choice = random.choice(["primitive", "array", "map", "struct", "variant"])
 
         if type_choice == "primitive":
             return random.choice(primitive_types)
@@ -563,6 +610,186 @@ class ClickHouseTypeMapper:
                 )
                 fields.append(f"{field_name}:{field_type}")
             return f"STRUCT<{','.join(fields)}>"
+        elif type_choice == "variant":
+            # Generate random number of variant members (1-4)
+            num_members = random.randint(1, 4)
+            members = set()
+            while len(members) < num_members:
+                member_type = self.generate_random_spark_sql_type(
+                    max_depth=max_depth,
+                    current_depth=current_depth + 1,
+                    allow_complex=False,
+                )
+                members.add(member_type)
+            inside = ",".join(
+                f'v{i}_{re.split(r"[^a-zA-Z0-9_]", m)[0]}:{m}'
+                for i, m in enumerate(members)
+            )
+            return f"STRUCT<{inside}>"
+
+    def generate_random_spark_type(
+        self, allow_variant=True, max_depth=3, current_depth=0
+    ) -> sp.DataType:
+        """Return a random Spark DataType for use inside a Variant column."""
+        primitive_factories = [
+            sp.BooleanType,
+            sp.ShortType,
+            sp.IntegerType,
+            sp.ByteType,
+            sp.LongType,
+            sp.FloatType,
+            sp.DoubleType,
+            sp.StringType,
+            sp.BinaryType,
+            sp.DateType,
+            sp.TimestampType,
+            lambda: sp.DecimalType(
+                precision=random.randint(1, 38), scale=random.randint(0, 10)
+            ),
+            lambda: sp.CharType(length=random.randint(1, 100)),
+            lambda: sp.VarcharType(length=random.randint(1, 100)),
+        ]
+        roll = random.randint(1, 100)
+
+        # At max depth only emit primitives
+        if roll <= 60 or current_depth >= max_depth:
+            factory = random.choice(primitive_factories)
+            return factory() if callable(factory) else factory
+        elif HAS_VARIANT_TYPE and roll <= 70 and allow_variant:
+            return sp.VariantType()
+        elif roll <= 80:
+            elem = self.generate_random_spark_type(
+                allow_variant, max_depth, current_depth + 1
+            )
+            return sp.ArrayType(elem, containsNull=random.choice([True, False]))
+        elif roll <= 90:
+            factory = random.choice(primitive_factories)
+            key = factory() if callable(factory) else factory
+            val = self.generate_random_spark_type(
+                allow_variant, max_depth, current_depth + 1
+            )
+            return sp.MapType(key, val, valueContainsNull=random.choice([True, False]))
+        else:
+            n_fields = random.randint(1, 4)
+            fields = []
+            for i in range(n_fields):
+                ft = self.generate_random_spark_type(
+                    allow_variant, max_depth, current_depth + 1
+                )
+                fields.append(
+                    sp.StructField(
+                        name=f"f{i}", dataType=ft, nullable=random.choice([True, False])
+                    )
+                )
+            return sp.StructType(fields)
+
+    def generate_random_clickhouse_type(
+        self, allow_complex=True, allow_variant=True, max_depth=3, current_depth=0
+    ) -> str:
+        """Generate a random ClickHouse SQL type string."""
+
+        primitive_types = [
+            "Bool",
+            "Boolean",
+            "UInt8",
+            "UInt16",
+            "UInt32",
+            "UInt64",
+            "UInt128",
+            "UInt256",
+            "Int8",
+            "Int16",
+            "Int32",
+            "Int64",
+            "Int128",
+            "Int256",
+            "BFloat16",
+            "Float32",
+            "Float64",
+            f"Decimal({random.randint(1, 38)}, {random.randint(0, 10)})",
+            "String",
+            f"FixedString({random.randint(1, 100)})",
+            "Date",
+            "Date32",
+            "DateTime",
+            "DateTime64",
+            "Time",
+            "Time64",
+            "UUID",
+            "IPv4",
+            "IPv6",
+            "JSON",
+            "Dynamic",
+            "Enum",
+            "Enum8",
+            "Enum16",
+        ]
+        roll = random.randint(1, 100)
+
+        if roll <= 60 or current_depth >= max_depth or not allow_complex:
+            base = random.choice(primitive_types)
+        elif roll <= 70:
+            inner = self.generate_random_clickhouse_type(
+                allow_complex, allow_variant, max_depth, current_depth + 1
+            )
+            base = f"Array({inner})"
+        elif roll <= 80:
+            # Map keys must be primitive in ClickHouse
+            key = self.generate_random_clickhouse_type(
+                False, allow_variant, max_depth, current_depth + 1
+            )
+            val = self.generate_random_clickhouse_type(
+                allow_complex, allow_variant, max_depth, current_depth + 1
+            )
+            base = f"Map({key}, {val})"
+        elif roll <= 90:
+            n = random.randint(1, 4)
+            named = random.choice([True, False])
+            elems = []
+            for i in range(n):
+                t = self.generate_random_clickhouse_type(
+                    allow_complex, allow_variant, max_depth, current_depth + 1
+                )
+                elems.append(f"f{i} {t}" if named else t)
+            base = f"Tuple({','.join(elems)})"
+        elif roll <= 95:
+            n = random.randint(2, 5)
+            members = set()
+            while len(members) < n:
+                members.add(
+                    self.generate_random_clickhouse_type(
+                        allow_complex, False, max_depth, current_depth + 1
+                    )
+                )
+            base = f"Variant({','.join(members)})"
+        else:
+            n = random.randint(1, 3)
+            fields = [
+                f"f{i} {self.generate_random_clickhouse_type(allow_complex, allow_variant, max_depth, current_depth + 1)}"
+                for i in range(n)
+            ]
+            base = f"Nested({','.join(fields)})"
+
+        # Optionally wrap in Nullable or LowCardinality
+        if random.randint(1, 5) == 1 and not base.startswith(
+            ("Dynamic", "Array", "Map", "Nested", "Variant")
+        ):
+            base = f"Nullable({base})"
+        if random.randint(1, 8) == 1 and not base.startswith(
+            (
+                "Decimal",
+                "Enum",
+                "JSON",
+                "Dynamic",
+                "Array",
+                "Map",
+                "Tuple",
+                "Nested",
+                "Variant",
+            )
+        ):
+            base = f"LowCardinality({base})"
+        return base
 
     def _get_random_iceberg_transform_for_type(self, field_type):
         """Get a random appropriate transform for a field type."""

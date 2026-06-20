@@ -96,14 +96,7 @@ public:
 
 REGISTER_FUNCTION(PatchPartitionID)
 {
-    factory.registerFunction<FunctionPatchPartitionID>(FunctionDocumentation
-    {
-        .description = R"(
-Internal function. Receives the name of a part and a hash of patch part's column names. Returns the name of partition of patch part. The argument must be a correct name of part, the behaviour is undefined otherwise.
-        )",
-        .introduced_in = {25, 5},
-        .category = FunctionDocumentation::Category::Other,
-    });
+    factory.registerFunction<FunctionPatchPartitionID>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

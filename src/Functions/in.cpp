@@ -173,24 +173,168 @@ private:
 
 void registerFunctionsInImpl(FunctionFactory & factory, bool ignore_set)
 {
-    const char * suffix = ignore_set ? "IgnoreSet" : "";
-    auto reg = [&](const char * name, bool negative_, bool null_is_skipped_)
-    {
-        String full_name = String(name) + suffix;
-        factory.registerFunction(full_name, [negative_, null_is_skipped_, ignore_set, n = full_name](ContextPtr)
-        {
-            return FunctionIn::create(n, negative_, null_is_skipped_, ignore_set);
-        });
-    };
+    const String suffix = ignore_set ? "IgnoreSet" : "";
+    static constexpr auto ignore_set_description_suffix = " This is the IgnoreSet variant used for type analysis without creating the set.";
 
-    reg("in", false, true);
-    reg("globalIn", false, true);
-    reg("notIn", true, true);
-    reg("globalNotIn", true, true);
-    reg("nullIn", false, false);
-    reg("globalNullIn", false, false);
-    reg("notNullIn", true, false);
-    reg("globalNotNullIn", true, false);
+    /// in
+    FunctionDocumentation::Description description_in = R"(
+Checks if the left operand is a member of the right operand set. Returns 1 if it is, 0 otherwise. NULL values in the left operand are skipped (treated as not in the set).
+    )";
+    FunctionDocumentation::Syntax syntax_in = "in(x, set)";
+    FunctionDocumentation::Arguments arguments_in = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
+    FunctionDocumentation::ReturnedValue returned_value_in = {"Returns 1 if x is in the set, 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_in = {{"Basic usage", "SELECT 1 IN (1, 2, 3)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in_in = {1, 1};
+    FunctionDocumentation::Category category_in = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation_in = {description_in, syntax_in, arguments_in, {}, returned_value_in, examples_in, introduced_in_in, category_in};
+    if (ignore_set)
+        documentation_in.description = String(documentation_in.description) + ignore_set_description_suffix;
+    String full_name_in = "in";
+    full_name_in += suffix;
+    factory.registerFunction(full_name_in, [ignore_set, n = full_name_in](ContextPtr)
+    {
+        return FunctionIn::create(n, false, true, ignore_set);
+    }, std::move(documentation_in));
+
+    /// globalIn
+    FunctionDocumentation::Description description_globalIn = R"(
+Same as `in`, but uses global set distribution in distributed queries. The set is sent to all remote servers.
+    )";
+    FunctionDocumentation::Syntax syntax_globalIn = "globalIn(x, set)";
+    FunctionDocumentation::Arguments arguments_globalIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
+    FunctionDocumentation::ReturnedValue returned_value_globalIn = {"Returns 1 if x is in the set, 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_globalIn = {{"Basic usage", "SELECT 1 IN (1, 2, 3)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in_globalIn = {1, 1};
+    FunctionDocumentation::Category category_globalIn = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation_globalIn = {description_globalIn, syntax_globalIn, arguments_globalIn, {}, returned_value_globalIn, examples_globalIn, introduced_in_globalIn, category_globalIn};
+    if (ignore_set)
+        documentation_globalIn.description = String(documentation_globalIn.description) + ignore_set_description_suffix;
+    String full_name_globalIn = "globalIn";
+    full_name_globalIn += suffix;
+    factory.registerFunction(full_name_globalIn, [ignore_set, n = full_name_globalIn](ContextPtr)
+    {
+        return FunctionIn::create(n, false, true, ignore_set);
+    }, std::move(documentation_globalIn));
+
+    /// notIn
+    FunctionDocumentation::Description description_notIn = R"(
+Checks if the left operand is NOT a member of the right operand set. Returns 1 if it is not in the set, 0 otherwise. NULL values in the left operand are skipped.
+    )";
+    FunctionDocumentation::Syntax syntax_notIn = "notIn(x, set)";
+    FunctionDocumentation::Arguments arguments_notIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
+    FunctionDocumentation::ReturnedValue returned_value_notIn = {"Returns 1 if x is not in the set, 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_notIn = {{"Basic usage", "SELECT 4 NOT IN (1, 2, 3)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in_notIn = {1, 1};
+    FunctionDocumentation::Category category_notIn = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation_notIn = {description_notIn, syntax_notIn, arguments_notIn, {}, returned_value_notIn, examples_notIn, introduced_in_notIn, category_notIn};
+    if (ignore_set)
+        documentation_notIn.description = String(documentation_notIn.description) + ignore_set_description_suffix;
+    String full_name_notIn = "notIn";
+    full_name_notIn += suffix;
+    factory.registerFunction(full_name_notIn, [ignore_set, n = full_name_notIn](ContextPtr)
+    {
+        return FunctionIn::create(n, true, true, ignore_set);
+    }, std::move(documentation_notIn));
+
+    /// globalNotIn
+    FunctionDocumentation::Description description_globalNotIn = R"(
+Same as `notIn`, but uses global set distribution in distributed queries. The set is sent to all remote servers.
+    )";
+    FunctionDocumentation::Syntax syntax_globalNotIn = "globalNotIn(x, set)";
+    FunctionDocumentation::Arguments arguments_globalNotIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
+    FunctionDocumentation::ReturnedValue returned_value_globalNotIn = {"Returns 1 if x is not in the set, 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_globalNotIn = {{"Basic usage", "SELECT 4 NOT IN (1, 2, 3)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in_globalNotIn = {1, 1};
+    FunctionDocumentation::Category category_globalNotIn = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation_globalNotIn = {description_globalNotIn, syntax_globalNotIn, arguments_globalNotIn, {}, returned_value_globalNotIn, examples_globalNotIn, introduced_in_globalNotIn, category_globalNotIn};
+    if (ignore_set)
+        documentation_globalNotIn.description = String(documentation_globalNotIn.description) + ignore_set_description_suffix;
+    String full_name_globalNotIn = "globalNotIn";
+    full_name_globalNotIn += suffix;
+    factory.registerFunction(full_name_globalNotIn, [ignore_set, n = full_name_globalNotIn](ContextPtr)
+    {
+        return FunctionIn::create(n, true, true, ignore_set);
+    }, std::move(documentation_globalNotIn));
+
+    /// nullIn
+    FunctionDocumentation::Description description_nullIn = R"(
+Checks if the left operand is a member of the right operand set. Unlike `in`, NULL values are not skipped: NULL is compared with set elements, and NULL = NULL evaluates to true.
+    )";
+    FunctionDocumentation::Syntax syntax_nullIn = "nullIn(x, set)";
+    FunctionDocumentation::Arguments arguments_nullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
+    FunctionDocumentation::ReturnedValue returned_value_nullIn = {"Returns 1 if x is in the set, 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_nullIn = {{"Basic usage", "SELECT nullIn(NULL, tuple(1, NULL))", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in_nullIn = {1, 1};
+    FunctionDocumentation::Category category_nullIn = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation_nullIn = {description_nullIn, syntax_nullIn, arguments_nullIn, {}, returned_value_nullIn, examples_nullIn, introduced_in_nullIn, category_nullIn};
+    if (ignore_set)
+        documentation_nullIn.description = String(documentation_nullIn.description) + ignore_set_description_suffix;
+    String full_name_nullIn = "nullIn";
+    full_name_nullIn += suffix;
+    factory.registerFunction(full_name_nullIn, [ignore_set, n = full_name_nullIn](ContextPtr)
+    {
+        return FunctionIn::create(n, false, false, ignore_set);
+    }, std::move(documentation_nullIn));
+
+    /// globalNullIn
+    FunctionDocumentation::Description description_globalNullIn = R"(
+Same as `nullIn`, but uses global set distribution in distributed queries. The set is sent to all remote servers.
+    )";
+    FunctionDocumentation::Syntax syntax_globalNullIn = "globalNullIn(x, set)";
+    FunctionDocumentation::Arguments arguments_globalNullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
+    FunctionDocumentation::ReturnedValue returned_value_globalNullIn = {"Returns 1 if x is in the set, 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_globalNullIn = {{"Basic usage", "SELECT nullIn(NULL, tuple(1, NULL))", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in_globalNulllIn = {1, 1};
+    FunctionDocumentation::Category category_globalNullIn = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation_globalNullIn = {description_globalNullIn, syntax_globalNullIn, arguments_globalNullIn, {}, returned_value_globalNullIn, examples_globalNullIn, introduced_in_globalNulllIn, category_globalNullIn};
+    if (ignore_set)
+        documentation_globalNullIn.description = String(documentation_globalNullIn.description) + ignore_set_description_suffix;
+    String full_name_globalNullIn = "globalNullIn";
+    full_name_globalNullIn += suffix;
+    factory.registerFunction(full_name_globalNullIn, [ignore_set, n = full_name_globalNullIn](ContextPtr)
+    {
+        return FunctionIn::create(n, false, false, ignore_set);
+    }, std::move(documentation_globalNullIn));
+
+    /// notNullIn
+    FunctionDocumentation::Description description_notNullIn = R"(
+Checks if the left operand is NOT a member of the right operand set. Unlike `notIn`, NULL values are not skipped: NULL is compared with set elements, and NULL = NULL evaluates to true.
+    )";
+    FunctionDocumentation::Syntax syntax_notNullIn = "notNullIn(x, set)";
+    FunctionDocumentation::Arguments arguments_notNullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
+    FunctionDocumentation::ReturnedValue returned_value_notNullIn = {"Returns 1 if x is not in the set, 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_notNullIn = {{"Basic usage", "SELECT notNullIn(NULL, tuple(1, NULL))", "0"}};
+    FunctionDocumentation::IntroducedIn introduced_in_notNulllIn = {1, 1};
+    FunctionDocumentation::Category category_notNullIn = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation_notNullIn = {description_notNullIn, syntax_notNullIn, arguments_notNullIn, {}, returned_value_notNullIn, examples_notNullIn, introduced_in_notNulllIn, category_notNullIn};
+    if (ignore_set)
+        documentation_notNullIn.description = String(documentation_notNullIn.description) + ignore_set_description_suffix;
+    String full_name_notNullIn = "notNullIn";
+    full_name_notNullIn += suffix;
+    factory.registerFunction(full_name_notNullIn, [ignore_set, n = full_name_notNullIn](ContextPtr)
+    {
+        return FunctionIn::create(n, true, false, ignore_set);
+    }, std::move(documentation_notNullIn));
+
+    /// globalNotNullIn
+    FunctionDocumentation::Description description_globalNotNullIn = R"(
+Same as `notNullIn`, but uses global set distribution in distributed queries. The set is sent to all remote servers.
+    )";
+    FunctionDocumentation::Syntax syntax_globalNotNullIn = "globalNotNullIn(x, set)";
+    FunctionDocumentation::Arguments arguments_globalNotNullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
+    FunctionDocumentation::ReturnedValue returned_value_globalNotNullIn = {"Returns 1 if x is not in the set, 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_globalNotNullIn = {{"Basic usage", "SELECT notNullIn(NULL, tuple(1, NULL))", "0"}};
+    FunctionDocumentation::IntroducedIn introduced_in_globalNotNulllIn = {1, 1};
+    FunctionDocumentation::Category category_globalNotNullIn = FunctionDocumentation::Category::Comparison;
+    FunctionDocumentation documentation_globalNotNullIn = {description_globalNotNullIn, syntax_globalNotNullIn, arguments_globalNotNullIn, {}, returned_value_globalNotNullIn, examples_globalNotNullIn, introduced_in_globalNotNulllIn, category_globalNotNullIn};
+    if (ignore_set)
+        documentation_globalNotNullIn.description = String(documentation_globalNotNullIn.description) + ignore_set_description_suffix;
+    String full_name_globalNotNullIn = "globalNotNullIn";
+    full_name_globalNotNullIn += suffix;
+    factory.registerFunction(full_name_globalNotNullIn, [ignore_set, n = full_name_globalNotNullIn](ContextPtr)
+    {
+        return FunctionIn::create(n, true, false, ignore_set);
+    }, std::move(documentation_globalNotNullIn));
 }
 
 }

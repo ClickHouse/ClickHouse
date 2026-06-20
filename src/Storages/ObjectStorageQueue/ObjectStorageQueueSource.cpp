@@ -8,9 +8,11 @@
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
@@ -43,6 +45,11 @@ namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsUInt64 keeper_max_retries;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ObjectStorageQueueSetting
@@ -939,7 +946,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
     const StorageID & storage_id_,
     LoggerPtr log_,
-    bool commit_once_processed_)
+    bool commit_once_processed_,
+    bool add_deduplication_info_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -961,6 +969,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , system_queue_log(system_queue_log_)
     , storage_id(storage_id_)
     , commit_once_processed(commit_once_processed_)
+    , add_deduplication_info(add_deduplication_info_)
+    , insert_deduplication_version(context_->getServerSettings()[ServerSetting::insert_deduplication_version].value)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1188,7 +1198,27 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         if (result)
         {
-            LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), path);
+            const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
+            const auto row_offset = file_status->processed_rows.load();
+
+            std::string dedup_token;
+            if (add_deduplication_info)
+            {
+                /// Etag is quoted for some reason.
+                std::string etag = object_metadata->etag;
+                if (etag.size() > 2 && etag.front() == '\"' && etag.back() == '\"')
+                    etag = etag.substr(1, etag.size() - 2);
+
+                /// Create unique token per chunk: etag + row offset
+                dedup_token = fmt::format("{}:{}", etag, row_offset);
+
+                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true, insert_deduplication_version);
+                deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
+                chunk.getChunkInfos().add(std::move(deduplication_info));
+            }
+
+            LOG_TEST(log, "Read {} rows from file {} (file offset: {}, deduplication token for chunk: {})",
+                     chunk.getNumRows(), path, row_offset, dedup_token);
 
             file_status->processed_rows += chunk.getNumRows();
             progress->processed_rows += chunk.getNumRows();
@@ -1205,12 +1235,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     path);
             }
 
-            const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
-
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
-                {.path = path, .size = object_metadata->size_bytes, .last_modified = object_metadata->last_modified},
+                {
+                    .path = path,
+                    .size = object_metadata->size_bytes,
+                    .last_modified = object_metadata->last_modified
+                },
                 getContext());
 
             return chunk;

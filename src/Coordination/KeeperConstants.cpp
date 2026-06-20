@@ -400,10 +400,14 @@ extern const std::vector<Metric> keeper_metrics
 }
 
 #define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
-    M(KeeperServerPreprocessRequestDurationMetricFamily) \
-    M(KeeperServerProcessRequestDuration) \
-    M(KeeperServerQueueDurationMetricFamily) \
-    M(KeeperServerSendDurationMetricFamily) \
+    M(KeeperReceiveRequestTimeMetricFamily) \
+    M(KeeperDispatcherRequestsQueueTimeMetricFamily) \
+    M(KeeperWritePreCommitTimeMetricFamily) \
+    M(KeeperWriteCommitTimeMetricFamily) \
+    M(KeeperDispatcherResponsesQueueTimeMetricFamily) \
+    M(KeeperSendResponseTimeMetricFamily) \
+    M(KeeperReadWaitForWriteTimeMetricFamily) \
+    M(KeeperReadProcessTimeMetricFamily) \
     M(KeeperBatchSizeBytesMetricFamily) \
 
 

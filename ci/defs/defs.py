@@ -33,8 +33,6 @@ class RunnerLabels:
     MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
-    # GitHub-hosted macOS runners for native smoke tests
-    MACOS_ARM = ["macos-14"]  # Apple Silicon (M1/M2/M3)
 
 
 class CIFiles:
@@ -357,7 +355,8 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
-    MACOS_SMOKE_TEST = "macOS smoke test"
+    BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
+    UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
 
 
 class ToolSet:
@@ -427,6 +426,9 @@ class ArtifactNames:
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
     PARSER_MEMORY_PROFILER = "PARSER_MEMORY_PROFILER"
+
+    TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
+    TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
 
 
 LLVM_FT_NUM_BATCHES = 3
@@ -581,4 +583,14 @@ class ArtifactConfigs:
         name=ArtifactNames.PARSER_MEMORY_PROFILER,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/src/Parsers/examples/parser_memory_profiler",
+    )
+    toolchain_pgo_bolt_amd = Artifact.Config(
+        name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
+    )
+    toolchain_pgo_bolt_arm = Artifact.Config(
+        name=ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
     )

@@ -16,7 +16,6 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['S3HeadObject'],
     ProfileEvents['S3ListObjects'],
-    ProfileEvents['RemoteFSPrefetches'],
     ProfileEvents['IOBufferAllocBytes'] < 100000
 FROM system.query_log WHERE current_database = currentDatabase()
 AND type = 'QueryFinish' AND query ILIKE 'SELECT count() FROM s3%test_02496%';

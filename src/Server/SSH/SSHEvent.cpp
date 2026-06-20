@@ -2,7 +2,6 @@
 
 #if USE_SSH && defined(OS_LINUX)
 
-#include <stdexcept>
 #include <Common/Exception.h>
 #include <Common/clibssh.h>
 
@@ -53,19 +52,12 @@ void SSHEvent::removeSession(SSHSession & session)
 
 int SSHEvent::poll(int timeout)
 {
-    while (true)
-    {
-        int rc = ssh_event_dopoll(event.get(), timeout);
+    int rc = ssh_event_dopoll(event.get(), timeout);
 
-        if (rc == SSH_AGAIN)
-            continue;
-        if (rc == SSH_ERROR)
-            throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on polling on ssh event. {}", errnoToString());
-        if (rc != SSH_OK)
-            throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "The failure happened with no reason provided by the libssh");
+    if (rc == SSH_ERROR)
+        throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on polling on ssh event. {}", errnoToString());
 
-        return rc;
-    }
+    return rc;
 }
 
 int SSHEvent::poll()

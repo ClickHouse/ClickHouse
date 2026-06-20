@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <string>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Dictionaries/Embedded/GeodataProviders/Entries.h>
 
 namespace DB
@@ -39,7 +39,7 @@ using IRegionsHierarchyDataSourcePtr = std::shared_ptr<IRegionsHierarchyDataSour
 class IRegionsHierarchiesDataProvider
 {
 public:
-    virtual std::vector<std::string> listCustomHierarchies() const = 0;
+    virtual VectorWithMemoryTracking<std::string> listCustomHierarchies() const = 0;
 
     virtual IRegionsHierarchyDataSourcePtr getDefaultHierarchySource() const = 0;
     virtual IRegionsHierarchyDataSourcePtr getHierarchySource(const std::string & name) const = 0;

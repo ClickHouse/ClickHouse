@@ -76,6 +76,7 @@ class Labels:
 
     CI_FUNCTIONAL_FLAKY = "ci-functional-test-flaky"
     CI_FUNCTIONAL = "ci-functional-test"
+    CI_TOOLCHAIN = "ci-toolchain"
 
     # automatic backport for critical bug fixes
     AUTO_BACKPORT = {"pr-critical-bugfix"}

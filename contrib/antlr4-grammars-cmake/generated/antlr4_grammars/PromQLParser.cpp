@@ -118,12 +118,12 @@ void promqlparserParserInitialize() {
   	0,66,307,1,0,0,0,68,309,1,0,0,0,70,324,1,0,0,0,72,326,1,0,0,0,74,328,
   	1,0,0,0,76,77,3,2,1,0,77,78,5,0,0,1,78,1,1,0,0,0,79,80,6,1,-1,0,80,81,
   	3,4,2,0,81,82,3,2,1,7,82,85,1,0,0,0,83,85,3,22,11,0,84,79,1,0,0,0,84,
-  	83,1,0,0,0,85,114,1,0,0,0,86,87,10,9,0,0,87,88,3,6,3,0,88,89,3,2,1,9,
+  	83,1,0,0,0,85,114,1,0,0,0,86,87,10,8,0,0,87,88,3,6,3,0,88,89,3,2,1,8,
   	89,113,1,0,0,0,90,91,10,6,0,0,91,92,3,8,4,0,92,93,3,2,1,7,93,113,1,0,
   	0,0,94,95,10,5,0,0,95,96,3,10,5,0,96,97,3,2,1,6,97,113,1,0,0,0,98,99,
   	10,4,0,0,99,100,3,12,6,0,100,101,3,2,1,5,101,113,1,0,0,0,102,103,10,3,
   	0,0,103,104,3,14,7,0,104,105,3,2,1,4,105,113,1,0,0,0,106,107,10,2,0,0,
-  	107,108,3,16,8,0,108,109,3,2,1,3,109,113,1,0,0,0,110,111,10,8,0,0,111,
+  	107,108,3,16,8,0,108,109,3,2,1,3,109,113,1,0,0,0,110,111,10,9,0,0,111,
   	113,3,18,9,0,112,86,1,0,0,0,112,90,1,0,0,0,112,94,1,0,0,0,112,98,1,0,
   	0,0,112,102,1,0,0,0,112,106,1,0,0,0,112,110,1,0,0,0,113,116,1,0,0,0,114,
   	112,1,0,0,0,114,115,1,0,0,0,115,3,1,0,0,0,116,114,1,0,0,0,117,118,7,0,
@@ -461,11 +461,11 @@ PromQLParser::VectorOperationContext* PromQLParser::vectorOperation(int preceden
           pushNewRecursionContext(_localctx, startState, RuleVectorOperation);
           setState(86);
 
-          if (!(precpred(_ctx, 9))) throw FailedPredicateException(this, "precpred(_ctx, 9)");
+          if (!(precpred(_ctx, 8))) throw FailedPredicateException(this, "precpred(_ctx, 8)");
           setState(87);
           powOp();
           setState(88);
-          vectorOperation(9);
+          vectorOperation(8);
           break;
         }
 
@@ -539,7 +539,7 @@ PromQLParser::VectorOperationContext* PromQLParser::vectorOperation(int preceden
           pushNewRecursionContext(_localctx, startState, RuleVectorOperation);
           setState(110);
 
-          if (!(precpred(_ctx, 8))) throw FailedPredicateException(this, "precpred(_ctx, 8)");
+          if (!(precpred(_ctx, 9))) throw FailedPredicateException(this, "precpred(_ctx, 9)");
           setState(111);
           subqueryOp();
           break;
@@ -3838,13 +3838,13 @@ bool PromQLParser::sempred(RuleContext *context, size_t ruleIndex, size_t predic
 
 bool PromQLParser::vectorOperationSempred(VectorOperationContext *_localctx, size_t predicateIndex) {
   switch (predicateIndex) {
-    case 0: return precpred(_ctx, 9);
+    case 0: return precpred(_ctx, 8);
     case 1: return precpred(_ctx, 6);
     case 2: return precpred(_ctx, 5);
     case 3: return precpred(_ctx, 4);
     case 4: return precpred(_ctx, 3);
     case 5: return precpred(_ctx, 2);
-    case 6: return precpred(_ctx, 8);
+    case 6: return precpred(_ctx, 9);
 
   default:
     break;

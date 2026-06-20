@@ -119,9 +119,9 @@ YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
     return configuration;
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context)
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context, const StorageID * table_id)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
         return StorageYTsaurus::processNamedCollectionResult(*named_collection, settings);
     }
@@ -151,7 +151,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext()),
+            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id),
             args.columns,
             args.constraints,
             args.comment);

@@ -15,6 +15,6 @@ s1
 ['{"d":1}','{"d":2}','{"d":3}']
 ['{"d":1}','{"d":2}','{"d":3}']
 1
-SELECT __table1.`json.a` AS `tupleElement(json, \'a\')`
+SELECT tupleElement(__table1.json, \'a\') AS `tupleElement(json, \'a\')`
 FROM default.test AS __table1
 SETTINGS optimize_functions_to_subcolumns = 1

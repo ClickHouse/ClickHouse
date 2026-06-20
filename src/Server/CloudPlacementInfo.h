@@ -13,6 +13,7 @@ namespace PlacementInfo
 
 static constexpr auto PLACEMENT_CONFIG_PREFIX = "placement";
 static constexpr auto DEFAULT_AZ_FILE_PATH = "/run/instance-metadata/node-zone";
+static constexpr auto DEFAULT_REGION_FILE_PATH = "/run/instance-metadata/node-region";
 
 /// A singleton providing information on where in cloud server is running.
 class PlacementInfo : private boost::noncopyable
@@ -23,6 +24,7 @@ public:
     void initialize(const Poco::Util::AbstractConfiguration & config);
 
     std::string getAvailabilityZone() const;
+    std::string getRegion() const;
 
 private:
     PlacementInfo() = default;
@@ -33,6 +35,7 @@ private:
 
     bool use_imds;
     std::string availability_zone;
+    std::string region;
 };
 
 }

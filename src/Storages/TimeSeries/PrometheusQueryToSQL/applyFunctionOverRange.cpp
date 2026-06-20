@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -50,7 +51,7 @@ namespace
     /// Returns an AST to do the aggregation over time.
     ASTPtr makeExpressionForResultVector(
         const String & function_name,
-        const NodeEvaluationRange & evaluation_range,
+        const NodeEvaluationRange & node_range,
         ASTPtr && timestamps_argument,
         ASTPtr && values_argument,
         ConverterContext & context)
@@ -70,10 +71,15 @@ namespace
 
         return addParametersToAggregateFunction(
             makeASTFunction(sql_function_name, std::move(timestamps_argument), std::move(values_argument)),
-            timeSeriesTimestampToAST(evaluation_range.start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(evaluation_range.end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(evaluation_range.step, context.timestamp_data_type),
-            timeSeriesDurationToAST(evaluation_range.window, context.timestamp_data_type));
+            timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(node_range.step, context.timestamp_data_type),
+            timeSeriesDurationToAST(node_range.window, context.timestamp_data_type));
+    }
+
+    bool shouldDropMetricName(const String & promql_function_name)
+    {
+        return promql_function_name != "last_over_time";
     }
 }
 
@@ -118,10 +124,10 @@ SQLQueryPiece applyFunctionOverRange(
 {
     checkArgumentTypes(function_name, arguments, context);
 
-    auto evaluation_range = context.node_evaluation_range_getter.get(node);
-    auto start_time = evaluation_range.start_time;
-    auto end_time = evaluation_range.end_time;
-    auto step = evaluation_range.step;
+    auto node_range = context.node_range_getter.get(node);
+    auto start_time = node_range.start_time;
+    auto end_time = node_range.end_time;
+    auto step = node_range.step;
 
     if (start_time > end_time)
     {
@@ -150,7 +156,7 @@ SQLQueryPiece applyFunctionOverRange(
 
             auto new_values = makeExpressionForResultVector(
                 function_name,
-                evaluation_range,
+                node_range,
                 makeASTFunction(
                     "timeSeriesRange",
                     timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
@@ -220,7 +226,7 @@ SQLQueryPiece applyFunctionOverRange(
             }
 
             auto new_values = makeExpressionForResultVector(
-                function_name, evaluation_range, std::move(timestamps_argument), std::move(values_argument), context);
+                function_name, node_range, std::move(timestamps_argument), std::move(values_argument), context);
 
             new_values->setAlias(ColumnNames::Values);
             builder.select_list.push_back(std::move(new_values));
@@ -237,6 +243,9 @@ SQLQueryPiece applyFunctionOverRange(
             res.end_time = end_time;
             res.step = step;
 
+            if ((res.store_method == StoreMethod::VECTOR_GRID) && shouldDropMetricName(function_name))
+                res = dropMetricName(std::move(res), context);
+
             return res;
         }
 
@@ -252,7 +261,7 @@ SQLQueryPiece applyFunctionOverRange(
 
             auto new_values = makeExpressionForResultVector(
                 function_name,
-                evaluation_range,
+                node_range,
                 make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
                 make_intrusive<ASTIdentifier>(ColumnNames::Value),
                 context);
@@ -272,6 +281,9 @@ SQLQueryPiece applyFunctionOverRange(
             res.start_time = start_time;
             res.end_time = end_time;
             res.step = step;
+
+            if (shouldDropMetricName(function_name))
+                res = dropMetricName(std::move(res), context);
 
             return res;
         }

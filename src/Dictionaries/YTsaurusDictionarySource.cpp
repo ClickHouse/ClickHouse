@@ -153,7 +153,7 @@ BlockIO YTsarususDictionarySource::loadAll()
     return io;
 }
 
-BlockIO YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -168,7 +168,7 @@ BlockIO YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return io;
 }
 
-BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     if (!supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");

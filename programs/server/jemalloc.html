@@ -1,0 +1,2025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ClickHouse Jemalloc Stats</title>
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6IzAwMH0ub3tmaWxsOiNmZjB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4">
+    <style>
+        :root {
+            --color: black;
+            --background: #f5f5f5;
+            --card-background: white;
+            --border-color: #ddd;
+            --header-background: #FCFF74;
+            --header-text: black;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+            --metric-value-color: black;
+            --error-color: #dc3545;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --table-header-bg: #f8f9fa;
+            --table-hover-bg: #f1f1f1;
+            --btn-primary-bg: black;
+            --btn-primary-color: white;
+        }
+        [data-theme="dark"] {
+            --color: white;
+            --background: #151C2C;
+            --card-background: #1b2834;
+            --border-color: #444;
+            --header-background: #2a2a2a;
+            --header-text: #FCFF74;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --metric-value-color: #FCFF74;
+            --error-color: #F66;
+            --success-color: #4ade80;
+            --warning-color: #facc15;
+            --table-header-bg: #2a3f5f;
+            --table-hover-bg: #2a3f5f;
+            --btn-primary-bg: #FCFF74;
+            --btn-primary-color: black;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Liberation Sans, DejaVu Sans, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: var(--background);
+            color: var(--color);
+        }
+        .header {
+            background: var(--header-background);
+            color: var(--header-text);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px var(--shadow-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: opacity 0.2s;
+        }
+        .btn:hover {
+            opacity: 0.8;
+        }
+        .btn-primary {
+            background: var(--btn-primary-bg);
+            color: var(--btn-primary-color);
+        }
+        .btn-secondary {
+            background: var(--border-color);
+            color: var(--color);
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .error {
+            background: var(--error-color);
+            color: white;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            font-size: 1.2rem;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .metric-group {
+            display: contents;
+        }
+        .metric-group-divider {
+            grid-column: 1 / -1;
+            height: 1px;
+            background: var(--border-color);
+            margin: 0.5rem 0;
+        }
+        .metric-card {
+            background: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 4px var(--shadow-color);
+        }
+        .metric-label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            opacity: 0.7;
+            margin-bottom: 0.5rem;
+        }
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--metric-value-color);
+        }
+        .metric-unit {
+            font-size: 0.9rem;
+            opacity: 0.7;
+            margin-left: 0.25rem;
+        }
+        .section {
+            background: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 4px var(--shadow-color);
+        }
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        th {
+            background: var(--table-header-bg);
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        tbody tr:hover {
+            background: var(--table-hover-bg);
+        }
+        tbody tr:hover .sticky-cell-100,
+        tbody tr:hover .sticky-cell-80 {
+            background: var(--table-hover-bg);
+        }
+        .number {
+            text-align: right;
+            font-family: Monaco, Consolas, monospace;
+        }
+        .bar-container {
+            width: 100%;
+            height: 20px;
+            background: var(--border-color);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .bar {
+            height: 100%;
+            background: var(--metric-value-color);
+            transition: width 0.3s;
+        }
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+        .tab {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: var(--color);
+            font-size: 1rem;
+            border-bottom: 3px solid transparent;
+            transition: border-color 0.2s;
+        }
+        .tab:hover {
+            border-bottom-color: var(--color);
+        }
+        .tab.active {
+            border-bottom-color: var(--color);
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        pre {
+            background: var(--table-header-bg);
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 600px;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            white-space: pre;
+        }
+        .theme-toggle {
+            background: none;
+            border: 1px solid white;
+            color: white;
+            padding: 0.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .timestamp {
+            font-size: 0.85rem;
+            opacity: 0.7;
+        }
+        .heatmap-split-view {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        @media (max-width: 1200px) {
+            .heatmap-split-view {
+                flex-direction: column;
+            }
+        }
+        .heatmap-container {
+            flex: 1;
+            background: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+        .heatmap-container.standalone {
+            margin-bottom: 2rem;
+        }
+        .heatmap-scrollable {
+            max-height: 450px; /* ~15 rows at ~30px per row */
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        .heatmap-title {
+            font-size: 1rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+            color: var(--color);
+        }
+        .heatmap-bar {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            gap: 0.5rem;
+        }
+        .heatmap-label {
+            min-width: 80px;
+            font-size: 0.85rem;
+            font-family: Monaco, Consolas, monospace;
+            text-align: right;
+        }
+        .heatmap-bar-bg {
+            flex: 1;
+            height: 24px;
+            background: var(--border-color);
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+        .heatmap-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            padding-left: 0.5rem;
+            font-size: 0.75rem;
+            color: white;
+            font-weight: bold;
+        }
+        .heatmap-bar-fill.hot {
+            background: linear-gradient(90deg, #dc3545, #ff6b6b);
+        }
+        .heatmap-bar-fill.warm {
+            background: linear-gradient(90deg, #ffc107, #ffdc73);
+            color: black;
+        }
+        .heatmap-bar-fill.cool {
+            background: linear-gradient(90deg, #28a745, #5fdb7c);
+        }
+        .sticky-header-100 {
+            position: sticky;
+            left: 0;
+            background: var(--table-header-bg);
+            z-index: 11;
+            min-width: 100px;
+        }
+        .sticky-header-80 {
+            position: sticky;
+            left: 0;
+            background: var(--table-header-bg);
+            z-index: 11;
+            min-width: 80px;
+        }
+        .sticky-cell-100 {
+            position: sticky;
+            left: 0;
+            background: var(--card-background);
+            z-index: 1;
+            min-width: 100px;
+        }
+        .sticky-cell-80 {
+            position: sticky;
+            left: 0;
+            background: var(--card-background);
+            z-index: 1;
+            min-width: 80px;
+        }
+        .arena-header {
+            background: var(--table-header-bg);
+            min-width: 120px;
+        }
+        .arena-first-header {
+            position: sticky;
+            left: 0;
+            top: 0;
+            background: var(--table-header-bg);
+            z-index: 12;
+            min-width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>ClickHouse Jemalloc Statistics</h1>
+        <div class="controls">
+            <span class="timestamp" id="timestamp"></span>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <label for="refresh-interval" style="font-size: 0.9rem;" title="Set to 0 to disable auto-refresh">Auto-refresh (s):</label>
+                <input type="number" id="refresh-interval" min="0" value="10" title="Set to 0 to disable auto-refresh" style="width: 60px; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-background); color: var(--color);" oninput="debouncedUpdateRefreshInterval()" onchange="updateRefreshInterval()">
+            </div>
+            <button class="btn btn-primary" onclick="event.preventDefault(); loadStats(true); return false;">Refresh</button>
+            <button class="theme-toggle" onclick="toggleTheme()">
+                <span id="theme-icon">🌙</span>
+            </button>
+        </div>
+    </div>
+    <div class="container">
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="loading" class="loading">Loading jemalloc statistics...</div>
+        <div id="content" style="display: none;">
+            <div class="metrics-grid" id="overview-metrics"></div>
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('summary')">Summary</button>
+                <button class="tab" onclick="switchTab('bins')">Allocations</button>
+                <button class="tab" onclick="switchTab('arenas')">Arenas</button>
+                <button class="tab" onclick="switchTab('operations')">Operations</button>
+                <button class="tab" onclick="switchTab('profile')">Heap Profile</button>
+                <button class="tab" onclick="switchTab('raw')">Raw Output</button>
+            </div>
+            <div id="tab-summary" class="tab-content active">
+                <div class="section">
+                    <div class="section-title">Memory Overview</div>
+                    <div id="memory-overview"></div>
+                </div>
+            </div>
+            <div id="tab-bins" class="tab-content">
+                <div class="section">
+                    <div class="section-title">Allocations</div>
+                    <div id="bin-stats"></div>
+                </div>
+            </div>
+            <div id="tab-arenas" class="tab-content">
+                <div class="section">
+                    <div class="section-title">Arena Statistics</div>
+                    <div id="arena-stats"></div>
+                </div>
+            </div>
+            <div id="tab-operations" class="tab-content">
+                <div class="section">
+                    <div class="section-title">Background Thread Operations</div>
+                    <div id="operations-stats"></div>
+                </div>
+            </div>
+            <div id="tab-profile" class="tab-content">
+                <div class="section">
+                    <div class="section-title">Heap Profile</div>
+                    <div id="profile-stats"></div>
+                </div>
+            </div>
+            <div id="tab-raw" class="tab-content">
+                <div class="section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div class="section-title" style="margin-bottom: 0;">Raw Statistics</div>
+                        <button class="btn btn-secondary" onclick="copyRawStats()">Copy All</button>
+                    </div>
+                    <pre id="raw-stats"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let host = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+        let user = 'default';
+        let password = '';
+        let add_http_cors_header = (location.protocol != 'file:');
+
+        const current_url = new URL(window.location);
+        /// Substitute user name if it's specified in the query string
+        const user_from_url = current_url.searchParams.get('user');
+        if (user_from_url) {
+            user = user_from_url;
+        }
+        /// Substitute password if it's specified in the query string
+        const password_from_url = current_url.searchParams.get('password');
+        if (password_from_url) {
+            password = password_from_url;
+        }
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        function formatNumber(num) {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+        function saveScrollPositions(container, sections) {
+            const positions = {};
+            sections.forEach(section => {
+                positions[section.name] = { x: 0, y: 0 };
+            });
+            const scrollElements = container.querySelectorAll('div[style*="max-height"]');
+            sections.forEach((section, index) => {
+                if (scrollElements[index]) {
+                    positions[section.name] = {
+                        x: scrollElements[index].scrollLeft,
+                        y: scrollElements[index].scrollTop
+                    };
+                }
+            });
+            return positions;
+        }
+        function restoreScrollPositions(container, positions, sections) {
+            setTimeout(() => {
+                const scrollElements = container.querySelectorAll('div[style*="max-height"]');
+                sections.forEach((section, index) => {
+                    if (scrollElements[index] && positions[section.name]) {
+                        scrollElements[index].scrollLeft = positions[section.name].x;
+                        scrollElements[index].scrollTop = positions[section.name].y;
+                    }
+                });
+            }, 0);
+        }
+        function getAllocationsTableHeader() {
+            return `
+                <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
+                    <tr>
+                        <th class="sticky-header-80">Type</th>
+                        <th class="number">Allocated</th>
+                        <th class="number">Nmalloc</th>
+                        <th class="number">Nmalloc/s</th>
+                        <th class="number">Ndalloc</th>
+                        <th class="number">Ndalloc/s</th>
+                        <th class="number">Nrequests</th>
+                        <th class="number">Nrequests/s</th>
+                        <th class="number">Nfill</th>
+                        <th class="number">Nfill/s</th>
+                        <th class="number">Nflush</th>
+                        <th class="number">Nflush/s</th>
+                    </tr>
+                </thead>`;
+        }
+        function renderAllocationRow(type, alloc) {
+            if (!alloc) return '';
+            return `
+                <tr>
+                    <td class="sticky-cell-80">${type}</td>
+                    <td class="number">${formatBytes(alloc.allocated)}</td>
+                    <td class="number">${formatNumber(alloc.nmalloc)}</td>
+                    <td class="number">${formatNumber(alloc.nmalloc_ps)}</td>
+                    <td class="number">${formatNumber(alloc.ndalloc)}</td>
+                    <td class="number">${formatNumber(alloc.ndalloc_ps)}</td>
+                    <td class="number">${formatNumber(alloc.nrequests)}</td>
+                    <td class="number">${formatNumber(alloc.nrequests_ps)}</td>
+                    <td class="number">${formatNumber(alloc.nfill)}</td>
+                    <td class="number">${formatNumber(alloc.nfill_ps)}</td>
+                    <td class="number">${formatNumber(alloc.nflush)}</td>
+                    <td class="number">${formatNumber(alloc.nflush_ps)}</td>
+                </tr>`;
+        }
+        function getBinsTableHeader() {
+            return `
+                <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
+                    <tr>
+                        <th class="number sticky-header-100">Size</th>
+                        <th class="number">Index</th>
+                        <th class="number">Allocated</th>
+                        <th class="number">Nmalloc</th>
+                        <th class="number">Nmalloc/s</th>
+                        <th class="number">Ndalloc</th>
+                        <th class="number">Ndalloc/s</th>
+                        <th class="number">Nrequests</th>
+                        <th class="number">Nrequests/s</th>
+                        <th class="number">Nshards</th>
+                        <th class="number">Curregs</th>
+                        <th class="number">Curslabs</th>
+                        <th class="number">Nonfull Slabs</th>
+                        <th class="number">Regs</th>
+                        <th class="number">Pgs</th>
+                        <th class="number">Util</th>
+                        <th class="number">Nfills</th>
+                        <th class="number">Nfills/s</th>
+                        <th class="number">Nflushes</th>
+                        <th class="number">Nflushes/s</th>
+                        <th class="number">Nslabs</th>
+                        <th class="number">Nreslabs</th>
+                        <th class="number">Nreslabs/s</th>
+                        <th class="number">Pops</th>
+                        <th class="number">Pops/s</th>
+                        <th class="number">Failed Push</th>
+                        <th class="number">Failed Push/s</th>
+                        <th class="number">Push</th>
+                        <th class="number">Push/s</th>
+                        <th class="number">Push Elem</th>
+                        <th class="number">Push Elem/s</th>
+                        <th class="number">Lock Ops</th>
+                        <th class="number">Lock Ops/s</th>
+                        <th class="number">Waiting</th>
+                        <th class="number">Waiting/s</th>
+                        <th class="number">Spin Acq</th>
+                        <th class="number">Spin Acq/s</th>
+                        <th class="number">Owner Switch</th>
+                        <th class="number">Owner Switch/s</th>
+                        <th class="number">Total Wait (ns)</th>
+                        <th class="number">Total Wait/s</th>
+                        <th class="number">Max Wait (ns)</th>
+                        <th class="number">Max Threads</th>
+                    </tr>
+                </thead>`;
+        }
+        function renderBinRow(bin) {
+            return `
+                <tr>
+                    <td class="number sticky-cell-100">${formatBytes(bin.size)}</td>
+                    <td class="number">${bin.ind}</td>
+                    <td class="number">${formatBytes(bin.allocated)}</td>
+                    <td class="number">${formatNumber(bin.nmalloc)}</td>
+                    <td class="number">${bin.nmalloc_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.ndalloc)}</td>
+                    <td class="number">${bin.ndalloc_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.nrequests)}</td>
+                    <td class="number">${bin.nrequests_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.nshards)}</td>
+                    <td class="number">${formatNumber(bin.curregs)}</td>
+                    <td class="number">${formatNumber(bin.curslabs)}</td>
+                    <td class="number">${formatNumber(bin.nonfull_slabs)}</td>
+                    <td class="number">${formatNumber(bin.regs)}</td>
+                    <td class="number">${formatNumber(bin.pgs)}</td>
+                    <td class="number">${(bin.util * 100).toFixed(2)}%</td>
+                    <td class="number">${formatNumber(bin.nfills)}</td>
+                    <td class="number">${bin.nfills_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.nflushes)}</td>
+                    <td class="number">${bin.nflushes_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.nslabs)}</td>
+                    <td class="number">${formatNumber(bin.nreslabs)}</td>
+                    <td class="number">${bin.nreslabs_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.pops)}</td>
+                    <td class="number">${bin.pops_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.failed_push)}</td>
+                    <td class="number">${bin.failed_push_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.push)}</td>
+                    <td class="number">${bin.push_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.push_elem)}</td>
+                    <td class="number">${bin.push_elem_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.n_lock_ops)}</td>
+                    <td class="number">${bin.n_lock_ops_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.n_waiting)}</td>
+                    <td class="number">${bin.n_waiting_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.n_spin_acq)}</td>
+                    <td class="number">${bin.n_spin_acq_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.n_owner_switch)}</td>
+                    <td class="number">${bin.n_owner_switch_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.total_wait_ns)}</td>
+                    <td class="number">${bin.total_wait_ns_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(bin.max_wait_ns)}</td>
+                    <td class="number">${formatNumber(bin.max_n_thds)}</td>
+                </tr>`;
+        }
+        function getLargeTableHeader() {
+            return `
+                <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
+                    <tr>
+                        <th class="number sticky-header-100">Size</th>
+                        <th class="number">Index</th>
+                        <th class="number">Allocated</th>
+                        <th class="number">Nmalloc</th>
+                        <th class="number">Nmalloc/s</th>
+                        <th class="number">Ndalloc</th>
+                        <th class="number">Ndalloc/s</th>
+                        <th class="number">Nrequests</th>
+                        <th class="number">Nrequests/s</th>
+                        <th class="number">Curlextents</th>
+                    </tr>
+                </thead>`;
+        }
+        function renderLargeRow(item) {
+            return `
+                <tr>
+                    <td class="number sticky-cell-100">${formatBytes(item.size)}</td>
+                    <td class="number">${item.ind}</td>
+                    <td class="number">${formatBytes(item.allocated)}</td>
+                    <td class="number">${formatNumber(item.nmalloc)}</td>
+                    <td class="number">${item.nmalloc_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(item.ndalloc)}</td>
+                    <td class="number">${item.ndalloc_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(item.nrequests)}</td>
+                    <td class="number">${item.nrequests_ps.toFixed(2)}</td>
+                    <td class="number">${formatNumber(item.curlextents)}</td>
+                </tr>`;
+        }
+        function getExtentsTableHeader() {
+            return `
+                <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
+                    <tr>
+                        <th class="number sticky-header-100">Size</th>
+                        <th class="number">Index</th>
+                        <th class="number">Ndirty</th>
+                        <th class="number">Dirty</th>
+                        <th class="number">Nmuzzy</th>
+                        <th class="number">Muzzy</th>
+                        <th class="number">Nretained</th>
+                        <th class="number">Retained</th>
+                        <th class="number">Ntotal</th>
+                        <th class="number">Total</th>
+                    </tr>
+                </thead>`;
+        }
+        function renderExtentRow(item) {
+            return `
+                <tr>
+                    <td class="number sticky-cell-100">${formatBytes(item.size)}</td>
+                    <td class="number">${item.ind}</td>
+                    <td class="number">${formatNumber(item.ndirty)}</td>
+                    <td class="number">${formatBytes(item.dirty)}</td>
+                    <td class="number">${formatNumber(item.nmuzzy)}</td>
+                    <td class="number">${formatBytes(item.muzzy)}</td>
+                    <td class="number">${formatNumber(item.nretained)}</td>
+                    <td class="number">${formatBytes(item.retained)}</td>
+                    <td class="number">${formatNumber(item.ntotal)}</td>
+                    <td class="number">${formatBytes(item.total)}</td>
+                </tr>`;
+        }
+        function renderHeatmapBar(label, colorClass, width, content, title = '') {
+            const titleAttr = title ? ` title="${title}"` : '';
+            return `
+                <div class="heatmap-bar">
+                    <div class="heatmap-label">${label}</div>
+                    <div class="heatmap-bar-bg">
+                        <div class="heatmap-bar-fill ${colorClass}" style="width: ${width}%"${titleAttr}>
+                            ${content}
+                        </div>
+                    </div>
+                </div>`;
+        }
+        function renderBinHeatmapSplitView(bins) {
+            return `
+                <div class="heatmap-split-view">
+                    ${renderBinHeatmap(bins)}
+                    ${renderBinUtilization(bins)}
+                </div>`;
+        }
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', newTheme);
+            document.getElementById('theme-icon').textContent = newTheme === 'dark' ? '☀️' : '🌙';
+            localStorage.setItem('theme', newTheme);
+        }
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+        function copyRawStats() {
+            const rawStatsEl = document.getElementById('raw-stats');
+            const text = rawStatsEl.textContent;
+            const button = event.target;
+            const originalText = button.textContent;
+
+            // Create a temporary textarea
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.left = '-999999px';
+            textarea.style.top = '-999999px';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    button.textContent = 'Copied!';
+                    button.style.background = 'var(--success-color)';
+                    button.style.color = 'white';
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                        button.style.background = '';
+                        button.style.color = '';
+                    }, 2000);
+                } else {
+                    throw new Error('Copy command failed');
+                }
+            } catch (error) {
+                console.error('Failed to copy:', error);
+                alert('Failed to copy to clipboard. Please try selecting the text manually.');
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        }
+        function parseJemallocStats(statsText) {
+            const stats = {
+                overview: {},
+                arenas: [],
+                bins: {},
+                raw: statsText
+            };
+            // Convert escaped newlines to actual newlines
+            const normalizedText = statsText.replace(/\\n/g, '\n');
+            const lines = normalizedText.split('\n');
+            let currentArena = null;
+            let inBinSection = false;
+            for (const line of lines) {
+                // Parse page size
+                if (line.includes('Page size:')) {
+                    const pageSizeMatch = line.match(/Page size:\s*(\d+)/);
+                    if (pageSizeMatch) stats.overview.pageSize = parseInt(pageSizeMatch[1]);
+                }
+                // Parse the main stats line: "Allocated: 499296096, active: 546709504, ..."
+                if (line.includes('Allocated:') && line.includes('active:')) {
+                    // Extract all key-value pairs from this line
+                    const allocatedMatch = line.match(/Allocated:\s*(\d+)/);
+                    const activeMatch = line.match(/active:\s*(\d+)/);
+                    const metadataMatch = line.match(/metadata:\s*(\d+)/);
+                    const mappedMatch = line.match(/mapped:\s*(\d+)/);
+                    const retainedMatch = line.match(/retained:\s*(\d+)/);
+                    const residentMatch = line.match(/resident:\s*(\d+)/);
+                    if (allocatedMatch) stats.overview.allocated = parseInt(allocatedMatch[1]);
+                    if (activeMatch) stats.overview.active = parseInt(activeMatch[1]);
+                    if (metadataMatch) stats.overview.metadata = parseInt(metadataMatch[1]);
+                    if (mappedMatch) stats.overview.mapped = parseInt(mappedMatch[1]);
+                    if (retainedMatch) stats.overview.retained = parseInt(retainedMatch[1]);
+                    if (residentMatch) stats.overview.resident = parseInt(residentMatch[1]);
+                }
+                // Parse dirty pages: "   dirty:   N/A        14223         2669        27202      1389554"
+                // Format: dirty: time npages sweeps madvises purged
+                if (line.match(/^\s+dirty:/)) {
+                    const dirtyMatch = line.match(/^\s+dirty:\s+\S+\s+(\d+)/);
+                    if (dirtyMatch && stats.overview.pageSize) {
+                        const npages = parseInt(dirtyMatch[1]);
+                        stats.overview.dirty = npages * stats.overview.pageSize;
+                    }
+                }
+                // Parse muzzy pages
+                if (line.match(/^\s+muzzy:/)) {
+                    const muzzyMatch = line.match(/^\s+muzzy:\s+\S+\s+(\d+)/);
+                    if (muzzyMatch && stats.overview.pageSize) {
+                        const npages = parseInt(muzzyMatch[1]);
+                        stats.overview.muzzy = npages * stats.overview.pageSize;
+                    }
+                }
+                // Parse arena information
+                if (line.match(/^arenas\[(\d+)\]:/)) {
+                    const arenaMatch = line.match(/^arenas\[(\d+)\]:/);
+                    if (arenaMatch) {
+                        currentArena = {
+                            id: parseInt(arenaMatch[1]),
+                            stats: {}
+                        };
+                        stats.arenas.push(currentArena);
+                    }
+                }
+                // Parse assigned threads
+                if (currentArena && line.match(/^\s*assigned threads:/)) {
+                    const threadsMatch = line.match(/^\s*assigned threads:\s+(\d+)/);
+                    if (threadsMatch) {
+                        currentArena.stats.assigned_threads = parseInt(threadsMatch[1]);
+                    }
+                }
+                // Parse arena total allocated (from total: line)
+                if (currentArena && line.match(/^\s*total:/)) {
+                    const totalMatch = line.match(/^\s*total:\s+(\d+)/);
+                    if (totalMatch) {
+                        currentArena.stats.allocated = parseInt(totalMatch[1]);
+                    }
+                }
+                // Parse arena-specific stats
+                if (currentArena && line.match(/^\s*(active|mapped|retained|resident):/)) {
+                    const statMatch = line.match(/^\s*(active|mapped|retained|resident):\s+(\d+)/);
+                    if (statMatch) {
+                        currentArena.stats[statMatch[1]] = parseInt(statMatch[2]);
+                    }
+                }
+                // Parse bin information
+                if (line.includes('bins:')) {
+                    inBinSection = true;
+                } else if (inBinSection && line.includes('size')) {
+                    const binMatch = line.match(/size\s+(\d+)/);
+                    if (binMatch) {
+                        const size = parseInt(binMatch[1]);
+                        if (!stats.bins[size]) {
+                            stats.bins[size] = { size, allocations: 0, current: 0 };
+                        }
+                    }
+                }
+            }
+            return stats;
+        }
+        function renderOverviewMetrics(stats) {
+            const container = document.getElementById('overview-metrics');
+            // Calculate fragmentation metrics
+            const allocated = stats.allocated || 0;
+            const active = stats.active || 0;
+            const fragmentation = active > 0 ? ((active - allocated) / allocated * 100) : 0;
+            const efficiency = active > 0 ? (allocated / active * 100) : 0;
+            const metrics = [
+                { label: 'Allocated', value: stats.allocated || 0, unit: '', isBytes: true, tooltip: 'Total bytes allocated by the application' },
+                { label: 'Active', value: stats.active || 0, unit: '', isBytes: true, tooltip: 'Total bytes in active pages' },
+                { label: 'Fragmentation', value: fragmentation, unit: '%', isBytes: false, tooltip: 'Formula: (Active - Allocated) / Allocated × 100%' },
+                { label: 'Efficiency', value: efficiency, unit: '%', isBytes: false, tooltip: 'Formula: Allocated / Active × 100%' },
+                { label: 'Mapped', value: stats.mapped || 0, unit: '', isBytes: true, tooltip: 'Total bytes in mapped extents', divider: true },
+                { label: 'Retained', value: stats.retained || 0, unit: '', isBytes: true, tooltip: 'Total bytes in retained virtual memory' },
+                { label: 'Resident', value: stats.resident || 0, unit: '', isBytes: true, tooltip: 'Total bytes in physical memory' },
+                { label: 'Metadata', value: stats.metadata || 0, unit: '', isBytes: true, tooltip: 'Total bytes dedicated to metadata' },
+                { label: 'Dirty', value: stats.dirty || 0, unit: '', isBytes: true, tooltip: 'Total bytes in dirty pages' }
+            ];
+            // Check if cards already exist
+            const existingCards = container.querySelectorAll('.metric-card');
+            if (existingCards.length === metrics.length) {
+                // Update existing values only
+                existingCards.forEach((card, idx) => {
+                    const valueEl = card.querySelector('.metric-value');
+                    if (valueEl) {
+                        const metric = metrics[idx];
+                        const displayValue = metric.isBytes ? formatBytes(metric.value) : metric.value.toFixed(2);
+                        valueEl.innerHTML = `${displayValue}<span class="metric-unit">${metric.unit}</span>`;
+                    }
+                });
+            } else {
+                // Initial render
+                container.innerHTML = metrics.map((m, idx) => {
+                    const displayValue = m.isBytes ? formatBytes(m.value) : m.value.toFixed(2);
+                    let cardStyle = '';
+                    // Add color coding for fragmentation
+                    if (m.label === 'Fragmentation') {
+                        if (m.value < 10) {
+                            cardStyle = 'border-left: 4px solid var(--success-color);';
+                        } else if (m.value < 25) {
+                            cardStyle = 'border-left: 4px solid var(--warning-color);';
+                        } else {
+                            cardStyle = 'border-left: 4px solid var(--error-color);';
+                        }
+                    } else if (m.label === 'Efficiency') {
+                        if (m.value > 90) {
+                            cardStyle = 'border-left: 4px solid var(--success-color);';
+                        } else if (m.value > 75) {
+                            cardStyle = 'border-left: 4px solid var(--warning-color);';
+                        } else {
+                            cardStyle = 'border-left: 4px solid var(--error-color);';
+                        }
+                    }
+                    const divider = m.divider ? '<div class="metric-group-divider"></div>' : '';
+                    const tooltip = m.tooltip ? `title="${m.tooltip}"` : '';
+                    return `
+                        ${divider}
+                        <div class="metric-card" style="${cardStyle}" ${tooltip}>
+                            <div class="metric-label">${m.label}</div>
+                            <div class="metric-value">
+                                ${displayValue}
+                                <span class="metric-unit">${m.unit}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+        function renderMemoryOverview(stats) {
+            const container = document.getElementById('memory-overview');
+            const total = stats.resident || 1;
+            const items = [
+                { label: 'Allocated', value: stats.allocated || 0, color: '#FCFF74' },
+                { label: 'Active', value: stats.active || 0, color: '#ffd700' },
+                { label: 'Dirty', value: stats.dirty || 0, color: '#ff9800' },
+                { label: 'Metadata', value: stats.metadata || 0, color: '#9c27b0' }
+            ];
+            // Check if table already exists
+            const existingTable = container.querySelector('tbody');
+            if (existingTable) {
+                // Update existing values only
+                const rows = existingTable.querySelectorAll('tr');
+                rows.forEach((row, idx) => {
+                    if (idx < items.length) {
+                        const item = items[idx];
+                        const cells = row.querySelectorAll('td');
+                        if (cells.length >= 4) {
+                            cells[1].textContent = formatBytes(item.value);
+                            cells[2].textContent = `${((item.value / total) * 100).toFixed(2)}%`;
+                            const bar = cells[3].querySelector('.bar');
+                            if (bar) {
+                                bar.style.width = `${(item.value / total) * 100}%`;
+                            }
+                        }
+                    }
+                });
+            } else {
+                // Initial render
+                container.innerHTML = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th class="number">Size</th>
+                                <th class="number">% of Resident</th>
+                                <th style="width: 30%;">Usage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.map(item => `
+                                <tr>
+                                    <td>${item.label}</td>
+                                    <td class="number">${formatBytes(item.value)}</td>
+                                    <td class="number">${((item.value / total) * 100).toFixed(2)}%</td>
+                                    <td>
+                                        <div class="bar-container">
+                                            <div class="bar" style="width: ${(item.value / total) * 100}%; background: ${item.color};"></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            }
+        }
+        let selectedArena = 0;
+        function renderArenaStats(arenas, rawStats) {
+            const container = document.getElementById('arena-stats');
+            if (!arenas || arenas.length === 0) {
+                container.innerHTML = '<p>No arena statistics available</p>';
+                return;
+            }
+            // Save scroll positions before re-rendering
+            const detailsDiv = container.querySelector('#arena-details');
+            const scrollPositions = detailsDiv
+                ? saveScrollPositions(detailsDiv, [{ name: 'allocations' }, { name: 'bins' }, { name: 'large' }, { name: 'extents' }])
+                : { allocations: { x: 0, y: 0 }, bins: { x: 0, y: 0 }, large: { x: 0, y: 0 }, extents: { x: 0, y: 0 } };
+            // Parse arena allocations, bins, large, and extents from raw stats
+            const arenaAllocations = parseArenaAllocations(rawStats);
+            const arenaBins = parseArenaBins(rawStats);
+            const arenaLarge = parseArenaLarge(rawStats);
+            const arenaExtents = parseArenaExtents(rawStats);
+            // Check if comparison table and dropdown already exist
+            let comparisonTable = container.querySelector('#arena-comparison');
+            if (!comparisonTable) {
+                // Initial render with comparison table and dropdown
+                container.innerHTML = `
+                    <div id="arena-load-balancing"></div>
+                    <div id="arena-comparison" style="margin-bottom: 1.5rem;">
+                        <h3 style="margin: 0.5rem 0;">Arena Comparison</h3>
+                        <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
+                            <table>
+                                <thead style="position: sticky; top: 0; z-index: 10;">
+                                    <tr>
+                                        <th class="arena-first-header">Arena</th>
+                                        <th class="number arena-header">Allocated</th>
+                                        <th class="number arena-header">Active</th>
+                                        <th class="number arena-header">Resident</th>
+                                        <th class="number arena-header">Mapped</th>
+                                        <th class="number arena-header">Retained</th>
+                                        <th class="number arena-header">Fragmentation</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${arenas.map(arena => {
+                                        const allocated = arena.stats.allocated || 0;
+                                        const active = arena.stats.active || 0;
+                                        const fragmentation = allocated > 0 ? ((active - allocated) / allocated * 100) : 0;
+                                        let fragColor = '';
+                                        if (fragmentation < 10) {
+                                            fragColor = 'color: var(--success-color);';
+                                        } else if (fragmentation < 25) {
+                                            fragColor = 'color: var(--warning-color);';
+                                        } else {
+                                            fragColor = 'color: var(--error-color);';
+                                        }
+                                        return `
+                                        <tr>
+                                            <td class="sticky-cell-100">Arena ${arena.id}</td>
+                                            <td class="number">${formatBytes(allocated)}</td>
+                                            <td class="number">${formatBytes(active)}</td>
+                                            <td class="number">${formatBytes(arena.stats.resident || 0)}</td>
+                                            <td class="number">${formatBytes(arena.stats.mapped || 0)}</td>
+                                            <td class="number">${formatBytes(arena.stats.retained || 0)}</td>
+                                            <td class="number" style="${fragColor}" title="Formula: (Active - Allocated) / Allocated × 100%">${fragmentation.toFixed(2)}%</td>
+                                        </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label for="arena-select" style="margin-right: 0.5rem;">Select Arena for Details:</label>
+                        <select id="arena-select" class="btn btn-secondary" onchange="selectedArena = parseInt(this.value); renderArenaStats(window.currentArenas, window.currentRawStats);" style="padding: 0.5rem;">
+                            ${arenas.map(arena => `<option value="${arena.id}">Arena ${arena.id}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div id="arena-details"></div>
+                `;
+            } else {
+                // Update comparison table values
+                const tbody = comparisonTable.querySelector('tbody');
+                if (tbody) {
+                    const rows = tbody.querySelectorAll('tr');
+                    rows.forEach((row, idx) => {
+                        if (idx < arenas.length) {
+                            const arena = arenas[idx];
+                            const cells = row.querySelectorAll('td.number');
+                            if (cells.length >= 6) {
+                                const allocated = arena.stats.allocated || 0;
+                                const active = arena.stats.active || 0;
+                                const fragmentation = allocated > 0 ? ((active - allocated) / allocated * 100) : 0;
+                                cells[0].textContent = formatBytes(allocated);
+                                cells[1].textContent = formatBytes(active);
+                                cells[2].textContent = formatBytes(arena.stats.resident || 0);
+                                cells[3].textContent = formatBytes(arena.stats.mapped || 0);
+                                cells[4].textContent = formatBytes(arena.stats.retained || 0);
+                                cells[5].textContent = `${fragmentation.toFixed(2)}%`;
+                                // Update color coding for fragmentation
+                                let fragColor = '';
+                                if (fragmentation < 10) {
+                                    fragColor = 'color: var(--success-color);';
+                                } else if (fragmentation < 25) {
+                                    fragColor = 'color: var(--warning-color);';
+                                } else {
+                                    fragColor = 'color: var(--error-color);';
+                                }
+                                cells[5].style.cssText = fragColor;
+                            }
+                        }
+                    });
+                }
+            }
+            // Always update the load balancing and thread distribution heatmaps
+            const loadBalancingDiv = container.querySelector('#arena-load-balancing');
+            if (loadBalancingDiv) {
+                loadBalancingDiv.innerHTML = `
+                    <div class="heatmap-split-view">
+                        ${renderArenaThreadDistribution(arenas)}
+                        ${renderArenaLoadBalancing(arenas, arenaAllocations)}
+                    </div>
+                `;
+            }
+            // Update selected arena in dropdown
+            const select = container.querySelector('select');
+            if (select) select.value = selectedArena;
+            // Render details for selected arena
+            const arena = arenas.find(a => a.id === selectedArena) || arenas[0];
+            const allocations = arenaAllocations[selectedArena] || { small: null, large: null, total: null };
+            const bins = arenaBins[selectedArena] || [];
+            const large = arenaLarge[selectedArena] || [];
+            const extents = arenaExtents[selectedArena] || [];
+            const targetDiv = container.querySelector('#arena-details') || container;
+            targetDiv.innerHTML = `
+                ${renderBinHeatmapSplitView(bins)}
+                <h3 style="margin: 1rem 0 0.5rem 0;">Allocations</h3>
+                <div style="max-height: 300px; overflow-x: auto; overflow-y: auto;">
+                    <table>
+                        ${getAllocationsTableHeader()}
+                        <tbody>
+                            ${renderAllocationRow('small', allocations.small)}
+                            ${renderAllocationRow('large', allocations.large)}
+                            ${renderAllocationRow('total', allocations.total)}
+                        </tbody>
+                    </table>
+                </div>
+                ${bins.length > 0 ? `
+                    <h3 style="margin: 1rem 0 0.5rem 0;">Bins</h3>
+                    <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
+                        <table>
+                            ${getBinsTableHeader()}
+                            <tbody>
+                                ${bins.map(renderBinRow).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                ` : '<p>No bin data available</p>'}
+                ${large.length > 0 ? `
+                    <h3 style="margin: 1rem 0 0.5rem 0;">Large Allocations</h3>
+                    <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
+                        <table>
+                            ${getLargeTableHeader()}
+                            <tbody>
+                                ${large.map(renderLargeRow).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                ` : ''}
+                ${extents.length > 0 ? `
+                    <h3 style="margin: 1rem 0 0.5rem 0;">Extents</h3>
+                    <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
+                        <table>
+                            ${getExtentsTableHeader()}
+                            <tbody>
+                                ${extents.map(renderExtentRow).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                ` : ''}
+            `;
+            // Restore scroll positions after re-rendering
+            const newDetailsDiv = container.querySelector('#arena-details');
+            if (newDetailsDiv) {
+                restoreScrollPositions(newDetailsDiv, scrollPositions, [{ name: 'allocations' }, { name: 'bins' }, { name: 'large' }, { name: 'extents' }]);
+            }
+            // Store for access in onchange handler
+            window.currentArenas = arenas;
+            window.currentRawStats = rawStats;
+        }
+        function parseArenaAllocations(rawStats) {
+            const arenaAllocations = {};
+            const lines = rawStats.replace(/\\n/g, '\n').split('\n');
+            let currentArena = null;
+            let inArenaSection = false;
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                // Detect arena start
+                const arenaMatch = line.match(/^arenas\[(\d+)\]:/);
+                if (arenaMatch) {
+                    currentArena = parseInt(arenaMatch[1]);
+                    arenaAllocations[currentArena] = { small: null, large: null, total: null };
+                    inArenaSection = true;
+                    continue;
+                }
+                // Parse small/large/total allocation lines
+                const allocMatch = line.match(/^\s*(small|large|total):\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/);
+                if (allocMatch) {
+                    const data = {
+                        type: allocMatch[1],
+                        allocated: parseInt(allocMatch[2]),
+                        nmalloc: parseInt(allocMatch[3]),
+                        nmalloc_ps: parseInt(allocMatch[4]),
+                        ndalloc: parseInt(allocMatch[5]),
+                        ndalloc_ps: parseInt(allocMatch[6]),
+                        nrequests: parseInt(allocMatch[7]),
+                        nrequests_ps: parseInt(allocMatch[8]),
+                        nfill: parseInt(allocMatch[9]),
+                        nfill_ps: parseInt(allocMatch[10]),
+                        nflush: parseInt(allocMatch[11]),
+                        nflush_ps: parseInt(allocMatch[12])
+                    };
+                    if (currentArena !== null && inArenaSection) {
+                        arenaAllocations[currentArena][allocMatch[1]] = data;
+                    } else if (!inArenaSection) {
+                        // Global data before any arena
+                        if (!arenaAllocations.global) {
+                            arenaAllocations.global = { small: null, large: null, total: null };
+                        }
+                        arenaAllocations.global[allocMatch[1]] = data;
+                    }
+                }
+            }
+            return arenaAllocations;
+        }
+        function parseArenaBins(rawStats) {
+            const arenaBins = {};
+            const lines = rawStats.replace(/\\n/g, '\n').split('\n');
+            let currentArena = null;
+            let inBins = false;
+            let inArenaSection = false;
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                // Detect arena start
+                const arenaMatch = line.match(/^arenas\[(\d+)\]:/);
+                if (arenaMatch) {
+                    currentArena = parseInt(arenaMatch[1]);
+                    arenaBins[currentArena] = [];
+                    inBins = false;
+                    inArenaSection = true;
+                    continue;
+                }
+                // Detect bins section
+                if (line.includes('bins:') && line.includes('size ind')) {
+                    inBins = true;
+                    continue;
+                }
+                // Parse bin data
+                if (inBins && line.trim()) {
+                    // Check if we've reached the end of bins section
+                    if (line.includes('large:') || line.includes('extents:') || line.match(/^[a-z]/)) {
+                        inBins = false;
+                        continue;
+                    }
+                    // bins format: size ind allocated nmalloc (#/sec) ndalloc (#/sec) nrequests (#/sec) nshards curregs curslabs nonfull_slabs regs pgs util nfills (#/sec) nflushes (#/sec) nslabs nreslabs (#/sec) pops (#/sec) failed_push (#/sec) push (#/sec) push_elem (#/sec) n_lock_ops (#/sec) n_waiting (#/sec) n_spin_acq (#/sec) n_owner_switch (#/sec) total_wait_ns (#/sec) max_wait_ns max_n_thds
+                    const binMatch = line.match(/^\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/);
+                    if (binMatch) {
+                        const binData = {
+                            size: parseInt(binMatch[1]),
+                            ind: parseInt(binMatch[2]),
+                            allocated: parseInt(binMatch[3]),
+                            nmalloc: parseInt(binMatch[4]),
+                            nmalloc_ps: parseInt(binMatch[5]),
+                            ndalloc: parseInt(binMatch[6]),
+                            ndalloc_ps: parseInt(binMatch[7]),
+                            nrequests: parseInt(binMatch[8]),
+                            nrequests_ps: parseInt(binMatch[9]),
+                            nshards: parseInt(binMatch[10]),
+                            curregs: parseInt(binMatch[11]),
+                            curslabs: parseInt(binMatch[12]),
+                            nonfull_slabs: parseInt(binMatch[13]),
+                            regs: parseInt(binMatch[14]),
+                            pgs: parseInt(binMatch[15]),
+                            util: parseFloat(binMatch[16]),
+                            nfills: parseInt(binMatch[17]),
+                            nfills_ps: parseInt(binMatch[18]),
+                            nflushes: parseInt(binMatch[19]),
+                            nflushes_ps: parseInt(binMatch[20]),
+                            nslabs: parseInt(binMatch[21]),
+                            nreslabs: parseInt(binMatch[22]),
+                            nreslabs_ps: parseInt(binMatch[23]),
+                            pops: parseInt(binMatch[24]),
+                            pops_ps: parseInt(binMatch[25]),
+                            failed_push: parseInt(binMatch[26]),
+                            failed_push_ps: parseInt(binMatch[27]),
+                            push: parseInt(binMatch[28]),
+                            push_ps: parseInt(binMatch[29]),
+                            push_elem: parseInt(binMatch[30]),
+                            push_elem_ps: parseInt(binMatch[31]),
+                            n_lock_ops: parseInt(binMatch[32]),
+                            n_lock_ops_ps: parseInt(binMatch[33]),
+                            n_waiting: parseInt(binMatch[34]),
+                            n_waiting_ps: parseInt(binMatch[35]),
+                            n_spin_acq: parseInt(binMatch[36]),
+                            n_spin_acq_ps: parseInt(binMatch[37]),
+                            n_owner_switch: parseInt(binMatch[38]),
+                            n_owner_switch_ps: parseInt(binMatch[39]),
+                            total_wait_ns: parseInt(binMatch[40]),
+                            total_wait_ns_ps: parseInt(binMatch[41]),
+                            max_wait_ns: parseInt(binMatch[42]),
+                            max_n_thds: parseInt(binMatch[43])
+                        };
+                        if (currentArena !== null && inArenaSection) {
+                            arenaBins[currentArena].push(binData);
+                        } else if (!inArenaSection) {
+                            // Global data before any arena
+                            if (!arenaBins.global) {
+                                arenaBins.global = [];
+                            }
+                            arenaBins.global.push(binData);
+                        }
+                    }
+                    // If line doesn't match, just skip it (don't exit bins section)
+                }
+            }
+            return arenaBins;
+        }
+        function parseArenaLarge(rawStats) {
+            const arenaLarge = {};
+            const lines = rawStats.replace(/\\n/g, '\n').split('\n');
+            let currentArena = null;
+            let inLarge = false;
+            let inArenaSection = false;
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                // Detect arena start
+                const arenaMatch = line.match(/^arenas\[(\d+)\]:/);
+                if (arenaMatch) {
+                    currentArena = parseInt(arenaMatch[1]);
+                    arenaLarge[currentArena] = [];
+                    inLarge = false;
+                    inArenaSection = true;
+                    continue;
+                }
+                // Detect large section
+                if (line.includes('large:') && line.includes('size ind')) {
+                    inLarge = true;
+                    continue;
+                }
+                // Parse large data
+                if (inLarge && line.trim()) {
+                    // Check if we've reached the end of large section
+                    if (line.includes('extents:') || line.match(/^[a-z]/)) {
+                        inLarge = false;
+                        continue;
+                    }
+                    // large format: size ind allocated nmalloc (#/sec) ndalloc (#/sec) nrequests (#/sec) curlextents
+                    const largeMatch = line.match(/^\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/);
+                    if (largeMatch) {
+                        const largeData = {
+                            size: parseInt(largeMatch[1]),
+                            ind: parseInt(largeMatch[2]),
+                            allocated: parseInt(largeMatch[3]),
+                            nmalloc: parseInt(largeMatch[4]),
+                            nmalloc_ps: parseInt(largeMatch[5]),
+                            ndalloc: parseInt(largeMatch[6]),
+                            ndalloc_ps: parseInt(largeMatch[7]),
+                            nrequests: parseInt(largeMatch[8]),
+                            nrequests_ps: parseInt(largeMatch[9]),
+                            curlextents: parseInt(largeMatch[10])
+                        };
+                        if (currentArena !== null && inArenaSection) {
+                            arenaLarge[currentArena].push(largeData);
+                        } else if (!inArenaSection) {
+                            // Global data before any arena
+                            if (!arenaLarge.global) {
+                                arenaLarge.global = [];
+                            }
+                            arenaLarge.global.push(largeData);
+                        }
+                    }
+                    // If line doesn't match, just skip it (don't exit large section)
+                }
+            }
+            return arenaLarge;
+        }
+        function parseArenaExtents(rawStats) {
+            const arenaExtents = {};
+            const lines = rawStats.replace(/\\n/g, '\n').split('\n');
+            let currentArena = null;
+            let inExtents = false;
+            let inArenaSection = false;
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                // Detect arena start
+                const arenaMatch = line.match(/^arenas\[(\d+)\]:/);
+                if (arenaMatch) {
+                    currentArena = parseInt(arenaMatch[1]);
+                    arenaExtents[currentArena] = [];
+                    inExtents = false;
+                    inArenaSection = true;
+                    continue;
+                }
+                // Detect extents section
+                if (line.includes('extents:') && line.includes('size ind')) {
+                    inExtents = true;
+                    continue;
+                }
+                // Parse extents data
+                if (inExtents && line.trim()) {
+                    // Check if we've reached the end of extents section
+                    if (line.match(/^[a-z]/) || line.match(/^arenas\[/)) {
+                        inExtents = false;
+                        continue;
+                    }
+                    // extents format: size ind ndirty dirty nmuzzy muzzy nretained retained ntotal total
+                    const extentsMatch = line.match(/^\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/);
+                    if (extentsMatch) {
+                        const extentsData = {
+                            size: parseInt(extentsMatch[1]),
+                            ind: parseInt(extentsMatch[2]),
+                            ndirty: parseInt(extentsMatch[3]),
+                            dirty: parseInt(extentsMatch[4]),
+                            nmuzzy: parseInt(extentsMatch[5]),
+                            muzzy: parseInt(extentsMatch[6]),
+                            nretained: parseInt(extentsMatch[7]),
+                            retained: parseInt(extentsMatch[8]),
+                            ntotal: parseInt(extentsMatch[9]),
+                            total: parseInt(extentsMatch[10])
+                        };
+                        if (currentArena !== null && inArenaSection) {
+                            arenaExtents[currentArena].push(extentsData);
+                        } else if (!inArenaSection) {
+                            // Global data before any arena
+                            if (!arenaExtents.global) {
+                                arenaExtents.global = [];
+                            }
+                            arenaExtents.global.push(extentsData);
+                        }
+                    }
+                    // If line doesn't match, just skip it (don't exit extents section)
+                }
+            }
+            return arenaExtents;
+        }
+        function renderArenaThreadDistribution(arenas) {
+            if (!arenas || arenas.length === 0) {
+                return '';
+            }
+            // Calculate thread distribution for each arena
+            const arenaThreads = arenas.map(arena => {
+                return {
+                    id: arena.id,
+                    assigned_threads: arena.stats.assigned_threads || 0
+                };
+            });
+            // Sort by assigned threads descending
+            const sortedArenas = [...arenaThreads].sort((a, b) => b.assigned_threads - a.assigned_threads);
+            const maxThreads = sortedArenas[0]?.assigned_threads || 1;
+            const totalThreads = arenaThreads.reduce((sum, arena) => sum + arena.assigned_threads, 0);
+            return `
+                <div class="heatmap-container">
+                    <div class="heatmap-title">Arena Thread Distribution</div>
+                    <div class="heatmap-scrollable">
+                        ${sortedArenas.map(arena => {
+                            const percentage = totalThreads > 0 ? (arena.assigned_threads / totalThreads * 100).toFixed(1) : 0;
+                            const width = maxThreads > 0 ? Math.max((arena.assigned_threads / maxThreads * 100), 5) : 5;
+                            let colorClass = 'cool';
+                            if (percentage > 66 / arenas.length) colorClass = 'hot';
+                            else if (percentage > 33 / arenas.length) colorClass = 'warm';
+                            return renderHeatmapBar(
+                                `Arena ${arena.id}`,
+                                colorClass,
+                                width,
+                                `${arena.assigned_threads} (${percentage}%)`,
+                                `${arena.assigned_threads} threads assigned`
+                            );
+                        }).join('')}
+                    </div>
+                    <div style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">
+                        💡 Total threads: ${totalThreads} · Balanced distribution: ${(100 / arenas.length).toFixed(1)}% per arena
+                    </div>
+                </div>
+            `;
+        }
+        function renderArenaLoadBalancing(arenas, arenaAllocations) {
+            if (!arenas || arenas.length === 0) {
+                return '';
+            }
+            // Calculate load metrics for each arena
+            const arenaLoads = arenas.map(arena => {
+                const allocations = arenaAllocations[arena.id];
+                const totalRequests = allocations?.total?.nrequests_ps || 0;
+                const allocated = arena.stats.allocated || 0;
+                const active = arena.stats.active || 0;
+                const fragmentation = allocated > 0 ? ((active - allocated) / allocated * 100) : 0;
+                return {
+                    id: arena.id,
+                    allocated,
+                    totalRequests,
+                    fragmentation,
+                    score: totalRequests // Use request rate as primary load indicator
+                };
+            });
+            // Sort by load (request rate) descending
+            const sortedArenas = [...arenaLoads].sort((a, b) => b.score - a.score);
+            const maxLoad = sortedArenas[0]?.score || 1;
+            return `
+                <div class="heatmap-container">
+                    <div class="heatmap-title">Arena Load Balancing (by Request Rate)</div>
+                    <div class="heatmap-scrollable">
+                        ${sortedArenas.map(arena => {
+                            const loadPercentage = (arena.score / maxLoad * 100).toFixed(1);
+                            const width = Math.max(loadPercentage, 5);
+                            let colorClass = 'cool';
+                            if (loadPercentage > 66) colorClass = 'hot';
+                            else if (loadPercentage > 33) colorClass = 'warm';
+                            const fragWarning = arena.fragmentation > 25 ? ' ⚠️' : '';
+                            return renderHeatmapBar(
+                                `Arena ${arena.id}`,
+                                colorClass,
+                                width,
+                                `${formatNumber(arena.totalRequests)} req/s${fragWarning}`,
+                                `Allocated: ${formatBytes(arena.allocated)}, Fragmentation: ${arena.fragmentation.toFixed(2)}%`
+                            );
+                        }).join('')}
+                    </div>
+                    <div style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">
+                        💡 Tip: Balanced arenas should have similar request rates. ⚠️ indicates high fragmentation (&gt;25%)
+                    </div>
+                </div>
+            `;
+        }
+        function renderBinHeatmap(bins) {
+            if (!bins || bins.length === 0) {
+                return '';
+            }
+            // Sort bins by nrequests_ps (descending) and take top 15
+            const sortedBins = [...bins]
+                .filter(bin => bin.nrequests_ps > 0)
+                .sort((a, b) => b.nrequests_ps - a.nrequests_ps)
+                .slice(0, 15);
+            if (sortedBins.length === 0) {
+                return '';
+            }
+            const maxRate = sortedBins[0].nrequests_ps;
+            return `
+                <div class="heatmap-container">
+                    <div class="heatmap-title">Hot Bins (Top 15 by Requests/s)</div>
+                    ${sortedBins.map(bin => {
+                        const percentage = (bin.nrequests_ps / maxRate * 100).toFixed(1);
+                        const width = Math.max(percentage, 5);
+                        let colorClass = 'cool';
+                        if (percentage > 66) colorClass = 'hot';
+                        else if (percentage > 33) colorClass = 'warm';
+                        return renderHeatmapBar(
+                            formatBytes(bin.size),
+                            colorClass,
+                            width,
+                            `${formatNumber(bin.nrequests_ps)} req/s`
+                        );
+                    }).join('')}
+                </div>
+            `;
+        }
+        function renderBinUtilization(bins) {
+            if (!bins || bins.length === 0) {
+                return '';
+            }
+            // Sort bins by utilization (worst first) and take bottom 15
+            const sortedBins = [...bins]
+                .filter(bin => bin.allocated > 0)
+                .map(bin => ({
+                    ...bin,
+                    waste: bin.allocated * (1 - bin.util) // Calculate wasted bytes
+                }))
+                .sort((a, b) => a.util - b.util) // Worst utilization first
+                .slice(0, 15);
+            if (sortedBins.length === 0) {
+                return '';
+            }
+            // Calculate total waste
+            const totalWaste = sortedBins.reduce((sum, bin) => sum + bin.waste, 0);
+            // Find max waste for scaling bars
+            const maxWaste = sortedBins[0]?.waste || 1;
+            return `
+                <div class="heatmap-container">
+                    <div class="heatmap-title">Bin Utilization Efficiency (Top 15 by Waste)</div>
+                    ${sortedBins.map(bin => {
+                        const utilPercent = (bin.util * 100).toFixed(1);
+                        const wastePercent = (bin.waste / maxWaste * 100).toFixed(1);
+                        const width = Math.max(wastePercent, 5);
+                        let colorClass = 'cool';
+                        if (bin.util < 0.5) colorClass = 'hot';
+                        else if (bin.util < 0.7) colorClass = 'warm';
+                        const wasteWarning = bin.util < 0.5 ? ' ⚠️' : '';
+                        return renderHeatmapBar(
+                            formatBytes(bin.size),
+                            colorClass,
+                            width,
+                            `${utilPercent}% util (${formatBytes(bin.waste)} waste)${wasteWarning}`,
+                            `Allocated: ${formatBytes(bin.allocated)}, Used: ${utilPercent}%, Waste: ${formatBytes(bin.waste)}`
+                        );
+                    }).join('')}
+                    <div style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">
+                        💡 Total waste: ${formatBytes(totalWaste)} · ⚠️ indicates severe waste (&lt;50% utilization)
+                    </div>
+                </div>
+            `;
+        }
+        function renderBinStats(rawStats, arenas) {
+            const container = document.getElementById('bin-stats');
+            if (!arenas || arenas.length === 0) {
+                container.innerHTML = '<p>No statistics available</p>';
+                return;
+            }
+            // Save scroll positions before re-rendering
+            const scrollPositions = saveScrollPositions(container, [
+                { name: 'allocations' },
+                { name: 'bins' },
+                { name: 'large' },
+                { name: 'extents' }
+            ]);
+            // Parse allocations, bins, large, and extents from raw stats
+            const arenaAllocations = parseArenaAllocations(rawStats);
+            const arenaBins = parseArenaBins(rawStats);
+            const arenaLarge = parseArenaLarge(rawStats);
+            const arenaExtents = parseArenaExtents(rawStats);
+            // Use global data (before any arena)
+            const allocations = arenaAllocations.global || { small: null, large: null, total: null };
+            const bins = arenaBins.global || [];
+            const large = arenaLarge.global || [];
+            const extents = arenaExtents.global || [];
+            container.innerHTML = `
+                ${renderBinHeatmapSplitView(bins)}
+                <h3 style="margin: 1rem 0 0.5rem 0;">Allocations</h3>
+                <div style="max-height: 300px; overflow-x: auto; overflow-y: auto;">
+                    <table>
+                        ${getAllocationsTableHeader()}
+                        <tbody>
+                            ${renderAllocationRow('small', allocations.small)}
+                            ${renderAllocationRow('large', allocations.large)}
+                            ${renderAllocationRow('total', allocations.total)}
+                        </tbody>
+                    </table>
+                </div>
+                ${bins.length > 0 ? `
+                    <h3 style="margin: 1rem 0 0.5rem 0;">Bins</h3>
+                    <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
+                        <table>
+                            ${getBinsTableHeader()}
+                            <tbody>
+                                ${bins.map(renderBinRow).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                ` : '<p>No bin data available</p>'}
+                ${large.length > 0 ? `
+                    <h3 style="margin: 1rem 0 0.5rem 0;">Large Allocations</h3>
+                    <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
+                        <table>
+                            <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
+                                <tr>
+                                    <th class="number sticky-header-100">Size</th>
+                                    <th class="number">Index</th>
+                                    <th class="number">Allocated</th>
+                                    <th class="number">Nmalloc</th>
+                                    <th class="number">Ndalloc</th>
+                                    <th class="number">Nrequests</th>
+                                    <th class="number">Curlextents</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${large.map(l => `
+                                    <tr>
+                                        <td class="number sticky-cell-100">${formatBytes(l.size)}</td>
+                                        <td class="number">${l.ind}</td>
+                                        <td class="number">${formatBytes(l.allocated)}</td>
+                                        <td class="number">${formatNumber(l.nmalloc)}</td>
+                                        <td class="number">${formatNumber(l.ndalloc)}</td>
+                                        <td class="number">${formatNumber(l.nrequests)}</td>
+                                        <td class="number">${formatNumber(l.curlextents)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                ` : '<p>No large allocation data available</p>'}
+                ${extents.length > 0 ? `
+                    <h3 style="margin: 1rem 0 0.5rem 0;">Extents</h3>
+                    <div style="max-height: 400px; overflow-x: auto; overflow-y: auto;">
+                        <table>
+                            <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
+                                <tr>
+                                    <th class="number sticky-header-100">Size</th>
+                                    <th class="number">Index</th>
+                                    <th class="number">Ndirty</th>
+                                    <th class="number">Dirty</th>
+                                    <th class="number">Nmuzzy</th>
+                                    <th class="number">Muzzy</th>
+                                    <th class="number">Nretained</th>
+                                    <th class="number">Retained</th>
+                                    <th class="number">Ntotal</th>
+                                    <th class="number">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${extents.map(e => `
+                                    <tr>
+                                        <td class="number sticky-cell-100">${formatBytes(e.size)}</td>
+                                        <td class="number">${e.ind}</td>
+                                        <td class="number">${formatNumber(e.ndirty)}</td>
+                                        <td class="number">${formatBytes(e.dirty)}</td>
+                                        <td class="number">${formatNumber(e.nmuzzy)}</td>
+                                        <td class="number">${formatBytes(e.muzzy)}</td>
+                                        <td class="number">${formatNumber(e.nretained)}</td>
+                                        <td class="number">${formatBytes(e.retained)}</td>
+                                        <td class="number">${formatNumber(e.ntotal)}</td>
+                                        <td class="number">${formatBytes(e.total)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                ` : '<p>No extents data available</p>'}
+            `;
+            // Restore scroll positions after re-rendering
+            restoreScrollPositions(container, scrollPositions, [
+                { name: 'allocations' },
+                { name: 'bins' },
+                { name: 'large' },
+                { name: 'extents' }
+            ]);
+        }
+        function parseOperationsStats(rawStats) {
+            const operations = {
+                backgroundThreads: null,
+                numRuns: null,
+                runInterval: null,
+                mutexStats: []
+            };
+            const lines = rawStats.replace(/\\n/g, '\n').split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                // Parse background threads info
+                if (line.includes('Background threads:')) {
+                    const match = line.match(/Background threads:\s*(\d+),\s*num_runs:\s*(\d+),\s*run_interval:\s*(\d+)\s*ns/);
+                    if (match) {
+                        operations.backgroundThreads = parseInt(match[1]);
+                        operations.numRuns = parseInt(match[2]);
+                        operations.runInterval = parseInt(match[3]);
+                    }
+                }
+                // Parse mutex statistics
+                // Format: mutex_name    n_lock_ops  (#/sec)  n_waiting  (#/sec)  n_spin_acq  (#/sec)  n_owner_switch  (#/sec)  total_wait_ns  (#/sec)  max_wait_ns  max_n_thds
+                const mutexMatch = line.match(/^\s*(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/);
+                if (mutexMatch && !line.includes('n_lock_ops') && !line.includes('bins:')) {
+                    const name = mutexMatch[1];
+                    // Filter known mutex names
+                    if (['background_thread', 'max_per_bg_thd', 'ctl', 'prof', 'prof_thds_data', 'prof_dump', 'prof_recent_alloc', 'prof_recent_dump', 'prof_stats'].includes(name)) {
+                        operations.mutexStats.push({
+                            name: name,
+                            n_lock_ops: parseInt(mutexMatch[2]),
+                            n_lock_ops_ps: parseInt(mutexMatch[3]),
+                            n_waiting: parseInt(mutexMatch[4]),
+                            n_waiting_ps: parseInt(mutexMatch[5]),
+                            n_spin_acq: parseInt(mutexMatch[6]),
+                            n_spin_acq_ps: parseInt(mutexMatch[7]),
+                            n_owner_switch: parseInt(mutexMatch[8]),
+                            n_owner_switch_ps: parseInt(mutexMatch[9]),
+                            total_wait_ns: parseInt(mutexMatch[10]),
+                            total_wait_ns_ps: parseInt(mutexMatch[11]),
+                            max_wait_ns: parseInt(mutexMatch[12]),
+                            max_n_thds: parseInt(mutexMatch[13])
+                        });
+                    }
+                }
+            }
+            return operations;
+        }
+        function renderOperationsStats(rawStats) {
+            const container = document.getElementById('operations-stats');
+            const operations = parseOperationsStats(rawStats);
+            if (!operations.backgroundThreads && operations.mutexStats.length === 0) {
+                container.innerHTML = '<p>No operations statistics available</p>';
+                return;
+            }
+            // Background thread info section
+            let backgroundInfo = '';
+            if (operations.backgroundThreads !== null) {
+                backgroundInfo = `
+                    <div style="margin-bottom: 2rem;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                            <div class="metric-card">
+                                <div class="metric-label">Background Threads</div>
+                                <div class="metric-value">${operations.backgroundThreads}</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-label">Num Runs</div>
+                                <div class="metric-value">${formatNumber(operations.numRuns)}</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-label">Run Interval</div>
+                                <div class="metric-value">${formatNumber(operations.runInterval)}<span class="metric-unit">ns</span></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            // Mutex statistics table
+            let mutexTable = '';
+            if (operations.mutexStats.length > 0) {
+                mutexTable = `
+                    <h3 style="margin: 1rem 0 0.5rem 0;">Mutex Statistics</h3>
+                    <div style="max-height: 500px; overflow-x: auto; overflow-y: auto;">
+                        <table>
+                            <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
+                                <tr>
+                                    <th class="sticky-header-100">Mutex</th>
+                                    <th class="number">Lock Ops</th>
+                                    <th class="number">Lock Ops/s</th>
+                                    <th class="number">Waiting</th>
+                                    <th class="number">Waiting/s</th>
+                                    <th class="number">Spin Acq</th>
+                                    <th class="number">Spin Acq/s</th>
+                                    <th class="number">Owner Switch</th>
+                                    <th class="number">Owner Switch/s</th>
+                                    <th class="number">Total Wait (ns)</th>
+                                    <th class="number">Total Wait/s</th>
+                                    <th class="number">Max Wait (ns)</th>
+                                    <th class="number">Max Threads</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${operations.mutexStats.map(mutex => `
+                                    <tr>
+                                        <td class="sticky-cell-100">${mutex.name}</td>
+                                        <td class="number">${formatNumber(mutex.n_lock_ops)}</td>
+                                        <td class="number">${formatNumber(mutex.n_lock_ops_ps)}</td>
+                                        <td class="number">${formatNumber(mutex.n_waiting)}</td>
+                                        <td class="number">${formatNumber(mutex.n_waiting_ps)}</td>
+                                        <td class="number">${formatNumber(mutex.n_spin_acq)}</td>
+                                        <td class="number">${formatNumber(mutex.n_spin_acq_ps)}</td>
+                                        <td class="number">${formatNumber(mutex.n_owner_switch)}</td>
+                                        <td class="number">${formatNumber(mutex.n_owner_switch_ps)}</td>
+                                        <td class="number">${formatNumber(mutex.total_wait_ns)}</td>
+                                        <td class="number">${formatNumber(mutex.total_wait_ns_ps)}</td>
+                                        <td class="number">${formatNumber(mutex.max_wait_ns)}</td>
+                                        <td class="number">${formatNumber(mutex.max_n_thds)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+            container.innerHTML = backgroundInfo + mutexTable;
+        }
+        async function checkProfilingEnabled() {
+            try {
+                const query = "SELECT value FROM system.asynchronous_metrics WHERE name = 'jemalloc.prof.thread_active_init'";
+                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
+                if (user) {
+                    url += `&user=${encodeURIComponent(user)}`;
+                }
+                if (password) {
+                    url += `&password=${encodeURIComponent(password)}`;
+                }
+                const response = await fetch(url, { method: 'POST' });
+                if (!response.ok) {
+                    return null;
+                }
+                const text = await response.text();
+                return text.trim() === '1';
+            } catch (error) {
+                console.error('Error checking profiling status:', error);
+                return null;
+            }
+        }
+        async function flushProfile() {
+            const button = document.getElementById('flush-profile-btn');
+            const resultDiv = document.getElementById('profile-result');
+            button.disabled = true;
+            button.textContent = 'Flushing...';
+            resultDiv.innerHTML = '<p>Generating profile...</p>';
+            try {
+                const query = "SYSTEM JEMALLOC FLUSH PROFILE";
+                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
+                if (user) {
+                    url += `&user=${encodeURIComponent(user)}`;
+                }
+                if (password) {
+                    url += `&password=${encodeURIComponent(password)}`;
+                }
+                const response = await fetch(url, { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const result = await response.text();
+                const timestamp = new Date().toLocaleString();
+                resultDiv.innerHTML = `
+                    <div class="metric-card" style="margin-top: 1rem;">
+                        <div class="metric-label">Last Generated Profile</div>
+                        <div style="margin-top: 0.5rem; font-family: Monaco, Consolas, monospace; font-size: 0.9rem; word-break: break-all;">
+                            ${result || 'Profile flushed successfully'}
+                        </div>
+                        <div style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.7;">
+                            Generated at: ${timestamp}
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error flushing profile:', error);
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Flush Profile';
+            }
+        }
+        async function renderProfileStats() {
+            const container = document.getElementById('profile-stats');
+            container.innerHTML = '<p>Checking profiling status...</p>';
+            const isEnabled = await checkProfilingEnabled();
+            if (isEnabled === null) {
+                container.innerHTML = `
+                    <div class="metric-card" style="border-left: 4px solid var(--warning-color);">
+                        <div class="metric-label">Profiling Status</div>
+                        <div class="metric-value">Unknown</div>
+                        <p style="margin-top: 1rem; font-size: 0.9rem;">
+                            Unable to determine profiling status. Make sure the query has access to system.asynchronous_metrics.
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+            const statusColor = isEnabled ? 'var(--success-color)' : 'var(--error-color)';
+            const statusText = isEnabled ? 'Enabled' : 'Disabled';
+            const statusIcon = isEnabled ? '✓' : '✗';
+            container.innerHTML = `
+                <div class="metric-card" style="border-left: 4px solid ${statusColor};">
+                    <div class="metric-label">Global Profiler Status</div>
+                    <div class="metric-value">${statusIcon} ${statusText}</div>
+                    ${isEnabled ? '<p style="margin-top: 1rem; font-size: 0.9rem;">Global heap profiling is active. Note that per-query profiling can still be enabled independently.</p>' : '<p style="margin-top: 1rem; font-size: 0.9rem;">Global heap profiling is not enabled. To enable it, set <code style="background: var(--table-header-bg); padding: 0.2rem 0.4rem; border-radius: 3px;">jemalloc_enable_global_profiler</code> in server config and restart the instance. Note that per-query profiling can still be used independently.</p>'}
+                </div>
+                <div style="margin-top: 2rem;">
+                    <button id="flush-profile-btn" class="btn btn-primary" onclick="flushProfile()">Flush Profile</button>
+                    <p style="margin-top: 0.5rem; font-size: 0.85rem; opacity: 0.8;">
+                        Generates a new heap profile dump. The profile will be saved to the directory configured in jemalloc settings. Works with both global and per-query profiling.
+                    </p>
+                </div>
+                <div id="profile-result"></div>
+            `;
+        }
+        async function loadStats(isManualRefresh = false) {
+            const loading = document.getElementById('loading');
+            const content = document.getElementById('content');
+            const errorDiv = document.getElementById('error');
+            // Only show loading on first load
+            const isFirstLoad = content.style.display === 'none';
+            if (isFirstLoad) {
+                loading.style.display = 'block';
+                content.style.display = 'none';
+            }
+            errorDiv.style.display = 'none';
+            try {
+                const query = 'SELECT * FROM system.jemalloc_stats';
+                // Build URL with parameters
+                let url = `${host}?default_format=TabSeparated&query=${encodeURIComponent(query)}`;
+                if (user) {
+                    url += `&user=${encodeURIComponent(user)}`;
+                }
+                if (password) {
+                    url += `&password=${encodeURIComponent(password)}`;
+                }
+                const response = await fetch(url, {
+                    method: 'POST'
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const statsText = await response.text();
+                const stats = parseJemallocStats(statsText);
+                // Update timestamp
+                document.getElementById('timestamp').textContent = new Date().toLocaleString();
+                // Render all sections (now optimized to only update values)
+                renderOverviewMetrics(stats.overview);
+                renderMemoryOverview(stats.overview);
+                renderBinStats(stats.raw, stats.arenas);
+                renderArenaStats(stats.arenas, stats.raw);
+                renderOperationsStats(stats.raw);
+                // Only check profile status on first load or manual refresh
+                if (isFirstLoad || isManualRefresh) {
+                    renderProfileStats();
+                }
+                // Only update raw stats on manual refresh or first load
+                const rawStatsEl = document.getElementById('raw-stats');
+                rawStatsEl.textContent = stats.raw.replace(/\\n/g, '\n');
+                if (isFirstLoad) {
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                errorDiv.textContent = `Error: ${error.message}`;
+                errorDiv.style.display = 'block';
+                loading.style.display = 'none';
+            }
+        }
+        // Initialize theme
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        document.getElementById('theme-icon').textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+        // Auto-refresh interval management
+        let refreshIntervalId = null;
+        let debounceTimer = null;
+        function updateRefreshInterval() {
+            const intervalInput = document.getElementById('refresh-interval');
+            const seconds = parseInt(intervalInput.value) || 0;
+            // Clear existing interval
+            if (refreshIntervalId) {
+                clearInterval(refreshIntervalId);
+                refreshIntervalId = null;
+            }
+            // Set new interval if seconds > 0
+            if (seconds > 0) {
+                refreshIntervalId = setInterval(loadStats, seconds * 1000);
+            }
+        }
+        function debouncedUpdateRefreshInterval() {
+            // Clear existing debounce timer
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            // Set new debounce timer
+            debounceTimer = setTimeout(() => {
+                updateRefreshInterval();
+            }, 500);
+        }
+        // Load stats on page load
+        loadStats();
+        // Start auto-refresh with default interval
+        updateRefreshInterval();
+    </script>
+</body>
+</html>

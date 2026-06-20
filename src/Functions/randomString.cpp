@@ -98,8 +98,8 @@ public:
             FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomStringImpl<TargetSpecific::AVX2::RandImpl>>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            FunctionRandomStringImpl<TargetSpecific::x86_64_v3::RandImpl>>();
     #endif
     }
 

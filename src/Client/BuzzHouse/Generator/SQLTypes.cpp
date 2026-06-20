@@ -54,22 +54,46 @@ static inline String nextFloatingPoint(RandomGenerator & rg, const bool extremes
     return ret;
 }
 
-static String numberColumn(RandomGenerator & rg, const bool negative, String && typeName)
+static String numberColumnEntry(RandomGenerator & rg, const bool negative, const bool iffunc)
 {
-    String buf = "CAST(";
+    String buf;
 
     buf += negative ? "(-" : "";
     buf += "number";
     buf += negative ? ")" : "";
-    if (rg.nextSmallNumber() < 4)
+    if (iffunc || rg.nextSmallNumber() < 4)
     {
         /// Generate identical numbers
         buf += " % ";
-        buf += std::to_string(rg.randomInt<uint32_t>(2, 100));
+        buf += std::to_string(rg.randomInt<uint32_t>(2, 31));
     }
+    return buf;
+}
+
+static String numberColumn(RandomGenerator & rg, const bool can_negative, String && typeName)
+{
+    String buf;
+    const bool iffunc = rg.nextSmallNumber() < 4;
+
+    if (iffunc)
+    {
+        buf += "if(";
+        buf += numberColumnEntry(rg, can_negative && rg.nextBool(), true);
+        buf += ",";
+    }
+    buf += "CAST(";
+    buf += numberColumnEntry(rg, can_negative && rg.nextBool(), false);
     buf += " AS ";
     buf += typeName;
     buf += ")";
+    if (iffunc)
+    {
+        buf += ",CAST(";
+        buf += numberColumnEntry(rg, can_negative && rg.nextBool(), false);
+        buf += " AS ";
+        buf += typeName;
+        buf += "))";
+    }
     return buf;
 }
 
@@ -208,7 +232,7 @@ String IntType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen
 {
     if (size > 8 && rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, !is_unsigned && rg.nextBool(), typeName(false, false));
+        return numberColumn(rg, !is_unsigned, typeName(false, false));
     }
     return appendRandomRawValue(rg, gen);
 }
@@ -247,7 +271,7 @@ String FloatType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & g
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, rg.nextBool(), typeName(false, false));
+        return numberColumn(rg, true, typeName(false, false));
     }
     return appendRandomRawValue(rg, gen);
 }
@@ -504,7 +528,7 @@ String DecimalType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, rg.nextBool(), typeName(false, false));
+        return numberColumn(rg, true, typeName(false, false));
     }
     return appendRandomRawValue(rg, gen);
 }
@@ -569,7 +593,7 @@ String StringType::insertNumberEntry(RandomGenerator & rg, StatementGenerator &,
 {
     if (rg.nextSmallNumber() < 8)
     {
-        return numberColumn(rg, rg.nextBool(), "String");
+        return numberColumn(rg, true, "String");
     }
     return rg.nextString("'", true, std::min(max_strlen, precision.value_or(rg.nextStrlen())));
 }

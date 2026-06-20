@@ -74,9 +74,16 @@ curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "
    SELECT * FROM system.replicas WHERE database=currentDatabase() FORMAT Null SETTINGS log_comment='02908_many_requests-baseline';" &>/dev/null
 
 
-$CLICKHOUSE_CLIENT -q "
-SYSTEM FLUSH LOGS query_log;
+# Wait for the baseline query to appear in query_log.
+# There is a race between HTTP response being sent and the query_log entry being written.
+for _ in $(seq 1 60); do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE current_database=currentDatabase() AND log_comment='02908_many_requests-baseline' AND type = 'QueryFinish'")
+    [ "$count" -ge 1 ] && break
+    sleep 0.5
+done
 
+$CLICKHOUSE_CLIENT -q "
 -- Check that average number of ZK request is less then a half of max requests
 WITH
     (SELECT ProfileEvents['ZooKeeperTransactions']

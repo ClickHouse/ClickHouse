@@ -67,6 +67,7 @@ struct JoinSettings
     UInt64 min_joined_block_size_rows;
     UInt64 min_joined_block_size_bytes;
     bool joined_block_split_single_row;
+    bool parallel_non_joined_rows_processing;
 
     OverflowMode join_overflow_mode;
     bool join_any_take_last_row;

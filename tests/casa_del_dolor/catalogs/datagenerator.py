@@ -28,7 +28,16 @@ from pyspark.sql.types import (
     MapType,
     DataType,
 )
+
+try:
+    from pyspark.sql.types import VariantType
+
+    HAS_VARIANT_TYPE = True
+except ImportError:
+    HAS_VARIANT_TYPE = False
+
 from .tablegenerator import LakeTableGenerator
+from .clickhousetospark import ClickHouseTypeMapper
 
 from .laketables import SparkTable
 
@@ -177,6 +186,7 @@ class LakeDataGenerator:
         self._thread_local._max_str_len = 100
         self.logger = logging.getLogger(__name__)
         self.spark_query_logger = query_logger
+        self.type_generator = ClickHouseTypeMapper()
 
     # ============================================================
     # Random data
@@ -293,6 +303,12 @@ class LakeDataGenerator:
             return self._rand_date()
         if isinstance(dtype, TimestampType):
             return self._rand_timestamp()
+        if HAS_VARIANT_TYPE and isinstance(dtype, VariantType):
+            # Spark stores variants as self-describing values, so any type works.
+            inner_type = self.type_generator.generate_random_spark_type(
+                allow_variant=False, max_depth=random.randint(1, 5)
+            )
+            return self._random_value_for_type(inner_type, null_rate)
         if isinstance(dtype, ArrayType):
             # Arrays of variable length
             elem_null_rate = null_rate if dtype.containsNull else 0.0

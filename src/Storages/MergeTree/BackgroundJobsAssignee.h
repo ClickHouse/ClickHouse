@@ -63,6 +63,10 @@ public:
     void postpone();
     void finish();
 
+    /// Update the cached storage ID after a table rename,
+    /// so that finish() can correctly find tasks belonging to this storage.
+    void updateStorageID(const StorageID & new_id);
+
     bool scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
     bool scheduleFetchTask(ExecutableTaskPtr fetch_task);
     bool scheduleMoveTask(ExecutableTaskPtr move_task);

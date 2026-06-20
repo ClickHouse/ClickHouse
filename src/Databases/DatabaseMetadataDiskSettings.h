@@ -13,6 +13,7 @@ struct DatabaseMetadataDiskSettingsImpl;
 
 /// List of available types supported in MetadataDiskSettings object
 #define DATABASE_METADATA_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, Bool) \
     M(CLASS_NAME, String)
 
 DATABASE_METADATA_SETTINGS_SUPPORTED_TYPES(DatabaseMetadataDiskSettings, DECLARE_SETTING_TRAIT)

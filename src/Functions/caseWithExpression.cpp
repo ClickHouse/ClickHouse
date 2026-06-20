@@ -223,7 +223,23 @@ private:
 
 REGISTER_FUNCTION(CaseWithExpression)
 {
-    factory.registerFunction<FunctionCaseWithExpression>();
+    FunctionDocumentation::Description description = R"(
+Implements the `CASE expr WHEN val1 THEN result1 ... ELSE default END` expression. Internally transforms into a series of `multiIf` calls using equality comparison. Note that `NULL = NULL` evaluates to true in this context, unlike standard SQL equality.
+    )";
+    FunctionDocumentation::Syntax syntax = "caseWithExpression(expr, val1, result1[, val2, result2, ...], default)";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "The expression to compare.", {"Expression"}},
+        {"val1", "Value to compare against.", {"Any"}},
+        {"result1", "Value to return when expr equals val1.", {"Any"}},
+        {"default", "Default value to return if no match is found.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result corresponding to the first matching value, or the default.", {"Any"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT CASE 1 WHEN 1 THEN 'one' WHEN 2 THEN 'two' ELSE 'other' END", "one"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCaseWithExpression>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 
     /// These are obsolete function names.
     factory.registerAlias("caseWithExpr", "caseWithExpression");

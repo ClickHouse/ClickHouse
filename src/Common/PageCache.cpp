@@ -131,6 +131,25 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached
     return result;
 }
 
+PageCache::MappedPtr PageCache::get(const PageCacheKey & key, bool inject_eviction)
+{
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+
+    if (inject_eviction && thread_local_rng() % 10 == 0)
+        return nullptr;
+
+    Key key_hash = key.hash();
+    Shard & shard = *shards[getShardIdx(key_hash)];
+
+    const auto result = shard.get(key_hash);
+
+    /// Count only hits. On miss, the caller would normally call getOrSet, which will count the miss.
+    if (result)
+        ProfileEvents::increment(ProfileEvents::PageCacheHits);
+
+    return result;
+}
+
 bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
 {
     /// Avoid deadlock if MemoryTracker calls PageCache::autoResize.

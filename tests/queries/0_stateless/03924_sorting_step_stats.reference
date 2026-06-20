@@ -1,0 +1,18 @@
+-------------- Limit < table size -------------
+      JoinLogical
+      Join: t1[999] ⋈ t2[22]
+          ReadFromMergeTree (default.t)
+            Limit (preliminary LIMIT)
+            Limit 22
+              Sorting (Sorting for ORDER BY)
+              Limit 22
+                  ReadFromMergeTree (default.t)
+-------------- Limit > table size -------------
+      JoinLogical
+      Join: t1[999] ⋈ t2[999]
+          ReadFromMergeTree (default.t)
+            Limit (preliminary LIMIT)
+            Limit 5000
+              Sorting (Sorting for ORDER BY)
+              Limit 5000
+                  ReadFromMergeTree (default.t)

@@ -24,7 +24,14 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count()>=$min_trace_entries FROM system.trace_lo
 # query_id cannot be longer then 28 bytes
 query_id_http="01526_http_${RANDOM}_$$"
 echo "$query" | ${CLICKHOUSE_CURL} -sSg -o /dev/null "${CLICKHOUSE_URL}&query_id=$query_id_http&max_untracked_memory=0&memory_profiler_sample_probability=1&max_threads=1&trace_profile_events=0" -d @-
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS trace_log"
+# Wait for trace_log entries from the HTTP query.
+# There is a race between HTTP response being sent and the log entry being written.
+for _ in $(seq 1 60); do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS trace_log"
+    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.trace_log WHERE query_id = '$query_id_http' AND abs(size) < 4e6 AND event_time >= now() - interval 1 hour")
+    [ "$count" -ge $min_trace_entries ] && break
+    sleep 0.5
+done
 # at least 2, one allocation, one deallocation
 # (but actually even more)
 ${CLICKHOUSE_CLIENT} -q "SELECT count()>=$min_trace_entries FROM system.trace_log WHERE query_id = '$query_id_http' AND abs(size) < 4e6 AND event_time >= now() - interval 1 hour"

@@ -858,8 +858,8 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (!size_to_download)
         return;
 
-    auto reader = file_segment.getRemoteFileReader();
-    if (!reader)
+    auto buf = file_segment.getRemoteFileReader();
+    if (!buf)
     {
         LOG_TEST(log, "No reader in {}:{} (state: {}, range: {}, downloaded size: {})",
                  file_segment.key(), file_segment.offset(), file_segment.state(),
@@ -867,25 +867,24 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         return;
     }
 
-    /// If remote_fs_read_method == 'threadpool',
-    /// reader itself never owns/allocates the buffer.
-    if (reader->internalBuffer().empty())
-    {
-        if (!memory)
-            memory.emplace(std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size_to_download));
-        reader->set(memory->data(), memory->size());
-    }
+    chassert(buf->internalBuffer().empty(),
+             fmt::format("Memory buffer for buffer must have been reset before "
+             "being put into background download ({})", file_segment.getInfoForLog()));
+
+    if (!memory)
+        memory.emplace(std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size_to_download));
+    buf->set(memory->data(), std::min(size_to_download, memory->size()));
 
     const auto reserve_space_lock_wait_timeout_milliseconds =
         Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     size_t offset = file_segment.getCurrentWriteOffset();
-    if (offset != static_cast<size_t>(reader->getPosition()))
-        reader->seek(offset, SEEK_SET);
+    if (offset != static_cast<size_t>(buf->getPosition()))
+        buf->seek(offset, SEEK_SET);
 
-    while (size_to_download && !reader->eof())
+    while (size_to_download && !buf->eof())
     {
-        const auto available = reader->available();
+        const auto available = buf->available();
         chassert(available);
 
         const auto size = std::min(available, size_to_download);
@@ -904,9 +903,9 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
 
         try
         {
-            file_segment.write(reader->position(), size, offset);
+            file_segment.write(buf->position(), size, offset);
             offset += size;
-            reader->position() += size;
+            buf->position() += size;
         }
         catch (ErrnoException & e)
         {
@@ -920,7 +919,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         }
     }
 
-    /// Reset reader to avoid
+    /// Reset buffer to avoid
     /// Logical error: 'remote_fs_segment_reader->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset()'
     file_segment.resetRemoteFileReader();
     file_segment.completePartAndResetDownloader();

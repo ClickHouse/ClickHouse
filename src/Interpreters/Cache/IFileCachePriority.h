@@ -236,6 +236,7 @@ public:
     struct IPriorityDump
     {
         std::vector<FileSegmentInfo> infos;
+        IPriorityDump() = default;
         explicit IPriorityDump(const std::vector<FileSegmentInfo> & infos_) : infos(infos_) {}
         void merge(const IPriorityDump & other) { infos.insert(infos.end(), other.infos.begin(), other.infos.end()); }
         virtual ~IPriorityDump() = default;

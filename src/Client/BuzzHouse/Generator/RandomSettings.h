@@ -69,7 +69,11 @@ extern std::unordered_map<String, CHSetting> backupSettings;
 
 extern std::unordered_map<String, CHSetting> restoreSettings;
 
-extern std::unique_ptr<SQLType> size_tp, null_tp, string_tp;
+extern std::unique_ptr<SQLType> size_tp;
+
+extern std::unique_ptr<SQLType> null_tp;
+
+extern std::unique_ptr<SQLType> string_tp;
 
 extern std::vector<SystemTable> systemTables;
 

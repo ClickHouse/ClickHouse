@@ -1,5 +1,5 @@
-Positive tests on preprocessor construction and use.
-- Test simple preprocessor expression.
+Basic expressions.
+- Test simple preprocessor expression with String.
 1
 1
 1
@@ -40,6 +40,84 @@ Positive tests on preprocessor construction and use.
 1
 1
 1
+- Test preprocessor declaration using the same column more than once.
+1
+0
+1
+1
+0
+0
+0
+1
+0
+1
+1
+1
+0
+1
+1
+- Test preprocessor declaration using a UDF.
+1
+0
+1
+1
+0
+0
+0
+1
+0
+1
+1
+1
+0
+1
+1
+Negative tests.
+- The preprocessor expression must reference only the index column
+- The preprocessor expression must be a function, not an identifier
+- The preprocessor must be an expression
+- The preprocessor expression must be a known function
+- The preprocessor must have input and output values of the same type
+- The preprocessor expression must reference the underlying column
+- The preprocessor expression must use only deterministic functions
+- The preprocessor expression must not contain arrayJoin
+Advanced expressions and types.
+- The preprocessor expression must contain the index definition
+-- Single arguments
+1
+0
+1
+1
+0
+0
+0
+1
+0
+1
+1
+1
+0
+1
+1
+-- Multiple arguments
+1
+0
+1
+1
+0
+0
+0
+1
+0
+1
+1
+1
+0
+1
+1
+- Negative tests
+-- Index definition may not be a different expression than used in the preprocessor
+Array support
 - Test simple preprocessor expression with Array(String).
 1
 1
@@ -52,52 +130,48 @@ Positive tests on preprocessor construction and use.
 - Test simple preprocessor expression with Array(FixedString).
 1
 1
+2
+3
 1
 1
-1
-1
-1
-1
-- Test preprocessor declaration using column more than once.
-1
-0
-1
-1
-0
-0
-0
-1
-0
-1
-1
-1
-0
-1
-1
-- Test preprocessor declaration using udf.
-1
-0
-1
-1
-0
-0
-0
-1
-0
-1
-1
-1
-0
-1
-1
-Negative tests on preprocessor construction validations.
-- The preprocessor argument must not reference non-indexed columns
-- Index definition may not be and expression when there is preprocessor
--- Not even the same expression
-- The preprocessor must be an expression
-- The preprocessor must be an expression, with existing functions
-- The preprocessor must have input and output values of the same type (here: String)
-- The preprocessor expression must use the column identifier
-- The preprocessor expression must use only deterministic functions
-- The preprocessor expression must be a function, not an identifier
-- The preprocessor expression must not contain arrayJoin
+2
+3
+Maps support
+- Index on mapKeys(val)
+-- Map itself should not be passed as argument
+-- SELECT on mapKeys(val)
+foo	1
+FOO	1
+BAR	2
+Baz	3
+foo	1
+FOO	1
+BAR	2
+Baz	3
+-- SELECT on mapValues(val) (fallback)
+foo	1
+BAR	2
+Baz	3
+foo	1
+BAR	2
+Baz	3
+- Index on mapValues(val)
+-- SELECT on mapValues(val)
+foo	1
+FOO	1
+BAR	2
+Baz	3
+foo	1
+FOO	1
+BAR	2
+Baz	3
+-- SELECT on mapKeys(val) (fallback)
+foo	1
+BAR	2
+Baz	3
+foo	1
+BAR	2
+Baz	3
+- Negative tests
+-- Index on whole map must fail
+-- The preprocessor expression must contain the index definition

@@ -101,7 +101,7 @@ AS SELECT number FROM
 SELECT number FROM modified_tab;
 
 SET enable_analyzer=1;
-SELECT 'New Analyzer:';
+SELECT 'Analyzer:';
 SELECT 'Negative Limit Only';
 SELECT number FROM numbers(10) ORDER BY number LIMIT -1;
 SELECT number FROM numbers(10) ORDER BY number LIMIT -3;

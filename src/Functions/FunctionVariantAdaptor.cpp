@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -18,6 +19,21 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TYPE_MISMATCH;
 extern const int CANNOT_CONVERT_TYPE;
 extern const int NO_COMMON_TYPE;
+}
+
+/// Strip LowCardinality wrapper from nested function result if present.
+/// This is needed because the FunctionBaseVariantAdaptor constructor computes result types
+/// using nullptr columns (treated as non-const by getReturnType), while executeImpl uses
+/// actual ColumnConst (from scatter/filter of constant arguments). The difference in const-ness
+/// changes the LowCardinality heuristic in getReturnType, potentially wrapping the result
+/// in LowCardinality during execution but not during type computation.
+static void removeLowCardinalityFromResult(DataTypePtr & result_type, ColumnPtr & result_column)
+{
+    if (typeid_cast<const DataTypeLowCardinality *>(result_type.get()))
+    {
+        result_type = removeLowCardinality(result_type);
+        result_column = result_column->convertToFullColumnIfLowCardinality();
+    }
 }
 
 ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
@@ -70,9 +86,11 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         auto func_base = function_overload_resolver->build(new_arguments);
         DataTypePtr nested_result_type = func_base->getResultType();
         ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, variant_column.size(), dry_run);
+        removeLowCardinalityFromResult(nested_result_type, nested_result);
 
-        /// If result is Nullable(Nothing), just return column filled with NULLs.
-        if (nested_result_type->onlyNull())
+        /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
+        /// Nothing can appear when the function is executed on an empty type (e.g. arrayElement on Array(Nothing)).
+        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
         {
             auto res = result_type->createColumn();
             res->insertManyDefaults(variant_column.size());
@@ -170,9 +188,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         DataTypePtr nested_result_type = func_base->getResultType();
         ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)
                             ->convertToFullColumnIfConst();
+        removeLowCardinalityFromResult(nested_result_type, nested_result);
 
-        /// If result is Nullable(Nothing), just return column filled with NULLs.
-        if (nested_result_type->onlyNull())
+        /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
+        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
         {
             auto res = result_type->createColumn();
             res->insertManyDefaults(variant_column.size());
@@ -345,11 +364,12 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         auto nested_result
             = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
                   ->convertToFullColumnIfConst();
+        removeLowCardinalityFromResult(nested_result_type, nested_result);
 
         variants_result_types[i] = nested_result_type;
 
-        /// Set nullptr in case of only NULL values, we will insert NULL for rows of this selector.
-        if (nested_result_type->onlyNull())
+        /// Set nullptr in case of only NULL or Nothing values, we will insert NULL for rows of this selector.
+        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
         {
             variants_results[i] = nullptr;
         }
@@ -562,10 +582,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeDryRunImpl(
 }
 
 FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
-    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_)
-    : function_overload_resolver(function_overload_resolver_)
-    , arguments(arguments_)
+    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
+    ColumnsWithTypeAndName arguments_with_type_)
+    : function_overload_resolver(std::move(function_overload_resolver_))
 {
+    arguments.reserve(arguments_with_type_.size());
+    for (const auto & arg : arguments_with_type_)
+        arguments.push_back(arg.type);
+
     std::optional<size_t> first_variant_index;
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -595,14 +619,11 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     for (const auto & alternative : variant_alternatives)
     {
         /// Create arguments with this alternative instead of the Variant.
-        DataTypes alt_arguments = arguments;
-        alt_arguments[variant_argument_index] = alternative;
-
-        /// Build the function for this alternative.
-        ColumnsWithTypeAndName alt_columns_with_type;
-        alt_columns_with_type.reserve(alt_arguments.size());
-        for (const auto & arg : alt_arguments)
-            alt_columns_with_type.push_back({nullptr, arg, ""});
+        /// Preserve original columns (especially ColumnConst) for non-Variant arguments.
+        ColumnsWithTypeAndName alt_columns_with_type = arguments_with_type_;
+        alt_columns_with_type[variant_argument_index].type = alternative;
+        /// Important: don't pass the original ColumnVariant with a non-Variant type
+        alt_columns_with_type[variant_argument_index].column = nullptr;
 
         /// Get the return type for this alternative.
         /// Wrap in try-catch to handle incompatible type combinations gracefully.
@@ -610,7 +631,9 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         try
         {
             const auto func_base = function_overload_resolver->build(alt_columns_with_type);
-            result_types.push_back(func_base->getResultType());
+            /// Strip LowCardinality from result type for consistency with executeImpl,
+            /// where we also strip LC from nested function results.
+            result_types.push_back(removeLowCardinality(func_base->getResultType()));
         }
         catch (const Exception & e)
         {

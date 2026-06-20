@@ -382,100 +382,108 @@ void MemoryWorker::updateResidentMemoryThread()
 
     while (true)
     {
-        rss_update_cv.wait_for(rss_update_lock, chrono_period_ms, [this] { return shutdown; });
-        if (shutdown)
-            return;
+        try
+        {
+            rss_update_cv.wait_for(rss_update_lock, chrono_period_ms, [this] { return shutdown; });
+            if (shutdown)
+                return;
 
-        Stopwatch total_watch;
+            Stopwatch total_watch;
 
-        Int64 resident = getMemoryUsage(first_run);
-        MemoryTracker::updateRSS(resident);
+            Int64 resident = getMemoryUsage(first_run);
+            MemoryTracker::updateRSS(resident);
 
-        if (page_cache)
-            page_cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
+            if (page_cache)
+                page_cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
 #if USE_JEMALLOC
-        const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
-        const auto purge_total_memory_threshold = static_cast<double>(memory_tracker_limit) * purge_total_memory_threshold_ratio;
-        const auto purge_dirty_pages_threshold = static_cast<double>(memory_tracker_limit) * purge_dirty_pages_threshold_ratio;
+            const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
+            const auto purge_total_memory_threshold = static_cast<double>(memory_tracker_limit) * purge_total_memory_threshold_ratio;
+            const auto purge_dirty_pages_threshold = static_cast<double>(memory_tracker_limit) * purge_dirty_pages_threshold_ratio;
 
-        const bool needs_purge = (purge_total_memory_threshold_ratio > 0 && static_cast<double>(resident) > purge_total_memory_threshold)
-            || (purge_dirty_pages_threshold_ratio > 0
-                && static_cast<double>(pdirty_mib.getValue() * page_size) > purge_dirty_pages_threshold);
+            const bool needs_purge
+                = (purge_total_memory_threshold_ratio > 0 && static_cast<double>(resident) > purge_total_memory_threshold)
+                || (purge_dirty_pages_threshold_ratio > 0
+                    && static_cast<double>(pdirty_mib.getValue() * page_size) > purge_dirty_pages_threshold);
 
-        auto current_decay_state = decay_state.load(std::memory_order_relaxed);
-        if (needs_purge)
-        {
-            bool notify_purge = false;
-            if (decay_adjustment_period_ms.count() > 0)
+            auto current_decay_state = decay_state.load(std::memory_order_relaxed);
+            if (needs_purge)
             {
-                if (!std::exchange(purging_dirty_pages, true))
+                bool notify_purge = false;
+                if (decay_adjustment_period_ms.count() > 0)
                 {
-                    /// Transitioned into purging state, record the time
+                    if (!std::exchange(purging_dirty_pages, true))
+                    {
+                        /// Transitioned into purging state, record the time
+                        purge_state_change_time_ms = getCurrentTimeMs();
+                    }
+                    else if (
+                        (getCurrentTimeMs() - purge_state_change_time_ms >= decay_adjustment_period_ms)
+                        && current_decay_state == MemoryWorker::DecayState::Enabled)
+                    {
+                        /// Sustained memory pressure - request disabling decay
+                        MemoryWorker::DecayState expected = MemoryWorker::DecayState::Enabled;
+                        notify_purge |= decay_state.compare_exchange_strong(
+                            expected, MemoryWorker::DecayState::DisableRequested, std::memory_order_relaxed);
+                    }
+                }
+
+                if (current_decay_state != MemoryWorker::DecayState::Disabled)
+                {
+                    /// Trigger immediate purge if decay is not yet disabled
+                    bool expected_purge_dirty_pages = false;
+                    notify_purge |= purge_dirty_pages.compare_exchange_strong(expected_purge_dirty_pages, true, std::memory_order_relaxed);
+                }
+
+                if (notify_purge)
+                    purge_dirty_pages_cv.notify_all();
+            }
+            else if (decay_adjustment_period_ms.count() > 0)
+            {
+                if (std::exchange(purging_dirty_pages, false))
+                {
+                    /// Transitioned out of purging state, record the time
                     purge_state_change_time_ms = getCurrentTimeMs();
                 }
                 else if (
                     (getCurrentTimeMs() - purge_state_change_time_ms >= decay_adjustment_period_ms)
-                    && current_decay_state == MemoryWorker::DecayState::Enabled)
+                    && current_decay_state == MemoryWorker::DecayState::Disabled)
                 {
-                    /// Sustained memory pressure - request disabling decay
-                    MemoryWorker::DecayState expected = MemoryWorker::DecayState::Enabled;
-                    notify_purge |= decay_state.compare_exchange_strong(
-                        expected, MemoryWorker::DecayState::DisableRequested, std::memory_order_relaxed);
+                    /// Sustained normal conditions - request enabling decay
+                    MemoryWorker::DecayState expected = MemoryWorker::DecayState::Disabled;
+                    if (decay_state.compare_exchange_strong(expected, MemoryWorker::DecayState::EnableRequested, std::memory_order_relaxed))
+                    {
+                        purge_dirty_pages_cv.notify_all();
+                    }
                 }
             }
 
-            if (current_decay_state != MemoryWorker::DecayState::Disabled)
-            {
-                /// Trigger immediate purge if decay is not yet disabled
-                bool expected_purge_dirty_pages = false;
-                notify_purge |= purge_dirty_pages.compare_exchange_strong(expected_purge_dirty_pages, true, std::memory_order_relaxed);
-            }
-
-            if (notify_purge)
-                purge_dirty_pages_cv.notify_all();
-        }
-        else if (decay_adjustment_period_ms.count() > 0)
-        {
-            if (std::exchange(purging_dirty_pages, false))
-            {
-                /// Transitioned out of purging state, record the time
-                purge_state_change_time_ms = getCurrentTimeMs();
-            }
-            else if (
-                (getCurrentTimeMs() - purge_state_change_time_ms >= decay_adjustment_period_ms)
-                && current_decay_state == MemoryWorker::DecayState::Disabled)
-            {
-                /// Sustained normal conditions - request enabling decay
-                MemoryWorker::DecayState expected = MemoryWorker::DecayState::Disabled;
-                if (decay_state.compare_exchange_strong(expected, MemoryWorker::DecayState::EnableRequested, std::memory_order_relaxed))
-                {
-                    purge_dirty_pages_cv.notify_all();
-                }
-            }
-        }
-
-        /// update MemoryTracker with `allocated` information from jemalloc when:
-        ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
-        ///  - MemoryTracker stores a negative value
-        ///  - `correct_tracker` is set to true
-        if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
-            MemoryTracker::updateAllocated(resident, /*log_change=*/true);
-        else if (correct_tracker)
-            MemoryTracker::updateAllocated(resident, /*log_change=*/false);
+            /// update MemoryTracker with `allocated` information from jemalloc when:
+            ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
+            ///  - MemoryTracker stores a negative value
+            ///  - `correct_tracker` is set to true
+            if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
+                MemoryTracker::updateAllocated(resident, /*log_change=*/true);
+            else if (correct_tracker)
+                MemoryTracker::updateAllocated(resident, /*log_change=*/false);
 #else
-        /// we don't update in the first run if we don't have jemalloc
-        /// because we can only use resident memory information
-        /// resident memory can be much larger than the actual allocated memory
-        /// so we rather ignore the potential difference caused by allocated memory
-        /// before MemoryTracker initialization
-        if (total_memory_tracker.get() < 0 || correct_tracker) [[unlikely]]
-            MemoryTracker::updateAllocated(resident, /*log_change=*/false);
+            /// we don't update in the first run if we don't have jemalloc
+            /// because we can only use resident memory information
+            /// resident memory can be much larger than the actual allocated memory
+            /// so we rather ignore the potential difference caused by allocated memory
+            /// before MemoryTracker initialization
+            if (total_memory_tracker.get() < 0 || correct_tracker) [[unlikely]]
+                MemoryTracker::updateAllocated(resident, /*log_change=*/false);
 #endif
 
-        ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);
-        ProfileEvents::increment(ProfileEvents::MemoryWorkerRunElapsedMicroseconds, total_watch.elapsedMicroseconds());
-        first_run = false;
+            ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);
+            ProfileEvents::increment(ProfileEvents::MemoryWorkerRunElapsedMicroseconds, total_watch.elapsedMicroseconds());
+            first_run = false;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to update resident memory");
+        }
     }
 }
 
@@ -528,51 +536,64 @@ void MemoryWorker::purgeDirtyPagesThread()
     LOG_INFO(log, "Default dirty pages decay period: {}ms", default_dirty_decay_ms);
     while (true)
     {
-        purge_dirty_pages_cv.wait(
-            purge_dirty_pages_lock,
-            [&]
+        try
+        {
+            /// We add timeout of 1 second to protect against rare race condition where
+            /// signal could be missed leading to this thread being suck forever.
+            /// We cannot use mutex in RSS update thread because we want to keep them independent,
+            /// i.e. purging dirty pages should not block RSS update.
+            purge_dirty_pages_cv.wait_for(
+                purge_dirty_pages_lock,
+                std::chrono::seconds(1),
+                [&]
+                {
+                    auto state = decay_state.load(std::memory_order_relaxed);
+                    return shutdown || purge_dirty_pages.load(std::memory_order_relaxed)
+                        || state == MemoryWorker::DecayState::DisableRequested || state == MemoryWorker::DecayState::EnableRequested;
+                });
+
+            if (shutdown)
+                return;
+
+            /// Handle decay state transitions
+            auto current_state = decay_state.load(std::memory_order_relaxed);
+            if (current_state == MemoryWorker::DecayState::DisableRequested)
             {
-                auto state = decay_state.load(std::memory_order_relaxed);
-                return shutdown || purge_dirty_pages.load(std::memory_order_relaxed)
-                    || state == MemoryWorker::DecayState::DisableRequested
-                    || state == MemoryWorker::DecayState::EnableRequested;
-            });
+                LOG_INFO(
+                    log,
+                    "Setting jemalloc's dirty pages decay period to 0ms (disabling automatic decay) because of high memory usage for a "
+                    "longer "
+                    "period of time (> {}ms). This should provide server with more memory but it could negatively impact the performance",
+                    decay_adjustment_period_ms.count());
+                setDirtyDecayForAllArenas(0);
+                decay_state.store(MemoryWorker::DecayState::Disabled, std::memory_order_relaxed);
+            }
+            else if (current_state == MemoryWorker::DecayState::EnableRequested)
+            {
+                LOG_INFO(
+                    log,
+                    "Setting jemalloc's dirty pages decay period to {}ms (re-enabling automatic decay). Server has been operating with "
+                    "normal "
+                    "memory usage for at least {}ms",
+                    default_dirty_decay_ms,
+                    decay_adjustment_period_ms.count());
+                setDirtyDecayForAllArenas(default_dirty_decay_ms);
+                decay_state.store(MemoryWorker::DecayState::Enabled, std::memory_order_relaxed);
+            }
 
-        if (shutdown)
-            return;
+            bool is_purge_enabled = true;
+            if (!purge_dirty_pages.compare_exchange_strong(is_purge_enabled, false, std::memory_order_relaxed))
+                continue;
 
-        /// Handle decay state transitions
-        auto current_state = decay_state.load(std::memory_order_relaxed);
-        if (current_state == MemoryWorker::DecayState::DisableRequested)
-        {
-            LOG_INFO(
-                log,
-                "Setting jemalloc's dirty pages decay period to 0ms (disabling automatic decay) because of high memory usage for a longer "
-                "period of time (> {}ms). This should provide server with more memory but it could negatively impact the performance",
-                decay_adjustment_period_ms.count());
-            setDirtyDecayForAllArenas(0);
-            decay_state.store(MemoryWorker::DecayState::Disabled, std::memory_order_relaxed);
+            Stopwatch purge_watch;
+            purge_mib.run();
+            ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
+            ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
         }
-        else if (current_state == MemoryWorker::DecayState::EnableRequested)
+        catch (...)
         {
-            LOG_INFO(
-                log,
-                "Setting jemalloc's dirty pages decay period to {}ms (re-enabling automatic decay). Server has been operating with normal "
-                "memory usage for at least {}ms",
-                default_dirty_decay_ms,
-                decay_adjustment_period_ms.count());
-            setDirtyDecayForAllArenas(default_dirty_decay_ms);
-            decay_state.store(MemoryWorker::DecayState::Enabled, std::memory_order_relaxed);
+            tryLogCurrentException(log, "Failed to purge dirty pages");
         }
-
-        bool is_purge_enabled = true;
-        if (!purge_dirty_pages.compare_exchange_strong(is_purge_enabled, false, std::memory_order_relaxed))
-            continue;
-
-        Stopwatch purge_watch;
-        purge_mib.run();
-        ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
-        ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
     }
 }
 #endif

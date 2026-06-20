@@ -58,11 +58,12 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
             "Arrow",
             CHColumnToArrowColumn::Settings
             {
-                format_settings.arrow.output_string_as_string,
-                format_settings.arrow.output_fixed_string_as_fixed_byte_array,
-                format_settings.arrow.low_cardinality_as_dictionary,
-                format_settings.arrow.use_signed_indexes_for_dictionary,
-                format_settings.arrow.use_64_bit_indexes_for_dictionary
+                .output_string_as_string = format_settings.arrow.output_string_as_string,
+                .output_fixed_string_as_fixed_byte_array = format_settings.arrow.output_fixed_string_as_fixed_byte_array,
+                .low_cardinality_as_dictionary = format_settings.arrow.low_cardinality_as_dictionary,
+                .use_signed_indexes_for_dictionary = format_settings.arrow.use_signed_indexes_for_dictionary,
+                .use_64_bit_indexes_for_dictionary = format_settings.arrow.use_64_bit_indexes_for_dictionary,
+                .output_date_as_uint16 = format_settings.arrow.output_date_as_uint16,
             });
     }
 

@@ -328,7 +328,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, ContextPtr) const
+ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, const Names &, ContextPtr) const
 {
     return nullptr;
 }

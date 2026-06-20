@@ -3,12 +3,13 @@
 #include <filesystem>
 #include <iomanip>
 
-#include <Common/CurrentThread.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
+#include <Common/CurrentThread.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/quoteString.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -267,7 +268,7 @@ private:
     ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function;
     ContextPtr context;
     String command_with_parameters;
-    std::vector<String> command_arguments_with_parameters;
+    VectorWithMemoryTracking<String> command_arguments_with_parameters;
 };
 
 }

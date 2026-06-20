@@ -29,12 +29,12 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for FileDictionarySource");
     }
 
-    BlockIO loadIds(const std::vector<UInt64> & /*ids*/) override
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & /*ids*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for FileDictionarySource");
     }
 
-    BlockIO loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
+    BlockIO loadKeys(const Columns & /*key_columns*/, const VectorWithMemoryTracking<size_t> & /*requested_rows*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for FileDictionarySource");
     }

@@ -291,9 +291,22 @@ class Targeting:
 
         # TODO: Add coverage supoort for Integration tests
         if self.job_type == self.STATELESS_JOB_TYPE:
-            covering_tests, result = self.get_most_relevant_tests(ch_path)
-            tests.update(covering_tests)
-            results.append(result)
+            try:
+                covering_tests, result = self.get_most_relevant_tests(ch_path)
+                tests.update(covering_tests)
+                results.append(result)
+            except Exception as e:
+                print(
+                    f"WARNING: Failed to get coverage-based tests (best effort): {e}",
+                    file=sys.stderr,
+                )
+                results.append(
+                    Result(
+                        name="tests found by coverage",
+                        status=Result.StatusExtended.OK,
+                        info=f"Skipped: {e}",
+                    )
+                )
 
         return tests, Result(
             name="Fetch relevant tests",

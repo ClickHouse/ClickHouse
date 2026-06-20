@@ -18,7 +18,13 @@ def create_parser():
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     run_parser = subparsers.add_parser("run", help="Run a CI job")
-    run_parser.add_argument("job", help="Name of the job to run", type=str)
+    run_parser.add_argument(
+        "job",
+        help="Name of the job to run",
+        type=str,
+        nargs="?",
+        default=None,
+    )
     run_parser.add_argument(
         "--workflow",
         help=(
@@ -230,7 +236,15 @@ def main():
 
         workflows = _get_workflows(
             name=args.workflow or None, default=not bool(args.workflow)
-        )
+        ) # it actually returns only default workflow when there is no --workflow
+        if args.job is None:
+            for workflow in workflows:
+                print(
+                    f"Workflow [{workflow.name}] has jobs:\n"
+                    "  \"" + f'"\n  "'.join([job.name for job in workflow.jobs]) + '"'
+                    )
+            Utils.exit_with_error("Job name is required to run a job.")
+
         job_workflow_pairs = []
         for workflow in workflows:
             jobs = workflow.find_jobs(args.job, lazy=True)
@@ -238,13 +252,13 @@ def main():
                 for job in jobs:
                     job_workflow_pairs.append((job, workflow))
         if not job_workflow_pairs:
-            Utils.raise_with_error(
+            Utils.exit_with_error(
                 f"Failed to find job [{args.job}] workflow [{args.workflow}]"
             )
         elif len(job_workflow_pairs) > 1:
             for job, wf in job_workflow_pairs:
                 print(f"Job: [{job.name}], Workflow [{wf.name}]")
-            Utils.raise_with_error(
+            Utils.exit_with_error(
                 f"More than one job [{args.job}]: {[(wf.name, job.name) for job, wf in job_workflow_pairs]}"
             )
         else:

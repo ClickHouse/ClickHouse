@@ -143,7 +143,7 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
 {
     const auto * node = config.selector.getRoot();
     if (!node || (node->node_type != PrometheusQueryTree::NodeType::InstantSelector))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} is not an instant selector", quoteString(config.selector.getQuery()));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} is not an instant selector", quoteString(config.selector.toString()));
 
     if (config.min_time > config.max_time)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Max time {} is less than min time {}",

@@ -21,6 +21,16 @@ protected:
     IAsynchronousReader & reader;
     Priority base_priority;
 
+    /// Buffer to prefetch into. Note that internal_buffer is initialized in constructor and never
+    /// changed; working_buffer doesn't necessarily point into internal_buffer.
+    /// The 3 buffers (internal_buffer, memory, prefetch_buffer) all have equal length when not empty.
+    /// How buffers are used:
+    ///  * If prefetching is used (prefetch() called), we swap buffers `prefetch` and `memory`
+    ///    after each prefetched. `existing_memory` passed to constructor ends up ignored.
+    ///  * If prefetching is not used (prefetch() never called), we read synchronously into
+    ///    `internal_buffer`, which points either into `memory` or to `existing_memory`.
+    ///  * If prefetch() is only sometimes called, the non-prefetched synchronous reads use `memory`
+    ///    and ignore `existing_memory`.
     Memory<> prefetch_buffer;
     std::future<IAsynchronousReader::Result> prefetch_future;
 

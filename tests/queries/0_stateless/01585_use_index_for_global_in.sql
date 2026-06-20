@@ -12,11 +12,14 @@ insert into xp select number, number + 2 from numbers(10);
 
 set max_rows_to_read = 4; -- 2 from numbers, 2 from tables
 select * from xp where i in (select * from numbers(2));
-select * from xp where i global in (select * from numbers(2));
+
+-- For Global IN-s now we can execute subquery twice with automatic parallel replicas :(
+select * from xp where i global in (select * from numbers(2)) SETTINGS automatic_parallel_replicas_mode=0;
+
 select * from xp_d where i in (select * from numbers(2));
 
 set max_rows_to_read = 6; -- 2 from numbers, 2 from GLOBAL temp table (pushed from numbers), 2 from local xp
-select * from xp_d where i global in (select * from numbers(2));
+select * from xp_d where i global in (select * from numbers(2)) SETTINGS automatic_parallel_replicas_mode=0;
 
 drop table if exists xp;
 drop table if exists xp_d;

@@ -29,6 +29,10 @@
 
 #include <filesystem>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -432,6 +436,11 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
     const std::set<DatabaseAndTableName> & except_table_names)
 {
     checkIsQueryCancelled();
+
+#if CLICKHOUSE_CLOUD
+    if (database_name == SharedDatabaseCatalog::INTERNAL_DATABASE_TO_DROP)
+        return;
+#endif
 
     auto it = database_infos.find(database_name);
     if (it == database_infos.end())

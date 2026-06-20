@@ -20,7 +20,7 @@ STATE_MAP = {
 
 
 def run_with_timeout(func, args, timeout):
-    for _ in range(5):
+    for attempt in range(5):
         state = multiprocessing.Value("i", -1)
         process = multiprocessing.Process(
             target=func, args=args, kwargs={"state": state}
@@ -34,9 +34,11 @@ def run_with_timeout(func, args, timeout):
         if process.is_alive():
             process.terminate()
 
-            if state.value == -1:
-                continue
+        # Retry on any non-terminal state (transient timeouts on loaded machines)
+        if attempt < 4:
+            continue
 
+        if state.value in (1, 2):
             print(f"Timeout, state: {STATE_MAP[state.value]}")
             return
 

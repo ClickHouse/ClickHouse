@@ -557,8 +557,8 @@ protected: // Hide all the ISchedulerNode interface methods as an implementation
     {
         if (immediate_child.get() == child)
         {
-            child_active = false; // deactivate
-            immediate_child->setParent(nullptr); // detach
+            immediate_child->setParent(nullptr); // detach first: cancels pending activations and waits for any in-progress activateChild
+            child_active = false; // deactivate (safe: no concurrent activateChild after cancelActivation)
             immediate_child.reset();
         }
     }

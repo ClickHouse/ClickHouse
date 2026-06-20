@@ -168,7 +168,7 @@ jobs:
 
   libfuzzer_tests:
     runs-on: [self-hosted, arm-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_fuzzers]
+    needs: [build_arm_fuzzers, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'bGliRnV6emVyIHRlc3Rz') }}
     name: "libFuzzer tests"
     outputs:
@@ -206,7 +206,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_fuzzers, libfuzzer_tests]
+    needs: [build_arm_fuzzers, config_workflow, dockers_build_amd, dockers_build_arm, libfuzzer_tests]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

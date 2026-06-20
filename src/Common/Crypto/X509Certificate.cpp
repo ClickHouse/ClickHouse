@@ -46,17 +46,12 @@ X509Certificate::X509Certificate(X509Certificate && other) noexcept
 
 X509Certificate::X509Certificate(const std::string & path)
 {
-    BIO_ptr bio(BIO_new(BIO_s_mem()), BIO_free);
+    BIO_ptr bio(BIO_new_file(path.c_str(), "r"), BIO_free);
 
     if (!bio)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new failed: {}", getOpenSSLErrors());
-
-    BIO * file = BIO_new_file(path.c_str(), "r");
-
-    if (!file)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
 
-    certificate = PEM_read_bio_X509(file, nullptr, nullptr, nullptr);
+    certificate = PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr);
     if (!certificate)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed for file {}: {}", path, getOpenSSLErrors());
 }

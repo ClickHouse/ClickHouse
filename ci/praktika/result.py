@@ -19,8 +19,17 @@ from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import ContextManager, MetaClasses, Shell, Utils
 
-if TYPE_CHECKING:
-    from .info import Info
+from .info import Info
+
+
+class _Colors:
+    """ANSI color codes for terminal output"""
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    YELLOW = "\033[93m"
+    CYAN = "\033[96m"
 
 
 @dataclasses.dataclass
@@ -403,6 +412,7 @@ class Result(MetaClasses.Serializable):
         pytest_report_file=None,
         pytest_logfile=None,
         logfile=None,
+        timeout=None,
     ):
         """
         Runs a pytest command, captures results in jsonl format, and creates a Result object.
@@ -414,6 +424,7 @@ class Result(MetaClasses.Serializable):
             env (dict, optional): Environment variables for the pytest command
             pytest_report_file (str, optional): Path to write the pytest jsonl report
             logfile (str, optional): Path to write pytest output logs
+            timeout (int, optional): Hard timeout in seconds to kill the pytest process
 
         Returns:
             Result: A Result object with test cases as sub-Results
@@ -443,7 +454,7 @@ class Result(MetaClasses.Serializable):
                 name = f"pytest_{command}"
 
             # Run pytest
-            Shell.run(full_command, log_file=logfile)
+            Shell.run(full_command, log_file=logfile, timeout=timeout)
             test_result = ResultTranslator.from_pytest_jsonl(
                 pytest_report_file=pytest_report_file
             )
@@ -884,11 +895,38 @@ class Result(MetaClasses.Serializable):
         add_frame = not output
         sub_indent = indent + "  "
 
+        # Check if colors should be used: local run + TTY + terminal supports colors
+        use_colors = (
+            Info().is_local_run
+            and sys.stdout.isatty()
+            and os.environ.get("TERM", "").lower() != "dumb"
+        )
+
+        # Define color variables once to avoid repetition
+        status_color = ""
+        frame_color = ""
+        reset_color = ""
+
+        if use_colors:
+            reset_color = _Colors.RESET
+            if self.is_success():
+                status_color = _Colors.GREEN + _Colors.BOLD
+                frame_color = _Colors.GREEN
+            elif self.is_failure() or self.is_error():
+                status_color = _Colors.RED + _Colors.BOLD
+                frame_color = _Colors.RED
+            else:
+                status_color = _Colors.YELLOW + _Colors.BOLD
+                frame_color = _Colors.YELLOW
+
         if add_frame:
-            output = indent + "+" * 80 + "\n"
+            output = f"{indent}{frame_color}{'+'*80}{reset_color}\n"
 
         if add_frame or not self.is_ok():
-            output += f"{indent}{self.status} [{self.name}]\n"
+            # Capitalize status and only show name if it's not empty
+            status_text = str(self.status).capitalize()
+            name_text = f" [{self.name}]" if self.name else ""
+            output += f"{indent}{status_color}{status_text}{reset_color}{name_text}\n"
             truncated_info = self.get_info_truncated(
                 max_info_lines_cnt=max_info_lines_cnt,
                 truncate_from_top=truncate_from_top,
@@ -909,7 +947,7 @@ class Result(MetaClasses.Serializable):
                 )
 
         if add_frame:
-            output += indent + "+" * 80 + "\n"
+            output += f"{indent}{frame_color}{'+'*80}{reset_color}\n"
 
         return output
 

@@ -322,10 +322,17 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         {
             bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
 
-            /// There are special const columns for example after prewhere sections.
+            /// There are special const columns for example after prewhere sections
+            /// or when skip index expressions produce constants.
+            if (isColumnConst(*column.column))
+            {
+                def.column_numbers_not_to_aggregate.push_back(i);
+                continue;
+            }
+
             if (!aggregate_all_columns)
             {
-                if ((!column.type->isSummable() && !is_agg_func && !simple) || isColumnConst(*column.column))
+                if (!column.type->isSummable() && !is_agg_func && !simple)
                 {
                     def.column_numbers_not_to_aggregate.push_back(i);
                     continue;

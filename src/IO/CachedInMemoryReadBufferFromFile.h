@@ -30,6 +30,9 @@ public:
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
 
+    PageCache::MappedPtr getPageCacheCell() const { return chunk; }
+    PageCachePtr getPageCache() const { return cache; }
+
 private:
     PageCacheKey cache_key; // .offset is offset of `chunk` start
     PageCachePtr cache;
@@ -42,7 +45,6 @@ private:
     size_t inner_read_until_position;
 
     PageCache::MappedPtr chunk;
-    bool last_read_hit_cache = false;
 
     bool nextImpl() override;
 };

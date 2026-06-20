@@ -143,35 +143,37 @@ class KeeperClient(object):
 
     def execute_query(self, query: str, timeout: float = 60.0) -> str:
         output = io.BytesIO()
+        error = b""
 
         self.proc.stdin.write(query.encode() + b"\n")
         self.proc.stdin.flush()
 
-        events = self.poller.poll(timeout)
-        if not events:
-            raise TimeoutError(f"Keeper client returned no output")
+        while True:
+            events = self.poller.poll(timeout)
+            if not events:
+                raise TimeoutError(f"Keeper client returned no output")
 
-        for fd_num, event in events:
-            if event & (select.EPOLLIN | select.EPOLLPRI):
-                file = self._fd_nums[fd_num]
+            for fd_num, event in events:
+                if event & (select.EPOLLIN | select.EPOLLPRI):
+                    file = self._fd_nums[fd_num]
 
-                if file == self.proc.stdout:
-                    while True:
-                        chunk = file.readline()
-                        if chunk.endswith(self.SEPARATOR):
-                            break
+                    if file == self.proc.stdout:
+                        while True:
+                            chunk = file.readline()
+                            if chunk.endswith(self.SEPARATOR):
+                                if error:
+                                    raise KeeperException(
+                                        error.strip().decode()
+                                    )
+                                return output.getvalue().strip().decode()
 
-                        output.write(chunk)
+                            output.write(chunk)
 
-                elif file == self.proc.stderr:
-                    self.proc.stdout.readline()
-                    raise KeeperException(self.proc.stderr.readline().strip().decode())
+                    elif file == self.proc.stderr:
+                        error += self.proc.stderr.readline()
 
-            else:
-                raise ValueError(f"Failed to read from pipe. Flag {event}")
-
-        data = output.getvalue().strip().decode()
-        return data
+                else:
+                    raise ValueError(f"Failed to read from pipe. Flag {event}")
 
     def cd(self, path: str, timeout: float = 60.0):
         self.execute_query(f"cd '{path}'", timeout)

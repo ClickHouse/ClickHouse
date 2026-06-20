@@ -8,7 +8,6 @@
 #include <cstring>
 
 #include <base/getPageSize.h>
-#include <Common/TargetSpecific.h>
 #include <Common/UTF8Helpers.h>
 
 #include <Poco/Unicode.h>

@@ -121,7 +121,21 @@ public:
 
 REGISTER_FUNCTION(H3GetUnidirectionalEdge)
 {
-    factory.registerFunction<FunctionH3GetUnidirectionalEdge>();
+    FunctionDocumentation::Description description = R"(
+Returns a unidirectional edge H3 index for two adjacent H3 cell indices (origin and destination).
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetUnidirectionalEdge(origin, destination)";
+    FunctionDocumentation::Arguments arguments = {
+        {"origin", "The origin H3 cell index.", {"UInt64"}},
+        {"destination", "The destination H3 cell index.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the H3 unidirectional edge index.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT h3GetUnidirectionalEdge(599686042433355775, 599686030622195711)", "1248204388774707199"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionH3GetUnidirectionalEdge>(documentation);
 }
 
 }

@@ -15,9 +15,6 @@ class DedicatedHost:
         praktika_resource_tag: str = (
             ""  # Praktika resource tag (e.g., "mac") - tagged as "praktika"
         )
-        runner_type: str = (
-            ""  # GitHub runner type (e.g., "arm_macos_small") - tagged as "github:runner-type"
-        )
 
         # If set, allocate hosts in all availability zones in the region.
         all_availability_zones: bool = False
@@ -89,8 +86,6 @@ class DedicatedHost:
             # Add resource tag if specified
             if self.praktika_resource_tag:
                 merged_tags["praktika_resource_tag"] = self.praktika_resource_tag
-            if self.runner_type:
-                merged_tags["github:runner-type"] = self.runner_type
             # Add user-defined tags
             merged_tags.update(self.tags or {})
 
@@ -146,8 +141,6 @@ class DedicatedHost:
             # Add resource tag if specified
             if self.praktika_resource_tag:
                 merged_tags["praktika_resource_tag"] = self.praktika_resource_tag
-            if self.runner_type:
-                merged_tags["github:runner-type"] = self.runner_type
             # Add user-defined tags
             merged_tags.update(self.tags or {})
 
@@ -235,8 +228,6 @@ class DedicatedHost:
             # Add resource tag if specified
             if self.praktika_resource_tag:
                 merged_tags["praktika_resource_tag"] = self.praktika_resource_tag
-            if self.runner_type:
-                merged_tags["github:runner-type"] = self.runner_type
             # Add user-defined tags
             merged_tags.update(self.tags or {})
 
@@ -310,6 +301,40 @@ class DedicatedHost:
                             f"for pool '{self.name}' (instance_type={self.instance_type}) - skipping this AZ. "
                             f"This is common for Mac dedicated hosts.{releasing_msg} "
                             f"Try again later or contact AWS support."
+                        )
+                        allocated_by_az[az] = []
+                    elif error_code == "HostLimitExceeded":
+                        # Likely caused by existing hosts that are not tagged with
+                        # the expected praktika tags and therefore not found by fetch().
+                        # List all hosts of this instance type in the AZ to help diagnose.
+                        try:
+                            all_resp = ec2.describe_hosts(
+                                Filters=[
+                                    {"Name": "availability-zone", "Values": [az]},
+                                    {"Name": "instance-type", "Values": [self.instance_type]},
+                                    {"Name": "state", "Values": ["available", "under-assessment"]},
+                                ]
+                            )
+                            all_host_ids = [
+                                h.get("HostId")
+                                for h in all_resp.get("Hosts", [])
+                                if h.get("HostId")
+                            ]
+                            untagged = [h for h in all_host_ids if h not in existing]
+                        except Exception:
+                            all_host_ids = []
+                            untagged = []
+                        hint = ""
+                        if untagged:
+                            hint = (
+                                f" Found {len(untagged)} existing host(s) in {az} not matched by tags"
+                                f" (missing 'praktika_rn={self.name}' or"
+                                f" 'praktika_resource_tag={self.praktika_resource_tag}'): {untagged}."
+                                f" Tag them or increase quantity_per_az to account for them."
+                            )
+                        print(
+                            f"Warning: Host limit exceeded when trying to allocate {missing} host(s)"
+                            f" in {az} for pool '{self.name}'.{hint}"
                         )
                         allocated_by_az[az] = []
                     elif error_code == "UnsupportedHostConfiguration":

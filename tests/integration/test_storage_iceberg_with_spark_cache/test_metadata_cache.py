@@ -69,7 +69,7 @@ def test_metadata_cache(started_cluster_iceberg_with_spark, storage_type):
         )
     )
 
-    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+    instance.query("SYSTEM CLEAR ICEBERG METADATA CACHE")
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(

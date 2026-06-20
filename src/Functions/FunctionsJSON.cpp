@@ -1233,7 +1233,29 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2;
 
         factory.registerFunction<JSONOverloadResolver<NameJSONLength, JSONLengthImpl>>(documentation);
     }
-    factory.registerFunction<JSONOverloadResolver<NameJSONKey, JSONKeyImpl>>();
+    {
+        FunctionDocumentation::Description description = R"(
+Returns the key of a JSON object field by its index (1-based). If the JSON is passed as a string, it is parsed first. The second argument is a JSON path to navigate into nested objects. The function returns the key name at the specified position.
+        )";
+        FunctionDocumentation::Syntax syntax = "JSONKey(json[, indices_or_keys, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse.", {"String"}},
+            {"indices_or_keys", "Optional list of indices or keys specifying a path to a nested element. Each argument can be either a string (access by key) or an integer (access by index starting from 1).", {"String", "Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the key name at the specified position in the JSON object.", {"String"}};
+        FunctionDocumentation::Examples example = {
+            {
+                "Usage example",
+                R"(SELECT JSONKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1);)",
+                R"(a)"
+            }
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+
+        factory.registerFunction<JSONOverloadResolver<NameJSONKey, JSONKeyImpl>>(documentation);
+    }
 
     /// JSONType
     {

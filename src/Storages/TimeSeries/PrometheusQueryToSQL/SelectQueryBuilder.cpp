@@ -74,6 +74,9 @@ ASTPtr SelectQueryBuilder::getSelectQuery()
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_list));
     }
 
+    if (having)
+        select_query->setExpression(ASTSelectQuery::Expression::HAVING, std::move(having));
+
     if (!order_by.empty())
     {
         auto order_by_list = make_intrusive<ASTExpressionList>();

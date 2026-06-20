@@ -168,7 +168,7 @@ jobs:
 
   stateless_tests_amd_coverage_1_8:
     runs-on: [self-hosted, amd-small]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_coverage]
+    needs: [build_amd_coverage, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDEvOCk=') }}
     name: "Stateless tests (amd_coverage, 1/8)"
     outputs:
@@ -206,7 +206,7 @@ jobs:
 
   stateless_tests_amd_coverage_2_8:
     runs-on: [self-hosted, amd-small]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_coverage]
+    needs: [build_amd_coverage, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDIvOCk=') }}
     name: "Stateless tests (amd_coverage, 2/8)"
     outputs:
@@ -244,7 +244,7 @@ jobs:
 
   stateless_tests_amd_coverage_3_8:
     runs-on: [self-hosted, amd-small]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_coverage]
+    needs: [build_amd_coverage, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDMvOCk=') }}
     name: "Stateless tests (amd_coverage, 3/8)"
     outputs:
@@ -282,7 +282,7 @@ jobs:
 
   stateless_tests_amd_coverage_4_8:
     runs-on: [self-hosted, amd-small]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_coverage]
+    needs: [build_amd_coverage, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDQvOCk=') }}
     name: "Stateless tests (amd_coverage, 4/8)"
     outputs:
@@ -320,7 +320,7 @@ jobs:
 
   stateless_tests_amd_coverage_5_8:
     runs-on: [self-hosted, amd-small]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_coverage]
+    needs: [build_amd_coverage, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDUvOCk=') }}
     name: "Stateless tests (amd_coverage, 5/8)"
     outputs:
@@ -358,7 +358,7 @@ jobs:
 
   stateless_tests_amd_coverage_6_8:
     runs-on: [self-hosted, amd-small]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_coverage]
+    needs: [build_amd_coverage, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDYvOCk=') }}
     name: "Stateless tests (amd_coverage, 6/8)"
     outputs:
@@ -396,7 +396,7 @@ jobs:
 
   stateless_tests_amd_coverage_7_8:
     runs-on: [self-hosted, amd-small]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_coverage]
+    needs: [build_amd_coverage, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDcvOCk=') }}
     name: "Stateless tests (amd_coverage, 7/8)"
     outputs:
@@ -434,7 +434,7 @@ jobs:
 
   stateless_tests_amd_coverage_8_8:
     runs-on: [self-hosted, amd-small]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_coverage]
+    needs: [build_amd_coverage, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsIDgvOCk=') }}
     name: "Stateless tests (amd_coverage, 8/8)"
     outputs:
@@ -472,7 +472,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_coverage, stateless_tests_amd_coverage_1_8, stateless_tests_amd_coverage_2_8, stateless_tests_amd_coverage_3_8, stateless_tests_amd_coverage_4_8, stateless_tests_amd_coverage_5_8, stateless_tests_amd_coverage_6_8, stateless_tests_amd_coverage_7_8, stateless_tests_amd_coverage_8_8]
+    needs: [build_amd_coverage, config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_coverage_1_8, stateless_tests_amd_coverage_2_8, stateless_tests_amd_coverage_3_8, stateless_tests_amd_coverage_4_8, stateless_tests_amd_coverage_5_8, stateless_tests_amd_coverage_6_8, stateless_tests_amd_coverage_7_8, stateless_tests_amd_coverage_8_8]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

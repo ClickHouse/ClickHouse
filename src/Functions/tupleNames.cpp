@@ -119,6 +119,7 @@ REGISTER_FUNCTION(TupleNames)
 Converts a tuple into an array of column names. For a tuple in the form `Tuple(a T, b T, ...)`, it returns an array of strings representing the named columns of the tuple. If the tuple elements do not have explicit names, their indices will be used as the column names instead.
 )",
         .examples{{"typical", "SELECT tupleNames(tuple(1 as a, 2 as b))", "['a','b']"}},
+        .introduced_in = {24, 8},
         .category = FunctionDocumentation::Category::Tuple});
 }
 

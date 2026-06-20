@@ -526,6 +526,8 @@ def main():
             f"rm -vf {perf_right_config}/config.d/keeper_max_request_size.xml",
             # backups disk uses absolute path, and this overlaps between servers, that could lead to errors
             f"rm {perf_right_config}/config.d/backups.xml ||:",
+            # SSH config tries to bind a port not overridden per-server and may be unsupported by the reference binary
+            f"rm {perf_right_config}/config.d/ssh.xml ||:",
             f"cp -rv {perf_right_config} {perf_left}/",
             restart_ch,
             # Make copies of the original db for both servers. Use hardlinks instead

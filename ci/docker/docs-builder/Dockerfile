@@ -1,7 +1,8 @@
 # docker build -t clickhouse/docs-builder .
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     git \
     openssh-client \
@@ -10,9 +11,7 @@ RUN apt-get update && \
     rsync \
     curl \
     ca-certificates \
-    build-essential \
-    g++ \
-    make && \
+    build-essential && \
     rm -rf /var/lib/apt/lists/*
 
 ARG CACHE_INVALIDATOR=0
@@ -21,7 +20,7 @@ ARG CACHE_INVALIDATOR=0
 RUN groupadd -r clickhouse && \
     useradd -r -g clickhouse -m -d /home/clickhouse -s /sbin/nologin -c "ClickHouse user" clickhouse
 
-RUN yarn config set registry https://registry.npmjs.org
+RUN npm install -g npm@11
 ENV HOME=/opt/clickhouse-docs
 
 # Create directory with specific ownership

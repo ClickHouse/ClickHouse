@@ -415,11 +415,11 @@ BlockIO DirectDictionary<dictionary_key_type>::loadKeys(const PaddedPODArray<Key
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        std::vector<UInt64> ids(requested_keys.begin(), requested_keys.end());
+        VectorWithMemoryTracking<UInt64> ids(requested_keys.begin(), requested_keys.end());
         return source_ptr->loadIds(ids);
     }
 
-    std::vector<size_t> requested_rows(requested_keys.size());
+    VectorWithMemoryTracking<size_t> requested_rows(requested_keys.size());
     iota(requested_rows.data(), requested_keys.size(), size_t(0));
 
     return source_ptr->loadKeys(key_columns, requested_rows);

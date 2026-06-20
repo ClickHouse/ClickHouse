@@ -17,7 +17,7 @@ FROM system.one
 SELECT CAST(tuple(3, 4, 5).1, \'Int32\')
 FROM system.one
 4
-SELECT CAST(CAST(tuple(3, 4, 5), \'Tuple(UInt64, UInt64, UInt64)\').1, \'Int32\')
+SELECT CAST((CAST(tuple(3, 4, 5), \'Tuple(UInt64, UInt64, UInt64)\')).1, \'Int32\')
 FROM system.one
 3
 WITH tuple(3, 4, 5) AS x

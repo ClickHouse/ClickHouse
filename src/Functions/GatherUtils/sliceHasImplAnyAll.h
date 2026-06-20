@@ -62,7 +62,7 @@ inline ALWAYS_INLINE bool hasAllIntegralLoopRemainder(
 
 #if USE_MULTITARGET_CODE
 
-DECLARE_AVX2_SPECIFIC_CODE (
+DECLARE_X86_64_V3_SPECIFIC_CODE (
 
 // AVX2 Int64, UInt64 specialization
 template<typename IntType>
@@ -417,12 +417,12 @@ bool sliceHasImplAnyAllImplInt16(
 
 )
 
-DECLARE_SSE42_SPECIFIC_CODE (
+DECLARE_X86_64_V2_SPECIFIC_CODE (
 
 // SSE4.2 Int64, UInt64 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int64> || std::is_same_v<IntType, UInt64>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt64(
+inline bool sliceHasImplAnyAllImplInt64(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
@@ -499,7 +499,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt64(
 // SSE4.2 Int32, UInt32 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt32(
+inline NO_INLINE bool sliceHasImplAnyAllImplInt32(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
@@ -585,7 +585,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt32(
 // SSE4.2 Int16, UInt16 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int16> || std::is_same_v<IntType, UInt16>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt16(
+bool sliceHasImplAnyAllImplInt16(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
@@ -688,7 +688,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt16(
 // SSE2 Int8, UInt8 specialization
 template<typename IntType>
 requires (std::is_same_v<IntType, Int8> || std::is_same_v<IntType, UInt8>)
-inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt8(
+bool sliceHasImplAnyAllImplInt8(
     const NumericArraySlice<IntType> & first,
     const NumericArraySlice<IntType> & second,
     const UInt8 * first_null_map,
@@ -890,39 +890,39 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const
 #if USE_MULTITARGET_CODE
     if constexpr (search_type == ArraySearchType::All && std::is_same_v<FirstSliceType, SecondSliceType>)
     {
-        if (isArchSupported(TargetArch::AVX2))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
             if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int16>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt16>>)
             {
-                return GatherUtils::TargetSpecific::AVX2::sliceHasImplAnyAllImplInt16(first, second, first_null_map, second_null_map);
+                return GatherUtils::TargetSpecific::x86_64_v3::sliceHasImplAnyAllImplInt16(first, second, first_null_map, second_null_map);
             }
             else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int32>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt32>>)
             {
-                return GatherUtils::TargetSpecific::AVX2::sliceHasImplAnyAllImplInt32(first, second, first_null_map, second_null_map);
+                return GatherUtils::TargetSpecific::x86_64_v3::sliceHasImplAnyAllImplInt32(first, second, first_null_map, second_null_map);
             }
             else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int64>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt64>>)
             {
-                return GatherUtils::TargetSpecific::AVX2::sliceHasImplAnyAllImplInt64(first, second, first_null_map, second_null_map);
+                return GatherUtils::TargetSpecific::x86_64_v3::sliceHasImplAnyAllImplInt64(first, second, first_null_map, second_null_map);
             }
         }
 
-        if (isArchSupported(TargetArch::SSE42))
+        if (isArchSupported(TargetArch::x86_64_v2))
         {
             if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int8>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt8>>)
             {
-                return GatherUtils::TargetSpecific::SSE42::sliceHasImplAnyAllImplInt8(first, second, first_null_map, second_null_map);
+                return GatherUtils::TargetSpecific::x86_64_v2::sliceHasImplAnyAllImplInt8(first, second, first_null_map, second_null_map);
             }
             else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int16>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt16>>)
             {
-                return GatherUtils::TargetSpecific::SSE42::sliceHasImplAnyAllImplInt16(first, second, first_null_map, second_null_map);
+                return GatherUtils::TargetSpecific::x86_64_v2::sliceHasImplAnyAllImplInt16(first, second, first_null_map, second_null_map);
             }
             else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int32>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt32>>)
             {
-                return GatherUtils::TargetSpecific::SSE42::sliceHasImplAnyAllImplInt32(first, second, first_null_map, second_null_map);
+                return GatherUtils::TargetSpecific::x86_64_v2::sliceHasImplAnyAllImplInt32(first, second, first_null_map, second_null_map);
             }
             else if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int64>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt64>>)
             {
-                return GatherUtils::TargetSpecific::SSE42::sliceHasImplAnyAllImplInt64(first, second, first_null_map, second_null_map);
+                return GatherUtils::TargetSpecific::x86_64_v2::sliceHasImplAnyAllImplInt64(first, second, first_null_map, second_null_map);
             }
         }
     }

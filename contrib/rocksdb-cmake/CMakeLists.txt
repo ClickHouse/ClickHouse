@@ -1,6 +1,6 @@
 option (ENABLE_ROCKSDB "Enable RocksDB" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_ROCKSDB OR NO_SSE3_OR_HIGHER) # assumes SSE4.2 and PCLMUL
+if (NOT ENABLE_ROCKSDB OR (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 2)) # assumes SSE4.2 and PCLMUL
   message (STATUS "Not using RocksDB")
   return()
 endif()

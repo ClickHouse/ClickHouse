@@ -97,7 +97,7 @@ public:
         const ColumnsWithTypeAndName & input_columns,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
-        size_t read_bytes = 0);
+        size_t read_bytes);
 
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 

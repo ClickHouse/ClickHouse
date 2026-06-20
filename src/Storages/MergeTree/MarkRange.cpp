@@ -37,8 +37,8 @@ bool MarkRange::operator<(const MarkRange & rhs) const
     /// (ranges are intersect)
     if (*this != rhs)
     {
-        const bool is_intersection = (begin <= rhs.begin && rhs.begin < end) ||
-            (rhs.begin <= begin && begin < rhs.end);
+        const bool is_intersection = (begin <= rhs.begin && rhs.begin < end)
+            || (rhs.begin <= begin && begin < rhs.end);
 
         if (is_intersection)
             throw Exception(

@@ -11,7 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 
 #include <absl/container/flat_hash_map.h>
@@ -32,7 +32,7 @@ constexpr size_t arg_input = 0;
 constexpr size_t arg_needles = 1;
 constexpr size_t arg_tokenizer = 2;
 
-TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & arguments, const ITokenExtractor & tokenizer, std::string_view function_name)
+TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name)
 {
     if (arguments.size() < 2)
         return {};
@@ -141,19 +141,19 @@ template <class HasTokensTraits>
 FunctionBasePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const
 {
     const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column
-        ? SplitByNonAlphaTokenExtractor::getExternalName()
+        ? SplitByNonAlphaTokenizer::getExternalName()
         : arguments[arg_tokenizer].column->getDataAt(0);
 
-    auto token_extractor = TokenizerFactory::instance().get(tokenizer_name);
-    auto search_tokens = initializeSearchTokens(arguments, *token_extractor, getName());
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
+    auto search_tokens = initializeSearchTokens(arguments, *tokenizer, getName());
     DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
-    return std::make_shared<FunctionBaseHasAnyAllTokens<HasTokensTraits>>(std::move(token_extractor), std::move(search_tokens), std::move(argument_types), return_type);
+    return std::make_shared<FunctionBaseHasAnyAllTokens<HasTokensTraits>>(std::move(tokenizer), std::move(search_tokens), std::move(argument_types), return_type);
 }
 
 template <class HasTokensTraits>
 ExecutableFunctionPtr FunctionBaseHasAnyAllTokens<HasTokensTraits>::prepare(const ColumnsWithTypeAndName &) const
 {
-    return std::make_unique<ExecutableFunctionHasAnyAllTokens<HasTokensTraits>>(token_extractor, search_tokens);
+    return std::make_unique<ExecutableFunctionHasAnyAllTokens<HasTokensTraits>>(tokenizer, search_tokens);
 }
 
 namespace
@@ -241,7 +241,7 @@ void searchOnArray(
     const StringColumnType auto & input_string,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     MatcherType auto matcher)
 {
     ArrayOffset current_offset = 0;
@@ -255,7 +255,7 @@ void searchOnArray(
         {
             std::string_view input = input_string.getDataAt(current_offset + j);
 
-            forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
+            forEachTokenPadded(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
 
             if (col_result[i])
                 break;
@@ -270,7 +270,7 @@ void searchOnString(
     const StringColumnType auto & col_input,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     MatcherType auto matcher)
 {
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -279,7 +279,7 @@ void searchOnString(
         col_result[i] = false;
         matcher.reset();
 
-        forEachTokenPadded(*token_extractor, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
+        forEachTokenPadded(*tokenizer, input.data(), input.size(), matcher([&] { col_result[i] = true; }));
     }
 }
 
@@ -288,7 +288,7 @@ void executeString(
     const StringColumnType auto & col_input,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
 {
     if (tokens.empty())
@@ -301,9 +301,9 @@ void executeString(
     col_result.resize(input_rows_count);
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
-        searchOnString(col_input, col_result, input_rows_count, token_extractor, HasAnyTokensMatcher(tokens));
+        searchOnString(col_input, col_result, input_rows_count, tokenizer, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
-        searchOnString(col_input, col_result, input_rows_count, token_extractor, HasAllTokensMatcher(tokens));
+        searchOnString(col_input, col_result, input_rows_count, tokenizer, HasAllTokensMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
@@ -313,7 +313,7 @@ void executeArray(
     const ColumnArray * array,
     const StringColumnType auto & input_string,
     PaddedPODArray<UInt8> & col_result,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
 {
     const auto & offsets = array->getOffsets();
@@ -329,9 +329,9 @@ void executeArray(
     col_result.resize(input_size);
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
-        searchOnArray(offsets, input_string, col_result, input_size, token_extractor, HasAnyTokensMatcher(tokens));
+        searchOnArray(offsets, input_string, col_result, input_size, tokenizer, HasAnyTokensMatcher(tokens));
     else if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::All)
-        searchOnArray(offsets, input_string, col_result, input_size, token_extractor, HasAllTokensMatcher(tokens));
+        searchOnArray(offsets, input_string, col_result, input_size, tokenizer, HasAllTokensMatcher(tokens));
     else
         static_assert(false, "Unknown search mode value detected");
 }
@@ -341,19 +341,19 @@ void executeStringOrArray(
     ColumnPtr col_input,
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
-    const ITokenExtractor * token_extractor,
+    const ITokenizer * tokenizer,
     const TokensWithPosition & tokens)
 {
     if (const auto * col_input_string = checkAndGetColumn<ColumnString>(col_input.get()))
-        executeString<HasTokensTraits>(*col_input_string, col_result, input_rows_count, token_extractor, tokens);
+        executeString<HasTokensTraits>(*col_input_string, col_result, input_rows_count, tokenizer, tokens);
     else if (const auto * col_input_fixedstring = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-        executeString<HasTokensTraits>(*col_input_fixedstring, col_result, input_rows_count, token_extractor, tokens);
+        executeString<HasTokensTraits>(*col_input_fixedstring, col_result, input_rows_count, tokenizer, tokens);
     else if (const auto * col_input_array = checkAndGetColumn<ColumnArray>(col_input.get()))
     {
         if (const auto * input_string = checkAndGetColumn<ColumnString>(&col_input_array->getData()))
-            executeArray<HasTokensTraits>(col_input_array, *input_string, col_result, token_extractor, tokens);
+            executeArray<HasTokensTraits>(col_input_array, *input_string, col_result, tokenizer, tokens);
         else if (const auto * input_fixedstring = checkAndGetColumn<ColumnFixedString>(&col_input_array->getData()))
-            executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, col_result, token_extractor, tokens);
+            executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, col_result, tokenizer, tokens);
     }
 }
 
@@ -376,17 +376,17 @@ ColumnPtr ExecutableFunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
 
     ColumnPtr col_input = arguments[arg_input].column;
 
-    if (token_extractor->getType() == ITokenExtractor::Type::SparseGrams)
+    if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
     {
         /// The sparse gram token extractor stores an internal state which modified during the execution.
         /// This leads to an error while executing this function multi-threaded because that state is not protected.
         /// To avoid this case, a clone of the sparse gram token extractor will be used.
-        auto sparse_gram_extractor = token_extractor->clone();
-        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_gram_extractor.get(), search_tokens);
+        auto sparse_grams_tokenizer = tokenizer->clone();
+        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_grams_tokenizer.get(), search_tokens);
     }
     else
     {
-        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, token_extractor.get(), search_tokens);
+        executeStringOrArray<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, tokenizer.get(), search_tokens);
     }
 
     return col_result;

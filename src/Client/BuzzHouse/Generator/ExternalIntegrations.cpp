@@ -877,6 +877,8 @@ bool RedisIntegration::performTableIntegration(RandomGenerator &, SQLTable &, co
 #if defined USE_MONGODB && USE_MONGODB
 std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
 {
+    static mongocxx::instance instance{}; /// initialized once, before any client usage
+
     String connection_str = "mongodb://";
 
     if (!scc.user.empty())
@@ -945,6 +947,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
 {
     IntType * itp;
     DateType * dtp;
+    TimeType * ttp;
     DateTimeType * dttp;
     DecimalType * detp;
     StringType * stp;
@@ -1043,6 +1046,19 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
         else
         {
             output << val;
+        }
+    }
+    else if ((ttp = dynamic_cast<TimeType *>(tp)))
+    {
+        String buf = ttp->extended ? rg.nextTime64("", false, rg.nextBool()) : rg.nextTime("", false);
+
+        if constexpr (is_document<T>)
+        {
+            output << cname << buf;
+        }
+        else
+        {
+            output << buf;
         }
     }
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
@@ -1250,7 +1266,7 @@ void MongoDBIntegration::documentAppendArray(
             dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
             || dynamic_cast<DecimalType *>(tp) || dynamic_cast<StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
             || dynamic_cast<EnumType *>(tp) || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp)
-            || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp))
+            || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp) || dynamic_cast<TimeType *>(tp))
         {
             documentAppendBottomType<decltype(array)>(rg, "", array, at->subtype);
         }
@@ -1352,7 +1368,8 @@ void MongoDBIntegration::documentAppendAnyValue(
     }
     else
     {
-        UNREACHABLE();
+        /// Workaround for unknown types, insert null
+        document << cname << bsoncxx::types::b_null{};
     }
 }
 
@@ -2024,7 +2041,7 @@ void ExternalIntegrations::createPeerTable(
     RandomGenerator & rg, const PeerTableDatabase pt, SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries)
 {
     requires_external_call_check++;
-    next_calls_succeeded.emplace_back(getPeerPtr(pt)->performCreatePeerTable(rg, true, t, ct, entries));
+    next_calls_succeeded.emplace_back(getPeerPtr(pt)->performCreatePeerTable(rg, pt == PeerTableDatabase::ClickHouse, t, ct, entries));
 }
 
 bool ExternalIntegrations::truncatePeerTableOnRemote(const SQLTable & t)

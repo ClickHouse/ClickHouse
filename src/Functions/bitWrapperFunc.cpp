@@ -66,6 +66,6 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitWrapperFunc>
 
 REGISTER_FUNCTION(BitWrapperFunc)
 {
-    factory.registerFunction<FunctionBitWrapperFunc>();
+    factory.registerFunction<FunctionBitWrapperFunc>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 }

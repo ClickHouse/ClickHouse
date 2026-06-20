@@ -64,4 +64,4 @@ RENAME DICTIONARY [db0.]dict_A TO [db1.]dict_B [,...] [ON CLUSTER cluster]
 
 **See Also**
 
-- [Dictionaries](../../sql-reference/dictionaries/index.md)
+- [Dictionaries](./create/dictionary/index.md)

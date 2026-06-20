@@ -156,7 +156,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             if (!res)
             {
                 /// The file has ended.
-                promise.set_value({0, 0, nullptr});
+                promise.set_value({ .buf = nullptr, .size = 0, .offset = 0, .file_offset_of_buffer_end = request.offset });
                 return future;
             }
 
@@ -198,7 +198,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
             ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
-            promise.set_value({bytes_read, request.ignore, nullptr});
+            promise.set_value({ .buf = request.buf, .size = bytes_read, .offset = request.ignore, .file_offset_of_buffer_end = request.offset + bytes_read });
             return future;
         }
     }
@@ -247,7 +247,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
-        return Result{ .size = bytes_read, .offset = request.ignore };
+        return Result{ .buf = request.buf, .size = bytes_read, .offset = request.ignore, .file_offset_of_buffer_end = request.offset + bytes_read };
     }, request.priority);
 }
 

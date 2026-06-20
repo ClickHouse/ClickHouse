@@ -597,8 +597,8 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && q
     std::optional<ResultProgress> result_progress;
     if (pulling_pipeline)
     {
-        UInt64 result_rows;
-        UInt64 result_bytes;
+        UInt64 result_rows = 0;
+        UInt64 result_bytes = 0;
         query_pipeline.tryGetResultRowsAndBytes(result_rows, result_bytes);
         result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes, 0);
     }

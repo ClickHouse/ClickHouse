@@ -38,7 +38,7 @@ node4 = cluster.add_instance(
     with_zookeeper=True,
     ipv6_address="2001:3984:3989::1:1114",
 )
-# Check SYSTEM DROP DNS CACHE on node5 and background cache update on node6
+# Check SYSTEM CLEAR DNS CACHE on node5 and background cache update on node6
 node5 = cluster.add_instance(
     "node5",
     main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
@@ -66,6 +66,14 @@ node8 = cluster.add_instance(
     ],
     stay_alive=True,
     ipv6_address="2001:3984:3989::1:1118",
+)
+node9 = cluster.add_instance(
+    "node9",
+    main_configs=[
+        "configs/disable_cache_and_ipv6.xml",
+        "configs/listen_host.xml"
+    ],
+    ipv6_address="2001:3984:3989::1:1119",
 )
 
 
@@ -129,8 +137,8 @@ def test_ip_change_drop_dns_cache(cluster_ready):
     # We use ipv6 for hosts, but resolved DNS entries may contain an unexpected ipv4 address.
     node2.set_hosts([(node1_ipv6, "node1")])
     # drop DNS cache
-    node2.query("SYSTEM DROP DNS CACHE")
-    node2.query("SYSTEM DROP CONNECTIONS CACHE")
+    node2.query("SYSTEM CLEAR DNS CACHE")
+    node2.query("SYSTEM CLEAR CONNECTIONS CACHE")
 
     # First we check, that normal replication works
     node1.query(
@@ -156,8 +164,8 @@ def test_ip_change_drop_dns_cache(cluster_ready):
         assert_eq_with_retry(node2, "SELECT count(*) from test_table_drop", "6")
 
     # drop DNS cache
-    node2.query("SYSTEM DROP DNS CACHE")
-    node2.query("SYSTEM DROP CONNECTIONS CACHE")
+    node2.query("SYSTEM CLEAR DNS CACHE")
+    node2.query("SYSTEM CLEAR CONNECTIONS CACHE")
     # Data is downloaded
     assert_eq_with_retry(node2, "SELECT count(*) from test_table_drop", "6")
 
@@ -251,7 +259,7 @@ def test_dns_cache_update(cluster_ready):
     # Reset the node4 state
     node4.set_hosts([])
     node4.query("DROP TABLE distributed_lost_host")
-    # Probably a bug: `SYSTEM DROP DNS CACHE` doesn't work with distributed engine
+    # Probably a bug: `SYSTEM CLEAR DNS CACHE` doesn't work with distributed engine
     cluster.restart_service("node4")
 
 
@@ -338,12 +346,12 @@ def test_user_access_ip_change(cluster_ready, node_name):
     if node_name == "node5":
         # client is not allowed to connect, so execute it directly in container to send query from localhost
         node.exec_in_container(
-            ["bash", "-c", 'clickhouse client -q "SYSTEM DROP DNS CACHE"'],
+            ["bash", "-c", 'clickhouse client -q "SYSTEM CLEAR DNS CACHE"'],
             privileged=True,
             user="root",
         )
         node.exec_in_container(
-            ["bash", "-c", 'clickhouse client -q "SYSTEM DROP CONNECTIONS CACHE"'],
+            ["bash", "-c", 'clickhouse client -q "SYSTEM CLEAR CONNECTIONS CACHE"'],
             privileged=True,
             user="root",
         )
@@ -433,8 +441,8 @@ def test_dns_resolver_filter(cluster_ready, allow_ipv4, allow_ipv6):
     )
 
     node.query("SYSTEM RELOAD CONFIG")
-    node.query("SYSTEM DROP DNS CACHE")
-    node.query("SYSTEM DROP CONNECTIONS CACHE")
+    node.query("SYSTEM CLEAR DNS CACHE")
+    node.query("SYSTEM CLEAR CONNECTIONS CACHE")
 
     if not allow_ipv4 and not allow_ipv6:
         with pytest.raises(QueryRuntimeException):
@@ -476,3 +484,13 @@ def test_setting_disable_internal_dns_cache(cluster_ready, disable_internal_dns_
         assert node.query("SELECT count(*) from system.dns_cache;") == "0\n"
     else:
         assert node.query("SELECT count(*) from system.dns_cache;") != "0\n"
+
+
+def test_dns_resolver_filter_cache_disabled(cluster_ready):
+    node = node9
+    node.set_hosts([(node.ipv6_address, "test_host")])
+    # query should fail because we disable IPv6 address resolution but provide no IPv4 address
+    with pytest.raises(QueryRuntimeException) as e:
+        node.query("SELECT * FROM remote('test_host', 'system', 'one')")
+    assert "DNS_ERROR" in str(e.value)
+    assert "After filtering there are no resolved address for host(test_host)" in str(e.value)

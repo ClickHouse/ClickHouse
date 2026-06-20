@@ -204,7 +204,7 @@ def test_writes_cluster_table_function(started_cluster_iceberg_with_spark, forma
     assert len(select_cluster) == 600
 
     create_iceberg_table(storage_type, instance, TABLE_NAME_2, started_cluster_iceberg_with_spark, "(a Int32, b String)", format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME_2} SELECT * FROM {table_function_expr_cluster};", settings={"allow_experimental_insert_into_iceberg": 1})
+    instance.query(f"INSERT INTO {TABLE_NAME_2} SELECT * FROM {table_function_expr_cluster};", settings={"allow_insert_into_iceberg": 1})
 
     assert instance.query(f"SELECT * FROM {table_function_expr_cluster}") == instance.query(f"SELECT * FROM {TABLE_NAME_2}")
 
@@ -319,7 +319,7 @@ def test_empty_parquet_file(started_cluster_iceberg_with_spark, storage_type):
     TABLE_NAME = "test_empty_parquet_file_" + get_uuid_str()
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x String)", format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1);", settings={"allow_experimental_insert_into_iceberg":1})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1);", settings={"allow_insert_into_iceberg":1})
 
     table_function_expr_cluster = get_creation_expression(
         storage_type,

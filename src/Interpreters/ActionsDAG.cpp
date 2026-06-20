@@ -3798,12 +3798,18 @@ static MutableColumnPtr deserializeConstant(
         readBinary(hash, in);
 
         auto column_set = ColumnSet::create(1, nullptr);
-        registry.sets[hash].push_back(column_set.get());
 
         if (!is_constant)
+        {
+            registry.sets[hash].push_back(column_set.get());
             return column_set;
+        }
 
-        return ColumnConst::create(std::move(column_set), 0);
+        auto column_const = ColumnConst::create(std::move(column_set), 0);
+        /// After move, get the pointer from ColumnConst
+        const auto * set_column = typeid_cast<const ColumnSet *>(column_const->getDataColumnPtr().get());
+        registry.sets[hash].push_back(const_cast<ColumnSet *>(set_column));
+        return column_const;
     }
 
     if (WhichDataType(type).isFunction())

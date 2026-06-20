@@ -52,7 +52,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         ]
     )
 
-    q("SYSTEM DROP FILESYSTEM CACHE")
+    q("SYSTEM CLEAR FILESYSTEM CACHE")
     q("DROP TABLE IF EXISTS t1 SYNC")
 
     assert get_cache_size() == 0, dump_debug_info()

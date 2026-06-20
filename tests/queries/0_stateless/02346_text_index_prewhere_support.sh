@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --enable_full_text_index 1 --use_skip_indexes_on_data_read 1"
+MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --use_skip_indexes_on_data_read 1"
 
 $MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS tab;

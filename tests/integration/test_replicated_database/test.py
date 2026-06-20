@@ -101,7 +101,6 @@ def zk_rmr_with_retries(zk, path):
     assert False
 
 
-
 def generate_random_string(length=6):
     return "".join(random.choice(string.ascii_lowercase) for i in range(length))
 
@@ -1770,9 +1769,13 @@ def test_system_database_replicas_with_ro(started_cluster):
     main_node.query(f"DETACH DATABASE {database_1}")
     main_node.query(f"ATTACH DATABASE {database_1}", ignore_error=True)
 
-    expected = TSV([
-        [database_1, 1, 1],
-    ])
+    # When attaching database, if the db keeper path is remove, it does not recreate DB nodes on Keeper
+    # So max_log_ptr is zero because it is never updated.
+    expected = TSV(
+        [
+            [database_1, 1, 0],
+        ]
+    )
     assert (
         main_node.query(
             f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%'") == expected
@@ -1783,10 +1786,12 @@ def test_system_database_replicas_with_ro(started_cluster):
         f"CREATE DATABASE {database_2} ENGINE = Replicated('/test/{database_2}', 'shard1', 'replica1');"
     )
 
-    expected = TSV([
-        [database_1, 1, 1],
-        [database_2, 0, 1],
-    ])
+    expected = TSV(
+        [
+            [database_1, 1, 0],
+            [database_2, 0, 1],
+        ]
+    )
     assert (
         main_node.query(
             f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database"
@@ -1859,14 +1864,18 @@ def test_block_system_database_replicas(started_cluster):
             f"ATTACH DATABASE {prefix}_db_{i}"
         )
 
-    expected = TSV([
-        [f"{prefix}_db_1", 1, 1],
-        [f"{prefix}_db_2", 1, 1],
-        [f"{prefix}_db_3", 1, 1],
-        [f"{prefix}_db_4", 0, 1],
-        [f"{prefix}_db_5", 0, 1],
-        [f"{prefix}_db_6", 0, 1],
-    ])
+    # When attaching database, if the db keeper path is remove, it does not recreate DB nodes on Keeper
+    # So max_log_ptr is zero because it is never updated.
+    expected = TSV(
+        [
+            [f"{prefix}_db_1", 1, 0],
+            [f"{prefix}_db_2", 1, 0],
+            [f"{prefix}_db_3", 1, 0],
+            [f"{prefix}_db_4", 0, 1],
+            [f"{prefix}_db_5", 0, 1],
+            [f"{prefix}_db_6", 0, 1],
+        ]
+    )
 
     assert (
         main_node.query(

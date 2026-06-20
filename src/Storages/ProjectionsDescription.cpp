@@ -270,20 +270,6 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         result.loadSettings(projection_definition->with_settings->changes);
 
     fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, query_context);
-
-    /// When positional arguments were enabled and resolved (e.g., GROUP BY 1, 2 -> GROUP BY b, a),
-    /// update definition_ast to store the resolved column names instead of positional references.
-    /// This ensures the table can be re-attached on server restart even with the default setting
-    /// (enable_positional_arguments_for_projections = false).
-    if (query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections])
-    {
-        if (auto resolved_group_by = result.query_ast->as<ASTSelectQuery &>().groupBy())
-        {
-            auto & proj_query = result.definition_ast->as<ASTProjectionDeclaration &>().query->as<ASTProjectionSelectQuery &>();
-            proj_query.setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, resolved_group_by->clone());
-        }
-    }
-
     return result;
 }
 

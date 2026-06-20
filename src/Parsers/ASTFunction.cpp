@@ -529,10 +529,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     }
                 }
 
-                // It can be printed in a form of 'x.1' only if right hand side
-                // is an unsigned integer lineral. We also allow nonnegative
-                // signed integer literals, because the fuzzer sometimes inserts
-                // them, and we want to have consistent formatting.
+                /// It can be printed in a form of 'x.1' only if right hand side
+                /// is an unsigned integer lineral. We also allow nonnegative
+                /// signed integer literals, because the fuzzer sometimes inserts
+                /// them, and we want to have consistent formatting.
                 if (tuple_arguments_valid && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
@@ -541,10 +541,31 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (frame.need_parens)
                             ostr << '(';
 
+                        /// Little hack: Expression like this: (tab.*).1 (tab contains single tuple column)
+                        /// causes inconsistent formatting because it is formatted as tab.*.1 which is invalid.
+                        /// So when child 0 has more than one element, we surround it with parens.
+                        /// Exception: array and tuple functions format with their own brackets ([...] and (...)),
+                        /// which are already unambiguous with .N syntax. Adding extra parens around them
+                        /// would cause inconsistent formatting when re-parsed, because the parser's fast path
+                        /// creates ASTLiteral (size=1, no parens) while ASTFunction has size>1.
+                        const auto * left_func = arguments->children[0]->as<ASTFunction>();
+                        bool left_needs_parens = arguments->children[0]->size() > 1
+                            && !(left_func && (left_func->name == "array" || left_func->name == "tuple"));
+
+                        if (left_needs_parens)
+                        {
+                            nested_need_parens.need_parens = false; /// Don't want duplicate parens
+                            ostr << '(';
+                        }
+
                         /// Don't allow moving operators like '-' before parents,
                         /// otherwise (-(42)).1 will be formatted as -(42).1 that will be parsed as -((42).1)
                         nested_need_parens.allow_moving_operators_before_parens = false;
                         arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+
+                        if (left_needs_parens)
+                            ostr << ')';
+
                         ostr << ".";
                         arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                         written = true;

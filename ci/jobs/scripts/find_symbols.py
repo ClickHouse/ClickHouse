@@ -22,7 +22,7 @@ class DiffToSymbols:
         ).is_file(), f"clickhouse binary not found at {self.clickhouse_path}"
 
     @staticmethod
-    def fetch(url: str, retries: int = 3, delay: float = 5.0) -> bytes:
+    def fetch(url: str, retries: int = 5, delay: float = 5.0) -> bytes:
         for attempt in range(retries):
             try:
                 with urllib.request.urlopen(url) as resp:

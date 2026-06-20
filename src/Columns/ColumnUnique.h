@@ -52,6 +52,7 @@ public:
     std::string getName() const override { return "Unique(" + getNestedColumn()->getName() + ")"; }
 
     MutableColumnPtr cloneEmpty() const override;
+    MutableColumnPtr cloneEmptyNullable() const override;
 
     const ColumnPtr & getNestedColumn() const override;
     const ColumnPtr & getNestedNotNullableColumn() const override { return column_holder; }
@@ -238,6 +239,15 @@ template <typename ColumnType>
 MutableColumnPtr ColumnUnique<ColumnType>::cloneEmpty() const
 {
     return ColumnUnique<ColumnType>::create(column_holder->cloneResized(numSpecialValues()), is_nullable);
+}
+
+template <typename ColumnType>
+MutableColumnPtr ColumnUnique<ColumnType>::cloneEmptyNullable() const
+{
+    auto holder = column_holder->cloneEmpty();
+    holder->insertDefault();
+    holder->insertDefault();
+    return ColumnUnique<ColumnType>::create(std::move(holder), true);
 }
 
 template <typename ColumnType>

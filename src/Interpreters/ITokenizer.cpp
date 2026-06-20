@@ -1,0 +1,485 @@
+#include <Interpreters/ITokenizer.h>
+
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
+
+#if defined(__SSE2__)
+#  include <emmintrin.h>
+#  if defined(__SSE4_2__)
+#    include <nmmintrin.h>
+#  endif
+#endif
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    token_start = pos;
+    token_length = 0;
+    size_t code_points = 0;
+    for (; code_points < n && token_start + token_length < length; ++code_points)
+    {
+        size_t sz = UTF8::seqLength(static_cast<UInt8>(data[token_start + token_length]));
+        token_length += sz;
+    }
+    /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+    token_length = std::min(token_length, length - token_start);
+    pos += UTF8::seqLength(static_cast<UInt8>(data[pos]));
+    return code_points == n;
+}
+
+bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const
+{
+    token.clear();
+
+    size_t code_points = 0;
+    bool escaped = false;
+    for (size_t i = pos; i < length;)
+    {
+        if (escaped && (data[i] == '%' || data[i] == '_' || data[i] == '\\'))
+        {
+            token += data[i];
+            ++code_points;
+            escaped = false;
+            ++i;
+        }
+        else if (!escaped && (data[i] == '%' || data[i] == '_'))
+        {
+            /// This token is too small, go to the next.
+            token.clear();
+            code_points = 0;
+            escaped = false;
+            ++i;
+            pos = i;
+        }
+        else if (!escaped && data[i] == '\\')
+        {
+            escaped = true;
+            ++i;
+        }
+        else
+        {
+            const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
+            /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+            for (size_t j = 0; j < sz && i + j < length; ++j)
+                token += data[i + j];
+            i += sz;
+            ++code_points;
+            escaped = false;
+        }
+
+        if (code_points == n)
+        {
+            pos += UTF8::seqLength(static_cast<UInt8>(data[pos]));
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool SplitByNonAlphaTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    token_start = pos;
+    token_length = 0;
+
+    while (pos < length)
+    {
+        if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
+        {
+            /// Finish current token if any
+            if (token_length > 0)
+                return true;
+            token_start = ++pos;
+        }
+        else
+        {
+            /// Note that UTF-8 sequence is completely consisted of non-ASCII bytes.
+            ++pos;
+            ++token_length;
+        }
+    }
+
+    return token_length > 0;
+}
+
+bool SplitByNonAlphaTokenizer::nextInStringPadded(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    token_start = pos;
+    token_length = 0;
+
+    while (pos < length)
+    {
+#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
+        // NOTE: we assume that `data` string is padded from the right with 15 bytes.
+        const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + pos));
+        const size_t haystack_length = 16;
+
+#if defined(__SSE4_2__)
+        // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
+        const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
+                '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
+        // Every bit represents if `haystack` character is in the ranges (1) or not (0)
+        const unsigned result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
+#else
+        // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
+        const auto number_begin =      _mm_set1_epi8('0' - 1);
+        const auto number_end =        _mm_set1_epi8('9' + 1);
+        const auto alpha_lower_begin = _mm_set1_epi8('a' - 1);
+        const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
+        const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
+        const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
+        const auto zero =              _mm_set1_epi8(0);
+
+        // every bit represents if `haystack` character `c` satisfies condition:
+        // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
+        // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
+        const unsigned result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
+                _mm_cmplt_epi8(haystack, zero),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
+#endif
+        if (result_bitmask == 0)
+        {
+            if (token_length != 0)
+                // end of token started on previous haystack
+                return true;
+
+            pos += haystack_length;
+            continue;
+        }
+
+        const auto token_start_pos_in_current_haystack = std::countr_zero(result_bitmask);
+        if (token_length == 0)
+            // new token
+            token_start = pos + token_start_pos_in_current_haystack;
+        else if (token_start_pos_in_current_haystack != 0)
+            // end of token starting in one of previous haystacks
+            return true;
+
+        const auto token_bytes_in_current_haystack = std::countr_zero(~(result_bitmask >> token_start_pos_in_current_haystack));
+        token_length += token_bytes_in_current_haystack;
+
+        pos += token_start_pos_in_current_haystack + token_bytes_in_current_haystack;
+        if (token_start_pos_in_current_haystack + token_bytes_in_current_haystack == haystack_length)
+            // check if there are leftovers in next `haystack`
+            continue;
+
+        break;
+#else
+        if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
+        {
+            /// Finish current token if any
+            if (token_length > 0)
+                return true;
+            token_start = ++pos;
+        }
+        else
+        {
+            /// Note that UTF-8 sequence is completely consisted of non-ASCII bytes.
+            ++pos;
+            ++token_length;
+        }
+#endif
+    }
+
+#if defined(__SSE2__) && !defined(MEMORY_SANITIZER)
+    // Could happen only if string is not padded with zeros, and we accidentally hopped over the end of data.
+    if (token_start > length)
+        return false;
+    token_length = std::min(length - token_start, token_length);
+#endif
+
+    return token_length > 0;
+}
+
+bool SplitByNonAlphaTokenizer::nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const
+{
+    token.clear();
+    bool bad_token = false; // % or _ before token
+    bool escaped = false;
+    while (pos < length)
+    {
+        if (!escaped && (data[pos] == '%' || data[pos] == '_'))
+        {
+            token.clear();
+            bad_token = true;
+            ++pos;
+        }
+        else if (!escaped && data[pos] == '\\')
+        {
+            escaped = true;
+            ++pos;
+        }
+        else if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
+        {
+            if (!bad_token && !token.empty())
+                return true;
+
+            token.clear();
+            bad_token = false;
+            escaped = false;
+            ++pos;
+        }
+        else
+        {
+            const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[pos]));
+            /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+            for (size_t j = 0; j < sz && pos < length; ++j)
+            {
+                token += data[pos];
+                ++pos;
+            }
+            escaped = false;
+        }
+    }
+
+    return !bad_token && !token.empty();
+}
+
+void SplitByNonAlphaTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && nextInString(data, length, cur, token_start, token_len))
+    {
+        /// In order to avoid filter updates with incomplete tokens, first token is ignored unless substring is prefix,
+        /// and last token is ignored, unless substring is suffix. See comment below for example
+        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
+            bloom_filter.add(data + token_start, token_len);
+    }
+}
+
+void SplitByNonAlphaTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && nextInString(data, length, cur, token_start, token_len))
+    {
+        /// In order to avoid adding incomplete tokens, first token is ignored unless substring is prefix and last token is ignored, unless substring is suffix.
+        /// Ex: If we want to match row "Service is not ready", and substring is "Serv" or "eady", we don't want to add either
+        /// of these substrings as tokens since they will not match any of the real tokens. However if our token string is
+        /// "Service " or " not ", we want to add these full tokens to our tokens vector.
+        if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
+            tokens.push_back({data + token_start, token_len});
+    }
+}
+
+namespace
+{
+
+bool startsWithSeparator(const char * data, size_t length, size_t pos, const std::vector<String> & separators, std::string & matched_sep)
+{
+    for (const auto & separator : separators)
+    {
+        size_t separator_length = separator.size();
+        if (pos + separator_length <= length && std::memcmp(data + pos, separator.data(), separator_length) == 0)
+        {
+            matched_sep = separator;
+            return true;
+        }
+    }
+    return false;
+}
+
+}
+
+bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
+{
+    size_t i = pos;
+    std::string matched_separators;
+
+    /// Skip prefix of separators
+    while (i < length && startsWithSeparator(data, length, i, separators, matched_separators))
+        i += matched_separators.size();
+
+    if (i >= length)
+    {
+        pos = length;
+        return false;
+    }
+
+    /// Read token until next separator
+    size_t start = i;
+    while (i < length && !startsWithSeparator(data, length, i, separators, matched_separators))
+        ++i;
+
+    token_start = start;
+    token_length = i - start;
+    pos = i;
+
+    return true;
+}
+
+bool SplitByStringTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
+}
+
+String SplitByStringTokenizer::getDescription() const
+{
+    String result = fmt::format("{}([", getName());
+    for (size_t i = 0; i < separators.size(); ++i)
+    {
+        if (i != 0)
+            result += ", ";
+
+        result += quoteString(separators[i]);
+    }
+
+    return result + "])";
+}
+
+bool ArrayTokenizer::nextInString(const char * /*data*/, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
+{
+    if (pos == 0)
+    {
+        pos = length;
+        token_start = 0;
+        token_length = length;
+        return true;
+    }
+    return false;
+}
+
+bool ArrayTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::nextInStringLike is not implemented");
+}
+
+SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
+    : ITokenizerHelper(Type::SparseGrams)
+    , min_gram_length(min_length)
+    , max_gram_length(max_length)
+    , min_cutoff_length(min_cutoff_length_)
+    , sparse_grams_iterator(min_length, max_length, min_cutoff_length_)
+{
+}
+
+bool SparseGramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    if (std::tie(data, length) != std::tie(previous_data, previous_len))
+    {
+        previous_data = data;
+        previous_len = length;
+        sparse_grams_iterator.set(data, data + length);
+    }
+
+    Pos next_begin;
+    Pos next_end;
+    if (!sparse_grams_iterator.get(next_begin, next_end))
+    {
+        previous_data = nullptr;
+        previous_len = 0;
+        return false;
+    }
+    token_start = next_begin - data;
+    token_length = next_end - next_begin;
+    pos = token_start;
+
+    return true;
+}
+
+bool SparseGramsTokenizer::nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const
+{
+    if (std::tie(data, length) != std::tie(previous_data, previous_len))
+    {
+        previous_data = data;
+        previous_len = length;
+        sparse_grams_iterator.set(data, data + length);
+    }
+
+    token.clear();
+
+    while (true)
+    {
+        Pos next_begin;
+        Pos next_end;
+        if (!sparse_grams_iterator.get(next_begin, next_end))
+        {
+            previous_data = nullptr;
+            previous_len = 0;
+            return false;
+        }
+        bool match_substring = true;
+        for (size_t i = next_begin - data; i < static_cast<size_t>(next_end - data);)
+        {
+            /// Escaped sequences are not supported by sparse grams tokenizers.
+            /// It requires pushing down this logic into sparse grams implementation,
+            /// because it changes the split into sparse grams. We don't want to do that now.
+            if (data[i] == '%' || data[i] == '_' || data[i] == '\\')
+            {
+                token.clear();
+                match_substring = false;
+                break;
+            }
+            else
+            {
+                const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
+                /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+                for (size_t j = 0; j < sz && i + j < length; ++j)
+                    token.push_back(data[i + j]);
+                i += sz;
+            }
+        }
+        if (match_substring)
+        {
+            pos = next_begin - data;
+            return true;
+        }
+    }
+}
+
+std::vector<String> SparseGramsTokenizer::compactTokens(const std::vector<String> & tokens) const
+{
+    std::unordered_set<String> result;
+    auto sorted_tokens = tokens;
+
+    /// Bug in clang-tidy: https://github.com/llvm/llvm-project/issues/78132
+    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.size() > rhs.size(); }); /// NOLINT(clang-analyzer-cplusplus.Move)
+
+    /// Filter out sparse grams that are covered by longer ones,
+    /// because if index has longer sparse gram, it has all shorter covered ones.
+    /// Using dumb O(n^2) algorithm to avoid unnecessary complexity, because this method
+    /// is used only for transforming constant searched tokens, which amount is usually small.
+    for (const auto & token : sorted_tokens)
+    {
+        bool is_covered = false;
+
+        for (const auto & existing_token : result)
+        {
+            if (existing_token.find(token) != std::string::npos)
+            {
+                is_covered = true;
+                break;
+            }
+        }
+
+        if (!is_covered)
+            result.insert(token);
+    }
+
+    return std::vector<String>(result.begin(), result.end());
+}
+
+String SparseGramsTokenizer::getDescription() const
+{
+    String result = fmt::format("{}({}, {}", getName(), min_gram_length, max_gram_length);
+    if (min_cutoff_length.has_value())
+        result += fmt::format(", {}", *min_cutoff_length);
+    return result + ")";
+}
+
+}

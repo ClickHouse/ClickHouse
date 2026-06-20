@@ -2,6 +2,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
@@ -22,8 +23,13 @@ namespace ErrorCodes
 
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.
+/// If dependent_table_id is provided, registers the table as a dependency of the named collection.
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
-    ASTs asts, ContextPtr context, bool throw_unknown_collection = true, std::vector<std::pair<std::string, ASTPtr>> * complex_args = nullptr);
+    ASTs asts,
+    ContextPtr context,
+    bool throw_unknown_collection = true,
+    std::vector<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
+    const StorageID * dependent_table_id = nullptr);
 
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.

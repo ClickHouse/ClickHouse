@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Core/Field.h>
@@ -10,6 +11,8 @@ namespace DB
 {
 class StorageTimeSeries;
 class PrometheusQueryTree;
+class PullingPipelineExecutor;
+enum class PrometheusQueryResultType;
 
 /// Helper class to support the Prometheus Query API endpoints.
 /// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values
@@ -65,21 +68,20 @@ public:
         const String & end_param);
 
 private:
-    /// Write JSON response for instant query result (including scalars)
-    void writeInstantQueryHeader(WriteBuffer & response);
-    void writeScalarQueryResponse(WriteBuffer & response, const Block & result_block);
-    void writeInstantQueryResponse(WriteBuffer & response, const Block & result_block);
-    void writeInstantQueryFooter(WriteBuffer & response);
+    /// Writes the result of a prometheus query as a JSON.
+    void writeQueryResponse(WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
 
-    /// Helper methods for writeInstantQueryResponse
-    void writeScalarResult(WriteBuffer & response, const Block & result_block);
-    void writeVectorResult(WriteBuffer & response, const Block & result_block);
-    void writeMetricLabels(WriteBuffer & response, const Block & result_block, size_t row_index);
-
-    /// Write JSON response for range query result
-    void writeRangeQueryHeader(WriteBuffer & response);
-    void writeRangeQueryFooter(WriteBuffer & response);
-    void writeRangeQueryResponse(WriteBuffer & response, const Block & result_block);
+    /// Helper methods.
+    void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);
+    void writeQueryResponseFooter(WriteBuffer & response);
+    void writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first);
+    void writeQueryResponseScalarBlock(WriteBuffer & response, const Block & result_block, bool first);
+    void writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first);
+    void writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
+    void writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
+    void writeTags(WriteBuffer & response, const Block & result_block, size_t row_index);
+    void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
+    void writeScalar(WriteBuffer & response, Float64 value);
 
     /// Write JSON response for series metadata
     void writeSeriesResponse(WriteBuffer & response, const Block & result_block);
@@ -91,6 +93,7 @@ private:
     void writeLabelValuesResponse(WriteBuffer & response, const Block & result_block);
 
     std::shared_ptr<const StorageTimeSeries> time_series_storage;
+    FormatSettings format_settings;
     Poco::LoggerPtr log;
 };
 

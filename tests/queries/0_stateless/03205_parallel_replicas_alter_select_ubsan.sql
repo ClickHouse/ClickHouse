@@ -17,7 +17,7 @@ ALTER TABLE t1
             toFixedString('%Prewhere%', 10),
             toNullable(12)
             WITH ROLLUP
-    )), 1)) settings allow_experimental_parallel_reading_from_replicas = 1; -- { serverError UNKNOWN_FUNCTION }
+    )), 1)) settings allow_experimental_parallel_reading_from_replicas = 1; -- { serverError BAD_ARGUMENTS }
 
 ALTER TABLE t1
     (MODIFY COLUMN `a` Float64 TTL toDateTime(b) + toIntervalMonth(viewExplain('EXPLAIN', 'actions = 1', (
@@ -29,7 +29,7 @@ ALTER TABLE t1
             toFixedString('%Prewhere%', 10),
             toNullable(12)
             WITH ROLLUP
-    )), 1)) settings allow_experimental_parallel_reading_from_replicas = 0; -- { serverError UNKNOWN_FUNCTION }
+    )), 1)) settings allow_experimental_parallel_reading_from_replicas = 0; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE t1;
 DROP TABLE t1__fuzz_26;

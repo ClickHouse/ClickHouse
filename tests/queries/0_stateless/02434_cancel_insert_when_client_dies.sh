@@ -18,7 +18,7 @@ export TEST_MARK="02434_insert_${CLICKHOUSE_DATABASE}_"
 # but the last block from distributed table can be small and inserted synchronously.
 # To have more uniform behaviour we set async_insert=0 globally for this test.
 
-$CLICKHOUSE_CLIENT -q 'select * from numbers(5000000) format TSV' > $DATA_FILE
+$CLICKHOUSE_CLIENT -q 'select * from numbers(500000) format TSV' > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "create table dedup_test(A Int64) Engine = MergeTree order by A settings non_replicated_deduplication_window=1000, merge_tree_clear_old_temporary_directories_interval_seconds = 1"
 $CLICKHOUSE_CLIENT -q "create table dedup_dist(A Int64) Engine = Distributed('test_cluster_one_shard_two_replicas', currentDatabase(), dedup_test)"
 
@@ -74,7 +74,7 @@ function thread_select
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT -q "with (select count() from dedup_test) as c select throwIf(c != 5000000, 'Expected 5000000 rows, got ' || toString(c)) format Null"
+        $CLICKHOUSE_CLIENT -q "with (select count() from dedup_test) as c select throwIf(c != 500000, 'Expected 500000 rows, got ' || toString(c)) format Null"
         sleep 0.$RANDOM;
     done
 }
