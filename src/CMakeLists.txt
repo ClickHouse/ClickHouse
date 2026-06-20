@@ -37,6 +37,15 @@ else()
     add_definitions(-DENABLE_MULTITARGET_CODE=0)
 endif()
 
+if (USE_NSYNC AND TARGET ch_contrib::nsync)
+    add_definitions(-DUSE_NSYNC=1)
+else()
+    if (USE_NSYNC)
+        message(STATUS "google/nsync is unavailable, building without NsyncSharedMutex")
+    endif()
+    add_definitions(-DUSE_NSYNC=0)
+endif()
+
 set(dbms_headers)
 set(dbms_sources)
 
@@ -564,8 +573,11 @@ if (TARGET ch_contrib::crc32-vpmsum)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
  endif()
 
-if (USE_NSYNC)
+if (USE_NSYNC AND TARGET ch_contrib::nsync)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::nsync)
+    target_compile_definitions(clickhouse_common_io PUBLIC USE_NSYNC=1)
+else()
+    target_compile_definitions(clickhouse_common_io PUBLIC USE_NSYNC=0)
 endif()
 
 if (TARGET ch_contrib::jwt-cpp)
