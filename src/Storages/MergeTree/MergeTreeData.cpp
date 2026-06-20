@@ -2695,6 +2695,10 @@ try
 catch (...)
 {
     tryLogCurrentException(log, "Failed to refresh parts");
+    /// A transient error (e.g. temporary disk unavailability) must not permanently disable the background
+    /// refresh task; otherwise the read-only table stays stale until the server restarts. Mirror the
+    /// reschedule that refreshStatistics performs in its own catch block.
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
 /// Re-scan the data directory once: reload disk metadata and add parts that appeared since the
