@@ -1036,11 +1036,15 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
     auto disk = volume->getDisk();
     if (disk->existsFile(packed_path))
     {
-        /// On shared storage another replica may delete skp_idx.packed between the existence check
-        /// above and the open below, so the open fails with a "no such key" error. Expect404ResponseScope
-        /// keeps that 404 from being logged or counted as a DiskS3NoSuchKeyError (which fails stress
-        /// tests); catching alone is not enough. If the archive is indeed gone after the failure, treat
-        /// the part as having no overlay; otherwise rethrow a genuine read error.
+        /// On shared storage another replica may delete or relocate skp_idx.packed between the
+        /// existence check above and the open below, so the open fails with a "no such key" error.
+        /// Expect404ResponseScope keeps that 404 from being logged or counted as a DiskS3NoSuchKeyError
+        /// (which fails stress tests); catching alone is not enough. If the archive is still present
+        /// it is a genuine read error -> rethrow. Otherwise it was removed or moved: do NOT cache a
+        /// miss (return without setting probed), so the next access re-probes against the current
+        /// path -- after a rename the archive lives at the new path and must not be lost. A part that
+        /// genuinely has no archive is cached as a miss via the existsFile-false branch above, so this
+        /// does not loop.
         Expect404ResponseScope scope;
         try
         {
@@ -1050,6 +1054,7 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
         {
             if (disk->existsFile(packed_path))
                 throw;
+            return nullptr;
         }
     }
 
