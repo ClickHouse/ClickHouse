@@ -1,3 +1,5 @@
 nan coordinate rejected
 inf coordinate rejected
 nan id rejected
+one-point linestring rejected
+one-point multilinestring rejected

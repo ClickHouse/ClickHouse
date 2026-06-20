@@ -18,3 +18,10 @@ ${CLICKHOUSE_CLIENT} --query "SELECT (1.0, inf)::Point AS geometry FORMAT GeoJSO
 # A floating-point feature id must be finite; a non-finite id is rejected rather than written as null.
 ${CLICKHOUSE_CLIENT} --query "SELECT nan AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON" >/dev/null 2>&1 \
     && echo "nan id accepted" || echo "nan id rejected"
+
+# A GeoJSON LineString (and each line of a MultiLineString) must have at least two positions; a shorter
+# line is rejected rather than emitted as a document the input format would reject.
+${CLICKHOUSE_CLIENT} --query "SELECT [(0.0, 0.0)]::LineString AS geometry FORMAT GeoJSON" >/dev/null 2>&1 \
+    && echo "one-point linestring accepted" || echo "one-point linestring rejected"
+${CLICKHOUSE_CLIENT} --query "SELECT [[(0.0, 0.0)]]::MultiLineString AS geometry FORMAT GeoJSON" >/dev/null 2>&1 \
+    && echo "one-point multilinestring accepted" || echo "one-point multilinestring rejected"
