@@ -41,25 +41,6 @@ namespace ErrorCodes
 namespace
 {
 
-    /// Whether `prepareGeoColumn` will collapse this top-level column into a single WKB `String`
-    /// field. That happens, when `output_format_parquet_geometadata` is enabled, for the recognized
-    /// geo custom types. In that case the emitted Parquet schema has only the top-level field, so we
-    /// must treat the column as a scalar and not enumerate its nested `Tuple` / `Array` structure.
-    bool isGeoColumnWrittenAsWKBScalar(const DataTypePtr & type)
-    {
-        const auto * custom_name = type->getCustomName();
-        if (!custom_name)
-            return false;
-
-        const auto & name = custom_name->getName();
-        return name == "Geometry"
-            || name == WKBPointTransform::name
-            || name == WKBLineStringTransform::name
-            || name == WKBPolygonTransform::name
-            || name == WKBMultiLineStringTransform::name
-            || name == WKBMultiPolygonTransform::name;
-    }
-
     /// Enumerate, in the same DFS order that `prepareColumnRecursive` visits them, the dotted
     /// `field_id`-bearing paths under a column named `name` of type `type`. `Nullable` and
     /// `LowCardinality` wrappers don't add a path segment; `Array` adds `.element`, `Map` adds
