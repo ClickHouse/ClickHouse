@@ -42,15 +42,16 @@ struct GeoTypeEntry
     const char * geojson_type;
     size_t depth;
     bool wrap_in_array;
+    size_t min_positions; /// Minimum positions per line, or 0 when no minimum applies.
 };
 
 constexpr std::array<GeoTypeEntry, 6> geo_type_table{{
-    {"Point", "Point", 0, false},
-    {"LineString", "LineString", 1, false},
-    {"Ring", "Polygon", 1, true},
-    {"MultiLineString", "MultiLineString", 2, false},
-    {"Polygon", "Polygon", 2, false},
-    {"MultiPolygon", "MultiPolygon", 3, false},
+    {"Point", "Point", 0, false, 0},
+    {"LineString", "LineString", 1, false, 2},
+    {"Ring", "Polygon", 1, true, 0},
+    {"MultiLineString", "MultiLineString", 2, false, 2},
+    {"Polygon", "Polygon", 2, false, 0},
+    {"MultiPolygon", "MultiPolygon", 3, false, 0},
 }};
 
 /// Whether a `properties` column should be emitted directly as the GeoJSON `properties` object: a
@@ -72,7 +73,7 @@ std::optional<GeoJSONRowOutputFormat::GeometryKind> GeoJSONRowOutputFormat::geom
 {
     for (const auto & entry : geo_type_table)
         if (type_name == entry.ch_name)
-            return GeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array};
+            return GeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array, entry.min_positions};
     return std::nullopt;
 }
 
@@ -131,7 +132,7 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
                 const auto & variant_type = assert_cast<const DataTypeVariant &>(*geo_type);
                 for (const auto & entry : geo_type_table)
                     if (auto discr = variant_type.tryGetVariantDiscriminator(entry.ch_name))
-                        variant_kind[*discr] = GeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array};
+                        variant_kind[*discr] = GeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array, entry.min_positions};
             }
             else
             {
@@ -251,13 +252,13 @@ void GeoJSONRowOutputFormat::writeGeometryObject(const GeometryKind & kind, cons
     writeCString(R"(","coordinates":)", *ostr);
     if (kind.wrap_in_array)
         writeChar('[', *ostr);
-    writeCoordinates(column, row_num, kind.depth);
+    writeCoordinates(column, row_num, kind.depth, kind.min_positions);
     if (kind.wrap_in_array)
         writeChar(']', *ostr);
     writeChar('}', *ostr);
 }
 
-void GeoJSONRowOutputFormat::writeCoordinates(const IColumn & column, size_t row_num, size_t depth)
+void GeoJSONRowOutputFormat::writeCoordinates(const IColumn & column, size_t row_num, size_t depth, size_t min_positions)
 {
     if (depth == 0)
     {
@@ -269,14 +270,23 @@ void GeoJSONRowOutputFormat::writeCoordinates(const IColumn & column, size_t row
     const IColumn & nested = array.getData();
     const auto & offsets = array.getOffsets();
     const size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
-    const size_t end = offsets[row_num];
+    const size_t count = offsets[row_num] - begin;
+
+    /// A GeoJSON LineString (and each line of a MultiLineString) must have at least two positions; a
+    /// shorter line would produce a document that the GeoJSON input format rejects.
+    if (depth == 1 && min_positions != 0 && count < min_positions)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "A GeoJSON line must have at least {} positions, but one with {} was given",
+            min_positions,
+            count);
 
     writeChar('[', *ostr);
-    for (size_t i = begin; i < end; ++i)
+    for (size_t i = begin; i < begin + count; ++i)
     {
         if (i != begin)
             writeChar(',', *ostr);
-        writeCoordinates(nested, i, depth - 1);
+        writeCoordinates(nested, i, depth - 1, min_positions);
     }
     writeChar(']', *ostr);
 }
