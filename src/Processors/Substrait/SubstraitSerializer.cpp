@@ -278,6 +278,10 @@ private:
             return "add";
         if (clickhouse_name == "minus")
             return "subtract";
+        if (clickhouse_name == "notLike")
+            return "not_like";
+        if (clickhouse_name == "notILike")
+            return "not_ilike";
         // Other arithmetic types have the same name in ClickHouse and Substrait
 
         return clickhouse_name;
@@ -319,6 +323,12 @@ private:
             || function_name == "max")
         {
             urn = "extension:substrait:functions_aggregate_generic";
+        }
+        else if (
+            function_name == "like" || function_name == "notLike" || function_name == "ilike"
+            || function_name == "notILike")
+        {
+            urn = "extension:substrait:functions_string";
         }
         else
         {
@@ -684,6 +694,14 @@ private:
         else if (step_name == "Join")
         {
             convertJoinStep(node, &rel);
+        }
+        else if (step_name == "BuildRuntimeFilter")
+        {
+            if (node->children.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "BuildRuntimeFilter step must have a child");
+
+            // BuildRuntimeFilter does not alter row shape so we can convert it as a pass-through to its child
+            rel = convertNode(node->children[0]);
         }
         else if (step_name == "Limit")
         {

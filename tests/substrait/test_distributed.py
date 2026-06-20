@@ -10,19 +10,24 @@ import json
 import re
 import pyarrow as pa
 import pyarrow.ipc as ipc
-from substrait.gen.proto import plan_pb2
+
+try:
+    from substrait import plan_pb2
+except ModuleNotFoundError:
+    from substrait import plan_pb2
 from google.protobuf import json_format
 
 CLICKHOUSE_BIN = os.path.join(os.path.dirname(__file__), "../../build/programs/clickhouse")
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "test_data")
+DATASET_DIR = os.path.join(os.path.dirname(__file__), "dataset")
 DATAFUSION_WORKER = os.path.join(os.path.dirname(__file__), "datafusion_worker.py")
 QUERIES_DIR = os.path.join(os.path.dirname(__file__), "queries")
 
 
 def discover_tables() -> dict[str, str]:
-    """Discover all CSV files in test_data and map table names to paths."""
+    """Discover all CSV files in dataset and map table names to paths."""
+    base_dir = DATASET_DIR
     tables = {}
-    for csv_file in glob.glob(os.path.join(TEST_DATA_DIR, "*.csv")):
+    for csv_file in glob.glob(os.path.join(base_dir, "*.csv")):
         # Table name is filename without -100.csv suffix
         basename = os.path.basename(csv_file)
         table_name = re.sub(r'-\d+\.csv$', '', basename)
@@ -69,7 +74,7 @@ def read_arrow_ipc(path: str) -> pa.Table:
         return reader.read_all()
 
 
-def run_query_test(query: str, query_name: str, table_defs: str, tables: dict[str, str]) -> tuple[bool, str]:
+def run_query_test(query: str, query_name: str, table_defs: str, tables: dict[str, str], plan_only: bool = False) -> tuple[bool, str]:
     with tempfile.TemporaryDirectory() as tmpdir:
         substrait_path = os.path.join(tmpdir, "plan.substrait")
         result_path = os.path.join(tmpdir, "result.arrow")
@@ -79,6 +84,9 @@ def run_query_test(query: str, query_name: str, table_defs: str, tables: dict[st
 
         with open(substrait_path, "wb") as f:
             f.write(substrait_bytes)
+
+        if plan_only:
+            return True, "plan serialized"
 
         run_datafusion_worker(substrait_path, tables, result_path)
         result_table = read_arrow_ipc(result_path)
@@ -91,10 +99,10 @@ def main():
         print(f"Error: ClickHouse binary not found at {CLICKHOUSE_BIN}")
         sys.exit(1)
 
-    # Discover all available tables from test_data
+    # Discover all available tables from dataset
     tables = discover_tables()
     if not tables:
-        print("Error: No CSV files found in test_data/")
+        print("Error: No CSV files found in dataset/")
         sys.exit(1)
     
     print(f"Available tables: {', '.join(sorted(tables.keys()))}")
@@ -118,11 +126,13 @@ def main():
     for query_file in query_files:
         query_name = os.path.basename(query_file)
         with open(query_file, "r") as f:
-            lines = [l for l in f.readlines() if not l.strip().startswith("--")]
+            raw_lines = f.readlines()
+            plan_only = any(l.strip().upper() == "-- PLAN_ONLY" for l in raw_lines)
+            lines = [l for l in raw_lines if not l.strip().startswith("--")]
             query = "".join(lines).strip()
 
         try:
-            success, msg = run_query_test(query, query_name, table_defs, tables)
+            success, msg = run_query_test(query, query_name, table_defs, tables, plan_only)
             if success:
                 passed += 1
                 results.append((query_name, "✓ PASS", msg))

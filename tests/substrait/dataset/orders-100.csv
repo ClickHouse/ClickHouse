@@ -1,0 +1,11 @@
+order_id,customer_id,product_idx,region,quantity,order_total,status
+1001,1,1,NA,2,59.98,completed
+1002,2,3,EU,5,49.95,completed
+1003,2,6,EU,1,199.99,returned
+1004,3,2,APAC,1,89.50,completed
+1005,4,5,NA,4,50.00,completed
+1006,5,9,EU,1,329.00,pending
+1007,6,10,NA,3,56.25,completed
+1008,6,11,NA,2,90.50,completed
+1009,7,4,APAC,2,70.00,pending
+1010,9,8,MEA,1,249.00,completed

@@ -1,0 +1,9 @@
+customer_id,customer_name,region,tier
+1,Alice Johnson,NA,gold
+2,Bob Smith,EU,silver
+3,Carol Davis,APAC,gold
+4,Dan Brown,NA,bronze
+5,Eva Wilson,EU,gold
+6,Frank Miller,NA,silver
+7,Grace Lee,APAC,bronze
+8,Hector Moore,LATAM,silver

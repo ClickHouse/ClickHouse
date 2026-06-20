@@ -1,2 +1,2 @@
--- Test string column selection with filter (LIKE not yet supported)
-SELECT name, category FROM products WHERE category = 'Electronics' OR category = 'Home'
+-- Test string pattern matching with LIKE predicates
+SELECT name, category FROM products WHERE category LIKE 'Elec%' OR category LIKE 'Home%'
