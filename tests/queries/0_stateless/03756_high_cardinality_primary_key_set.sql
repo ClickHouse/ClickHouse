@@ -7,6 +7,6 @@ CREATE TABLE high_cardinality_primary_key_set
 ORDER BY (u, d)
 SETTINGS index_granularity = 1;
 
-INSERT INTO high_cardinality_primary_key_set SELECT today() - number, number FROM numbers(100);
+INSERT INTO high_cardinality_primary_key_set SELECT toDate('2025-01-01') - number, number FROM numbers(100);
 
-SELECT count() FROM high_cardinality_primary_key_set WHERE (u, d) IN ((0, today()), (1, today()));
+SELECT count() FROM high_cardinality_primary_key_set WHERE (u, d) IN ((0, toDate('2025-01-01')), (1, toDate('2025-01-01')));
