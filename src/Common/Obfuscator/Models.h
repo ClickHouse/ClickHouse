@@ -435,7 +435,7 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::serverTimezoneInstance()) {}
+    explicit DateTimeModel(UInt64 seed_, const DateLUTImpl & date_lut_) : seed(seed_), date_lut(date_lut_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -1061,8 +1061,11 @@ public:
         if (typeid_cast<const DataTypeDate *>(&data_type))
             return std::make_unique<IdentityModel>();
 
-        if (typeid_cast<const DataTypeDateTime *>(&data_type))
-            return std::make_unique<DateTimeModel>(seed);
+        /// `DateTime` columns can carry an explicit timezone that differs from the server timezone.
+        /// The obfuscator preserves the date component as displayed in the column's timezone, so the
+        /// model must use that timezone (which falls back to the server timezone when none is set).
+        if (const auto * type = typeid_cast<const DataTypeDateTime *>(&data_type))
+            return std::make_unique<DateTimeModel>(seed, type->getTimeZone());
 
         if (typeid_cast<const DataTypeString *>(&data_type))
             return std::make_unique<StringModel>(seed, markov_model_params);
