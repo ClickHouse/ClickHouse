@@ -89,6 +89,10 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     /// JSON array, so the `properties` member is always a valid GeoJSON object.
     settings.json.write_named_tuples_as_objects = true;
 
+    /// A `Map` used as the `properties` object must serialize as a JSON object rather than an array of
+    /// key/value tuples, for the same reason.
+    settings.json.write_map_as_array_of_tuples = false;
+
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 
     const auto & header = getPort(PortKind::Main).getHeader();
