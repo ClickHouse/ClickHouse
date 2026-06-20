@@ -4060,7 +4060,9 @@ async function postOne()
         await postSingle(my_request_num, query, isMultiQuery ? query_area.value : undefined);
     }
 
-    endFlight();
+    /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
+    /// state; a newer run (e.g. after a tab switch) may have taken over while we awaited.
+    if (my_request_num === request_num) endFlight();
 }
 
 /// Run all queries from the textarea.
@@ -4082,7 +4084,9 @@ async function postAll()
         await postSingle(my_request_num, query);
     }
 
-    endFlight();
+    /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
+    /// state; a newer run (e.g. after a tab switch) may have taken over while we awaited.
+    if (my_request_num === request_num) endFlight();
 }
 
 async function cancel()
