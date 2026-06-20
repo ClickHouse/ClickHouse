@@ -698,10 +698,17 @@ void DataPartStorageOnDiskBase::rename(
     part_dir = new_part_dir;
     root_path = new_root_path;
 
-    /// The cached skp_idx.packed reader keeps serving the same archive index: a directory move
-    /// does not change the offsets inside the archive, and reads resolve the archive's current
-    /// location through readFile. So there is nothing to invalidate here, and not touching the
-    /// reader avoids freeing it while a concurrent query is reading the index.
+    /// A successfully-loaded reader stays valid: its archive index is path-independent and reads
+    /// resolve the archive's current location through readFile, so keep it (dropping it could also
+    /// race a concurrent query holding it). But a cached *miss* may be stale: a probe that ran while
+    /// this rename was in progress could have built packed_path from the old location and found no
+    /// file. Clear that stale miss (only when there is no reader) so the next access re-probes the
+    /// new path.
+    {
+        std::lock_guard lock(skip_indices_packed_mutex);
+        if (!skip_indices_packed_reader)
+            skip_indices_packed_probed = false;
+    }
 }
 
 void DataPartStorageOnDiskBase::remove(
@@ -984,9 +991,13 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
 
     root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
 
-    /// See rename: the cached skp_idx.packed index is path-independent, so a root-path change
-    /// does not invalidate it. Leaving the reader in place avoids freeing it under a concurrent
-    /// reader.
+    /// See rename: keep a successfully-loaded (path-independent) reader, but clear a stale cached
+    /// miss so the next access re-probes the new path.
+    {
+        std::lock_guard lock(skip_indices_packed_mutex);
+        if (!skip_indices_packed_reader)
+            skip_indices_packed_probed = false;
+    }
 }
 
 SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
