@@ -252,6 +252,22 @@ void addSettingsLike(MutableColumns & res_columns, EntityType type, const Settin
     }
 }
 
+/// Settings can have aliases (e.g. `enable_analyzer` for `allow_experimental_analyzer`). As for the other
+/// entities with aliases, the alias is rendered as a reference to the canonical setting rather than
+/// duplicating its documentation.
+template <typename SettingsCollection>
+void addSettingAliases(MutableColumns & res_columns, EntityType type, const SettingsCollection & settings)
+{
+    for (const auto & alias : settings.getAllAliasNames())
+    {
+        /// `getTier` resolves the alias to its canonical setting; skip aliases of obsolete settings,
+        /// consistent with the canonical settings, which are not exposed either.
+        if (settings.getTier(alias) == SettingsTierType::OBSOLETE)
+            continue;
+        addRow(res_columns, type, String(alias), "Alias of `" + String(SettingsCollection::resolveName(alias)) + "`.");
+    }
+}
+
 }
 
 ColumnsDescription StorageSystemDocumentation::getColumnsDescription()
@@ -310,7 +326,9 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     addDocumented(res_columns, EntityType::DiskType, DiskFactory::instance());
 
     addSettingsLike(res_columns, EntityType::Setting, Settings{});
+    addSettingAliases(res_columns, EntityType::Setting, Settings{});
     addSettingsLike(res_columns, EntityType::MergeTreeSetting, MergeTreeSettings{});
+    addSettingAliases(res_columns, EntityType::MergeTreeSetting, MergeTreeSettings{});
     addSettingsLike(res_columns, EntityType::ServerSetting, ServerSettings{});
 
     /// The format dictionary is keyed by the lower-cased name; `creators.name` carries the original case.

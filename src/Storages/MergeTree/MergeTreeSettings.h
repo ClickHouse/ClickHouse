@@ -87,6 +87,7 @@ struct MergeTreeSettings
     void applyChanges(const SettingsChanges & changes);
     void applyChange(const SettingChange & change);
     std::vector<std::string_view> getAllRegisteredNames() const;
+    std::vector<std::string_view> getAllAliasNames() const;
     std::string_view getDescription(std::string_view name) const;
     SettingsTierType getTier(std::string_view name) const;
     void applyCompatibilitySetting(const String & compatibility_value);

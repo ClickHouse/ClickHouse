@@ -38,3 +38,5 @@ Alias of `timeSeriesSamples`.
 0
 1
 0
+Alias of `allow_experimental_analyzer`.
+Alias of `enable_block_number_column`.
