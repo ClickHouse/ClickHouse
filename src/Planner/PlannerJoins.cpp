@@ -1085,6 +1085,14 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     PreparedJoinStorage result;
     if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_expression))
     {
+        /// The lookup-join entity (`MergeTreeTableJoinEntity`) is built from physical columns only
+        /// (`getAllPhysicalColumnsForLookupJoin`). If the right table expression reads `ALIAS` columns,
+        /// the regular plan computes them from the physical columns, but the direct lookup join would
+        /// request them from the physical-only entity and fail with `Cannot find column ... in table
+        /// lookup cache`. Fall back to the regular join path so the alias is computed.
+        if (!table_expression_data->getAliasColumnExpressions().empty())
+            return {};
+
         result.column_mapping = table_expression_data->getColumnIdentifierToColumnName();
     }
     else

@@ -114,6 +114,7 @@ It is most useful when the right-hand side is reused across many queries, becaus
 - Lookup index keys must be plain columns, not arbitrary expressions.
 - `table_join` requires non-nullable key columns.
 - `table_join` is only used for direct-compatible equality joins.
+- `table_join` serves physical columns only. A query that reads an `ALIAS` column from the right-hand table falls back to a regular join (which computes the alias) instead of using the lookup.
 - Lookup indexes are not data skipping indexes. They do not use `GRANULARITY`, do not materialize per-granule index files, and are not shown in `system.data_skipping_indices`.
 
 ## Replication {#replication}
