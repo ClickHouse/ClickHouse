@@ -144,7 +144,7 @@ namespace Paimon
         std::unordered_set<String> partition_key_set(
             table_schema_.partition_keys.begin(), table_schema_.partition_keys.end());
 
-        DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context);
+        DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag.getOutputs().front(), context, /* boolean_context */ true);
 
         column_conditions.reserve(table_schema_.fields.size());
         for (Int32 field_idx = 0; field_idx < static_cast<Int32>(table_schema_.fields.size()); ++field_idx)
