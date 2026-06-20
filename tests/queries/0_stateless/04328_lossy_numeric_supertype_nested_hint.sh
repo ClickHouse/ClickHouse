@@ -20,6 +20,16 @@ $CH -q "SELECT min(map('a', toDecimal64(1, 2), 'b', 0.))" 2>&1 | grep -oF "$hint
 $CH -q "SELECT min([toInt64(1), 'str'::String])" 2>&1 | grep -cF "$hint"
 $CH -q "SELECT min([toInt64(1), toUInt64(2)])" 2>&1 | grep -cF "$hint"
 
+# No hint for a numeric Variant Map key: a Map key cannot be Nullable, so FunctionMap keeps the
+# plain Variant key even with the setting on, and the aggregate would still fail. Covers the
+# nullable-numeric key directly and nested inside an Array.
+$CH -q "SELECT min(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2))" 2>&1 | grep -cF "$hint"
+$CH -q "SELECT max(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2))" 2>&1 | grep -cF "$hint"
+$CH -q "SELECT min([map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2)])" 2>&1 | grep -cF "$hint"
+# A Map with a numeric Variant in both key and value: the key Variant survives, so even though the
+# value would become Float64 the aggregate still fails. The hint must stay silent.
+$CH -q "SELECT min(map(materialize(toNullable(toDecimal64(1, 2))), materialize(toNullable(toDecimal64(3, 2))), 0., 1.5))" 2>&1 | grep -cF "$hint"
+
 # Setting on: the nested numeric supertype is used, so the aggregate works.
 ${CLICKHOUSE_CLIENT} --use_variant_as_common_type=1 --allow_lossy_numeric_supertype=1 -q "SELECT min([toDecimal64(1, 2), 0.]), toTypeName([toDecimal64(1, 2), 0.])"
 ${CLICKHOUSE_CLIENT} --use_variant_as_common_type=1 --allow_lossy_numeric_supertype=1 -q "SELECT min(map('a', toDecimal64(1, 2), 'b', 0.)), toTypeName(map('a', toDecimal64(1, 2), 'b', 0.))"
