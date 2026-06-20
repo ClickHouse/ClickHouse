@@ -1,3 +1,6 @@
 # Special Values Test (NaN, Inf, Zeros, Clamp Bounds)
 4000	0
 4000	0
+# Exceptions Count 0xFF
+1024	0
+1024	0

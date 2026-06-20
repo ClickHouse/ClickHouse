@@ -85,6 +85,15 @@ SELECT count(), sum(
                 ) FROM base32 AS b INNER JOIN alp32 AS a USING i;
 
 
+SELECT '# Exceptions Count 0xFF';
+TRUNCATE TABLE base64; INSERT INTO base64 SELECT number AS i, if(number % 4 = 1 AND number < 1021, toFloat64(2), toFloat64(1)) AS f FROM numbers(1024);
+TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
+TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;
+TRUNCATE TABLE alp32; INSERT INTO alp32 SELECT i, f FROM base32;
+SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
+SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
+
+
 DROP TABLE base32;
 DROP TABLE base64;
 DROP TABLE alp32;

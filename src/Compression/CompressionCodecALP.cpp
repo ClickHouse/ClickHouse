@@ -115,7 +115,7 @@ namespace DB
  *       - raw value (float or double)
  *
  * Per-Block Encoding Schema (Uncompressed Case)
- *   - 1 byte: 255 (uncompressed block marker)
+ *   - 2 bytes: 0xFFFF (uncompressed block marker)
  *   - Raw numbers for the block
  *
  * ---
@@ -210,8 +210,8 @@ constexpr UInt32 ALP_RD_HEADER_TOTAL_MAX_SIZE = ALP_RD_HEADER_MIN_SIZE + ALP_RD_
  */
 constexpr UInt32 ALP_RD_BLOCK_HEADER_SIZE = sizeof(UInt16);
 
-constexpr UInt32 ALP_RD_UNENCODED_BLOCK_HEADER_SIZE = sizeof(UInt8);
-constexpr UInt8 ALP_RD_UNENCODED_BLOCK_BYTE = 255;
+constexpr UInt32 ALP_RD_UNENCODED_BLOCK_HEADER_SIZE = sizeof(UInt16);
+constexpr UInt16 ALP_RD_UNENCODED_BLOCK_MARKER = 0xFFFF;
 
 /**
  * Alignment for internal ALP buffers. Used to align buffers for FFOR encoding/decoding.
@@ -346,6 +346,14 @@ struct ALPUtils
     {
         // Dictionary indices are from 0 to dict_size - 1, so the bit-width is calculated based on dict_size - 1.
         return calculateBitWidth(dict_size - 1);
+    }
+
+    /**
+     * Calculate the number of right bits for RD encoding based on the left bits.
+     */
+    static UInt8 calcRdRightBits(const UInt8 left_bits)
+    {
+        return static_cast<UInt8>(sizeof(T) * 8 - left_bits);
     }
 
     /**
@@ -961,12 +969,15 @@ private:
         // Check if encoding yields size reduction
         const size_t total_encoded_size = ALP_RD_BLOCK_HEADER_SIZE +
             Compression::FFOR::calculateBitpackedBytes(ALPUtils<T>::calcRdDictBits(dict_size)) + // Left part bit-packed indices
-                Compression::FFOR::calculateBitpackedBytes(calcRightBits(dict_params.left_bits)) + // Right part bit-packed values
+                Compression::FFOR::calculateBitpackedBytes(ALPUtils<T>::calcRdRightBits(dict_params.left_bits)) + // Right part bit-packed values
                     exception_count * (sizeof(UInt16) + sizeof(T)); // Exceptions
         const size_t total_unencoded_size = ALP_UNENCODED_BLOCK_HEADER_SIZE + float_count * sizeof(T);
         if (total_encoded_size >= total_unencoded_size) // No compression gain
         {
-            *dest++ = ALP_RD_UNENCODED_BLOCK_BYTE; // Unencoded block marker
+            // Unencoded block marker
+            unalignedStoreLittleEndian<UInt16>(dest, ALP_RD_UNENCODED_BLOCK_MARKER);
+            dest += sizeof(UInt16);
+
             return ALPUtils<T>::writeUnencoded(source, float_count, dest);
         }
 
@@ -996,7 +1007,7 @@ private:
 
     void encodeBlockToState(const char * source, const UInt16 float_count)
     {
-        UInt8 right_bits = calcRightBits(dict_params.left_bits);
+        UInt8 right_bits = ALPUtils<T>::calcRdRightBits(dict_params.left_bits);
         Unsigned right_part_mask = (static_cast<Unsigned>(1) << right_bits) - 1;
 
         block.exceptions.clear();
@@ -1085,7 +1096,7 @@ private:
             .left_part_freq = {},
             .estimated_size = std::numeric_limits<double>::max()
         };
-        UInt8 right_bits = calcRightBits(left_bits);
+        UInt8 right_bits = ALPUtils<T>::calcRdRightBits(left_bits);
 
         // Count frequency of left part values
         std::unordered_map<UInt16, UInt16> left_part_freq(float_count); // left part value → occurrence count
@@ -1124,11 +1135,6 @@ private:
                 static_cast<double>(exceptions_count * (sizeof(UInt16) + sizeof(T)) * 8) / static_cast<double>(float_count);
 
         return params;
-    }
-
-    static UInt8 calcRightBits(const UInt8 left_bits)
-    {
-        return static_cast<UInt8>(sizeof(Unsigned) * 8 - left_bits);
     }
 };
 
@@ -1230,25 +1236,20 @@ private:
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                 "Cannot decompress ALP(RD)-encoded data, incomplete block header");
 
-        // Read first byte of exception count
-        const UInt8 exception_count_first_byte = static_cast<UInt8>(*source++);
-        if (exception_count_first_byte == ALP_RD_UNENCODED_BLOCK_BYTE)
+        // Read exception count
+        const UInt16 exception_count = unalignedLoadLittleEndian<UInt16>(source);
+        source += sizeof(UInt16);
+
+        if (exception_count == ALP_RD_UNENCODED_BLOCK_MARKER)
         {
             ALPUtils<T>::decompressUnencodedBlock(source, source_end, dest, dest_end, float_count);
             return;
         }
-        if (unlikely(source + (ALP_RD_BLOCK_HEADER_SIZE - ALP_RD_UNENCODED_BLOCK_HEADER_SIZE) > source_end))
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                "Cannot decompress ALP(RD)-encoded data, incomplete block header (encoded)");
-
-        // Read exception count
-        const UInt16 exception_count = unalignedLoadLittleEndian<UInt16>(source - 1); // exception count starts from the first byte we just read
-        ++source; // Move by one byte since the first byte has been read
 
         // Calculate additional parameters based on header values
         UInt8 dict_size = static_cast<UInt8>(dict_params.values.size());
         UInt8 dict_bits = ALPUtils<T>::calcRdDictBits(dict_size);
-        UInt8 right_bits = static_cast<UInt8>(sizeof(Unsigned) * 8 - dict_params.left_bits);
+        UInt8 right_bits = ALPUtils<T>::calcRdRightBits(dict_params.left_bits);
 
         UInt16 bitpacked_left_bytes = Compression::FFOR::calculateBitpackedBytes<ALP_BLOCK_MAX_FLOAT_COUNT>(dict_bits);
         UInt16 bitpacked_right_bytes = Compression::FFOR::calculateBitpackedBytes<ALP_BLOCK_MAX_FLOAT_COUNT>(right_bits);
@@ -1507,7 +1508,7 @@ void registerCodecALP(CompressionCodecFactory & factory)
             const auto * variant_ident = arguments->children[0]->as<ASTIdentifier>();
             if (!variant_ident)
                 throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
-                    "ALP codec variant must be an identifier with STD or RD");
+                    "ALP codec variant must be an identifier: AUTO, STD or RD");
 
             const String variant_str = variant_ident->shortName();
             if (variant_str == "AUTO")
@@ -1518,7 +1519,7 @@ void registerCodecALP(CompressionCodecFactory & factory)
                 variant = CompressionCodecALP::Variant::RD;
             else
                 throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
-                    "ALP codec variant must be STD or RD, given {}",
+                    "ALP codec variant must be AUTO, STD or RD, given {}",
                     variant_str);
         }
 

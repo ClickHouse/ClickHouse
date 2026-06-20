@@ -2137,22 +2137,6 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidLeftBitWidthTooLarge)
     verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, invalid left bit-width: 17, allowed: 1-16");
 }
 
-TEST_F(ALPTest, DecompressMalformedInputRDWithTruncatedBlockHeaderEncoded)
-{
-    const std::vector<UInt8> source = {
-        0x11,       // meta byte (version=1, variant=RD)
-        0x08,       // float width (Float64)
-        0x00, 0x04, // block float count = 1024
-        // RD header: left_bits=1, dict_size=1, one dictionary entry
-        0x01,       // left_bits = 1
-        0x01,       // dict_size = 1
-        0x00, 0x00, // dictionary entry
-        // Block header: only first byte of exception count, second byte missing
-        0x01        // first byte of exception count (not 0xFF, so not unencoded), but second byte is missing
-    };
-    verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, incomplete block header (encoded)");
-}
-
 TEST_F(ALPTest, DecompressMalformedInputRDWithInvalidDictionarySizeZero)
 {
     const std::vector<UInt8> source = {
