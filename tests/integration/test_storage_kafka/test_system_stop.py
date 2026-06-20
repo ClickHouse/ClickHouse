@@ -872,3 +872,55 @@ def test_direct_select_blocked_while_stopped_with_attached_view(kafka_cluster):
         # START drains the backlog, proving the messages were retained.
         instance.query(f"SYSTEM START test.{table}")
         wait_dst_count(table, 20)
+
+
+@pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
+def test_direct_select_rejected_when_view_attached_while_stopped(kafka_cluster, keeper):
+    # The direct-read guard reads the attached views live, so attaching a view to an already STOPped
+    # table rejects a direct SELECT immediately, with no wait for a background tick.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_stopped_attach_{k.random_string(6)}"
+    engine = "StorageKafka2" if keeper else "StorageKafka"
+    keeper_settings = (
+        f", kafka_keeper_path = '/clickhouse/kafka2/{table}', kafka_replica_name = 'r1'"
+        if keeper
+        else ""
+    )
+    with k.kafka_topic(admin_client, table):
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{table}',
+                         kafka_group_name = '{table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 500{keeper_settings};
+
+            CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+                ENGINE = MergeTree ORDER BY key;
+            """,
+            settings=(
+                {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+            ),
+        )
+
+        # Stop before any view is attached, then attach the view while stopped.
+        instance.query(f"SYSTEM STOP test.{table}")
+        instance.query(
+            f"CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst "
+            f"AS SELECT key, value FROM test.{table}"
+        )
+
+        # The guard is live: the direct SELECT is rejected immediately.
+        err = instance.query_and_get_error(
+            f"SELECT count() FROM test.{table}",
+            settings={"stream_like_engine_allow_direct_select": 1},
+            timeout=60,
+        )
+        assert f"Cannot read from {engine} with attached materialized views" in err
+
+        # START drains freshly produced messages into the view.
+        instance.query(f"SYSTEM START test.{table}")
+        produce(kafka_cluster, table, 0, 10)
+        wait_dst_count(table, 10)

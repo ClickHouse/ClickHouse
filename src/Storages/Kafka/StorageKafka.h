@@ -119,8 +119,6 @@ private:
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
 
-    std::atomic<bool> mv_attached = false;
-
     std::vector<KafkaConsumerPtr> consumers;
 
     std::mutex mutex;

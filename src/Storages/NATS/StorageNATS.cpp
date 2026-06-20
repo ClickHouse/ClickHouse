@@ -265,9 +265,10 @@ void StorageNATS::initializeConsumersFunc()
     }
 
     size_t num_views = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
-    mv_attached.store(num_views > 0);
     if (num_views == 0)
     {
+        /// Viewless
+        stream_control.claimCycle();
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
     }
@@ -379,7 +380,7 @@ void StorageNATS::read(
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
 
-    if (mv_attached)
+    if (!DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
 
     if (!getStreamName().empty() && getConsumerName().empty())
@@ -620,16 +621,19 @@ void StorageNATS::threadFunc()
     bool consumers_queues_are_empty = false;
 
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-    mv_attached.store(num_views > 0);
 
     try
     {
         if (num_views && consumers_connection && consumers_connection->isConnected() && stream_control.claimCycle())
         {
+            /// Re-subscribe if a previous STOP/PAUSE dropped the subscription
+            if (!consumers_ready)
+                subscribeConsumers();
+
             auto start_time = std::chrono::steady_clock::now();
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!shutdown_called && num_created_consumers > 0)
+            while (consumers_ready && !shutdown_called && num_created_consumers > 0)
             {
                 if (!checkDependencies(table_id))
                 {
@@ -670,6 +674,9 @@ void StorageNATS::threadFunc()
 
     if (num_views != 0)
     {
+        if (stream_control.isBlocked() && consumers_ready)
+            unsubscribeConsumers();
+
         /// While paused/stopped the loop above does no work, so reschedule with a delay to avoid
         /// busy-looping; SYSTEM START reschedules it promptly via `scheduleStreamingTasks`.
         if (consumers_queues_are_empty || stream_control.isBlocked())

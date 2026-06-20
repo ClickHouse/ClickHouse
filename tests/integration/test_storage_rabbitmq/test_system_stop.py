@@ -565,3 +565,64 @@ def test_direct_select_blocked_while_stopped_with_attached_view(rabbitmq_cluster
     # START drains the backlog, proving the messages were retained.
     instance.query(f"SYSTEM START test.{table}")
     wait_dst_count(table, 20)
+
+
+def test_direct_select_rejected_when_view_attached_while_stopped(rabbitmq_cluster):
+    # The direct-read guard reads the attached views live, so attaching a view to an already STOPped
+    # table rejects a direct SELECT immediately, with no wait for a background tick.
+    table = "rabbitmq_stopped_attach"
+    exchange = "stopped_attach_exchange"
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{exchange}',
+                     rabbitmq_flush_interval_ms = 500,
+                     rabbitmq_row_delimiter = '\\n';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+        """
+    )
+
+    # read() returns an empty source until consumers are created, so wait for setup to finish first;
+    # otherwise the direct SELECT below would not yet reach the attached-view guard.
+    def initialized():
+        try:
+            instance.query(
+                f"SELECT count() FROM test.{table}",
+                settings={"stream_like_engine_allow_direct_select": 1},
+            )
+            return True
+        except Exception:
+            return False
+
+    for _ in range(60):
+        if initialized():
+            break
+        time.sleep(0.5)
+    else:
+        assert False, "RabbitMQ table did not finish setup"
+
+    # Stop before any view is attached, then attach the view while stopped.
+    instance.query(f"SYSTEM STOP test.{table}")
+    instance.query(
+        f"CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst "
+        f"AS SELECT key, value FROM test.{table}"
+    )
+
+    # The guard is live: the direct SELECT is rejected immediately.
+    err = instance.query_and_get_error(
+        f"SELECT count() FROM test.{table}",
+        settings={"stream_like_engine_allow_direct_select": 1},
+        timeout=60,
+    )
+    assert "Cannot read from StorageRabbitMQ with attached materialized views" in err
+
+    # START drains freshly published messages into the view.
+    instance.query(f"SYSTEM START test.{table}")
+    publish(rabbitmq_cluster, exchange, 0, 10)
+    wait_dst_count(table, 10)

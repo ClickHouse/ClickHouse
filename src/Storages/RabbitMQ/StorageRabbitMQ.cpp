@@ -801,7 +801,7 @@ void StorageRabbitMQ::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
 
-    if (mv_attached)
+    if (!DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
 
     std::lock_guard lock(loop_mutex);
@@ -1079,8 +1079,6 @@ void StorageRabbitMQ::threadFunc()
             bool rabbit_connected = connection->isConnected() || connection->reconnect();
 
             const bool run_cycle = rabbit_connected && stream_control.claimCycle();
-
-            mv_attached.store(num_views > 0);
 
             if (num_views && run_cycle)
             {

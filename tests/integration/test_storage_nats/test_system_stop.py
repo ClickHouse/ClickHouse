@@ -629,9 +629,9 @@ def test_system_stop_requires_grant(nats_cluster):
 
 
 def test_direct_select_blocked_while_stopped_with_attached_view(nats_cluster):
-    # While a table with an attached materialized view is STOPped, a direct SELECT must still be
-    # rejected: the direct-read guard depends on the attached view, not on whether streaming is
-    # running. Otherwise the SELECT would consume messages meant for the view and lose them.
+    # A direct SELECT must be rejected whenever a materialized view is attached, even while STOPped,
+    # or it would steal messages meant for the view. The guard reads the attached views live (like
+    # StorageKafka2), so it engages the instant the view exists -- no wait for a background tick.
     table = "nats_stopped_direct"
     subject = "stopped_direct_subject"
     instance.query(
@@ -662,27 +662,117 @@ def test_direct_select_blocked_while_stopped_with_attached_view(nats_cluster):
         """
     )
 
-    # The background task picks up the attached view on its next wake-up and sets the guard, after which
-    # a direct SELECT is rejected.
-    def direct_select_rejected():
+    # The guard is live: a direct SELECT is rejected immediately, with no wait for a background tick.
+    def direct_select_error():
         try:
             instance.query(
                 f"SELECT count() FROM test.{table}",
                 settings={"stream_like_engine_allow_direct_select": 1},
             )
-            return False
+            return ""  # the guard did not engage
         except Exception as e:
-            return "Cannot read from StorageNATS with attached materialized views" in str(e)
+            return str(e)
 
-    for _ in range(40):
-        if direct_select_rejected():
-            break
-        time.sleep(0.5)
-    else:
-        assert False, "direct SELECT was not blocked while a materialized view is attached"
+    assert (
+        "Cannot read from StorageNATS with attached materialized views"
+        in direct_select_error()
+    ), "direct SELECT was not blocked immediately after a materialized view was attached"
 
     # START resumes consumption into the view.
     instance.query(f"SYSTEM START test.{table}")
     instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
     nats_publish(nats_cluster, subject, 0, 10)
     wait_dst_count_at_least(table, 10)
+
+
+def test_refresh_on_stopped_viewless_table_does_not_leak(nats_cluster):
+    # SYSTEM REFRESH on a STOPped viewless table must not leave a one-shot cycle armed that later
+    # fires when a view is attached, bypassing the STOP. JetStream retains messages, so a leaked
+    # refresh would surface them in the view -- we assert nothing is consumed until START.
+    stream = "js_leak_stream"
+    subject = "js_leak_subject"
+    durable = "js_leak_durable"
+    table = "nats_refresh_leak"
+
+    # A generous ack-wait so retained messages stay available for the (forbidden) leaked cycle.
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=30)
+
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+        """
+    )
+    # Let the consumers initialize while the table is viewless.
+    time.sleep(3)
+
+    # Messages retained by the stream that a leaked refresh could stream into the view.
+    jetstream_publish(nats_cluster, subject, 0, 10)
+
+    # STOP, then REFRESH while still viewless: the one-shot request must be consumed, not left armed.
+    instance.query(f"SYSTEM STOP test.{table}")
+    instance.query(f"SYSTEM REFRESH test.{table}")
+    time.sleep(3)  # let the initialize task consume the pending one-shot refresh
+
+    # Attach a view while stopped. A leaked refresh would now run one cycle and consume the backlog.
+    instance.query(
+        f"""
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table};
+        """
+    )
+
+    # STOP holds: no cycle runs, nothing is consumed into the view.
+    assert_dst_count_stable(table, 0, seconds=8)
+
+    # START resumes and consumes the retained messages, proving they were available all along.
+    instance.query(f"SYSTEM START test.{table}")
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+    wait_dst_count_at_least(table, 10)
+
+
+def test_stop_does_not_buffer_backlog(nats_cluster):
+    # While STOPped, a core-NATS table must drop its subscription, not keep buffering. Core NATS has
+    # no backlog, so messages published while stopped must be dropped, not delivered after START. We
+    # publish a distinct key range while stopped and assert none of it ever reaches the view.
+    table = "nats_no_backlog"
+    subject = "no_backlog_subject"
+    setup_consuming_table(table, subject)
+
+    nats_publish(nats_cluster, subject, 0, 10)
+    wait_dst_count_at_least(table, 10)
+
+    instance.query(f"SYSTEM STOP test.{table}")
+    time.sleep(3)  # let the background task observe STOP and drop the subscription
+
+    # Distinct key range published while stopped: with no subscriber these must be dropped.
+    nats_publish(nats_cluster, subject, 1000, 20)
+    time.sleep(3)
+
+    instance.query(f"SYSTEM START test.{table}")
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+
+    # Fresh messages after START are consumed normally (a third distinct range).
+    nats_publish(nats_cluster, subject, 2000, 10)
+    wait_dst_count_at_least(table, 20)
+    time.sleep(3)  # let any (incorrectly buffered) backlog flush before asserting its absence
+
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM test.{table}_dst WHERE key >= 1000 AND key < 2000"
+            )
+        )
+        == 0
+    ), "messages published while stopped were buffered and delivered as a backlog after START"

@@ -115,7 +115,6 @@ private:
     /// Needed for tell MV or producer background tasks
     /// that they must finish as soon as possible.
     std::atomic<bool> shutdown_called{false};
-    std::atomic<bool> mv_attached = false;
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;

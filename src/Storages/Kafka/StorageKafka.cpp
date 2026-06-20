@@ -131,7 +131,7 @@ private:
         if (kafka_storage.shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
-        if (kafka_storage.mv_attached)
+        if (!DatabaseCatalog::instance().getDependentViews(kafka_storage.getStorageID()).empty())
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
 
         ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
@@ -616,8 +616,6 @@ void StorageKafka::threadFunc(size_t idx)
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         const bool run_cycle = stream_control.claimCycle();
-
-        mv_attached.store(num_views > 0);
 
         if (num_views && run_cycle)
         {
