@@ -1,9 +1,9 @@
 -- Tags: no-parallel
 -- no-parallel: creates a globally-visible rewrite rule
 
--- Regression test: when both the rule source and the incoming query are parameterized with
--- the same {p:Type} placeholder, matching short-circuited on equal subtree hashes and never
--- populated the capture map, causing applyRule to throw REWRITE_RULE_UNKNOWN_QUERY_PARAMETER.
+-- A query whose matched value is supplied through a query parameter is rewritten correctly:
+-- matching runs after the parameter is substituted, so the literal it became is captured by
+-- the rule's {name:String} placeholder.
 
 DROP TABLE IF EXISTS rewrite_rule_param_src;
 DROP TABLE IF EXISTS rewrite_rule_param_dst;
@@ -24,8 +24,8 @@ REWRITE TO
 
 SET query_rules = 'rewrite_rule_param_rule';
 
--- Incoming query is itself parameterized with the same placeholder {name:String}.
--- Before the fix this threw REWRITE_RULE_UNKNOWN_QUERY_PARAMETER.
+-- The incoming query parameterizes the matched value with {name:String}; after substitution
+-- it becomes the literal 'first', which the rule captures and substitutes into the rewrite.
 SET param_name = 'first';
 SELECT date, sum(hits) FROM rewrite_rule_param_src WHERE page = {name:String} GROUP BY date;
 

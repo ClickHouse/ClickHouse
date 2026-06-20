@@ -185,50 +185,10 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
                     queue_rule.push(child);
                 }
             }
-            else
-            {
-                /// Trees are structurally identical at this node. If the rule template
-                /// contains a query parameter at this position (because the incoming
-                /// query is also parameterized with the same name and type), the hashes
-                /// match and the branch above does not record a binding. Without a
-                /// binding, applyRule throws REWRITE_RULE_UNKNOWN_QUERY_PARAMETER when
-                /// substituting the parameter in the resulting query template.
-                auto * query_parameter = top2->as<ASTQueryParameter>();
-                /// When the parameter is wrapped in a single-child `ASTExpressionList`,
-                /// both `top1` and `top2` are the wrapper. We must bind the inner node,
-                /// not the wrapper, otherwise `applyRule` substitutes an extra
-                /// `ASTExpressionList` layer into the resulting template.
-                ASTPtr bound_node = top1;
-                if (!query_parameter
-                    && top2->as<ASTExpressionList>() && top2->children.size() == 1)
-                {
-                    query_parameter = top2->children[0]->as<ASTQueryParameter>();
-                    if (query_parameter && top1->children.size() == 1)
-                        bound_node = top1->children[0];
-                }
-                if (query_parameter)
-                {
-                    if (matching_map.contains(query_parameter->name))
-                    {
-                        throw Exception(
-                            ErrorCodes::REWRITE_RULE_DUPLICATED_QUERY_PARAMETER,
-                            "Query parameter duplicate in rewrite rule template: {}\n",
-                            query_parameter->name
-                        );
-                    }
-                    matching_map.emplace(query_parameter->name, bound_node->clone());
-                    continue;
-                }
-                /// Deeper parameters may exist below — continue BFS into children.
-                for (const auto& child : top1->children)
-                {
-                    queue_query.push(child);
-                }
-                for (const auto& child : top2->children)
-                {
-                    queue_rule.push(child);
-                }
-            }
+            /// Otherwise the subtrees are identical (equal hash) and match as-is, with
+            /// nothing to capture. Matching runs after query-parameter substitution, so the
+            /// incoming query never carries a placeholder of its own — only the rule template
+            /// does — and an equal-hash subtree therefore has no placeholder to bind here.
         }
         if (is_template)
         {
