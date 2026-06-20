@@ -8,12 +8,13 @@ import tempfile
 import glob
 import json
 import re
+from collections import Counter
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
 try:
-    from substrait import plan_pb2
-except ModuleNotFoundError:
+    from substrait.gen.proto import plan_pb2
+except (ImportError, ModuleNotFoundError):
     from substrait import plan_pb2
 from google.protobuf import json_format
 
@@ -45,11 +46,20 @@ def build_table_defs(tables: dict[str, str]) -> str:
 
 def get_substrait_json(sql: str, table_defs: str) -> str:
     query = table_defs + f"EXPLAIN SUBSTRAIT {sql}"
-    cmd = [CLICKHOUSE_BIN, "local", "--query", query, "--allow_experimental_substrait=1", "--format", "RawBLOB"]
+    cmd = [CLICKHOUSE_BIN, "local", "--query", query, "--allow_experimental_substrait=1", "--output-format", "RawBLOB"]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"ClickHouse error: {result.stderr}")
     return result.stdout
+
+
+def get_clickhouse_arrow(sql: str, table_defs: str) -> pa.Table:
+    query = table_defs + sql
+    cmd = [CLICKHOUSE_BIN, "local", "--query", query, "--output-format", "Arrow"]
+    result = subprocess.run(cmd, capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ClickHouse error: {result.stderr.decode(errors='replace')}")
+    return read_arrow_ipc_bytes(result.stdout)
 
 
 def json_to_substrait_bytes(json_str: str) -> bytes:
@@ -70,8 +80,38 @@ def run_datafusion_worker(substrait_path: str, tables: dict[str, str], output_pa
 
 def read_arrow_ipc(path: str) -> pa.Table:
     with pa.OSFile(path, "rb") as source:
+        return read_arrow_ipc_source(source)
+
+
+def read_arrow_ipc_bytes(data: bytes) -> pa.Table:
+    return read_arrow_ipc_source(pa.BufferReader(data))
+
+
+def read_arrow_ipc_source(source) -> pa.Table:
+    try:
         reader = ipc.open_file(source)
-        return reader.read_all()
+    except (pa.ArrowInvalid, OSError):
+        source.seek(0)
+        reader = ipc.open_stream(source)
+    return reader.read_all()
+
+
+def normalize_table(table: pa.Table) -> tuple[list[str], Counter[str]]:
+    table = table.combine_chunks()
+    rows = [json.dumps(row, sort_keys=True, default=str) for row in table.to_pylist()]
+    return table.column_names, Counter(rows)
+
+
+def compare_tables(actual: pa.Table, expected: pa.Table) -> tuple[bool, str]:
+    actual_columns, actual_rows = normalize_table(actual)
+    expected_columns, expected_rows = normalize_table(expected)
+    if actual_columns != expected_columns:
+        return False, f"columns differ: expected {expected_columns}, got {actual_columns}"
+    if actual_rows != expected_rows:
+        missing = expected_rows - actual_rows
+        extra = actual_rows - expected_rows
+        return False, f"rows differ: missing {sum(missing.values())}, extra {sum(extra.values())}"
+    return True, f"{actual.num_rows} rows"
 
 
 def run_query_test(query: str, query_name: str, table_defs: str, tables: dict[str, str], plan_only: bool = False) -> tuple[bool, str]:
@@ -90,8 +130,9 @@ def run_query_test(query: str, query_name: str, table_defs: str, tables: dict[st
 
         run_datafusion_worker(substrait_path, tables, result_path)
         result_table = read_arrow_ipc(result_path)
-        
-        return True, f"{result_table.num_rows} rows"
+        expected_table = get_clickhouse_arrow(query, table_defs)
+
+        return compare_tables(result_table, expected_table)
 
 
 def main():

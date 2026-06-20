@@ -1,0 +1,4 @@
+pyarrow==22.0.0
+datafusion==53.0.0
+substrait==0.25.0
+protobuf==5.29.6

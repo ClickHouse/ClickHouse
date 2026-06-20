@@ -35,7 +35,7 @@ def main():
     df = ctx.create_dataframe_from_logical_plan(logical_plan)
 
     batches = df.collect()
-    table = pa.Table.from_batches(batches)
+    table = pa.Table.from_batches(batches, schema=df.schema()) if not batches else pa.Table.from_batches(batches)
 
     with pa.OSFile(output_path, "wb") as sink:
         writer = ipc.new_file(sink, table.schema)

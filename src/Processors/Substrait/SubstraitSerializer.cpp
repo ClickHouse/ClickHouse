@@ -269,7 +269,7 @@ private:
 
     std::vector<FunctionExtension> function_extensions_;
     std::unordered_map<String, int> function_name_to_ref_;
-    int next_function_ref_ = 0;
+    int next_function_ref_ = 1;
 
     /// Map ClickHouse function names to Substrait standard names
     static String toSubstraitFunctionName(const String & clickhouse_name)
@@ -278,13 +278,61 @@ private:
             return "add";
         if (clickhouse_name == "minus")
             return "subtract";
-        if (clickhouse_name == "notLike")
-            return "not_like";
-        if (clickhouse_name == "notILike")
-            return "not_ilike";
+        if (clickhouse_name == "equals")
+            return "equal";
+        if (clickhouse_name == "notEquals")
+            return "not_equal";
+        if (clickhouse_name == "less")
+            return "lt";
+        if (clickhouse_name == "lessOrEquals")
+            return "lte";
+        if (clickhouse_name == "greater")
+            return "gt";
+        if (clickhouse_name == "greaterOrEquals")
+            return "gte";
+        if (clickhouse_name == "like" || clickhouse_name == "notLike" || clickhouse_name == "ilike" || clickhouse_name == "notILike")
+            return "like";
+        if (clickhouse_name == "startsWith" || clickhouse_name == "startsWithCaseInsensitive")
+            return "starts_with";
+        if (clickhouse_name == "endsWith" || clickhouse_name == "endsWithCaseInsensitive")
+            return "ends_with";
         // Other arithmetic types have the same name in ClickHouse and Substrait
 
         return clickhouse_name;
+    }
+
+    static bool isLikeFunction(const String & function_name)
+    {
+        return function_name == "like" || function_name == "notLike" || function_name == "ilike" || function_name == "notILike";
+    }
+
+    static bool isNegatedLikeFunction(const String & function_name)
+    {
+        return function_name == "notLike" || function_name == "notILike";
+    }
+
+    static bool isCaseInsensitiveLikeFunction(const String & function_name)
+    {
+        return function_name == "ilike" || function_name == "notILike";
+    }
+
+    static bool isStringPredicateFunction(const String & function_name)
+    {
+        return isLikeFunction(function_name) || function_name == "startsWith" || function_name == "startsWithCaseInsensitive"
+            || function_name == "endsWith" || function_name == "endsWithCaseInsensitive";
+    }
+
+    static bool isCaseInsensitiveStringPredicateFunction(const String & function_name)
+    {
+        return isCaseInsensitiveLikeFunction(function_name) || function_name == "startsWithCaseInsensitive"
+            || function_name == "endsWithCaseInsensitive";
+    }
+
+    static bool isBooleanFunction(const String & function_name)
+    {
+        return function_name == "equals" || function_name == "notEquals" || function_name == "less"
+            || function_name == "lessOrEquals" || function_name == "greater" || function_name == "greaterOrEquals"
+            || function_name == "and" || function_name == "or" || function_name == "not" || isStringPredicateFunction(function_name);
     }
 
     // Register a function and get its reference ID
@@ -306,29 +354,27 @@ private:
         if (function_name == "equals" || function_name == "notEquals" || function_name == "less"
             || function_name == "lessOrEquals" || function_name == "greater" || function_name == "greaterOrEquals")
         {
-            urn = "extension:substrait:functions_comparison";
+            urn = "extension:io.substrait:functions_comparison";
         }
         else if (function_name == "and" || function_name == "or" || function_name == "not")
         {
-            urn = "extension:substrait:functions_boolean";
+            urn = "extension:io.substrait:functions_boolean";
         }
         else if (
             function_name == "plus" || function_name == "minus" || function_name == "multiply"
             || function_name == "divide")
         {
-            urn = "extension:substrait:functions_arithmetic";
+            urn = "extension:io.substrait:functions_arithmetic";
         }
         else if (
             function_name == "sum" || function_name == "avg" || function_name == "count" || function_name == "min"
             || function_name == "max")
         {
-            urn = "extension:substrait:functions_aggregate_generic";
+            urn = "extension:io.substrait:functions_aggregate_generic";
         }
-        else if (
-            function_name == "like" || function_name == "notLike" || function_name == "ilike"
-            || function_name == "notILike")
+        else if (isStringPredicateFunction(function_name))
         {
-            urn = "extension:substrait:functions_string";
+            urn = "extension:io.substrait:functions_string";
         }
         else
         {
@@ -370,6 +416,21 @@ private:
         return expr;
     }
 
+    void setBooleanOutputType(const DataTypePtr & result_type, substrait::Type * output_type) const
+    {
+        auto nullability = substrait::Type::NULLABILITY_REQUIRED;
+        if (isNullableOrLowCardinalityNullable(result_type))
+            nullability = substrait::Type::NULLABILITY_NULLABLE;
+        output_type->mutable_bool_()->set_nullability(nullability);
+    }
+
+    void addStringPredicateOptions(substrait::Expression::ScalarFunction * scalar_func, const String & function_name) const
+    {
+        auto * option = scalar_func->add_options();
+        option->set_name("case_sensitivity");
+        option->add_preference(isCaseInsensitiveStringPredicateFunction(function_name) ? "CASE_INSENSITIVE" : "CASE_SENSITIVE");
+    }
+
     // Add extensions to the plan using extension_urns
     void addExtensionsToPlan(substrait::Plan & substrait_plan)
     {
@@ -382,7 +443,7 @@ private:
 
         // Create extension URN declarations using extension_urns
         std::unordered_map<String, uint32_t> urn_to_anchor;
-        uint32_t anchor = 0;
+        uint32_t anchor = 1;
         for (const auto & [urn, functions] : urn_to_functions)
         {
             auto * extension_urn = substrait_plan.add_extension_urns();
@@ -630,12 +691,44 @@ private:
 
             case ActionsDAG::ActionType::FUNCTION: {
                 const String & func_name = node->function_base->getName();
+
+                if (isNegatedLikeFunction(func_name))
+                {
+                    auto * not_func = expr.mutable_scalar_function();
+                    int not_ref_id = registerFunction("not");
+                    not_func->set_function_reference(not_ref_id);
+                    setBooleanOutputType(node->result_type, not_func->mutable_output_type());
+
+                    substrait::Expression like_expr;
+                    auto * like_func = like_expr.mutable_scalar_function();
+                    int like_ref_id = registerFunction(func_name);
+                    like_func->set_function_reference(like_ref_id);
+                    setBooleanOutputType(node->result_type, like_func->mutable_output_type());
+                    addStringPredicateOptions(like_func, func_name);
+
+                    for (const auto * child : node->children)
+                    {
+                        auto * arg = like_func->add_arguments();
+                        arg->mutable_value()->CopyFrom(convertExpression(child, input_header));
+                    }
+
+                    auto * not_arg = not_func->add_arguments();
+                    not_arg->mutable_value()->Swap(&like_expr);
+                    break;
+                }
+
                 auto * scalar_func = expr.mutable_scalar_function();
 
                 int ref_id = registerFunction(func_name);
                 scalar_func->set_function_reference(ref_id);
 
-                convertType(node->result_type, scalar_func->mutable_output_type());
+                if (isBooleanFunction(func_name))
+                    setBooleanOutputType(node->result_type, scalar_func->mutable_output_type());
+                else
+                    convertType(node->result_type, scalar_func->mutable_output_type());
+
+                if (isStringPredicateFunction(func_name))
+                    addStringPredicateOptions(scalar_func, func_name);
 
                 for (const auto * child : node->children)
                 {
@@ -730,10 +823,32 @@ private:
 
     void convertReadStep(const IQueryPlanStep & step, substrait::Rel * rel)
     {
-        auto * read_rel = rel->mutable_read();
+        // Get output header and add hidden source-filter columns, if the storage step kept a pushed-down predicate.
+        const auto & output_header = *step.getOutputHeader();
+        Block header = output_header;
+        const auto * source_with_filter = dynamic_cast<const SourceStepWithFilterBase *>(&step);
+        const auto & filter_actions_dag = source_with_filter ? source_with_filter->getFilterActionsDAG() : nullptr;
+        if (filter_actions_dag)
+        {
+            for (const auto * input : filter_actions_dag->getInputs())
+            {
+                if (!header.has(input->result_name))
+                    header.insert({input->result_type, input->result_name});
+            }
+        }
 
-        // Get output header to determine schema
-        const auto & header = *step.getOutputHeader();
+        substrait::ReadRel * read_rel = nullptr;
+        substrait::FilterRel * filter_rel = nullptr;
+        if (filter_actions_dag)
+        {
+            filter_rel = rel->mutable_filter();
+            read_rel = filter_rel->mutable_input()->mutable_read();
+        }
+        else
+        {
+            read_rel = rel->mutable_read();
+        }
+
         auto * base_schema = read_rel->mutable_base_schema();
 
         base_schema->mutable_struct_()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
@@ -743,6 +858,16 @@ private:
         {
             base_schema->add_names(column.name);
             convertType(column.type, base_schema->mutable_struct_()->add_types());
+        }
+
+        if (filter_actions_dag)
+        {
+            auto filter_expr = convertExpression(filter_actions_dag->getOutputs().front(), header);
+            filter_rel->mutable_condition()->Swap(&filter_expr);
+
+            auto * emit = filter_rel->mutable_common()->mutable_emit();
+            for (const auto & output_column : output_header)
+                emit->add_output_mapping(findColumnIndex(header, output_column.name, fmt::format("Read output {}", output_column.name)));
         }
 
         // Create a named table reference
@@ -1035,6 +1160,7 @@ private:
                 auto * scalar_func = eq_expr.mutable_scalar_function();
                 int ref_id = registerFunction("equals");
                 scalar_func->set_function_reference(ref_id);
+                scalar_func->mutable_output_type()->mutable_bool_()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
 
                 auto * arg0 = scalar_func->add_arguments();
                 arg0->mutable_value()->CopyFrom(left_sel);
@@ -1057,6 +1183,7 @@ private:
                     auto * and_func = and_expr.mutable_scalar_function();
                     int and_ref = registerFunction("and");
                     and_func->set_function_reference(and_ref);
+                    and_func->mutable_output_type()->mutable_bool_()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
 
                     for (const auto & conj : key_conjuncts)
                     {
@@ -1082,6 +1209,7 @@ private:
                 auto * or_func = or_expr.mutable_scalar_function();
                 int or_ref = registerFunction("or");
                 or_func->set_function_reference(or_ref);
+                or_func->mutable_output_type()->mutable_bool_()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
 
                 for (const auto & clause_expr : clause_expressions)
                 {
