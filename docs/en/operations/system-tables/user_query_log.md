@@ -15,8 +15,6 @@ The `system.user_query_log` table is a view over the query log table configured 
 
 The view is created with `SQL SECURITY NONE`, so its inner query uses internal access to the configured query log table instead of a `DEFINER` user. This lets a user read their own query log rows through `system.user_query_log` without being granted direct access to the configured query log table. Users do not need an explicit `SELECT` grant on `system.user_query_log`.
 
-The filter is placed in `PREWHERE` in the view definition.
-
 You can disable the view with the `query_log.enable_user_query_log` server configuration parameter.
 
 In `clickhouse-local`, `system.user_query_log` is available only when `query_log` is explicitly configured, because `clickhouse-local` does not initialize system logs by default.
