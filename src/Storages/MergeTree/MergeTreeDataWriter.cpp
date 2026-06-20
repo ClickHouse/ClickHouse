@@ -403,7 +403,7 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
         if (is_virtual_column_index(index))
             continue;
 
-        indices.emplace_back(MergeTreeIndexFactory::instance().get(index, merge_tree_settings));
+        indices.emplace_back(MergeTreeIndexFactory::instance().get(metadata_snapshot, index, merge_tree_settings));
     }
 
     return indices;

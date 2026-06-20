@@ -12,7 +12,7 @@ namespace DB
 class MergeTreeIndexLegacyHypothesis : public IMergeTreeIndex
 {
 public:
-    explicit MergeTreeIndexLegacyHypothesis(const IndexDescription & index_);
+    MergeTreeIndexLegacyHypothesis(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_);
     ~MergeTreeIndexLegacyHypothesis() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
@@ -20,7 +20,7 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 };
 
-MergeTreeIndexPtr legacyHypothesisIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
+MergeTreeIndexPtr legacyHypothesisIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void legacyHypothesisIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 }

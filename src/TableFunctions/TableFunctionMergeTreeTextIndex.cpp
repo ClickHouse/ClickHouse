@@ -113,7 +113,7 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 
-    auto text_index = MergeTreeIndexFactory::instance().get(index_desc, *merge_tree->getSettings());
+    auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
     auto columns = getActualTableStructure(context, is_insert_query);
     StorageID storage_id(getDatabaseName(), table_name);
 

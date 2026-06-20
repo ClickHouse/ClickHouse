@@ -116,7 +116,7 @@ void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndex
 }
 
 MergeTreeIndexPtr MergeTreeIndexFactory::get(
-    const IndexDescription & index, const MergeTreeSettings & settings) const
+    StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const
 {
     auto it = creators.find(index.type);
     if (it == creators.end())
@@ -133,15 +133,14 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                 );
     }
 
-    return it->second(index, settings);
+    return it->second(std::move(metadata_snapshot), index, settings);
 }
 
-
-MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const
+MergeTreeIndices MergeTreeIndexFactory::getMany(StorageMetadataPtr metadata_snapshot, const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const
 {
     MergeTreeIndices result;
     for (const auto & index : indices)
-        result.emplace_back(get(index, settings));
+        result.emplace_back(get(metadata_snapshot, index, settings));
     return result;
 }
 

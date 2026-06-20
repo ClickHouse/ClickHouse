@@ -155,7 +155,7 @@ protected:
                     continue;
                 }
 
-                StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+                const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 columns = metadata_snapshot->getColumns();
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.

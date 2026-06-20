@@ -810,10 +810,10 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index);
 }
 
-MergeTreeIndexPtr setIndexCreator(const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     size_t max_rows = getFieldFromIndexArgumentAST(index.arguments->children[0]).safeGet<size_t>();
-    return std::make_shared<MergeTreeIndexSet>(index, max_rows);
+    return std::make_shared<MergeTreeIndexSet>(std::move(metadata_snapshot), index, max_rows);
 }
 
 void setIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
