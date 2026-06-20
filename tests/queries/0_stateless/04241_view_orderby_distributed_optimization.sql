@@ -14,6 +14,14 @@ DROP TABLE IF EXISTS test_local_04241;
 DROP TABLE IF EXISTS test_distributed_04241;
 DROP VIEW IF EXISTS test_view_04241;
 
+-- The `SQL SECURITY DEFINER` views below depend on the `definer_*_04241` users,
+-- so a leftover view from a partially-failed previous run would make a later
+-- `DROP USER` throw `HAVE_DEPENDENT_OBJECTS`. Drop the definer views before the
+-- users (here and again before `DROP USER` below) to keep the test rerunnable.
+DROP VIEW IF EXISTS test_view_definer_limit_04241;
+DROP VIEW IF EXISTS test_view_definer_offset_04241;
+DROP VIEW IF EXISTS test_view_definer_alias_04241;
+
 CREATE TABLE test_local_04241 (
     id UInt64,
     val String,
@@ -354,6 +362,11 @@ DROP VIEW test_view_settings_alias_04241;
 -- definer `prefer_column_name_to_alias` rebinds the injected `ORDER BY`
 -- identifiers. The AST `SETTINGS` guard above does not see these inherited
 -- settings, so they must be rejected via the effective view context.
+-- Drop the dependent views before the users so this block is rerunnable even if
+-- a previous run was interrupted between creating a view and dropping its user.
+DROP VIEW IF EXISTS test_view_definer_limit_04241;
+DROP VIEW IF EXISTS test_view_definer_offset_04241;
+DROP VIEW IF EXISTS test_view_definer_alias_04241;
 DROP USER IF EXISTS definer_limit_04241;
 DROP USER IF EXISTS definer_offset_04241;
 DROP USER IF EXISTS definer_alias_04241;
