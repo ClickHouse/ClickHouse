@@ -1,5 +1,7 @@
--- Tags: no-parallel
--- ^^ required because the test runs SYSTEM DROP COMPILED EXPRESSION CACHE, which affects global state.
+-- Tags: no-parallel, no-fasttest
+-- no-parallel: the test runs SYSTEM DROP COMPILED EXPRESSION CACHE, which affects global state.
+-- no-fasttest: the Fast test build has no embedded compiler, so SYSTEM DROP COMPILED EXPRESSION CACHE
+--              raises SUPPORT_IS_DISABLED there (and the regexp JIT path is a no-op).
 
 -- The regexp JIT keeps a process-wide seen-count map (how many times each pattern has been used before
 -- it is compiled). SYSTEM DROP COMPILED EXPRESSION CACHE must clear that map together with the compiled
