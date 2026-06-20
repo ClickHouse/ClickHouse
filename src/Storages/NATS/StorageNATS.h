@@ -117,6 +117,8 @@ private:
     /// One-shot request from STOP/PAUSE: unsubscribe and drop buffered messages.
     std::atomic<bool> subscription_stale{false};
 
+    UInt64 last_seen_refresh_epoch = 0;
+
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
 

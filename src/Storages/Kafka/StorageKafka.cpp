@@ -613,7 +613,7 @@ void StorageKafka::threadFunc(size_t idx)
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        const bool run_cycle = stream_control.claimCycle();
+        const bool run_cycle = stream_control.claimCycle(task->last_seen_refresh_epoch);
 
         if (num_views && run_cycle)
         {

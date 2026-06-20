@@ -1092,7 +1092,7 @@ void StorageRabbitMQ::threadFunc()
             size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
             bool rabbit_connected = connection->isConnected() || connection->reconnect();
 
-            const bool run_cycle = rabbit_connected && stream_control.claimCycle();
+            const bool run_cycle = rabbit_connected && stream_control.claimCycle(last_seen_refresh_epoch);
 
             if (num_views && run_cycle)
             {

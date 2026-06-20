@@ -37,8 +37,9 @@ namespace DB
 ///                          flight when it arrived, a later reader takes a fresh snapshot and is
 ///                          unaffected (no stale flag to poison a future direct SELECT), and concurrent
 ///                          cycles cannot clear each other's request (there is nothing to reset).
-///   - `refresh_once`     — REFRESH runs exactly one out-of-order cycle even while blocked, then the
-///                          block applies again. Mirrors `SYSTEM REFRESH VIEW` for refreshable views.
+///   - `refresh_epoch`    — REFRESH runs one out-of-order cycle even while blocked. A monotonic counter
+///                          (like `cancel_epoch`) so every worker of a multi-task engine serves each
+///                          REFRESH once. Mirrors `SYSTEM REFRESH VIEW` for refreshable views.
 class StreamingBackgroundControl
 {
 public:
@@ -52,22 +53,23 @@ public:
     UInt64 currentCancelEpoch() const { return cancel_epoch.load(); }
     bool isCancelRequested(UInt64 snapshot) const { return cancel_epoch.load() != snapshot; }
 
-    /// Run exactly one cycle even while blocked.
-    void requestRefreshOnce() { refresh_once.store(true); }
+    /// Request one out-of-order cycle for every worker, even while blocked (one per SYSTEM REFRESH).
+    void requestRefreshOnce() { refresh_epoch.fetch_add(1); }
 
-    /// Decide whether the background task should run a streaming cycle on this scheduler wake-up:
-    /// true when consumption is not blocked, or a SYSTEM REFRESH has requested one out-of-order cycle.
-    /// Consumes the one-shot REFRESH request, so call it exactly once per wake-up.
-    bool claimCycle()
+    /// True if this worker should run a cycle now: not blocked, or a REFRESH it has not served yet.
+    /// `last_seen_refresh_epoch` is per-worker state; call once per wake-up.
+    bool claimCycle(UInt64 & last_seen_refresh_epoch)
     {
-        const bool one_shot = refresh_once.exchange(false);
-        return one_shot || !isBlocked();
+        const UInt64 epoch = refresh_epoch.load();
+        const bool refresh_requested = epoch != last_seen_refresh_epoch;
+        last_seen_refresh_epoch = epoch;
+        return refresh_requested || !isBlocked();
     }
 
 private:
     ActionBlocker blocker;
     std::atomic<UInt64> cancel_epoch = 0;
-    std::atomic<bool> refresh_once = false;
+    std::atomic<UInt64> refresh_epoch = 0;
 };
 
 }

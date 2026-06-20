@@ -130,6 +130,7 @@ private:
     {
         BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
+        UInt64 last_seen_refresh_epoch = 0;
         explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
         {
         }

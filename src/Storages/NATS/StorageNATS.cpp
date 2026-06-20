@@ -267,8 +267,7 @@ void StorageNATS::initializeConsumersFunc()
     size_t num_views = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
     if (num_views == 0)
     {
-        /// Viewless
-        stream_control.claimCycle();
+        stream_control.claimCycle(last_seen_refresh_epoch);
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
     }
@@ -634,7 +633,7 @@ void StorageNATS::threadFunc()
     if (consumers_ready && subscription_stale.exchange(false))
         unsubscribeConsumers();
 
-    const bool run_cycle = stream_control.claimCycle();
+    const bool run_cycle = stream_control.claimCycle(last_seen_refresh_epoch);
 
     try
     {

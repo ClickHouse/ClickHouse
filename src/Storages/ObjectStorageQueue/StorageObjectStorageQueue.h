@@ -165,6 +165,7 @@ private:
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
+    std::vector<UInt64> streaming_task_refresh_epochs;
     std::atomic<size_t> max_files_override{0};
 
     LoggerPtr log;

@@ -687,15 +687,10 @@ def test_pause_after_refresh_while_running(kafka_cluster):
 
 @pytest.mark.parametrize("verb", ["STOP", "CANCEL"])
 def test_direct_select_not_poisoned_by_stop_or_cancel(kafka_cluster, verb):
-    # Regression test: on a table with no attached materialized view no streaming cycle ever
-    # runs, so nothing may rely on a cycle start to reset the in-flight cancel request. After a
-    # STOP (which also requests a cancel) or a bare CANCEL issued while idle, a direct SELECT must
-    # still return data instead of bailing out before polling and returning nothing forever.
-    #
-    # Each verb uses its own fresh table so its direct read is the consumer's first group join. A
-    # second direct read on the same pooled consumer re-subscribes and rebalances (revoke+rejoin),
-    # which races the short query and marks the consumer dirty independently of the cancel logic
-    # under test; that churn — not the cancel epoch — is what would make a later read flaky.
+    # With no attached view no streaming cycle runs, so nothing may rely on a cycle start to reset an
+    # in-flight cancel request. After STOP (which also requests a cancel) or a bare CANCEL while idle,
+    # a direct SELECT must still poll and return data. Each verb uses a fresh table so its read is the
+    # consumer's first group join (a second read would rebalance and flake on churn, not the cancel).
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_select_{verb.lower()}_{k.random_string(6)}"
     with k.kafka_topic(admin_client, table):
@@ -721,12 +716,9 @@ def test_direct_select_not_poisoned_by_stop_or_cancel(kafka_cluster, verb):
 
 
 def test_multi_consumer_stop_aborts_all_inflight_blocks(kafka_cluster):
-    # With `kafka_thread_per_consumer = 1` every consumer runs its own independent background
-    # task against the shared control state. A STOP issued while several cycles are in flight
-    # must abort ALL of them before their offset commits: no task may commit its open block,
-    # and no task's cycle start may erase the request for a sibling still in flight.
-    # (The CANCEL-only analogue of this race is not deterministically testable: without the
-    # blocker a finishing task is free to start a fresh cycle at any moment.)
+    # With kafka_thread_per_consumer=1 each consumer runs its own task against the shared control. A
+    # STOP while several cycles are in flight must abort ALL of them: no task commits its open block,
+    # and no task's cycle start erases a sibling's pending request.
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_multi_{k.random_string(6)}"
     with k.kafka_topic(admin_client, table, num_partitions=2):
@@ -765,6 +757,65 @@ def test_multi_consumer_stop_aborts_all_inflight_blocks(kafka_cluster):
         # Nothing was committed, so START redelivers everything.
         instance.query(f"SYSTEM START test.{table}")
         wait_dst_count(table, 10)
+
+
+def test_multi_consumer_refresh_while_stopped_covers_all(kafka_cluster):
+    # On a STOPPED table, SYSTEM REFRESH must run one cycle for EVERY consumer, not just the one that
+    # wins the shared grant. With two partitions and kafka_thread_per_consumer=1 each consumer owns one
+    # partition, so a single REFRESH must drain BOTH. (v1 only: StorageKafka2 locks partitions per
+    # replica, so on one instance a single consumer holds both and the test can't isolate the fix.)
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_multi_refresh_{k.random_string(6)}"
+    with k.kafka_topic(admin_client, table, num_partitions=2):
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{table}',
+                         kafka_group_name = '{table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_num_consumers = 2,
+                         kafka_thread_per_consumer = 1,
+                         kafka_flush_interval_ms = 500,
+                         kafka_max_block_size = 1000;
+            CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+                SELECT key, value FROM test.{table};
+            """
+        )
+
+        # Warm up both partitions so both consumers join the group and each is assigned a partition.
+        produce_to_partition(kafka_cluster, table, 0, 0, 3)
+        produce_to_partition(kafka_cluster, table, 1, 1000, 3)
+        wait_dst_count(table, 6)
+
+        # Stop, then load a distinct backlog on BOTH partitions while stopped.
+        instance.query(f"SYSTEM STOP test.{table}")
+        produce_to_partition(kafka_cluster, table, 0, 100, 5)
+        produce_to_partition(kafka_cluster, table, 1, 1100, 5)
+        assert_dst_count_stable(table, 6, seconds=5)
+
+        # A single REFRESH while stopped must run a cycle for each consumer, draining both partitions.
+        instance.query(f"SYSTEM REFRESH test.{table}")
+        p0 = p1 = 0
+        for _ in range(120):
+            p0 = int(
+                instance.query(
+                    f"SELECT count() FROM test.{table}_dst WHERE key >= 100 AND key < 1000"
+                )
+            )
+            p1 = int(
+                instance.query(
+                    f"SELECT count() FROM test.{table}_dst WHERE key >= 1100"
+                )
+            )
+            if p0 == 5 and p1 == 5:
+                break
+            time.sleep(0.5)
+        assert (
+            p0 == 5 and p1 == 5
+        ), f"single REFRESH while stopped drained only one partition: partition0={p0} partition1={p1} (expected 5 and 5)"
 
 
 @pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])

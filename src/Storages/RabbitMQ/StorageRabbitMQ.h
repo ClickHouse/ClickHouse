@@ -175,6 +175,8 @@ private:
     RabbitMQConsumerPtr createConsumer();
     std::atomic<bool> initialized = false;
 
+    UInt64 last_seen_refresh_epoch = 0;
+
     /// Functions working in the background
     void threadFunc();
     void loopingFunc();
