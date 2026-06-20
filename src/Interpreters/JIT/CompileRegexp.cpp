@@ -217,7 +217,10 @@ private:
     llvm::Value * loadByte(llvm::Value * p) { return b.CreateLoad(b.getInt8Ty(), p); }
     llvm::Value * gepByte(llvm::Value * p, int64_t off)
     {
-        return b.CreateInBoundsGEP(b.getInt8Ty(), p, llvm::ConstantInt::getSigned(b.getInt64Ty(), off));
+        /// Deliberately not `inbounds`: callers (`emitLiteral`, `emitCharQuant`) form a pointer past the
+        /// input and only then range-check it against `end_arg`. An `inbounds` GEP that leaves the
+        /// allocated object is poison, so the subsequent comparison could be miscompiled.
+        return b.CreateGEP(b.getInt8Ty(), p, llvm::ConstantInt::getSigned(b.getInt64Ty(), off));
     }
     llvm::Value * ptrDiff(llvm::Value * hi, llvm::Value * lo) { return b.CreatePtrDiff(b.getInt8Ty(), hi, lo); }
 
@@ -591,6 +594,12 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
 RegexpJITMatcher getRegexpJITMatcher(
     const std::string & pattern, bool case_insensitive, bool dot_all, size_t min_count_to_compile)
 {
+    /// `std::numeric_limits<size_t>::max()` is the disabled sentinel (`compile_regular_expressions = 0`).
+    /// Return before doing any work, so a disabled JIT neither parses patterns nor grows the seen-count
+    /// map - some callers (`extractAll`, `replaceRegexp*`) invoke this unconditionally.
+    if (min_count_to_compile == std::numeric_limits<size_t>::max())
+        return {};
+
     ParseFlags flags;
     flags.case_insensitive = case_insensitive;
     flags.dot_all = dot_all;
