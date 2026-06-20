@@ -305,7 +305,15 @@ void ReplxxLineReader::setCompletionCallbackWithAutoComplete(Suggest & suggest, 
     auto suggestion_callback = [&autocomplete, &suggest, this] (const String & context, size_t context_size)
     {
         if (DB::Autocomplete::isLastCharSpace(context, word_break_characters))
-            return autocomplete.getPossibleNextWords<Replxx::completions_t>(context, context_size, word_break_characters);
+        {
+            /// After a word-break character (e.g. `FROM `, `db.`) ask the model first. When it has no
+            /// prediction (still loading, failed to load, or simply not confident) fall back to the
+            /// static `Suggest` completions (keywords, database/table/column names), so completion is
+            /// never worse than it was before autocomplete was enabled.
+            auto completions = autocomplete.getPossibleNextWords<Replxx::completions_t>(context, context_size, word_break_characters);
+            if (!completions.empty())
+                return completions;
+        }
 
         return suggest.getCompletions(context, context_size, word_break_characters);
     };
