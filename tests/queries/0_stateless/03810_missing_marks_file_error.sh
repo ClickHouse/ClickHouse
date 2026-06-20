@@ -7,6 +7,27 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Remove every marks file in a part directory, matching by extension only. On case-insensitive
+# filesystems (e.g. macOS) the stream basename is replaced by a hash, so a column.ext lookup misses;
+# the marks extension (.cmrk2/.mrk2/.cmrk/.mrk for wide, .cmrk4/.mrk4/.cmrk3/.mrk3 for compact) is
+# never hashed. Removing all of them guarantees the read/loaded column's marks are gone. Exits the
+# test if the part has no marks file (layout changed unexpectedly).
+remove_all_marks_files() {
+    local dir=$1
+    local removed=0 f
+    shopt -s nullglob
+    for f in "$dir"*.cmrk2 "$dir"*.mrk2 "$dir"*.cmrk "$dir"*.mrk "$dir"*.cmrk4 "$dir"*.mrk4 "$dir"*.cmrk3 "$dir"*.mrk3; do
+        rm -f "$f"
+        removed=$((removed + 1))
+    done
+    shopt -u nullglob
+    if [ "$removed" -eq 0 ]; then
+        echo "NO MARKS FILE FOUND in $dir" >&2
+        ls "$dir" >&2
+        return 1
+    fi
+}
+
 # When a column's marks file is listed in a part's checksums but is missing on disk
 # (e.g. due to a rare concurrent race), reading that column must fail with a clear,
 # typed error (NO_FILE_IN_DATA_PART) naming the part and the file, not an opaque
@@ -28,22 +49,8 @@ path=$($CLICKHOUSE_CLIENT -q "select path from system.parts where database=curre
 # ensure path is absolute before touching the filesystem
 $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is relative: $path')" > /dev/null || exit 1
 
-# remove the marks file for column b. Wide marks are adaptive-compressed (.cmrk2), adaptive
-# (.mrk2), non-adaptive-compressed (.cmrk) or non-adaptive (.mrk) depending on randomized
-# index_granularity_bytes / compress_marks; cover every wide extension.
-mark_file=""
-for ext in cmrk2 mrk2 cmrk mrk; do
-    if [ -f "${path}b.${ext}" ]; then
-        mark_file="${path}b.${ext}"
-        break
-    fi
-done
-if [ -z "$mark_file" ]; then
-    echo "NO MARKS FILE FOUND for column b in $path" >&2
-    ls "$path" >&2
-    exit 1
-fi
-rm -f "$mark_file"
+# remove the marks files so column b's marks are gone (the select below reads only b).
+remove_all_marks_files "$path" || exit 1
 
 # drop the mark cache so the marks are loaded from disk (and not served from cache)
 $CLICKHOUSE_CLIENT -q "system drop mark cache"
@@ -77,23 +84,11 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_missing_granularity_marks SELECT number, nu
 path=$($CLICKHOUSE_CLIENT -q "select path from system.parts where database=currentDatabase() and table='t_missing_granularity_marks' and active=1 limit 1")
 $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is relative: $path')" > /dev/null || exit 1
 
-# detach the table so the part is unloaded, then remove the first column's (a) marks file:
-# that is the one loadIndexGranularity() reads.
+# detach the table so the part is unloaded, then remove the marks files. loadIndexGranularity()
+# reads the first column's (a) marks file, which is among those removed.
 $CLICKHOUSE_CLIENT -q "detach table t_missing_granularity_marks"
 
-mark_file=""
-for ext in cmrk2 mrk2 cmrk mrk; do
-    if [ -f "${path}a.${ext}" ]; then
-        mark_file="${path}a.${ext}"
-        break
-    fi
-done
-if [ -z "$mark_file" ]; then
-    echo "NO MARKS FILE FOUND for column a in $path" >&2
-    ls "$path" >&2
-    exit 1
-fi
-rm -f "$mark_file"
+remove_all_marks_files "$path" || exit 1
 
 # reloading the table re-reads index granularity from disk; the missing marks file makes the
 # part broken-on-start instead of crashing with an opaque std::filesystem error.
@@ -142,21 +137,8 @@ $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is 
 
 $CLICKHOUSE_CLIENT -q "detach table t_missing_compact_marks"
 
-# the single compact marks file is "data" with extension .cmrk4 / .mrk4 (with substreams) or
-# .cmrk3 / .mrk3 depending on randomized compress_marks; cover every compact extension.
-mark_file=""
-for ext in cmrk4 mrk4 cmrk3 mrk3; do
-    if [ -f "${path}data.${ext}" ]; then
-        mark_file="${path}data.${ext}"
-        break
-    fi
-done
-if [ -z "$mark_file" ]; then
-    echo "NO MARKS FILE FOUND for compact data in $path" >&2
-    ls "$path" >&2
-    exit 1
-fi
-rm -f "$mark_file"
+# a compact part keeps every column's marks in a single "data" marks file; remove it.
+remove_all_marks_files "$path" || exit 1
 
 $CLICKHOUSE_CLIENT --send_logs_level=none -q "attach table t_missing_compact_marks"
 
