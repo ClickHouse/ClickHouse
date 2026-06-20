@@ -1058,6 +1058,16 @@ void StorageDistributed::read(
 
 SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    /// When the target is a table function (e.g. `numbers(...)`, `view(...)`), there is no remote
+    /// table to insert into: `remote_storage` is an empty `StorageID`, so `DistributedSink` would
+    /// build an `INSERT` into an empty table id. Such targets are read-only by nature, so reject the
+    /// write explicitly instead of producing a malformed query. This covers both the `remote()` table
+    /// function and the `Remote`/`RemoteSecure` storage engines with a table-function target.
+    if (remote_table_function_ptr)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method write is not supported by storage {} with a table function target", getName());
+
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
 
