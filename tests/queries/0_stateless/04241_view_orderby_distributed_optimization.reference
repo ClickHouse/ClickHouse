@@ -28,6 +28,34 @@ outer inline OVER disables pushdown:	1
 fractional LIMIT disables pushdown:	1
 fractional LIMIT result count:	20
 extremes disables pushdown:	1
+exact_rows_before_limit disables pushdown:	1
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[0],
+		[1],
+		[1],
+		[2],
+		[2],
+		[3],
+		[3],
+		[4],
+		[4]
+	],
+
+	"rows": 10,
+
+	"rows_before_limit_at_least": 200
+}
 type mismatch disables pushdown:	1
 type mismatch result:	9
 view QUALIFY disables pushdown:	1

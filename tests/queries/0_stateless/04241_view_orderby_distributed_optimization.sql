@@ -246,6 +246,23 @@ SELECT 'extremes disables pushdown:',
     (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10 SETTINGS extremes = 1)
      WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
 
+-- `exact_rows_before_limit` setting: pushdown must be disabled. The setting
+-- promises an exact `rows_before_limit_at_least` value computed over the full
+-- pre-`LIMIT` stream. The pushed inner `LIMIT` becomes a child `LimitTransform`
+-- under the outer `LimitTransform`, and `initRowsBeforeLimit` ignores child
+-- limits once it finds the outer limit, so with the pushdown the counter would
+-- be attached above the already-truncated view output and report only the
+-- per-shard top-N instead of the full row count.
+SELECT 'exact_rows_before_limit disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10 SETTINGS exact_rows_before_limit = 1)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+-- With the pushdown disabled, `rows_before_limit_at_least` reports the full
+-- pre-`LIMIT` row count (200 = 100 rows x 2 shards), not the per-shard top-N.
+-- `output_format_write_statistics = 0` keeps the JSON output deterministic.
+SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10
+FORMAT JSONCompact SETTINGS exact_rows_before_limit = 1, output_format_write_statistics = 0, output_format_json_quote_64bit_integers = 0, max_block_size = 1;
+
 -- View whose declared column type differs from the inner expression type:
 -- pushdown must be disabled. `StorageView` converts the inner result to the
 -- view's declared structure *after* the inner query runs, so the conversion
