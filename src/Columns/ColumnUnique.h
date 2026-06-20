@@ -225,6 +225,26 @@ private:
     ColumnType * getRawColumnPtr() { return assert_cast<ColumnType *>(column_holder.get()); }
     const ColumnType * getRawColumnPtr() const { return assert_cast<const ColumnType *>(column_holder.get()); }
 
+    /// Canonicalize a float value so that values which compare equal share a single dictionary entry: all
+    /// NaNs collapse to one NaN (their sign and mantissa bits are ignored) and -0.0 collapses to +0.0.
+    /// Returns the dictionary index if the value was canonicalized and inserted, or nullopt otherwise.
+    template <is_floating_point T>
+    std::optional<size_t> uniqueInsertCanonicalFloat(T value)
+    {
+        using ValueType = typename ColumnType::ValueType;
+        if (isNaN(value))
+        {
+            auto nan = NaNOrZero<ValueType>();
+            return uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
+        }
+        if (value == 0)
+        {
+            ValueType zero{};
+            return uniqueInsertData(reinterpret_cast<char *>(&zero), sizeof(zero));
+        }
+        return {};
+    }
+
     template <typename IndexType>
     MutableColumnPtr uniqueInsertRangeImpl(
         const IColumn & src,
@@ -373,15 +393,13 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
     if (x.isNull())
         return getNullValueIndex();
 
-    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
+    /// Values that compare equal must map to the same dictionary entry. Two kinds of float values have
+    /// distinct bit patterns yet compare equal, so they need explicit canonicalization:
+    ///     1. NaNs may differ in their sign and mantissa bits, but all NaNs must be treated as equal.
+    ///     2. Negative and positive zero have different bit patterns, but -0.0 compares equal to 0.0.
     if constexpr (is_float_vector_v<ColumnType>)
-    {
-        if (isNaN(x.safeGet<typename ColumnType::ValueType>()))
-        {
-            auto nan = NaNOrZero<typename ColumnType::ValueType>();
-            return uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
-        }
-    }
+        if (auto index = uniqueInsertCanonicalFloat(x.safeGet<typename ColumnType::ValueType>()))
+            return *index;
 
     auto single_value_column = column_holder->cloneEmpty();
     single_value_column->insert(x);
@@ -405,12 +423,14 @@ bool ColumnUnique<ColumnType>::tryUniqueInsert(const Field & x, size_t & index)
     if (!single_value_column->tryInsert(x))
         return false;
 
-    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
+    /// Values that compare equal must map to the same dictionary entry. Two kinds of float values have
+    /// distinct bit patterns yet compare equal, so they need explicit canonicalization:
+    ///     1. NaNs may differ in their sign and mantissa bits, but all NaNs must be treated as equal.
+    ///     2. Negative and positive zero have different bit patterns, but -0.0 compares equal to 0.0.
     if constexpr (is_float_vector_v<ColumnType>)
-        if (isNaN(x.safeGet<typename ColumnType::ValueType>()))
+        if (auto insertion_point = uniqueInsertCanonicalFloat(x.safeGet<typename ColumnType::ValueType>()))
         {
-            auto nan = NaNOrZero<typename ColumnType::ValueType>();
-            index = uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
+            index = *insertion_point;
             return true;
         }
 
@@ -428,13 +448,13 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&src))
         return uniqueInsertFrom(nullable->getNestedColumn(), n);
 
-    // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
+    /// Values that compare equal must map to the same dictionary entry. Two kinds of float values have
+    /// distinct bit patterns yet compare equal, so they need explicit canonicalization:
+    ///     1. NaNs may differ in their sign and mantissa bits, but all NaNs must be treated as equal.
+    ///     2. Negative and positive zero have different bit patterns, but -0.0 compares equal to 0.0.
     if constexpr (is_float_vector_v<ColumnType>)
-        if (isNaN(src.getFloat64(n)))
-        {
-            auto nan = NaNOrZero<typename ColumnType::ValueType>();
-            return uniqueInsertData(reinterpret_cast<char *>(&nan), sizeof(nan));
-        }
+        if (auto index = uniqueInsertCanonicalFloat(src.getFloat64(n)))
+            return *index;
 
     auto ref = src.getDataAt(n);
     return uniqueInsertData(ref.data(), ref.size());
