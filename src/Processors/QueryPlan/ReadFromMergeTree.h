@@ -561,6 +561,15 @@ private:
         const Names & column_names,
         std::optional<ActionsDAG> & out_projection);
 
+    /// Reads non-intersecting primary-key ranges (each owned by a single deduplicated part) without a
+    /// merge, applying only the filter the merge would have applied (drop negative-sign rows for
+    /// `Collapsing`, `is_deleted` rows for `Replacing` with an is-deleted column; other engines need none).
+    Pipe readNonIntersectingWithEngineFilter(
+        RangesInDataParts && parts,
+        const MergeTreeIndexBuildContextPtr & index_build_context,
+        size_t num_streams,
+        const Names & origin_column_names);
+
     ReadFromMergeTree::AnalysisResult & getAnalysisResultImpl() const;
     const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
     ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }

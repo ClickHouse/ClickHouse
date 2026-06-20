@@ -1614,6 +1614,40 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     return true;
 }
 
+Pipe ReadFromMergeTree::readNonIntersectingWithEngineFilter(
+    RangesInDataParts && parts,
+    const MergeTreeIndexBuildContextPtr & index_build_context,
+    size_t num_streams,
+    const Names & origin_column_names)
+{
+    /// `Collapsing` does not expose unmatched negative-sign rows on FINAL, and `Replacing` with an
+    /// is-deleted column hides deleted rows; a non-intersecting range skips the merge, so add that filter
+    /// here. Other engines drop nothing on FINAL beyond the deduplication a single part already did.
+    if (data.merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+    {
+        auto columns_with_sign = origin_column_names;
+        if (std::ranges::find(columns_with_sign, data.merging_params.sign_column) == columns_with_sign.end())
+            columns_with_sign.push_back(data.merging_params.sign_column);
+        Pipe pipe = spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns_with_sign);
+        auto [expression, filter_name] = createExpressionForPositiveSign(data.merging_params.sign_column, pipe.getHeader(), context);
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+            { return std::make_shared<FilterTransform>(header, expression, filter_name, true); });
+        return pipe;
+    }
+    if (!data.merging_params.is_deleted_column.empty())
+    {
+        auto columns_with_is_deleted = origin_column_names;
+        if (std::ranges::find(columns_with_is_deleted, data.merging_params.is_deleted_column) == columns_with_is_deleted.end())
+            columns_with_is_deleted.push_back(data.merging_params.is_deleted_column);
+        Pipe pipe = spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns_with_is_deleted);
+        auto [expression, filter_name] = createExpressionForIsDeleted(data.merging_params.is_deleted_column, pipe.getHeader(), context);
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+            { return std::make_shared<FilterTransform>(header, expression, filter_name, true); });
+        return pipe;
+    }
+    return spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, origin_column_names);
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1711,6 +1745,17 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             sort_description.emplace_back(sort_columns[i], (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1);
 
         addMergingFinal(pipe, sort_description, data.merging_params, storage_snapshot->metadata, block_size.max_block_size_rows, enable_vertical_final);
+        return pipe;
+    }
+
+    if (distributed_read_bucket_count > 0)
+    {
+        /// Distributed non-intersecting FINAL bucket: read its ranges without a merge (only the engine
+        /// filter), no re-split. The downstream gather reconciles the header to the read step's output.
+        Pipe pipe = readNonIntersectingWithEngineFilter(
+            std::move(parts_with_ranges), index_build_context, num_streams, origin_column_names);
+        if (!out_projection)
+            out_projection = createProjection(pipe.getHeader());
         return pipe;
     }
 
@@ -1846,49 +1891,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     }
 
     if (!non_intersecting_parts_by_primary_key.empty())
-    {
-        Pipe pipe;
-
-        /// Collapsing algorithm doesn't expose non-matched rows with a negative sign in queries with FINAL.
-        /// To support this logic without merging data, add a filtering by sign column for non-intersecting ranges.
-        if (data.merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-        {
-            auto columns_with_sign = origin_column_names;
-            if (std::ranges::find(columns_with_sign, data.merging_params.sign_column) == columns_with_sign.end())
-                columns_with_sign.push_back(data.merging_params.sign_column);
-
-            pipe = spreadMarkRangesAmongStreams(
-                std::move(non_intersecting_parts_by_primary_key), index_build_context, num_streams, columns_with_sign);
-            auto [expression, filter_name] = createExpressionForPositiveSign(data.merging_params.sign_column, pipe.getHeader(), context);
-
-            pipe.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<FilterTransform>(header, expression, filter_name, true);
-            });
-        }
-        else if (!data.merging_params.is_deleted_column.empty())
-        {
-            auto columns_with_is_deleted = origin_column_names;
-            if (std::ranges::find(columns_with_is_deleted, data.merging_params.is_deleted_column) == columns_with_is_deleted.end())
-                columns_with_is_deleted.push_back(data.merging_params.is_deleted_column);
-
-            pipe = spreadMarkRangesAmongStreams(
-                std::move(non_intersecting_parts_by_primary_key), index_build_context, num_streams, columns_with_is_deleted);
-            auto [expression, filter_name] = createExpressionForIsDeleted(data.merging_params.is_deleted_column, pipe.getHeader(), context);
-
-            pipe.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<FilterTransform>(header, expression, filter_name, true);
-            });
-        }
-        else
-        {
-            pipe = spreadMarkRangesAmongStreams(
-                std::move(non_intersecting_parts_by_primary_key), index_build_context, num_streams, origin_column_names);
-        }
-
-        no_merging_pipes.emplace_back(std::move(pipe));
-    }
+        no_merging_pipes.emplace_back(readNonIntersectingWithEngineFilter(
+            std::move(non_intersecting_parts_by_primary_key), index_build_context, num_streams, origin_column_names));
 
     if (!merging_pipes.empty() && !no_merging_pipes.empty())
     {
@@ -4799,28 +4803,61 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     for (const auto & span : spans)
         total_marks += span.getMarksCountAllParts();
 
-    /// Split each span into PK-range layers, giving it a share of the layer budget proportional to its
-    /// marks (at least one layer per span). Each layer keeps its span's borders and its index among them
-    /// so the worker can rebuild the trimming filter for its interval.
-    std::vector<DistributedReadBucket> final_layers;
+    /// Split each span by primary key into non-intersecting ranges (each owned by a single level>0 part,
+    /// already deduplicated, so read without a merge) and intersecting ranges (overlapping across parts,
+    /// merged in PK-range layers). Each gets a share of the span's bucket budget proportional to its marks;
+    /// `split_parts_ranges_into_intersecting_and_non_intersecting_final` (default on) gates the split. A
+    /// read-in-order bucketed read is rejected in `serialize`, so the split needs no read-in-order guard.
+    const bool split_non_intersecting
+        = context->getSettingsRef()[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final];
+    std::vector<DistributedReadBucket> buckets;
     for (auto & span : spans)
     {
         const size_t span_marks = span.getMarksCountAllParts();
-        const size_t span_max_layers = total_marks == 0 ? 1 : std::max<size_t>(1, target_buckets * span_marks / total_marks);
-        auto split = splitIntersectingPartsRangesIntoLayers(
-            std::move(span), span_max_layers, primary_key.column_names.size(), *in_reverse_order, log);
-        for (size_t i = 0; i < split.layers.size(); ++i)
-            final_layers.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
+        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, target_buckets * span_marks / total_marks);
+
+        RangesInDataParts intersecting;
+        if (split_non_intersecting)
+        {
+            auto ranges = splitPartsRanges(std::move(span), *in_reverse_order, log);
+            intersecting = std::move(ranges.intersecting_parts_ranges);
+
+            /// Non-intersecting ranges read without a merge (the worker applies the engine sign/is_deleted
+            /// filter); slice them by marks like a plain read.
+            const size_t non_intersecting_marks = ranges.non_intersecting_parts_ranges.getMarksCountAllParts();
+            if (non_intersecting_marks > 0)
+            {
+                const size_t non_intersecting_buckets = std::max<size_t>(1, span_budget * non_intersecting_marks / span_marks);
+                for (auto & slice : sliceMarksAcrossBuckets(ranges.non_intersecting_parts_ranges, non_intersecting_buckets))
+                    if (!slice.empty())
+                        buckets.push_back({std::move(slice), /*needs_merge=*/ false, {}, 0});
+            }
+        }
+        else
+        {
+            intersecting = std::move(span);
+        }
+
+        /// Intersecting ranges become PK-range layers; each keeps its span's borders and its index among
+        /// them so the worker can rebuild the trimming filter for its interval, then merge-dedup.
+        const size_t intersecting_marks = intersecting.getMarksCountAllParts();
+        if (intersecting_marks > 0)
+        {
+            const size_t intersecting_layers = std::max<size_t>(1, span_budget * intersecting_marks / span_marks);
+            auto split = splitIntersectingPartsRangesIntoLayers(
+                std::move(intersecting), intersecting_layers, primary_key.column_names.size(), *in_reverse_order, log);
+            for (size_t i = 0; i < split.layers.size(); ++i)
+                buckets.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
+        }
     }
 
-    /// A single layer has nothing to parallelize and carries no borders to trim by. A per-partition split
-    /// can also produce more layers than the distributed plan allows buckets (a table with many
-    /// partitions); read serially rather than exceed that limit.
-    if (final_layers.size() <= 1 || final_layers.size() > max_total_buckets)
+    /// A single bucket has nothing to parallelize; a per-partition split can also exceed the bucket-count
+    /// limit (a table with many partitions). Read serially rather than under-parallelize or exceed it.
+    if (buckets.size() <= 1 || buckets.size() > max_total_buckets)
         return 0;
 
-    setDistributedRead(final_layers.size());
-    distributed_read_buckets = std::move(final_layers);
+    setDistributedRead(buckets.size());
+    distributed_read_buckets = std::move(buckets);
     return distributed_read_buckets.size();
 }
 

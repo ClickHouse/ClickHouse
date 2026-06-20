@@ -1,0 +1,7 @@
+rep local	100000	5000050000
+rep distributed	100000	5000050000
+rep read distributes	1
+del local	88572	4314364286
+del distributed	88572	4314364286
+col local	70000	3949965000
+col distributed	70000	3949965000
