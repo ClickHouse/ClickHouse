@@ -236,9 +236,11 @@ public:
             const Int64 max_seconds = date_lut.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59);
             const Int64 min_seconds = date_lut.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0);
 
-            if (max_seconds <= std::numeric_limits<Int64>::max() / deg)
+            /// The bound ticks are computed directly (`seconds * 10^scale (+ 10^scale - 1)`) rather than via
+            /// DecimalUtils::dateTimeFromComponents to avoid a clang-analyzer false positive on `% scale_multiplier`.
+            if (max_seconds <= (std::numeric_limits<Int64>::max() - (deg - 1)) / deg)
             {
-                max_date = DecimalUtils::dateTimeFromComponents(max_seconds, deg - 1, static_cast<UInt32>(scale));
+                max_date = max_seconds * deg + (deg - 1);   /// last tick of 9999-12-31 at this scale
                 max_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
             }
             else
@@ -249,7 +251,7 @@ public:
 
             if (min_seconds >= std::numeric_limits<Int64>::min() / deg)
             {
-                min_date = DecimalUtils::dateTimeFromComponents(min_seconds, static_cast<Int64>(0), static_cast<UInt32>(scale));
+                min_date = min_seconds * deg;               /// first tick of 0000-01-01 at this scale
                 min_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
             }
             else
