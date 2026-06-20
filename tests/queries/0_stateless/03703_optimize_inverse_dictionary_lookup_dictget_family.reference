@@ -3,7 +3,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id = _CAST(1, \'UInt64\')
+WHERE equals(__table1.id, _CAST(1, \'UInt64\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -16,7 +16,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id = _CAST(1, \'UInt64\')
+WHERE equals(__table1.id, _CAST(1, \'UInt64\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -29,7 +29,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id = _CAST(1, \'UInt64\')
+WHERE equals(__table1.id, _CAST(1, \'UInt64\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -42,7 +42,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id = _CAST(1, \'UInt64\')
+WHERE equals(__table1.id, _CAST(1, \'UInt64\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -55,7 +55,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id = _CAST(1, \'UInt64\')
+WHERE equals(__table1.id, _CAST(1, \'UInt64\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -68,7 +68,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id = _CAST(1, \'UInt64\')
+WHERE equals(__table1.id, _CAST(1, \'UInt64\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -81,7 +81,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id = _CAST(1, \'UInt64\')
+WHERE equals(__table1.id, _CAST(1, \'UInt64\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -94,7 +94,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id = _CAST(1, \'UInt64\')
+WHERE equals(__table1.id, _CAST(1, \'UInt64\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -107,7 +107,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id = _CAST(1, \'UInt64\')
+WHERE equals(__table1.id, _CAST(1, \'UInt64\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -120,7 +120,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id = _CAST(1, \'UInt64\')
+WHERE equals(__table1.id, _CAST(1, \'UInt64\'))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
@@ -133,7 +133,7 @@ SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE dictGetOrNull(\'dictionary_all\', \'name\', __table1.id) = \'alpha\'
+WHERE equals(dictGetOrNull(\'dictionary_all\', \'name\', __table1.id), \'alpha\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
