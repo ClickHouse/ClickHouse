@@ -95,40 +95,6 @@ def started_cluster():
             stay_alive=True,
         )
         cluster.add_instance(
-            "instance_24.5",
-            with_zookeeper=True,
-            image="clickhouse/clickhouse-server",
-            tag="24.5",
-            stay_alive=True,
-            user_configs=[
-                "configs/users.xml",
-                "configs/compatibility.xml",
-            ],
-            main_configs=[
-                "configs/s3queue_log.xml",
-                "configs/remote_servers_245.xml",
-                "configs/insert_deduplication.xml",
-            ],
-            with_installed_binary=True,
-        )
-        cluster.add_instance(
-            "instance2_24.5",
-            with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
-            image="clickhouse/clickhouse-server",
-            tag="24.5",
-            stay_alive=True,
-            user_configs=[
-                "configs/users.xml",
-                "configs/compatibility.xml",
-            ],
-            main_configs=[
-                "configs/s3queue_log.xml",
-                "configs/remote_servers_245.xml",
-            ],
-            with_installed_binary=True,
-        )
-        cluster.add_instance(
             "instance_without_keeper_fault_injection",
             with_minio=True,
             with_azurite=True,
@@ -174,93 +140,6 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
-
-def test_upgrade_3(started_cluster):
-    node = started_cluster.instances["instance_24.5"]
-    if "24.5" not in node.query("select version()").strip():
-        node.restart_with_original_version(clear_data_dir=True)
-    assert "24.5" in node.query("select version()").strip()
-
-    table_name = f"test_upgrade_3_{uuid.uuid4().hex[:8]}"
-    dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}"
-    files_path = f"{table_name}_data"
-    files_to_generate = 10
-
-    create_table(
-        started_cluster,
-        node,
-        table_name,
-        "ordered",
-        files_path,
-        no_settings=True,
-        version="24.5",
-    )
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
-    )
-
-    create_mv(node, table_name, dst_table_name)
-
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    expected_rows = 10
-    for _ in range(20):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-
-    assert expected_rows == get_count()
-
-    node.restart_with_latest_version()
-
-    assert table_name in node.query("SHOW TABLES")
-
-    node.query(
-        f"""
-        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=111
-    """
-    )
-    assert 111 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
-        )
-    )
-
-    node.query(
-        f"""
-        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=222, polling_max_timeout_ms=333
-    """
-    )
-    assert 222 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
-        )
-    )
-    assert 333 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
-        )
-    )
-
-    assert "polling_max_timeout_ms = 333" in node.query(
-        f"SHOW CREATE TABLE {table_name}"
-    )
-
-    node.restart_clickhouse()
-
-    assert "polling_max_timeout_ms = 333" in node.query(
-        f"SHOW CREATE TABLE {table_name}"
-    )
-
-    assert 333 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
-        )
-    )
-    node.query(f"DROP TABLE {table_name} SYNC")
 
 
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
@@ -1540,8 +1419,6 @@ def test_persistent_processing(started_cluster):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_max_timeout_ms": 1000,
-            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 10,
             "cleanup_interval_min_ms": 100,
@@ -1610,8 +1487,6 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_max_timeout_ms": 1000,
-            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,
@@ -1897,8 +1772,6 @@ def test_deduplication(started_cluster, mode):
         format=format,
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_max_timeout_ms": 1000,
-            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,
@@ -2051,8 +1924,6 @@ def test_deduplication_with_multiple_chunks(started_cluster, mode):
         file_format="parquet",
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_max_timeout_ms": 1000,
-            "polling_backoff_ms": 1000,
             "use_persistent_processing_nodes": 1,
             "persistent_processing_node_ttl_seconds": 60,
             "cleanup_interval_min_ms": 100,
