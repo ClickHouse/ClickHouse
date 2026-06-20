@@ -1975,10 +1975,29 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
-                            /// range doesn't seem to be continuous. Something's broken.
+                            /// range doesn't seem to be continuous. Something's broken - most likely a
+                            /// function reported inaccurate monotonicity (see the issue below).
+                            ///
+                            /// Log the key condition, the part and the offending mark ranges before throwing,
+                            /// so the occurrence (typically found by a stress test or the fuzzer) is actionable.
+                            /// The thrown message is deliberately kept constant: CI derives the failure's name
+                            /// from the exception's format string, so the details go to the log instead of the
+                            /// message to keep failures grouped under a single stable name.
                             /// TODO: Remove the #ifndef and always throw after
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
 #ifndef NDEBUG
+                            LOG_ERROR(
+                                log,
+                                "Inconsistent KeyCondition behavior: matchesExactContinuousRange() reported an exact "
+                                "continuous range, but the mark range [{}, {}) (exact subrange [{}, {})) of part {} is "
+                                "not exactly continuous. This is most likely caused by a function reporting inaccurate "
+                                "monotonicity (see https://github.com/ClickHouse/ClickHouse/issues/90461). "
+                                "Key condition (relaxed: {}): {}",
+                                result_range.begin, result_range.end,
+                                result_exact_range.begin, result_exact_range.end,
+                                part_name,
+                                key_condition.isRelaxed(),
+                                key_condition.toString());
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
 #endif
                         }
