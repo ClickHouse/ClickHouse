@@ -8724,6 +8724,11 @@ SettingsTierType Settings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
+std::string_view Settings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
+}
+
 bool Settings::tryGet(std::string_view name, Field & value) const
 {
     return impl->tryGet(name, value);
