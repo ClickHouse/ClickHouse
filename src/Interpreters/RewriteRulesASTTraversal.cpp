@@ -6,6 +6,7 @@
 #include <Parsers/ASTCreateRewriteRuleQuery.h>
 #include <Parsers/ASTAlterRewriteRuleQuery.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Interpreters/ClientInfo.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <functional>
@@ -37,6 +38,17 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
 {
     const auto& settings = context->getSettingsRef();
     if (!ast)
+    {
+        return false;
+    }
+
+    /// Rewrite rules transform the query the user submitted to the initiator. A secondary
+    /// query (a fragment sent to a shard during distributed execution) has already been
+    /// rewritten on the initiator and must run as-is: re-applying rules on the shard would
+    /// rewrite/reject it a second time, and a rule named in the propagated `query_rules`
+    /// setting may not even exist on the shard (rule storage is local by default). So apply
+    /// rules only to the initial query.
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         return false;
     }
