@@ -229,3 +229,65 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Granules:%';
 
 DROP TABLE tab;
+
+SELECT 'A trailing backslash is not pruned by the text index (row-level LIKE raises, so the index must decline)';
+
+-- A trailing backslash is an invalid escape: row-level `LIKE` raises CANNOT_PARSE_ESCAPE_SEQUENCE,
+-- but `nextInStringLike` silently drops it and asks the index for the token `abc`. If the index then
+-- prunes every granule (none of these rows contains `abc`), the `like` is never evaluated and a query
+-- that should raise returns an empty result. The analyzer must decline the condition so row-level
+-- evaluation runs and raises. ('abc\\' is the four-byte string a, b, c, backslash.)
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'zzz none'), (2, 'qqq nothing'), (3, 'more here');
+
+SELECT 'Text index analysis declines the condition: all 3 granules are scanned';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE msg LIKE 'abc\\'
+) WHERE explain LIKE '%Granules:%';
+
+SELECT 'Correctness check: the query raises instead of silently returning an empty result';
+
+SELECT count() FROM tab WHERE msg LIKE 'abc\\'; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+
+DROP TABLE tab;
+
+SELECT 'A trailing backslash in a map LIKE is not pruned by the text index either';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, String),
+    INDEX map_keys_idx mapKeys(m) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1,
+    INDEX map_values_idx mapValues(m) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, {'kkk':'vvv'}), (2, {'nnn':'mmm'}), (3, {'ppp':'qqq'});
+
+SELECT 'Text index analysis declines the map condition: all 3 granules are scanned';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsKeyLike(m, 'abc\\')
+) WHERE explain LIKE '%Granules:%';
+
+SELECT 'Correctness check: the map query raises instead of silently returning an empty result';
+
+SELECT count() FROM tab WHERE mapContainsKeyLike(m, 'abc\\'); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT count() FROM tab WHERE mapContainsValueLike(m, 'abc\\'); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+
+DROP TABLE tab;

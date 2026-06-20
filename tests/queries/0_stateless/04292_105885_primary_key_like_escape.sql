@@ -118,3 +118,31 @@ SELECT 'Correctness check: all four rows starting with a literal backslash are r
 SELECT * FROM tab3 WHERE s LIKE 'a\\b%' ORDER BY s;
 
 DROP TABLE tab3;
+
+-- A trailing backslash is an invalid escape: row-level `LIKE` raises CANNOT_PARSE_ESCAPE_SEQUENCE,
+-- but `extractFixedPrefixFromLikePattern` silently drops it and builds the prefix range for `abc`.
+-- If the primary key then prunes every mark outside `[abc, abd)`, the `like` is never evaluated and
+-- a query that should raise returns an empty result. The analyzer must decline the key condition for
+-- such patterns so row-level evaluation runs and raises. All rows here sort below `abc`, so a wrong
+-- prefix range would prune the whole part. ('abc\\' is the four-byte string a, b, c, backslash.)
+
+DROP TABLE IF EXISTS tab4;
+
+CREATE TABLE tab4 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 2;
+
+INSERT INTO tab4 VALUES ('aaa'), ('aab'), ('aba'), ('abb');
+
+OPTIMIZE TABLE tab4 FINAL;
+
+SELECT 'Trailing backslash: primary key declines (Condition: true) so the predicate is not pruned away';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM tab4 WHERE s LIKE 'abc\\'
+) WHERE explain LIKE '%Condition:%';
+
+SELECT 'Correctness check: the query raises instead of silently returning an empty result';
+
+SELECT * FROM tab4 WHERE s LIKE 'abc\\'; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+
+DROP TABLE tab4;

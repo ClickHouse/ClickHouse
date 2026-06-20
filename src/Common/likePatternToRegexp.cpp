@@ -162,8 +162,12 @@ bool likePatternHasUnknownBackslashEscape(std::string_view pattern)
         if (*pos == '\\')
         {
             ++pos;
+            /// A trailing backslash is an invalid escape: row-level matching rejects it with
+            /// CANNOT_PARSE_ESCAPE_SEQUENCE, but the index-side prefix extractor and the
+            /// `nextInStringLike` tokenizer silently drop it. Treat it as unsafe so the index/key
+            /// is skipped and the row-level predicate raises instead of being pruned away.
             if (pos == end)
-                return false;
+                return true;
             /// `\%`, `\_` and `\\` are interpreted identically by row-level matching and by the
             /// index-side prefix extractor / `nextInStringLike` tokenizer. Any other `\c` keeps the
             /// literal backslash at row-level but is dropped index-side, so it is "unknown".
