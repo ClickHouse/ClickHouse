@@ -1333,7 +1333,7 @@ Possible values:
 
 - `unavailable_or_table_missing` — In addition to `unavailable`, errors caused by a missing table or database on the shard are ignored. This is useful while a table is being created or dropped across a cluster. This is the default and matches the historical behavior of `skip_unavailable_shards`, which also treated a shard whose table does not exist as unavailable.
 
-- `unavailable_or_exception_before_processing` — In addition to `unavailable`, any exception received from a shard before it returned any data is ignored. An exception that arrives after the shard already returned some data is always rethrown, so partial results are never silently accepted.
+- `unavailable_or_exception_before_processing` — In addition to `unavailable`, any exception received from a shard before it returned any data block to the initiator is ignored. An exception that arrives after the shard already returned some data is always rethrown. Note that "before it returned any data" is checked at the initiator: a shard that performs a blocking computation (for example an aggregation, sort, or `LIMIT BY`) may process rows and fail before emitting any block, in which case its partial work is silently discarded and the query returns a result built from the remaining shards. This is therefore the most permissive mode and should be used with care.
 )", 0) \
     \
     DECLARE(UInt64, max_skip_unavailable_shards_num, 0, R"(

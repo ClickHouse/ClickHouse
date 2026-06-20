@@ -481,7 +481,9 @@ enum class SkipUnavailableShardsMode : uint8_t
     /// Additionally ignore errors caused by a missing table or database on the shard
     /// (the historical behavior of `skip_unavailable_shards`, and the default).
     UNAVAILABLE_OR_TABLE_MISSING,
-    /// Additionally ignore any exception received from the shard before it returned any data.
+    /// Additionally ignore any exception received from the shard before it returned any data block to the initiator.
+    /// Note: a shard performing a blocking computation (aggregation, sort, ...) may process rows and fail before
+    /// emitting a block, so its partial work can still be silently discarded. This is the most permissive mode.
     UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING,
 };
 
