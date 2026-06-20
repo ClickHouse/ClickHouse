@@ -32,9 +32,11 @@ report_refresh_state() {
 }
 
 # Temp table and ALTER must run in the SAME session so AddDefaultDatabaseVisitor leaves bare `t` unqualified.
+# Create with a qualified DEPENDS ON so the view cannot run before the ALTER (first timeslot is otherwise
+# immediately due and the scheduler could flip to Running, masking the expected MissingDependencies status).
 ${CLICKHOUSE_CLIENT} --multiquery -q "
     CREATE TEMPORARY TABLE t (a UInt64) ENGINE = Memory;
-    CREATE MATERIALIZED VIEW \`$DB2\`.mv_alt REFRESH EVERY 1 SECOND TO \`$DB2\`.dst1 AS SELECT a FROM \`$DB2\`.t;
+    CREATE MATERIALIZED VIEW \`$DB2\`.mv_alt REFRESH EVERY 1 SECOND DEPENDS ON \`$DB2\`.t TO \`$DB2\`.dst1 AS SELECT a FROM \`$DB2\`.t;
     ALTER TABLE \`$DB2\`.mv_alt MODIFY REFRESH EVERY 1 SECOND DEPENDS ON t;
 "
 echo "1. ALTER MODIFY REFRESH DEPENDS ON temp-shadowed name, settled status and empty exception:"
