@@ -274,6 +274,7 @@ void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
 
     auto query_log = context->getQueryLog();
     String select_query;
+    String comment;
     ASTPtr ast;
     const ASTCreateQuery * expected_create_query = nullptr;
 
@@ -292,6 +293,8 @@ void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
 
         select_query = "SELECT * FROM " + query_log_table_id.getFullTableName()
             + " WHERE if(initial_user != '', initial_user, user) = currentUser()";
+        comment = "A view over `" + query_log_table_id.getFullTableName()
+            + "` that shows queries submitted by the current user.";
         ast = parseSystemViewCreateQuery(USER_QUERY_LOG_TABLE_NAME, select_query);
         expected_create_query = &ast->as<ASTCreateQuery &>();
     }
@@ -319,7 +322,7 @@ void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
         USER_QUERY_LOG_TABLE_NAME,
         select_query,
         QueryLogElement::getColumnsDescription(),
-        "A view over `system.query_log` that shows queries submitted by the current user.",
+        comment,
         /* security_barrier */ true);
 }
 

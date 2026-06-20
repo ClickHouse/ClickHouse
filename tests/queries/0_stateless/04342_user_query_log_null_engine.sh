@@ -100,7 +100,7 @@ cat > "${test_dir}/config.xml" <<EOF
 
     <query_log>
         <database>system</database>
-        <table>query_log</table>
+        <table>custom_query_log</table>
         <engine>ENGINE = Null</engine>
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
         <max_size_rows>1048576</max_size_rows>
@@ -139,6 +139,11 @@ ${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "${tcp_port}" --query "SYSTE
 ${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "${tcp_port}" --query "
     SELECT engine
     FROM system.tables
-    WHERE database = 'system' AND name = 'query_log'"
+    WHERE database = 'system' AND name = 'custom_query_log'"
+
+${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "${tcp_port}" --query "
+    SELECT comment
+    FROM system.tables
+    WHERE database = 'system' AND name = 'user_query_log'"
 
 ${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "${tcp_port}" --query "SELECT count() FROM system.user_query_log"
