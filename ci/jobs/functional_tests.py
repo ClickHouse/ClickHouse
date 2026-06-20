@@ -301,6 +301,13 @@ def main():
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
 
+    if is_llvm_coverage:
+        # Pin random-by-default fault injection seeds server-side (in the default
+        # profile) so coverage is deterministic, instead of injecting them as
+        # per-query client settings (which broke tests that switch to readonly
+        # mode mid-session). See tests/config/users.d/coverage_fault_injection_seeds.xml.
+        config_installs_args += " --llvm-coverage"
+
     if is_shared_catalog or is_parallel_replicas:
         pass
     else:
