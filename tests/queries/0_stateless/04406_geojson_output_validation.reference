@@ -3,3 +3,4 @@
 {"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"a":"b"}}]}
 {"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}
 {"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":{}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"p":"1.5"}}]}

@@ -20,3 +20,7 @@ SELECT (1.0, 2.0)::Point AS geometry, map('a', 'b') AS properties FORMAT GeoJSON
 -- the geometry, and a null value is written as a null geometry.
 SELECT CAST((1.0, 2.0), 'Nullable(Point)') AS geometry FORMAT GeoJSON SETTINGS enable_nullable_tuple_type = 1;
 SELECT CAST(NULL AS Nullable(Point)) AS geometry FORMAT GeoJSON SETTINGS enable_nullable_tuple_type = 1;
+
+-- `output_format_json_quote_64bit_floats` applies to Float64 property values, but coordinates remain
+-- bare JSON numbers regardless of that setting.
+SELECT (1.0, 2.0)::Point AS geometry, toFloat64(1.5) AS p FORMAT GeoJSON SETTINGS output_format_json_quote_64bit_floats = 1;
