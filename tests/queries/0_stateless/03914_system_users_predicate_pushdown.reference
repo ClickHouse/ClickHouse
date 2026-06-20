@@ -7,6 +7,10 @@ alice
 alice
 bob
 2
+-- equality fast path: a NULL constant matches no rows and raises no exception
+0
+-- IN fast path: a NULL element is skipped, non-NULL names still match
+alice
 -- AND fast path: contradictory equalities intersect to the empty set
 0
 -- AND fast path: equality intersected with IN narrows the candidates

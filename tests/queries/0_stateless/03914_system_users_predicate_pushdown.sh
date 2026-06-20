@@ -46,6 +46,17 @@ echo "-- IN fast path: returns both users and reads only the matched rows"
 ${CLICKHOUSE_CLIENT} -q "SELECT replaceOne(name, '${P}_', '') FROM system.users WHERE name IN ('${P}_alice', '${P}_bob') ORDER BY name"
 read_rows "${P}_in" "SELECT name FROM system.users WHERE name IN ('${P}_alice', '${P}_bob') FORMAT Null"
 
+echo "-- equality fast path: a NULL constant matches no rows and raises no exception"
+# `name = NULL` is NULL for every row, so the full scan returns nothing; the fast path must
+# treat the NULL constant as an unsatisfiable predicate (empty candidate set) rather than
+# trying to read it as a String (which would raise an exception).
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.users WHERE name = CAST(NULL, 'Nullable(String)')"
+
+echo "-- IN fast path: a NULL element is skipped, non-NULL names still match"
+# `name IN (NULL, 'alice')` matches only 'alice' (other rows evaluate to NULL); the fast path
+# must skip the NULL element instead of raising an exception when reading the set.
+${CLICKHOUSE_CLIENT} -q "SELECT replaceOne(name, '${P}_', '') FROM system.users WHERE name IN (CAST(NULL, 'Nullable(String)'), '${P}_alice')"
+
 echo "-- AND fast path: contradictory equalities intersect to the empty set"
 ${CLICKHOUSE_CLIENT} -q "SELECT replaceOne(name, '${P}_', '') FROM system.users WHERE name = '${P}_alice' AND name = '${P}_bob'"
 read_rows "${P}_and_contra" "SELECT name FROM system.users WHERE name = '${P}_alice' AND name = '${P}_bob' FORMAT Null"

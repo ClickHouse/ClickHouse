@@ -124,6 +124,15 @@ namespace
             if (!isString(removeNullable(removeLowCardinality(value->result_type))))
                 return {};
 
+            /// A `Nullable(String)` constant passes the type check above, but a `NULL` value
+            /// (e.g. `name = CAST(NULL, 'Nullable(String)')`) matches no rows under full-scan
+            /// semantics, and `getDataAt` would throw on it. Treat it as an unsatisfiable
+            /// predicate on `name` by returning an empty candidate set, so the fast path emits
+            /// nothing — consistent with the full scan. (`ColumnConst::isNullAt` forwards to the
+            /// underlying value, so this is correct even though the constant has size 0.)
+            if (value->column->isNullAt(0))
+                return std::unordered_set<String>{};
+
             /// `ActionsDAG::addColumn` normalizes a constant node to a `ColumnConst` of size 0
             /// (see `ActionsDAG::Node::column`), so a size guard here would reject every literal
             /// and silently send `name = 'literal'` back to the full scan. The underlying data
@@ -154,6 +163,16 @@ namespace
             if (!future_set)
                 return {};
 
+            /// Check the set size *before* materializing its explicit elements. For an already
+            /// built set (the literal `name IN ('a', 'b', ...)` case, which `FutureSetFromTuple`
+            /// fills at construction time) `getTotalRowCount` is available without copying anything.
+            /// Above the fast-path limit the full scan is cheaper, so fall back here instead of
+            /// letting `buildOrderedSetInplace` duplicate the whole right-hand side first — its own
+            /// guard (`use_index_for_in_with_subqueries_max_values`) defaults to `0` (unlimited)
+            /// and would not stop a large literal list from being materialized.
+            if (auto built_set = future_set->get(); built_set && built_set->getTotalRowCount() > max_names_for_fast_path)
+                return {};
+
             auto set = future_set->buildOrderedSetInplace(context);
             if (!set || !set->hasExplicitSetElements())
                 return {};
@@ -165,17 +184,24 @@ namespace
 
             auto elements = set->getSetElements()[0];
 
-            /// Bail out before copying a large set. Above the fast-path limit the full scan is
-            /// cheaper, so fall back instead of materializing every element here (returning
-            /// `nullopt` leaves `name` unconstrained, which `fillData` turns into a full scan and
-            /// `and` treats as the universal set). The upstream filter still enforces the `IN`.
+            /// Final guard for set kinds whose size is known only after building (e.g. a set from a
+            /// subquery, which `buildOrderedSetInplace` fills above): above the fast-path limit the
+            /// full scan is cheaper, so fall back (returning `nullopt` leaves `name` unconstrained,
+            /// which `fillData` turns into a full scan and `and` treats as the universal set). The
+            /// upstream filter still enforces the `IN`.
             if (elements->size() > max_names_for_fast_path)
                 return {};
 
             std::unordered_set<String> names;
             names.reserve(elements->size());
             for (size_t i = 0; i < elements->size(); ++i)
+            {
+                /// Skip `NULL` elements (e.g. `name IN (NULL, 'alice')`): they match no row under
+                /// full-scan semantics, and `getDataAt` would throw on a `NULL`.
+                if (elements->isNullAt(i))
+                    continue;
                 names.insert(String(elements->getDataAt(i)));
+            }
             return names;
         }
 
