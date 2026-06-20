@@ -24,11 +24,12 @@ namespace
 
 /// Reject Variant/Dynamic found anywhere inside the min/max argument type and, where it helps,
 /// point the user at allow_lossy_numeric_supertype. `in_map_key` is true once we descend into a
-/// Map key: enabling the setting cannot remove a Variant from a Map key (Map keys cannot be
-/// Nullable, so FunctionMap keeps the plain Variant key), and the resolved type is identical for
-/// nullable and non-nullable numeric keys, leaving position as the only signal. So the hint is
-/// suppressed under a Map key but kept for values, array/tuple elements and scalars. Recurses via
-/// immediate children (not forEachChild, which is a position-blind deep walk).
+/// Map key: a Map key cannot be Nullable, so the resolved type is identical for nullable and
+/// non-nullable numeric keys, leaving position as the only signal. The setting still helps a
+/// non-nullable numeric key (FunctionMap resolves it to Float64) but not a nullable one (the key
+/// stays a Variant), so under a Map key the hint is worded to say so rather than suppressed or
+/// claiming the setting always works. Recurses via immediate children (not forEachChild, which is
+/// a position-blind deep walk).
 void checkNoVariantOrDynamic(
     const IDataType & type, bool in_map_key, const String & function_name, const String & argument_type_name)
 {
@@ -39,7 +40,7 @@ void checkNoVariantOrDynamic(
             "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
             argument_type_name,
             function_name,
-            in_map_key ? String{} : getNumericVariantSupertypeHint(type.getPtr()));
+            getNumericVariantSupertypeHint(type.getPtr(), in_map_key));
 
     auto recurse = [&](const IDataType & child, bool child_in_map_key)
     { checkNoVariantOrDynamic(child, child_in_map_key, function_name, argument_type_name); };

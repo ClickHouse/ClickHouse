@@ -1004,7 +1004,7 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types, bool allow_lossy
     return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
 }
 
-String getNumericVariantSupertypeHint(const DataTypePtr & type)
+String getNumericVariantSupertypeHint(const DataTypePtr & type, bool in_map_key)
 {
     const auto * variant_type = typeid_cast<const DataTypeVariant *>(removeLowCardinalityAndNullable(type).get());
     if (!variant_type)
@@ -1016,6 +1016,15 @@ String getNumericVariantSupertypeHint(const DataTypePtr & type)
     /// so pointing users at it there would be misleading.
     if (!tryGetLossyNumericSupertype(variant_type->getVariants()))
         return {};
+
+    /// A Map key cannot be Nullable. For a non-nullable numeric key the setting resolves the key to
+    /// Float64 and the aggregate works; for a nullable numeric key FunctionMap discards the lossy
+    /// Nullable(Float64) and keeps the plain Variant key, so the setting does not help. Both resolve
+    /// to the same Map(Variant(...)) type here, so the hint cannot promise the setting always works.
+    if (in_map_key)
+        return ". Its alternatives are all numeric; enabling setting 'allow_lossy_numeric_supertype' resolves a "
+               "non-nullable numeric map key to a numeric supertype, but a nullable key stays a Variant because "
+               "Map keys cannot be Nullable";
 
     return ". Its alternatives are all numeric; enable setting 'allow_lossy_numeric_supertype' so that "
            "if/multiIf/coalesce/array over mixed numeric types resolve to a numeric supertype instead of a Variant";

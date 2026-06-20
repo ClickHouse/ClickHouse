@@ -10,26 +10,35 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CH="${CLICKHOUSE_CLIENT} --use_variant_as_common_type=1 --allow_lossy_numeric_supertype=0"
 hint="allow_lossy_numeric_supertype"
+# The general hint (if/multiIf/coalesce/array, Array element, Map value) promises the setting
+# resolves the Variant. The Map-key hint is worded differently because a Map key cannot be Nullable.
+general="if/multiIf/coalesce/array"
+mapkey="numeric map key"
 
-# Setting off: the hint must be present for all-numeric Variants nested in Array/Map.
-$CH -q "SELECT min([toDecimal64(1, 2), 0.])" 2>&1 | grep -oF "$hint" | head -n1
-$CH -q "SELECT max([toDecimal64(1, 2), 0.])" 2>&1 | grep -oF "$hint" | head -n1
-$CH -q "SELECT min(map('a', toDecimal64(1, 2), 'b', 0.))" 2>&1 | grep -oF "$hint" | head -n1
+# Setting off: the general hint must be present for all-numeric Variants nested in Array and Map value.
+$CH -q "SELECT min([toDecimal64(1, 2), 0.])" 2>&1 | grep -oF "$general" | head -n1
+$CH -q "SELECT max([toDecimal64(1, 2), 0.])" 2>&1 | grep -oF "$general" | head -n1
+$CH -q "SELECT min(map('a', toDecimal64(1, 2), 'b', 0.))" 2>&1 | grep -oF "$general" | head -n1
 
 # No hint when the setting cannot help: a non-numeric branch, or an integer-only set (no float).
 $CH -q "SELECT min([toInt64(1), 'str'::String])" 2>&1 | grep -cF "$hint"
 $CH -q "SELECT min([toInt64(1), toUInt64(2)])" 2>&1 | grep -cF "$hint"
 
-# No hint for a numeric Variant Map key: a Map key cannot be Nullable, so FunctionMap keeps the
-# plain Variant key even with the setting on, and the aggregate would still fail. Covers the
-# nullable-numeric key directly and nested inside an Array.
-$CH -q "SELECT min(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2))" 2>&1 | grep -cF "$hint"
-$CH -q "SELECT max(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2))" 2>&1 | grep -cF "$hint"
-$CH -q "SELECT min([map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2)])" 2>&1 | grep -cF "$hint"
-# A Map with a numeric Variant in both key and value: the key Variant survives, so even though the
-# value would become Float64 the aggregate still fails. The hint must stay silent.
-$CH -q "SELECT min(map(materialize(toNullable(toDecimal64(1, 2))), materialize(toNullable(toDecimal64(3, 2))), 0., 1.5))" 2>&1 | grep -cF "$hint"
+# Numeric Variant Map key: a Map key cannot be Nullable, so the resolved type is identical for a
+# nullable and a non-nullable key. The setting resolves only a non-nullable key (FunctionMap maps it
+# to Float64); a nullable key stays a Variant. min/max cannot tell the two apart here, so the Map-key
+# hint names the setting without claiming it always works. It must be the Map-key wording, not the
+# general one. Covers the non-nullable key, the nullable key, and the key nested inside an Array.
+$CH -q "SELECT min(map(toDecimal64(1, 2), 1, 0., 2))" 2>&1 | grep -oF "$mapkey" | head -n1
+$CH -q "SELECT min(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2))" 2>&1 | grep -oF "$mapkey" | head -n1
+$CH -q "SELECT max(map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2))" 2>&1 | grep -oF "$mapkey" | head -n1
+$CH -q "SELECT min([map(materialize(toNullable(toDecimal64(1, 2))), 1, 0., 2)])" 2>&1 | grep -oF "$mapkey" | head -n1
+# The Map-key hint must not use the general wording, and the general sites must not use the Map-key wording.
+$CH -q "SELECT min(map(toDecimal64(1, 2), 1, 0., 2))" 2>&1 | grep -cF "$general"
+$CH -q "SELECT min(map('a', toDecimal64(1, 2), 'b', 0.))" 2>&1 | grep -cF "$mapkey"
 
-# Setting on: the nested numeric supertype is used, so the aggregate works.
+# Setting on: a non-nullable numeric Map key resolves to Float64 and the aggregate works (the
+# Map-key hint was truthful). A nullable Map key keeps the Variant, so it still throws.
 ${CLICKHOUSE_CLIENT} --use_variant_as_common_type=1 --allow_lossy_numeric_supertype=1 -q "SELECT min([toDecimal64(1, 2), 0.]), toTypeName([toDecimal64(1, 2), 0.])"
 ${CLICKHOUSE_CLIENT} --use_variant_as_common_type=1 --allow_lossy_numeric_supertype=1 -q "SELECT min(map('a', toDecimal64(1, 2), 'b', 0.)), toTypeName(map('a', toDecimal64(1, 2), 'b', 0.))"
+${CLICKHOUSE_CLIENT} --use_variant_as_common_type=1 --allow_lossy_numeric_supertype=1 -q "SELECT min(map(toDecimal64(1, 2), 1, 0., 2)), toTypeName(map(toDecimal64(1, 2), 1, 0., 2))"

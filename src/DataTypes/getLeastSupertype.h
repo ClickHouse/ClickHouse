@@ -54,8 +54,10 @@ DataTypePtr tryGetLeastSupertype(const DataTypes & types);
 /// `allow_lossy_numeric_supertype` setting, suitable for appending to an aggregate
 /// function "illegal type" error. Such Variants are typically produced by
 /// if/multiIf/coalesce/array over mixed numeric types. Returns an empty string for
-/// any other type, so callers can append it unconditionally.
-String getNumericVariantSupertypeHint(const DataTypePtr & type);
+/// any other type, so callers can append it unconditionally. Pass `in_map_key = true`
+/// when the Variant was reached through a Map key: a Map key cannot be Nullable, so the
+/// setting only resolves a non-nullable numeric key and the hint is worded accordingly.
+String getNumericVariantSupertypeHint(const DataTypePtr & type, bool in_map_key = false);
 
 using TypeIndexSet = std::unordered_set<TypeIndex>;
 
