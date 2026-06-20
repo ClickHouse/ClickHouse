@@ -282,6 +282,40 @@ def test_output_format():
     )
 
 
+def test_format_settings():
+    # The `format` / `input_format` / `output_format` settings are global format overrides that must
+    # work on every protocol, including gRPC (the resolution mirrors the server query path).
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t VALUES (1),(2),(3)")
+    # `output_format` overrides the gRPC `output_format` field (TabSeparated) and the query FORMAT clause.
+    assert (
+        query("SELECT a FROM t ORDER BY a", settings={"output_format": "JSONEachRow"})
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    assert (
+        query(
+            "SELECT a FROM t ORDER BY a FORMAT TabSeparated",
+            settings={"output_format": "JSONEachRow"},
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    # The generic `format` setting applies to output too.
+    assert (
+        query("SELECT a FROM t ORDER BY a", settings={"format": "JSONEachRow"})
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    # `input_format` selects the INSERT input format, overriding the query FORMAT clause.
+    query("DROP TABLE IF EXISTS t_in")
+    query("CREATE TABLE t_in (a UInt8, b UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_in FORMAT TabSeparated",
+        input_data="1,2\n3,4\n",
+        settings={"input_format": "CSV"},
+    )
+    assert query("SELECT a, b FROM t_in ORDER BY a") == "1\t2\n3\t4\n"
+    query("DROP TABLE t_in")
+
+
 def test_totals_and_extremes():
     query("CREATE TABLE t (x UInt8, y UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4)")

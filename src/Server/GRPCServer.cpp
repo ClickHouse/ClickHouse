@@ -72,6 +72,9 @@ namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool calculate_text_stack_trace;
+    extern const SettingsString format;
+    extern const SettingsString input_format;
+    extern const SettingsString output_format;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
@@ -968,26 +971,44 @@ namespace
         ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
         ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-        /// Choose input format.
+        /// Choose input format. The explicit `input_format` / `format` settings (e.g. supplied via
+        /// `QueryInfo.settings`) win over the `INSERT`'s `FORMAT` clause, matching the server query
+        /// path (`InterpreterSetQuery::applySettingsFromQuery` -> `setInsertFormat`).
         insert_query = ast->as<ASTInsertQuery>();
         if (insert_query)
         {
-            input_format = insert_query->format;
-            if (input_format.empty())
-                input_format = "Values";
+            if (const String & input_format_setting = settings[Setting::input_format]; !input_format_setting.empty())
+                input_format = input_format_setting;
+            else if (const String & format_setting = settings[Setting::format]; !format_setting.empty())
+                input_format = format_setting;
+            else
+            {
+                input_format = insert_query->format;
+                if (input_format.empty())
+                    input_format = "Values";
+            }
         }
 
         input_data_delimiter = query_info.input_data_delimiter();
 
-        /// Choose output format.
+        /// Choose output format. The explicit `output_format` / `format` settings (e.g. supplied via
+        /// `QueryInfo.settings`) win over the query's `FORMAT` clause and the default format, matching
+        /// the server query path (`resolveOutputFormatName`).
         query_context->setDefaultFormat(query_info.output_format());
-        if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-            ast_query_with_output && ast_query_with_output->format_ast)
+        if (const String & output_format_setting = settings[Setting::output_format]; !output_format_setting.empty())
+            output_format = output_format_setting;
+        else if (const String & format_setting = settings[Setting::format]; !format_setting.empty())
+            output_format = format_setting;
+        else
         {
-            output_format = getIdentifierName(ast_query_with_output->format_ast);
+            if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+                ast_query_with_output && ast_query_with_output->format_ast)
+            {
+                output_format = getIdentifierName(ast_query_with_output->format_ast);
+            }
+            if (output_format.empty())
+                output_format = query_context->getDefaultFormat();
         }
-        if (output_format.empty())
-            output_format = query_context->getDefaultFormat();
 
         send_output_columns_names_and_types = query_info.send_output_columns();
 

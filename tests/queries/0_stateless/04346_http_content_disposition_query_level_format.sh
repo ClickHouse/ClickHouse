@@ -34,4 +34,13 @@ disp "${BASE_URL}/${DB}/hits.CSV?output_format=Native"
 echo "-- no override: the path .Native extension is kept as-is"
 disp "${BASE_URL}/${DB}/hits.Native"
 
+echo "-- compression alias 'gzip' does not duplicate the path's '.gz' extension"
+disp "${BASE_URL}/${DB}/hits.Native.gz?compression=gzip"
+
+echo "-- compression alias 'gzip' on a path without a compression extension is canonicalized to '.gz'"
+disp "${BASE_URL}/${DB}/hits.Native?compression=gzip"
+
+echo "-- compression alias 'zstd' is canonicalized to '.zst'"
+disp "${BASE_URL}/${DB}/hits.Native?compression=zstd"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.hits"

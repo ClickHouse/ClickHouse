@@ -959,6 +959,14 @@ void HTTPHandler::processQuery(
     String disposition_base = path_info.table;
     String disposition_path_format = path_info.format;
     String disposition_compression = settings[Setting::compression];
+    /// Canonicalize the compression to its file-extension form (`gzip` -> `gz`, `zstd` -> `zst`, …) so
+    /// the `Content-Disposition` filename uses the same suffix as the URL path. Otherwise an accepted
+    /// alias would duplicate the extension: `/hits.CSV.gz?compression=gzip` has a path filename of
+    /// `hits.CSV.gz` but a raw `gzip` setting, and appending `.gzip` would yield `hits.CSV.gz.gzip`.
+    /// Unknown values are left as-is (the response-buffer setup throws on them anyway).
+    if (!disposition_compression.empty())
+        if (String canonical = canonicalizeCompressionExtension(disposition_compression); !canonical.empty())
+            disposition_compression = std::move(canonical);
     String disposition_format_override = !settings[Setting::output_format].value.empty()
         ? settings[Setting::output_format].value
         : settings[Setting::format].value;

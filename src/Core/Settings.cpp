@@ -6404,7 +6404,10 @@ If enabled, the HTTP interface recognizes `/name=value/` components in the path 
 Like [`http_allow_database_as_path`](#http_allow_database_as_path), this is a per-user setting; routing of path-style requests is gated globally by the server-level `http_allow_path_requests` configuration setting (routing happens before authentication).
 )", 0) \
     DECLARE(Bool, http_allow_filters_as_unrecognized_url_parameters, false, R"(
-If enabled, any URL parameter not recognized as a known parameter, setting, or `param_*` prefix is treated as a filter expression and combined with AND. Operators `>`, `<`, `>=`, `<=`, `!=`, `<>` are recognized; the value is parsed as a full expression and must contain at least one comparison operator.
+If enabled, any URL parameter not recognized as a known parameter, setting, or `param_*` prefix is treated as a filter and combined with AND. Two forms are accepted:
+
+- A plain `name=value` becomes the equality `` `name` = 'value' `` (the identifier is back-quoted, the value is quoted as a string literal).
+- A comparison operator (`!=`, `>`, `<`, `>=`, `<=`, `<>`) makes it a comparison: either split across the parameter (`?a!=2`, `?a>=2`) or written inline when the URL has no `=` to split on (`?a<>2`, `?f(x)>3`), in which case the reassembled `name[=value]` is parsed as a full SQL expression.
 )", 0) \
     \
     DECLARE(UInt64, function_range_max_elements_in_block, 500000000, R"(

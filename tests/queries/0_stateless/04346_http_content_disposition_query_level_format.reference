@@ -6,3 +6,9 @@ Content-Disposition: attachment; filename="hits.Native"
 Content-Disposition: attachment; filename="hits.Native"
 -- no override: the path .Native extension is kept as-is
 Content-Disposition: attachment; filename="hits.Native"
+-- compression alias 'gzip' does not duplicate the path's '.gz' extension
+Content-Disposition: attachment; filename="hits.Native.gz"
+-- compression alias 'gzip' on a path without a compression extension is canonicalized to '.gz'
+Content-Disposition: attachment; filename="hits.Native.gz"
+-- compression alias 'zstd' is canonicalized to '.zst'
+Content-Disposition: attachment; filename="hits.Native.zst"
