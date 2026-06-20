@@ -91,7 +91,7 @@ namespace DB
 class TSA_CAPABILITY("NsyncSharedMutex") NsyncSharedMutex
 {
 public:
-    NsyncSharedMutex() { nsync::nsync_mu_init(&mutex); }
+    NsyncSharedMutex() : mutex{} { nsync::nsync_mu_init(&mutex); }
     ~NsyncSharedMutex() = default;
     NsyncSharedMutex(const NsyncSharedMutex &) = delete;
     NsyncSharedMutex & operator=(const NsyncSharedMutex &) = delete;
