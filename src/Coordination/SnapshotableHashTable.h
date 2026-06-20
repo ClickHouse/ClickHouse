@@ -334,6 +334,13 @@ public:
             list.erase(list_itr);
         }
 
+        /// Note: `erase` deliberately does not call `optimizeIfNeeded`. `optimize` calls `rehash(0)`,
+        /// which unconditionally rebuilds the whole index (it is O(N) even when it cannot shrink), so
+        /// shrinking after every delete would turn a large `rmr`/delete batch into O(N^2). The sparse
+        /// table left behind by deletes is instead reclaimed lazily: on the next `insert`/`insertOrReplace`,
+        /// on the periodic post-snapshot `clearOutdatedNodes`, or via a manual `clrs` 4LW command. This is
+        /// why `hash_map_min_load_factor` controls auto-optimization on inserts and snapshot cleanup rather
+        /// than on individual deletes.
         updateDataSize(ERASE, key.size(), 0, old_data_size, remove_old);
         return true;
     }

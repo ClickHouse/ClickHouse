@@ -518,6 +518,76 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapClearSkipsAutoOptimize)
         EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
 }
 
+TYPED_TEST(CoordinationTest, SnapshotableHashMapEraseDefersAutoOptimizeUntilInsert)
+{
+    /// Ordinary (non-snapshot) `erase` deliberately does not run automatic optimization: `optimize`
+    /// calls `rehash(0)`, which unconditionally rebuilds the whole index (O(N) even when it cannot
+    /// shrink), so shrinking after every delete would make a large `rmr`/delete batch O(N^2). The
+    /// sparse table left behind by deletes is reclaimed lazily - here, on the next `insert`.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::hash_map_min_load_factor] = 0.5f;
+    (*settings)[DB::CoordinationSetting::min_node_count_for_auto_optimize] = 8;
+    auto context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    DB::SnapshotableHashTable<IntNode> map;
+    map.initialize(context);
+
+    static constexpr int node_count = 2000;
+    for (int i = 0; i < node_count; ++i)
+        EXPECT_TRUE(map.insert("/node" + std::to_string(i), i).second);
+
+    const size_t buckets_after_insert = map.getBucketCount();
+
+    /// Delete almost everything outside snapshot mode. The bucket count must not change: a bare `erase`
+    /// never triggers `rehash(0)`, even though the load factor is now far below the threshold.
+    for (int i = 0; i < node_count - 10; ++i)
+        EXPECT_TRUE(map.erase("/node" + std::to_string(i)));
+    EXPECT_EQ(map.size(), 10);
+    EXPECT_EQ(map.getBucketCount(), buckets_after_insert);
+
+    /// The next insert runs the deferred optimization and shrinks the now-sparse table.
+    EXPECT_TRUE(map.insert("/trigger", -1).second);
+    EXPECT_LT(map.getBucketCount(), buckets_after_insert);
+
+    /// Remaining nodes are intact.
+    for (int i = node_count - 10; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+    EXPECT_EQ(map.getValue("/trigger"), -1);
+}
+
+TYPED_TEST(CoordinationTest, SnapshotableHashMapEraseReclaimedByPostSnapshotCleanup)
+{
+    /// Companion to the test above: even without a follow-up insert, the sparse table produced by
+    /// non-snapshot deletes is reclaimed by the periodic post-snapshot cleanup. `clearOutdatedNodes`
+    /// (called from `clearGarbageAfterSnapshot`) has nothing to free here - all deletes were outside
+    /// snapshot mode - but its trailing `optimizeIfNeeded` still shrinks the index.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::hash_map_min_load_factor] = 0.5f;
+    (*settings)[DB::CoordinationSetting::min_node_count_for_auto_optimize] = 8;
+    auto context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    DB::SnapshotableHashTable<IntNode> map;
+    map.initialize(context);
+
+    static constexpr int node_count = 2000;
+    for (int i = 0; i < node_count; ++i)
+        EXPECT_TRUE(map.insert("/node" + std::to_string(i), i).second);
+
+    const size_t buckets_after_insert = map.getBucketCount();
+
+    for (int i = 0; i < node_count - 10; ++i)
+        EXPECT_TRUE(map.erase("/node" + std::to_string(i)));
+    EXPECT_EQ(map.size(), 10);
+    EXPECT_EQ(map.getBucketCount(), buckets_after_insert);
+
+    /// Post-snapshot cleanup reclaims the sparse table (no outdated nodes to free, optimize still runs).
+    map.clearOutdatedNodes();
+    EXPECT_LT(map.getBucketCount(), buckets_after_insert);
+
+    for (int i = node_count - 10; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+}
+
 TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
 {
     ChangelogDirTest test("./snapshots");
