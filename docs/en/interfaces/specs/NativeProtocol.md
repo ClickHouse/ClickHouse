@@ -332,7 +332,7 @@ sequenceDiagram
     S->>C: EndOfStream — authoritative end of query
 ```
 
-On error at any point the server sends an `Exception` instead of `EndOfStream`, which terminates the query.
+On error at any point the server sends an `Exception` instead of `EndOfStream`, which terminates the query. The one exception is a socket-level failure of the connection itself (a read timeout or a network error on the client socket): the server then closes the connection without sending an `Exception` packet, so a client must treat an unexpected close as a query failure.
 
 1. The client sends [`Query`](#query) with a unique `query_id` (typically a UUID).
 2. The client sends any external tables, then the empty Data marker. The empty Data packet has `table_name = ""`, `num_columns = 0`, `num_rows = 0`. The server does not begin executing the query until it receives this marker.
