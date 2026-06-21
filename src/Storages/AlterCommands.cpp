@@ -1741,7 +1741,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 column.default_desc.expression = command.default_expression->clone();
             }
 
-            all_columns.add(std::move(column));
+            all_columns.add(std::move(column), command.after_column, command.first);
             revalidate_stored_defaults = true;
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
@@ -1856,9 +1856,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             const bool removes_default_expression = command.to_remove == AlterCommand::RemoveProperty::DEFAULT
                 || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED
                 || command.to_remove == AlterCommand::RemoveProperty::ALIAS;
-            if (command.data_type || command.default_expression || removes_default_expression)
+            const bool changes_position = !command.after_column.empty() || command.first;
+            if (command.data_type || command.default_expression || removes_default_expression || changes_position)
             {
-                all_columns.modify(column_name, [&](ColumnDescription & column)
+                all_columns.modify(column_name, command.after_column, command.first, [&](ColumnDescription & column)
                 {
                     if (command.data_type)
                         column.type = command.data_type;
@@ -1875,7 +1876,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 });
             }
 
-            if (command.data_type || command.default_expression || removes_default_expression)
+            if (command.data_type || command.default_expression || removes_default_expression || changes_position)
                 revalidate_stored_defaults = true;
             modified_columns.emplace(column_name);
         }
