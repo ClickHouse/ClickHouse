@@ -12,6 +12,13 @@ SELECT false AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON; -- { clientErr
 -- column rather than a plain `Nullable` column.
 SELECT CAST(NULL AS LowCardinality(Nullable(String))) AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON;
 
+-- A literal `NULL AS id` has type `Nullable(Nothing)`; it is accepted and the id is omitted.
+SELECT NULL AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON;
+
+-- A literal `NULL AS properties` has type `Nullable(Nothing)`; it is written as the top-level
+-- `"properties": null` rather than nested inside a `{"properties": null}` object.
+SELECT (1.0, 2.0)::Point AS geometry, NULL AS properties FORMAT GeoJSON;
+
 -- A named Tuple used as the lone `properties` column is always written as an object, even when
 -- `output_format_json_named_tuples_as_objects` is disabled.
 SELECT (1.0, 2.0)::Point AS geometry, (1, 'x')::Tuple(num UInt8, str String) AS properties FORMAT GeoJSON SETTINGS output_format_json_named_tuples_as_objects = 0;
