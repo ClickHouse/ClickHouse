@@ -489,7 +489,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         };
         auto hint_previous = [this](char32_t code)
         {
-            if (hintPopupActive() && hint_active)
+            /// In the middle of the line Up navigates the hints directly (history recall there
+            /// would clobber the edit). At the end of the line Up only navigates once the user
+            /// has stepped into the list with Down, so it keeps recalling history before that.
+            if (hintPopupActive() && (hint_active || !isCursorAtEndOfInput()))
                 return rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
             return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
         };
