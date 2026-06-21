@@ -61,6 +61,10 @@ struct AnalysisTableExpressionData
     /// of a compound identifier could refer to a column in this table. Populated together
     /// with `column_names` by `ensureColumnMembershipSetsArePopulated()`.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
+    /// Lowercase fold of every entry in `column_identifier_first_parts`, populated only in `standard`
+    /// mode (by `enableStandardMode`). Kept separate so a case-sensitive lookup (quoted base part)
+    /// cannot accidentally bind via a folded entry — only the `use_case_insensitive` branch may consult it.
+    mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> lowercase_column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
 
     void ensureColumnMembershipSetsArePopulated() const;
@@ -107,8 +111,10 @@ struct AnalysisTableExpressionData
             return true;
         if (use_case_insensitive)
         {
+            /// Consult the lowercase-fold side index only on the case-insensitive path so a quoted/
+            /// base-case-sensitive lookup never matches a column whose first part differs only by case.
             String lower_first = Poco::toLower(String(first_part));
-            if (column_identifier_first_parts.contains(lower_first))
+            if (lowercase_column_identifier_first_parts.contains(lower_first))
                 return true;
         }
         return tryGetSubcolumnInfo(identifier_view.getFullName(), use_case_insensitive).has_value();
@@ -286,19 +292,16 @@ struct AnalysisTableExpressionData
             lowercase_column_name_to_original_names[lower_name].push_back(column_name);
         }
 
-        /// Add lowercase entries to column_identifier_first_parts for binding check
+        /// Populate the side index of lowercase first parts. Keep it disjoint from
+        /// `column_identifier_first_parts` so case-sensitive callers never observe a folded entry.
         ensureColumnMembershipSetsArePopulated();
-        std::vector<std::string> first_parts_to_add;
+        lowercase_column_identifier_first_parts.clear();
         for (const auto & first_part : column_identifier_first_parts)
         {
             if (case_sensitive_column_names.contains(first_part))
                 continue;
-            String lower_part = Poco::toLower(first_part);
-            if (lower_part != first_part)
-                first_parts_to_add.push_back(lower_part);
+            lowercase_column_identifier_first_parts.insert(Poco::toLower(first_part));
         }
-        for (const auto & part : first_parts_to_add)
-            column_identifier_first_parts.insert(part);
     }
 
 private:
