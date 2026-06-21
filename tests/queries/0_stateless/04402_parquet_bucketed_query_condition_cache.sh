@@ -35,7 +35,7 @@ WRITE_SETTINGS="s3_truncate_on_insert = 1, output_format_parquet_row_group_size 
 FILTER_SETTINGS="use_query_condition_cache = 1"
 BUCKET_SETTINGS="${FILTER_SETTINGS}, cluster_table_function_split_granularity = 'bucket'"
 
-obj="${ENDPOINT}/04401.parquet"
+obj="${ENDPOINT}/04402.parquet"
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3('${obj}', ${AUTH}, 'Parquet', 'number UInt64') SELECT number FROM numbers(400) SETTINGS ${WRITE_SETTINGS}"
 
