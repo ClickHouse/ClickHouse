@@ -1867,6 +1867,15 @@ void QueryResultCache::clear(const std::optional<String> & type, const std::opti
         }
     };
 
+    /// Hold the cache `mutex` across the whole clear. Clearing/removing a disk entry runs its `DiskEntry`
+    /// deleter, which `removeRecursive`s the entry directory; `readFromDisk` and `writeDisk` run under the same
+    /// `mutex` and rely on that removal being serialized with them. Without this lock
+    /// `SYSTEM DROP QUERY CACHE TYPE 'Disk'` (or `... TAG ...`) could delete files while `readFromDisk` is
+    /// deserializing them, or run between a writer's `createDirectories` and `disk_cache.set`. It also closes a
+    /// contract gap: a writer that already entered `writeDisk` holds the `mutex`, so the drop waits for it and
+    /// then removes the freshly published entry, leaving the disk cache actually empty after the drop returns.
+    std::lock_guard lock(mutex);
+
     if (type)
     {
         switch (parseQueryResultCacheType(*type))
@@ -1885,7 +1894,6 @@ void QueryResultCache::clear(const std::optional<String> & type, const std::opti
         clear_cache(disk_cache);
     }
 
-    std::lock_guard lock(mutex);
     times_executed.clear();
 }
 
