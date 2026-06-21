@@ -146,7 +146,7 @@ void forEachElementInJSONArray(ReadBuffer & buf, ElementHandler && handle_elemen
 }
 
 /// The shape invariant to enforce on an array of positions: a `LineString`/`MultiLineString` line (at
-/// least two positions), a `Polygon`/`MultiPolygon` ring (at least four positions and closed), or a
+/// least two points), a `Polygon`/`MultiPolygon` ring (at least four points and closed), or a
 /// `MultiPoint` (no invariant).
 enum class PositionArrayKind
 {
@@ -158,7 +158,7 @@ enum class PositionArrayKind
 /// Read an array of positions `[[lon,lat],...]` and enforce the shape invariant for `kind`. When
 /// `array_col` (an `Array(Tuple(Float64, Float64))`) is provided, each position is appended to its
 /// nested tuple and one array offset is pushed; otherwise the positions are only read and validated.
-void readGeoJSONPositions(ReadBuffer & buf, ColumnArray * array_col, PositionArrayKind kind)
+void readGeoJSONPositions(ReadBuffer & buf, ColumnArray * array_col, PositionArrayKind kind, bool validate)
 {
     ColumnFloat64 * lon_col = nullptr;
     ColumnFloat64 * lat_col = nullptr;
@@ -182,18 +182,23 @@ void readGeoJSONPositions(ReadBuffer & buf, ColumnArray * array_col, PositionArr
         ++count;
     });
 
-    if (kind == PositionArrayKind::Line && count < 2)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA, "GeoJSON: a LineString must have at least two positions, but got {}", count);
-    if (kind == PositionArrayKind::Ring)
+    /// Enforce the GeoJSON shape invariants only when geometry validation is enabled
+    /// (`format_geojson_validate_geometry`). When disabled, degenerate lines and rings are read as-is.
+    if (validate)
     {
-        if (count < 4)
+        if (kind == PositionArrayKind::Line && count < 2)
             throw Exception(
-                ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon ring must have at least four positions, but got {}", count);
-        if (first != last)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "GeoJSON: a Polygon ring must be closed (its first and last positions must be equal)");
+                ErrorCodes::INCORRECT_DATA, "GeoJSON: a LineString must have at least two points, but got {}", count);
+        if (kind == PositionArrayKind::Ring)
+        {
+            if (count < 4)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon ring must have at least four points, but got {}", count);
+            if (first != last)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "GeoJSON: a Polygon ring must be closed (its first and last points must be equal)");
+        }
     }
 
     if (array_col)
@@ -417,7 +422,7 @@ size_t readGeoJSONNestedArray(ReadBuffer & buf, ColumnArray * array_col, Element
 /// `sub_col` is null the coordinates are only read and validated. `Ring` is a synonym for `LineString`
 /// because it is part of the `Geometry` type, and `MultiPoint` is read in validation-only mode because
 /// it can be stored as NULL.
-void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, IColumn * sub_col)
+void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, IColumn * sub_col, bool validate)
 {
     if (geo_type == "Point")
     {
@@ -437,22 +442,24 @@ void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, ICo
 
     if (geo_type == "LineString" || geo_type == "Ring")
     {
-        readGeoJSONPositions(buf, array_col, PositionArrayKind::Line);
+        readGeoJSONPositions(buf, array_col, PositionArrayKind::Line, validate);
     }
     else if (geo_type == "MultiPoint")
     {
-        readGeoJSONPositions(buf, array_col, PositionArrayKind::MultiPoint);
+        readGeoJSONPositions(buf, array_col, PositionArrayKind::MultiPoint, validate);
     }
     else if (geo_type == "MultiLineString")
     {
         /// A `MultiLineString` is an array of lines.
-        if (readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * line_col) { readGeoJSONPositions(buf, line_col, PositionArrayKind::Line); }) == 0)
+        const size_t lines = readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * line_col) { readGeoJSONPositions(buf, line_col, PositionArrayKind::Line, validate); });
+        if (validate && lines == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a MultiLineString must have at least one LineString");
     }
     else if (geo_type == "Polygon")
     {
         /// A `Polygon` is an array of rings.
-        if (readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring); }) == 0)
+        const size_t rings = readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring, validate); });
+        if (validate && rings == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon must have at least one ring");
     }
     else if (geo_type == "MultiPolygon")
@@ -460,10 +467,12 @@ void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, ICo
         /// A `MultiPolygon` is an array of polygons, each an array of rings.
         auto read_polygon = [&](ColumnArray * polygon_col)
         {
-            if (readGeoJSONNestedArray(buf, polygon_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring); }) == 0)
+            const size_t rings = readGeoJSONNestedArray(buf, polygon_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring, validate); });
+            if (validate && rings == 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon must have at least one ring");
         };
-        if (readGeoJSONNestedArray(buf, array_col, read_polygon) == 0)
+        const size_t polygons = readGeoJSONNestedArray(buf, array_col, read_polygon);
+        if (validate && polygons == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a MultiPolygon must have at least one Polygon");
     }
 }
@@ -550,7 +559,7 @@ void validateGeoJSONGeometryMembers(
             "GeoJSON: geometry of type '{}' is missing the 'coordinates' member", geo_type);
 
     ReadBufferFromString coord_buf(raw_coordinates);
-    parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr);
+    parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr, format_settings.geojson.validate_geometry);
 }
 
 } /// anonymous namespace
@@ -895,7 +904,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
 
     if (!col)
     {
-        parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr);
+        parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr, format_settings.geojson.validate_geometry);
         return;
     }
 
@@ -905,7 +914,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
     auto local_discr = variant_col.localDiscriminatorByGlobal(global_discr);
     size_t offset = sub_col.size();
 
-    parseGeometryCoordinatesInto(geo_type, coord_buf, &sub_col);
+    parseGeometryCoordinatesInto(geo_type, coord_buf, &sub_col, format_settings.geojson.validate_geometry);
     variant_col.getLocalDiscriminators().push_back(local_discr);
     variant_col.getOffsets().push_back(offset);
 }
