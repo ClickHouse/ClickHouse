@@ -1438,9 +1438,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// Abort writing the result set to the output promptly when the query is cancelled.
             /// Without this, a write to a slow or stuck sink (e.g. a slow terminal) blocks the
             /// client, so the first Ctrl+C appears to have no effect until the whole block is
-            /// written. The hook lets the output buffer stop waiting and discard the rest.
+            /// written. The hook lets the output buffer stop waiting and discard the rest. It is
+            /// re-pointed and then cleared in resetOutput(), after the parallel-formatting collector
+            /// that also reads it has been joined, so the hook is never mutated while that thread
+            /// reads it.
             std_out->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
-            SCOPE_EXIT({ std_out->setCancellationHook({}); });
 
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
@@ -1868,6 +1870,23 @@ void ClientBase::resetOutput()
 
     output_format.reset();
     pending_progress.reset();
+
+    /// output_format.reset() above joined the parallel-formatting collector, the only other reader of
+    /// std_out's cancellation hook (WriteBufferFromFileDescriptor::nextImpl), so the hook can now be
+    /// re-pointed for the teardown flushes below and cleared at function end without racing it.
+    /// On exception paths the interrupt handler is already stopped here (its cancelled() is then
+    /// unconditionally true), so fall back to the genuine cancellation flag to avoid discarding
+    /// already-produced output; on normal completion the handler is still armed and is honored so a
+    /// fresh Ctrl+C keeps interrupting a flush to a slow/stuck stdout.
+    const bool interrupt_handler_armed = !query_interrupt_handler.cancelled();
+    if (std_out)
+        std_out->setCancellationHook(
+            [this, interrupt_handler_armed]
+            { return interrupt_handler_armed ? query_interrupt_handler.cancelled() : cancelled.load(); });
+    SCOPE_EXIT({
+        if (std_out)
+            std_out->setCancellationHook({});
+    });
 
     /// out_file_buf wraps std_out_wrapper (via a raw pointer), so it must be finalized
     /// first to flush remaining data (e.g. the gzip footer) into std_out_wrapper.
