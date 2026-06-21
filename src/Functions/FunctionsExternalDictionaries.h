@@ -49,16 +49,26 @@ namespace ErrorCodes
 }
 
 /// The range value passed to `dictGet`/`dictHas` for a `range_hashed` dictionary is cast to the
-/// dictionary's range type before the lookup (see `RangeHashedDictionary::getColumn`). The range
-/// type may be an integer, `Enum`, `Date`/`DateTime`/`DateTime64` or `Decimal` whose value fits
-/// into `Int64` (see `impl::callOnRangeType`). `DateTime64` and `Decimal` are not "represented by
-/// integer", so they must be checked explicitly; otherwise a `DateTime64` range argument would be
-/// rejected even though it is a valid range type.
+/// dictionary's range type before the lookup (see `RangeHashedDictionary::getColumn`). The accepted
+/// classes mirror the range types that `range_hashed`/`complex_key_range_hashed` itself accepts (see
+/// `impl::callOnRangeType`): integer-represented types (integers, `Date`/`DateTime`, `Enum`),
+/// floating point, `DateTime64` and `Decimal`. `DateTime64` and `Decimal` are not "represented by
+/// integer", so they must be checked explicitly; otherwise such an argument would be rejected even
+/// though it is a valid range type.
 inline bool isValidRangeArgumentType(const DataTypePtr & range_col_type)
 {
-    if (range_col_type->getSizeOfValueInMemory() > sizeof(Int64))
+    /// The type class must be checked before the in-memory size: variable-size types such as
+    /// `String` have no fixed value size and would make `getSizeOfValueInMemory` throw a
+    /// `LOGICAL_ERROR` instead of producing the intended `ILLEGAL_COLUMN` message below.
+    if (!(range_col_type->isValueRepresentedByInteger()
+          || isFloat(range_col_type)
+          || isDateTime64(range_col_type)
+          || isDecimal(range_col_type)))
         return false;
-    return range_col_type->isValueRepresentedByInteger() || isDateTime64(range_col_type) || isDecimal(range_col_type);
+
+    /// The range value is compared as a 64-bit quantity, so wider types (e.g. `Int128`,
+    /// `Decimal128`) are rejected with `ILLEGAL_COLUMN`.
+    return range_col_type->getSizeOfValueInMemory() <= sizeof(Int64);
 }
 
 

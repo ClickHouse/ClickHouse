@@ -16,3 +16,7 @@ none
 Decimal range argument
 low
 high
+Float range argument
+low
+high
+Unsupported range argument types are rejected with a clean error

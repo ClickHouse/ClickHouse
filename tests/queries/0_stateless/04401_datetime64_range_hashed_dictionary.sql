@@ -131,3 +131,48 @@ SELECT dictGet('04401_range_dict_decimal', 'value', toUInt64(1), toDecimal64(50.
 
 DROP DICTIONARY 04401_range_dict_decimal;
 DROP TABLE 04401_range_source_decimal;
+
+SELECT 'Float range argument';
+
+DROP TABLE IF EXISTS 04401_range_source_float;
+CREATE TABLE 04401_range_source_float
+(
+    id UInt64,
+    range_start Float64,
+    range_end Nullable(Float64),
+    value String
+)
+ENGINE = TinyLog;
+
+INSERT INTO 04401_range_source_float VALUES
+    (1, 0.0, 10.5, 'low'),
+    (1, 10.5, NULL, 'high');
+
+DROP DICTIONARY IF EXISTS 04401_range_dict_float;
+CREATE DICTIONARY 04401_range_dict_float
+(
+    id UInt64,
+    range_start Float64,
+    range_end Nullable(Float64),
+    value String DEFAULT 'none'
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE '04401_range_source_float'))
+LAYOUT(RANGE_HASHED(range_lookup_strategy 'max'))
+RANGE(MIN range_start MAX range_end)
+LIFETIME(0);
+
+-- A Float64 range column is accepted by range_hashed, so a fractional Float64 argument must be
+-- accepted by dictGet as well (it is cast to the dictionary's range type before the lookup).
+SELECT dictGet('04401_range_dict_float', 'value', toUInt64(1), toFloat64(5.25));
+-- A point far in the future falls into the open-ended (NULL max) interval.
+SELECT dictGet('04401_range_dict_float', 'value', toUInt64(1), toFloat64(1000.0));
+
+SELECT 'Unsupported range argument types are rejected with a clean error';
+-- A variable-size type such as String must produce ILLEGAL_COLUMN, not a LOGICAL_ERROR.
+SELECT dictGet('04401_range_dict_float', 'value', toUInt64(1), 'not a number'); -- { serverError ILLEGAL_COLUMN }
+-- A wider-than-Int64 numeric argument is rejected, since the range value is compared as Int64.
+SELECT dictGet('04401_range_dict_float', 'value', toUInt64(1), toInt128(5)); -- { serverError ILLEGAL_COLUMN }
+
+DROP DICTIONARY 04401_range_dict_float;
+DROP TABLE 04401_range_source_float;
