@@ -113,10 +113,13 @@ std::pair<Float64, Float64> readGeoJSONPosition(ReadBuffer & buf, ColumnFloat64 
     JSONUtils::skipComma(buf);
     Float64 lat = readStrictJSONNumber(buf);
 
+    /// Any extra position elements (a third altitude coordinate, or more) are discarded, so they are
+    /// validated only for JSON-number grammar, not finiteness: a valid but out-of-`Float64`-range value
+    /// such as `1e400` in an ignored slot must not reject the document, since it is not stored.
     while (!JSONUtils::checkAndSkipArrayEnd(buf))
     {
         JSONUtils::skipComma(buf);
-        readStrictJSONNumber(buf);
+        readStrictJSONNumberText(buf);
     }
 
     if (lon_col)
@@ -244,15 +247,17 @@ void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_set
     else
     {
         /// A scalar: string, boolean, null, or number. Strings/booleans/null have no internal
-        /// separators to validate, so the permissive `skipJSONField` is fine for them. Numbers,
-        /// however, must be validated against the strict JSON grammar even in ignored fields (e.g.
-        /// a skipped `bbox`), so that non-JSON spellings such as `+Inf` or `+NaN` are rejected
-        /// rather than silently tolerated in an otherwise-rejecting parser.
+        /// separators to validate, so the permissive `skipJSONField` is fine for them. A number is
+        /// validated against the strict JSON grammar (so non-JSON spellings such as `+Inf` or `+NaN`
+        /// are rejected even in an ignored field) but its text is discarded. Finiteness is deliberately
+        /// not enforced here: the value is in an ignored field (a `bbox`, a foreign member, an
+        /// unrequested `properties` value), so a valid JSON number that merely overflows `Float64`
+        /// (such as `1e400`) must not reject the document, since it is never stored as a coordinate.
         const char c = *buf.position();
         if (c == '"' || c == 't' || c == 'f' || c == 'n')
             skipJSONField(buf, "<ignored>", json_settings);
         else
-            readStrictJSONNumber(buf);
+            readStrictJSONNumberText(buf);
     }
 }
 
