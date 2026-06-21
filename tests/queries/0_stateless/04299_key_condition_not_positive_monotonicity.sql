@@ -12,7 +12,7 @@ SET use_query_condition_cache = 0;
 -- equals the number of granules the optimizer should select.
 
 DROP TABLE IF EXISTS test_divide_neg;
-CREATE TABLE test_divide_neg (c0 Int32) ENGINE = MergeTree() ORDER BY (c0 / -42) SETTINGS index_granularity = 1;
+CREATE TABLE test_divide_neg (c0 Int32) ENGINE = MergeTree() ORDER BY (c0 / -42) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_divide_neg VALUES (-100), (-1), (0), (1), (100);
 
 SELECT c0 FROM test_divide_neg WHERE c0 < 0 ORDER BY c0 SETTINGS force_primary_key = 1, max_rows_to_read = 4;
@@ -34,7 +34,7 @@ SELECT c0 FROM test_divide_neg WHERE c0 < 0;
 -- intDiv(1,-42) = 0), which makes the boundary granule wider and prunes fewer granules.
 
 DROP TABLE IF EXISTS test_intdiv_neg;
-CREATE TABLE test_intdiv_neg (c0 Int32) ENGINE = MergeTree() ORDER BY intDiv(c0, -42) SETTINGS index_granularity = 1;
+CREATE TABLE test_intdiv_neg (c0 Int32) ENGINE = MergeTree() ORDER BY intDiv(c0, -42) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_intdiv_neg VALUES (-100), (-1), (0), (1), (100);
 
 SELECT c0 FROM test_intdiv_neg WHERE c0 < 0 ORDER BY c0 SETTINGS force_primary_key = 1, max_rows_to_read = 5;
@@ -50,7 +50,7 @@ SELECT c0 FROM test_intdiv_neg WHERE c0 < 0;
 -- Compound chain: two non-positive functions compose to a positive direction (no flip).
 
 DROP TABLE IF EXISTS test_double_neg;
-CREATE TABLE test_double_neg (c0 Int32) ENGINE = MergeTree() ORDER BY (intDiv(c0, -5) / -7) SETTINGS index_granularity = 1;
+CREATE TABLE test_double_neg (c0 Int32) ENGINE = MergeTree() ORDER BY (intDiv(c0, -5) / -7) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_double_neg VALUES (-100), (-1), (0), (1), (100);
 
 SELECT c0 FROM test_double_neg WHERE c0 < 0 ORDER BY c0 SETTINGS force_primary_key = 1, max_rows_to_read = 4;
@@ -62,7 +62,7 @@ SELECT c0 FROM test_double_neg WHERE c0 < 0;
 -- Compound chain: one non-positive function, one positive (overall non-increasing).
 
 DROP TABLE IF EXISTS test_mixed_neg;
-CREATE TABLE test_mixed_neg (c0 Int32) ENGINE = MergeTree() ORDER BY (intDiv(c0, 5) / -7) SETTINGS index_granularity = 1;
+CREATE TABLE test_mixed_neg (c0 Int32) ENGINE = MergeTree() ORDER BY (intDiv(c0, 5) / -7) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_mixed_neg VALUES (-100), (-1), (0), (1), (100);
 
 SELECT c0 FROM test_mixed_neg WHERE c0 < 0 ORDER BY c0 SETTINGS force_primary_key = 1, max_rows_to_read = 5;
@@ -75,7 +75,7 @@ SELECT c0 FROM test_mixed_neg WHERE c0 < 0;
 -- constant-pushed-through-chain path is rejected and no pruning is attempted.
 
 DROP TABLE IF EXISTS test_negate;
-CREATE TABLE test_negate (c0 Int32) ENGINE = MergeTree() ORDER BY negate(c0) SETTINGS index_granularity = 1;
+CREATE TABLE test_negate (c0 Int32) ENGINE = MergeTree() ORDER BY negate(c0) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_negate VALUES (-100), (-1), (0), (1), (100);
 
 SELECT c0 FROM test_negate WHERE c0 < 0 ORDER BY c0;
@@ -88,7 +88,7 @@ SELECT c0 FROM test_negate WHERE c0 < 0;
 -- does not trigger the path.
 
 DROP TABLE IF EXISTS test_multiply_neg;
-CREATE TABLE test_multiply_neg (c0 Int32) ENGINE = MergeTree() ORDER BY (c0 * -2) SETTINGS index_granularity = 1;
+CREATE TABLE test_multiply_neg (c0 Int32) ENGINE = MergeTree() ORDER BY (c0 * -2) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_multiply_neg VALUES (-100), (-1), (0), (1), (100);
 
 SELECT c0 FROM test_multiply_neg WHERE c0 < 0 ORDER BY c0;
