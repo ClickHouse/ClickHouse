@@ -276,6 +276,15 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
 
         MergeTreeSelectAlgorithmPtr algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
 
+        /// Partial aggregate cache is opportunistic. Lazy materialization builds `MergeTreeReadPoolInOrder` with
+        /// `mutations_snapshot`, so reads may apply lightweight DELETE/UPDATE or patch overlays after the base part
+        /// is chosen. The base part name/mutation version does not describe the rows actually read; attaching
+        /// `PartialAggregateInfo` from `part_with_ranges.data_part` (or from a task before overlays are known absent)
+        /// could reuse stale cache entries. Fail-close here until identity can be tied to the materialized read task.
+        MergeTreeReaderSettings lazy_reader_settings = reader_settings;
+        if (lazy_reader_settings.use_partial_aggregate_cache)
+            lazy_reader_settings.use_partial_aggregate_cache = false;
+
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool,
             std::move(algorithm),
@@ -283,11 +292,11 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             nullptr,
             /*index_read_tasks*/ IndexReadTasks{},
             actions_settings,
-            reader_settings,
+            lazy_reader_settings,
             /*index_build_context*/ nullptr,
             lazy_materializing_rows);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name, nullptr);
         source->addTotalRowsApprox(total_rows);
 
         processors.emplace_back(std::move(source));

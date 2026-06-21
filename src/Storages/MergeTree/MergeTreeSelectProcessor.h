@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Interpreters/Cache/PartialAggregateInfo.h>
 #include <Processors/Chunk.h>
 
 namespace DB
@@ -134,6 +135,9 @@ public:
     void cancel() noexcept;
 
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
+
+    /// For pooled reads: part identity comes from the current read task (not fixed when the pipe is built).
+    PartialAggregateInfoPtr buildPartialAggregateInfoFromCurrentTask() const;
 
     static PrewhereExprInfo getPrewhereActions(
         const FilterDAGInfoPtr & row_level_filter,

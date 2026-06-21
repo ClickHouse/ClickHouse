@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
@@ -21,11 +22,16 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/ASTNonDeterministicFunctions.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -74,12 +80,75 @@ namespace ErrorCodes
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
 
 namespace
 {
+struct HasSubqueryMatcher
+{
+    struct Data
+    {
+        bool has_subquery = false;
+    };
+
+    static bool needChildVisit(const DB::ASTPtr &, const DB::ASTPtr &) { return true; }
+
+    static void visit(const DB::ASTPtr & node, Data & data)
+    {
+        if (node->as<DB::ASTSubquery>())
+            data.has_subquery = true;
+    }
+};
+
+using HasSubqueryVisitor = DB::ConstInDepthNodeVisitor<HasSubqueryMatcher, true>;
+
+bool astContainsSubquery(const DB::ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    HasSubqueryMatcher::Data data;
+    HasSubqueryVisitor(data).visit(ast);
+    return data.has_subquery;
+}
+
+bool hasJoinOrMutableTableInputs(const DB::ASTSelectQuery & select)
+{
+    if (select.hasJoin())
+        return true;
+
+    const auto tables_ast = select.tables();
+    if (!tables_ast)
+        return false;
+
+    const auto * tables = tables_ast->as<DB::ASTTablesInSelectQuery>();
+    if (!tables)
+        return true;
+
+    for (const auto & child : tables->children)
+    {
+        const auto * element = child->as<DB::ASTTablesInSelectQueryElement>();
+        if (!element)
+            return true;
+
+        if (!element->table_expression)
+            continue;
+
+        const auto * table_expression = element->table_expression->as<DB::ASTTableExpression>();
+        if (!table_expression)
+            return true;
+
+        /// Table functions and subqueries may read mutable data not represented in the part identity cache key.
+        if (table_expression->table_function || table_expression->subquery)
+            return true;
+    }
+
+    return false;
+}
+
 bool worthConvertToTwoLevel(
     size_t group_by_two_level_threshold, size_t result_size, size_t group_by_two_level_threshold_bytes, auto result_size_bytes)
 {
@@ -237,6 +306,11 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsTimezone session_timezone;
+}
+
 size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
 {
     auto estimate_size_of_compressed_state = [&](auto & table)
@@ -340,7 +414,8 @@ Aggregator::Params::Params(
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
     bool enable_producing_buckets_out_of_order_in_aggregation_,
-    bool serialize_string_with_zero_byte_)
+    bool serialize_string_with_zero_byte_,
+    UInt64 query_semantic_hash_for_partial_cache_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -365,6 +440,7 @@ Aggregator::Params::Params(
     , stats_collecting_params(stats_collecting_params_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
+    , query_semantic_hash_for_partial_cache(query_semantic_hash_for_partial_cache_)
 {
 }
 
@@ -4054,12 +4130,143 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
 
     SipHash hash;
     hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto with_expr = select.with())
+        hash.update(with_expr->getTreeHash(/*ignore_aliases=*/true));
+    try
+    {
+        if (const auto [array_join_expression_list, is_array_join_left] = select.arrayJoinExpressionList(); array_join_expression_list)
+        {
+            hash.update(array_join_expression_list->getTreeHash(/*ignore_aliases=*/true));
+            hash.update(static_cast<UInt8>(is_array_join_left));
+        }
+    }
+    catch (const Exception & e)
+    {
+        /// Multiple ARRAY JOIN is not supported in `arrayJoinExpressionList`; disable cache keying fail-close.
+        if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+            return 0;
+        throw;
+    }
     if (const auto prewhere = select.prewhere())
         hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
     if (const auto where = select.where())
         hash.update(where->getTreeHash(/*ignore_aliases=*/true));
     if (const auto group_by = select.groupBy())
         hash.update(group_by->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto select_expr = select.select())
+        hash.update(select_expr->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto having = select.having())
+        hash.update(having->getTreeHash(/*ignore_aliases=*/true));
+    return hash.get64();
+}
+
+namespace
+{
+bool isPartialAggregateCacheOnlySetting(const String & setting_name)
+{
+    return setting_name == "use_partial_aggregate_cache" || setting_name.starts_with("partial_aggregate_cache");
+}
+
+bool isSettingIgnoredInPartialAggregateCacheSemanticKey(const String & setting_name)
+{
+    if (isPartialAggregateCacheOnlySetting(setting_name))
+        return true;
+
+    if ((setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag")
+        return true;
+
+    if (setting_name == "log_comment"
+        || setting_name.starts_with("output_format_")
+        || setting_name == "http_response_headers"
+        || setting_name == "use_structure_from_insertion_table_in_table_functions")
+        return true;
+
+    /// Stats collection settings do not change grouping keys or aggregate state semantics.
+    if (setting_name == "collect_hash_table_stats_during_aggregation" || setting_name == "max_size_to_preallocate_for_aggregation")
+        return true;
+
+    return false;
+}
+
+void hashSemanticsAffectingSettingsForPartialAggregateCache(const Settings & settings, SipHash & hash)
+{
+    /// Always hash session timezone: it affects DateTime parsing in GROUP BY keys but may be absent from `changes()`.
+    hash.update(settings[Setting::session_timezone].value);
+
+    auto changed_settings = settings.changes();
+    std::vector<std::pair<String, String>> changed_settings_sorted;
+    changed_settings_sorted.reserve(changed_settings.size());
+    for (const auto & change : changed_settings)
+    {
+        if (isSettingIgnoredInPartialAggregateCacheSemanticKey(change.name))
+            continue;
+        changed_settings_sorted.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
+    }
+
+    std::sort(
+        changed_settings_sorted.begin(),
+        changed_settings_sorted.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+    for (const auto & setting : changed_settings_sorted)
+    {
+        hash.update(setting.first);
+        hash.update(setting.second);
+    }
+}
+
+}
+
+UInt64 partialAggregateCacheSemanticKey(
+    const DB::ASTPtr & select_query,
+    ContextPtr context,
+    const String & current_database,
+    const Settings & settings,
+    bool apply_deleted_mask,
+    bool has_row_level_filter,
+    bool has_additional_table_filters)
+{
+    /// Prefer query context for `FunctionFactory::tryGet` (stateful functions need it); callers may pass global context.
+    ContextPtr context_for_function_check = context;
+    if (context && context->hasQueryContext())
+        context_for_function_check = context->getQueryContext();
+
+    if (astContainsNonDeterministicFunctions(select_query, context_for_function_check))
+        return 0;
+
+    if (has_row_level_filter || has_additional_table_filters)
+        return 0;
+
+    const auto & select = select_query->as<DB::ASTSelectQuery &>();
+
+    if (select.with())
+        return 0;
+
+    if (select.sampleSize())
+        return 0;
+
+    /// JOINs/table functions/subqueries can introduce mutable inputs whose identity is not fully represented in the per-part key.
+    if (hasJoinOrMutableTableInputs(select))
+        return 0;
+
+    /// Subqueries may depend on mutable external sources whose freshness is not represented in the per-part PAC key.
+    /// Disable PAC instead of trying to include every scalar subquery input identity/version in the key.
+    if (astContainsSubquery(select.tables())
+        || astContainsSubquery(select.prewhere())
+        || astContainsSubquery(select.where())
+        || astContainsSubquery(select.select())
+        || astContainsSubquery(select.groupBy())
+        || astContainsSubquery(select.having()))
+        return 0;
+
+    const UInt64 base = calculateCacheKey(select_query);
+    if (base == 0)
+        return 0;
+
+    SipHash hash;
+    hash.update(base);
+    hash.update(current_database);
+    hash.update(static_cast<UInt8>(apply_deleted_mask));
+    hashSemanticsAffectingSettingsForPartialAggregateCache(settings, hash);
     return hash.get64();
 }
 }

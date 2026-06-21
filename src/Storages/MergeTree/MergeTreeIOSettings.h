@@ -63,6 +63,13 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    bool query_condition_cache_store_conditions_as_plaintext = false;
+    /// True when the query reads with FINAL (deduplication / collapsing merge semantics).
+    bool is_final = false;
+    /// If we should use the partial aggregate cache for caching per-part aggregation results.
+    bool use_partial_aggregate_cache = false;
+    /// Plan-time probe already called `PartialAggregateCache::get` for these reads and missed; skip redundant execution-time `get`.
+    bool skip_partial_aggregate_execution_cache_lookup = false;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;

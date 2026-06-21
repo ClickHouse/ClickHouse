@@ -3709,6 +3709,21 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (!allow_query_condition_cache || !has_where_or_prewhere)
         reader_settings.use_query_condition_cache = false;
 
+    /// PAC keys are per physical part. Sampled reads cover only a subset,
+    /// so cached states would be incorrect for non-sampled or differently-sampled queries.
+    if (result.sampling.use_sampling)
+        reader_settings.use_partial_aggregate_cache = false;
+
+    /// Parallel replicas read disjoint mark ranges of the same part. The PAC key
+    /// has no range component, so subset aggregates must not be cached as full-part aggregates.
+    if (is_parallel_reading_from_replicas)
+        reader_settings.use_partial_aggregate_cache = false;
+
+    /// Distributed bucket reads slice each part by bucket_id; PAC key has no bucket component
+    /// so subset aggregates must not be cached as full-part aggregates.
+    if (distributed_read_bucket_count > 0)
+        reader_settings.use_partial_aggregate_cache = false;
+
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
     /// (which may skip index analysis).

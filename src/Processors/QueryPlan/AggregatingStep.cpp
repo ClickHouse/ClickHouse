@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <memory>
 #include <numeric>
+#include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -13,6 +14,9 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Cache/PartialAggregateCache.h>
+#include <Interpreters/Cache/PartialAggregateCacheQueryHash.h>
+#include <Parsers/IASTHash.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -31,7 +35,11 @@
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Common/JSONBuilder.h>
+
+#include <algorithm>
+#include <optional>
 
 namespace DB
 {
@@ -384,7 +392,54 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
     const auto & src_header = pipeline.getSharedHeader();
+
+    std::shared_ptr<PartialAggregateCache> partial_aggregate_cache_holder;
+    std::optional<IASTHash> partial_aggregate_query_hash;
+    /// Partial aggregate cache: plan probe in `ReadFromMergeTree` when hash is available; execution `get`/`put` in `AggregatingTransform`.
+    /// Disabled for in-order aggregation, non-`throw` overflow modes, or `max_rows_to_group_by` with non-`throw` `group_by_overflow_mode`.
+    const bool partial_cache_is_compatible_with_group_by_limits
+        = params.max_rows_to_group_by == 0 || params.group_by_overflow_mode == OverflowMode::THROW;
+    if (!use_sharded_aggregation
+        && settings.use_partial_aggregate_cache
+        && settings.partial_aggregate_cache_compatible_with_overflow_modes
+        && sort_description_for_merging.empty()
+        && partial_cache_is_compatible_with_group_by_limits)
+    {
+        partial_aggregate_cache_holder = Context::getGlobalContextInstance()->getPartialAggregateCache();
+        if (partial_aggregate_cache_holder)
+        {
+            if (settings.partial_aggregate_cache_query_hash.has_value())
+            {
+                partial_aggregate_query_hash = settings.partial_aggregate_cache_query_hash;
+            }
+            else
+            {
+                partial_aggregate_query_hash = computePartialAggregateCacheQueryHash(
+                    partial_aggregate_cache_holder,
+                    params,
+                    *src_header,
+                    group_by_use_nulls,
+                    !sort_description_for_merging.empty(),
+                    nullptr,
+                    std::nullopt);
+                if (!partial_aggregate_query_hash.has_value())
+                    partial_aggregate_cache_holder.reset();
+            }
+        }
+    }
+
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
+    transform_params->partial_aggregate_cache = std::move(partial_aggregate_cache_holder);
+    transform_params->partial_aggregate_query_hash = std::move(partial_aggregate_query_hash);
+
+    /// Per-part execution cache needs one stream per part; otherwise `resize(1)` or drop cache (`partial_aggregate_cache_allow_parallel_aggregation_streams`).
+    if (transform_params->partial_aggregate_cache && pipeline.getNumStreams() > 1)
+    {
+        if (!settings.partial_aggregate_cache_allow_parallel_aggregation_streams)
+            pipeline.resize(1, false, settings.min_outstreams_per_resize_after_split);
+        else
+            transform_params->partial_aggregate_cache.reset();
+    }
 
     if (!grouping_sets_params.empty())
     {
@@ -419,6 +474,22 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 Aggregator::Params params_for_set = transform_params->params.cloneWithKeys(grouping_sets_params[i].used_keys, false);
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
+
+                /// Partial aggregate cache key includes missing_keys and grouping set index.
+                transform_params_for_set->partial_aggregate_cache = transform_params->partial_aggregate_cache;
+                if (transform_params_for_set->partial_aggregate_cache)
+                {
+                    transform_params_for_set->partial_aggregate_query_hash = computePartialAggregateCacheQueryHash(
+                        transform_params->partial_aggregate_cache,
+                        transform_params_for_set->params,
+                        *src_header,
+                        group_by_use_nulls,
+                        !sort_description_for_merging.empty(),
+                        &grouping_sets_params[i].missing_keys,
+                        i);
+                    if (!transform_params_for_set->partial_aggregate_query_hash.has_value())
+                        transform_params_for_set->partial_aggregate_cache.reset();
+                }
 
                 if (streams > 1)
                 {
@@ -1044,6 +1115,10 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in);
 
+    UInt64 query_semantic_hash_for_partial_cache = 0;
+    /// Partial aggregate cache query hash is not serialized — serialized/remote plans fall back
+    /// to computing the hash locally or disabling PAC if semantic key is unavailable.
+
     UInt64 stats_key = 0;
     if (has_stats_key)
         readIntBinary(stats_key, ctx.in);
@@ -1076,7 +1151,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
         ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
-        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]};
+        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
+        query_semantic_hash_for_partial_cache};
 
     SortDescription sort_description_for_merging;
 
