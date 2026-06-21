@@ -360,23 +360,6 @@ size_t ZooKeeperCreateResponse::sizeImpl() const
     return Coordination::size(path_created);
 }
 
-void ZooKeeperCreateTTLResponse::readImpl(ReadBuffer & in)
-{
-    Coordination::read(path_created, in);
-    Coordination::read(zstat, in);
-}
-
-void ZooKeeperCreateTTLResponse::writeImpl(WriteBuffer & out) const
-{
-    Coordination::write(path_created, out);
-    Coordination::write(zstat, out);
-}
-
-size_t ZooKeeperCreateTTLResponse::sizeImpl() const
-{
-    return Coordination::size(path_created) + Coordination::size(zstat);
-}
-
 void ZooKeeperCreate2Response::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path_created, out);
@@ -1622,12 +1605,6 @@ void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) 
     auto & elem =  elems[idx];
     elem.stat = zstat;
 }
-
-void ZooKeeperCreateTTLResponse::fillLogElements(LogElements & elems, size_t idx) const
-{
-    ZooKeeperCreate2Response::fillLogElements(elems, idx);
-}
-
 
 void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
 {

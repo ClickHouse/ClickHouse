@@ -300,20 +300,11 @@ struct ZooKeeperCreateIfNotExistsResponse : ZooKeeperCreateResponse
     using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
 };
 
-struct ZooKeeperCreateTTLResponse : ZooKeeperCreate2Response
+struct ZooKeeperCreateTTLResponse final : ZooKeeperCreate2Response
 {
     using ZooKeeperCreate2Response::ZooKeeperCreate2Response;
 
-    void readImpl(ReadBuffer & in) override;
-
-    void writeImpl(WriteBuffer & out) const override;
-    size_t sizeImpl() const override;
-
     OpNum getOpNum() const override { return OpNum::CreateTTL; }
-
-    size_t bytesSize() const override { return ZooKeeperCreate2Response::bytesSize(); }
-
-    void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
