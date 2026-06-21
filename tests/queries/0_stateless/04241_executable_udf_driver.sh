@@ -221,6 +221,45 @@ rm -rf "$WORK_DIR/dyn/test_udf_drv_add.xml" "$WORK_DIR/dyn/test_udf_drv_add.yaml
 run "SELECT test_udf_drv_add(10, 5);"
 RECREATED_WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_add.workdir")
 
+echo "-- query_log classifies driver-created function as executable UDF only"
+# Driver-created functions are persisted in the SQL-object storage, but they are executable UDFs and
+# must appear only in system.query_log.used_executable_user_defined_functions, not in
+# used_sql_user_defined_functions. Run this check in an isolated config with its own (fresh) data path
+# so system.query_log is created in-process - clickhouse-local does not re-attach a query_log table
+# persisted by an earlier process. The created function call goes through the query result cache
+# (use_query_cache); query_cache_nondeterministic_function_handling = 'save' lets the non-deterministic
+# executable UDF still exercise the cache determinism check that performs the classification.
+cat > "$WORK_DIR/config_query_log.xml" <<EOF
+<clickhouse>
+    <allow_experimental_executable_udf_drivers>1</allow_experimental_executable_udf_drivers>
+    <user_defined_executable_function_drivers_config>${WORK_DIR}/*_driver.xml</user_defined_executable_function_drivers_config>
+    <dynamic_user_defined_executable_functions_path>${WORK_DIR}/qlog_dyn/</dynamic_user_defined_executable_functions_path>
+    <user_defined_path>${WORK_DIR}/qlog_user_defined</user_defined_path>
+    <user_scripts_path>${WORK_DIR}/qlog_user_scripts/</user_scripts_path>
+    <path>${WORK_DIR}/qlog_data/</path>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_log>
+</clickhouse>
+EOF
+mkdir -p "$WORK_DIR/qlog_user_defined" "$WORK_DIR/qlog_user_scripts" "$WORK_DIR/qlog_dyn" "$WORK_DIR/qlog_data"
+"$CLICKHOUSE_LOCAL" --config-file="$WORK_DIR/config_query_log.xml" --query "
+CREATE FUNCTION test_udf_drv_qlog ARGUMENTS (x UInt8, y UInt8) RETURNS Int64
+    ENGINE = DockerC() AS 'return (int64_t) x + (int64_t) y;';
+SET log_queries = 1;
+SELECT test_udf_drv_qlog(123, 45) SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'save';
+SYSTEM FLUSH LOGS;
+SELECT
+    if(has(used_executable_user_defined_functions, 'test_udf_drv_qlog'), 'executable', 'NOT_executable'),
+    if(has(used_sql_user_defined_functions, 'test_udf_drv_qlog'), 'ALSO_sql_BUG', 'sql_clean')
+FROM system.query_log
+WHERE query LIKE '%test_udf_drv_qlog(123, 45)%' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+" 2>&1
+
 echo "-- drop removes everything"
 run "DROP FUNCTION test_udf_drv_add; DROP FUNCTION test_udf_drv_add_u64; DROP FUNCTION test_udf_drv_concat; DROP FUNCTION test_udf_drv_unsafe;"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "config_still_present" || echo "config_removed"

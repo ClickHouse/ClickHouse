@@ -245,31 +245,30 @@ bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr &
     return true;
 }
 
+/// Records the use of a SQL user-defined function in system.query_log. Driver-created executable
+/// functions are persisted in the same SQL-object storage, but they are executable UDFs (recorded
+/// separately as ExecutableUserDefinedFunction), so they must not be reported as SQL UDFs here.
+static void recordSQLUserDefinedFunctionUse(const ASTPtr & ast, const String & function_name)
+{
+    if (!ast || ast->as<ASTCreateFunctionWithDriverQuery>() || !CurrentThread::isInitialized())
+        return;
+
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+        query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
+}
+
 ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 {
     ASTPtr ast = getContext()->getUserDefinedSQLObjectsStorage().get(function_name);
-
-    if (ast && CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().tryGetQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
-    }
-
+    recordSQLUserDefinedFunctionUse(ast, function_name);
     return ast;
 }
 
 ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) const
 {
     ASTPtr ast = getContext()->getUserDefinedSQLObjectsStorage().tryGet(function_name);
-
-    if (ast && CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().tryGetQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::SQLUserDefinedFunction, function_name);
-    }
-
+    recordSQLUserDefinedFunctionUse(ast, function_name);
     return ast;
 }
 

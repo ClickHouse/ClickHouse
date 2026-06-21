@@ -60,6 +60,9 @@ unsafe_dynamic_execute_direct
 3
 -- attach-style recreate after config loss
 15
+-- query_log classifies driver-created function as executable UDF only
+168
+executable	sql_clean
 -- drop removes everything
 config_removed
 workdir_metadata_removed
