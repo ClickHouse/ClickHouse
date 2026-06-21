@@ -103,6 +103,7 @@ TTLTransform::TTLTransform(
             return Result{};
         const auto & column = storage_columns.get(name);
         auto default_ast = cloneAndExpandColumnDefaultExpressionWithAliases(it->second, storage_columns, context);
+        validateNoCyclicAliasesAfterExpansion(name, default_ast, storage_columns, context);
         default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
         auto syntax_result = TreeRewriter(context).analyze(default_ast, storage_columns.getAll());
         auto actions = ExpressionAnalyzer{default_ast, syntax_result, context}.getActions(true);
