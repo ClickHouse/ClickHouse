@@ -18,3 +18,15 @@ ${CLICKHOUSE_CLIENT} --query "SELECT (1.0, inf)::Point AS geometry FORMAT GeoJSO
 # A floating-point feature id must be finite; a non-finite id is rejected rather than written as null.
 ${CLICKHOUSE_CLIENT} --query "SELECT nan AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON" >/dev/null 2>&1 \
     && echo "nan id accepted" || echo "nan id rejected"
+
+# With geometry validation enabled (the default, format_geojson_validate_geometry = 1), the output rejects
+# geometries that are not valid GeoJSON shapes: a line or ring with too few positions, an unclosed ring,
+# or an empty multi-geometry. These rejections also happen mid-stream, so they are checked by exit code.
+${CLICKHOUSE_CLIENT} --query "SELECT [(0.0, 0.0)]::LineString AS geometry FORMAT GeoJSON" >/dev/null 2>&1 \
+    && echo "one-position linestring accepted" || echo "one-position linestring rejected"
+${CLICKHOUSE_CLIENT} --query "SELECT [[(0.0, 0.0), (1.0, 1.0), (0.0, 0.0)]]::Polygon AS geometry FORMAT GeoJSON" >/dev/null 2>&1 \
+    && echo "short polygon ring accepted" || echo "short polygon ring rejected"
+${CLICKHOUSE_CLIENT} --query "SELECT [[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (2.0, 2.0)]]::Polygon AS geometry FORMAT GeoJSON" >/dev/null 2>&1 \
+    && echo "unclosed polygon ring accepted" || echo "unclosed polygon ring rejected"
+${CLICKHOUSE_CLIENT} --query "SELECT []::MultiPolygon AS geometry FORMAT GeoJSON" >/dev/null 2>&1 \
+    && echo "empty multipolygon accepted" || echo "empty multipolygon rejected"
