@@ -1,9 +1,12 @@
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
+#include <city.h>
 
+#include <cstring>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -79,4 +82,132 @@ TEST(HexTest, UnhexingIntegral)
         ASSERT_EQ(u256, unhexer<UInt256>("102030405060708090a0b0c0d0e0f00000112233445566778899aabbccddeeff"));
         ASSERT_EQ(u256, unhexer<UInt256>("102030405060708090A0B0C0D0E0F00000112233445566778899AABBCCDDEEFF"));
     }
+}
+
+TEST(HexTest, UnhexSingleDigit)
+{
+    ASSERT_EQ(0, unhex('0'));
+    ASSERT_EQ(9, unhex('9'));
+    ASSERT_EQ(10, unhex('a'));
+    ASSERT_EQ(15, unhex('f'));
+    ASSERT_EQ(10, unhex('A'));
+    ASSERT_EQ(15, unhex('F'));
+}
+
+TEST(HexTest, Unhex2)
+{
+    ASSERT_EQ(0x00, unhex2("00"));
+    ASSERT_EQ(0xFF, unhex2("FF"));
+    ASSERT_EQ(0xff, unhex2("ff"));
+    ASSERT_EQ(0xAB, unhex2("AB"));
+    ASSERT_EQ(0xab, unhex2("ab"));
+    ASSERT_EQ(0x1F, unhex2("1F"));
+}
+
+TEST(HexTest, Unhex4)
+{
+    ASSERT_EQ(0x0000, unhex4("0000"));
+    ASSERT_EQ(0xFFFF, unhex4("FFFF"));
+    ASSERT_EQ(0xffff, unhex4("ffff"));
+    ASSERT_EQ(0x1234, unhex4("1234"));
+    ASSERT_EQ(0xABCD, unhex4("ABCD"));
+    ASSERT_EQ(0xabcd, unhex4("abcd"));
+}
+
+TEST(HexTest, HexDigit)
+{
+    ASSERT_EQ('0', hexDigitUppercase(0));
+    ASSERT_EQ('9', hexDigitUppercase(9));
+    ASSERT_EQ('A', hexDigitUppercase(10));
+    ASSERT_EQ('F', hexDigitUppercase(15));
+
+    ASSERT_EQ('0', hexDigitLowercase(0));
+    ASSERT_EQ('9', hexDigitLowercase(9));
+    ASSERT_EQ('a', hexDigitLowercase(10));
+    ASSERT_EQ('f', hexDigitLowercase(15));
+}
+
+TEST(HexTest, WriteHexByte)
+{
+    char buf[2];
+    writeHexByteUppercase(0xAB, buf);
+    ASSERT_EQ("AB", std::string_view(buf, 2));
+
+    writeHexByteLowercase(0xAB, buf);
+    ASSERT_EQ("ab", std::string_view(buf, 2));
+
+    writeHexByteUppercase(0x00, buf);
+    ASSERT_EQ("00", std::string_view(buf, 2));
+
+    writeHexByteLowercase(0xFF, buf);
+    ASSERT_EQ("ff", std::string_view(buf, 2));
+}
+
+TEST(HexTest, WriteBinByte)
+{
+    char buf[8];
+    writeBinByte(0x00, buf);
+    ASSERT_EQ("00000000", std::string_view(buf, 8));
+
+    writeBinByte(0xFF, buf);
+    ASSERT_EQ("11111111", std::string_view(buf, 8));
+
+    writeBinByte(0xA5, buf);
+    ASSERT_EQ("10100101", std::string_view(buf, 8));
+}
+
+TEST(HexTest, HexStringUppercase)
+{
+    constexpr auto input = "\x10\x20\x30\x40\x50\x60\x70\x80\x90\xA0\xB0\xC0\xD0\xE0\xF0"sv;
+
+    std::string upper(input.size() * 2, '\0');
+    hexString<false>(reinterpret_cast<UInt8 *>(upper.data()), input.data(), input.size());
+    ASSERT_EQ("102030405060708090A0B0C0D0E0F0", upper);
+
+    std::string lower(input.size() * 2, '\0');
+    hexString<true>(reinterpret_cast<UInt8 *>(lower.data()), input.data(), input.size());
+    ASSERT_EQ("102030405060708090a0b0c0d0e0f0", lower);
+}
+
+TEST(HexTest, HexStringRoundtrip)
+{
+    /// Exercise scalar path (< 16 bytes) and SIMD paths (>= 16 and >= 32 bytes).
+    for (size_t size : {0, 1, 7, 15, 16, 17, 31, 32, 33, 64, 100})
+    {
+        std::vector<uint8_t> original(size);
+        for (size_t i = 0; i < size; ++i)
+            original[i] = static_cast<uint8_t>(i * 37 + 13);
+
+        std::string encoded = hexString(original.data(), original.size());
+        ASSERT_EQ(encoded.size(), size * 2);
+
+        std::vector<uint8_t> decoded(size);
+        unHexString(reinterpret_cast<UInt8 *>(decoded.data()), reinterpret_cast<const UInt8 *>(encoded.data()), size);
+        ASSERT_EQ(original, decoded) << "roundtrip failed for size=" << size;
+    }
+}
+
+TEST(HexTest, GetHexUInt)
+{
+    ASSERT_EQ("0123456789ABCDEF", getHexUIntUppercase(UInt64{0x0123456789ABCDEF}));
+    ASSERT_EQ("0123456789abcdef", getHexUIntLowercase(UInt64{0x0123456789abcdef}));
+}
+
+TEST(HexTest, CityHashUInt128Roundtrip)
+{
+    CityHash_v1_0_2::uint128 original;
+    original.high64 = 0x0123456789ABCDEF;
+    original.low64  = 0xFEDCBA9876543210;
+
+    /// Encode upper and lower, verify hex string has high64 first.
+    auto upper = getHexUIntUppercase(original);
+    ASSERT_EQ("0123456789ABCDEFFEDCBA9876543210", upper);
+
+    auto lower = getHexUIntLowercase(original);
+    ASSERT_EQ("0123456789abcdeffedcba9876543210", lower);
+
+    /// Roundtrip: unhex the encoded string back and compare.
+    auto decoded = unhexUInt<CityHash_v1_0_2::uint128>(upper.data());
+    ASSERT_EQ(original.high64, decoded.high64);
+    ASSERT_EQ(original.low64, decoded.low64);
 }

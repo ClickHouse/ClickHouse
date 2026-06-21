@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 namespace DB
 {

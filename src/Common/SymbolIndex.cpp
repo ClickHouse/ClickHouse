@@ -1,7 +1,7 @@
 #include <base/defines.h>
 
 #include <base/MemorySanitizer.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/sort.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>

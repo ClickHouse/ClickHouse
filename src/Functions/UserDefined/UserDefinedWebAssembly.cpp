@@ -3,7 +3,7 @@
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
 #include <ranges>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 #include <Columns/ColumnVector.h>
 

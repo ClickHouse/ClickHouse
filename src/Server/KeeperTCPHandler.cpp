@@ -13,7 +13,7 @@
 #    include <IO/WriteBufferFromPocoSocket.h>
 #    include <IO/LimitReadBuffer.h>
 #    include <base/defines.h>
-#    include <base/hex.h>
+#    include <Common/Hex.h>
 #    include <Poco/Net/NetException.h>
 #    include <Poco/Util/AbstractConfiguration.h>
 #    include <Common/CurrentThread.h>

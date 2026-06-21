@@ -7,7 +7,7 @@
 #include <Interpreters/FileCache/FileCacheUtils.h>
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
