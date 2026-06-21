@@ -97,6 +97,27 @@ node_cli_skip = cluster_cli_skip.add_instance(
     stay_alive=True,
 )
 
+# Compatibility case: a `GraphiteMergeTree` rollup config section can have an
+# arbitrary name (taken from the table definition, e.g. `GraphiteMergeTree('retention_5m')`),
+# not necessarily one starting with `graphite_rollup`. Such a section was valid before this
+# check existed, so it must still be accepted (recognized by its rollup structure) and usable.
+cluster_graphite = ClickHouseCluster(__file__, name="graphite")
+node_graphite = cluster_graphite.add_instance(
+    "node_graphite",
+    main_configs=["configs/config.d/graphite_arbitrary_name.xml"],
+)
+
+# Negative case: an unknown top-level key must NOT be accepted merely because an external
+# `<include_from>` substitution source (one that is NOT merged into the config, i.e. lives
+# outside `config.d/`) happens to define a tag of the same name. Such a source is only a
+# lookup table for `incl` references and contributes no top-level key to the merged config.
+cluster_include_from_external = ClickHouseCluster(__file__, name="include_from_external")
+node_include_from_external = cluster_include_from_external.add_instance(
+    "node_include_from_external",
+    main_configs=["configs/config.d/include_from_external_initial.xml"],
+    stay_alive=True,
+)
+
 
 @pytest.fixture(scope="module")
 def start_bad_cluster():
@@ -177,6 +198,20 @@ def start_cli_skip_cluster():
     cluster_cli_skip.start()
     yield
     cluster_cli_skip.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_graphite_cluster():
+    cluster_graphite.start()
+    yield
+    cluster_graphite.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_include_from_external_cluster():
+    cluster_include_from_external.start()
+    yield
+    cluster_include_from_external.shutdown()
 
 
 def test_unknown_config_option_rejected(start_bad_cluster):
@@ -321,3 +356,88 @@ def test_cli_skip_flag_disables_check(start_cli_skip_cluster):
         assert node_cli_skip.query("SELECT 1").strip() == "1"
     finally:
         node_cli_skip.exec_in_container(["bash", "-c", f"rm -f {extra_unknown_path}"])
+
+
+def test_cli_skip_flag_disables_user_setting_check_on_reload(start_cli_skip_cluster):
+    # Regression for the command-line escape hatch on `SYSTEM RELOAD CONFIG` for the
+    # *pre-existing* top-level user-setting check (`Settings::checkNoSettingNamesAtTopLevel`),
+    # not only for the new unknown-server-key check. On reload that helper validates the
+    # file-only config (so a failed reload does not mutate the layered config), which does not
+    # carry command-line options; the escape hatch must therefore be resolved from the layered
+    # config. Injecting a top-level user setting such as `<max_memory_usage>` and reloading must
+    # NOT raise `UNKNOWN_ELEMENT_IN_CONFIG`, exactly as the command-line flag suppresses that
+    # same check at startup.
+    user_setting_path = "/etc/clickhouse-server/config.d/cli_skip_user_setting.xml"
+    user_setting = (
+        "<clickhouse>"
+        "<max_memory_usage>1</max_memory_usage>"
+        "</clickhouse>"
+    )
+    try:
+        node_cli_skip.replace_config(user_setting_path, user_setting)
+        # `query` raises on error; a clean return proves the reload was accepted.
+        node_cli_skip.query("SYSTEM RELOAD CONFIG")
+        assert node_cli_skip.query("SELECT 1").strip() == "1"
+    finally:
+        node_cli_skip.exec_in_container(["bash", "-c", f"rm -f {user_setting_path}"])
+
+
+def test_graphite_rollup_arbitrary_section_name_accepted(start_graphite_cluster):
+    # A `GraphiteMergeTree` rollup section can have an arbitrary name (taken from the table
+    # definition, here `retention_5m`), not necessarily one starting with `graphite_rollup`.
+    # If the unknown-key validator rejected `<retention_5m>`, the node would have failed to
+    # start. The section must also remain usable: a `GraphiteMergeTree('retention_5m')` table
+    # is created, populated, and rolled up.
+    node_graphite.query("DROP TABLE IF EXISTS test_graphite SYNC")
+    node_graphite.query(
+        """
+        CREATE TABLE test_graphite
+            (metric String, value Float64, timestamp UInt32, date Date, updated UInt32)
+            ENGINE = GraphiteMergeTree('retention_5m')
+            PARTITION BY toYYYYMM(date)
+            ORDER BY (metric, timestamp)
+        """
+    )
+    node_graphite.query(
+        "INSERT INTO test_graphite VALUES ('metric1', 1.0, 1, toDate('2020-01-01'), 1)"
+    )
+    node_graphite.query("OPTIMIZE TABLE test_graphite FINAL")
+    assert node_graphite.query("SELECT count() FROM test_graphite").strip() == "1"
+    node_graphite.query("DROP TABLE test_graphite SYNC")
+
+
+def test_external_include_from_source_does_not_exempt_unknown_key(
+    start_include_from_external_cluster,
+):
+    # An external `<include_from>` source that lives OUTSIDE `config.d/` is used by
+    # `ConfigProcessor` only as a lookup table for `incl` references; it does not contribute
+    # any top-level key to the merged config. Therefore an unknown top-level key must still be
+    # rejected even when the external source happens to define a tag of the same name.
+    # (Before the fix, the validator exempted every top-level tag of every `include_from`
+    # source unconditionally, masking exactly this typo/misplaced-section class.)
+    external_source_path = "/etc/clickhouse-server/external_incl_source.xml"
+    external_source = (
+        "<clickhouse>"
+        "<my_external_only_payload>lookup value</my_external_only_payload>"
+        "</clickhouse>"
+    )
+    # The unknown top-level key shares its name with the external source's tag, so it would be
+    # wrongly exempted by the old code. It is paired with the `<include_from>` directive that
+    # points at the external (non-merged) source.
+    bad_config_path = "/etc/clickhouse-server/config.d/external_include_from.xml"
+    bad_config = (
+        "<clickhouse>"
+        f"<include_from>{external_source_path}</include_from>"
+        "<my_external_only_payload>1</my_external_only_payload>"
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(external_source_path, external_source)
+        node_include_from_external.replace_config(bad_config_path, bad_config)
+        error = node_include_from_external.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+        assert "my_external_only_payload" in error
+    finally:
+        node_include_from_external.exec_in_container(
+            ["bash", "-c", f"rm -f {bad_config_path} {external_source_path}"]
+        )
