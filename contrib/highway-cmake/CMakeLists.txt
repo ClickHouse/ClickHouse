@@ -7,6 +7,7 @@ set(HIGHWAY_SOURCES
     "${HIGHWAY_SOURCE_DIR}/hwy/per_target.cc"
     "${HIGHWAY_SOURCE_DIR}/hwy/targets.cc"
     "${HIGHWAY_SOURCE_DIR}/hwy/timer.cc"
+    "${HIGHWAY_SOURCE_DIR}/hwy/contrib/sort/vqsort.cc"
 )
 
 add_library(_highway ${HIGHWAY_SOURCES})
