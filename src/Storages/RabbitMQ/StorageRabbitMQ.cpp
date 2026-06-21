@@ -914,7 +914,13 @@ void StorageRabbitMQ::shutdown(bool)
     LOG_TRACE(log, "Deactivating init task");
     deactivateTask(init_task, true, false);
 
-    for (auto & consumer_weak : consumers_ref)
+    std::vector<std::weak_ptr<RabbitMQConsumer>> consumers_snapshot;
+    {
+        std::lock_guard lock(consumers_mutex);
+        consumers_snapshot = consumers_ref;
+    }
+
+    for (auto & consumer_weak : consumers_snapshot)
     {
         auto consumer = consumer_weak.lock();
         if (!consumer)
@@ -934,7 +940,7 @@ void StorageRabbitMQ::shutdown(bool)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        for (auto & consumer_weak : consumers_ref)
+        for (auto & consumer_weak : consumers_snapshot)
         {
             auto consumer = consumer_weak.lock();
             if (!consumer)
@@ -952,7 +958,10 @@ void StorageRabbitMQ::shutdown(bool)
         for (size_t i = 0; i < num_created_consumers; ++i)
             popConsumer();
 
-        consumers_ref.clear();
+        {
+            std::lock_guard lock(consumers_mutex);
+            consumers_ref.clear();
+        }
     }
     catch (...)
     {

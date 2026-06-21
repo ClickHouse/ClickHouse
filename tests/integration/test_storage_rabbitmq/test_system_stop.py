@@ -673,3 +673,36 @@ def test_cancel_wakes_flush_wait_promptly(rabbitmq_cluster):
         f"SYSTEM CANCEL took {elapsed:.1f}s to abort the in-flight block; it should wake the flush "
         f"wait promptly instead of waiting out rabbitmq_flush_interval_ms"
     )
+
+
+def test_drop_during_cancel_all_background_no_race(rabbitmq_cluster):
+    # Regression for the shutdown() vs cancelBackgroundActivity() data race on consumers_ref:
+    # DROP TABLE runs shutdown() (which clears consumers_ref) while SYSTEM CANCEL ALL BACKGROUND
+    # iterates consumers_ref. Hammer the two concurrently; the server must stay up. The underlying
+    # UB is what ThreadSanitizer/stress CI catches; here we assert no crash.
+    stop = threading.Event()
+
+    def spam_cancel_all_background():
+        # CANCEL ALL BACKGROUND fans out cancelBackgroundActivity() over every live streaming table
+        # without blocking consumption, so it races shutdown() but does not stall table setup.
+        while not stop.is_set():
+            instance.query("SYSTEM CANCEL ALL BACKGROUND")
+
+    hammer = threading.Thread(target=spam_cancel_all_background, daemon=True)
+    hammer.start()
+    try:
+        for i in range(30):
+            table = f"rabbitmq_drop_race_{i}"
+            exchange = f"drop_race_exchange_{i}"
+            setup_consuming_table(table, exchange)
+            publish(rabbitmq_cluster, exchange, 0, 5)
+            # DROP triggers flushAndShutdown() -> shutdown() while the table is still registered, so
+            # the concurrent CANCEL ALL BACKGROUND fan-out can hit it mid-shutdown.
+            instance.query(f"DROP TABLE test.{table}_mv SYNC")
+            instance.query(f"DROP TABLE test.{table} SYNC")
+            instance.query(f"DROP TABLE test.{table}_dst SYNC")
+    finally:
+        stop.set()
+        hammer.join()
+
+    assert instance.query("SELECT 1") == "1\n"
