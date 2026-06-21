@@ -77,6 +77,8 @@ private:
     FormatSettings settings;
     /// `settings` with number quoting disabled, used for coordinates and numeric feature ids.
     FormatSettings number_settings;
+    /// `settings` forcing object serialization, used only for a lone object-typed `properties` column.
+    FormatSettings splat_settings;
     WriteBuffer * ostr;
 
     std::optional<size_t> id_col_idx;

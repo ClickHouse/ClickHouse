@@ -81,14 +81,6 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
           header_, out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
     , settings(settings_)
 {
-    /// A named `Tuple` used as the `properties` object must serialize as a JSON object rather than a
-    /// JSON array, so the `properties` member is always a valid GeoJSON object.
-    settings.json.write_named_tuples_as_objects = true;
-
-    /// A `Map` used as the `properties` object must serialize as a JSON object rather than an array of
-    /// key/value tuples, for the same reason.
-    settings.json.write_map_as_array_of_tuples = false;
-
     /// Coordinates and numeric feature ids are plain JSON numbers and must never be quoted, even when
     /// settings such as `output_format_json_quote_64bit_floats`, `output_format_json_quote_64bit_integers`,
     /// or `output_format_json_quote_decimals` are enabled — those still apply to ordinary property
@@ -97,6 +89,14 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     number_settings.json.quote_64bit_floats = false;
     number_settings.json.quote_64bit_integers = false;
     number_settings.json.quote_decimals = false;
+
+    /// A lone object-typed `properties` column is emitted directly as the `properties` member, which must
+    /// be a JSON object: a named `Tuple` must serialize as an object rather than an array, and a `Map` as
+    /// an object rather than an array of key/value tuples. This forcing applies only to that column;
+    /// ordinary property columns follow the user's JSON settings.
+    splat_settings = settings;
+    splat_settings.json.write_named_tuples_as_objects = true;
+    splat_settings.json.write_map_as_array_of_tuples = false;
 
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 
@@ -308,7 +308,7 @@ void GeoJSONRowOutputFormat::writeProperties(const Columns & columns, size_t row
     if (emit_properties_column_directly)
     {
         const size_t idx = property_col_indices.front();
-        serializations[idx]->serializeTextJSON(*columns[idx], row_num, *ostr, settings);
+        serializations[idx]->serializeTextJSON(*columns[idx], row_num, *ostr, splat_settings);
         return;
     }
 
