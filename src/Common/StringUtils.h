@@ -108,6 +108,7 @@ inline bool isAlphaNumericASCII(char c)
 
 inline bool isTokenSeparator(char c)
 {
+    /// `splitByNonAlpha` tokenizer semantics
     return isASCII(c) && !isAlphaNumericASCII(c);
 }
 
