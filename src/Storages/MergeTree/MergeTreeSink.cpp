@@ -5,6 +5,7 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEventsScope.h>
@@ -117,6 +118,15 @@ void MergeTreeSink::consume(Chunk & chunk)
 
     for (auto & current_block : part_blocks)
     {
+        /// A single INSERT block can be scattered into a huge number of single-partition blocks
+        /// (for example, a high-cardinality `partition by` expression together with
+        /// `throw_on_max_partitions_per_insert_block = false`). Writing all of them happens in this
+        /// loop without returning to the pipeline executor, which otherwise enforces time limits and
+        /// cancellation only between `consume` calls. Check it here so such a query stays responsive
+        /// to `max_execution_time` and `KILL QUERY` instead of running an uninterruptible loop.
+        if (auto process_list_element = context->getProcessListElement())
+            process_list_element->checkTimeLimit();
+
         ProfileEvents::Counters part_counters;
         auto partition_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
