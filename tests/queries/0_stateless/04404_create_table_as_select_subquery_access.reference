@@ -4,5 +4,5 @@ ACCESS_DENIED
 0
 -- a retry must still be ACCESS_DENIED, not TABLE_ALREADY_EXISTS:
 ACCESS_DENIED
--- once SELECT on t2 is granted, the query succeeds and populates the table:
+-- once column-level SELECT(y) on t2 is granted, the query succeeds and populates the table:
 1
