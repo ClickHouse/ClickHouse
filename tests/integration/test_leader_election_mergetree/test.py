@@ -350,7 +350,7 @@ def test_concurrent_inserts_with_restarts(started_cluster):
     attach_concurrent_table(node3, table, SHARED_UUID_CONCURRENT)
 
     # Wait for an initial leader so workers don't all start in a bootstrap-flap window.
-    wait_for_leader(nodes, table_name=table)
+    initial_leader, _ = wait_for_leader(nodes, table_name=table)
 
     stop_event = threading.Event()
     records_lock = threading.Lock()
@@ -390,9 +390,18 @@ def test_concurrent_inserts_with_restarts(started_cluster):
         # `leader_election_session_timeout` (3 s here); otherwise the leader
         # comes back before the lease expires and silently reclaims its role,
         # so the test never observes a failover.
+        #
+        # Take down the current leader first. Only killing the leader forces a
+        # failover (followers are already read-only), so if it lands late in the
+        # kill order it may never be reached within the test window: on slow
+        # builds a single kill-and-restart cycle can take ~15 s, so only two of
+        # three cycles fit in 30 s. Killing the leader up front guarantees a
+        # failover early in the run regardless of build speed.
         rng = random.Random(20260506)
         order = list(nodes)
         rng.shuffle(order)
+        order.remove(initial_leader)
+        order.insert(0, initial_leader)
         idx = 0
         while not stop_event.is_set():
             wait = rng.uniform(1.0, 2.0)
