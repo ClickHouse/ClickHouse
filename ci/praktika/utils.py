@@ -23,7 +23,7 @@ from threading import Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
-T = TypeVar("T", bound="Serializable")
+T = TypeVar("T", bound="Serializable")  # noqa: F821  # forward ref to MetaClasses.Serializable below
 
 
 class MetaClasses:
@@ -629,6 +629,13 @@ class Utils:
         base64_bytes = base64.b64encode(string_bytes)
         base64_string = base64_bytes.decode("utf-8")
         return base64_string
+
+    @staticmethod
+    def from_base64(value):
+        assert isinstance(value, str), f"TODO: not supported for {type(value)}"
+        base64_bytes = value.encode("utf-8")
+        string_bytes = base64.b64decode(base64_bytes)
+        return string_bytes.decode("utf-8")
 
     @staticmethod
     def is_hex(s):
