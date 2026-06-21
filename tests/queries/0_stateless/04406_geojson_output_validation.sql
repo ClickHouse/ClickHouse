@@ -29,3 +29,9 @@ SELECT (1.0, 2.0)::Point AS geometry, toFloat64(1.5) AS p FORMAT GeoJSON SETTING
 -- or `output_format_json_quote_decimals` is enabled (those settings still apply to property values).
 SELECT 18446744073709551615::UInt64 AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON SETTINGS output_format_json_quote_64bit_integers = 1;
 SELECT 1.23::Decimal64(2) AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON SETTINGS output_format_json_quote_decimals = 1;
+
+-- The object forcing applies only to a lone `properties` object column; an ordinary property column
+-- named otherwise follows the user's JSON settings, so a named Tuple or Map is written as an array when
+-- the corresponding setting requests it.
+SELECT (1.0, 2.0)::Point AS geometry, (1, 'x')::Tuple(a UInt8, b String) AS t FORMAT GeoJSON SETTINGS output_format_json_named_tuples_as_objects = 0;
+SELECT (1.0, 2.0)::Point AS geometry, map('a', 'b') AS m FORMAT GeoJSON SETTINGS output_format_json_map_as_array_of_tuples = 1;
