@@ -1,8 +1,10 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
 
+#include <Core/DecimalFunctions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -40,6 +42,42 @@ namespace
                             function_name, ResultType::INSTANT_VECTOR,
                             getPromQLText(argument, context), argument.type);
         }
+    }
+
+    SQLQueryPiece makeDefaultTimeVectorArgument(const PQT::Function * function_node, ConverterContext & context)
+    {
+        auto node_range = context.node_range_getter.get(function_node);
+        if (node_range.empty())
+            return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+
+        if (node_range.start_time == node_range.end_time)
+        {
+            SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::CONST_SCALAR};
+            res.start_time = node_range.start_time;
+            res.end_time = node_range.end_time;
+            res.step = node_range.step;
+            res.scalar_value = DecimalUtils::convertTo<Float64>(node_range.start_time, context.timestamp_scale);
+            return res;
+        }
+
+        SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::SCALAR_GRID};
+        res.start_time = node_range.start_time;
+        res.end_time = node_range.end_time;
+        res.step = node_range.step;
+
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(makeASTFunction(
+            "CAST",
+            makeASTFunction(
+                "timeSeriesRange",
+                timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
+                timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
+                timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)),
+            make_intrusive<ASTLiteral>(fmt::format("Array({})", context.scalar_data_type->getName()))));
+        builder.select_list.back()->setAlias(ColumnNames::Values);
+        res.select_query = builder.getSelectQuery();
+
+        return res;
     }
 
     using TransformASTFunc = ASTPtr (*)(ASTPtr t);
@@ -122,6 +160,9 @@ SQLQueryPiece applyDateTimeFunction(
     const auto & function_name = function_node->function_name;
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
+
+    if (arguments.empty())
+        arguments.push_back(makeDefaultTimeVectorArgument(function_node, context));
 
     checkArgumentTypes(function_node, arguments, context);
 

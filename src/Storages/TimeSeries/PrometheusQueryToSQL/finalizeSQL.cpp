@@ -245,10 +245,17 @@ namespace
                     context.scalar_data_type);
                 value->setAlias(ColumnNames::Value);
 
-                /// WHERE isNotNull(values[1])
+                /// WHERE isNotNull(values[1]) AND values[1] is not a Prometheus stale marker.
+                ASTPtr array_element_for_null_check = makeASTFunction(
+                    "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u));
+                ASTPtr array_element_for_stale_check = array_element_for_null_check->clone();
                 where = makeASTFunction(
-                    "isNotNull",
-                    makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
+                    "and",
+                    makeASTFunction("isNotNull", std::move(array_element_for_null_check)),
+                    makeASTFunction(
+                        "notEquals",
+                        makeASTFunction("reinterpretAsUInt64", makeASTFunction("assumeNotNull", std::move(array_element_for_stale_check))),
+                        make_intrusive<ASTLiteral>(0x7ff0000000000002ULL)));
                 break;
             }
 
