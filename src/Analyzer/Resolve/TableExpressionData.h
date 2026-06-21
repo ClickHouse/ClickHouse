@@ -200,7 +200,8 @@ struct AnalysisTableExpressionData
     std::optional<SubcolumnInfo> tryGetSubcolumnInfo(
         std::string_view full_identifier_name,
         bool use_case_insensitive,
-        const String & scope_description) const
+        const String & scope_description,
+        bool suffix_case_insensitive) const
     {
         ensureColumnMembershipSetsArePopulated();
         for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(full_identifier_name))
@@ -241,8 +242,10 @@ struct AnalysisTableExpressionData
             /// In standard mode also try a case-insensitive subcolumn match. Tuple/Variant/Map
             /// subcolumns are resolved via exact string lookup inside the type itself, so we have to
             /// canonicalize the suffix here. Multiple case-only-different subcolumn names are an
-            /// ambiguity at this level.
-            if (use_case_insensitive)
+            /// ambiguity at this level. The fold is gated on `suffix_case_insensitive` rather than
+            /// `use_case_insensitive` so a double-quoted suffix like `data."name"` stays case-sensitive
+            /// even when the base part was unquoted.
+            if (suffix_case_insensitive)
             {
                 auto data_type = it->second->getResultType();
                 String lower_suffix = Poco::toLower(String(subcolumn_name));
@@ -270,7 +273,18 @@ struct AnalysisTableExpressionData
 
     std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name, bool use_case_insensitive = false) const
     {
-        return tryGetSubcolumnInfo(full_identifier_name, use_case_insensitive, "");
+        /// Convenience overload: callers that don't know the per-part quoting fold the suffix
+        /// case-insensitively iff the base did. Callers that need separate base/suffix flags
+        /// (e.g. for `data."name"`) must use the four-argument form.
+        return tryGetSubcolumnInfo(full_identifier_name, use_case_insensitive, "", use_case_insensitive);
+    }
+
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(
+        std::string_view full_identifier_name,
+        bool use_case_insensitive,
+        const String & scope_description) const
+    {
+        return tryGetSubcolumnInfo(full_identifier_name, use_case_insensitive, scope_description, use_case_insensitive);
     }
 
     /// Build lowercase-to-original mappings for case-insensitive identifier resolution from the

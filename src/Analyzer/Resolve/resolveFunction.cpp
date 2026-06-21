@@ -453,6 +453,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     identifier.getFullName(),
                     scope.scope_node->formatASTForErrorMessage());
 
+            /// Resolved canonical name to thread into the constant argument that downstream code reparses.
+            /// Defaults to the original spelling for the dictionary path; the joinGet branch overwrites it
+            /// with the storage's canonical name so a case-insensitive analyzer lookup matches the exact
+            /// lookup `FunctionJoinGet::getJoin` does later via `context->resolveStorageID`.
+            String resolved_first_argument = identifier.getFullName();
+
             if (is_special_function_dict_get)
             {
                 scope.context->getExternalDictionariesLoader().assertDictionaryStructureExists(identifier.getFullName(), scope.context);
@@ -491,9 +497,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         function_name,
                         identifier.getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
+
+                /// Substitute the canonical storage name resolved by the analyzer. Without this,
+                /// `joinGet(myjoin, ...)` against an actual `Join` table `MyJoin` would pass analyzer
+                /// validation in `standard` mode and then fail at function overload resolution where
+                /// `FunctionJoinGet::getJoin` does an exact `context->resolveStorageID` lookup.
+                const auto resolved_storage_id = table_node_typed.getStorageID();
+                if (parts_size == 2 && !resolved_storage_id.database_name.empty())
+                    resolved_first_argument = resolved_storage_id.getDatabaseName() + "." + resolved_storage_id.getTableName();
+                else
+                    resolved_first_argument = resolved_storage_id.getTableName();
             }
 
-            first_argument = std::make_shared<ConstantNode>(identifier.getFullName());
+            first_argument = std::make_shared<ConstantNode>(resolved_first_argument);
         }
     }
 

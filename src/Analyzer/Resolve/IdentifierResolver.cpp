@@ -672,9 +672,14 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
         if (identifier_lookup.isPartDoubleQuoted(p))
             full_name_case_insensitive = false;
     }
-    /// Subcolumn base keys off the first part of the lookup (the tuple/struct column); the suffix is
-    /// matched exact-string inside `tryGetSubcolumnType`, so its case-sensitivity follows that path.
+    /// Subcolumn base keys off the first part of the lookup (the tuple/struct column); the suffix
+    /// is folded case-insensitively only when every suffix part of the lookup was also unquoted.
+    /// A double-quoted suffix like `data."Name"` must stay case-sensitive even when the base
+    /// (`data`) is case-insensitive.
     const bool subcolumn_base_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
+    bool subcolumn_suffix_case_insensitive = standard_mode;
+    for (size_t p = 1, n = identifier.getPartsSize(); p < n && subcolumn_suffix_case_insensitive; ++p)
+        subcolumn_suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
 
     const auto & node_map = scope.table_expression_data_for_alias_resolution->getColumnNodeMap();
     if (full_name_case_insensitive)
@@ -693,7 +698,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(
-            identifier_full_name, subcolumn_base_case_insensitive, scope.scope_node->formatASTForErrorMessage()))
+            identifier_full_name, subcolumn_base_case_insensitive,
+            scope.scope_node->formatASTForErrorMessage(), subcolumn_suffix_case_insensitive))
     {
         /// Don't read subcolumn of aliases directly, only using getSubcolumn,
         /// because aliases don't have real subcolumns, they should be extracted
@@ -880,10 +886,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             }
         }
     }
-    /// Subcolumn base lookup keys off the first part of the trimmed identifier (the tuple/struct column),
-    /// so `data."Name"` matches an unquoted base column `Data` while the quoted tuple field `Name` stays
-    /// case-sensitive (the tuple-field lookup is always exact-match).
+    /// Subcolumn base lookup keys off the first part of the trimmed identifier (the tuple/struct column).
+    /// `data."Name"` matches an unquoted base column `Data` while the quoted tuple field `Name` stays
+    /// case-sensitive. The suffix flag covers parts beyond the base — a double-quoted suffix part
+    /// must pin the fallback case-sensitively even when the base was unquoted.
     const bool subcolumn_base_case_insensitive = identifier_lookup.isPartCaseInsensitive(identifier_qualifier_parts, standard_mode);
+    bool subcolumn_suffix_case_insensitive = standard_mode;
+    for (size_t p = identifier_qualifier_parts + 1, n = identifier.getPartsSize(); p < n && subcolumn_suffix_case_insensitive; ++p)
+        subcolumn_suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
 
     const auto & node_map = table_expression_data.getColumnNodeMap();
     if (use_case_insensitive)
@@ -902,7 +912,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     if (!result_expression)
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(
-                identifier_full_name, subcolumn_base_case_insensitive, scope.scope_node->formatASTForErrorMessage()))
+                identifier_full_name, subcolumn_base_case_insensitive,
+                scope.scope_node->formatASTForErrorMessage(), subcolumn_suffix_case_insensitive))
         {
             /// Don't read subcolumn of aliases directly, only using getSubcolumn,
             /// because aliases don't have real subcolumns, they should be extracted

@@ -80,6 +80,11 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 {
     auto & projection_nodes = getProjection().getNodes();
     size_t projection_columns_size = projection_columns.size();
+    /// The projection-override vectors are indexed by projection column position. They must be
+    /// compacted in lockstep with `projection_columns`, otherwise pruning shifts entries and
+    /// `toAST` emits the wrong alias spelling for `FROM (...) AS t(A, "B")`-style overrides.
+    const bool has_override_aliases = !projection_aliases_to_override.empty();
+    const bool has_override_quote_flags = !projection_aliases_to_override_is_double_quoted.empty();
     size_t write_index = 0;
 
     for (size_t i = 0; i < projection_columns_size; ++i)
@@ -89,11 +94,23 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
         projection_nodes[write_index] = projection_nodes[i];
         projection_columns[write_index] = projection_columns[i];
+        if (has_override_aliases && i < projection_aliases_to_override.size())
+            projection_aliases_to_override[write_index] = std::move(projection_aliases_to_override[i]);
+        if (has_override_quote_flags && i < projection_aliases_to_override_is_double_quoted.size())
+            projection_aliases_to_override_is_double_quoted[write_index] = projection_aliases_to_override_is_double_quoted[i];
         ++write_index;
     }
 
     projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
+    if (has_override_aliases)
+        projection_aliases_to_override.erase(
+            projection_aliases_to_override.begin() + std::min(write_index, projection_aliases_to_override.size()),
+            projection_aliases_to_override.end());
+    if (has_override_quote_flags)
+        projection_aliases_to_override_is_double_quoted.erase(
+            projection_aliases_to_override_is_double_quoted.begin() + std::min(write_index, projection_aliases_to_override_is_double_quoted.size()),
+            projection_aliases_to_override_is_double_quoted.end());
 
     if (hasInterpolate())
     {
