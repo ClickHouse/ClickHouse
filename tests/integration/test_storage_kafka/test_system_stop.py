@@ -975,3 +975,45 @@ def test_direct_select_rejected_when_view_attached_while_stopped(kafka_cluster, 
         instance.query(f"SYSTEM START test.{table}")
         produce(kafka_cluster, table, 0, 10)
         wait_dst_count(table, 10)
+
+
+def test_two_queued_refreshes_run_two_cycles(kafka_cluster):
+    # Regression: two SYSTEM REFRESH issued while the stopped worker sleeps must run TWO cycles, not
+    # collapse into one. kafka_max_block_size=1 makes each cycle drain exactly one row, so the two
+    # refreshes drain exactly two rows out of a larger backlog (only one row would mean they collapsed).
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka_two_refresh_{k.random_string(6)}"
+    with k.kafka_topic(admin_client, table):
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{table}',
+                         kafka_group_name = '{table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 500,
+                         kafka_max_block_size = 1;
+            CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+                SELECT key, value FROM test.{table};
+            """
+        )
+        # Warm up so the consumer group is established, then stop.
+        produce(kafka_cluster, table, 0, 1)
+        wait_dst_count(table, 1)
+        instance.query(f"SYSTEM STOP test.{table}")
+
+        # Backlog larger than two; the stopped worker must not touch it without REFRESH.
+        produce(kafka_cluster, table, 1, 5)
+        assert_dst_count_stable(table, 1, seconds=3)
+
+        # Two REFRESHes queued back-to-back while the worker sleeps: each must run one one-row cycle.
+        instance.query(f"SYSTEM REFRESH test.{table}")
+        instance.query(f"SYSTEM REFRESH test.{table}")
+        wait_dst_count(table, 3)  # 1 warm-up + 2 refresh cycles; a collapse would stall at 2
+        assert_dst_count_stable(table, 3, seconds=5)  # exactly two cycles, no continuous consumption
+
+        # START drains the remaining backlog.
+        instance.query(f"SYSTEM START test.{table}")
+        wait_dst_count(table, 6)
