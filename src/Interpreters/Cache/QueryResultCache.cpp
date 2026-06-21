@@ -600,7 +600,13 @@ QueryResultCache::Key::Key(
 /// Version of the on-disk `key_metadata.txt` format. Bump whenever the serialized layout changes so that
 /// `deserialize` can intentionally reject (and `loadEntrysFromDisk` discard) entries written by an older or
 /// newer incompatible version instead of misparsing them.
-static constexpr UInt64 QUERY_RESULT_CACHE_DISK_FORMAT_VERSION = 1;
+///
+/// Version 2: `query_id`, `query_tag` and `query_string` are written as TSV-escaped strings
+/// (`writeEscapedString` / `readEscapedString`) instead of raw text. `query_cache_tag` accepts any string and
+/// `query_id` is client-provided, so a value containing a newline or tab (both valid input) must round-trip
+/// through the newline-terminated metadata format instead of truncating the field and getting the whole entry
+/// discarded as broken on reload.
+static constexpr UInt64 QUERY_RESULT_CACHE_DISK_FORMAT_VERSION = 2;
 
 static constexpr auto * token_format_version = "format_version: ";
 static constexpr auto * token_user_id = "user_id: ";
@@ -654,16 +660,19 @@ void QueryResultCache::Key::serialize(WriteBuffer & buf) const
     writeBoolText(is_subquery, buf);
     writeText("\n", buf);
 
+    /// `query_id`, `tag` and `query_string` are arbitrary strings (a tag/query id can legally contain a
+    /// newline or tab). Escape them so they round-trip through the newline-terminated metadata format instead
+    /// of being truncated at the first '\n'/'\t' and making `deserialize` reject the whole entry.
     writeText(token_query_id, buf);
-    writeText(query_id, buf);
+    writeEscapedString(query_id, buf);
     writeText("\n", buf);
 
     writeText(token_tag, buf);
-    writeText(tag, buf);
+    writeEscapedString(tag, buf);
     writeText("\n", buf);
 
     writeText(token_query_string, buf);
-    writeText(query_string, buf);
+    writeEscapedString(query_string, buf);
     writeText("\n", buf);
 }
 
@@ -725,15 +734,16 @@ void QueryResultCache::Key::deserialize(ReadBuffer & buf)
 
     assertChar('\n', buf);
     assertString(token_query_id, buf);
-    readString(query_id, buf);
+    readEscapedString(query_id, buf);
 
     assertChar('\n', buf);
     assertString(token_tag, buf);
-    readString(tag, buf);
+    readEscapedString(tag, buf);
 
     assertChar('\n', buf);
     assertString(token_query_string, buf);
-    readStringUntilNewlineInto(query_string, buf);
+    readEscapedString(query_string, buf);
+    assertChar('\n', buf);
 }
 
 String QueryResultCache::Key::getKeyPath() const

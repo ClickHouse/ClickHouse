@@ -320,3 +320,49 @@ def test_disk_cache_shared_entry_quota_after_restart(start_cluster):
         ).strip()
         == "1"
     )
+
+
+def test_disk_cache_tag_with_special_chars_survives_restart(start_cluster):
+    setup_table()
+
+    # `query_cache_tag` is documented as accepting any string. A tag that contains a newline and a tab is
+    # valid input and must round-trip through the on-disk `key_metadata.txt` (the string fields are written
+    # with an escaped encoding). Otherwise `Key::deserialize` would truncate the tag at the first '\n'/'\t',
+    # `loadEntrysFromDisk` would classify the entry as broken, and it would be silently discarded after a
+    # restart - so the cache would lose entries for any query run with such a tag.
+    tag = "weird\ttag\nwith\\specials"
+    expected = node.query(
+        QUERY,
+        settings={
+            "use_query_cache": 1,
+            "enable_writes_to_query_cache_disk": 1,
+            "enable_reads_from_query_cache_disk": 1,
+            "query_cache_tag": tag,
+            # Keep the entry fresh across the (potentially slow) restart so the post-restart read is a hit.
+            "query_cache_ttl": 600,
+        },
+    )
+    assert node.query("SELECT count() FROM system.query_cache WHERE type = 'Disk'").strip() == "1"
+    # `hex()` avoids TSV-escaping ambiguity when comparing a tag that itself contains tabs and newlines.
+    tag_hex = node.query("SELECT hex(tag) FROM system.query_cache WHERE type = 'Disk'").strip()
+    assert tag_hex != ""
+
+    node.restart_clickhouse(kill=True)
+
+    # The entry must still be present after restart (not discarded as broken) and the tag must be byte-identical.
+    assert node.query("SELECT count() FROM system.query_cache WHERE type = 'Disk'").strip() == "1"
+    assert node.query("SELECT hex(tag) FROM system.query_cache WHERE type = 'Disk'").strip() == tag_hex
+
+    # And the restored entry is fully usable: a read with the same tag is served from disk and matches.
+    query_id = "qrc_on_disk_special_tag_read"
+    res = node.query(
+        QUERY,
+        query_id=query_id,
+        settings={
+            "use_query_cache": 1,
+            "enable_reads_from_query_cache_disk": 1,
+            "query_cache_tag": tag,
+        },
+    )
+    assert res == expected
+    assert disk_hits_for(query_id) == 1
