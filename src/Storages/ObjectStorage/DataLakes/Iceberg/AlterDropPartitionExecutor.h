@@ -99,7 +99,7 @@ private:
         IcebergPathFromMetadata path;
         Int64 length = 0;
         Int64 min_sequence_number = 0;
-        Int32 existing_rows_count = 0;
+        Int64 existing_rows_count = 0;
         Int32 existing_files_count = 0;
         FileContentType content_type = FileContentType::DATA;
     };
