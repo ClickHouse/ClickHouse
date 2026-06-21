@@ -9,7 +9,9 @@ SET allow_experimental_nullable_tuple_type = 1;
 DROP TABLE IF EXISTS t_shared_cache_wide;
 CREATE TABLE t_shared_cache_wide (x Tuple(a Nullable(Tuple(b Nullable(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
-INSERT INTO t_shared_cache_wide SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4);
+-- The inner `tuple(number)` is converted to the destination element positionally, not by name,
+-- so disable `enable_named_columns_in_function_tuple` for this INSERT.
+INSERT INTO t_shared_cache_wide SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4) SETTINGS enable_named_columns_in_function_tuple = 0;
 SELECT x.a, x.a.b FROM t_shared_cache_wide;
 SELECT x.a.b, x.a FROM t_shared_cache_wide;
 SELECT x, x.a, x.a.b, isNull(x.a), isNull(x.a.b) FROM t_shared_cache_wide;
@@ -20,7 +22,9 @@ DROP TABLE t_shared_cache_wide;
 DROP TABLE IF EXISTS t_shared_cache_compact;
 CREATE TABLE t_shared_cache_compact (x Tuple(a Nullable(Tuple(b Nullable(UInt32))))) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000;
-INSERT INTO t_shared_cache_compact SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4);
+-- The inner `tuple(number)` is converted to the destination element positionally, not by name,
+-- so disable `enable_named_columns_in_function_tuple` for this INSERT.
+INSERT INTO t_shared_cache_compact SELECT number % 2 ? tuple(NULL) : tuple(tuple(number)) FROM numbers(4) SETTINGS enable_named_columns_in_function_tuple = 0;
 SELECT x.a, x.a.b FROM t_shared_cache_compact;
 SELECT x.a.b, x.a FROM t_shared_cache_compact;
 SELECT x, x.a, x.a.b, isNull(x.a), isNull(x.a.b) FROM t_shared_cache_compact;
