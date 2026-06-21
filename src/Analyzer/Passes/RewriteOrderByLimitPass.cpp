@@ -172,6 +172,14 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
         /// Note: Statements like "select a join b order by x limit 10" are not supported for now.
         if (auto * tb_node = query_node.getJoinTree()->as<TableNode>())
         {
+            /// With `FINAL` the result row is not necessarily a single physical source row: engines such as
+            /// `SummingMergeTree`, `AggregatingMergeTree`, and the collapsing/replacing variants can merge or
+            /// suppress rows before the final result is produced. The rewrite feeds a physical-row predicate
+            /// (`_part_starting_offset + _part_offset` `IN` subquery) back into the read, and `ReadFromMergeTree`
+            /// turns it into a `total_offset_condition` during index analysis, so marks needed to compute the
+            /// merged `FINAL` result can be pruned too early. Reject the rewrite in this case.
+            if (tb_node->hasTableExpressionModifiers() && tb_node->getTableExpressionModifiers()->hasFinal())
+                return {};
             if (columns.size() >= min_columns_to_use_fetch)
             {
                 auto storage = tb_node->getStorage();
