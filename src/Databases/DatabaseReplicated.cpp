@@ -800,6 +800,7 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, SyncReplicaMode mode)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::waitForReplicaToProcessAllEntries");
     chassert(mode == SyncReplicaMode::DEFAULT || mode == SyncReplicaMode::STRICT);
     {
         std::lock_guard lock{ddl_worker_mutex};
@@ -810,23 +811,32 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
     if (mode == SyncReplicaMode::DEFAULT)
         return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
 
+    /// In STRICT mode the sync is satisfied as soon as our replication lag is within the
+    /// max_replication_lag_to_enqueue threshold - we do not require every entry to be fully
+    /// processed. Check that condition before blocking, and otherwise wait in short bounded
+    /// steps and re-check, so a sync that is (or becomes) within-threshold returns promptly
+    /// instead of blocking for the whole timeout. Blocking for the full budget would make a
+    /// successful sync arrive at the same boundary as the client's own read timeout.
+    static constexpr UInt64 wait_step_ms = 100;
     Stopwatch elapsed;
     while (true)
     {
-        UInt64 elapsed_ms = elapsed.elapsedMilliseconds();
-        if (elapsed_ms > timeout_ms)
-            return false;
-
-        if (ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms - elapsed_ms))
-            return true;
-
         UInt32 our_log_ptr = ddl_worker->getLogPointer();
         UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(zookeeper_path) / "max_log_ptr"));
         bool became_synced = our_log_ptr + db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
         if (became_synced)
             return true;
 
-        /// max_log_ptr might be increased while we were waiting - retry until replication lag is below the threshold
+        UInt64 elapsed_ms = elapsed.elapsedMilliseconds();
+        if (elapsed_ms >= timeout_ms)
+            return false;
+
+        /// Block until the worker fully processes the queue or wait_step_ms elapses. Full
+        /// processing (our_log_ptr == max_log_ptr) is strictly stronger than the STRICT
+        /// threshold, so return immediately in that case; otherwise loop and re-check the
+        /// threshold above, re-reading max_log_ptr, which might have advanced while we waited.
+        if (ddl_worker->waitForReplicaToProcessAllEntries(std::min(wait_step_ms, timeout_ms - elapsed_ms)))
+            return true;
     }
 }
 
@@ -2204,8 +2214,11 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     auto table = tryGetTable(table_name, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
-    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin")
+    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin"
+        || table->getName() == "TimeSeries")
     {
+        /// Drop inner tables here while the metadata transaction is available, so the background
+        /// dropTableFinally task does not re-route the inner DROP through the replicated DDL log.
         /// Avoid recursive locking of metadata_mutex
         table->dropInnerTableIfAny(sync, local_context);
     }

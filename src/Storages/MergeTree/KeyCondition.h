@@ -36,7 +36,12 @@ struct ActionsDAGWithInversionPushDown
     std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * predicate = nullptr;
 
-    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
+    /// `boolean_context`: Pass true only when the caller uses `predicate_` as a filter: it tests each row for truthiness
+    /// and discards the value (index analysis of a WHERE/PREWHERE). Then `cloneDAGWithInversionPushDown` may apply
+    /// truthiness-preserving but value-changing rewrites (`tryRewriteCoalesceCondition`, `tryRewriteCoalesceComparison`),
+    /// which can differ from the original (e.g. `NULL` vs `false`) on NULL rows but agree on truthiness.
+    /// There is no correctness cost to passing false, but it may miss some optimization opportunities.
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context);
 };
 
 
@@ -420,6 +425,7 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         MonotonicFunctionsChain & out_functions_chain,
+        bool & out_chain_is_positive,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
 
@@ -436,7 +442,8 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
-        DataTypePtr & out_type);
+        DataTypePtr & out_type,
+        bool & out_chain_is_positive);
 
     bool canConstantBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
