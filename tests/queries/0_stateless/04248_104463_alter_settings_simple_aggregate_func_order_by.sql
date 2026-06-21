@@ -144,5 +144,27 @@ ALTER TABLE t_104463_swap
     MODIFY ORDER BY (key, value2); -- { serverError DATA_TYPE_CANNOT_BE_USED_IN_KEY }
 
 DROP TABLE t_104463_swap;
+
+-- `StorageReplicatedMergeTree::alter` shares the same gate. `03020_order_by_SimpleAggregateFunction`
+-- already covers the replicated rejection path (a key change is still rejected); this covers the new
+-- skip path: a non-key ALTER on a grandfathered suspicious key must succeed with
+-- `allow_suspicious_primary_key = 0`. The `{database}` macro keeps the ZooKeeper path unique per run.
+SET allow_suspicious_primary_key = 1;
+CREATE TABLE t_104463_rep
+(
+    key   Int,
+    value SimpleAggregateFunction(sum, UInt64)
+)
+ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{database}/t_104463_rep', 'r1')
+ORDER BY (key, value)
+SETTINGS merge_with_ttl_timeout = 30;
+
+SET allow_suspicious_primary_key = 0;
+ALTER TABLE t_104463_rep MODIFY SETTING merge_with_ttl_timeout = 60;
+ALTER TABLE t_104463_rep MODIFY COMMENT 'replicated table comment', RESET SETTING merge_with_ttl_timeout;
+ALTER TABLE t_104463_rep ADD COLUMN extra Int;
+SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = 't_104463_rep' AND name = 'extra';
+
+DROP TABLE t_104463_rep;
 DROP TABLE t_104463_mt;
 DROP TABLE t_104463_amt;
