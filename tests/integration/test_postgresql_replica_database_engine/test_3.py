@@ -992,6 +992,69 @@ def test_use_extended_date_and_time_types_setting_alter_database_rejected(starte
     cursor.execute("DROP TABLE IF EXISTS test_alter_date_types")
 
 
+def test_use_extended_date_and_time_types_setting_alter_database_atomic(started_cluster):
+    # A multi-setting `ALTER DATABASE ... MODIFY SETTING` that rejects the immutable
+    # `materialized_postgresql_use_extended_date_and_time_types` must validate the whole statement
+    # before applying anything. Otherwise a mutable setting placed before the immutable one in the
+    # same statement would already be applied (to the live replication handler, the in-memory settings
+    # and the on-disk metadata) when the statement aborts, so the rejected alter could still change the
+    # database. Here `materialized_postgresql_max_block_size` precedes the immutable setting and must
+    # remain unchanged after the failed statement.
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_alter_atomic_date_types")
+    cursor.execute(
+        "CREATE TABLE test_alter_atomic_date_types (key integer PRIMARY KEY, d date)"
+    )
+    cursor.execute("INSERT INTO test_alter_atomic_date_types VALUES (1, '2000-05-12')")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_tables_list = 'test_alter_atomic_date_types'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+            "materialized_postgresql_max_block_size = 11111",
+        ],
+    )
+    assert_eq_with_retry(
+        instance,
+        "SELECT count() FROM test_database.test_alter_atomic_date_types",
+        "1",
+    )
+
+    create_before = instance.query("SHOW CREATE DATABASE test_database")
+    assert "materialized_postgresql_max_block_size = 11111" in create_before, create_before
+
+    # The mutable `materialized_postgresql_max_block_size` precedes the immutable setting, so a
+    # non-atomic implementation would apply it before throwing on the immutable one.
+    error = instance.query_and_get_error(
+        "ALTER DATABASE test_database MODIFY SETTING "
+        "materialized_postgresql_max_block_size = 22222, "
+        "materialized_postgresql_use_extended_date_and_time_types = 0"
+    )
+    assert (
+        "materialized_postgresql_use_extended_date_and_time_types" in error
+        and "cannot be changed for an existing database" in error
+    ), error
+
+    # The rejected statement must not have changed the mutable setting.
+    create_after = instance.query("SHOW CREATE DATABASE test_database")
+    assert "materialized_postgresql_max_block_size = 11111" in create_after, create_after
+    assert "22222" not in create_after, create_after
+
+    # A valid `ALTER DATABASE` of the mutable setting alone still works and is persisted, so the
+    # added pre-validation pass did not break the normal path.
+    instance.query(
+        "ALTER DATABASE test_database MODIFY SETTING materialized_postgresql_max_block_size = 33333"
+    )
+    create_valid = instance.query("SHOW CREATE DATABASE test_database")
+    assert "materialized_postgresql_max_block_size = 33333" in create_valid, create_valid
+
+    pg_manager.drop_materialized_db()
+    cursor.execute("DROP TABLE IF EXISTS test_alter_atomic_date_types")
+
+
 def test_numeric_to_int256(started_cluster):
     # https://github.com/ClickHouse/ClickHouse/issues/59224
     # PostgreSQL numeric with precision wider than Decimal256 can hold (76 digits) and scale 0
