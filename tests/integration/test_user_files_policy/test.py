@@ -23,6 +23,17 @@ node_s3 = cluster.add_instance(
     stay_alive=True,
 )
 
+# This node deliberately sets an unusable legacy `user_files_path` together with a
+# `user_files_policy`. The fact that the cluster starts at all proves the policy takes
+# precedence over the local path during startup (see the precedence test below).
+node_precedence = cluster.add_instance(
+    "node_precedence",
+    main_configs=["configs/config.d/storage_configuration_bad_local_path.xml"],
+    tmpfs=[
+        "/test_user_files_disk_precedence:size=100M",
+    ],
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -569,3 +580,33 @@ def test_s3_truncate_then_insert():
     node_s3.query("INSERT INTO s3_truncate_insert VALUES (99)")
     assert node_s3.query("SELECT * FROM s3_truncate_insert").strip() == "99"
     node_s3.query("DROP TABLE s3_truncate_insert")
+
+
+def test_user_files_policy_precedence_over_bad_local_path():
+    """`user_files_policy` must take precedence over `user_files_path` during startup.
+
+    `node_precedence` sets `user_files_path` to `/dev/null/user_files/` - a path under a
+    character device, so creating the legacy local directory would fail. The server must
+    still start (the policy's disk provides the user files location) and `file()` must
+    resolve against the policy disk, not the bogus local path. Without skipping the local
+    `user_files_path` setup when a policy is configured, `fs::create_directories` throws
+    during startup and the server never comes up."""
+    # The instance being up at all already proves startup did not fail on the unusable
+    # local path; this confirms the server is actually serving.
+    assert node_precedence.query("SELECT 1").strip() == "1"
+
+    node_precedence.query(
+        "INSERT INTO FUNCTION file('precedence_test.csv', 'CSV', 'x UInt64') SELECT 555"
+    )
+    assert (
+        node_precedence.query(
+            "SELECT * FROM file('precedence_test.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == "555"
+    )
+
+    # The file must land on the policy disk, not under the bogus `/dev/null/...` path.
+    output = node_precedence.exec_in_container(
+        ["bash", "-c", "cat /test_user_files_disk_precedence/precedence_test.csv"]
+    )
+    assert "555" in output
