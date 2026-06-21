@@ -1256,7 +1256,7 @@ ColumnPtr FunctionCast::convertQBitToArray(ColumnsWithTypeAndName & arguments, s
     offsets.reserve(rows);
 
     /// Reusable scratch buffer of the padded size. The untranspose kernel ORs bits in, so it must be zeroed before each row.
-    std::vector<FloatType> reconstructed(padded_dimension);
+    VectorWithMemoryTracking<FloatType> reconstructed(padded_dimension);
 
     for (size_t row = 0; row < rows; ++row)
     {
