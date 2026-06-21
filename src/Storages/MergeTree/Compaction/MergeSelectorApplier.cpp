@@ -101,6 +101,18 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
             return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
     }
 
+    /// Clear index files - 4 priority. Generation is gated for rolling-upgrade safety because
+    /// merge type is serialized in replicated MergeTree log entries.
+    if (!ctx.merge_constraints.empty()
+        && ctx.metadata_snapshot.hasAnyIndexClearTTL()
+        && ctx.can_generate_ttl_clear_index_merges)
+    {
+        TTLIndexClearMergeSelector index_clear_ttl_selector(ctx.current_time);
+
+        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLClearIndex);
+    }
+
     return {};
 }
 

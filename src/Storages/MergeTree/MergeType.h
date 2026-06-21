@@ -21,6 +21,8 @@ enum class MergeType : uint8_t
     TTLRecompress = 3,
     /// Merge assigned to drop parts completely
     TTLDrop = 4,
+    /// Merge assigned to clear secondary index files from parts
+    TTLClearIndex = 5,
 };
 
 /// Check parsed merge_type from raw int and get enum value.
