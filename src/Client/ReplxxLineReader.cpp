@@ -489,10 +489,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         };
         auto hint_previous = [this](char32_t code)
         {
-            /// In the middle of the line Up navigates the hints directly (history recall there
-            /// would clobber the edit). At the end of the line Up only navigates once the user
-            /// has stepped into the list with Down, so it keeps recalling history before that.
-            if (hintPopupActive() && (hint_active || !isCursorAtEndOfInput()))
+            if (hintPopupActive() && hint_active)
                 return rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
             return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
         };
@@ -636,12 +633,15 @@ bool ReplxxLineReader::isCursorAtEndOfInput()
     return state.cursor_position() >= static_cast<int>(code_points);
 }
 
-bool ReplxxLineReader::hintPopupActive() const
+bool ReplxxLineReader::hintPopupActive()
 {
-    /// Up/Down navigate the hints whenever they are shown (end of the line, in the middle after
-    /// an identifier fragment, or on any line of a multi-line query). When the hints are not
-    /// shown these keys keep their normal line/history movement.
-    return hints_visible;
+    /// Only treat Up/Down as hint navigation for a single-line input with the cursor at the end,
+    /// where the hints are actually shown — otherwise keep them for line/history movement.
+    if (!hints_visible)
+        return false;
+    if (strchr(rx.get_state().text(), '\n') != nullptr)
+        return false;
+    return isCursorAtEndOfInput();
 }
 
 ReplxxLineReader::~ReplxxLineReader()
