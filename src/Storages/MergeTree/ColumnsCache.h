@@ -214,10 +214,15 @@ public:
     /// without an explicit compaction here a runtime config reload that shrinks
     /// the cache would leak metadata indefinitely if no further `set` calls
     /// trigger periodic compaction.
+    /// Takes interval_index_mutex first, then the CacheBase internal mutex (inside
+    /// Base::setMaxSizeInBytes), matching the lock order of clearAll / set /
+    /// removePart so there is no lock-order cycle. Holding interval_index_mutex
+    /// across the eviction also makes the eviction and the following compaction
+    /// atomic with respect to a concurrent clearAll / set.
     void setMaxSizeInBytesAndCompact(size_t max_size_in_bytes)
     {
-        Base::setMaxSizeInBytes(max_size_in_bytes);
         std::lock_guard lock(interval_index_mutex);
+        Base::setMaxSizeInBytes(max_size_in_bytes);
         compactIntervalIndex();
         sets_since_compaction = 0;
     }
