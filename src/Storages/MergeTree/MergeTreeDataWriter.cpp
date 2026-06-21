@@ -935,6 +935,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & ttl_entry : recompression_ttl_entries)
         updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
+    const auto & index_clear_ttl_entries = metadata_snapshot->getIndexClearTTLs();
+    for (const auto & ttl_entry : index_clear_ttl_entries)
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.index_clear_ttl[ttl_entry.result_column], block, false);
+
     new_data_part->ttl_infos.update(move_ttl_infos);
 
     /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected at insert time;
