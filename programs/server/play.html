@@ -4628,8 +4628,24 @@ document.getElementById('download-button').addEventListener('click', async funct
     /// Keep the icon's `href` pointing at the current `/webterminal` URL, so that a native
     /// middle-click or Ctrl/Shift+click opens the right address even after the user edits the
     /// server URL. An empty `href` is left in place when the URL is currently unparsable.
+    ///
+    /// The non-empty Play username is carried over as a `user` query parameter so a new-tab
+    /// terminal connects as the same user instead of falling back to the server default user.
+    /// The password is intentionally omitted (it would leak in the URL); `webterminal.html`
+    /// prompts for it on the first authentication failure. This `user` parameter is added only
+    /// to the anchor `href` used for new-tab navigation, never to `getTerminalURL`: that one
+    /// also feeds the inline iframe `src`, where a `?user=` would set `userFromURL` and stop the
+    /// iframe from waiting for the credentials `play.html` sends via `postMessage`.
     function updateTerminalHref() {
-        terminalIcon.setAttribute('href', getTerminalURL() || '');
+        const base = getTerminalURL();
+        if (!base) { terminalIcon.setAttribute('href', ''); return; }
+        try {
+            const url = new URL(base);
+            if (user_elem.value) url.searchParams.set('user', user_elem.value);
+            terminalIcon.setAttribute('href', url.href);
+        } catch (e) {
+            terminalIcon.setAttribute('href', base);
+        }
     }
 
     /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal).
