@@ -73,6 +73,8 @@ struct QueryPlanOptimizationSettings
     std::optional<bool> join_swap_table;
     /// Maximum number of tables in query graph to reorder
     UInt64 query_plan_optimize_join_order_limit;
+    /// Maximum number of partial plans to enumerate before falling back to the next algorithm
+    UInt64 query_plan_optimize_join_order_max_searched_plans;
     /// When non-zero, randomize statistics for join reordering using this value as seed
     UInt64 query_plan_optimize_join_order_randomize = 0;
 
@@ -180,6 +182,9 @@ struct QueryPlanOptimizationSettings
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
+
+    size_t min_columns_for_join_lazy_indexing = 0;
+    size_t max_limit_for_join_lazy_indexing = 0;
 
     /// Please, avoid using this
     ///
