@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 import logging
 import socket
+import threading
 import time
 import warnings
 
@@ -730,4 +731,112 @@ def test_enable_compression_xml_dict(started_cluster):
             instance.query("DROP DICTIONARY IF EXISTS dict_compression_wire_check")
     finally:
         execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict_compression_table;")
+        mysql_connection.close()
+
+
+def test_mysql_shared_connection_pool_limit(started_cluster):
+    """Regression for https://github.com/ClickHouse/ClickHouse/issues/22048
+
+    XML / config-path dictionaries (i.e. without a named collection) must honor
+    `connection_pool_size` and `connection_wait_timeout`. Previously these were ignored on
+    that path, and a shared pool (`share_connection=true`) always waited indefinitely for a
+    free connection (wait_timeout = UINT64_MAX). As a result, concurrent loads through a
+    single shared pool could freeze SYSTEM RELOAD DICTIONAR{Y,IES} once all connections were
+    in use, instead of failing with a clear error.
+
+    Two dictionaries that resolve to the same shared, single-connection pool are reloaded
+    concurrently. With the fix, the reload that loses the race for the only connection must
+    fail fast (`connection_wait_timeout 0` => "do not wait"). Before the fix the size limit
+    was ignored, the pool had 16 connections, and both reloads simply succeeded.
+    """
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    def make_dict(name):
+        instance.query(f"DROP DICTIONARY IF EXISTS {name}")
+        instance.query(
+            f"""
+            CREATE DICTIONARY {name} (id UInt32, value UInt32)
+            PRIMARY KEY id
+            SOURCE(MYSQL(
+                host 'mysql80'
+                port 3306
+                user 'root'
+                password '{mysql_pass}'
+                db 'test'
+                query 'SELECT id, value FROM test.shared_pool_test WHERE SLEEP(5) = 0'
+                share_connection 1
+                close_connection 1
+                connection_pool_size 1
+                connection_wait_timeout 0
+            ))
+            LAYOUT(HASHED())
+            LIFETIME(0)
+            """
+        )
+
+    try:
+        execute_mysql_query(
+            mysql_connection, "DROP TABLE IF EXISTS test.shared_pool_test;"
+        )
+        execute_mysql_query(
+            mysql_connection,
+            "CREATE TABLE test.shared_pool_test (id INT NOT NULL, value INT NOT NULL, PRIMARY KEY(id));",
+        )
+        execute_mysql_query(
+            mysql_connection, "INSERT INTO test.shared_pool_test VALUES (1, 100);"
+        )
+
+        make_dict("shared_pool_dict_a")
+        make_dict("shared_pool_dict_b")
+
+        # Reload both dictionaries concurrently. They resolve to the same shared pool
+        # (identical host/port/user/db) which now holds a single connection. One reload
+        # acquires it and runs the slow query; the other must fail fast instead of waiting
+        # forever (the freeze) or grabbing an out-of-limit connection (the pre-fix behavior).
+        results = {}
+
+        def reload(name):
+            try:
+                instance.query(f"SYSTEM RELOAD DICTIONARY {name}")
+                results[name] = None
+            except Exception as e:  # noqa: BLE001
+                results[name] = str(e)
+
+        threads = [
+            threading.Thread(target=reload, args=("shared_pool_dict_a",)),
+            threading.Thread(target=reload, args=("shared_pool_dict_b",)),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=60)
+        for t in threads:
+            assert (
+                not t.is_alive()
+            ), "SYSTEM RELOAD DICTIONARY hung on a shared connection pool (issue #22048)"
+
+        errors = [msg for msg in results.values() if msg]
+        successes = [name for name, msg in results.items() if not msg]
+
+        assert len(errors) >= 1, (
+            "Expected the shared single-connection pool to reject the second concurrent "
+            f"reload, but both succeeded (connection_pool_size was ignored): {results}"
+        )
+        assert any("Pool is full" in msg for msg in errors), (
+            f"Expected a 'Pool is full' error from the exhausted shared pool, got: {errors}"
+        )
+        assert len(successes) >= 1, f"Expected exactly one reload to succeed: {results}"
+
+        # The pool is free again; a subsequent load must succeed and return correct data.
+        instance.query("SYSTEM RELOAD DICTIONARY shared_pool_dict_a")
+        value = instance.query(
+            "SELECT dictGetUInt32('shared_pool_dict_a', 'value', toUInt64(1))"
+        ).strip()
+        assert value == "100", f"Unexpected dictionary value: {value!r}"
+    finally:
+        instance.query("DROP DICTIONARY IF EXISTS shared_pool_dict_a")
+        instance.query("DROP DICTIONARY IF EXISTS shared_pool_dict_b")
+        execute_mysql_query(
+            mysql_connection, "DROP TABLE IF EXISTS test.shared_pool_test;"
+        )
         mysql_connection.close()
