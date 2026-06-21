@@ -184,7 +184,7 @@ private:
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     bool has_preprocessor;
-    /// Reference postprocessor expression (applied to tokens after tokenization)
+    /// Reference postprocessor expression
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     bool has_postprocessor;
     /// Cache for tokens and their infos (cardinality, etc.)
