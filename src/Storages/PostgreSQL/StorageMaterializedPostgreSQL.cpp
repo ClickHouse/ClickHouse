@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_BACKUP_TABLE;
 }
 
 
@@ -306,10 +307,16 @@ void StorageMaterializedPostgreSQL::backupData(
     BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     /// The data lives in the nested ReplacingMergeTree table, delegate the backup to it.
-    if (auto nested = tryGetNested())
-        nested->backupData(backup_entries_collector, data_path_in_backup, partitions);
-    else
-        LOG_WARNING(log, "Nested table does not exist, will not back up any data");
+    auto nested = tryGetNested();
+    if (!nested)
+        throw Exception(
+            ErrorCodes::CANNOT_BACKUP_TABLE,
+            "Cannot back up table {}: its nested ReplacingMergeTree table does not exist (the table may not have "
+            "finished its initial synchronization from PostgreSQL yet). Failing closed instead of producing a "
+            "backup with table metadata but no data.",
+            getStorageID().getNameForLogs());
+
+    nested->backupData(backup_entries_collector, data_path_in_backup, partitions);
 }
 
 
