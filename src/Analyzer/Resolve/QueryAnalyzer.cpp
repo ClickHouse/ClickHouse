@@ -1880,6 +1880,10 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     {
         const auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
         const auto & join_using_nodes = join_using_list.getNodes();
+        /// In `standard` mode the matcher-resolved column name and the USING key name may differ only
+        /// by case (the USING side is canonicalized through case-insensitive lookup). Compare names
+        /// case-insensitively so the supertype propagation does not get silently skipped.
+        const bool standard_mode = scope.isStandardMode();
 
         for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
         {
@@ -1891,7 +1895,10 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                 auto & join_using_column_node = join_using_node->as<ColumnNode &>();
                 const auto & join_using_column_name = join_using_column_node.getColumnName();
 
-                if (matched_column_name != join_using_column_name)
+                const bool names_match = standard_mode
+                    ? Poco::icompare(matched_column_name, join_using_column_name) == 0
+                    : matched_column_name == join_using_column_name;
+                if (!names_match)
                     continue;
 
                 const auto & join_using_column_nodes_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
