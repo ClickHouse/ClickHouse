@@ -211,3 +211,171 @@ TEST(HexTest, CityHashUInt128Roundtrip)
     ASSERT_EQ(original.high64, decoded.high64);
     ASSERT_EQ(original.low64, decoded.low64);
 }
+
+
+/// ============================================================
+/// Target-specific tests: exercise each architecture path
+/// independently, so the scalar path is validated even on
+/// machines that support AVX2 (and vice versa).
+/// ============================================================
+
+#define HEX_GTEST_UNIT_TEST
+#include "Common/Hex.cpp" // NOLINT(bugprone-suspicious-include)
+
+namespace
+{
+
+struct DefaultHexTrait
+{
+    static void skipIfUnsupported() { }
+
+    static void encodeString(uint8_t * dst, const uint8_t * src, size_t size)
+    {
+        TargetSpecific::Default::encodeHexStringImpl(dst, src, size, heks::lower);
+    }
+
+    static void decodeString(uint8_t * dst, const uint8_t * src, size_t size)
+    {
+        TargetSpecific::Default::decodeHexStringImpl(dst, src, size);
+    }
+
+    static void encodeInt(uint8_t * dst, const void * value, size_t num_bytes)
+    {
+        TargetSpecific::Default::encodeHexIntImpl(dst, value, num_bytes, heks::lower);
+    }
+
+    static UInt64 decodeInt64(const uint8_t * src)
+    {
+        return TargetSpecific::Default::decodeHexInt64Impl(src);
+    }
+
+    static void encodeHex16LE(uint8_t * dst, const uint8_t * src)
+    {
+        TargetSpecific::Default::encodeHex16LEImpl(dst, src, heks::lower);
+    }
+};
+
+#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+
+struct X86V3HexTrait
+{
+    static void skipIfUnsupported()
+    {
+        if (!DB::isArchSupported(DB::TargetArch::x86_64_v3))
+            GTEST_SKIP() << "x86_64_v3 (AVX2) not supported on this host";
+    }
+
+    static void encodeString(uint8_t * dst, const uint8_t * src, size_t size)
+    {
+        TargetSpecific::x86_64_v3::encodeHexStringImpl(dst, src, size, heks::lower);
+    }
+
+    static void decodeString(uint8_t * dst, const uint8_t * src, size_t size)
+    {
+        TargetSpecific::x86_64_v3::decodeHexStringImpl(dst, src, size);
+    }
+
+    static void encodeInt(uint8_t * dst, const void * value, size_t num_bytes)
+    {
+        TargetSpecific::x86_64_v3::encodeHexIntImpl(dst, value, num_bytes, heks::lower);
+    }
+
+    static UInt64 decodeInt64(const uint8_t * src)
+    {
+        return TargetSpecific::x86_64_v3::decodeHexInt64Impl(src);
+    }
+
+    static void encodeHex16LE(uint8_t * dst, const uint8_t * src)
+    {
+        TargetSpecific::x86_64_v3::encodeHex16LEImpl(dst, src, heks::lower);
+    }
+};
+
+#endif
+
+} // namespace
+
+
+template <typename T>
+class HexMultiArchTest : public ::testing::Test
+{
+protected:
+    void SetUp() override { T::skipIfUnsupported(); }
+};
+
+using HexImplementations = ::testing::Types<
+    DefaultHexTrait
+#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+    , X86V3HexTrait
+#endif
+    >;
+
+TYPED_TEST_SUITE(HexMultiArchTest, HexImplementations);
+
+
+TYPED_TEST(HexMultiArchTest, StringEncodeDecodeRoundtrip)
+{
+    for (size_t size : {0, 1, 7, 15, 16, 17, 31, 32, 33, 64, 100})
+    {
+        SCOPED_TRACE("size=" + std::to_string(size));
+
+        std::vector<uint8_t> original(size);
+        for (size_t i = 0; i < size; ++i)
+            original[i] = static_cast<uint8_t>(i * 37 + 13);
+
+        std::vector<uint8_t> encoded(size * 2);
+        TypeParam::encodeString(encoded.data(), original.data(), size);
+
+        std::vector<uint8_t> decoded(size);
+        TypeParam::decodeString(decoded.data(), encoded.data(), size);
+
+        ASSERT_EQ(original, decoded);
+    }
+}
+
+TYPED_TEST(HexMultiArchTest, IntegralUInt64)
+{
+    UInt64 val = 0x0123456789ABCDEF;
+    uint8_t hex_buf[16];
+    TypeParam::encodeInt(hex_buf, &val, 8);
+    ASSERT_EQ("0123456789abcdef", std::string_view(reinterpret_cast<const char *>(hex_buf), 16));
+
+    UInt64 decoded = TypeParam::decodeInt64(hex_buf);
+    ASSERT_EQ(val, decoded);
+}
+
+TYPED_TEST(HexMultiArchTest, IntegralUInt128)
+{
+    UInt128 val = (UInt128{0x1020304050607080} << 64) | 0x90a0b0c0d0e0f000;
+    uint8_t hex_buf[32];
+    TypeParam::encodeInt(hex_buf, &val, 16);
+    ASSERT_EQ("102030405060708090a0b0c0d0e0f000", std::string_view(reinterpret_cast<const char *>(hex_buf), 32));
+}
+
+TYPED_TEST(HexMultiArchTest, IntegralUInt256)
+{
+    UInt128 hi = (UInt128{0x1020304050607080} << 64) | 0x90a0b0c0d0e0f000;
+    UInt256 val{hi};
+    val = (val << 128) | ((UInt128{0x0011223344556677} << 64) | 0x8899aabbccddeeff);
+    uint8_t hex_buf[64];
+    TypeParam::encodeInt(hex_buf, &val, 32);
+    ASSERT_EQ(
+        "102030405060708090a0b0c0d0e0f00000112233445566778899aabbccddeeff",
+        std::string_view(reinterpret_cast<const char *>(hex_buf), 64));
+}
+
+TYPED_TEST(HexMultiArchTest, EncodeHex16LE)
+{
+    /// CityHash uint128 layout: low64 at bytes [0..7], high64 at bytes [8..15].
+    uint8_t input[16];
+    UInt64 low = 0xFEDCBA9876543210;
+    UInt64 high = 0x0123456789ABCDEF;
+    memcpy(input, &low, 8);
+    memcpy(input + 8, &high, 8);
+
+    uint8_t hex_buf[32];
+    TypeParam::encodeHex16LE(hex_buf, input);
+
+    /// Output should be hex(high64) followed by hex(low64), both MSB-first.
+    ASSERT_EQ("0123456789abcdeffedcba9876543210", std::string_view(reinterpret_cast<const char *>(hex_buf), 32));
+}

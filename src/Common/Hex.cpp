@@ -208,6 +208,8 @@ static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case)
 ) // DECLARE_X86_64_V3_SPECIFIC_CODE
 
 
+#ifndef HEX_GTEST_UNIT_TEST
+
 namespace DB
 {
 
@@ -305,3 +307,5 @@ void encodeHex16LELower(uint8_t * dst, const uint8_t * src)
 }
 
 }
+
+#endif // HEX_GTEST_UNIT_TEST

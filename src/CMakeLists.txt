@@ -911,6 +911,8 @@ if (ENABLE_TESTS)
         clickhouse_common_config
         clickhouse_common_zookeeper)
 
+    target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
+
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
