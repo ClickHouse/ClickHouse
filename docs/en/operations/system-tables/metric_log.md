@@ -119,7 +119,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_TextIndexHeaderCacheHits` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a header has been found in the cache.
 - `ProfileEvent_TextIndexHeaderCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a header has not been found in the cache.
 - `ProfileEvent_TextIndexPostingsCacheHits` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a text index posting list has been found in the cache.
-- `ProfileEvent_TextIndexPostingsCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a a text index posting list has not been found in the cache.
+- `ProfileEvent_TextIndexPostingsCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a text index posting list has not been found in the cache.
 - `ProfileEvent_TextIndexReadSparseIndexBlocks` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a sparse index block has been read from the text index.
 - `ProfileEvent_TextIndexReaderTotalMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent reading the text index.
 - `ProfileEvent_TextIndexReadGranulesMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent reading and analyzing granules of the text index.
@@ -728,7 +728,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of bytes evicted from filesystem cache
 - `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/sql-reference/data-types/int-uint)) — Number of created key directories
 - `ProfileEvent_FilesystemCacheEvictedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments evicted from filesystem cache
-- `ProfileEvent_FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments evicted from filesystem cache when increasing priority of file segments (Applies to SLRU cache policy)
+- `ProfileEvent_FilesystemCacheDowngradedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments downgraded (moved) from the protected to the probationary queue in SLRU cache policy. This is an internal move within the cache, not an eviction.
 - `ProfileEvent_FilesystemCacheBackgroundDownloadQueuePush` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments sent for background download in filesystem cache
 - `ProfileEvent_FilesystemCacheEvictionSkippedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments skipped for eviction because of being in unreleasable state
 - `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments skipped for eviction because of being in evicting state
@@ -1584,6 +1584,8 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_FilesystemCacheSize` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache size in bytes
 - `CurrentMetric_FilesystemCacheSizeLimit` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache size limit in bytes
 - `CurrentMetric_FilesystemCacheElements` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache elements (file segments)
+- `CurrentMetric_FilesystemCachePriorityQueueElements` ([Int64](/sql-reference/data-types/int-uint)) — Total number of entries in the filesystem cache priority queue, including invalidated entries pending removal
+- `CurrentMetric_FilesystemCacheInvalidatedElements` ([Int64](/sql-reference/data-types/int-uint)) — Number of invalidated (zero size, pending removal) entries in the filesystem cache priority queue
 - `CurrentMetric_FilesystemCacheDownloadQueueElements` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache elements in download queue
 - `CurrentMetric_FilesystemCacheDelayedCleanupElements` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache elements in background cleanup queue
 - `CurrentMetric_FilesystemCacheHoldFileSegments` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache file segment which are currently hold as unreleasable

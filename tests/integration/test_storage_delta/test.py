@@ -43,13 +43,12 @@ from decimal import Decimal
 from pyspark.sql.window import Window
 
 import helpers.client
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
     AzureUploader,
-    LocalUploader,
     S3Uploader,
     get_file_contents,
     list_s3_objects,
@@ -84,8 +83,8 @@ def get_spark(log_dir=None):
             "spark.sql.catalog.spark_catalog.warehouse",
             "/var/lib/clickhouse/user_files/test_storage_delta",
         )
-        .config("spark.driver.memory", "8g")
-        .config("spark.executor.memory", "8g")
+        .config("spark.driver.memory", "2g")
+        .config("spark.executor.memory", "2g")
         .master("local")
     )
 
@@ -173,7 +172,7 @@ def started_cluster():
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="25.3.3.42",
+            tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
@@ -1552,6 +1551,74 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_filesystem_cache_azure(started_cluster, use_delta_kernel):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/106090:
+    # AzureObjectStorage::getObjectMetadata used to return an empty etag, which
+    # silently disabled the object-storage filesystem cache for Azure-backed
+    # tables (logging "Cannot use filesystem cache, no etag specified"). Without
+    # the fix the second read below still hits Azure (AzureGetObject > 0) and
+    # nothing is written to the cache (CachedReadBufferCacheWriteBytes == 0).
+    instance = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_filesystem_cache_azure")
+
+    parquet_data_path = create_initial_data_file(
+        started_cluster,
+        instance,
+        "SELECT toUInt64(number), toString(number) FROM numbers(100)",
+        TABLE_NAME,
+        node_name=instance.name,
+    )
+
+    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
+    default_upload_directory(started_cluster, "azure", f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "azure", TABLE_NAME, started_cluster)
+
+    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
+    instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
+        query_id=query_id,
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    count = int(
+        instance.query(
+            f"SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+    # The first read must populate the cache (this is 0 without the etag fix).
+    assert count > 0
+    assert 0 < int(
+        instance.query(
+            f"SELECT ProfileEvents['AzureGetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
+    instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
+        query_id=query_id,
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # See the comment in test_filesystem_cache about parquet reader v3 reading
+    # small files twice, hence the "no more than 2x" check instead of equality.
+    assert count * 2 > int(
+        instance.query(
+            f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+    # The second read must be served entirely from the filesystem cache.
+    assert 0 == int(
+        instance.query(
+            f"SELECT ProfileEvents['AzureGetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
@@ -1643,14 +1710,23 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
         zk = started_cluster.get_kazoo_client("zoo1")
         zk.set(replica_path + "/digest", "123456".encode())
 
-        assert "123456" in node2.query(
-            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
+        # Compare the `digest` value exactly instead of substring-matching the
+        # whole dump of all znodes: the recomputed digest is a 64-bit hash whose
+        # decimal representation can incidentally contain "123456" as a substring.
+        assert (
+            node2.query(
+                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
+            ).strip()
+            == "123456"
         )
 
         node2.restart_clickhouse()
 
-        assert "123456" not in node2.query(
-            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
+        assert (
+            node2.query(
+                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
+            ).strip()
+            != "123456"
         )
 
 
@@ -3978,6 +4054,63 @@ def test_write_column_order(started_cluster):
     assert num_rows * 2 == int(instance.query(f"SELECT count() FROM {table_name}"))
 
 
+def test_write_schema_mismatch_raises_user_error(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_write_schema_mismatch")
+
+    # Case 1: a Nested column declared in the table definition flattens to
+    # subcolumns (c0.c1), which do not match the table-level write schema (c0).
+    nested_file = f"/var/lib/clickhouse/user_files/{table_name}_nested"
+    nested_type = pa.list_(pa.struct([("c1", pa.int32())]))
+    nested_schema = pa.schema([("c0", nested_type)])
+    write_deltalake(
+        f"file:///{nested_file}",
+        pa.Table.from_arrays([pa.array([], type=nested_type)], schema=nested_schema),
+        mode="overwrite",
+    )
+    LocalUploader(instance).upload_directory(f"/{nested_file}/", f"/{nested_file}/")
+
+    nested_table = randomize_table_name("nested")
+    instance.query(
+        f"CREATE TABLE {nested_table} (c0 Nested(c1 Int32)) "
+        f"ENGINE = DeltaLakeLocal('/{nested_file}') "
+        f"SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    error = instance.query_and_get_error(
+        f"INSERT INTO {nested_table} (c0.c1) SELECT [1, 2, 3]"
+    )
+    assert "INCOMPATIBLE_COLUMNS" in error
+    assert "do not match" in error
+
+    # Case 2: explicit structure inserts a subset of the table's columns.
+    subset_file = f"/var/lib/clickhouse/user_files/{table_name}_subset"
+    subset_schema = pa.schema([("c1", pa.int32()), ("c0", pa.int32())])
+    write_deltalake(
+        f"file:///{subset_file}",
+        pa.Table.from_arrays(
+            [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())],
+            schema=subset_schema,
+        ),
+        mode="overwrite",
+    )
+    LocalUploader(instance).upload_directory(f"/{subset_file}/", f"/{subset_file}/")
+
+    error = instance.query_and_get_error(
+        f"INSERT INTO TABLE FUNCTION deltaLakeLocal('/{subset_file}', 'Parquet', 'c0 Int32') (c0) "
+        f"VALUES (1)"
+    )
+    assert "INCOMPATIBLE_COLUMNS" in error
+    assert "do not match" in error
+
+    # Server stays alive: a well-formed write to the same table still works.
+    instance.query(
+        f"INSERT INTO TABLE FUNCTION deltaLakeLocal('/{subset_file}') (c1, c0) VALUES (1, 2)"
+    )
+    assert "1\t2" == instance.query(
+        f"SELECT c1, c0 FROM deltaLakeLocal('/{subset_file}')"
+    ).strip()
+
+
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_type_from_storage_def(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]
@@ -4209,7 +4342,7 @@ deltaLake{suffix}({cluster}
 
 
 @pytest.mark.parametrize("cluster", [False, True])
-def test_partition_columns_3(started_cluster, cluster):
+def test_partition_columns_jumbled(started_cluster, cluster):
     """Test for bug https://github.com/ClickHouse/ClickHouse/issues/95526
 
     Reproduces issue where partition column values become incorrect when inserting

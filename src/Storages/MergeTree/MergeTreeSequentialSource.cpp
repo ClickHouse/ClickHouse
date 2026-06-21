@@ -266,11 +266,12 @@ try
             }
             result_column = std::move(mutable_column);
         }
-        /// `shrinkToFit` is a best-effort optimization that mutates the column in place; skip it
-        /// when the column is shared so we do not violate the `assumeMutableRef` ownership check
-        /// and do not perturb state that the other holder still observes.
-        if (result_column->use_count() == 1)
-            result_column->assumeMutableRef().shrinkToFit();
+
+        /// `shrinkToFit` reallocates the column's data. Go through `IColumn::mutate` so a shared
+        /// column is cloned first: mutating a column still referenced elsewhere is a use-after-free hazard.
+        auto mutable_column = IColumn::mutate(std::move(result_column));
+        mutable_column->shrinkToFit();
+        result_column = std::move(mutable_column);
     }
 
     auto result = Chunk(std::move(result_columns), read_result.num_rows);
@@ -438,7 +439,7 @@ public:
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             const Names & primary_key_column_names = primary_key.column_names;
-            ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context);
+            ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context, /* boolean_context */ true);
             KeyCondition key_condition(filter_dag, context, primary_key_column_names, primary_key.expression);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
