@@ -31,7 +31,7 @@ Reading a `FeatureCollection` produces one row per feature with the following fi
 
 Each geometry is stored in ClickHouse's `Geometry` type (a `Variant`). The supported GeoJSON geometry types are `Point`, `LineString`, `MultiLineString`, `Polygon`, and `MultiPolygon`. The two other GeoJSON geometry types, `GeometryCollection` and `MultiPoint`, cannot be represented by the `Geometry` type; reading one into the `geometry` column raises an exception by default, which can be changed to insert `NULL` instead — see [Handling unsupported geometry types](#unsupported-geometry) below. By default, the `geometry` column is `NULL` only when a feature's geometry is an explicit JSON `null`; under `input_format_geojson_unsupported_geometry_handling = 'null'` it is also `NULL` for an unsupported geometry type.
 
-The document's structure is validated: the top-level `type` must be `FeatureCollection` and every element of `features` must have `type` `Feature`. Coordinates must satisfy the GeoJSON shape invariants — a `LineString` (and each line of a `MultiLineString`) must have at least two positions, and a `Polygon` ring (and each ring of a `MultiPolygon`) must be closed and have at least four positions. Malformed documents are rejected rather than silently loaded.
+The document's structure is validated: the top-level `type` must be `FeatureCollection` and every element of `features` must have `type` `Feature`. By default, coordinates must satisfy the GeoJSON shape invariants — a `LineString` (and each line of a `MultiLineString`) must have at least two points, and a `Polygon` ring (and each ring of a `MultiPolygon`) must be closed and have at least four points (see [Geometry validation](#geometry-validation)). Malformed documents are rejected rather than silently loaded.
 
 Key ordering is flexible: the top-level `type` may appear before or after the `features` array, and within a geometry object `coordinates` may appear before or after `type`.
 
@@ -326,4 +326,16 @@ The output reflects only what ClickHouse stores:
 - Coordinates are written from `Float64` values using their shortest round-trippable representation.
 - A `properties` object taken directly from a `JSON` column is emitted in the `JSON` type's canonical key order, which may differ from the input.
 
-Geometries are written exactly as stored — coordinate order, ring closure, and winding are preserved — but GeoJSON's ring-closure and right-hand-rule (winding) invariants are **not enforced** on output (the input format enforces them on read). A geometry built directly in ClickHouse, such as an unclosed `Polygon` ring, is therefore emitted as-is, producing structurally valid but non-conformant GeoJSON. The distinction between a `null` and an empty `properties` object is likewise preserved.
+Geometries are written exactly as stored — coordinate order and winding are preserved. By default, GeoJSON shape validity is enforced on write (see [Geometry validation](#geometry-validation)): a geometry that is not a valid GeoJSON shape, such as a `LineString` with one point or an unclosed `Polygon` ring, is rejected so that the written document reads back. Set `format_geojson_validate_geometry = 0` to emit such geometries as-is instead, producing structurally valid but non-conformant GeoJSON. The right-hand-rule (winding) invariant is not enforced either way, and the distinction between a `null` and an empty `properties` object is preserved.
+
+## Geometry validation {#geometry-validation}
+
+The setting `format_geojson_validate_geometry` controls whether the format enforces [RFC 7946](https://datatracker.ietf.org/doc/html/rfc7946#section-3.1) geometry shape rules, in both directions. It is enabled by default.
+
+When enabled, a geometry that violates the GeoJSON shape rules is rejected: a `LineString` (or a line of a `MultiLineString`) with fewer than two points; a `Polygon` or `MultiPolygon` ring with fewer than four points, or whose first and last points differ (an unclosed ring); or an empty `MultiLineString`, `Polygon`, or `MultiPolygon`. The same rules apply when reading such a document and when writing such a ClickHouse value, so a written document always reads back.
+
+When disabled, these shape rules are not enforced in either direction: degenerate geometries are read as-is and written as-is. This lets ClickHouse geometry values that are not valid GeoJSON geometries round-trip through the format, at the cost of producing documents that are not valid GeoJSON.
+
+The validation is structural only: it checks point counts and ring closure. It does not inspect the geometric correctness of a shape, so a structurally valid but geometrically degenerate geometry is accepted in either direction — for example a zero-area polygon, a self-intersecting ring, or a polygon whose holes (inner rings) lie outside its outer ring. The right-hand-rule (winding) orientation of polygon rings is likewise never enforced.
+
+One check is independent of the setting: non-finite coordinates (`NaN`, `Inf`) are always rejected, because they cannot be represented as JSON numbers.
