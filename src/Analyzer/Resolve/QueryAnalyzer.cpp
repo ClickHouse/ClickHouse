@@ -1308,13 +1308,18 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     {
         if (identifier_lookup.isExpressionLookup())
         {
+            /// Fold the suffix case-insensitively when in `standard` mode and every suffix part was unquoted.
+            bool suffix_case_insensitive = standard_mode;
+            for (size_t p = 1; p < identifier_lookup.identifier.getPartsSize() && suffix_case_insensitive; ++p)
+                suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
             if (auto resolved_identifier = identifier_resolver.tryResolveIdentifierFromCompoundExpression(
                 identifier_lookup.identifier,
                 1 /*identifier_bind_size*/,
                 alias_node,
                 {} /* compound_expression_source */,
                 scope,
-                identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */))
+                identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */,
+                suffix_case_insensitive))
             {
                 return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::ALIASES };
             }

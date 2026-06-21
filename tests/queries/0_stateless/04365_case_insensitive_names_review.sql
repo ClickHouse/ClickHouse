@@ -44,5 +44,19 @@ SELECT '--- information_schema alias is not ambiguous (Blocker #9) ---';
 SELECT count() > 0 FROM information_schema.tables WHERE table_schema = 'system';
 SELECT count() > 0 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'system';
 
+SELECT '--- Tuple subcolumn case-insensitive fold ---';
+-- Unquoted suffix should match a Tuple subcolumn whose canonical name differs only by case.
+WITH CAST(tuple('val'), 'Tuple(Name String)') AS data SELECT data.name;
+WITH CAST(tuple('val'), 'Tuple(Name String)') AS data SELECT data."Name";
+-- Double-quoted wrong-case suffix stays case-sensitive — must fail.
+WITH CAST(tuple('val'), 'Tuple(Name String)') AS data SELECT data."name"; -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT '--- Temporary table exact-case-first ---';
+CREATE TEMPORARY TABLE Temp_review (v Int32);
+INSERT INTO Temp_review VALUES (7);
+-- Exact-case unquoted lookup binds to the literal temp table.
+SELECT v FROM Temp_review;
+DROP TEMPORARY TABLE Temp_review;
+
 DROP TABLE IF EXISTS t_using_l;
 DROP TABLE IF EXISTS t_using_r;

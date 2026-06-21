@@ -101,7 +101,10 @@ public:
         const QueryTreeNodePtr & compound_expression,
         String compound_expression_source,
         IdentifierResolveScope & scope,
-        bool can_be_not_found = false);
+        bool can_be_not_found = false,
+        /// When set, fold the post-prefix suffix path case-insensitively against the type's subcolumn
+        /// names. Required for `standard` mode when the user-written suffix was unquoted.
+        bool fold_subcolumn_case_insensitively = false);
 
     IdentifierResolveResult tryResolveIdentifierFromExpressionArguments(
         const IdentifierLookup & identifier_lookup,

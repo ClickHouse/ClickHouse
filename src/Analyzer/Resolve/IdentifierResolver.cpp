@@ -469,7 +469,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
     const QueryTreeNodePtr & compound_expression,
     String compound_expression_source,
     IdentifierResolveScope & scope,
-    bool can_be_not_found)
+    bool can_be_not_found,
+    bool fold_subcolumn_case_insensitively)
 {
     Identifier compound_expression_identifier;
     for (size_t i = 0; i < identifier_bind_size; ++i)
@@ -480,7 +481,35 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
 
     auto expression_type = compound_expression->getResultType();
 
-    if (!expression_type->hasSubcolumn(nested_path.getFullName()))
+    String nested_path_full = String(nested_path.getFullName());
+    bool found = expression_type->hasSubcolumn(nested_path_full);
+
+    /// In `standard` mode, an unquoted suffix must also match a subcolumn whose canonical name
+    /// differs only by case (e.g. `data.name` on a `Tuple(Name String)`). Tuple/Variant subcolumns
+    /// inside `IDataType` are looked up by exact string, so we canonicalize the suffix here.
+    if (!found && fold_subcolumn_case_insensitively)
+    {
+        String lower_suffix = Poco::toLower(nested_path_full);
+        String matched;
+        for (const auto & candidate : expression_type->getSubcolumnNames())
+        {
+            if (Poco::toLower(candidate) != lower_suffix)
+                continue;
+            if (!matched.empty() && matched != candidate)
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "Identifier {} nested path '{}' is ambiguous: matches multiple subcolumns with different cases: '{}', '{}'. In scope {}",
+                    expression_identifier, nested_path_full, matched, candidate,
+                    scope.scope_node->formatASTForErrorMessage());
+            matched = candidate;
+        }
+        if (!matched.empty())
+        {
+            nested_path_full = std::move(matched);
+            found = true;
+        }
+    }
+
+    if (!found)
     {
         if (can_be_not_found)
             return {};
@@ -511,7 +540,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
             getHintsErrorMessageSuffix(hints));
     }
 
-    return wrapExpressionNodeInSubcolumn(compound_expression, std::string(nested_path.getFullName()), scope.context);
+    return wrapExpressionNodeInSubcolumn(compound_expression, nested_path_full, scope.context);
 }
 
 /** Resolve identifier from expression arguments.
@@ -561,7 +590,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
     {
-        if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope))
+        /// Fold suffix case-insensitively only when every suffix part of the lookup was unquoted in `standard` mode.
+        bool suffix_case_insensitive = standard_mode;
+        for (size_t p = 1; p < identifier_lookup.identifier.getPartsSize() && suffix_case_insensitive; ++p)
+            suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
+        if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpression(
+                identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope,
+                /*can_be_not_found=*/false, suffix_case_insensitive))
             return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS };
         return {};
     }
@@ -1899,13 +1934,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
         }
 
         /// Resolve subcolumns. Example : SELECT x.y.z FROM tab ARRAY JOIN arr AS x
+        const size_t bind_size = identifier_lookup.identifier.getPartsSize() - identifier_view.getPartsSize();
+        bool suffix_case_insensitive = standard_mode;
+        for (size_t p = bind_size; p < identifier_lookup.identifier.getPartsSize() && suffix_case_insensitive; ++p)
+            suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
         auto compound_expr = tryResolveIdentifierFromCompoundExpression(
             identifier_lookup.identifier,
-            identifier_lookup.identifier.getPartsSize() - identifier_view.getPartsSize() /*identifier_bind_size*/,
+            bind_size,
             array_join_column,
             {} /* compound_expression_source */,
             scope,
-            true /* can_be_not_found */);
+            true /* can_be_not_found */,
+            suffix_case_insensitive);
 
         if (compound_expr)
             return { .resolved_identifier = compound_expr, .resolve_place = IdentifierResolvePlace::JOIN_TREE };

@@ -21,3 +21,8 @@
 --- information_schema alias is not ambiguous (Blocker #9) ---
 1
 1
+--- Tuple subcolumn case-insensitive fold ---
+val
+val
+--- Temporary table exact-case-first ---
+7

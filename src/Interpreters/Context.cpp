@@ -2572,9 +2572,18 @@ String Context::tryResolveExternalTableNameCaseInsensitive(const String & table_
     /// Mirror `resolveStorageIDImpl`: walk current → query_context → session_context so that a
     /// temporary table registered higher up the chain (most common: session_context) is reachable
     /// from a query_context that has no temp tables of its own.
+    /// Prefer an exact-case match (same shape as the ordinary-table path in `IDatabase`): when the
+    /// session has both `Temp` and `TEMP`, an unquoted lookup of `Temp` must bind to `Temp` itself
+    /// rather than throw on the otherwise-ambiguous case-insensitive scan.
+    String exact_match;
     auto scan_one = [&](const Context * ctx, String & resolved)
     {
         SharedLockGuard lock(ctx->mutex);
+        if (auto exact_it = ctx->external_tables_mapping.find(table_name); exact_it != ctx->external_tables_mapping.end())
+        {
+            exact_match = exact_it->first;
+            return;
+        }
         for (const auto & [name, _] : ctx->external_tables_mapping)
         {
             if (Poco::icompare(name, table_name) == 0)
@@ -2590,13 +2599,19 @@ String Context::tryResolveExternalTableNameCaseInsensitive(const String & table_
 
     String resolved;
     scan_one(this, resolved);
+    if (exact_match.empty())
+    {
+        if (auto query_context_ptr = query_context.lock(); query_context_ptr && query_context_ptr.get() != this)
+            scan_one(query_context_ptr.get(), resolved);
+    }
+    if (exact_match.empty())
+    {
+        if (auto session_context_ptr = session_context.lock(); session_context_ptr && session_context_ptr.get() != this)
+            scan_one(session_context_ptr.get(), resolved);
+    }
 
-    if (auto query_context_ptr = query_context.lock(); query_context_ptr && query_context_ptr.get() != this)
-        scan_one(query_context_ptr.get(), resolved);
-
-    if (auto session_context_ptr = session_context.lock(); session_context_ptr && session_context_ptr.get() != this)
-        scan_one(session_context_ptr.get(), resolved);
-
+    if (!exact_match.empty())
+        return exact_match;
     return resolved;
 }
 

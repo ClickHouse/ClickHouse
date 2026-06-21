@@ -185,7 +185,9 @@ struct AnalysisTableExpressionData
     struct SubcolumnInfo
     {
         ColumnNodePtr column_node;
-        std::string_view subcolumn_name;
+        /// Owning string so a `standard`-mode case-insensitive match can return its canonical
+        /// suffix name without depending on a temporary returned by `IDataType::getSubcolumnNames`.
+        String subcolumn_name;
         DataTypePtr subcolumn_type;
     };
 
@@ -222,10 +224,38 @@ struct AnalysisTableExpressionData
 
             const auto & node_map = getColumnNodeMap();
             auto it = node_map.find(resolved_column_name);
-            if (it != node_map.end())
+            if (it == node_map.end())
+                continue;
+
+            /// Exact-case match first; backwards-compatible and works for storages that expose the
+            /// subcolumn under its canonical name.
+            if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
+                return SubcolumnInfo{it->second, String(subcolumn_name), subcolumn_type};
+
+            /// In standard mode also try a case-insensitive subcolumn match. Tuple/Variant/Map
+            /// subcolumns are resolved via exact string lookup inside the type itself, so we have to
+            /// canonicalize the suffix here. Multiple case-only-different subcolumn names are an
+            /// ambiguity at this level.
+            if (use_case_insensitive)
             {
-                if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
-                    return SubcolumnInfo{it->second, subcolumn_name, subcolumn_type};
+                auto data_type = it->second->getResultType();
+                String lower_suffix = Poco::toLower(String(subcolumn_name));
+                String matched_subcolumn;
+                for (const auto & candidate : data_type->getSubcolumnNames())
+                {
+                    if (Poco::toLower(candidate) != lower_suffix)
+                        continue;
+                    if (!matched_subcolumn.empty() && matched_subcolumn != candidate)
+                        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                            "Identifier '{}' is ambiguous: subcolumn '{}' matches multiple subcolumns with different cases: '{}', '{}'. In scope {}",
+                            full_identifier_name, subcolumn_name, matched_subcolumn, candidate, scope_description);
+                    matched_subcolumn = candidate;
+                }
+                if (!matched_subcolumn.empty())
+                {
+                    if (auto subcolumn_type = data_type->tryGetSubcolumnType(matched_subcolumn))
+                        return SubcolumnInfo{it->second, std::move(matched_subcolumn), subcolumn_type};
+                }
             }
         }
 
