@@ -93,6 +93,9 @@ def test_cluster_discovery_retries_after_missing_shards_node(start_cluster):
             break
         time.sleep(1)
 
+    # Clean up the ZK path so subsequent tests see a consistent cluster count.
+    zk.delete(discovery_path, recursive=True)
+
     assert found, "ClusterDiscovery did not recover after KEEPER_EXCEPTION on missing /shards node"
 
 
