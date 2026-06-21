@@ -898,6 +898,14 @@ struct ContextSharedPart : boost::noncopyable
         return config ? *config : Poco::Util::Application::instance().config();
     }
 
+    ConfigurationPtr getConfig() const
+    {
+        SharedLockGuard lock(mutex);
+        if (config)
+            return config;
+        return ConfigurationPtr(&Poco::Util::Application::instance().config(), /* shared= */ true);
+    }
+
     /** Perform a complex job of destroying objects in advance.
       */
     void shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
@@ -1323,6 +1331,12 @@ void ContextData::resetSharedContext()
 {
     std::lock_guard<std::mutex> lock(mutex_shared_context);
     shared = nullptr;
+}
+
+ConfigurationPtr ContextData::tryGetConfig() const
+{
+    std::lock_guard<std::mutex> lock(mutex_shared_context);
+    return shared ? shared->getConfig() : nullptr;
 }
 
 Context::Context() = default;
@@ -2820,7 +2834,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
-            auto query = table->getInMemoryMetadataPtr(getQueryContext(), false)->getSelectQuery().inner_query->clone();
+            auto view_metadata = table->getInMemoryMetadataPtr(getQueryContext(), false);
+            auto query = view_metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
             StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
@@ -7302,6 +7317,12 @@ void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address
 void Context::setInitialUserName(const String & initial_user_name)
 {
     client_info.initial_user = initial_user_name;
+    need_recalculate_access = true;
+}
+
+void Context::setAuthenticatedUserName(const String & authenticated_user_name)
+{
+    client_info.authenticated_user = authenticated_user_name;
     need_recalculate_access = true;
 }
 
