@@ -10,6 +10,7 @@
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 
@@ -84,6 +85,11 @@ protected:
         /// Uses metadata-only API to avoid pinning all cached column data in memory.
         if (!entries_fetched)
         {
+            access = getContext()->getAccess();
+            /// A user with the global SHOW COLUMNS privilege may see all entries
+            /// without per-table checks, mirroring system.columns.
+            has_global_show_columns = access->isGranted(AccessType::SHOW_COLUMNS);
+
             auto columns_cache = getContext()->getColumnsCache();
             if (columns_cache)
                 all_entries = columns_cache->getAllEntriesMetadata();
@@ -121,6 +127,25 @@ protected:
                 table_name = table->getStorageID().table_name;
             }
 
+            /// Access control: do not expose tables/columns the user is not allowed to see,
+            /// mirroring system.columns. Otherwise a user with access to this system table but
+            /// without SHOW TABLES / SHOW COLUMNS on another database could learn its table
+            /// name, UUID, part names, column names, row ranges, and cached sizes once the
+            /// cache is warmed.
+            if (!has_global_show_columns)
+            {
+                /// For unresolved or dropped UUIDs we cannot evaluate per-table access, so
+                /// fail closed: only the global SHOW COLUMNS privilege (checked above) grants
+                /// visibility of those entries.
+                if (!database || !table
+                    || !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name)
+                    || !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, meta.key.column_name))
+                {
+                    ++current_index;
+                    continue;
+                }
+            }
+
             col_database->insert(database_name);
             col_table->insert(table_name);
             col_table_uuid->insert(meta.key.table_uuid);
@@ -133,6 +158,14 @@ protected:
 
             ++num_rows;
             ++current_index;
+        }
+
+        /// The block can be empty if every remaining entry was filtered out by
+        /// access control; in that case all entries have been consumed.
+        if (num_rows == 0)
+        {
+            done = true;
+            return {};
         }
 
         Columns columns;
@@ -155,6 +188,8 @@ private:
     bool entries_fetched = false;
     size_t current_index = 0;
     std::vector<ColumnsCache::EntryMetadata> all_entries;
+    std::shared_ptr<const ContextAccessWrapper> access;
+    bool has_global_show_columns = false;
 };
 
 }
