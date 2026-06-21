@@ -825,6 +825,100 @@ def test_runtime_increase_preserves_fifo(started_cluster):
         wait_for_max_concurrent_queries(node, 2)
 
 
+def test_normal_release_preserves_fifo(started_cluster):
+    """
+    Verify that releasing a single admission slot on ordinary query completion
+    hands it to the oldest queued waiter first (FIFO is not violated).
+
+    `test_runtime_increase_preserves_fifo` only proves FIFO for the runtime
+    `setMaxSize` drain path (a `max_concurrent_queries` increase). This test
+    covers the normal release path instead: a running query finishes and its
+    `ProcessListEntry` teardown calls `releaseAdmissionSlotLocked`, which must
+    transfer the freed slot to the *front* of the queue. A regression that
+    granted from the back of `admission_queue` would still pass
+    `test_all_queued_queries_admitted` (which only checks eventual completion,
+    not admission order), so this asserts the ordering of the handoff directly.
+
+    Strategy (server config: max_concurrent_queries = 2):
+    1. Saturate both slots with two long blockers.
+    2. Submit 3 waiters one at a time, confirming each enters the queue before
+       the next, so the FIFO order is deterministically waiter_0 < 1 < 2.
+    3. KILL exactly one blocker. Its `ProcessListEntry` teardown releases exactly
+       one admission slot through `releaseAdmissionSlotLocked`, transferring it
+       to the front waiter.
+    4. Verify the oldest waiter is now running and the two younger ones are still
+       queued (queue length 2), i.e. not overtaken.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    blocker_ids = [f"normfifo_blocker_{prefix}_{i}" for i in range(2)]
+    waiter_ids = [f"normfifo_waiter_{prefix}_{i}" for i in range(3)]
+
+    pool = Pool(10)
+
+    def run_long(qid):
+        # Long-running so an admitted waiter keeps holding its slot, which lets
+        # us observe exactly which waiter was admitted.
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=qid,
+        )
+
+    try:
+        # Baseline limit must be active before we saturate it (slots are free here).
+        wait_for_max_concurrent_queries(node, 2)
+
+        for qid in blocker_ids:
+            pool.apply_async(run_long, (qid,))
+        for qid in blocker_ids:
+            wait_for_query_start(node, qid)
+
+        # Submit waiters one at a time, establishing a deterministic FIFO order.
+        for i, qid in enumerate(waiter_ids):
+            pool.apply_async(run_long, (qid,))
+            wait_for_queue_length(node, i + 1)
+
+        # Release exactly one slot via the normal path: kill a single blocker.
+        # Its teardown frees one admission slot, which `releaseAdmissionSlotLocked`
+        # must hand to the front (oldest) waiter — not to a younger one.
+        node.query(f"KILL QUERY WHERE query_id = '{blocker_ids[0]}' SYNC")
+
+        # The oldest waiter must now be running.
+        wait_for_query_start(node, waiter_ids[0])
+
+        # Exactly one slot opened, so the two younger waiters must still be
+        # queued, not overtaken.
+        wait_for_queue_length(node, 2)
+        for qid in waiter_ids[1:]:
+            running = node.query(
+                f"SELECT count() FROM system.processes WHERE query_id = '{qid}'"
+            ).strip()
+            assert running == "0", (
+                f"Waiter {qid} was admitted out of FIFO order (oldest must go first)"
+            )
+    finally:
+        # Drain the queue (unlimited) so every remaining waiter is admitted and
+        # therefore appears in system.processes — a queued waiter is not yet
+        # killable, so killing before draining would let cleanup block on the
+        # 30s sleep.
+        set_max_concurrent_queries(node, 0)
+        for qid in waiter_ids:
+            try:
+                wait_for_query_start(node, qid, timeout=10)
+            except RuntimeError:
+                pass  # already finished or never admitted
+        for qid in blocker_ids + waiter_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        pool.close()
+        pool.join()
+        # Restore the original limit and confirm it before the next test runs.
+        set_max_concurrent_queries(node, 2)
+        wait_for_max_concurrent_queries(node, 2)
+
+
 def test_secondary_limit_not_rejected_on_early_release(started_cluster):
     """
     Regression test for the admission handoff vs secondary concurrency limits.
