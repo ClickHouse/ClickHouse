@@ -75,6 +75,13 @@ def test_ttransport_exception_restart_service(started_cluster):
     password = os.environ.get('MINIO_PASSWORD', '[HIDDEN]')
 
     node = started_cluster.instances["node1"]
+
+    # Catalog initialization now happens in the DatabaseDataLake constructor, so
+    # CREATE DATABASE connects to the Hive Metastore eagerly. Make sure the
+    # metastore is accepting connections before issuing it, otherwise the
+    # statement fails with a TTransportException during construction.
+    wait_for_hms(started_cluster)
+
     node.query(f"""
         CREATE DATABASE IF NOT EXISTS lake_test
         ENGINE = DataLakeCatalog('thrift://hive:9083', 'minio', '{password}')
