@@ -128,8 +128,12 @@ and [`Tuple`](/sql-reference/data-types/tuple)) are written without brackets and
 are separated by a delimiter derived from the fields delimiter by their nesting
 level, the same way Hive's `LazySimpleSerDe` does it (`\x02` for the second
 level, `\x03`/`\x04` for the third, and so on). Data types that have no natural
-Hive text representation (for example `AggregateFunction`, `Dynamic` or
-`LowCardinality`) are not supported for output.
+Hive text representation are not supported for output and raise a
+`NOT_IMPLEMENTED` exception. This includes `AggregateFunction`, `Dynamic`,
+`Variant`, `LowCardinality` and `Object`, as well as the numeric-backed types
+`Enum`, `Time`, `Time64` and `Interval` — Hive has no matching type for the
+latter, so they are rejected rather than written as their raw underlying
+numbers.
 
 ```sql title="Query"
 SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) FORMAT HiveText;
