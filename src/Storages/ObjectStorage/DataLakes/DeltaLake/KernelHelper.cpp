@@ -8,16 +8,6 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
-#if USE_AZURE_BLOB_STORAGE
-#include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include <azure/storage/common/storage_credential.hpp>
-#include <azure/identity/client_secret_credential.hpp>
-#include <azure/identity/workload_identity_credential.hpp>
-#include <azure/identity/managed_identity_credential.hpp>
-#endif
-
-
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -120,8 +110,14 @@ public:
         auto secret_access_key = credentials.GetAWSSecretKey();
         auto token = credentials.GetSessionToken();
 
+        /// The delta-kernel-rs integration is currently under experimental flag,
+        /// because we wait for delta-kernel maintainers to provide ffi api
+        /// which will allow us to provide our own s3 client to delta-kernel.
+        /// For now it uses its own client, which would lake all the auth options
+        /// which our own client supports.
+
         /// Supported options
-        /// https://github.com/apache/arrow-rs-object-store/blob/main/src/aws/builder.rs#L446
+        /// https://github.com/apache/arrow-rs/blob/main/object_store/src/aws/builder.rs#L191
         if (!access_key_id.empty())
             set_option("aws_access_key_id", access_key_id);
         if (!secret_access_key.empty())
@@ -423,14 +419,6 @@ DeltaLake::KernelHelperPtr getKernelHelper(
                 object_storage->getS3StorageClient(),
                 s3_conf->getAuthSettings());
         }
-#if USE_AZURE_BLOB_STORAGE
-        case DB::ObjectStorageType::Azure:
-        {
-            return std::make_shared<DeltaLake::AzureKernelHelper>(
-                object_storage->getAzureBlobStorageConnectionParams(),
-                configuration->getRawPath().path);
-        }
-#endif
         case DB::ObjectStorageType::Local:
         {
             const auto * local_conf = dynamic_cast<const DB::StorageLocalConfiguration *>(configuration.get());
