@@ -59,6 +59,8 @@ private:
         const char * geojson_type = nullptr; /// GeoJSON `"type"` value, e.g. "Polygon".
         size_t depth = 0; /// Number of nested coordinate-array levels in storage.
         bool wrap_in_array = false; /// Emit one extra array level (a `Ring` -> a single-ring `Polygon`).
+        size_t min_points = 0; /// Minimum points in each innermost array (a line or ring); 0 = no check.
+        bool ring = false; /// The innermost array is a polygon ring (must have >= 4 points and be closed).
     };
 
     /// The emission kind for a non-Variant geo type name, or nullopt if `type_name` is not one of
@@ -71,7 +73,8 @@ private:
 
     void writeGeometryObject(const GeometryKind & kind, const IColumn & column, size_t row_num);
     /// Recursively emit `depth` nested coordinate-array levels, bottoming out at a position `[x, y]`.
-    void writeCoordinates(const IColumn & column, size_t row_num, size_t depth);
+    /// `kind` carries the validation rules applied when `validate_geometry` is enabled.
+    void writeCoordinates(const IColumn & column, size_t row_num, size_t depth, const GeometryKind & kind);
     void writePosition(const IColumn & tuple_column, size_t row_num);
 
     FormatSettings settings;
@@ -81,6 +84,10 @@ private:
     /// emit a lone object-typed `properties` column directly as the Feature's `properties` object.
     FormatSettings properties_object_settings;
     WriteBuffer * ostr;
+
+    /// When set (the `format_geojson_validate_geometry` setting), geometries that violate RFC 7946 shape
+    /// rules are rejected on write, mirroring the input format, so written documents round-trip.
+    bool validate_geometry = true;
 
     std::optional<size_t> id_col_idx;
     bool id_is_float = false;

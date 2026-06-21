@@ -42,16 +42,29 @@ struct GeoTypeEntry
     const char * geojson_type;
     size_t depth;
     bool wrap_in_array;
+    size_t min_points; /// Minimum points in each innermost array, or 0 when no minimum applies.
+    bool ring; /// The innermost array is a polygon ring (>= 4 points and closed).
 };
 
 constexpr std::array<GeoTypeEntry, 6> geo_type_table{{
-    {"Point", "Point", 0, false},
-    {"LineString", "LineString", 1, false},
-    {"Ring", "Polygon", 1, true},
-    {"MultiLineString", "MultiLineString", 2, false},
-    {"Polygon", "Polygon", 2, false},
-    {"MultiPolygon", "MultiPolygon", 3, false},
+    {"Point", "Point", 0, false, 0, false},
+    {"LineString", "LineString", 1, false, 2, false},
+    {"Ring", "Polygon", 1, true, 4, true},
+    {"MultiLineString", "MultiLineString", 2, false, 2, false},
+    {"Polygon", "Polygon", 2, false, 4, true},
+    {"MultiPolygon", "MultiPolygon", 3, false, 4, true},
 }};
+
+/// Whether the polygon ring spanning points `[begin, end)` is closed: its first and last points
+/// must be equal. The points are the nested `Tuple(Float64, Float64)` of a coordinate array.
+bool isRingClosed(const IColumn & points, size_t begin, size_t end)
+{
+    const auto & tuple = assert_cast<const ColumnTuple &>(points);
+    const auto & x = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
+    const auto & y = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
+    const size_t last = end - 1;
+    return x[begin] == x[last] && y[begin] == y[last];
+}
 
 /// Whether a `properties` column should be emitted directly as the GeoJSON `properties` object: a
 /// `JSON`/`Object`, a `Map`, or a named `Tuple` all serialize to a JSON object. Anything else is
@@ -72,7 +85,7 @@ std::optional<GeoJSONRowOutputFormat::GeometryKind> GeoJSONRowOutputFormat::geom
 {
     for (const auto & entry : geo_type_table)
         if (type_name == entry.ch_name)
-            return GeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array};
+            return GeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array, entry.min_points, entry.ring};
     return std::nullopt;
 }
 
@@ -97,6 +110,8 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     properties_object_settings = settings;
     properties_object_settings.json.write_named_tuples_as_objects = true;
     properties_object_settings.json.write_map_as_array_of_tuples = false;
+
+    validate_geometry = settings.geojson.validate_geometry;
 
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 
@@ -134,7 +149,7 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
                 const auto & variant_type = assert_cast<const DataTypeVariant &>(*geo_type);
                 for (const auto & entry : geo_type_table)
                     if (auto discr = variant_type.tryGetVariantDiscriminator(entry.ch_name))
-                        variant_kind[*discr] = GeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array};
+                        variant_kind[*discr] = GeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array, entry.min_points, entry.ring};
             }
             else
             {
@@ -270,13 +285,13 @@ void GeoJSONRowOutputFormat::writeGeometryObject(const GeometryKind & kind, cons
     writeCString(R"(","coordinates":)", *ostr);
     if (kind.wrap_in_array)
         writeChar('[', *ostr);
-    writeCoordinates(column, row_num, kind.depth);
+    writeCoordinates(column, row_num, kind.depth, kind);
     if (kind.wrap_in_array)
         writeChar(']', *ostr);
     writeChar('}', *ostr);
 }
 
-void GeoJSONRowOutputFormat::writeCoordinates(const IColumn & column, size_t row_num, size_t depth)
+void GeoJSONRowOutputFormat::writeCoordinates(const IColumn & column, size_t row_num, size_t depth, const GeometryKind & kind)
 {
     if (depth == 0)
     {
@@ -289,13 +304,42 @@ void GeoJSONRowOutputFormat::writeCoordinates(const IColumn & column, size_t row
     const auto & offsets = array.getOffsets();
     const size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
     const size_t end = offsets[row_num];
+    const size_t count = end - begin;
+
+    /// When geometry validation is enabled, reject coordinate arrays that the GeoJSON input format would
+    /// reject, so a written document round-trips: a line or ring with too few points, an unclosed
+    /// ring, or an empty array of lines/rings/polygons in a multi-geometry.
+    if (validate_geometry)
+    {
+        if (depth == 1)
+        {
+            if (count < kind.min_points)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The GeoJSON output format cannot write a {} with fewer than {} points, but one with {} was given",
+                    kind.ring ? "polygon ring" : "line",
+                    kind.min_points,
+                    count);
+            if (kind.ring && !isRingClosed(nested, begin, end))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The GeoJSON output format cannot write an unclosed polygon ring; its first and last points must be equal");
+        }
+        else if (count == 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The GeoJSON output format cannot write a {} geometry with an empty coordinate array",
+                kind.geojson_type);
+        }
+    }
 
     writeChar('[', *ostr);
     for (size_t i = begin; i < end; ++i)
     {
         if (i != begin)
             writeChar(',', *ostr);
-        writeCoordinates(nested, i, depth - 1);
+        writeCoordinates(nested, i, depth - 1, kind);
     }
     writeChar(']', *ostr);
 }
