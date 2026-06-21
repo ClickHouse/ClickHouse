@@ -1,6 +1,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Storages/IndicesDescription.h>
 
 #include <Parsers/ASTFunction.h>
@@ -21,7 +22,6 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int CYCLIC_ALIASES;
 }
 
 namespace
@@ -30,68 +30,16 @@ namespace
 /// Skip index expressions are analyzed with physical columns only. Matchers may
 /// expand to ALIAS columns, and ALIAS expressions may contain matchers, so
 /// normalize both recursively before passing the expression to TreeRewriter.
-[[noreturn]] void throwCyclicAliasInIndexException(const Strings & aliases)
-{
-    Strings cycle = aliases;
-    cycle.emplace_back(aliases.front());
-
-    String message;
-    for (size_t i = 0; i != cycle.size(); ++i)
-    {
-        if (i)
-            message += " -> ";
-        message += cycle[i];
-    }
-
-    throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic alias detected in skip index expression: {}", message);
-}
-
-void normalizeIndexExpression(ASTPtr & node, const ColumnsDescription & columns, ContextPtr context, Strings & alias_stack);
-
-void replaceAliasesInIndexExpression(ASTPtr & node, const ColumnsDescription & columns, ContextPtr context, Strings & alias_stack)
-{
-    if (!node)
-        return;
-
-    if (const auto * identifier = node->as<ASTIdentifier>())
-    {
-        const auto & column_name = identifier->name();
-        if (columns.hasAlias(column_name))
-        {
-            if (auto it = std::find(alias_stack.begin(), alias_stack.end(), column_name); it != alias_stack.end())
-            {
-                Strings cycle(it, alias_stack.end());
-                throwCyclicAliasInIndexException(cycle);
-            }
-
-            auto col_default = columns.getDefault(column_name);
-            if (!col_default)
-                return;
-
-            alias_stack.push_back(column_name);
-            node = col_default->expression->clone();
-            normalizeIndexExpression(node, columns, context, alias_stack);
-            alias_stack.pop_back();
-        }
-
-        return;
-    }
-
-    for (auto & child : node->children)
-        replaceAliasesInIndexExpression(child, columns, context, alias_stack);
-}
-
-void normalizeIndexExpression(ASTPtr & node, const ColumnsDescription & columns, ContextPtr context, Strings & alias_stack)
-{
-    expandColumnMatchersInExpression(node, columns, context);
-    replaceAliasesInIndexExpression(node, columns, context, alias_stack);
-}
-
 void normalizeIndexExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns, ContextPtr context)
 {
-    Strings alias_stack;
     expandColumnMatchersInExpressionList(expression_list, columns, context);
-    replaceAliasesInIndexExpression(expression_list, columns, context, alias_stack);
+    replaceAliasColumnsInQuery(
+        expression_list,
+        columns,
+        {},
+        context,
+        {},
+        ColumnAliasReplacementMode::MetadataNormalization);
 }
 
 ASTPtr makePersistedIndexDefinitionAST(

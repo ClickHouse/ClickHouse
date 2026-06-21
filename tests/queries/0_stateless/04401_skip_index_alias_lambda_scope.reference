@@ -1,0 +1,2 @@
+INDEX idx arrayCount(x -> (x < (a + 2)), arr) TYPE minmax GRANULARITY 1
+1

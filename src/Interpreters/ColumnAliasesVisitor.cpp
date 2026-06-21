@@ -77,12 +77,18 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
             // If expanded alias is used in array join, avoid expansion, otherwise the column will be mis-array joined
             if (data.array_join_result_columns.contains(original_column) || data.array_join_source_columns.contains(original_column))
                 return;
-            ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
-            // We need to set back the original column name, or else the process of naming resolution will complain.
-            if (!alias.empty())
-                ast->setAlias(alias);
+            if (data.replacement_mode == ColumnAliasReplacementMode::QueryAnalysis)
+                ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
             else
-                ast->setAlias(*column_name);
+                ast = std::move(alias_expr);
+            // We need to set back the original column name, or else the process of naming resolution will complain.
+            if (data.replacement_mode == ColumnAliasReplacementMode::QueryAnalysis)
+            {
+                if (!alias.empty())
+                    ast->setAlias(alias);
+                else
+                    ast->setAlias(*column_name);
+            }
 
             data.changed = true;
             // revisit ast to track recursive alias columns
