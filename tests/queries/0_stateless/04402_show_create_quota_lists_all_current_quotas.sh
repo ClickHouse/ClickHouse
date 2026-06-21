@@ -14,9 +14,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Quotas and users are server-global, so the names are suffixed with the (unique) database name to
 # keep the test isolated when it runs in parallel with itself (e.g. in the flaky check).
 
-user="u_05019_${CLICKHOUSE_DATABASE}"
-quota_hash="q_05019_hash_${CLICKHOUSE_DATABASE}"
-quota_user="q_05019_user_${CLICKHOUSE_DATABASE}"
+user="u_04402_${CLICKHOUSE_DATABASE}"
+quota_hash="q_04402_hash_${CLICKHOUSE_DATABASE}"
+quota_user="q_04402_user_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}"
 ${CLICKHOUSE_CLIENT} -q "DROP QUOTA IF EXISTS ${quota_hash}"
