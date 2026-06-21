@@ -4,6 +4,10 @@
 -- column of any other type (such as an array) is rejected.
 SELECT [1, 2] AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON; -- { clientError BAD_ARGUMENTS }
 
+-- A Bool id is rejected: although stored as a numeric type, it serializes as a JSON boolean, which is
+-- not a valid Feature id.
+SELECT false AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON; -- { clientError BAD_ARGUMENTS }
+
 -- A null id is omitted from the Feature, including when it arrives through a `LowCardinality(Nullable)`
 -- column rather than a plain `Nullable` column.
 SELECT CAST(NULL AS LowCardinality(Nullable(String))) AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON;
