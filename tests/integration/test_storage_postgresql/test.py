@@ -1131,6 +1131,27 @@ def test_postgres_query_passing(started_cluster):
     assert node1.query(f"SELECT big FROM {q_wide}").rstrip() == big_value
     assert node1.query(f"SELECT arr2 FROM {q_wide}").rstrip() == "[[1,2],[3,4]]"
 
+    # When the first sampled row of an array column is NULL or an empty array, the number of dimensions
+    # cannot be inferred. The query path must fail early during schema inference with a clear error (as the
+    # table-name path does in its recheck_array step) instead of silently inferring a one-dimensional array
+    # and then failing at read time with the confusing `Got more dimensions than expected`.
+    empty_arr_name = "test_query_passing_empty_array"
+    cursor.execute(f"DROP TABLE IF EXISTS {empty_arr_name}")
+    cursor.execute(f"CREATE TABLE {empty_arr_name} (id integer, arr integer[][])")
+    cursor.execute(
+        f"INSERT INTO {empty_arr_name} VALUES (1, '{{}}'), (2, '{{{{1,2}},{{3,4}}}}')"
+    )
+    started_cluster.postgres_conn.commit()
+
+    q_empty = (
+        f"postgresql('{host}', 'postgres', "
+        f"query('SELECT arr FROM {empty_arr_name} ORDER BY id'), 'postgres', '{pg_pass}')"
+    )
+    assert "Cannot infer the number of dimensions" in node1.query_and_get_error(
+        f"SELECT * FROM {q_empty}"
+    )
+
+    cursor.execute(f"DROP TABLE {empty_arr_name}")
     cursor.execute(f"DROP TABLE {wide_name}")
     cursor.execute(f"DROP TABLE {table_name}")
     cursor.execute(f"DROP TABLE {dim_name}")

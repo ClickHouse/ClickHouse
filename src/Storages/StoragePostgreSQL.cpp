@@ -1021,9 +1021,22 @@ ColumnsDescription doQueryResultStructure(pqxx::connection & connection, const S
         {
             for (size_t j = 0; j < array_columns.size(); ++j)
             {
+                const auto column = array_columns[j];
                 const auto & field = ndims_result[0][static_cast<pqxx::row_size_type>(j)];
-                if (!field.is_null())
-                    dimensions[array_columns[j]] = static_cast<uint16_t>(field.as<int>());
+
+                /// `array_ndims` returns NULL when the sampled array value is NULL or empty, so the dimensions
+                /// cannot be inferred from the first row. Fail early with a clear error (as the table path does
+                /// in its `recheck_array` step) instead of silently inferring a one-dimensional array and then
+                /// failing at read time with the confusing `Got more dimensions than expected`.
+                if (field.is_null())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot infer the number of dimensions of the array in column {} ({}) of the PostgreSQL "
+                        "query result, because its value in the first row is NULL or an empty array. "
+                        "Make sure the first row contains a non-empty array value.",
+                        column + 1, sample.column_name(column));
+
+                dimensions[column] = static_cast<uint16_t>(field.as<int>());
             }
         }
     }
