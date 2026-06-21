@@ -349,4 +349,7 @@ struct NameQuantilesDD { static constexpr auto name = "quantilesDD"; };
 struct NameQuantilePrometheusHistogram { static constexpr auto name = "quantilePrometheusHistogram"; };
 struct NameQuantilesPrometheusHistogram { static constexpr auto name = "quantilesPrometheusHistogram"; };
 
+struct NameQuantileKLL { static constexpr auto name = "quantileKLL"; };
+struct NameQuantilesKLL { static constexpr auto name = "quantilesKLL"; };
+
 }
