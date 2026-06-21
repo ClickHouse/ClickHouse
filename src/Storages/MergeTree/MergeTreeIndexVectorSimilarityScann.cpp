@@ -866,8 +866,8 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
 // ---------------------------------------------------------------------------
 
 MergeTreeIndexVectorSimilarityScann::MergeTreeIndexVectorSimilarityScann(
-    const IndexDescription & index_, const ScannIndexParams & params_)
-    : IMergeTreeIndex(index_)
+    StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_, const ScannIndexParams & params_)
+    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     , params(params_)
 {
 }

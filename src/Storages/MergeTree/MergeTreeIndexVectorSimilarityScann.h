@@ -116,7 +116,7 @@ private:
 class MergeTreeIndexVectorSimilarityScann final : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexVectorSimilarityScann(const IndexDescription & index_, const ScannIndexParams & params_);
+    MergeTreeIndexVectorSimilarityScann(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_, const ScannIndexParams & params_);
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;

@@ -658,7 +658,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
         ScannIndexParams p;
         p.distance_name = args[1].safeGet<String>();
         p.dimensions    = args[2].safeGet<UInt64>();
-        return std::make_shared<MergeTreeIndexVectorSimilarityScann>(index, p);
+        return std::make_shared<MergeTreeIndexVectorSimilarityScann>(std::move(metadata_snapshot), index, p);
     }
 #endif
 
