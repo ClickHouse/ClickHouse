@@ -21,6 +21,8 @@ public:
         bool ignore_shell_suspend = false;
         bool embedded_mode = false;
         bool interactive_history_legacy_keymap = false;
+        /// Show as-you-type autocompletion hints (ghost text). Requires color (highlighting).
+        bool enable_hints = true;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
@@ -52,6 +54,10 @@ private:
 
     replxx::Replxx rx;
     replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+
+    /// Suggestion dictionary; used both for Tab completion and as-you-type hints, and updated
+    /// with identifiers from committed queries to prioritize recently-used words.
+    Suggest & suggest;
 
     const char * word_break_characters;
 

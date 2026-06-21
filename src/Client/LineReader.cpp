@@ -60,7 +60,9 @@ bool LineReader::hasInputData() const
     return poll(&pfd, 1, 0) == 1 && (pfd.revents & POLLIN);
 }
 
-replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
+LineReader::Suggest::Words LineReader::Suggest::getMatchingWords(
+    const String & prefix, size_t prefix_length, const char * word_break_characters,
+    const Words & priority_words, bool & last_word_empty)
 {
     std::string_view last_word;
 
@@ -69,11 +71,13 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
         last_word = prefix;
     else
         last_word = std::string_view{prefix}.substr(last_word_pos + 1, std::string::npos);
-    /// last_word can be empty.
+
+    last_word_empty = last_word.empty();
 
     std::pair<Words::const_iterator, Words::const_iterator> range;
 
     Words to_search;
+    Words recent;
     bool no_case = false;
 
     {
@@ -86,6 +90,8 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
         }
         else
             to_search = words;
+
+        recent.assign(recently_used.begin(), recently_used.end());
     }
 
     if (custom_completions_callback)
@@ -108,7 +114,87 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
                 return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
             });
 
-    return replxx::Replxx::completions_t(range.first, range.second);
+    Words result(range.first, range.second);
+
+    /// Prioritize words that the user has used or already typed. When matching case-insensitively,
+    /// membership is compared case-insensitively too (consistent with the matching above).
+    if (!result.empty() && (!recent.empty() || !priority_words.empty()))
+    {
+        auto fold = [no_case](const std::string & s)
+        {
+            if (!no_case)
+                return s;
+            std::string folded = s;
+            std::transform(folded.begin(), folded.end(), folded.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return folded;
+        };
+
+        std::unordered_set<std::string> recent_set;
+        for (const auto & w : recent)
+            recent_set.insert(fold(w));
+        std::unordered_set<std::string> priority_set;
+        for (const auto & w : priority_words)
+            priority_set.insert(fold(w));
+
+        /// Tier 0: used earlier this session; tier 1: present in the current input; tier 2: rest.
+        /// Compute the tier once per word, then a stable sort preserves the alphabetical order
+        /// within each tier.
+        std::vector<std::pair<int, std::string>> ranked;
+        ranked.reserve(result.size());
+        for (auto & w : result)
+        {
+            std::string folded = fold(w);
+            int tier = 2;
+            if (recent_set.contains(folded))
+                tier = 0;
+            else if (priority_set.contains(folded))
+                tier = 1;
+            ranked.emplace_back(tier, std::move(w));
+        }
+        std::stable_sort(ranked.begin(), ranked.end(),
+            [](const auto & a, const auto & b) { return a.first < b.first; });
+
+        result.clear();
+        for (auto & p : ranked)
+            result.push_back(std::move(p.second));
+    }
+
+    return result;
+}
+
+replxx::Replxx::completions_t LineReader::Suggest::getCompletions(
+    const String & prefix, size_t prefix_length, const char * word_break_characters, const Words & priority_words)
+{
+    bool last_word_empty = false;
+    Words matched = getMatchingWords(prefix, prefix_length, word_break_characters, priority_words, last_word_empty);
+    return replxx::Replxx::completions_t(matched.begin(), matched.end());
+}
+
+replxx::Replxx::hints_t LineReader::Suggest::getHints(
+    const String & prefix, size_t prefix_length, const char * word_break_characters,
+    const Words & priority_words, size_t max_hints)
+{
+    bool last_word_empty = false;
+    Words matched = getMatchingWords(prefix, prefix_length, word_break_characters, priority_words, last_word_empty);
+
+    /// Mirror `set_complete_on_empty(false)`: do not show hints when there is nothing typed to
+    /// complete (otherwise the whole dictionary would be hinted).
+    if (last_word_empty)
+        return {};
+
+    if (matched.size() > max_hints)
+        matched.resize(max_hints);
+    return replxx::Replxx::hints_t(matched.begin(), matched.end());
+}
+
+void LineReader::Suggest::addUsedWords(const Words & used)
+{
+    if (used.empty())
+        return;
+    std::lock_guard lock(mutex);
+    for (const auto & word : used)
+        recently_used.insert(word);
 }
 
 void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)

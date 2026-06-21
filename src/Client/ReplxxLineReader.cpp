@@ -1,5 +1,6 @@
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ReplxxLineReader.h>
+#include <Parsers/Lexer.h>
 #include <base/errnoToString.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
+#include <unordered_set>
 #include <chrono>
 #include <cerrno>
 #include <cstring>
@@ -32,6 +34,41 @@
 
 namespace
 {
+
+/// How many as-you-type hint rows to show at once (mirrors the Web UI completion window).
+constexpr size_t HINTS_MAX_ROWS = 5;
+
+/// Extract identifier-like words from a query so they can be prioritized in completions/hints
+/// (column names, aliases, etc. typed elsewhere in the same query). Uses the SQL lexer so that
+/// string literals, numbers, and comments are not mistaken for identifiers.
+std::vector<std::string> extractIdentifiers(const char * text)
+{
+    std::vector<std::string> result;
+    if (text == nullptr || *text == '\0')
+        return result;
+
+    const char * end = text + strlen(text);
+    DB::Lexer lexer(text, end);
+    std::unordered_set<std::string> seen;
+
+    for (DB::Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+    {
+        if (token.isError())
+            break;
+
+        std::string word;
+        if (token.type == DB::TokenType::BareWord)
+            word.assign(token.begin, token.end);
+        else if (token.type == DB::TokenType::QuotedIdentifier && token.size() >= 2)
+            word.assign(token.begin + 1, token.end - 1); /// strip the surrounding quotes/backticks
+
+        /// The suggestion dictionary only contains words of 2+ characters.
+        if (word.size() >= 2 && seen.insert(word).second)
+            result.push_back(std::move(word));
+    }
+
+    return result;
+}
 
 /// Trim ending whitespace inplace
 void rightTrim(String & s)
@@ -309,6 +346,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     )
     , rx(options.input_stream, options.output_stream, options.in_fd, options.out_fd, options.err_fd)
     , highlighter(std::move(options.highlighter))
+    , suggest(options.suggest)
     , word_break_characters(options.word_break_characters.data())
     , editor(getEditor())
 {
@@ -348,9 +386,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     rx.install_window_change_handler();
 
-    auto callback = [&suggest = options.suggest, this] (const String & context, size_t context_size)
+    auto callback = [this] (const String & context, size_t context_size)
     {
-        return suggest.getCompletions(context, context_size, word_break_characters);
+        /// Prioritize identifiers already present in the whole query line (not just up to the
+        /// cursor), so the same words rank first for both Tab completion and the inline hints.
+        auto priority = extractIdentifiers(rx.get_state().text());
+        return suggest.getCompletions(context, context_size, word_break_characters, priority);
     };
 
     rx.set_completion_callback(callback);
@@ -362,6 +403,24 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
+
+    /// As-you-type autocompletion: show the matching suggestions as inline "ghost" hints, with
+    /// the same priority ordering as Tab completion. replxx renders a single hint inline after
+    /// the cursor and a navigable list (Ctrl-Up/Ctrl-Down) for several; Tab accepts the selected
+    /// one. The completion and hint callbacks must return the same words in the same order,
+    /// which is guaranteed by routing both through `Suggest::getMatchingWords`.
+    /// Hints need color, so they are only enabled together with highlighting (see ClientBase).
+    if (options.enable_hints && highlighter)
+    {
+        auto hint_callback = [this] (const String & context, int & context_size, Replxx::Color &)
+        {
+            auto priority = extractIdentifiers(rx.get_state().text());
+            return suggest.getHints(context, context_size, word_break_characters, priority, HINTS_MAX_ROWS);
+        };
+        rx.set_hint_callback(hint_callback);
+        rx.set_hint_delay(0); /// Show hints immediately, without a delay.
+        rx.set_max_hint_rows(static_cast<int>(HINTS_MAX_ROWS));
+    }
 
     /// By default C-p/C-n bound to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
@@ -401,6 +460,27 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::meta(Replxx::KEY::BACKSPACE), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_BEGINING_OF_WORD, code); });
     /// By default C-w is KILL_TO_BEGINING_OF_WORD, while in readline it is unix-word-rubout
     rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
+
+    /// When hints are enabled, let Right at the end of the line accept the current hint (like the
+    /// Web UI), while Right elsewhere keeps moving the cursor. At the end of the line moving right
+    /// is a no-op anyway, so accepting the suggestion there is non-destructive.
+    if (options.enable_hints && highlighter)
+    {
+        rx.bind_key(Replxx::KEY::RIGHT, [this](char32_t code)
+        {
+            const replxx::Replxx::State state(rx.get_state());
+            const char * text = state.text();
+            /// replxx cursor positions are counted in code points; count them in the UTF-8 text.
+            size_t code_points = 0;
+            for (const char * p = text; *p != '\0'; ++p)
+                if ((static_cast<unsigned char>(*p) & 0xC0) != 0x80)
+                    ++code_points;
+
+            if (state.cursor_position() >= static_cast<int>(code_points))
+                return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
+            return rx.invoke(Replxx::ACTION::MOVE_CURSOR_RIGHT, code);
+        });
+    }
 
     /// We don't want to allow opening EDITOR in the embedded mode.
     if (!options.embedded_mode)
@@ -543,6 +623,10 @@ void ReplxxLineReader::addToHistory(const String & line)
         locked = true;
 
     rx.history_add(line);
+
+    /// Remember identifiers from the committed query so they are prioritized in later
+    /// completions/hints this session (the "previously used" tier).
+    suggest.addUsedWords(extractIdentifiers(line.c_str()));
 
     // flush changes to the disk
     if (history_file_fd >= 0 && !rx.history_save(history_file_path))

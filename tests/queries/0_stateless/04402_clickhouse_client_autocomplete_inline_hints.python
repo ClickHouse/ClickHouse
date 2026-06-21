@@ -1,0 +1,160 @@
+import multiprocessing
+import os
+import pty
+import select
+import shlex
+import time
+
+TIMEOUT_SECONDS = 30
+
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+)
+
+# The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;1;30").
+HINT_COLOR = "\x1b[0;1;30m"
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            if predicate(output):
+                return output
+            continue
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def drain(master, debug_log_fd, idle):
+    output = ""
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+    return output
+
+
+def run_case(program, argv, name, keystrokes, check, state=None):
+    """Fork a PTY, wait for the prompt, send keystrokes (with a small pause between
+    them so replxx repaints), then run `check` over the collected output."""
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.environ["TERM"] = "xterm"
+        os.execv(program, argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        output = ""
+        for keys in keystrokes:
+            os.write(master, keys)
+            output += drain(master, debug_log_fd, 0.4)
+
+        ok = check(output)
+        print(f"{name}: {'OK' if ok else 'FAIL'}")
+        state.value = 0 if ok else 1
+    finally:
+        os.close(master)
+        debug_log_fd.close()
+
+
+def run_with_timeout(program, argv, name, keystrokes, check):
+    for attempt in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=run_case,
+            args=(program, argv, name, keystrokes, check),
+            kwargs={"state": state},
+        )
+        process.start()
+        process.join(TIMEOUT_SECONDS)
+        if process.is_alive():
+            process.terminate()
+        if state.value in (0, 1):
+            return
+        # transient timeout on a loaded machine - retry
+    print(f"{name}: FAIL")
+
+
+def main():
+    program = os.environ["CLICKHOUSE_LOCAL"]
+    base = shlex.split(program)
+    args = base + ["--wait_for_suggestions_to_load"]
+
+    # 1. As-you-type ghost text: typing a unique prefix shows the remaining suffix in the gray
+    #    hint color (here "ive", the suffix of "concatAssumeInjective").
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "ghost_text",
+        [b"SELECT concatAssumeInject"],
+        lambda o: (HINT_COLOR + "ive") in o,
+    )
+
+    # 2. Tab accepts the hint: the full word is inserted.
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "tab_accept",
+        [b"SELECT concatAssumeInject", b"\t"],
+        lambda o: "concatAssumeInjective" in o and "\x07" not in o,
+    )
+
+    # 3. Right at the end of the line also accepts the hint.
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "right_accept",
+        [b"SELECT concatAssumeInject", b"\x1b[C"],
+        lambda o: "concatAssumeInjective" in o and "\x07" not in o,
+    )
+
+    # 4. --hints 0 disables the ghost text (no gray hint color emitted while typing).
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "0"],
+        "hints_off",
+        [b"SELECT concatAssumeInject"],
+        lambda o: HINT_COLOR not in o,
+    )
+
+    # 5. Priority: an identifier already present in the query is hinted before others.
+    #    "ReplicatedMergeTree" is typed earlier, so for the prefix "Repl" it must rank before
+    #    the alphabetically-first "ReplacingMergeTree".
+    def in_query_first(o):
+        a = o.rfind("ReplicatedMergeTree")
+        b = o.rfind("ReplacingMergeTree")
+        return a != -1 and b != -1 and a < b
+
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "in_query_priority",
+        [b"SELECT ReplicatedMergeTree, Repl"],
+        in_query_first,
+    )
+
+
+if __name__ == "__main__":
+    main()
