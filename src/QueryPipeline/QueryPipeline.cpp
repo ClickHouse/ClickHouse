@@ -772,10 +772,15 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, c
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to convert header");
 
+    /// Match the source columns to the target structure by name, not by position.
+    /// This is used to read external dictionaries from a local ClickHouse source: the dictionary expects its
+    /// columns in keys-first order, but the source query returns them in the order it was written. Matching by
+    /// name reorders the columns correctly and keeps the local source consistent with the remote one, which
+    /// already matches by name (see `adaptBlockStructure` in `RemoteQueryExecutor`).
     auto converting = ActionsDAG::makeConvertingActions(
         output->getHeader().getColumnsWithTypeAndName(),
         columns,
-        ActionsDAG::MatchColumnsMode::Position,
+        ActionsDAG::MatchColumnsMode::Name,
         context);
 
     auto actions = std::make_shared<ExpressionActions>(std::move(converting));
