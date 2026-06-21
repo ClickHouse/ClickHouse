@@ -1,6 +1,10 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AlterDropPartitionExecutor.h>
 
 #if USE_AVRO
+/// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
+/// avro uses nasty '*std::any_cast' which triggers clang-tidy, the warning is false positive since
+/// a type and value are consistent in avro::GenericDatum, and even more - all avro manifests in iceberg
+/// consist only of AVRO_RECORDS
 
 #include <Core/Block.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
@@ -223,16 +227,23 @@ AlterDropPartitionExecutor::AlterDropPartitionExecutor(
 
 std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecutor::fetchSnapshotState()
 {
-    auto [snapshot, table_state] = fetch_latest_state();
-    if (!snapshot)
-        return std::nullopt;
+    SnapshotState state;
 
-    /// FIXME: in all other places schema_id is int32
-    if (snapshot->schema_id_on_snapshot_commit > std::numeric_limits<Int32>::max())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg schema_id {} exceeds Int32 range", snapshot->schema_id_on_snapshot_commit);
+    {
+        auto [snapshot, table_state] = fetch_latest_state();
+        if (!snapshot)
+            return std::nullopt;
+
+        /// FIXME: in all other places schema_id is int32
+        if (snapshot->schema_id_on_snapshot_commit > std::numeric_limits<Int32>::max())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg schema_id {} exceeds Int32 range", snapshot->schema_id_on_snapshot_commit);
+
+        state.snapshot = std::move(snapshot);
+        state.table_state = std::move(table_state);
+    }
 
     auto metadata_object = getMetadataJSONObject(
-        table_state.metadata_file_path,
+        state.table_state.metadata_file_path,
         object_storage,
         components.metadata_cache,
         context,
@@ -243,16 +254,13 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     if (metadata_object->getValue<Int32>(f_format_version) < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "DROP PARTITION is supported only for Iceberg format-version 2");
 
-    SnapshotState state;
-    state.snapshot = std::move(snapshot);
-    state.table_state = std::move(table_state);
+    auto specs = metadata_object->getArray(f_partition_specs);
+    if (!specs || specs->size() == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No 'partition-specs' or empty in metadata file {}", state.table_state.metadata_file_path);
+
     state.metadata_object = metadata_object;
     state.schema_id = static_cast<Int32>(state.snapshot->schema_id_on_snapshot_commit);
     state.partition_spec_id = metadata_object->getValue<Int64>(f_default_spec_id);
-
-    auto specs = metadata_object->getArray(f_partition_specs);
-    if (!specs || specs->size() == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No 'partition-specs' or empty in metadata file {}", table_state.metadata_file_path);
 
     /// TODO: support different specs
     /// Conservative guard against Iceberg partition-spec evolution. When a
@@ -281,7 +289,7 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
             ErrorCodes::BAD_ARGUMENTS,
             "Default partition spec {} not found in metadata {}",
             state.partition_spec_id,
-            table_state.metadata_file_path);
+            state.table_state.metadata_file_path);
 
     if (!state.partition_spec->has(f_fields))
         throw Exception(
@@ -289,7 +297,7 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
             "Default partition spec {} doesn't have '{}' key, metadata {}",
             state.partition_spec_id,
             f_fields,
-            table_state.metadata_file_path);
+            state.table_state.metadata_file_path);
 
     auto partition_fields = state.partition_spec->getArray(f_fields);
     for (size_t i = 0; i < partition_fields->size(); ++i)
@@ -304,7 +312,11 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
 
     auto schemas = metadata_object->getArray(f_schemas);
     if (!schemas || schemas->size() == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg '{}' key not found in metadata {} or empty", f_schemas, table_state.metadata_file_path);
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Iceberg '{}' key not found in metadata {} or empty",
+            f_schemas,
+            state.table_state.metadata_file_path);
 
     Poco::JSON::Object::Ptr current_schema;
     for (size_t i = 0; schemas && i < schemas->size(); ++i)
@@ -322,7 +334,7 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
             ErrorCodes::BAD_ARGUMENTS,
             "Iceberg schema '{}' not found in metadata {} or empty",
             state.schema_id,
-            table_state.metadata_file_path);
+            state.table_state.metadata_file_path);
 
     state.partition_types
         = resolvePartitionTypes(*state.partition_spec, *current_schema, *components.schema_processor, state.schema_id, context);
@@ -792,4 +804,5 @@ void AlterDropPartitionExecutor::run()
 }
 }
 
+// NOLINTEND(clang-analyzer-core.uninitialized.UndefReturn)
 #endif
