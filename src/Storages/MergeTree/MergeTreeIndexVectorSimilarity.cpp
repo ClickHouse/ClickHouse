@@ -610,12 +610,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
 }
 
 MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
+    StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
     UInt64 dimensions_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_)
-    : IMergeTreeIndex(index_)
+    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     , dimensions(dimensions_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
@@ -646,7 +647,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 
 #endif // USE_USEARCH
 
-MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     const String & method = args[0].safeGet<String>();
@@ -682,7 +683,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index, c
             metric_kind = unum::usearch::metric_kind_t::hamming_k;
     }
 
-    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(std::move(metadata_snapshot), index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 #else
     throw Exception(ErrorCodes::LOGICAL_ERROR,
         "vector_similarity index with method '{}' requires USearch to be enabled at build time",
