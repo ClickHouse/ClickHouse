@@ -1,11 +1,11 @@
-# Build wrapper for the Jieba-CPP submodule (contrib/Jieba-CPP).
+# Build wrapper for the jieba_cpp submodule (contrib/jieba_cpp).
 #
 # The submodule ships its own standalone CMakeLists.txt for independent
 # development; ClickHouse ignores that and builds the sources directly here,
 # using its in-tree dependencies (abseil/darts-clone/zstd) instead of the
 # dependency-discovery logic in the submodule's own build files.
 
-set(JIEBA_DIR "${ClickHouse_SOURCE_DIR}/contrib/Jieba-CPP")
+set(JIEBA_DIR "${ClickHouse_SOURCE_DIR}/contrib/jieba_cpp")
 
 add_library(_jieba
     "${JIEBA_DIR}/src/jieba.cpp"

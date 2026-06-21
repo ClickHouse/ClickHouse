@@ -405,6 +405,6 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
-[submodule "contrib/Jieba-CPP"]
-	path = contrib/Jieba-CPP
-	url = https://github.com/amosbird/Jieba-CPP
+[submodule "contrib/jieba_cpp"]
+	path = contrib/jieba_cpp
+	url = https://github.com/ClickHouse/jieba_cpp

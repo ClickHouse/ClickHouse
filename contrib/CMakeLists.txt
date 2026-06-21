@@ -177,18 +177,11 @@ add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
-# The feature is named after what it provides (a Chinese tokenizer) rather than after
-# the underlying library: the algorithm is a reimplementation following fxsjy/jieba, and
-# only the embedded dictionary/model data is derived from cppjieba — so neither `JIEBA`
-# nor `CPPJIEBA` is an accurate name for the option.
-option(ENABLE_CHINESE_TOKENIZER "Enable the Chinese tokenizer (jieba-style segmentation in contrib/Jieba-CPP)" ${ENABLE_LIBRARIES})
+option(ENABLE_CHINESE_TOKENIZER "Enable the Chinese tokenizer (jieba-style segmentation in contrib/jieba_cpp)" ${ENABLE_LIBRARIES})
 if (ENABLE_CHINESE_TOKENIZER)
-    # The Jieba-CPP dictionary ships in both little-endian (`dict_le.dat.zst`) and
-    # big-endian (`dict_be.dat.zst`) variants, and `jieba_dict.cpp` `#embed`s the one
-    # matching the host `__BYTE_ORDER__`, so the tokenizer works on big-endian targets
-    # (e.g. s390x) as well — no architecture guard is needed here.
+    # The dictionary ships little- and big-endian variants and is #embed-ed per host byte order, so no s390x guard is needed.
     add_contrib (darts-clone-cmake darts-clone)
-    add_contrib (Jieba-CPP-cmake Jieba-CPP)
+    add_contrib (jieba_cpp-cmake jieba_cpp)
 endif()
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
