@@ -94,9 +94,9 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     /// be a JSON object: a named `Tuple` must serialize as an object rather than an array, and a `Map` as
     /// an object rather than an array of key/value tuples. This forcing applies only to that column;
     /// ordinary property columns follow the user's JSON settings.
-    splat_settings = settings;
-    splat_settings.json.write_named_tuples_as_objects = true;
-    splat_settings.json.write_map_as_array_of_tuples = false;
+    properties_object_settings = settings;
+    properties_object_settings.json.write_named_tuples_as_objects = true;
+    properties_object_settings.json.write_map_as_array_of_tuples = false;
 
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 
@@ -328,7 +328,7 @@ void GeoJSONRowOutputFormat::writeProperties(const Columns & columns, size_t row
     if (emit_properties_column_directly)
     {
         const size_t idx = property_col_indices.front();
-        serializations[idx]->serializeTextJSON(*columns[idx], row_num, *ostr, splat_settings);
+        serializations[idx]->serializeTextJSON(*columns[idx], row_num, *ostr, properties_object_settings);
         return;
     }
 
