@@ -48,6 +48,19 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+/// The range value passed to `dictGet`/`dictHas` for a `range_hashed` dictionary is cast to the
+/// dictionary's range type before the lookup (see `RangeHashedDictionary::getColumn`). The range
+/// type may be an integer, `Enum`, `Date`/`DateTime`/`DateTime64` or `Decimal` whose value fits
+/// into `Int64` (see `impl::callOnRangeType`). `DateTime64` and `Decimal` are not "represented by
+/// integer", so they must be checked explicitly; otherwise a `DateTime64` range argument would be
+/// rejected even though it is a valid range type.
+inline bool isValidRangeArgumentType(const DataTypePtr & range_col_type)
+{
+    if (range_col_type->getSizeOfValueInMemory() > sizeof(Int64))
+        return false;
+    return range_col_type->isValueRepresentedByInteger() || isDateTime64(range_col_type) || isDecimal(range_col_type);
+}
+
 
 /** Functions that use plug-ins (external) dictionaries_loader.
   *
@@ -243,7 +256,7 @@ public:
             range_col = arguments[2].column;
             range_col_type = arguments[2].type;
 
-            if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
+            if (!isValidRangeArgumentType(range_col_type))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal type {} of fourth argument of function {} must be convertible to Int64.",
                     range_col_type->getName(),
@@ -452,7 +465,7 @@ public:
             range_col = arguments[current_arguments_index].column;
             range_col_type = arguments[current_arguments_index].type;
 
-            if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
+            if (!isValidRangeArgumentType(range_col_type))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal type {} of fourth argument of function {} must be convertible to Int64.",
                     range_col_type->getName(),
