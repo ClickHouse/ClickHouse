@@ -4331,6 +4331,10 @@ const completionOverlay = document.getElementById('completion-overlay');
 /// Sorted (by lowercased word) array of { w, lw } for prefix lookup.
 let completionWords = [];
 let completionsLoadStarted = false;
+/// Bumped whenever the connection settings change, to invalidate a cached or in-flight load.
+/// `system.completions` is filtered by the connected user's privileges, so suggestions must not
+/// outlive the connection they were loaded for.
+let completionsLoadGeneration = 0;
 /// How many times each completion was accepted in this session — accepted completions
 /// bubble to the top of the candidate list on subsequent uses.
 let completionUsage = new Map();
@@ -4363,15 +4367,29 @@ function buildCompletionUrl() {
 }
 
 /// The completion query mirrors `getLoadSuggestionQueryUsingSystemCompletionsTable` in
-/// `src/Client/Suggest.cpp`: it extracts identifier-like words from every completion entry.
+/// `src/Client/Suggest.cpp`: static contexts are loaded in full, while the catalog-sized
+/// contexts (database/table/column/dictionary) are capped per context so that focusing the
+/// editor does not enumerate and transfer the whole catalog on large installations. Then it
+/// extracts identifier-like words from the resulting completion entries.
+const COMPLETION_SUGGESTION_LIMIT = 10000;
 const COMPLETION_QUERY =
-    "SELECT DISTINCT arrayJoin(extractAll(word, '[\\\\w]{2,}')) AS res FROM system.completions WHERE notEmpty(res)";
+    "SELECT DISTINCT arrayJoin(extractAll(word, '[\\\\w]{2,}')) AS res FROM (" +
+        "SELECT word FROM system.completions WHERE context IN " +
+        "('function', 'table engine', 'format', 'table function', 'data type', 'merge tree setting', " +
+        "'setting', 'aggregate function combinator pair', 'keyword', 'cluster', 'macro', 'policy') " +
+        "UNION ALL SELECT word FROM (" +
+            "SELECT word, ROW_NUMBER() OVER (PARTITION BY context ORDER BY word) AS rn FROM " +
+            "(SELECT DISTINCT word, context FROM system.completions WHERE context IN " +
+            "('database', 'table', 'column', 'dictionary'))" +
+        ") WHERE rn <= " + COMPLETION_SUGGESTION_LIMIT +
+    ") WHERE notEmpty(res)";
 
 async function loadCompletions() {
     if (completionsLoadStarted || !wasmAvailable()) {
         return;
     }
     completionsLoadStarted = true;
+    const generation = completionsLoadGeneration;
 
     try {
         const response = await fetch(buildCompletionUrl(), {
@@ -4379,6 +4397,10 @@ async function loadCompletions() {
             body: COMPLETION_QUERY,
             headers: { 'Authorization': 'never' },
         });
+        /// The connection settings changed while loading — discard this stale result.
+        if (generation !== completionsLoadGeneration) {
+            return;
+        }
         if (!response.ok) {
             /// Older servers without `system.completions`, or no connection — the feature
             /// simply stays inactive. This is an optional enhancement, not a fallback that
@@ -4388,6 +4410,9 @@ async function loadCompletions() {
             return;
         }
         const text = await response.text();
+        if (generation !== completionsLoadGeneration) {
+            return;
+        }
         const seen = new Set();
         const words = [];
         for (const line of text.split('\n')) {
@@ -4404,10 +4429,23 @@ async function loadCompletions() {
         updateCompletions();
     } catch (e) {
         /// Network error or aborted — allow a retry on a later focus.
-        completionsLoadStarted = false;
+        if (generation === completionsLoadGeneration) {
+            completionsLoadStarted = false;
+        }
         console.error('Failed to load completions:', e);
     }
 }
+
+/// Invalidate the cached completions when the connection settings change, so suggestions are
+/// reloaded (with the new privileges) on the next focus and any in-flight load is discarded.
+function resetCompletions() {
+    completionsLoadGeneration++;
+    completionsLoadStarted = false;
+    completionWords = [];
+    closeCompletions();
+}
+
+[url_elem, user_elem, password_elem].forEach(el => el.addEventListener('input', resetCompletions));
 
 /// Lower-bound binary search for the first word whose lowercased form is >= `key`.
 function completionLowerBound(key) {
