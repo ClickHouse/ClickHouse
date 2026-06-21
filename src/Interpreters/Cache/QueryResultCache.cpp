@@ -1233,7 +1233,10 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
 {
     std::lock_guard lock(mutex);
 
-    if (!cache_policy->contains(key))
+    /// Use `getWithKey` (not `contains`) so that a disk hit counts as an access and refreshes the entry's position in the LRU
+    /// queue. `contains` is explicitly the non-access check, so with it a hot entry served repeatedly from disk would stay the
+    /// oldest cell and could be evicted by unrelated write pressure.
+    if (!cache_policy->getWithKey(key).has_value())
     {
         LOG_TRACE(logger, "No entry on disk, key not found in metadata");
         return std::nullopt;
@@ -1278,7 +1281,11 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
         return;
     }
 
-    if (cache_policy->contains(key))
+    /// Skip the insert only if a non-stale entry is already persisted. If the persisted entry has expired, fall through and
+    /// overwrite it with the fresh result: the disk policy is a plain LRU and is not TTL-aware, so otherwise the stale metadata
+    /// would keep this branch returning early and block refreshes of the query result until size/count eviction or
+    /// `SYSTEM DROP QUERY CACHE`. This mirrors the in-memory writer in `QueryResultCacheWriter::finalizeWrite`.
+    if (auto existing = cache_policy->getWithKey(key); existing.has_value() && !QueryResultCache::IsStale()(existing->key))
     {
         LOG_TRACE(logger, "Entry already in disk cache, skip inserting");
         return;

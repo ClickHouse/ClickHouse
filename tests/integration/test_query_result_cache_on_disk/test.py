@@ -4,6 +4,8 @@
 # against regressions in the on-disk serialization format, in particular multi-line query
 # strings and the encoding of the `is_subquery` dimension in the entry file name.
 
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -133,3 +135,50 @@ def test_query_result_cache_on_disk_replicated_columns():
     )
     assert result == expected
     assert cache_hits_for("qrc_disk_replicated_after_restart") == 1
+
+
+STALE_REFRESH_QUERY = "SELECT number FROM numbers(7) ORDER BY number"
+
+
+def test_query_result_cache_on_disk_refreshes_stale_entry():
+    # The on-disk policy is a plain LRU and is not TTL-aware. A persisted entry that has expired is
+    # correctly rejected by the reader, but the writer must still be able to overwrite it with a fresh
+    # result. Otherwise the stale metadata makes the writer skip the insert ("already in disk cache"),
+    # so the query result on disk can never be refreshed until size/count eviction or SYSTEM DROP QUERY
+    # CACHE. Restarts isolate the disk tier: each restart wipes the in-memory cache, so a cache hit can
+    # only be served from disk.
+    node.query("SYSTEM DROP QUERY CACHE")
+
+    # First execution with a short TTL: cache miss, written through to disk and about to expire.
+    expected = run_cached(
+        STALE_REFRESH_QUERY,
+        "qrc_disk_stale_first",
+        extra_settings={"query_cache_ttl": 1},
+    )
+    assert expected != ""
+    assert cache_on_disk_entries() >= 1
+
+    # Let the persisted entry expire, then restart so only the (now stale) on-disk entry remains.
+    time.sleep(3)
+    node.restart_clickhouse()
+    assert cache_on_disk_entries() >= 1
+
+    # Re-execute with a long TTL: the reader rejects the stale on-disk entry (miss) and the writer must
+    # replace it on disk with a fresh, long-lived result instead of skipping because an entry exists.
+    result = run_cached(
+        STALE_REFRESH_QUERY,
+        "qrc_disk_stale_refresh",
+        extra_settings={"query_cache_ttl": 60},
+    )
+    assert result == expected
+    assert cache_hits_for("qrc_disk_stale_refresh") == 0
+
+    # Restart again to clear the in-memory cache, then the refreshed on-disk entry must serve a hit.
+    node.restart_clickhouse()
+    result = run_cached(
+        STALE_REFRESH_QUERY,
+        "qrc_disk_stale_after_refresh",
+        extra_settings={"query_cache_ttl": 60},
+    )
+    assert result == expected
+    assert cache_hits_for("qrc_disk_stale_after_refresh") == 1
