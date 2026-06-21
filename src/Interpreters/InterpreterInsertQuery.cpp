@@ -953,8 +953,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
             }
         }
     }
-     auto extension = src_storage_cluster->getTaskIteratorExtension(
-        predicate, filter_dag ? &*filter_dag : nullptr, local_context, src_cluster, src_storage_cluster->getInMemoryMetadataPtr(local_context, false));
+    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
+    auto extension = src_storage_cluster->getTaskIteratorExtension(
+        predicate, filter_dag ? &*filter_dag : nullptr, local_context, src_cluster, src_metadata_snapshot);
 
     /// -Cluster storage treats each replicas as a shard in cluster definition
     /// so, it's enough to consider only shards here
@@ -1112,10 +1113,11 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
 
 void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table)
 {
+    const auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
     std::optional<Names> insert_columns;
     if (insert_query.columns)
     {
-        const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(context_, false), insert_query.columns);
+        const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, metadata_snapshot, insert_query.columns);
         Names names;
         names.reserve(columns_ast->children.size());
         for (const auto & identifier : columns_ast->children)
@@ -1127,7 +1129,7 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
         insert_columns = std::move(names);
     }
 
-    context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(table->getInMemoryMetadataPtr(context_, false)->columns));
+    context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(metadata_snapshot->columns));
 }
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory);
