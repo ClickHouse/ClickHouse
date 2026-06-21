@@ -325,7 +325,7 @@ bool allRowsHaveMetadata(const SourceState & state, size_t num_rows)
 
 /// True when the output should be produced as a per-row JSON string (the only output that needs the
 /// `VariantValue` tree). Everything else (`Dynamic`, exact `Nullable`/scalar, etc.) is columnar.
-bool useJsonStringOutput(const Reader::OutputColumnInfo & output_info, const Reader::VariantSourceInfo & source_info)
+bool useJSONStringOutput(const Reader::OutputColumnInfo & output_info, const Reader::VariantSourceInfo & source_info)
 {
     return isNullableStringType(output_info.output_type.get())
         && (source_info.string_output_uses_json || output_info.source_subcolumn_name.empty());
@@ -832,7 +832,7 @@ static MutableColumnPtr tryFormAllNullResidualScalarTypedValue(
 
     /// Only the JSON-string output path needs the per-row `VariantValue` tree; everything else
     /// (`Dynamic`, exact `Nullable`/scalar, etc.) is produced columnar here.
-    if (useJsonStringOutput(output_info, source_info))
+    if (useJSONStringOutput(output_info, source_info))
         return {};
 
     /// Subcolumn projection through the typed value is handled by the per-row path.
@@ -1282,7 +1282,7 @@ MutableColumnPtr formOutputColumn(
 
     MutableColumnPtr result = output_info.output_type->createColumn();
     auto serialization = output_info.output_type->getDefaultSerialization();
-    const bool use_json_string_output = useJsonStringOutput(output_info, source_info);
+    const bool use_json_string_output = useJSONStringOutput(output_info, source_info);
     const OutputMode output_mode
         = use_json_string_output ? OutputMode::NullableString
         : isDynamicLikeVariantOutputType(output_info.output_type.get()) ? OutputMode::Dynamic

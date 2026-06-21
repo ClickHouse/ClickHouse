@@ -57,7 +57,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_DEEP_RECURSION;
-    extern const int TOO_LARGE_STRING_SIZE;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
@@ -3291,9 +3290,6 @@ std::optional<PreparedVariantColumns> tryPrepareScalarShreddedVariantColumns(
     result.typed_value_column = std::move(typed_nested);
     return result;
 }
-
-
-
 
 /// Columnar analysis walk: visits
 /// `(column, type, row)` directly, recording shredding statistics into `node` and (when `keys` is set)
