@@ -107,4 +107,21 @@ private:
     bool canConsiderPart(const PartProperties & part) const override;
 };
 
+/// Select single parts whose secondary index files should be cleared according to index-clear TTL.
+class TTLIndexClearMergeSelector : public ITTLMergeSelector
+{
+public:
+    explicit TTLIndexClearMergeSelector(time_t current_time_);
+
+    PartsRanges select(
+        const PartsRanges & parts_ranges,
+        const MergeConstraints & merge_constraints,
+        const RangeFilter & range_filter) const override;
+
+private:
+    time_t getTTLForPart(const PartProperties & part) const override;
+    bool canConsiderPart(const PartProperties & part) const override;
+    time_t current_time;
+};
+
 }

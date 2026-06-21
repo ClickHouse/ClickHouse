@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
@@ -19,6 +21,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -50,6 +53,7 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeIndexClearFiles.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -84,6 +88,7 @@ namespace ProfileEvents
     extern const Event Merge;
     extern const Event MergeSourceParts;
     extern const Event MergeWrittenRows;
+    extern const Event TTLClearIndexMetadataOnlyMerges;
     extern const Event MergedColumns;
     extern const Event GatheredColumns;
     extern const Event MergeTotalMilliseconds;
@@ -128,7 +133,9 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
+    extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
+    extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
@@ -254,6 +261,76 @@ static void throwIfMergePipelineCancelled(const PullingPipelineExecutor & execut
         default:
             break;
     }
+}
+
+static bool isIndexExpiredByTTL(
+    const StorageMetadataPtr & metadata_snapshot,
+    const IMergeTreeDataPart::TTLInfos & ttl_infos,
+    const String & index_name,
+    time_t current_time,
+    bool ttl_merges_allowed)
+{
+    if (!ttl_merges_allowed || !metadata_snapshot->hasAnyIndexClearTTL())
+        return false;
+
+    for (const auto & ttl : metadata_snapshot->getIndexClearTTLs())
+    {
+        if (ttl.index_name != index_name)
+            continue;
+
+        auto ttl_info_it = ttl_infos.index_clear_ttl.find(ttl.result_column);
+        if (ttl_info_it == ttl_infos.index_clear_ttl.end())
+            continue;
+
+        const time_t max_ttl = ttl_info_it->second.max;
+        if (max_ttl && max_ttl <= current_time)
+            return true;
+    }
+
+    return false;
+}
+
+static std::set<MergeTreeIndexPtr> getIndexesExpiredByClearTTL(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & settings,
+    const IMergeTreeDataPart::TTLInfos & ttl_infos,
+    time_t current_time,
+    bool ttl_merges_allowed)
+{
+    std::set<MergeTreeIndexPtr> result;
+    if (!ttl_merges_allowed || !metadata_snapshot->hasAnyIndexClearTTL())
+        return result;
+
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (isIndexExpiredByTTL(metadata_snapshot, ttl_infos, index.name, current_time, ttl_merges_allowed))
+            result.insert(index_factory.get(metadata_snapshot, index, settings));
+    }
+
+    return result;
+}
+
+static SkipIndexClearFiles getClearIndexFilesToClear(
+    const MergeTreeData::DataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    time_t current_time,
+    bool ttl_merges_allowed)
+{
+    const auto indexes = getIndexesExpiredByClearTTL(
+        metadata_snapshot,
+        *part->storage.getSettings(),
+        part->ttl_infos,
+        current_time,
+        ttl_merges_allowed);
+
+    return collectSkipIndexClearFiles(
+        indexes,
+        part->getMarksFileExtension(),
+        part->checksums,
+        part->getDataPartStorage());
+}
+
 }
 
 /// Manages the "rows_sources" temporary file that is used during vertical merge.
@@ -455,6 +532,15 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         if (exclude_index_names.contains(index.name)) /// user requested to skip this index during merge
             continue;
 
+        if (!ctx->force_ttl
+            && isIndexExpiredByTTL(
+                global_ctx->metadata_snapshot,
+                global_ctx->new_data_part->ttl_infos,
+                index.name,
+                global_ctx->time_of_merge,
+                !global_ctx->ttl_merges_blocker->isCancelled()))
+            continue;
+
         auto index_columns = index.expression->getRequiredColumns();
 
         /// Calculate indexes that depend only on one column on vertical
@@ -533,6 +619,211 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     /// Track whether any projection or index needs _block_number/_block_offset in the horizontal phase.
     global_ctx->need_block_number_in_merge |= key_columns.contains(BlockNumberColumn::name);
     global_ctx->need_block_offset_in_merge |= key_columns.contains(BlockOffsetColumn::name);
+}
+
+
+static void pruneExpiredIndexFilesFromPart(
+    const MergeTreeData::MutableDataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    time_t current_time,
+    bool ttl_merges_allowed,
+    bool sync,
+    const WriteSettings & write_settings)
+{
+    const auto clear_index_files = getClearIndexFilesToClear(
+        part,
+        metadata_snapshot,
+        current_time,
+        ttl_merges_allowed);
+    if (clear_index_files.files.empty() || !clear_index_files.has_existing_files)
+        return;
+
+    const auto & files_to_clear = clear_index_files.files;
+    auto & storage = part->getDataPartStorage();
+    bool removed_any = false;
+
+    if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&storage))
+    {
+        if (clear_index_files.packed_archive_dirty)
+        {
+            disk_storage->filterPackedSkipIndicesArchiveTo(
+                files_to_clear,
+                storage,
+                write_settings,
+                ReadSettings{},
+                part->checksums,
+                sync);
+            if (!part->checksums.has(String(SKIP_INDICES_PACKED_FILENAME)))
+            {
+                storage.removeFileIfExists(String(SKIP_INDICES_PACKED_FILENAME));
+                disk_storage->resetSkipIndicesPackedReader();
+            }
+            removed_any = true;
+        }
+    }
+
+    for (const auto & file : files_to_clear)
+    {
+        if (part->checksums.has(file))
+        {
+            storage.removeFileIfExists(file);
+            part->checksums.remove(file);
+            removed_any = true;
+        }
+    }
+
+    if (removed_any)
+    {
+        auto out_checksums = storage.writeFile("checksums.txt", 4096, write_settings);
+        part->checksums.write(*out_checksums);
+        out_checksums->finalize();
+        if (sync)
+            out_checksums->sync();
+        auto sync_guard = sync ? storage.getDirectorySyncGuard() : nullptr;
+
+        part->setBytesOnDisk(part->checksums.getTotalSizeOnDisk());
+        part->setBytesUncompressedOnDisk(part->checksums.getTotalSizeUncompressedOnDisk());
+        part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    }
+}
+
+bool MergeTask::ExecuteAndFinalizeHorizontalPart::tryPrepareClearIndexReplacementPart() const
+{
+    const bool is_ttl_clear_index_merge = global_ctx->future_part->merge_type == MergeType::TTLClearIndex;
+    const bool can_adopt_regular_single_part_cleanup = global_ctx->future_part->merge_type == MergeType::Regular
+        && ctx->need_clear_expired_indexes
+        && !ctx->need_remove_expired_values
+        && !global_ctx->deduplicate
+        && !global_ctx->cleanup
+        && global_ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary;
+
+    if (!is_ttl_clear_index_merge && !can_adopt_regular_single_part_cleanup)
+        return false;
+
+    if (global_ctx->parent_part || global_ctx->future_part->parts.size() != 1 || !global_ctx->future_part->patch_parts.empty())
+        return false;
+
+    const auto & source_part = global_ctx->future_part->parts.front();
+
+    /// Keep source-side eligibility shared with TTLClearIndex selection: over-size parts
+    /// bypass the normal merge cap only when this predicate says the metadata-only path can run.
+    if (!canUseMetadataOnlyIndexClear(global_ctx->metadata_snapshot, source_part))
+        return false;
+
+    if (global_ctx->new_data_part->getDataPartStorage().getType() != MergeTreeDataPartStorageType::Full
+        || global_ctx->future_part->uuid != UUIDHelpers::Nil
+        || global_ctx->new_data_part->uuid != UUIDHelpers::Nil)
+        return false;
+
+    const auto clear_index_files = getClearIndexFilesToClear(
+        source_part,
+        global_ctx->metadata_snapshot,
+        global_ctx->time_of_merge,
+        !global_ctx->ttl_merges_blocker->isCancelled());
+    if (clear_index_files.files.empty() || !clear_index_files.has_existing_files)
+        return false;
+
+    const auto & index_files_to_clear = clear_index_files.files;
+    auto & dst_storage = global_ctx->new_data_part->getDataPartStorage();
+    const auto & src_storage = source_part->getDataPartStorage();
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&src_storage);
+
+    NameSet files_to_skip = index_files_to_clear;
+    files_to_skip.insert("checksums.txt");
+    files_to_skip.insert(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+    if (clear_index_files.packed_archive_dirty)
+        files_to_skip.insert(String(SKIP_INDICES_PACKED_FILENAME));
+
+    const PartFileCopyOptions copy_options
+    {
+        .files_to_skip = &files_to_skip,
+        .copy_instead_of_hardlinks = (*global_ctx->data_settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+        .fail_on_temporary_projection_directories = true,
+        .fail_on_projection_subdirectories = true,
+    };
+    if (!canCopyPartFilesWithSkip(src_storage, copy_options))
+        return false;
+
+    dst_storage.createDirectories();
+    global_ctx->new_data_part->version->setAndStoreCreationTID(
+        global_ctx->txn ? global_ctx->txn->tid : Tx::NonTransactionalTID,
+        nullptr);
+
+    /// This cannot fail after the preflight above, so the fallback path never sees a
+    /// partially populated destination part.
+    auto copied_files = copyPartFilesWithSkip(src_storage, dst_storage, copy_options);
+    chassert(copied_files.has_value());
+
+    global_ctx->new_data_part->checksums = source_part->checksums;
+
+    const bool need_sync = global_ctx->data_settings->needSyncPart(source_part->rows_count, source_part->getBytesOnDisk());
+
+    if (disk_storage)
+    {
+        if (clear_index_files.packed_archive_dirty)
+        {
+            disk_storage->filterPackedSkipIndicesArchiveTo(
+                index_files_to_clear,
+                dst_storage,
+                global_ctx->context->getWriteSettings(),
+                global_ctx->context->getReadSettings(),
+                global_ctx->new_data_part->checksums,
+                need_sync);
+        }
+    }
+
+    for (const auto & file : index_files_to_clear)
+        global_ctx->new_data_part->checksums.remove(file);
+
+    {
+        auto out_checksums = dst_storage.writeFile("checksums.txt", 4096, global_ctx->context->getWriteSettings());
+        global_ctx->new_data_part->checksums.write(*out_checksums);
+        out_checksums->finalize();
+        if (need_sync)
+            out_checksums->sync();
+    }
+    auto sync_guard = need_sync ? dst_storage.getDirectorySyncGuard() : nullptr;
+
+    if (global_ctx->ttl_merges_blocker->isCancelled())
+        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
+
+    /// This path copies the source part's data and metadata files unchanged, except for
+    /// secondary-index files/checksums. Keep the in-memory replacement metadata source-shaped
+    /// too; the metadata-version guard above guarantees the source part is current.
+    global_ctx->new_data_part->setColumns(
+        source_part->getColumns(),
+        source_part->getSerializationInfos(),
+        source_part->getMetadataVersion());
+    global_ctx->new_data_part->setColumnsSubstreams(source_part->getColumnsSubstreams());
+
+    global_ctx->new_data_part->rows_count = source_part->rows_count;
+    global_ctx->new_data_part->existing_rows_count = source_part->existing_rows_count.value_or(source_part->rows_count);
+    global_ctx->new_data_part->index_granularity_info = source_part->index_granularity_info;
+    global_ctx->new_data_part->index_granularity = source_part->index_granularity;
+    global_ctx->new_data_part->setMinMaxIndex(std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*source_part->getMinMaxIndex()));
+    global_ctx->new_data_part->modification_time = time(nullptr);
+    global_ctx->new_data_part->default_codec = source_part->default_codec;
+
+    if (!global_ctx->new_data_part->storage.getPrimaryIndexCache())
+        global_ctx->new_data_part->setIndex(*source_part->getIndex());
+
+    bool noop = false;
+    global_ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
+
+    global_ctx->new_data_part->setBytesOnDisk(global_ctx->new_data_part->checksums.getTotalSizeOnDisk());
+    global_ctx->new_data_part->setBytesUncompressedOnDisk(global_ctx->new_data_part->checksums.getTotalSizeUncompressedOnDisk());
+    if (!(*global_ctx->new_data_part->storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
+        global_ctx->new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
+    dst_storage.precommitTransaction();
+
+    ProfileEvents::increment(ProfileEvents::TTLClearIndexMetadataOnlyMerges);
+    global_ctx->merge_list_element_ptr->columns_written.store(0, std::memory_order_relaxed);
+    global_ctx->merge_list_element_ptr->rows_written = source_part->rows_count;
+    global_ctx->merge_list_element_ptr->bytes_written_uncompressed = source_part->getTotalColumnsSize().data_uncompressed;
+    global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
+    global_ctx->task_finished = true;
+    return true;
 }
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
@@ -632,10 +923,27 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
+    ctx->need_clear_expired_indexes = !ctx->force_ttl
+        && !getIndexesExpiredByClearTTL(
+            global_ctx->metadata_snapshot,
+            *global_ctx->data_settings,
+            global_ctx->new_data_part->ttl_infos,
+            global_ctx->time_of_merge,
+            true).empty();
+
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
     {
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
         ctx->need_remove_expired_values = false;
+    }
+
+    if (ctx->need_clear_expired_indexes && global_ctx->ttl_merges_blocker->isCancelled())
+    {
+        LOG_INFO(
+            ctx->log,
+            "Part {} has secondary indexes with expired CLEAR INDEX TTL, but merges with TTL are cancelled.",
+            global_ctx->new_data_part->name);
+        ctx->need_clear_expired_indexes = false;
     }
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
@@ -864,6 +1172,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
+    if (tryPrepareClearIndexReplacementPart())
+        return false;
+
     ctx->sum_input_rows_upper_bound = global_ctx->merge_list_element_ptr->total_rows_count;
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
     ctx->sum_uncompressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed;
@@ -899,7 +1210,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
             for (const auto & index : all_skip_indexes)
             {
-                if (!exclude_index_names.contains(index.name))
+                if (!exclude_index_names.contains(index.name)
+                    && (ctx->force_ttl
+                        || !isIndexExpiredByTTL(
+                            global_ctx->metadata_snapshot,
+                            global_ctx->new_data_part->ttl_infos,
+                            index.name,
+                            global_ctx->time_of_merge,
+                            !global_ctx->ttl_merges_blocker->isCancelled())))
                 {
                     if (index.type == "text")
                         global_ctx->text_indexes_to_merge.push_back(index);
@@ -976,6 +1294,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
         ttl_merges_blocker = global_ctx->ttl_merges_blocker,
         need_remove = ctx->need_remove_expired_values,
+        need_clear_indexes = ctx->need_clear_expired_indexes,
         merge_list_element = global_ctx->merge_list_element_ptr,
         partition_id = global_ctx->future_part->part_info.getPartitionId()]() -> bool
     {
@@ -985,7 +1304,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             return true;
 
         bool cancelled = merges_blocker->isCancelledForPartition(partition_id)
-            || (need_remove && ttl_merges_blocker->isCancelled());
+            || ((need_remove || need_clear_indexes) && ttl_merges_blocker->isCancelled());
 
         if (cancelled)
         {
@@ -1142,6 +1461,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 
     if (res)
         return res;
+
+    if (global_ctx->task_finished)
+        return false;
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
@@ -1577,7 +1899,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
 
     global_ctx->checkOperationIsNotCanceled();
 
-    if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
+    if ((ctx->need_remove_expired_values || ctx->need_clear_expired_indexes) && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
 
     const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
@@ -2128,6 +2450,14 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     else
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, &global_ctx->storage_columns);
 
+    pruneExpiredIndexFilesFromPart(
+        global_ctx->new_data_part,
+        global_ctx->metadata_snapshot,
+        global_ctx->time_of_merge,
+        !global_ctx->ttl_merges_blocker->isCancelled(),
+        ctx->need_sync,
+        global_ctx->context->getWriteSettings());
+
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
         global_ctx->cached_marks.emplace(name, std::move(marks));
@@ -2415,6 +2745,9 @@ try
 
     if (current_stage->execute())
         return true;
+
+    if (global_ctx->task_finished)
+        return false;
 
     /// Stage is finished, need to initialize context for the next stage and update profile events.
 

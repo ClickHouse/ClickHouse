@@ -192,6 +192,10 @@ public:
     /// shares the source's bytes, so the source's index applies verbatim. No-op if `source` has
     /// no packed archive. See the seed rationale above.
     void seedSkipIndicesPackedReaderFrom(const IDataPartStorage & source) const;
+
+    /// Forget the cached skp_idx.packed reader after the archive was removed or rewritten
+    /// through this storage, so subsequent existsFile/getFileSize probes observe the new state.
+    void resetSkipIndicesPackedReader() const;
 protected:
 
     VolumePtr volume;

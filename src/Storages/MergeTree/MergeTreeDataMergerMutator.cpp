@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <Core/Settings.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/quoteString.h>
 #include <Common/WeightedRandomSampling.h>
@@ -34,6 +35,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ABORTED;
+}
+
+namespace Setting
+{
+    extern const SettingsBool enable_ttl_clear_index_merge_type_generation;
 }
 
 namespace MergeTreeSetting
@@ -154,6 +160,7 @@ CollectedPartsRanges collectAllPossibleRanges(
     return parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
 }
 
+
 }
 
 std::string convertMergeConstraintsToString(const MergeConstraints & constraints)
@@ -186,8 +193,9 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
         {
             case MergeType::Regular:
             case MergeType::TTLDrop:
+            case MergeType::TTLClearIndex:
             {
-                /// Do not update anything for regular and drop merges.
+                /// Do not update anything for regular, whole-part drop, and single-part clear-index merges.
                 break;
             }
             case MergeType::TTLDelete:
@@ -223,6 +231,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
+    const bool can_generate_ttl_clear_index_merges = context->getSettingsRef()[Setting::enable_ttl_clear_index_merge_type_generation];
     LogSeriesLimiter series_log(log, 1, /*interval_s_=*/60 * 30);
 
     auto collected = collectAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, std::nullopt, series_log);
@@ -246,7 +255,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
             selector, *merge_predicate,
             ranges_in_partition, partitions_stats, metadata_snapshot, settings,
             next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
-            can_use_ttl_merges, current_time, log);
+            can_use_ttl_merges, can_generate_ttl_clear_index_merges, current_time, log);
 
         const String & partition_id = ranges_in_partition.front().front().info.getPartitionId();
 
@@ -281,6 +290,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
+    const bool can_generate_ttl_clear_index_merges = context->getSettingsRef()[Setting::enable_ttl_clear_index_merge_type_generation];
     LogSeriesLimiter series_log(log, 1, /*interval_s_=*/60 * 30);
 
     auto collected = collectAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
@@ -306,7 +316,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         selector, *merge_predicate,
         ranges, partitions_stats, metadata_snapshot, settings,
         next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
-        can_use_ttl_merges, current_time, log);
+        can_use_ttl_merges, can_generate_ttl_clear_index_merges, current_time, log);
 
     if (!merge_choices.empty())
     {
@@ -377,7 +387,9 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         const PartProperties & part = parts.front();
 
         /// FIXME? Probably we should check expired ttls here, not only calculated.
-        if (part.info.level > 0 && (!metadata_snapshot->hasAnyTTL() || part.all_ttl_calculated_if_any))
+        /// Do not skip if a single already-merged part still has secondary index files
+        /// eligible for TTL CLEAR INDEX cleanup.
+        if (part.info.level > 0 && (!metadata_snapshot->hasAnyTTL() || (part.all_ttl_calculated_if_any && !part.next_index_clear_ttl)))
         {
             return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,
@@ -668,17 +680,6 @@ String getBestPartitionToOptimizeEntire(
     return best_partition_it->first;
 }
 
-PartsRanges grabAllPossibleRanges(
-    const PartsCollectorPtr & parts_collector,
-    const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    const time_t & current_time,
-    const std::optional<PartitionIdsHint> & partitions_hint,
-    LogSeriesLimiter & series_log)
-{
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds);
-    return parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, partitions_hint, series_log).ranges;
-}
 
 MergeSelectorChoices chooseMergesFrom(
     const MergeSelectorApplier & selector,
@@ -690,6 +691,7 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
+    bool can_generate_ttl_clear_index_merges,
     time_t current_time,
     const LoggerPtr & log)
 {
@@ -698,7 +700,7 @@ MergeSelectorChoices chooseMergesFrom(
     auto choices = selector.chooseMergesFrom(
         ranges, partitions_stats, predicate, metadata_snapshot,
         data_settings, next_delete_times, next_recompress_times,
-        can_use_ttl_merges, current_time);
+        can_use_ttl_merges, can_generate_ttl_clear_index_merges, current_time);
 
     if (!choices.empty())
     {

@@ -2651,9 +2651,9 @@ void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk() const
 
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const
 {
-    columns_sizes.clear();
+    columns_sizes = std::make_shared<ColumnSizeByName>();
     total_columns_size = {};
-    secondary_index_sizes.clear();
+    secondary_index_sizes = std::make_shared<IndexSizeByName>();
     total_secondary_indices_size = {};
 
     calculateColumnsSizesOnDisk();

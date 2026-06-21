@@ -148,14 +148,6 @@ String getBestPartitionToOptimizeEntire(
     const std::unordered_map<String, PartitionStatistics> & stats,
     const LoggerPtr & log);
 
-PartsRanges grabAllPossibleRanges(
-    const PartsCollectorPtr & parts_collector,
-    const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    const time_t & current_time,
-    const std::optional<PartitionIdsHint> & partitions_hint,
-    LogSeriesLimiter & series_log);
-
 MergeSelectorChoices chooseMergesFrom(
     const MergeSelectorApplier & selector,
     const IMergePredicate & predicate,
@@ -166,6 +158,7 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
+    bool can_generate_ttl_clear_index_merges,
     time_t current_time,
     const LoggerPtr & log);
 
