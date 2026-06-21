@@ -39,6 +39,8 @@ PartLogElement::MergeReasonType PartLogElement::getMergeReasonType(MergeType mer
             return TTL_RECOMPRESS_MERGE;
         case MergeType::TTLDrop:
             return TTL_DROP_MERGE;
+        case MergeType::TTLClearIndex:
+            return TTL_CLEAR_INDEX_MERGE;
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeType {}", static_cast<UInt64>(merge_type));
@@ -83,6 +85,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             {"TTLDeleteMerge",      static_cast<Int8>(TTL_DELETE_MERGE)},
             {"TTLRecompressMerge",  static_cast<Int8>(TTL_RECOMPRESS_MERGE)},
             {"TTLDropMerge",        static_cast<Int8>(TTL_DROP_MERGE)},
+            {"TTLClearIndexMerge",  static_cast<Int8>(TTL_CLEAR_INDEX_MERGE)},
         }
     );
 
@@ -119,7 +122,8 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "NotAMerge — The current event has the type other than MERGE_PARTS, "
             "RegularMerge — Some regular merge, "
             "TTLDeleteMerge, TTLDropMerge — Cleaning up expired data. "
-            "TTLRecompressMerge — Recompressing data part with the. "},
+            "TTLRecompressMerge — Recompressing data part with the. "
+            "TTLClearIndexMerge — Clearing expired secondary index files. "},
         {"merge_algorithm", std::move(merge_algorithm_datatype), "Merge algorithm for the event with type MERGE_PARTS. Can have one of the following values: Undecided, Horizontal, Vertical"},
         {"event_date", std::make_shared<DataTypeDate>(), "Event date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Event time."},
