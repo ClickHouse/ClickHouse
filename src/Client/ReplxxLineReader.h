@@ -52,6 +52,13 @@ private:
     int executeEditor(const std::string & path);
     void openEditor(bool format_query);
 
+    /// Whether the text cursor is at the very end of the input (where as-you-type hints render).
+    bool isCursorAtEndOfInput();
+    /// Whether the as-you-type hint "popup" is currently navigable here: hints are shown, the
+    /// cursor is at the end, and the input is a single line (so Up/Down can move through hints
+    /// without stealing line navigation in multi-line input).
+    bool hintPopupActive();
+
     replxx::Replxx rx;
     replxx::Replxx::highlighter_callback_with_pos_t highlighter;
 
@@ -67,6 +74,14 @@ private:
 
     std::string editor;
     bool overwrite_mode = false;
+
+    /// As-you-type hint state (input-thread only). `hints_visible` mirrors whether hints were
+    /// shown by the last render, so Up/Down/Right can act on the "popup" only when it is open.
+    /// `hint_active` becomes true once the user steps into the hint list (e.g. via Down); until
+    /// then Up keeps recalling command history, so it is not shadowed by the hints. Both are
+    /// reset when the input changes (the hint callback regenerates).
+    bool hints_visible = false;
+    bool hint_active = false;
 };
 
 }

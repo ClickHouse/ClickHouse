@@ -130,6 +130,16 @@ def main():
         lambda o: "concatAssumeInjective" in o and "\x07" not in o,
     )
 
+    # 3b. Down steps into the hint list and Tab accepts the selected (first) hint. For the prefix
+    #     "Replicated" the alphabetically-first match is "ReplicatedAggregatingMergeTree".
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "down_navigate",
+        [b"SELECT Replicated", b"\x1b[B", b"\t"],
+        lambda o: "ReplicatedAggregatingMergeTree" in o and "\x07" not in o,
+    )
+
     # 4. --hints 0 disables the ghost text (no gray hint color emitted while typing).
     run_with_timeout(
         base[0],

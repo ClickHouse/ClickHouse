@@ -414,8 +414,14 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     {
         auto hint_callback = [this] (const String & context, int & context_size, Replxx::Color &)
         {
-            auto priority = extractIdentifiers(rx.get_state().text());
-            return suggest.getHints(context, context_size, word_break_characters, priority, HINTS_MAX_ROWS);
+            /// The callback runs only when the input text changes (replxx caches hints while it
+            /// stays the same), so this is the right place to reset the navigation state.
+            const std::string text = rx.get_state().text();
+            auto priority = extractIdentifiers(text.c_str());
+            auto hints = suggest.getHints(context, context_size, word_break_characters, priority, HINTS_MAX_ROWS);
+            hints_visible = !hints.empty();
+            hint_active = false;
+            return hints;
         };
         rx.set_hint_callback(hint_callback);
         rx.set_hint_delay(0); /// Show hints immediately, without a delay.
@@ -461,22 +467,51 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// By default C-w is KILL_TO_BEGINING_OF_WORD, while in readline it is unix-word-rubout
     rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
 
-    /// When hints are enabled, let Right at the end of the line accept the current hint (like the
-    /// Web UI), while Right elsewhere keeps moving the cursor. At the end of the line moving right
-    /// is a no-op anyway, so accepting the suggestion there is non-destructive.
+    /// When the as-you-type hints are shown, let the arrow keys drive them like the Web UI
+    /// completion popup: Down steps into / advances the hint list, Up moves back through it, and
+    /// Right (or Tab) accepts the selected hint. Up only navigates hints once the user has
+    /// stepped into the list with Down (`hint_active`); before that Up keeps recalling command
+    /// history, so the hints never shadow it. Outside the popup these keys behave normally.
+    /// Ctrl-Up/Ctrl-Down (replxx's defaults) are rebound to the same logic so the two stay in
+    /// sync. Note: Esc cannot be used to dismiss the hints, because the bundled replxx reads a
+    /// lone Esc by blocking for the next byte (no escape-key timeout); the Up-to-history
+    /// behavior above covers the need to get back to history instead.
     if (options.enable_hints && highlighter)
     {
+        auto hint_next = [this](char32_t code)
+        {
+            if (hintPopupActive())
+            {
+                hint_active = true;
+                return rx.invoke(Replxx::ACTION::HINT_NEXT, code);
+            }
+            return rx.invoke(Replxx::ACTION::LINE_NEXT, code);
+        };
+        auto hint_previous = [this](char32_t code)
+        {
+            if (hintPopupActive() && hint_active)
+                return rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
+            return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
+        };
+        rx.bind_key(Replxx::KEY::DOWN, hint_next);
+        rx.bind_key(Replxx::KEY::UP, hint_previous);
+        /// Ctrl-Up/Ctrl-Down explicitly drive the hints (also entering the list from Up).
+        rx.bind_key(Replxx::KEY::control(Replxx::KEY::DOWN), hint_next);
+        rx.bind_key(Replxx::KEY::control(Replxx::KEY::UP), [this](char32_t code)
+        {
+            if (hintPopupActive())
+            {
+                hint_active = true;
+                return rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
+            }
+            return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
+        });
+
+        /// Right at the end of the line accepts the current hint (moving right there is a no-op
+        /// anyway, so this is non-destructive); elsewhere it keeps moving the cursor.
         rx.bind_key(Replxx::KEY::RIGHT, [this](char32_t code)
         {
-            const replxx::Replxx::State state(rx.get_state());
-            const char * text = state.text();
-            /// replxx cursor positions are counted in code points; count them in the UTF-8 text.
-            size_t code_points = 0;
-            for (const char * p = text; *p != '\0'; ++p)
-                if ((static_cast<unsigned char>(*p) & 0xC0) != 0x80)
-                    ++code_points;
-
-            if (state.cursor_position() >= static_cast<int>(code_points))
+            if (hints_visible && isCursorAtEndOfInput())
                 return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
             return rx.invoke(Replxx::ACTION::MOVE_CURSOR_RIGHT, code);
         });
@@ -584,6 +619,29 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             rx.print("%s", "\033[0 q");
         return rx.invoke(Replxx::ACTION::TOGGLE_OVERWRITE_MODE, 0);
     });
+}
+
+bool ReplxxLineReader::isCursorAtEndOfInput()
+{
+    const replxx::Replxx::State state(rx.get_state());
+    const char * text = state.text();
+    /// replxx cursor positions are counted in code points; count them in the UTF-8 text.
+    size_t code_points = 0;
+    for (const char * p = text; *p != '\0'; ++p)
+        if ((static_cast<unsigned char>(*p) & 0xC0) != 0x80)
+            ++code_points;
+    return state.cursor_position() >= static_cast<int>(code_points);
+}
+
+bool ReplxxLineReader::hintPopupActive()
+{
+    /// Only treat Up/Down as hint navigation for a single-line input with the cursor at the end,
+    /// where the hints are actually shown — otherwise keep them for line/history movement.
+    if (!hints_visible)
+        return false;
+    if (strchr(rx.get_state().text(), '\n') != nullptr)
+        return false;
+    return isCursorAtEndOfInput();
 }
 
 ReplxxLineReader::~ReplxxLineReader()
