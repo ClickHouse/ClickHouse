@@ -140,6 +140,17 @@ def main():
         lambda o: "ReplicatedAggregatingMergeTree" in o and "\x07" not in o,
     )
 
+    # 3c. Hints also appear in the middle of the line, right after an identifier fragment.
+    #     Type "SELECT Replicated FROM t", then move the cursor left over " FROM t" (7 chars) so
+    #     it sits right after "Replicated" — the suggestions for that fragment must appear.
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "mid_line",
+        [b"SELECT Replicated FROM t"] + [b"\x1b[D"] * 7,
+        lambda o: "ReplicatedAggregatingMergeTree" in o,
+    )
+
     # 4. --hints 0 disables the ghost text (no gray hint color emitted while typing).
     run_with_timeout(
         base[0],

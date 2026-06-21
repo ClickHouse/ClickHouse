@@ -635,13 +635,12 @@ bool ReplxxLineReader::isCursorAtEndOfInput()
 
 bool ReplxxLineReader::hintPopupActive()
 {
-    /// Only treat Up/Down as hint navigation for a single-line input with the cursor at the end,
-    /// where the hints are actually shown — otherwise keep them for line/history movement.
+    /// Treat Up/Down as hint navigation for a single-line input while hints are shown (the hints
+    /// may be at the end of the line or in the middle after an identifier fragment). For
+    /// multi-line input keep Up/Down for line movement.
     if (!hints_visible)
         return false;
-    if (strchr(rx.get_state().text(), '\n') != nullptr)
-        return false;
-    return isCursorAtEndOfInput();
+    return strchr(rx.get_state().text(), '\n') == nullptr;
 }
 
 ReplxxLineReader::~ReplxxLineReader()
