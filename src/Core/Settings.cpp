@@ -3993,7 +3993,7 @@ Possible values:
     DECLARE(Bool, enable_sharding_aggregator, false, R"(
 Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
 
-This is efficient for high-cardinality keys with evenly distributed data, but may suffer from highly skewed key distributions or queries with very few distinct keys.
+This is most efficient for high-cardinality keys. Skewed key distributions are handled as well: keys that prove to be very frequent are detected on the fly and spread across all threads instead of overloading a single one, so highly skewed data and queries with very few distinct keys still run in parallel.
 
 Possible values:
 
