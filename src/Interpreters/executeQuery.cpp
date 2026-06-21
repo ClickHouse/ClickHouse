@@ -1334,7 +1334,8 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// serialization metadata may differ between the original and re-attached table state.
         {
             bool has_dynamic_structure = false;
-            for (const auto & column : table->getInMemoryMetadataPtr(context, false)->getColumns().getAllPhysical())
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
             {
                 if (column.type->hasDynamicSubcolumns())
                 {
