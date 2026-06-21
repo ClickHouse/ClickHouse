@@ -17,11 +17,15 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_src (x UInt64) ENGINE=Memory AS SELECT n
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_dst (x UInt64) ENGINE=Memory"
 
 # Run a write query via HTTP with extra URL parameters; report whether it was rejected.
+# The query is sent as the raw request body (not as a `query=` form field): the dynamic handler reads
+# the `query` parameter only from the URL, so a `--data-urlencode "query=…"` POST body is treated as
+# the query text verbatim (`query=…` then fails to parse). Sending it via the URL with `--get` would
+# turn the request into a GET and force `readonly = 2`, which rejects the INSERT for a different reason.
 run() {
     local params="$1"
     local query="$2"
     local out
-    out=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&${params}" --data-urlencode "query=${query}")
+    out=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&${params}" --data-binary "${query}")
     if echo "$out" | grep -q "Query-construction settings"; then
         echo "rejected"
     else
@@ -42,7 +46,7 @@ echo "-- nothing was inserted by any rejected statement"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_dst"
 
 echo "-- without construction parameters, INSERT ... SELECT inserts all rows"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-urlencode "query=INSERT INTO t_dst SELECT x FROM t_src"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "INSERT INTO t_dst SELECT x FROM t_src"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_dst"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_src"
