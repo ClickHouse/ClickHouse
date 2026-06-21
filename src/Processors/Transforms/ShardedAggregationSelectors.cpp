@@ -119,6 +119,79 @@ private:
     bool done = false;
 };
 
+Columns gatherKeyColumns(const Columns & columns, const ColumnNumbers & key_positions)
+{
+    Columns key_columns;
+    key_columns.reserve(key_positions.size());
+    for (auto position : key_positions)
+        key_columns.push_back(columns[position]);
+    return key_columns;
+}
+
+}
+
+std::function<IColumn::Selector(const Columns &)>
+makeInputHotColdSelector(HotKeyStatePtr state, ColumnNumbers key_positions, size_t num_cold_shards)
+{
+    auto detector = std::make_shared<WarmupDetector>(num_cold_shards);
+
+    return [state, positions = std::move(key_positions), num_cold = num_cold_shards, detector](const Columns & columns) -> IColumn::Selector
+    {
+        const size_t num_rows = columns.empty() ? 0 : columns.front()->size();
+        if (num_rows == 0)
+            return {};
+
+        PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
+        for (auto position : positions)
+            columns[position]->computeHashInto(0, num_rows, hash.data(), false);
+
+        const Columns key_columns = gatherKeyColumns(columns, positions);
+        detector->observe(hash, key_columns, num_rows, *state);
+
+        /// We assign each cold row to a shard by mapping its whole 32-bit hash onto the shard range with
+        /// `mapToRange`. Using the whole hash, rather than just its low bits, keeps keys from clustering
+        /// into a few downstream hash-table buckets.
+        IColumn::Selector selector(num_rows);
+        mapToRange(hash.data(), num_rows, static_cast<UInt32>(num_cold), selector.data());
+
+        /// Now override the hot rows to go to the hot shard (the last port).
+        if (auto mask_column = state->buildHotMask(key_columns))
+        {
+            const auto & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+            for (size_t i = 0; i < num_rows; ++i)
+                if (mask[i])
+                    selector[i] = num_cold;
+        }
+
+        return selector;
+    };
+}
+
+std::function<IColumn::Selector(const Columns &)> makeDivertSelector(HotKeyStatePtr state, ColumnNumbers key_positions)
+{
+    return [state, positions = std::move(key_positions)](const Columns & columns) -> IColumn::Selector
+    {
+        const size_t num_rows = columns.empty() ? 0 : columns.front()->size();
+
+        /// We default every row to the cold port (port 1), then below move the hot-key rows (the residue)
+        /// to port 0, which feeds the merger.
+        IColumn::Selector selector(num_rows, 1);
+        if (num_rows == 0)
+            return selector;
+
+        const Columns key_columns = gatherKeyColumns(columns, positions);
+
+        /// Now override the hot rows to go to port 0, which feeds the merger.
+        if (auto mask_column = state->buildHotMask(key_columns))
+        {
+            const auto & mask = assert_cast<const ColumnUInt8 &>(*mask_column).getData();
+            for (size_t i = 0; i < num_rows; ++i)
+                if (mask[i])
+                    selector[i] = 0;
+        }
+
+        return selector;
+    };
 }
 
 }
