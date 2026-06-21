@@ -313,7 +313,7 @@ Typical use cases for the postprocessor argument include:
    ClickHouse provides a built-in [stem](/sql-reference/functions/string-functions.md/#stem) function for several languages.
    Example: `stem(str, 'en')`
 4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
-   We generally recommend using a corresponding preprocessor for lower- and upper-casing.
+   For lower-and upper casing, we recommend a preprocessor instead of a postprocessor.
 
 The postprocessor expression transforms tokens of type [String](/sql-reference/data-types/string.md) to tokens of the same type.
 Also, the postprocessor expression must only reference the column or expression on top of which the text index is defined.
@@ -331,24 +331,24 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 |---|---|---|---|
 | `=` | yes | all | yes |
 | `IN` | yes | all | yes |
-| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken) | yes | all (designed for `splitByNonAlpha`) | yes |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                   | yes | all (designed for `splitByNonAlpha`) | yes |
 | [hasAnyTokens(col, str)](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) | yes | all | yes |
 | [hasAllTokens(col, str)](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | all | yes |
 | [hasAnyTokens(col, arr)](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
-| [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
-| [startsWith](/sql-reference/functions/string-functions.md/#startsWith) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [endsWith](/sql-reference/functions/string-functions.md/#endsWith) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [like](/sql-reference/functions/string-search-functions.md/#like) | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| [match](/sql-reference/functions/string-search-functions.md/#match) | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| [ilike](/sql-reference/functions/string-search-functions.md/#like) | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
-| [mapContainsKey](/sql-reference/functions/tuple-map-functions#mapContainsKey) | yes | all | yes |
-| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue) | yes | all | yes |
-| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [has](/sql-reference/functions/array-functions.md/#has) | yes | `array` | yes |
-| [hasAny](/sql-reference/functions/array-functions.md/#hasAny) | yes | `array` | yes |
-| [hasAll](/sql-reference/functions/array-functions.md/#hasAll) | yes | `array` | yes |
+| [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
+| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [like](/sql-reference/functions/string-search-functions.md/#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [match](/sql-reference/functions/string-search-functions.md/#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [ilike](/sql-reference/functions/string-search-functions.md/#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
+| [mapContainsKey](/sql-reference/functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
+| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
+| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)   | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [has](/sql-reference/functions/array-functions.md/#has)                                     | yes | `array` | yes |
+| [hasAny](/sql-reference/functions/array-functions.md/#hasAny)                               | yes | `array` | yes |
+| [hasAll](/sql-reference/functions/array-functions.md/#hasAll)                               | yes | `array` | yes |
 
 ¹ `LIKE` and `match` use the index in Hint mode for the tokenizers shown.
 `LIKE` additionally supports a *direct-read mode* (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
