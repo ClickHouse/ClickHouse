@@ -245,7 +245,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
@@ -466,9 +466,9 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(
-    const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+    StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
-    return std::make_shared<MergeTreeIndexMinMax>(index);
+    return std::make_shared<MergeTreeIndexMinMax>(std::move(metadata_snapshot), index);
 }
 
 void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
