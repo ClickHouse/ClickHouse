@@ -166,7 +166,7 @@ enum class URLSchemeTarget : uint8_t
 {
     URL,    /// http, https, ftp, ... and anything without a recognized scheme — handled by StorageURL itself.
     File,   /// file://
-    S3,     /// s3, gs, gcs, oss, cos, cosn, obs, eos, s3express
+    S3,     /// s3, gs, gcs, oss
     Azure,  /// az, azure, abfss, abfs
     HDFS,   /// hdfs
 };
