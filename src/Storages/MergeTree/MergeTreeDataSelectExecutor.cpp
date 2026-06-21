@@ -503,7 +503,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         return;
 
     part_offset_condition.emplace(KeyCondition{
-        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context),
+        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context, /* boolean_context */ true),
         context,
         sample.getNames(),
         std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
@@ -550,7 +550,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
 
     auto required_columns = dag->getRequiredColumns();
     total_offset_condition.emplace(KeyCondition{
-        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context),
+        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context, /* boolean_context */ true),
         context,
         required_columns.getNames(),
         std::make_shared<ExpressionActions>(ActionsDAG(required_columns), ExpressionActionsSettings{}),
