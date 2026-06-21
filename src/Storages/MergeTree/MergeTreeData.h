@@ -1282,7 +1282,7 @@ public:
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn);
+        const MergeTreeTransactionPtr & txn) const;
 
     MergeTreeDataFormatVersion format_version;
 
