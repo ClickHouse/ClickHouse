@@ -1,3 +1,5 @@
+-- Tags: long
+
 -- A qualified matcher (`t.*`) over a JOIN USING key must keep the matched column's own
 -- type, not the merged key's. Otherwise it can wrongly become Nullable (join_use_nulls = 0,
 -- outer JOIN against a Nullable key) and an aggregate over it aborts with
