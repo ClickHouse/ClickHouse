@@ -8,6 +8,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Storages/NATS/StorageNATS.h>
 
+#include <memory>
 #include <optional>
 
 namespace Poco
@@ -42,8 +43,8 @@ public:
     };
 
     bool isSubscribed() const;
-    virtual void subscribe() = 0;
-    void unsubscribe();
+    void subscribe();
+    void unsubscribe(bool finish_queue);
 
     void ackConsumed();
     void dropConsumed();
@@ -53,8 +54,8 @@ public:
 
     bool isConsumerStopped() { return stopped; }
 
-    bool queueEmpty() { return received.empty(); }
-    size_t queueSize() { return received.size(); }
+    bool queueEmpty() { return received->empty(); }
+    size_t queueSize() { return received->size(); }
 
     auto getSubject() const { return current.subject; }
     const String & getCurrentMessage() const { return current.message; }
@@ -76,6 +77,8 @@ protected:
 
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 
+    virtual void subscribeImpl() = 0;
+
     virtual void nackMessage(natsMsg * msg);
 
     virtual bool needsAck() const { return false; }
@@ -89,7 +92,8 @@ private:
 
     String queue_name;
 
-    ConcurrentBoundedQueue<MessageData> received;
+    const uint32_t queue_size;
+    std::unique_ptr<ConcurrentBoundedQueue<MessageData>> received;
     MessageData current;
     std::vector<NatsMsgPtr> consumed_messages;
 };

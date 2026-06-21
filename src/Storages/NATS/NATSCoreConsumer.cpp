@@ -8,11 +8,8 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_NATS;
 }
 
-void NATSCoreConsumer::subscribe()
+void NATSCoreConsumer::subscribeImpl()
 {
-    if (isSubscribed())
-        return;
-
     std::vector<NATSSubscriptionPtr> created_subscriptions;
     created_subscriptions.reserve(getSubjects().size());
 

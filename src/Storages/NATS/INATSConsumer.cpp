@@ -25,7 +25,8 @@ INATSConsumer::INATSConsumer(
     , log(log_)
     , stopped(stopped_)
     , queue_name(subscribe_queue_name)
-    , received(queue_size_)
+    , queue_size(queue_size_)
+    , received(std::make_unique<ConcurrentBoundedQueue<MessageData>>(queue_size_))
 {
 }
 
@@ -33,10 +34,22 @@ bool INATSConsumer::isSubscribed() const
 {
     return !subscriptions.empty();
 }
-void INATSConsumer::unsubscribe()
+
+void INATSConsumer::subscribe()
 {
-    if (stopped)
-        received.finish();
+    if (isSubscribed())
+        return;
+
+    if (received->isFinished())
+        received = std::make_unique<ConcurrentBoundedQueue<MessageData>>(queue_size);
+
+    subscribeImpl();
+}
+
+void INATSConsumer::unsubscribe(bool finish_queue)
+{
+    if (finish_queue)
+        received->finish();
 
     for (auto & subscription : subscriptions)
     {
@@ -63,7 +76,7 @@ void INATSConsumer::dropBuffered()
 {
     consumed_messages.clear();
     MessageData dropped;
-    while (received.tryPop(dropped)) {}
+    while (received->tryPop(dropped)) {}
 }
 
 ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
@@ -71,7 +84,7 @@ ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
     if (stopped)
         return nullptr;
 
-    const bool popped = timeout_ms ? received.tryPop(current, *timeout_ms) : received.tryPop(current);
+    const bool popped = timeout_ms ? received->tryPop(current, *timeout_ms) : received->tryPop(current);
     if (!popped)
         return nullptr;
 
@@ -115,7 +128,7 @@ void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, v
                 .subject = subject,
                 .msg = std::move(owned_msg),
             };
-            if (!nats_consumer->received.push(std::move(data)))
+            if (!nats_consumer->received->push(std::move(data)))
             {
                 LOG_DEBUG(nats_consumer->log, "Consumer {} is shutting down, dropping a message", static_cast<void *>(nats_consumer));
                 nats_consumer->nackMessage(msg);

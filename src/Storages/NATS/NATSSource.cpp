@@ -73,7 +73,7 @@ NATSSource::~NATSSource()
         return;
 
     if (unsubscribe_on_destroy)
-        consumer->unsubscribe();
+        consumer->unsubscribe(/*finish_queue=*/false);
 
     consumer->dropConsumed();
 

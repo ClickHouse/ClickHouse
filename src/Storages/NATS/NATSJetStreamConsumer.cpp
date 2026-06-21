@@ -30,11 +30,8 @@ NATSJetStreamConsumer::NATSJetStreamConsumer(
 {
 }
 
-void NATSJetStreamConsumer::subscribe()
+void NATSJetStreamConsumer::subscribeImpl()
 {
-    if (isSubscribed())
-        return;
-
     auto er = jsOptions_Init(&jet_stream_options);
     if (er != NATS_OK)
         throw Exception(
