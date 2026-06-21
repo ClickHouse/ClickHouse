@@ -642,9 +642,12 @@ void StorageNATS::threadFunc()
     {
         if (num_views && consumers_connection && consumers_connection->isConnected() && run_cycle)
         {
-            /// Re-subscribe if a previous STOP/PAUSE dropped the subscription
-            if (!consumers_ready)
-                subscribeConsumers();
+            if (!consumers_ready && !subscribeConsumers())
+            {
+                unsubscribeConsumers();
+                streaming_task->scheduleAfter(RESCHEDULE_MS);
+                return;
+            }
 
             auto start_time = std::chrono::steady_clock::now();
 

@@ -976,3 +976,77 @@ def test_rapid_stop_start_cycles_drain_unsubscribe(nats_cluster):
     # JetStream redelivers everything published while stopped, so every message eventually arrives.
     wait_dst_count_at_least(table, total)
     assert instance.query("SELECT 1") == "1\n"
+
+
+def jetstream_delete_stream(nats_cluster, stream):
+    async def run():
+        nc = await nats_connect_ssl(nats_cluster)
+        js = nc.jetstream()
+        try:
+            await js.delete_stream(stream)
+        except Exception:
+            pass  # already gone
+        await nc.close()
+
+    asyncio.run(run())
+
+
+def test_resubscribe_failure_backs_off(nats_cluster):
+    # A transient subscribe failure on the STOP/PAUSE -> START resubscribe path must back off
+    # (reschedule with a delay), not busy-spin the message-broker pool. Inject the failure by deleting
+    # the JetStream stream while stopped: the TCP connection stays up (isConnected() is true) but the
+    # resubscribe throws. After START the worker must retry at the ~RESCHEDULE_MS backoff rate.
+    stream = "js_resub_fail_stream"
+    subject = "js_resub_fail_subject"
+    durable = "js_resub_fail_durable"
+    table = "nats_resub_fail"
+
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=5)
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table};
+        """
+    )
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+
+    jetstream_publish(nats_cluster, subject, 0, 2)
+    wait_dst_count_at_least(table, 2)
+
+    instance.query(f"SYSTEM STOP test.{table}")
+    time.sleep(1)  # let the worker unsubscribe and settle
+
+    # Inject: delete the stream so the resubscribe throws while the connection stays up.
+    jetstream_delete_stream(nats_cluster, stream)
+
+    marker = f"test.{table}.*Failed to subscribe consumer"
+    before = int(instance.count_in_log(marker))
+    instance.query(f"SYSTEM START test.{table}")
+
+    window = 5
+    time.sleep(window)
+    attempts = int(instance.count_in_log(marker)) - before
+
+    # The failure must actually be injected, else the test proves nothing.
+    assert attempts > 0, "resubscribe failure was not injected (stream delete had no effect)"
+    # Backoff is ~one attempt per RESCHEDULE_MS (500ms) => ~10 over 5s; a busy-loop would be far more.
+    assert attempts < 25, (
+        f"resubscribe appears to busy-spin: {attempts} subscribe attempts in {window}s "
+        f"(expected ~10 with 500ms backoff)"
+    )
+
+    # Server stays alive throughout.
+    assert instance.query("SELECT 1") == "1\n"
