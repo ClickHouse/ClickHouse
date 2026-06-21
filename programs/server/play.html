@@ -410,6 +410,11 @@
             right: 0.25rem;
             color: var(--misc-text-color);
             animation: hourglass-animation 2s linear infinite;
+            /* The hourglass overlays the right edge of the full-width database button.
+               Let clicks pass through to the button underneath, so the row stays fully
+               clickable while tables load (otherwise a click here is treated as a menu
+               background click and would close the whole panel). */
+            pointer-events: none;
         }
 
         .no-tables
