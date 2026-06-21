@@ -975,9 +975,30 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
+            SelectQueryOptions sample_block_options = SelectQueryOptions{}.analyze();
+
+            /// For queries that populate the table immediately (CREATE ... AS SELECT, or a materialized/window
+            /// view with POPULATE), the table is created first and the data is inserted afterwards by an
+            /// INSERT SELECT. If the user lacks access to a table referenced by the SELECT, that INSERT SELECT
+            /// would fail only after the table has already been created, leaving an empty orphan table behind
+            /// (issue #26746: a retry then reports `TABLE_ALREADY_EXISTS` instead of the access error).
+            /// To prevent this, verify access to all referenced tables now, before the table is created, by
+            /// building a full query plan: in only_analyze mode subqueries in WHERE/IN/scalar positions are
+            /// not recursively planned, so their (column-aware) access checks would otherwise be skipped.
+            if (create.isCreateQueryWithImmediateInsertSelect())
+            {
+                /// Use the same options as the subsequent INSERT SELECT (see fillTableIfNeeded), so this check
+                /// mirrors that query plan exactly and cannot introduce a failure mode that the insert would not
+                /// also hit - it only moves the access check before the table is created.
+                InterpreterSelectQueryAnalyzer(create.select->clone(), select_context,
+                    SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1)).getQueryPlan();
+            }
+            else
+                sample_block_options.checkSubqueryTableAccess();
+
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
                 select_context,
-                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
+                sample_block_options);
         }
         else
         {

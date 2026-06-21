@@ -1,0 +1,8 @@
+-- denied because of missing SELECT on t2 (referenced in a WHERE-IN subquery):
+ACCESS_DENIED
+-- the denied query must not leave an orphan table:
+0
+-- a retry must still be ACCESS_DENIED, not TABLE_ALREADY_EXISTS:
+ACCESS_DENIED
+-- once SELECT on t2 is granted, the query succeeds and populates the table:
+1
