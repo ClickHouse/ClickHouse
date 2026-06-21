@@ -1,0 +1,18 @@
+DateTime64 range argument, open-ended (NULL) interval
+250
+250
+DateTime64 range argument, sub-second precision
+100
+50
+0
+100
+dictHas with DateTime64 range argument
+1
+0
+Simple key with DateTime64 range
+first
+open
+none
+Decimal range argument
+low
+high
