@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -11,6 +9,7 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
+#include "config.h"
 #if USE_JIEBA
 #  include <Interpreters/JiebaSegmenter.h>
 #endif
