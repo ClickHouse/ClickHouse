@@ -118,6 +118,7 @@ bool functionCanCache(const String & function_name)
         fun_name == "hasAnyTokens" || 
         fun_name == "hasAllTokens" || 
         fun_name == "interval" || 
+        fun_name == "profileevents" || 
         // rand functions
         fun_name == "rand" || 
         fun_name == "rand64" || 
@@ -841,6 +842,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
     {
         result.hash = 0;
         result.normalized_sql = "";
+        LOG_DEBUG(logger, "sql({}) has not begin with select", std::string(begin, end));
         return result;
     }
     size_t num_literals_in_sequence = 0;
@@ -861,6 +863,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
     bool is_dot = false;
     bool is_negative = false;
     bool is_where = false;
+    bool is_from = false;
 
     while (true)
     {
@@ -879,6 +882,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             result.hash = 0;
             result.normalized_sql = "";
             result.params.clear();
+            LOG_DEBUG(logger, "sql({}) has not support function", std::string(begin, end));
             return result;
         }
         if (vector_function_type && token.type == TokenType::BareWord)
@@ -1034,6 +1038,8 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             is_where = false;
         if (token.type == TokenType::BareWord && token.size() == 5 && tokenMatchesBareWord(token, "where"))
             is_where = true;
+        if (token.type == TokenType::BareWord && token.size() == 4 && tokenMatchesBareWord(token, "from"))
+            is_from = true;
         if (token.type == TokenType::Dot)
             is_dot = true;
         else if (!only_vector)
@@ -1139,7 +1145,14 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
         result.normalized_sql += std::string(token.begin, token.size());
         result.new_sql += std::string(token.begin, token.size());
     }
-
+    if (!is_from)
+    {
+        result.hash = 0;
+        result.normalized_sql = "";
+        result.params.clear();
+        LOG_DEBUG(logger, "sql({}) has not from", std::string(begin, end));
+        return result;
+    }
     result.hash = hash.get64();
     return result;
 }
@@ -1577,23 +1590,31 @@ bool VectorQueryParameters::applyParametersByASTLiteralPositions(
     if (!query_ast || parameters.params.empty() || positions.empty())
         return false;
 
-    size_t replaced_count = 0;
-    const size_t count = std::min(positions.size(), parameters.parsed_params.size());
-    // Parameter tokens and literal positions are collected in the same traversal
-    // order, so the same index can be used to reconnect each token to one AST node.
-    for (size_t i = 0; i < count; ++i)
+    try
     {
-        ASTPtr node = getASTNodeByPath(query_ast, positions[i].path);
-        if (!node)
-            continue;
-        auto * literal = node->as<ASTLiteral>();
-        if (!literal)
-            continue;
+        size_t replaced_count = 0;
+        const size_t count = std::min(positions.size(), parameters.parsed_params.size());
+        // Parameter tokens and literal positions are collected in the same traversal
+        // order, so the same index can be used to reconnect each token to one AST node.
+        for (size_t i = 0; i < count; ++i)
+        {
+            ASTPtr node = getASTNodeByPath(query_ast, positions[i].path);
+            if (!node)
+                continue;
+            auto * literal = node->as<ASTLiteral>();
+            if (!literal)
+                continue;
 
-        literal->value = parameters.parsed_params[i];
-        ++replaced_count;
+            literal->value = parameters.parsed_params[i];
+            ++replaced_count;
+        }
+        return replaced_count > 0;
     }
-    return replaced_count > 0;
+    catch (...)
+    {
+        LOG_DEBUG(logger, "Exception caught when applyParametersByASTLiteralPositions: {}", getCurrentExceptionMessage(false));
+        return false;
+    }
 }
 
 bool VectorQueryParameters::parseNormalizedParamsWithAST(

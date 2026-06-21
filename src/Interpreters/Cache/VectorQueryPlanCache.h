@@ -133,6 +133,7 @@ public:
         std::vector<ASTLiteralPosition> ast_literal_positions; /// Ordered ASTLiteral node positions for fast replacement.
         std::vector<PlanConstantBinding> plan_constant_bindings; /// QueryPlan constant-node positions for fast replacement.
         std::vector<String> table_names;         /// Canonical `db.table` names referenced by this cached SELECT entry.
+        String query_access_info_cache; 
     };
 
 private:
@@ -170,6 +171,7 @@ public:
         void setPlanConstantBindings(std::vector<PlanConstantBinding> plan_constant_bindings);
         /// Store the canonical table list used to invalidate cached plans when a table changes.
         void setTableNames(std::vector<String> table_names);
+        void setQueryAccessInfo(String query_access_info);
         /// Publish the finished entry if it satisfies admission checks such as build
         /// time, entry size, and cache-capacity quotas. Publication is atomic from
         /// the caller's perspective: the entry becomes visible only after all stored
@@ -217,6 +219,7 @@ public:
         const std::vector<ASTLiteralPosition> & getAstLiteralPositions() const;
         /// Return the QueryPlan constant map associated with the cache entry.
         const std::vector<PlanConstantBinding> & getPlanConstantBindings() const;
+        String getQueryAccessInfo();
 
     private:
         /// The reader snapshots the shared entry under VectorQueryPlanCache::mutex and then
@@ -232,7 +235,7 @@ public:
         size_t plan_size = 0;            /// Size of the plan for deferred statistics counting.
         size_t ast_size = 0;              /// Size of the AST for deferred statistics counting.
         LoggerPtr logger = getLogger("VectorQueryPlanCacheReader");
-
+        String query_access_info;
         friend class VectorQueryPlanCache;
     };
 

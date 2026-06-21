@@ -332,7 +332,7 @@ size_t VectorQueryPlanCache::KeyHasher::operator()(const Key & key) const
 
 size_t VectorQueryPlanCache::EntryWeight::operator()(const Entry & entry) const
 {
-    return entry.plan_size + entry.ast_size;
+    return entry.plan_size + entry.ast_size + entry.query_access_info_cache.size();
 }
 
 bool VectorQueryPlanCache::IsStale::operator()(const Key & key) const
@@ -447,6 +447,15 @@ void VectorQueryPlanCache::Writer::setTableNames(std::vector<String> table_names
     query_plan->table_names = std::move(table_names);
 }
 
+void VectorQueryPlanCache::Writer::setQueryAccessInfo(String query_access_info)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (skip_insert)
+        return;
+
+    query_plan->query_access_info_cache = query_access_info;
+}
+
 void VectorQueryPlanCache::Writer::finalizeWrite()
 {
     Cache::MappedPtr query_plan_snapshot;
@@ -496,7 +505,8 @@ void VectorQueryPlanCache::Writer::finalizeWrite()
                     = (query_plan_snapshot->plan_cache && !existing->plan_cache)
                     || (query_plan_snapshot->ast && !existing->ast)
                     || (!query_plan_snapshot->ast_literal_positions.empty() && existing->ast_literal_positions.empty())
-                    || (!query_plan_snapshot->plan_constant_bindings.empty() && existing->plan_constant_bindings.empty());
+                    || (!query_plan_snapshot->plan_constant_bindings.empty() && existing->plan_constant_bindings.empty())
+                    || (!query_plan_snapshot->query_access_info_cache.empty() && existing->query_access_info_cache.empty());
 
                 if (!has_new_component)
                     return;
@@ -519,6 +529,8 @@ void VectorQueryPlanCache::Writer::finalizeWrite()
                 query_plan_snapshot->plan_constant_bindings = existing->plan_constant_bindings;
             if (query_plan_snapshot->table_names.empty() && !existing->table_names.empty())
                 query_plan_snapshot->table_names = existing->table_names;
+            if (query_plan_snapshot->query_access_info_cache.empty() && !existing->query_access_info_cache.empty())
+                query_plan_snapshot->query_access_info_cache = existing->query_access_info_cache;
         }
 
         // Charge plan+AST size and enforce per-entry cap.
@@ -581,7 +593,7 @@ VectorQueryPlanCache::Reader::Reader(Cache & cache_, const Cache::Key & key, con
     ast = entry_mapped_ref->ast;
     ast_literal_positions = entry_mapped_ref->ast_literal_positions;
     plan_constant_bindings = entry_mapped_ref->plan_constant_bindings;
-    
+    query_access_info = entry_mapped_ref->query_access_info_cache;
     // Store sizes for deferred statistics counting
     plan_size = entry_mapped_ref->plan_size;
     ast_size = entry_mapped_ref->ast_size;
@@ -657,6 +669,11 @@ const std::vector<VectorQueryPlanCache::ASTLiteralPosition> & VectorQueryPlanCac
 const std::vector<VectorQueryPlanCache::PlanConstantBinding> & VectorQueryPlanCache::Reader::getPlanConstantBindings() const
 {
     return plan_constant_bindings;
+}
+
+String VectorQueryPlanCache::Reader::getQueryAccessInfo()
+{
+    return query_access_info;
 }
 
 VectorQueryPlanCache::VectorQueryPlanCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)

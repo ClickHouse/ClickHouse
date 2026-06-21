@@ -292,6 +292,7 @@ struct VectorQueryPlanCacheRestoreResult
     bool can_use_query_result_cache = false;
     bool is_select = false;
     size_t params_size = 0;
+    String query_access_info_cache;
 };
 
 static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
@@ -310,102 +311,111 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
 
     const bool vector_use_cast = settings[Setting::vector_use_cast];
     const bool enable_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
-
-    if (enable_vector_query_plan_cache)
+    
+    if (enable_vector_query_plan_cache && vector_query_plan_cache && !internal)
     {
-        const bool vector_query_plan_cache_only_vector = settings[Setting::vector_query_plan_cache_only_vector];
-        VectorQueryParameters::NormalizedQueryResult parameterized_result;
         try
         {
+            const bool vector_query_plan_cache_only_vector = settings[Setting::vector_query_plan_cache_only_vector];
+            VectorQueryParameters::NormalizedQueryResult parameterized_result;
             parameterized_result = parameterizer.normalizeQueryAndExtractParams(begin,
                 end, vector_query_plan_cache_only_vector, vector_use_cast);
             if (parameterized_result.hash == 0 || parameterized_result.params.empty())
+            {
                 result.vector_query_for_plan_cache.assign(begin, end);
+                LOG_DEBUG(logger, "sql={} is not select", std::string(begin, end));
+            }
             else
             {
                 result.is_select = true;
                 result.vector_query_for_plan_cache = parameterized_result.normalized_sql;
                 result.new_query = parameterized_result.new_sql;
-                result.params_size = parameterized_result.params.size();
-                if (vector_query_plan_cache && !internal)
+                result.params_size = parameterized_result.params.size();                
+                chassert(!result.vector_query_for_plan_cache.empty());
+                VectorQueryPlanCache::Key key(
+                    result.vector_query_for_plan_cache,
+                    context->getCurrentDatabase(),
+                    settings,
+                    context->getUserID(),
+                    context->getCurrentRoles());
+                VectorQueryPlanCache::Reader reader = vector_query_plan_cache->createReader(key);
+
+                const bool ast_cache_entry_exists = reader.hasAstCacheEntryForKey(true);
+                bool parsed_cache_parameters = false;
+                if (ast_cache_entry_exists)
                 {
-                    chassert(!result.vector_query_for_plan_cache.empty());
-                    VectorQueryPlanCache::Key key(
-                        result.vector_query_for_plan_cache,
-                        context->getCurrentDatabase(),
-                        settings,
-                        context->getUserID(),
-                        context->getCurrentRoles());
-                    VectorQueryPlanCache::Reader reader = vector_query_plan_cache->createReader(key);
-
-                    const bool ast_cache_entry_exists = reader.hasAstCacheEntryForKey(true);
-                    bool parsed_cache_parameters = false;
-                    if (ast_cache_entry_exists)
+                    auto cached_ast = reader.getAst();
+                    result.ast = std::move(cached_ast);
+                    auto cached_ast_literal_positions = reader.getAstLiteralPositions();
+                    parsed_cache_parameters = parameterizer.parseNormalizedParamsWithAST(
+                        parameterized_result,
+                        &cached_ast_literal_positions,
+                        vector_query_plan_cache_only_vector);
+                    const bool ast_parameters_restored = parameterizer.applyParametersByASTLiteralPositions(
+                        result.ast,
+                        parameterized_result,
+                        cached_ast_literal_positions);
+                    if (ast_parameters_restored)
                     {
-                        auto cached_ast = reader.getAst();
-                        result.ast = std::move(cached_ast);
-                        auto cached_ast_literal_positions = reader.getAstLiteralPositions();
-                        parsed_cache_parameters = parameterizer.parseNormalizedParamsWithAST(
-                            parameterized_result,
-                            &cached_ast_literal_positions,
-                            vector_query_plan_cache_only_vector);
-                        const bool ast_parameters_restored = parsed_cache_parameters
-                            && parameterizer.applyParametersByASTLiteralPositions(
-                                result.ast,
-                                parameterized_result,
-                                cached_ast_literal_positions);
-                        if (ast_parameters_restored)
-                        {
-                            LOG_DEBUG(logger, "Restore AST from vector_query_plan_cache({})", result.new_query);
-                            result.vector_ast_restored = true;
-                            result.skip_ast_processing = true;
-                            result.can_use_query_result_cache = query_result_cache != nullptr
-                                && settings[Setting::use_query_cache] && !internal 
-                                && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-                                && (result.ast->as<ASTSelectQuery>() || result.ast->as<ASTSelectWithUnionQuery>());
-                            if (result.can_use_query_result_cache)
-                                result.settings_copy = settings;
+                        LOG_DEBUG(logger, "Restore AST from vector_query_plan_cache({})", result.new_query);
+                        result.query_access_info_cache = reader.getQueryAccessInfo();
+                        result.vector_ast_restored = true;
+                        result.skip_ast_processing = true;
+                        result.can_use_query_result_cache = query_result_cache != nullptr
+                            && settings[Setting::use_query_cache] && !internal 
+                            && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+                            && (result.ast->as<ASTSelectQuery>() || result.ast->as<ASTSelectWithUnionQuery>());
+                        if (result.can_use_query_result_cache)
+                            result.settings_copy = settings;
 
-                            result.query_result_cache_hit = getResultFromQueryResultCache(
-                                query_result_cache,
-                                result.ast,
-                                context,
-                                result.settings_copy,
-                                result.can_use_query_result_cache,
-                                result.query_result_cache_usage,
-                                res,
-                                logger);
+                        result.query_result_cache_hit = getResultFromQueryResultCache(
+                            query_result_cache,
+                            result.ast,
+                            context,
+                            result.settings_copy,
+                            result.can_use_query_result_cache,
+                            result.query_result_cache_usage,
+                            res,
+                            logger);
+                        if (!result.query_result_cache_hit)
+                        {
+                            if (reader.hasCacheEntryForKey(true))
+                            {
+                                result.cached_plan = reader.getPlan();
+                                auto cached_plan_constant_bindings = reader.getPlanConstantBindings();
+                                if (!parsed_cache_parameters && parameterized_result.parsed_params.empty())
+                                {
+                                    parsed_cache_parameters = parameterizer.parseNormalizedParamsWithPlan(
+                                        parameterized_result,
+                                        &cached_plan_constant_bindings,
+                                        vector_query_plan_cache_only_vector);
+                                }
+                                if (!parameterizer.replaceConstantsInQueryPlan(
+                                    *result.cached_plan,
+                                    parameterized_result,
+                                    cached_plan_constant_bindings))
+                                {
+                                    result.cached_plan = nullptr;
+                                    LOG_DEBUG(logger, "Restore QueryPlan failed");
+                                }    
+                                else
+                                    LOG_DEBUG(logger, "Restore QueryPlan from query_plan_cache({})", result.new_query);
+                            }
+                            else
+                                LOG_DEBUG(logger, "QueryPlan not found");
                         }
                         else
-                        {
-                            LOG_DEBUG(logger, "Failed to restore AST from query_plan_cache({})", result.new_query);
-                            result.ast.reset();
-                            parsed_cache_parameters = false;
-                        }
-                    }
-                    if (!result.query_result_cache_hit)
-                    {
-                        if (reader.hasCacheEntryForKey(true))
-                        {
-                            result.cached_plan = reader.getPlan();
-                            auto cached_plan_constant_bindings = reader.getPlanConstantBindings();
-                            if (!parsed_cache_parameters && parameterized_result.parsed_params.empty())
-                            {
-                                parsed_cache_parameters = parameterizer.parseNormalizedParamsWithPlan(
-                                    parameterized_result,
-                                    &cached_plan_constant_bindings,
-                                    vector_query_plan_cache_only_vector);
-                            }
-                            if (!parameterizer.replaceConstantsInQueryPlan(
-                                *result.cached_plan,
-                                parameterized_result,
-                                cached_plan_constant_bindings))
-                                result.cached_plan = nullptr;
-                            LOG_DEBUG(logger, "Restore QueryPlan from query_plan_cache({})", result.new_query);
-                        }
+                            LOG_DEBUG(logger, "use QueryResult from query_plan_cache({})", result.new_query);
                     }
                     else
-                        LOG_DEBUG(logger, "use QueryResult from query_plan_cache({})", result.new_query);
+                    {
+                        LOG_DEBUG(logger, "Failed to restore AST from query_plan_cache({})", result.new_query);
+                        result.ast.reset();
+                    }
+                }
+                else
+                {
+                    LOG_DEBUG(logger, "({}) not hit QueryPlanCache({})", result.vector_query_for_plan_cache, result.new_query);
                 }
             }
         }
@@ -413,7 +423,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
         {
             result = VectorQueryPlanCacheRestoreResult{};
             result.vector_query_for_plan_cache.assign(begin, end);
-            LOG_DEBUG(logger, "normalizeQueryAndExtractParams failed: {}", getCurrentExceptionMessage(false));
+            LOG_DEBUG(logger, "found and restore QueryPlanCache failed: {}", getCurrentExceptionMessage(false));
         }
     }
     else if (vector_use_cast)
@@ -737,7 +747,7 @@ QueryLogElement logQueryStart(
         if (interval_milliseconds > 0)
             query_metric_log->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds);
     }
-
+    
     return elem;
 }
 
@@ -1324,7 +1334,7 @@ static std::optional<BlockIO> tryExecuteFromCache(
     output.query_result_cache_entry_exists = cache_result.query_result_cache_hit;
     output.ast = std::move(cache_result.ast);
     output.cached_plan = std::move(cache_result.cached_plan);
-    output.params_size = cache_result.params_size;
+    output.params_size = cache_result.params_size;   
 
     const bool has_cached_result = output.query_result_cache_entry_exists;
     const bool has_cached_plan = output.cached_plan != nullptr;
@@ -1335,6 +1345,12 @@ static std::optional<BlockIO> tryExecuteFromCache(
     ASTPtr ast = output.ast;
     if (!ast)
         return std::nullopt;
+
+    if (!cache_result.query_access_info_cache.empty())
+    {
+        auto query_access_info = context->deserializeQueryAccessInfo(cache_result.query_access_info_cache);
+        context->setQueryAccessInfo(query_access_info);
+    }
 
     if (has_cached_plan)
     {

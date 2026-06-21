@@ -26,6 +26,9 @@
 #include <Backups/BackupsInMemoryHolder.h>
 
 #include <Poco/AutoPtr.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 #include "config.h"
 
@@ -1007,6 +1010,56 @@ public:
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
+    String serializeQueryAccessInfo()
+    {
+        std::lock_guard lock(query_access_info->mutex);
+        Poco::JSON::Object json;
+        auto setToArray = [](const std::set<std::string> & s) {
+            Poco::JSON::Array arr;
+            for (const auto & item : s)
+                arr.add(item);
+            return arr;
+        };
+
+        json.set("databases", setToArray(query_access_info->databases));
+        json.set("tables", setToArray(query_access_info->tables));
+        json.set("columns", setToArray(query_access_info->columns));
+        json.set("partitions", setToArray(query_access_info->partitions));
+        json.set("projections", setToArray(query_access_info->projections));
+        json.set("views", setToArray(query_access_info->views));
+        json.set("row_policies", setToArray(query_access_info->row_policies));
+
+        std::stringstream ss;
+        json.stringify(ss);
+        return ss.str();
+    }
+
+    QueryAccessInfoPtr deserializeQueryAccessInfo(const String & data)
+    {
+        auto info = std::make_shared<QueryAccessInfo>();
+        std::lock_guard lock(info->mutex);
+        Poco::JSON::Parser parser;
+        auto json = parser.parse(data).extract<Poco::JSON::Object::Ptr>();
+        auto arrayToSet = [](Poco::JSON::Array::Ptr arr) {
+            std::set<std::string> s;
+            if (arr)
+            {
+                for (unsigned i = 0; i < static_cast<unsigned>(arr->size()); ++i)
+                    s.insert(arr->getElement<std::string>(i));
+            }
+            return s;
+        };
+
+        info->databases = arrayToSet(json->getArray("databases"));
+        info->tables = arrayToSet(json->getArray("tables"));
+        info->columns = arrayToSet(json->getArray("columns"));
+        info->partitions = arrayToSet(json->getArray("partitions"));
+        info->projections = arrayToSet(json->getArray("projections"));
+        info->views = arrayToSet(json->getArray("views"));
+        info->row_policies = arrayToSet(json->getArray("row_policies"));
+
+        return info;
+    }
 
     void addQueryAccessInfo(
         const StorageID & table_id,
