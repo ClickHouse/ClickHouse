@@ -279,4 +279,74 @@ bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) co
     return part.recompression_ttl_info->will_change_codec;
 }
 
+/// `merge_due_times` is nullptr and there is no per-partition throttling. A merge of this kind
+/// runs once per part: after it removes the index files, `buildNextIndexClearTTL` returns 0 for
+/// the result part, so the part is not selected again. A per-partition due time would also slow
+/// down partitions with several expired parts, because `select` returns one part per call.
+/// Failed attempts on replicated tables are retried with the usual queue postpone backoff.
+/// `TTLPartDropMergeSelector` passes nullptr for the same reason.
+TTLIndexClearMergeSelector::TTLIndexClearMergeSelector(time_t current_time_, bool is_replicated_)
+    : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_)
+    , is_replicated(is_replicated_)
+{
+}
+
+PartsRanges TTLIndexClearMergeSelector::select(
+    const PartsRanges & parts_ranges,
+    const MergeConstraints & merge_constraints,
+    const RangeFilter & range_filter) const
+{
+    if (merge_constraints.empty())
+        return {};
+
+    PartsRanges result;
+    for (const auto & range : parts_ranges)
+    {
+        for (const auto & part : range)
+        {
+            if (!canConsiderPart(part))
+                continue;
+
+            const auto ttl = getTTLForPart(part);
+            if (!ttl || ttl > current_time)
+                continue;
+
+            /// A part may exceed the normal merge size limits only if the merge will replace the
+            /// part without rewriting its rows (`can_clear_index_metadata_only`). If the rows
+            /// would have to be rewritten, the limits apply as usual. On replicated tables the
+            /// limits always apply: `can_clear_index_metadata_only` describes only the local
+            /// replica (storage type, remote disk, zero-copy), but the selection creates a
+            /// replication log entry that every replica must execute, and a replica that cannot
+            /// replace the part cheaply would have to rewrite an arbitrarily large part.
+            const bool exceeds_normal_merge_limits = part.size > merge_constraints.front().max_size_bytes
+                || part.rows > merge_constraints.front().max_size_rows;
+            const bool may_bypass_size_cap = part.can_clear_index_metadata_only && !is_replicated;
+            if (exceeds_normal_merge_limits && !may_bypass_size_cap)
+                continue;
+
+            PartsRange single_part_range{part};
+            if (range_filter && !range_filter(single_part_range))
+                continue;
+
+            result.push_back(std::move(single_part_range));
+            return result;
+        }
+    }
+
+    return result;
+}
+
+time_t TTLIndexClearMergeSelector::getTTLForPart(const PartProperties & part) const
+{
+    return part.next_index_clear_ttl;
+}
+
+bool TTLIndexClearMergeSelector::canConsiderPart(const PartProperties & part) const
+{
+    if (part.is_in_volume_where_merges_avoid)
+        return false;
+
+    return part.next_index_clear_ttl != 0;
+}
+
 }

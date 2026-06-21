@@ -34,6 +34,8 @@ protected:
     /// Returns true if part can be used during ranges building process.
     virtual bool canConsiderPart(const PartProperties & part) const = 0;
 
+    const time_t current_time;
+
 private:
     struct CenterPosition
     {
@@ -60,7 +62,6 @@ private:
         size_t & usable_parts,
         DisjointPartsRangesSet & disjoint_set) const;
 
-    const time_t current_time;
     const PartitionIdToTTLs * merge_due_times;
     const size_t max_parts_to_merge_at_once;
 };
@@ -105,6 +106,24 @@ private:
     /// Checks that part's codec is not already equal to required codec
     /// according to recompression TTL. It doesn't make sense to assign such merge.
     bool canConsiderPart(const PartProperties & part) const override;
+};
+
+/// Select single parts whose secondary index files should be cleared according to index-clear TTL.
+class TTLIndexClearMergeSelector : public ITTLMergeSelector
+{
+public:
+    TTLIndexClearMergeSelector(time_t current_time_, bool is_replicated_);
+
+    PartsRanges select(
+        const PartsRanges & parts_ranges,
+        const MergeConstraints & merge_constraints,
+        const RangeFilter & range_filter) const override;
+
+private:
+    time_t getTTLForPart(const PartProperties & part) const override;
+    bool canConsiderPart(const PartProperties & part) const override;
+
+    const bool is_replicated;
 };
 
 }

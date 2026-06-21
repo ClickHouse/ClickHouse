@@ -2680,11 +2680,9 @@ void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk() const
 
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const
 {
-    columns_sizes.clear();
-    total_columns_size = {};
-    secondary_index_sizes.clear();
-    total_secondary_indices_size = {};
-
+    /// Both functions below accumulate into local variables and assign the members at the end,
+    /// so an exception (e.g. from storage access) leaves the previously calculated sizes intact,
+    /// and repeated calls do not double-count.
     calculateColumnsSizesOnDisk();
     calculateSecondaryIndicesSizesOnDisk();
     are_columns_and_secondary_indices_sizes_calculated = true;
@@ -2696,8 +2694,11 @@ void IMergeTreeDataPart::calculateColumnsSizesOnDisk() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
     auto new_column_sizes_ptr = std::make_unique<ColumnSizeByName>();
-    calculateEachColumnSizes(*new_column_sizes_ptr, total_columns_size);
+    ColumnSize new_total_columns_size;
+    calculateEachColumnSizes(*new_column_sizes_ptr, new_total_columns_size);
+
     columns_sizes = std::move(new_column_sizes_ptr);
+    total_columns_size = new_total_columns_size;
 }
 
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
@@ -2713,6 +2714,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     auto secondary_indices_descriptions = storage_metadata_snapshot->secondary_indices;
     IndexSizeByName new_secondary_index_sizes;
+    IndexSize new_total_secondary_indices_size;
 
     /// A substream with no standalone checksums entry (e.g. bundled in skp_idx.packed) is sized
     /// via getFileSizeOrZeroResolved below, so `secondary_indices_compressed_bytes` reflects it too.
@@ -2760,12 +2762,13 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 
             substream_size.marks = getFileSizeOrZeroResolved(index_stream_name, getMarksFileExtension());
 
-            total_secondary_indices_size.add(substream_size);
+            new_total_secondary_indices_size.add(substream_size);
             new_secondary_index_sizes[index_description.name].add(substream_size);
         }
     }
 
     secondary_index_sizes = std::make_shared<IndexSizeByName>(std::move(new_secondary_index_sizes));
+    total_secondary_indices_size = new_total_secondary_indices_size;
 }
 
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
@@ -2846,18 +2849,6 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
     auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
     return getStreamNameOrHashResolved(file_name, ".idx").has_value()
         || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
-}
-
-bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const
-{
-    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
-    if (!disk_storage)
-        return false;
-    const String file_name = skip_index.getFileName();
-    for (const auto & substream : skip_index.getSubstreams())
-        if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))
-            return true;
-    return false;
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const

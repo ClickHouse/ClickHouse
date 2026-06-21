@@ -50,6 +50,8 @@ struct ChooseContext
     const PartitionIdToTTLs & next_recompress_times;
     const time_t current_time;
     const bool aggressive;
+    const bool can_generate_ttl_clear_index_merges;
+    const bool is_replicated;
 };
 
 MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
@@ -107,11 +109,30 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         && ctx.metadata_snapshot.hasAnyIndexClearTTL()
         && ctx.can_generate_ttl_clear_index_merges)
     {
-        TTLIndexClearMergeSelector index_clear_ttl_selector(ctx.current_time);
+        TTLIndexClearMergeSelector index_clear_ttl_selector(ctx.current_time, ctx.is_replicated);
+        IMergeSelector::RangeFilter range_filter = [&](PartsRangeView range)
+        {
+            if (ctx.range_filter && !ctx.range_filter(range))
+                return false;
 
-        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
+            const bool exceeds_normal_merge_limits = range.size() == 1
+                && (range.front().size > ctx.merge_constraints.front().max_size_bytes
+                    || range.front().rows > ctx.merge_constraints.front().max_size_rows);
+            if (exceeds_normal_merge_limits
+                && ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge])
+            {
+                PartsRange single_part_range{range.front()};
+                if (!ctx.predicate.getPatchesToApplyOnMerge(single_part_range).empty())
+                    return false;
+            }
+
+            return true;
+        };
+
+        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ctx.merge_constraints, range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLClearIndex);
     }
+
 
     return {};
 }
@@ -209,6 +230,8 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
+    bool can_generate_ttl_clear_index_merges,
+    bool is_replicated,
     time_t current_time) const
 {
     ChooseContext ctx{
@@ -224,6 +247,8 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,
         .aggressive = aggressive,
+        .can_generate_ttl_clear_index_merges = can_generate_ttl_clear_index_merges,
+        .is_replicated = is_replicated,
     };
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)

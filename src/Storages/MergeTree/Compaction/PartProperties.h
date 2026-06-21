@@ -54,11 +54,23 @@ struct PartProperties
         const time_t next_recompress_ttl;
     };
     const std::optional<RecompressTTLInfo> recompression_ttl_info = std::nullopt;
+
+    /// Next expired index-clear TTL for part. Used by clear-index TTL merge selector.
+    const time_t next_index_clear_ttl = 0;
+
+    /// Whether the source part is eligible for metadata-only clear-index replacement.
+    /// When false, TTLClearIndex selection must obey normal full-part merge size limits
+    /// because execution may fall back to a row-rewriting merge.
+    const bool can_clear_index_metadata_only = false;
 };
 
 using PartsRange = std::vector<PartProperties>;
 using PartsRanges = std::vector<PartsRange>;
 using PartsRangeView = std::span<const PartProperties>;
+
+bool canUseMetadataOnlyIndexClear(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeDataPartPtr & part);
 
 PartProperties buildPartProperties(
     const MergeTreeDataPartPtr & part,
