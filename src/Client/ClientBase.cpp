@@ -2319,7 +2319,9 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
     try
     {
         if (default_input_compression_method != CompressionMethod::None)
-            std_in = wrapReadBufferWithCompressionMethod(std::move(std_in), default_input_compression_method);
+            std_in = wrapReadBufferWithCompressionMethod(
+                std::move(std_in), default_input_compression_method,
+                /*zstd_window_log_max=*/ 0, client_context->getSettingsRef()[Setting::snappy_mode]);
         sendDataFrom(*std_in, sample, columns_description, parsed_query);
     }
     catch (Exception & e)

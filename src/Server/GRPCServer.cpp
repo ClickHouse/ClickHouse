@@ -1140,7 +1140,9 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
-        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
+        read_buffer = wrapReadBufferWithCompressionMethod(
+            std::move(read_buffer), input_compression_method,
+            /*zstd_window_log_max=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
 
         chassert(!pipeline);
 
@@ -1204,7 +1206,9 @@ namespace
                     auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
 
                     std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
-                    buf = wrapReadBufferWithCompressionMethod(std::move(buf), chooseCompressionMethod("", external_table.compression_type()));
+                    buf = wrapReadBufferWithCompressionMethod(
+                        std::move(buf), chooseCompressionMethod("", external_table.compression_type()),
+                        /*zstd_window_log_max=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
 
                     String format = external_table.format();
                     if (format.empty())
