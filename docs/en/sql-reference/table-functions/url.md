@@ -89,6 +89,19 @@ SELECT * FROM url(
 );
 ```
 
+:::note
+When the `structure` argument is omitted, `url` first sends a request to infer the response schema and then sends a second request to read the data. This double request is the same behavior as for plain `GET` reads with automatic structure, but with a body it means the `POST` (and any subquery used to build the body) is sent twice. For endpoints that are not safe to call twice, or to avoid re-running the subquery, specify an explicit `structure` so that the request is sent exactly once:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    'id UInt64, name String',
+    body((SELECT id, name FROM local_table WHERE active))
+);
+```
+:::
+
 ## Globs in URL {#globs-in-url}
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.

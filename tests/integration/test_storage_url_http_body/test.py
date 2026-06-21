@@ -4,7 +4,12 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-from . import body_dependent_response_server, http_headers_echo_server, redirect_server
+from . import (
+    body_dependent_response_server,
+    http_headers_echo_server,
+    redirect_server,
+    request_counting_server,
+)
 
 cluster = ClickHouseCluster(__file__)
 server = cluster.add_instance("node")
@@ -61,6 +66,11 @@ def run_redirect_server():
     run_server(container_id, "redirect_server.py", "localhost", 8080, "localhost", 8000)
 
 
+def run_request_counting_server():
+    container_id = cluster.get_container_id("node")
+    run_server(container_id, "request_counting_server.py", "localhost", 8002)
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -68,6 +78,7 @@ def started_cluster():
         run_redirect_server()
         run_echo_server()
         run_body_dependent_server()
+        run_request_counting_server()
 
         yield cluster
     finally:
@@ -197,3 +208,35 @@ def test_subquery_body_with_old_analyzer(started_cluster):
         "body((SELECT 1 + 2))) SETTINGS enable_analyzer = 0"
     )
     run_test(query, '{"plus(1, 2)":3}')
+
+
+def reset_request_count():
+    server.exec_in_container(
+        ["curl", "-s", "http://localhost:8002/reset"], user="root"
+    )
+
+
+def get_request_count():
+    return int(
+        server.exec_in_container(
+            ["cat", request_counting_server.COUNT_PATH], user="root"
+        ).strip()
+    )
+
+
+def test_post_count_without_structure_is_two(started_cluster):
+    # With `structure` omitted, schema inference sends one POST and the read sends another, so the
+    # body-carrying request (and any subquery) is sent twice. This mirrors the pre-existing
+    # double-fetch for `GET` reads with automatic structure and is documented in url.md.
+    reset_request_count()
+    server.query("SELECT * FROM url('http://localhost:8002/', JSONEachRow, body('x'))")
+    assert get_request_count() == 2
+
+
+def test_post_count_with_explicit_structure_is_one(started_cluster):
+    # With an explicit `structure`, schema inference is skipped, so exactly one POST is sent.
+    reset_request_count()
+    server.query(
+        "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', body('x'))"
+    )
+    assert get_request_count() == 1
