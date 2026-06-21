@@ -39,8 +39,10 @@ def test_concurrent_reads(started_cluster_iceberg):
 
     def run_concurrent_queries(i):
         def select(_):
+            # Bound per-query fan-out so the concurrent readers don't exhaust the global thread pool.
             instance.query(
                 f"SELECT * FROM {TABLE_NAME}",
+                settings={"max_threads": 4},
             )
                 
 
