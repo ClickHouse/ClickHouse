@@ -143,6 +143,7 @@ bool injectRequiredColumnsRecursively(
     /// collect identifiers required for evaluation
     IdentifierNameSet identifiers;
     auto default_expression = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, storage_snapshot->metadata->getColumns(), context);
+    validateNoCyclicAliasesAfterExpansion(column_name, default_expression, storage_snapshot->metadata->getColumns(), context);
     default_expression->collectIdentifierNames(identifiers);
 
     bool result = false;
@@ -214,6 +215,7 @@ void injectRequiredColumnsForNullableDefaultConversions(
 
         const auto column_default = storage_snapshot->getDefault(column_name);
         auto default_expression = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, storage_snapshot->metadata->getColumns(), context);
+        validateNoCyclicAliasesAfterExpansion(column_name, default_expression, storage_snapshot->metadata->getColumns(), context);
 
         IdentifierNameSet identifiers;
         default_expression->collectIdentifierNames(identifiers);
