@@ -142,6 +142,22 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-std=c++17"
 )
 
+# one_to_many_asymmetric.cc and dot_product_sse4.cc use SSE4.1 (_mm_cvtepi8_epi32,
+# _mm_blend_epi16) and SSSE3 (_mm_shuffle_epi8, _mm_maddubs_epi16) always_inline
+# intrinsics.  On SSE2-only builds (amd_compat) the compiler rejects always_inline
+# calls to intrinsics that require target features not enabled globally.  Add per-file
+# flags so these files are compiled with the SIMD level they actually require.
+if (ARCH_AMD64)
+    set_source_files_properties(
+        "${SCANN_SOURCE_DIR}/scann/distance_measures/one_to_many/one_to_many_asymmetric.cc"
+        PROPERTIES COMPILE_OPTIONS "-msse4.1;-mssse3"
+    )
+    set_source_files_properties(
+        "${SCANN_SOURCE_DIR}/scann/distance_measures/one_to_one/dot_product_sse4.cc"
+        PROPERTIES COMPILE_OPTIONS "-msse4.1"
+    )
+endif()
+
 # scale_encoding_helpers.cc calls absl::little_endian::Load32(encoded.end() - sizeof(float))
 # where encoded is absl::string_view.  When ABSL_USES_STD_STRING_VIEW is active (C++17+),
 # absl::string_view is aliased to std::string_view, whose const_iterator is
@@ -171,22 +187,20 @@ list(REMOVE_ITEM SCANN_SOURCES
 )
 
 # one_to_many_symmetric.h defines DenseAccumulatingDistanceMeasureOneToManyInternalAvx1
-# and Avx2 under #ifdef __SSE3__ (line 231), but the extern template instantiation
-# macro at line 1787 only checks #ifdef __x86_64__.  On SSE2-only x86-64 builds
-# (amd_compat), __SSE3__ is not defined so the function definitions are absent
-# while the extern declarations are emitted, causing "no template named" errors.
-# Tighten the guard to #if defined(__x86_64__) && defined(__SSE3__).  This is
-# correct on all platforms: SSE3+ builds are unaffected; SSE2-only builds skip
-# the Avx1/Avx2 extern declarations that reference non-existent definitions.
+# and Avx2 under #ifdef __SSE3__ (line 231), but three call sites and the extern
+# template instantiation macro only check #ifdef __x86_64__.  On SSE2-only x86-64
+# builds (amd_compat), __SSE3__ is not defined so the function definitions are absent
+# while the call sites and extern declarations reference them, causing
+# "undeclared identifier" and "no template named" errors at lines 645, 674, and 1787.
+# Tighten all three guards to #if defined(__x86_64__) && defined(__SSE3__).
 set(_oto_src "${SCANN_SOURCE_DIR}/scann/distance_measures/one_to_many/one_to_many_symmetric.h")
 set(_oto_dst "${CMAKE_CURRENT_BINARY_DIR}/scann/distance_measures/one_to_many/one_to_many_symmetric.h")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/scann/distance_measures/one_to_many")
 configure_file("${_oto_src}" "${_oto_dst}" COPYONLY)
 file(READ "${_oto_dst}" _oto_content)
-set(_nl "\n")
 string(REPLACE
-    "#ifdef __x86_64__${_nl}#define SCANN_INSTANTIATE_ONE_TO_MANY("
-    "#if defined(__x86_64__) && defined(__SSE3__)${_nl}#define SCANN_INSTANTIATE_ONE_TO_MANY("
+    "#ifdef __x86_64__"
+    "#if defined(__x86_64__) && defined(__SSE3__)"
     _oto_content "${_oto_content}")
 file(WRITE "${_oto_dst}" "${_oto_content}")
 
