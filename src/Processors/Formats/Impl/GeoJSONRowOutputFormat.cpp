@@ -148,8 +148,10 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
             const auto id_inner_type = removeLowCardinalityAndNullable(column.type);
             const WhichDataType id_type(id_inner_type);
             /// `Bool` is stored as a numeric type but serializes as a JSON boolean, which is not a valid
-            /// Feature id, so reject it even though it passes the numeric-type check.
-            if (isBool(id_inner_type) || (!id_type.isStringOrFixedString() && !id_type.isNumber()))
+            /// Feature id, so reject it even though it passes the numeric-type check. A literal `NULL AS id`
+            /// has type `Nullable(Nothing)`; it is accepted and always omitted, like any other NULL id.
+            if (isBool(id_inner_type)
+                || (!id_type.isStringOrFixedString() && !id_type.isNumber() && !id_type.isNothing()))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "The 'id' column of the GeoJSON output format must be a String, FixedString, or numeric "
@@ -176,7 +178,11 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     if (property_col_indices.size() == 1)
     {
         const auto & column = header.getByPosition(property_col_indices.front());
-        if (column.name == "properties" && isPropertiesObjectLike(removeNullable(column.type)))
+        const auto properties_type = removeNullable(column.type);
+        /// A literal `NULL AS properties` has type `Nullable(Nothing)`; emit it directly as well so it
+        /// becomes the valid top-level `"properties": null` rather than a nested `{"properties": null}`.
+        if (column.name == "properties"
+            && (isPropertiesObjectLike(properties_type) || WhichDataType(properties_type).isNothing()))
             emit_properties_column_directly = true;
     }
 
