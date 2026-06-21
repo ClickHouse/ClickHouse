@@ -2226,6 +2226,21 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         Poco::XML::DOMParser dom_parser;
         std::unordered_set<std::string> include_from_paths;
 
+        /// Canonicalize paths so that symlinks (e.g. a symlinked `/etc/clickhouse-server`) and
+        /// relative segments do not defeat the merge-set membership test below.
+        auto to_canonical = [](const fs::path & p) -> std::string
+        {
+            std::error_code ec;
+            fs::path c = fs::weakly_canonical(p, ec);
+            return ec ? p.string() : c.string();
+        };
+
+        /// Canonical paths of the files whose top-level tags actually become top-level keys of the
+        /// *validated* (main server) config — i.e. the main config and the `config.d`/`conf.d`
+        /// fragments `ConfigProcessor` merges into it. The users config is a separate tree that is
+        /// not merged into the server config, so it is intentionally excluded here.
+        std::unordered_set<std::string> merge_files;
+
         auto scan_file = [&](const fs::path & p)
         {
             if (!fs::exists(p) || !fs::is_regular_file(p))
@@ -2281,9 +2296,13 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// `config.d` with an `.xml`/`.yaml` filter — otherwise a substitution source kept in a
         /// `.conf` file or a `conf.d` directory would be missed and the merged config rejected.
         fs::path config_dir = fs::path(config_path).remove_filename();
+        merge_files.insert(to_canonical(config_path));
         scan_file(config_path);
         for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(config_path))
+        {
+            merge_files.insert(to_canonical(merge_file));
             scan_file(merge_file);
+        }
 
         /// The merged `config` already has `<include_from>` substitutions (from_env, from_zk)
         /// resolved by `ConfigProcessor`. Use it as a fallback for sources we cannot resolve
@@ -2325,6 +2344,16 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         {
             if (!fs::exists(include_from_path) || !fs::is_regular_file(include_from_path))
                 continue;
+            /// Only exempt the source's top-level tags when the source file is itself merged into
+            /// the server config (it lives under `config.d`/`conf.d`, so `ConfigProcessor` copies
+            /// its top-level children into the loaded config). An external `<include_from>` source
+            /// that is *only* a substitution lookup table (e.g. `/etc/metrika.xml`) contributes no
+            /// top-level key to the merged config — `ConfigProcessor::processIncludes` reads it
+            /// solely to resolve `incl` references — so exempting its tags would let a genuinely
+            /// unknown top-level key pass merely because the lookup table happens to define a tag
+            /// of the same name, masking exactly the typo/misplaced-section class this check catches.
+            if (!merge_files.contains(to_canonical(include_from_path)))
+                continue;
             try
             {
                 Poco::AutoPtr<Poco::XML::Document> include_from_doc = ConfigProcessor::parseConfig(include_from_path, dom_parser);
@@ -2343,6 +2372,35 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             }
         }
     }
+
+    /// A `GraphiteMergeTree` rollup configuration section can have an *arbitrary* top-level name:
+    /// the name is taken from the table definition `GraphiteMergeTree('<section>')` (see
+    /// `setGraphitePatternsFromConfig`), not from a fixed allowlist, so such sections cannot be
+    /// matched by name or by prefix. They have a fixed *shape* instead — one or more `<pattern>`
+    /// elements and/or a `<default>` element, each carrying rollup-specific children (`<regexp>`,
+    /// `<function>`, `<retention>`). Recognize that shape so a deployment that names its rollup
+    /// section e.g. `<retention_5m>` (valid before this check existed) keeps starting, while a typo
+    /// (which lacks this shape) is still rejected. We require at least one pattern/default that
+    /// actually carries a rollup child, so an unrelated section with a stray `<pattern>`/`<default>`
+    /// scalar is not exempted.
+    auto looks_like_graphite_rollup = [&config](const String & section) -> bool
+    {
+        Poco::Util::AbstractConfiguration::Keys children;
+        config.keys(section, children);
+        for (const auto & child : children)
+        {
+            const bool is_pattern = child.starts_with("pattern");
+            const bool is_default = child == "default" || child.starts_with("default[");
+            if (!is_pattern && !is_default)
+                continue;
+            const String child_path = section + "." + child;
+            if (config.has(child_path + ".regexp")
+                || config.has(child_path + ".function")
+                || config.has(child_path + ".retention"))
+                return true;
+        }
+        return false;
+    };
 
     Poco::Util::AbstractConfiguration::Keys top_level_keys;
     config.keys("", top_level_keys);
@@ -2367,6 +2425,10 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             }
         }
         if (matches_prefix)
+            continue;
+
+        /// Arbitrary-named `GraphiteMergeTree` rollup sections, recognized by their structure.
+        if (looks_like_graphite_rollup(key))
             continue;
 
         throw Exception(
