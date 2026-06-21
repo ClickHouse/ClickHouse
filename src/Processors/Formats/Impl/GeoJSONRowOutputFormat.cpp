@@ -145,8 +145,11 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
         {
             /// A GeoJSON Feature id must be a JSON string or number, so the column must be a string or
             /// numeric type (optionally wrapped in `Nullable` or `LowCardinality`).
-            const WhichDataType id_type(removeLowCardinalityAndNullable(column.type));
-            if (!id_type.isStringOrFixedString() && !id_type.isNumber())
+            const auto id_inner_type = removeLowCardinalityAndNullable(column.type);
+            const WhichDataType id_type(id_inner_type);
+            /// `Bool` is stored as a numeric type but serializes as a JSON boolean, which is not a valid
+            /// Feature id, so reject it even though it passes the numeric-type check.
+            if (isBool(id_inner_type) || (!id_type.isStringOrFixedString() && !id_type.isNumber()))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "The 'id' column of the GeoJSON output format must be a String, FixedString, or numeric "
