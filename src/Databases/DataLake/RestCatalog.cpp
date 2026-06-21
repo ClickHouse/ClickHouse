@@ -1446,11 +1446,12 @@ std::optional<std::chrono::system_clock::time_point> parseSasTokenExpiry(const s
                 return std::chrono::system_clock::from_time_t(date_time.timestamp().epochTime());
             }
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: handled by the fail-close return below
         {
-            return std::nullopt;
         }
-        return std::nullopt;
+
+        /// 'se=' is present but could not be parsed. Do not cache.
+        return std::chrono::system_clock::time_point{};
     }
     return std::nullopt;
 }
@@ -1504,7 +1505,12 @@ VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Obje
                 }
                 catch (...)
                 {
-                    LOG_DEBUG(log, "Failed to parse '{}' from vended credentials config", session_token_expires_at_ms_str);
+                    /// The provider sent an expiry we cannot parse; do not cache.
+                    LOG_WARNING(
+                        log,
+                        "Failed to parse '{}' from vended credentials config; will not cache this credential",
+                        session_token_expires_at_ms_str);
+                    expires_at = std::chrono::system_clock::time_point{};
                 }
             }
 
