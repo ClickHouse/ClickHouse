@@ -264,7 +264,7 @@ if (ARCH_PPC64LE)
         "#  define _mm_loadu_si64(p) _mm_loadl_epi64((__m128i const *)(p))\n"
         "#endif\n"
     )
-    target_compile_options(_scann PRIVATE "-include" "${_ppc_compat_h}")
+    target_compile_options(_scann PUBLIC "-include" "${_ppc_compat_h}")
 endif()
 
 target_compile_options(_scann PRIVATE -w)
