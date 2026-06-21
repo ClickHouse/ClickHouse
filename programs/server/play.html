@@ -4349,6 +4349,9 @@ let completionSuppressedKey = null;
 /// Set when the user types a word character; gates *opening* the completion list so that
 /// clicks, focus, and cursor navigation do not pop it up on their own.
 let completionOpenRequested = false;
+/// True while `acceptCompletion` is inserting text, so the resulting `input` event is not
+/// mistaken for the user typing a new word (which would reopen the list on the accepted word).
+let completionAccepting = false;
 
 function wasmAvailable() {
     return typeof WebAssembly === 'object' && typeof WebAssembly.instantiate === 'function';
@@ -4592,8 +4595,14 @@ function getCaretCoordinates(pos) {
 /// `completionOpenRequested`). Cursor-only events — clicks, focus, arrow navigation — may
 /// reposition or close an already-open list, but never open a new one.
 function updateCompletions() {
-    if (!completionWords.length
-        || document.activeElement !== query_area
+    /// Completions are not loaded yet (the lazy `system.completions` load may still be in
+    /// flight). Keep any pending "just typed a word" request so it can fire once
+    /// `loadCompletions` finishes and calls back here — otherwise the first word typed during
+    /// the initial load would get no suggestions.
+    if (!completionWords.length) {
+        return;
+    }
+    if (document.activeElement !== query_area
         || query_area.selectionStart !== query_area.selectionEnd) {
         completionOpenRequested = false;
         closeCompletions();
@@ -4760,9 +4769,15 @@ function acceptCompletion(index) {
     /// already-typed prefix also takes the suggestion's case (e.g. "se" + accept -> "SELECT").
     /// Done via a selection + execCommand so it participates in the undo history and fires an
     /// `input` event (which refreshes the backdrop and recomputes completions).
+    ///
+    /// The `input` event from this programmatic insertion carries the inserted word as
+    /// `e.data`, which would otherwise re-arm the open request and reopen the list (e.g.
+    /// accepting `count` would reopen on `countIf`). Suppress that for the duration of the edit.
+    completionAccepting = true;
     query_area.focus();
     query_area.setSelectionRange(start, start + prefix.length);
     document.execCommand('insertText', false, word);
+    completionAccepting = false;
 }
 
 /// Force the completion list to open at the current cursor (used as a manual Tab trigger),
@@ -4821,6 +4836,11 @@ query_area.addEventListener('keydown', (e) => {
 /// by the time the post-tokenize `updateCompletions` runs. `e.data` holds the inserted text
 /// (null for deletions); composition input also carries the composed text.
 query_area.addEventListener('input', (e) => {
+    if (completionAccepting) {
+        /// Programmatic insertion from accepting a completion — do not treat as typing.
+        completionOpenRequested = false;
+        return;
+    }
     const typed = e.data;
     completionOpenRequested = typeof typed === 'string' && /^\w+$/.test(typed);
 });
