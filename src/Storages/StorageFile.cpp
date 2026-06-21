@@ -285,8 +285,23 @@ void listFilesWithRegexpMatchingOnDisk(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    bool recursive)
+    bool recursive,
+    size_t depth)
 {
+    /// Mirror the bound enforced by the local-filesystem walker
+    /// `listFilesWithRegexpMatchingImpl`: a deeply nested directory tree under a
+    /// `user_files_policy` disk must surface `TOO_DEEP_RECURSION` rather than
+    /// exhaust the stack while resolving a `**` glob.
+    if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "Maximum recursion depth ({}) exceeded while listing files for pattern '{}'.",
+            MAX_LIST_FILES_RECURSION_DEPTH, for_match);
+
+    /// On systems with small stacks (e.g., Musl) the depth cap above is not enough on its own,
+    /// because each recursion frame can be large. Probe the remaining stack periodically.
+    if (depth % 16 == 0)
+        checkStackSize();
+
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
     if (first_glob_pos == std::string::npos)
@@ -407,13 +422,13 @@ void listFilesWithRegexpMatchingOnDisk(
             {
                 listFilesWithRegexpMatchingOnDisk(disk, full_entry_path + "/",
                     looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                    total_bytes_to_read, result, recursive);
+                    total_bytes_to_read, result, recursive, depth + 1);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
             {
                 listFilesWithRegexpMatchingOnDisk(disk, full_entry_path + "/",
                     suffix_with_globs.substr(next_slash_after_glob_pos),
-                    total_bytes_to_read, result, false);
+                    total_bytes_to_read, result, false, depth + 1);
             }
         }
     }
@@ -730,7 +745,7 @@ Strings getPathsListOnDisk(
             const Strings expanded_patterns = expandSelectionGlob(relative_pattern);
             Strings relative_matches;
             for (const auto & pattern : expanded_patterns)
-                listFilesWithRegexpMatchingOnDisk(disk, "", pattern, total_bytes_to_read, relative_matches, false);
+                listFilesWithRegexpMatchingOnDisk(disk, "", pattern, total_bytes_to_read, relative_matches, false, 0);
 
             const String disk_prefix = getDiskPathWithSlash(disk);
             for (const auto & rel : relative_matches)

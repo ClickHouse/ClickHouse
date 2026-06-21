@@ -521,3 +521,26 @@ def test_s3_relative_path_starting_with_disk_root_prefix():
         or "Cannot stat" in short_read
         or "doesn't exist" in short_read
     ), short_read
+
+
+def test_local_disk_glob_recursion_depth_guarded():
+    """A deeply nested directory tree under a `user_files_policy` disk must surface
+    `TOO_DEEP_RECURSION` from the disk-backed `**` glob walker instead of exhausting the
+    stack. The disk walker must enforce the same `MAX_LIST_FILES_RECURSION_DEPTH` bound
+    as the local-filesystem walker `listFilesWithRegexpMatchingImpl`."""
+    # Build a directory chain deeper than MAX_LIST_FILES_RECURSION_DEPTH (1000). The
+    # physical (single-slash) path stays well under PATH_MAX; the walker throws at depth
+    # 1001 before the path it constructs internally can grow that large.
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            'd=/test_user_files_disk1/deep_glob; '
+            'for i in $(seq 1 1100); do d="$d/d"; done; '
+            'mkdir -p "$d"',
+        ]
+    )
+    err = node_local.query_and_get_error(
+        "SELECT count() FROM file('deep_glob/**', 'CSV', 'x UInt64')"
+    )
+    assert "TOO_DEEP_RECURSION" in err, err
