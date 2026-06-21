@@ -312,9 +312,8 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.current_quota)
     {
-        auto usage = getContext()->getQuotaUsage();
-        if (usage)
-            entities.push_back(access_control.read<Quota>(usage->quota_id));
+        for (const auto & usage : getContext()->getQuotaUsages())
+            entities.push_back(access_control.read<Quota>(usage.quota_id));
     }
     else if (show_query.type == AccessEntityType::ROW_POLICY)
     {
