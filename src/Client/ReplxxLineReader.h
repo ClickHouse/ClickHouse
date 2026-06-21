@@ -54,9 +54,9 @@ private:
 
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).
     bool isCursorAtEndOfInput();
-    /// Whether the as-you-type hint "popup" is currently navigable here: hints are shown, the
-    /// cursor is at the end, and the input is a single line (so Up/Down can move through hints
-    /// without stealing line navigation in multi-line input).
+    /// Whether the as-you-type hint "popup" is currently navigable here: hints are shown and the
+    /// cursor is at the end of the input (including the last line of a multi-line query). When it
+    /// is not, Up/Down keep moving between lines and through history.
     bool hintPopupActive();
 
     replxx::Replxx rx;

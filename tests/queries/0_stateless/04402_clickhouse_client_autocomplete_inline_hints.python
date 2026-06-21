@@ -140,6 +140,16 @@ def main():
         lambda o: "ReplicatedAggregatingMergeTree" in o and "\x07" not in o,
     )
 
+    # 3c. In a multi-line query the hints (shown at the end of the last line) are still navigable:
+    #     Down steps into the list and Tab accepts the first one.
+    run_with_timeout(
+        base[0],
+        args + ["--multiline", "--hints", "1"],
+        "multi_line_navigate",
+        [b"SELECT x", b"\r", b"FROM Replicated", b"\x1b[B", b"\t"],
+        lambda o: "ReplicatedAggregatingMergeTree" in o and "\x07" not in o,
+    )
+
     # 4. --hints 0 disables the ghost text (no gray hint color emitted while typing).
     run_with_timeout(
         base[0],
