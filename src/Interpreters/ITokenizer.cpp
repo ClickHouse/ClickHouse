@@ -19,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -489,16 +488,7 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
             });
     };
 
-    if (const auto * col_string = typeid_cast<const ColumnString *>(&input))
-    {
-        for (size_t i = from; i < from + rows; ++i)
-        {
-            if (!col_string->isNullAt(i))
-                tokenize(col_string->getDataAt(i));
-            tokens_offsets->getData().push_back(tokens_data->size());
-        }
-    }
-    else if (const auto * col_array = typeid_cast<const ColumnArray *>(&input))
+    if (const auto * col_array = typeid_cast<const ColumnArray *>(&input))
     {
         const IColumn & data = col_array->getData();
         const IColumn::Offsets & src_offsets = col_array->getOffsets();
@@ -516,8 +506,14 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
         }
     }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected input column type in tokenizeToArray");
-
+    {
+        for (size_t i = from; i < from + rows; ++i)
+        {
+            if (!input.isNullAt(i))
+                tokenize(input.getDataAt(i));
+            tokens_offsets->getData().push_back(tokens_data->size());
+        }
+    }
 
     return ColumnArray::create(std::move(tokens_data), std::move(tokens_offsets));
 }
