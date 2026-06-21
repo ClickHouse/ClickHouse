@@ -1,6 +1,5 @@
 #include <unistd.h>
 #include <cerrno>
-#include <poll.h>
 #include <sys/stat.h>
 #include <algorithm>
 
@@ -43,39 +42,9 @@ namespace ErrorCodes
 }
 
 
-void WriteBufferFromFileDescriptor::setCancellationHook(std::function<bool()> cancellation_hook_)
-{
-    cancellation_hook = std::move(cancellation_hook_);
-
-    /// Decide whether the responsive bounded-chunk write path is needed. Only a pipe/FIFO, a socket
-    /// or a terminal can block in write() when the sink is slow or stuck, so while the hook is
-    /// installed we wait for writability and write in small chunks for these to stay responsive. A
-    /// regular file never blocks on write, and a non-tty character device such as /dev/null does not
-    /// block either, so such descriptors keep using a single large write for throughput - otherwise
-    /// a common pattern like `clickhouse-client --query ... > /dev/null` would regress to one poll
-    /// and one small write per chunk. If fstat fails, assume the descriptor can block and use the
-    /// safe (responsive) path.
-    cancellation_fd_can_block = false;
-    if (cancellation_hook)
-    {
-        struct stat stat_buf{};
-        if (0 != ::fstat(fd, &stat_buf))
-            cancellation_fd_can_block = true;
-        else
-            cancellation_fd_can_block
-                = S_ISFIFO(stat_buf.st_mode) || S_ISSOCK(stat_buf.st_mode) || (0 != ::isatty(fd));
-    }
-}
-
-
 void WriteBufferFromFileDescriptor::nextImpl()
 {
     if (!offset())
-        return;
-
-    /// The operation was cancelled (e.g. the user pressed Ctrl+C in the client) - discard the
-    /// buffered data instead of writing it, so the output stops promptly.
-    if (cancellation_hook && cancellation_hook())
         return;
 
     Stopwatch watch;
@@ -83,50 +52,12 @@ void WriteBufferFromFileDescriptor::nextImpl()
     size_t bytes_written = 0;
     while (bytes_written != offset())
     {
-        size_t bytes_to_write = offset() - bytes_written;
-
-        /// When a cancellation hook is installed (e.g. the client output during a query), avoid
-        /// blocking for a long time in write() on a slow or stuck sink such as a slow terminal.
-        /// Otherwise a Ctrl+C would only set the cancellation flag while we stay stuck in the
-        /// write(), because the interrupting signal can be delivered to another thread and thus
-        /// not interrupt this write() at all. Wait for the descriptor to become writable in small
-        /// steps, checking for cancellation in between, write only a bounded chunk at a time so a
-        /// single write() cannot block for long, and discard the rest of the buffer once
-        /// cancellation is requested.
-        if (cancellation_hook && cancellation_fd_can_block)
-        {
-            if (cancellation_hook())
-                return;
-
-            pollfd poll_fd{.fd = fd, .events = POLLOUT, .revents = 0};
-            int poll_res = ::poll(&poll_fd, 1, 100);
-
-            if (poll_res < 0 && errno != EINTR)
-            {
-                String poll_error_file_name = file_name.empty() ? "(fd = " + toString(fd) + ")" : file_name;
-                ErrnoException::throwFromPath(
-                    ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, poll_error_file_name, "Cannot write to file {}", poll_error_file_name);
-            }
-
-            /// Timed out or interrupted by a signal - the descriptor is not writable yet.
-            if (poll_res <= 0)
-                continue;
-
-            /// After poll() reports the descriptor is writable, writing at most PIPE_BUF bytes is
-            /// guaranteed not to block on a pipe (and such a small write does not block on a socket
-            /// or terminal either). Bounding the chunk this way ensures a single write() cannot
-            /// sleep for long even if the sink stops draining right after becoming writable, so the
-            /// cancellation hook is consulted promptly. (A larger chunk could still block: poll()
-            /// only promises that some space is available, not space for the whole chunk.)
-            bytes_to_write = std::min(bytes_to_write, static_cast<size_t>(PIPE_BUF));
-        }
-
         ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWrite);
 
         ssize_t res = 0;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
-            res = ::write(fd, working_buffer.begin() + bytes_written, bytes_to_write);
+            res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
         }
 
         if ((-1 == res || 0 == res) && errno != EINTR)
@@ -140,11 +71,6 @@ void WriteBufferFromFileDescriptor::nextImpl()
             ErrnoException::throwFromPath(
                 ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, error_file_name, "Cannot write to file {}", error_file_name);
         }
-
-        /// The write was interrupted by a signal. If meanwhile the operation was cancelled,
-        /// stop writing and discard the rest of the buffer instead of restarting the write.
-        if (-1 == res && errno == EINTR && cancellation_hook && cancellation_hook())
-            return;
 
         if (res > 0)
         {

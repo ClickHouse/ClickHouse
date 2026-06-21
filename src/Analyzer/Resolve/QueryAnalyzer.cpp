@@ -45,6 +45,7 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -1791,10 +1792,16 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 
 /// Columns that resolved from matcher can also match columns from JOIN USING.
 /// In that case we update type to type of column in USING section.
-/// TODO: It's not completely correct for qualified matchers, so t1.* should be resolved to left table column type.
-/// But in planner we do not distinguish such cases.
+///
+/// Unqualified matcher (`*`): the matched column IS the merged USING key, so it takes the
+/// key type as-is. Qualified matcher (`t.*`): the matched column is `t`'s own column, so its
+/// type must equal what the explicit reference `t.col` resolves to. The merged key's type is
+/// not correct here: in a nested JOIN it reflects the outer join's other side, while `t.col`
+/// only follows the joins `t` participates in.
 void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
+    bool is_qualified_matcher,
+    const Identifier & matched_qualified_identifier,
     IdentifierResolveScope & scope)
 {
     auto * nearest_query_scope = scope.getNearestQueryScope();
@@ -1845,12 +1852,32 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                     }
                 }
 
+                auto using_column_type = join_using_column_node.getResultType();
+
+                /// Qualified matcher: the matched column is `t.col`, NOT the merged USING key.
+                /// Resolve the explicit identifier `t.col` and adopt its type, exactly matching
+                /// how an explicit reference is typed (IdentifierResolver::tryResolveIdentifierFromJoin).
+                /// The merged key's type is wrong here: in a nested JOIN it reflects the OUTER
+                /// join's siblings, while `t.col` only follows the joins `t` participates in.
+                if (is_qualified_matcher)
+                {
+                    Identifier explicit_identifier = matched_qualified_identifier;
+                    explicit_identifier.push_back(matched_column_name);
+                    auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+                    IdentifierResolveContext explicit_resolve_settings;
+                    explicit_resolve_settings.allow_to_check_cte = false;
+                    explicit_resolve_settings.allow_to_check_database_catalog = false;
+                    auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
+                    if (explicit_resolve_result.resolved_identifier)
+                        using_column_type = explicit_resolve_result.resolved_identifier->getResultType();
+                }
+
                 auto it = node_to_projection_name.find(matched_column_node);
                 matched_column_node = matched_column_node->clone();
                 if (it != node_to_projection_name.end())
                     node_to_projection_name.emplace(matched_column_node, it->second);
 
-                matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
+                matched_column_node->as<ColumnNode &>().setColumnType(using_column_type);
                 correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
@@ -2011,7 +2038,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         matched_columns,
         scope);
 
-    updateMatchedColumnsFromJoinUsing(result_matched_column_nodes_with_names, scope);
+    updateMatchedColumnsFromJoinUsing(
+        result_matched_column_nodes_with_names, /*is_qualified_matcher=*/ true, matcher_node_typed.getQualifiedIdentifier(), scope);
 
     return result_matched_column_nodes_with_names;
 }
@@ -2266,7 +2294,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression_columns,
             scope);
 
-        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, scope);
+        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, /*is_qualified_matcher=*/ false, {}, scope);
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
@@ -2404,7 +2432,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             auto it = scope.nullable_group_by_keys.find(node);
             if (it != scope.nullable_group_by_keys.end())
             {
-                node = it->node->clone();
+                /// See resolveExpressionNode: for a constant keep the matched node's own source
+                /// expression instead of the stored key, which may be a different colliding constant.
+                node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
                 node->convertToNullable();
             }
         }
@@ -3458,7 +3488,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())
                 {
-                    node = it->node->clone();
+                    /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
+                    /// matched node itself rather than the stored key `it->second`: two constants equal
+                    /// in value and type but with different source expressions share a single map entry,
+                    /// and the source expression determines the action node name (hence which aggregation
+                    /// key column the projection reads), so the matched node's own one must be preserved.
+                    node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
                     node->convertToNullable();
                     break;
                 }
@@ -3726,12 +3761,114 @@ void expandTuplesInList(QueryTreeNodes & key_list)
     key_list = std::move(expanded_keys);
 }
 
+bool nodeSupportsConvertToNullable(const QueryTreeNodePtr & node)
+{
+    auto node_type = node->getNodeType();
+    return node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::FUNCTION;
+}
+
+/** Convert maximal subtrees that are GROUP BY keys to Nullable and recompute the types of all
+  * nodes above them. This mirrors what resolveExpressionNode does during bottom-up resolution
+  * of an expression containing GROUP BY keys as subexpressions: a subexpression equal to a key
+  * is replaced with a clone of the key converted to Nullable, and the functions above it are
+  * resolved with the new argument types.
+  * Returns true if any key was converted inside the given subtree.
+  */
+bool convertNestedGroupByKeysToNullable(
+    QueryTreeNodePtr & node,
+    const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
+    const ContextPtr & context)
+{
+    if (nodeSupportsConvertToNullable(node) && nullable_group_by_keys.contains(node))
+    {
+        node->convertToNullable();
+        return true;
+    }
+
+    auto node_type = node->getNodeType();
+    if (node_type != QueryTreeNodeType::FUNCTION && node_type != QueryTreeNodeType::LAMBDA && node_type != QueryTreeNodeType::LIST)
+        return false;
+
+    bool converted = false;
+    for (auto & child : node->getChildren())
+    {
+        if (child && convertNestedGroupByKeysToNullable(child, nullable_group_by_keys, context))
+            converted = true;
+    }
+
+    if (!converted)
+        return false;
+
+    if (auto * function_node = node->as<FunctionNode>())
+    {
+        rerunFunctionResolve(function_node, context);
+    }
+    else if (auto * lambda_node = node->as<LambdaNode>())
+    {
+        const auto * lambda_type = typeid_cast<const DataTypeFunction *>(lambda_node->getResultType().get());
+        if (!lambda_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Lambda node {} result type is not a function type",
+                lambda_node->formatASTForErrorMessage());
+
+        lambda_node->resolve(std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), lambda_node->getExpression()->getResultType()));
+    }
+
+    return true;
+}
+
+/** Register GROUP BY keys in scope.nullable_group_by_keys in every shape in which an expression
+  * equal to a key can arrive at the lookup in resolveExpressionNode, so that the lookup can use
+  * exact comparison (including types):
+  * - the original form, for keys resolved from scratch;
+  * - the form with every maximal proper sub-key already converted to Nullable and the types of
+  *   the nodes above recomputed, for keys that contain other keys as subexpressions;
+  * - the form converted to Nullable itself, for already converted expressions resolved again
+  *   (for example, reused through an alias).
+  * All shapes are mapped to the original key node.
+  */
+void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, IdentifierResolveScope & scope)
+{
+    for (const auto & key : group_by_keys)
+        scope.nullable_group_by_keys.emplace(key, key);
+
+    for (const auto & key : group_by_keys)
+    {
+        if (key->as<FunctionNode>())
+        {
+            auto key_with_converted_sub_keys = key->clone();
+            bool converted = false;
+
+            for (auto & child : key_with_converted_sub_keys->getChildren())
+            {
+                if (child && convertNestedGroupByKeysToNullable(child, scope.nullable_group_by_keys, scope.context))
+                    converted = true;
+            }
+
+            if (converted)
+            {
+                rerunFunctionResolve(key_with_converted_sub_keys->as<FunctionNode>(), scope.context);
+                scope.nullable_group_by_keys.emplace(std::move(key_with_converted_sub_keys), key);
+            }
+        }
+
+        if (nodeSupportsConvertToNullable(key))
+        {
+            auto converted_key = key->clone();
+            converted_key->convertToNullable();
+            scope.nullable_group_by_keys.emplace(std::move(converted_key), key);
+        }
+    }
+}
+
 }
 
 /** Resolve GROUP BY clause.
   */
 void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
+    QueryTreeNodes nullable_group_by_keys;
+
     if (query_node_typed.isGroupByWithGroupingSets())
     {
         for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
@@ -3752,7 +3889,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
             {
                 validateGroupByKeyType(group_by_elem->getResultType(), scope);
                 if (scope.group_by_use_nulls)
-                    scope.nullable_group_by_keys.insert(group_by_elem);
+                    nullable_group_by_keys.push_back(group_by_elem);
             }
         }
     }
@@ -3771,10 +3908,17 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         {
             validateGroupByKeyType(group_by_elem->getResultType(), scope);
             if (scope.group_by_use_nulls)
-                scope.nullable_group_by_keys.insert(group_by_elem);
+                nullable_group_by_keys.push_back(group_by_elem);
         }
     }
 
+    if (!nullable_group_by_keys.empty())
+        registerNullableGroupByKeys(nullable_group_by_keys, scope);
+
+    /// With group_by_use_nulls the projection (and the other clauses) are re-resolved after GROUP BY
+    /// so that expressions equal to a key become Nullable via the scope.nullable_group_by_keys
+    /// lookup. Clear the resolution caches so that this re-resolution actually re-runs instead of
+    /// reusing the non-Nullable results cached during the first resolution.
     if (!scope.nullable_group_by_keys.empty())
     {
         resolved_expressions.clear();
