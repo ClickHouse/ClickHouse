@@ -158,6 +158,14 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
         }
         else if (column.name == "id")
         {
+            /// Only one column can map to the Feature `id`. A second `id` column would otherwise be
+            /// silently dropped (it is neither emitted as the id nor kept as a property), so reject it,
+            /// mirroring the single-geometry-column check.
+            if (id_col_idx)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The GeoJSON output format allows at most one column named 'id', but found more than one");
+
             /// A GeoJSON Feature id must be a JSON string or number, so the column must be a string or
             /// numeric type (optionally wrapped in `Nullable` or `LowCardinality`).
             const auto id_inner_type = removeLowCardinalityAndNullable(column.type);
