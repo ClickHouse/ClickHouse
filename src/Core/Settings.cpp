@@ -6242,7 +6242,7 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
-    DECLARE(Bool, query_plan_rewrite_order_by_limit, true, R"(
+    DECLARE(Bool, query_plan_rewrite_order_by_limit, false, R"(
 Use query plan rewrite for optimize order by limit.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_rewrite_order_by_limit, 1000000, R"(Control maximum limit value that allows to rewrite query plan for optimize order by limit. If zero, there is no limit.
