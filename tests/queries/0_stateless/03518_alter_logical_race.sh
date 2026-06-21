@@ -65,7 +65,20 @@ rm -f "${PROGRESS_PREFIX}"*
 trap '$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"; rm -f "${PROGRESS_PREFIX}"*' EXIT
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b UInt8, c UInt8, d UInt8, e UInt8, f UInt8, g UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_03518/alter_table', 'r1') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1"
+# `max_replicated_mutations_in_queue` and `number_of_free_entries_in_pool_to_execute_mutation`
+# both defer the data-rewriting mutation that `MODIFY COLUMN ... UInt64` creates, in favour of
+# the regular merges this test's heavy concurrent INSERT load produces. Under that load (and
+# especially on a busy CI host) they stall the data part of the very first `MODIFY` indefinitely:
+# replicated metadata alters must finish in strict version order, and an alter is not finished -
+# and so does not leave the alter-version chain - until its data mutation completes. So a starved
+# data mutation at the head of the chain blocks every later `MODIFY`'s metadata change, which then
+# waits (with the default `alter_sync = 1`) until the table is dropped at teardown. The `timeout`
+# wrapping each statement then fires first and fails the test with a spurious `TIMEOUT`, even though
+# nothing is actually hung - the mutation just never gets a turn. The two ALTER workers issue their
+# `MODIFY`s synchronously, so in-flight mutations stay naturally low; disabling these throttles only
+# removes the head-of-chain stall, it does not let mutations pile up. See
+# https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=2a3a502d2ed0af65bb0a5c91223c91c1b2e28047&name_0=MasterCI&name_1=Stateless%20tests%20%28arm_binary%2C%20parallel%29
+$CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b UInt8, c UInt8, d UInt8, e UInt8, f UInt8, g UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_03518/alter_table', 'r1') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1, max_replicated_mutations_in_queue = 100000, number_of_free_entries_in_pool_to_execute_mutation = 0"
 
 # True while the workers should keep issuing (and retrying) statements. Every worker - both
 # `thread_alter` and `thread_insert` loops, and the retry loop inside `run_with_retry` - gates
