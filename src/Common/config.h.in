@@ -15,6 +15,7 @@
 #cmakedefine01 USE_GOOGLE_CLOUD_KMS
 #cmakedefine01 USE_AZURE_BLOB_STORAGE
 #cmakedefine01 USE_BROTLI
+#cmakedefine01 USE_LIBDEFLATE
 #cmakedefine01 USE_CASSANDRA
 #cmakedefine01 USE_GRPC
 #cmakedefine01 USE_SIMDJSON
