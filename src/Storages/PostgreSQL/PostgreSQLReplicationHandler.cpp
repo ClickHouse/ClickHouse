@@ -95,7 +95,7 @@ namespace
     /// There can be several replication slots per publication, but one publication per table/database replication.
     /// Replication slot might be unique (contain uuid) to allow have multiple replicas for the same PostgreSQL table/database.
 
-    String getPublicationName(const String & postgres_database, const String & postgres_table)
+    String getPublicationName(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
     {
         /// The publication name preserves the case of the database/table name. It is created via
         /// `CREATE PUBLICATION "<name>"` (case-preserving) and looked up by exact `pubname` match,
@@ -104,9 +104,19 @@ namespace
         /// name when it hands it to the `pgoutput` plugin via the `publication_names` option (which
         /// PostgreSQL parses with `SplitIdentifierString`, folding unquoted identifiers to lower
         /// case), so both sides agree even for names with upper-case letters.
-        return fmt::format(
-            "{}_ch_publication",
-            postgres_table.empty() ? postgres_database : fmt::format("{}_{}", postgres_database, postgres_table));
+        String name;
+        if (postgres_table.empty())
+            /// MaterializedPostgreSQL database engine: one publication per database.
+            name = postgres_database;
+        else if (postgres_schema.empty())
+            name = fmt::format("{}_{}", postgres_database, postgres_table);
+        else
+            /// Single-table MaterializedPostgreSQL engine with a non-default schema: include the schema
+            /// so that two standalone tables replicating the same table name from different schemas of
+            /// the same PostgreSQL database do not collide on a single publication (which would make
+            /// their consumers cross-talk, because the publication carries only the bare relation name).
+            name = fmt::format("{}_{}_{}", postgres_database, postgres_schema, postgres_table);
+        return fmt::format("{}_ch_publication", name);
     }
 
     void checkReplicationSlot(String name)
@@ -138,6 +148,7 @@ namespace
 
     String getReplicationSlotName(
         const String & postgres_database,
+        const String & postgres_schema,
         const String & postgres_table,
         const String & clickhouse_uuid,
         const MaterializedPostgreSQLSettings & replication_settings)
@@ -147,8 +158,16 @@ namespace
         {
             if (replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
                 slot_name = clickhouse_uuid;
+            else if (postgres_table.empty())
+                /// MaterializedPostgreSQL database engine.
+                slot_name = postgres_database;
+            else if (postgres_schema.empty())
+                slot_name = fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
             else
-                slot_name = postgres_table.empty() ? postgres_database : fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
+                /// Include the schema for the same reason as in getPublicationName(): otherwise two
+                /// standalone tables replicating the same table name from different schemas of the same
+                /// PostgreSQL database would share the default replication slot.
+                slot_name = fmt::format("{}_{}_{}_ch_replication_slot", postgres_database, postgres_schema, postgres_table);
 
             slot_name = normalizeReplicationSlot(slot_name);
         }
@@ -180,9 +199,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema])
     , user_managed_slot(!replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
     , user_provided_snapshot(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_snapshot])
-    , replication_slot(getReplicationSlotName(postgres_database_, postgres_table_, clickhouse_uuid_, replication_settings))
+    , replication_slot(getReplicationSlotName(postgres_database_, postgres_schema, postgres_table_, clickhouse_uuid_, replication_settings))
     , tmp_replication_slot(replication_slot + "_tmp")
-    , publication_name(getPublicationName(postgres_database_, postgres_table_))
+    , publication_name(getPublicationName(postgres_database_, postgres_schema, postgres_table_))
     , reschedule_backoff_min_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_min_ms])
     , reschedule_backoff_max_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_max_ms])
     , reschedule_backoff_factor(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_factor])
@@ -626,13 +645,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
 
     if (!is_attach || !publication_exists)
     {
-        /// For the MaterializedPostgreSQL database engine `tables_list` has already been
-        /// schema-qualified and quoted by fetchRequiredTables(). For the single-table
-        /// MaterializedPostgreSQL table engine, however, `tables_list` is just the bare
-        /// remote table name (set in the storage constructor) and has never been processed,
-        /// so the `materialized_postgresql_schema` setting would be ignored here. Build the
-        /// list from the storages in that case, which applies the schema via doubleQuoteWithSchema().
-        if (tables_list.empty() || !is_materialized_postgresql_database)
+        if (tables_list.empty())
         {
             if (materialized_storages.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "No tables to replicate");

@@ -866,11 +866,11 @@ def test_single_table_engine_with_non_default_schema(started_cluster):
     # `materialized_postgresql_schema` setting and created the publication for the bare,
     # unqualified table name, failing with `relation "..." does not exist`.
     cursor = pg_manager.get_db_cursor()
-    schema_name = "test_engine_schema"
-    # Keep the table name short: the default replication slot name is
-    # `<postgres_database>_<table>_ch_replication_slot`, which must stay within
-    # PostgreSQL's 63-character identifier limit (`postgres_database` is 17 chars here).
-    table = "test_engine_table"
+    # Keep the schema and table names short: the default replication slot name is
+    # `<postgres_database>_<schema>_<table>_ch_replication_slot`, which must stay within
+    # PostgreSQL's 63-character identifier limit (`postgres_database` alone is 17 chars).
+    schema_name = "eng_schema"
+    table = "eng_table"
     clickhouse_postgres_db = "postgres_database_with_schema_for_table_engine"
 
     create_postgres_schema(cursor, schema_name)
@@ -917,6 +917,94 @@ def test_single_table_engine_with_non_default_schema(started_cluster):
     assert 100 == int(instance.query(f"SELECT count() FROM {table}"))
 
     instance.query(f"DROP TABLE {table} SYNC")
+
+
+def test_two_schemas_same_table_name_single_storage(started_cluster):
+    # Regression for the publication/slot collision uncovered while fixing
+    # https://github.com/ClickHouse/ClickHouse/issues/59950: two standalone
+    # MaterializedPostgreSQL tables that replicate a table with the SAME name from two
+    # different PostgreSQL schemas of the same database must not share a publication or a
+    # replication slot. Before making the publication/slot names schema-aware, both tables
+    # derived their identity from `<postgres_database>_<table>` only, so the second `CREATE`
+    # dropped and recreated the shared publication and the consumers cross-talked (one replica
+    # would stop receiving its schema's changes or ingest the other schema's rows).
+    cursor = pg_manager.get_db_cursor()
+    # Keep the names short: the default replication slot name is
+    # `<postgres_database>_<schema>_<table>_ch_replication_slot`, which must stay within
+    # PostgreSQL's 63-character identifier limit (`postgres_database` alone is 17 chars).
+    schema1 = "cs1"
+    schema2 = "cs2"
+    table = "ct"
+
+    create_postgres_schema(cursor, schema1)
+    create_postgres_schema(cursor, schema2)
+    create_postgres_table_with_schema(cursor, schema1, table)
+    create_postgres_table_with_schema(cursor, schema2, table)
+
+    # ClickHouse PostgreSQL databases scoped to each schema, used to seed and to read the source.
+    pg_db1 = "cs1_src"
+    pg_db2 = "cs2_src"
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db1,
+        schema_name=schema1,
+        postgres_database="postgres_database",
+    )
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db2,
+        schema_name=schema2,
+        postgres_database="postgres_database",
+    )
+
+    # Distinct data per schema so cross-talk is detectable: schema2's values are offset by 1000.
+    instance.query(
+        f"INSERT INTO {pg_db1}.{table} SELECT number, number from numbers(0, 50)"
+    )
+    instance.query(
+        f"INSERT INTO {pg_db2}.{table} SELECT number, number + 1000 from numbers(0, 30)"
+    )
+
+    instance.query("DROP TABLE IF EXISTS ct_cs1 SYNC")
+    instance.query("DROP TABLE IF EXISTS ct_cs2 SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE ct_cs1 (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema1}'
+        """
+    )
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE ct_cs2 (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema2}'
+        """
+    )
+
+    # Initial snapshot: each replica sees only its own schema's rows.
+    assert_eq_with_retry(instance, "SELECT count() FROM ct_cs1", "50\n")
+    assert_eq_with_retry(instance, "SELECT count() FROM ct_cs2", "30\n")
+    # Values prove there is no cross-talk: schema2's rows (>= 1000) must never appear in replica 1.
+    assert_eq_with_retry(instance, "SELECT countIf(value >= 1000) FROM ct_cs1", "0\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value < 1000) FROM ct_cs2", "0\n")
+
+    # Ongoing replication (the consumer path) stays isolated too.
+    instance.query(
+        f"INSERT INTO {pg_db1}.{table} SELECT number, number from numbers(50, 50)"
+    )
+    instance.query(
+        f"INSERT INTO {pg_db2}.{table} SELECT number, number + 1000 from numbers(30, 30)"
+    )
+    assert_eq_with_retry(instance, "SELECT count() FROM ct_cs1", "100\n")
+    assert_eq_with_retry(instance, "SELECT count() FROM ct_cs2", "60\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value >= 1000) FROM ct_cs1", "0\n")
+    assert_eq_with_retry(instance, "SELECT countIf(value < 1000) FROM ct_cs2", "0\n")
+
+    instance.query("DROP TABLE ct_cs1 SYNC")
+    instance.query("DROP TABLE ct_cs2 SYNC")
 
 
 def test_numeric_to_int256(started_cluster):
