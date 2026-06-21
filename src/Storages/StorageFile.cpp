@@ -1157,8 +1157,9 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
     auto context = CurrentThread::tryGetQueryContext();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     return getSupportedPrewhereColumnsForFormat(
-        getInMemoryMetadataPtr(context, false),
+        metadata_snapshot,
         context,
         format_name,
         format_settings,
@@ -1168,7 +1169,8 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
 {
     /// Reporting some fake sizes to enable prewhere optimization.
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getFakeColumnSizes();
 }
 
 bool StorageFile::prefersLargeBlocks() const

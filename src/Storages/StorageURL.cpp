@@ -1108,8 +1108,9 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
 std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
     auto context = CurrentThread::tryGetQueryContext();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     return getSupportedPrewhereColumnsForFormat(
-        getInMemoryMetadataPtr(context, false),
+        metadata_snapshot,
         context,
         format_name,
         format_settings,
@@ -1118,7 +1119,8 @@ std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 
 IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getFakeColumnSizes();
 }
 
 bool IStorageURLBase::prefersLargeBlocks() const
