@@ -891,3 +891,41 @@ def test_stop_while_viewless_does_not_drop_after_start(nats_cluster):
     assert (
         subscribes == 1
     ), f"consumer subscribed {subscribes}x; a stale unsubscribe fired after a STOP-while-viewless"
+
+
+def _server_cpu_jiffies():
+    """utime + stime of the clickhouse server process, in clock ticks."""
+    pid = instance.get_process_pid("clickhouse server")
+    content = instance.exec_in_container(["bash", "-c", f"cat /proc/{pid}/stat"])
+    # Skip 'pid (comm)' -- comm may contain spaces -- then fields start at 'state' (field 3).
+    rest = content[content.rindex(")") + 1:].split()
+    return int(rest[11]) + int(rest[12])  # utime (field 14) + stime (field 15)
+
+
+def _cpu_over(seconds):
+    before = _server_cpu_jiffies()
+    time.sleep(seconds)
+    return _server_cpu_jiffies() - before
+
+
+def test_detach_last_view_does_not_busy_loop(nats_cluster):
+    # After the last view is detached, the viewless streaming task must back off, not tight-loop the
+    # message-broker schedule pool. Compare server CPU with a view (idle 500ms polling) vs viewless;
+    # a busy-loop pegs roughly a full core, while backing off stays near the baseline.
+    table = "nats_detach_loop"
+    subject = "detach_loop_subject"
+    setup_consuming_table(table, subject)
+
+    nats_publish(nats_cluster, subject, 0, 5)
+    wait_dst_count_at_least(table, 5)
+
+    baseline = _cpu_over(4)
+
+    instance.query(f"DROP TABLE test.{table}_mv SYNC")
+    time.sleep(2)  # settle into the viewless state
+
+    viewless = _cpu_over(4)
+    assert viewless < baseline + 150, ( # based on test runs, where it's ~15, or ~400-800 for busy
+        f"viewless streaming task appears to busy-loop: baseline={baseline} viewless={viewless} "
+        f"CPU jiffies over 4s"
+    )

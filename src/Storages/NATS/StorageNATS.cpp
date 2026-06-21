@@ -705,12 +705,6 @@ void StorageNATS::threadFunc()
     else if (consumers_ready)
         unsubscribeConsumers();
 
-    if (!consumers_queues_are_empty)
-    {
-        streaming_task->schedule();
-        return;
-    }
-
     initialize_consumers_task->schedule();
 }
 
