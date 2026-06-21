@@ -1085,8 +1085,14 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
         throw Exception(ErrorCodes::INVALID_SHARD_ID, "Shard id should be range from 1 to shard number");
     }
 
-    /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || owned_cluster || relative_data_path.empty();
+    /// Force synchronous insertion when there is no persistent data path to spool blocks to: a
+    /// temporary table-function storage (`remote()`/`cluster()`) has an empty `relative_data_path`
+    /// and an owned cluster, so it always inserts synchronously. A persistent `Remote`/`RemoteSecure`
+    /// engine also builds an owned cluster, but it has a data path, so it can use the asynchronous
+    /// `Distributed` queue exactly like a regular `Distributed` table; keying the fallback on
+    /// `relative_data_path.empty()` rather than `owned_cluster` makes `distributed_foreground_insert`
+    /// and the related queue settings effective for it.
+    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || relative_data_path.empty();
     auto timeout = settings[Setting::distributed_background_insert_timeout];
 
     Names columns_to_send;
