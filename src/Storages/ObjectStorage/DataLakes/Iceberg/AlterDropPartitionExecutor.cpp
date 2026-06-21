@@ -520,8 +520,8 @@ std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropParti
         write.path = std::move(new_manifest_path);
         write.length = length;
         write.min_sequence_number = min_entry_seq;
-        write.existing_rows_count = row_total; // Iceberg `long`, no narrowing
-        write.existing_files_count = static_cast<Int32>(target_manifest.entries_to_keep.size());
+        write.existing_rows_count = row_total;
+        write.existing_files_count = target_manifest.entries_to_keep.size();
         write.content_type = replacement_content_type;
         result.push_back(std::move(write));
     }

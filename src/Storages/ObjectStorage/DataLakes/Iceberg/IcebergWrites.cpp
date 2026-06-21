@@ -46,8 +46,6 @@
 #include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <sys/stat.h>
-#include <Schema.hh>
-#include <Types.hh>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
 #include <Common/Exception.h>
@@ -71,6 +69,8 @@
 #include <Specific.hh>
 #include <Stream.hh>
 #include <ValidSchema.hh>
+#include <Schema.hh>
+#include <Types.hh>
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
