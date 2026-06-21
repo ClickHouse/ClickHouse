@@ -765,6 +765,22 @@ FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & f
         };
     }
 
+    /// Convert from QBit by reconstructing the original vector from the bit-transposed representation.
+    if (const auto * from_type_qbit = checkAndGetDataType<DataTypeQBit>(from_type_untyped.get()))
+    {
+        switch (from_type_qbit->getElementSize())
+        {
+            case 16:
+                return createQBitToArrayWrapper<BFloat16>(*from_type_qbit, to_type);
+            case 32:
+                return createQBitToArrayWrapper<Float32>(*from_type_qbit, to_type);
+            case 64:
+                return createQBitToArrayWrapper<Float64>(*from_type_qbit, to_type);
+            default:
+                UNREACHABLE();
+        }
+    }
+
     DataTypePtr from_type_holder;
     const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
     const auto * from_type_map = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
@@ -1208,6 +1224,86 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
         /// Pass nullable_source so that convertArrayToQBit can use the null map
         /// to skip NULL rows (whose nested arrays may have default/empty values).
         return convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size);
+    };
+}
+
+template <typename FloatType>
+ColumnPtr FunctionCast::convertQBitToArray(ColumnsWithTypeAndName & arguments, size_t dimension)
+{
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
+
+    ColumnPtr src_col = arguments.front().column;
+    const auto * col_qbit = checkAndGetColumn<ColumnQBit>(src_col.get());
+
+    if (!col_qbit)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Unexpected column type {} for QBit source when converting to Array", src_col->getName());
+
+    const size_t rows = col_qbit->size();
+    const ColumnTuple & tuple = col_qbit->getNestedData();
+
+    constexpr size_t bits = sizeof(Word) * 8;
+    const auto untranspose = SerializationQBit::resolveUntransposeBitPlane<Word>();
+    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dimension);
+    const size_t padded_dimension = bytes_per_fixedstring * 8;
+
+    auto data_column = ColumnVector<FloatType>::create();
+    auto & result_data = data_column->getData();
+    result_data.reserve(rows * dimension);
+
+    auto offsets_column = ColumnArray::ColumnOffsets::create();
+    auto & offsets = offsets_column->getData();
+    offsets.reserve(rows);
+
+    /// Reusable scratch buffer of the padded size. The untranspose kernel ORs bits in, so it must be zeroed before each row.
+    std::vector<FloatType> reconstructed(padded_dimension);
+
+    for (size_t row = 0; row < rows; ++row)
+    {
+        /// The float value 0 has an all-zero bit pattern for BFloat16/Float32/Float64, matching the zero Word the kernel ORs into.
+        std::memset(reconstructed.data(), 0, reconstructed.size() * sizeof(FloatType));
+
+        for (size_t bit = 0; bit < bits; ++bit)
+        {
+            const auto & fixed_string_column = assert_cast<const ColumnFixedString &>(tuple.getColumn(bit));
+            const UInt8 * src = reinterpret_cast<const UInt8 *>(fixed_string_column.getChars().data()) + row * bytes_per_fixedstring;
+            const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
+            untranspose(src, reinterpret_cast<Word *>(reconstructed.data()), padded_dimension, mask);
+        }
+
+        /// Drop the trailing padding floats that exist when dimension is not a multiple of 8.
+        result_data.insert(reconstructed.data(), reconstructed.data() + dimension);
+        offsets.push_back(result_data.size());
+    }
+
+    return ColumnArray::create(std::move(data_column), std::move(offsets_column));
+}
+
+template <typename T>
+FunctionCast::WrapperType FunctionCast::createQBitToArrayWrapper(const DataTypeQBit & from_qbit_type, const DataTypeArray & to_type) const
+{
+    /// A QBit reconstructs into an array of its own element type; the elements are converted to the requested type afterwards.
+    const DataTypePtr from_nested_type = from_qbit_type.getElementType();
+    const DataTypePtr & to_nested_type = to_type.getNestedType();
+    const size_t dimension = from_qbit_type.getDimension();
+
+    return [nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type),
+            from_nested_type,
+            to_nested_type,
+            dimension](
+               ColumnsWithTypeAndName & arguments,
+               const DataTypePtr & /* result_type */,
+               const ColumnNullable * /* nullable_source */,
+               size_t /* input_rows_count */) -> ColumnPtr
+    {
+        /// Reconstruct the original vector into an Array of the QBit's native element type.
+        ColumnPtr native_array = convertQBitToArray<T>(arguments, dimension);
+        const auto & col_array = assert_cast<const ColumnArray &>(*native_array);
+
+        /// Convert the array elements to the requested nested type (e.g. Float32 -> Float64). Identity if they already match.
+        ColumnsWithTypeAndName nested_columns{{col_array.getDataPtr(), from_nested_type, ""}};
+        auto converted_nested = nested_function(nested_columns, to_nested_type, nullptr, col_array.getData().size());
+        return ColumnArray::create(converted_nested, col_array.getOffsetsPtr());
     };
 }
 
