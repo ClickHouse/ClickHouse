@@ -1233,23 +1233,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// table with `TTL c2 + INTERVAL 1 DAY`, TTL scheduling/deletes/moves would still use the
             /// old bounds. The required TTL input columns are fed into the mutation stream as well,
             /// just like `MATERIALIZE TTL` does for the UPDATE/DELETE case.
-            ///
-            /// `getAllColumnDependencies` matches dependency columns by exact name, unlike the
-            /// subcolumn-aware `column_required_by` used for the index / projection / statistics
-            /// checks above. A TTL expression can read a subcolumn of a rewritten parent column —
-            /// e.g. `TTL t.k` while `MATERIALIZE COLUMN t` rewrites the whole `t` — whose dependency
-            /// is recorded as `t.k`, not `t`. Materializing the parent recomputes the subcolumn too,
-            /// so expand the rewritten set with the subcolumn names of each rewritten column;
-            /// otherwise the subcolumn TTL dependency is missed and the new part keeps stale bounds.
-            NameSet rewritten_columns_and_subcolumns = rewritten_columns;
-            for (const auto & rewritten_column : rewritten_columns)
-            {
-                if (auto physical_column = columns_desc.tryGetPhysical(rewritten_column))
-                    for (const auto & subcolumn_name : physical_column->type->getSubcolumnNames())
-                        rewritten_columns_and_subcolumns.insert(rewritten_column + "." + subcolumn_name);
-            }
-
-            for (const auto & dependency : getAllColumnDependencies(metadata_snapshot, rewritten_columns_and_subcolumns, has_dependency))
+            for (const auto & dependency : getAllColumnDependencies(metadata_snapshot, rewritten_columns, has_dependency))
             {
                 if (dependency.kind == ColumnDependency::TTL_EXPRESSION
                     || dependency.kind == ColumnDependency::TTL_TARGET)

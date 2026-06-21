@@ -203,18 +203,3 @@ DROP TABLE IF EXISTS t_mat_dep_sign;
 CREATE TABLE t_mat_dep_sign (a Int, c2 Int MATERIALIZED a, s Int8 MATERIALIZED c2) ENGINE = CollapsingMergeTree(s) ORDER BY a;
 ALTER TABLE t_mat_dep_sign MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_dep_sign;
-
--- Case 20: Materializing a PARENT column whose subcolumn feeds a TTL expression must also recalculate
--- the part's TTL bounds. The TTL dependency is recorded as the subcolumn name (t.k) while the rewritten
--- column is the parent (t), so the dependency expansion has to be subcolumn-aware — exactly like the
--- key checks above. Without it the new part keeps the source part's stale ttl_infos. This is Case 16
--- for a Tuple subcolumn. Both the old and the new bounds are far in the future so no row is deleted.
-DROP TABLE IF EXISTS t_mat_ttl_subcolumn;
-CREATE TABLE t_mat_ttl_subcolumn (a Int, t Tuple(k DateTime, v UInt64) MATERIALIZED (toDateTime(1800000000 + a), 0))
-    ENGINE = MergeTree() ORDER BY a TTL t.k + INTERVAL 1 DAY;
-INSERT INTO t_mat_ttl_subcolumn (a) VALUES (1);
-ALTER TABLE t_mat_ttl_subcolumn MODIFY COLUMN t Tuple(k DateTime, v UInt64) MATERIALIZED (toDateTime(1900000000 + a), 0);
-ALTER TABLE t_mat_ttl_subcolumn MATERIALIZE COLUMN t SETTINGS mutations_sync = 2;
-SELECT delete_ttl_info_min = (SELECT t.k + INTERVAL 1 DAY FROM t_mat_ttl_subcolumn LIMIT 1)
-    FROM system.parts WHERE table = 't_mat_ttl_subcolumn' AND active AND database = currentDatabase();
-DROP TABLE t_mat_ttl_subcolumn;
