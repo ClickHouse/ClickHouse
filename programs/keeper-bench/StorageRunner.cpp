@@ -243,7 +243,7 @@ void StorageRunner::setupStorage()
         for (const auto & [tag_name, paths] : benchmark_context.getTaggedPaths())
             std::cerr << "  \"" << tag_name << "\": " << paths.size() << " paths" << std::endl;
     }
-    std::cerr << "Populated " << storage->getNodesCount() << " znodes.\n" << std::endl;
+    std::cerr << "Populated " << storage->getStorageStats().nodes_count << " znodes.\n" << std::endl;
 }
 
 void StorageRunner::startGenerators()
@@ -557,7 +557,7 @@ void StorageRunner::printStats(const std::string & header, double seconds, const
     uint64_t znode_count = 0;
     {
         std::lock_guard lock(state_machine_storage_mutex);
-        znode_count = storage ? storage->getNodesCount() : 0;
+        znode_count = storage ? storage->getStorageStats().nodes_count : 0;
     }
 
     std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM

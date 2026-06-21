@@ -134,7 +134,7 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                         "  Digest: {}\n",
                         snapshot_meta->get_last_log_idx(),
                         snapshot_meta->get_last_log_term(),
-                        storage->getNodesCount(),
+                        storage->getStorageStats().nodes_count,
                         storage->getNodesDigest(/*committed=*/true, /*lock_transaction_mutex=*/false).value)
                         << std::endl;
                 }

@@ -1836,42 +1836,6 @@ KeeperStorageStats KeeperStateMachine::getStorageStats() const
     return storage->getStorageStats();
 }
 
-uint64_t KeeperStateMachine::getNodesCount() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getNodesCount();
-}
-
-uint64_t KeeperStateMachine::getTotalWatchesCount() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getTotalWatchesCount();
-}
-
-uint64_t KeeperStateMachine::getWatchedPathsCount() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getWatchedPathsCount();
-}
-
-uint64_t KeeperStateMachine::getSessionsWithWatchesCount() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getSessionsWithWatchesCount();
-}
-
-uint64_t KeeperStateMachine::getTotalEphemeralNodesCount() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getTotalEphemeralNodesCount();
-}
-
-uint64_t KeeperStateMachine::getSessionWithEphemeralNodesCount() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getSessionWithEphemeralNodesCount();
-}
-
 void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
@@ -1888,18 +1852,6 @@ void KeeperStateMachine::dumpSessionsAndEphemerals(WriteBufferFromOwnString & bu
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpSessionsAndEphemerals(buf);
-}
-
-uint64_t KeeperStateMachine::getApproximateDataSize() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getApproximateDataSize();
-}
-
-uint64_t KeeperStateMachine::getKeyArenaSize() const
-{
-    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    return storage->getArenaDataSize();
 }
 
 uint64_t KeeperStateMachine::getLatestSnapshotSize() const

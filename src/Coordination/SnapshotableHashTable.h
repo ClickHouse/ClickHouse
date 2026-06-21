@@ -444,8 +444,6 @@ public:
         }
     }
 
-    uint64_t keyArenaSize() const { return 0; }
-
     iterator begin() { return list.begin(); }
     const_iterator begin() const { return list.cbegin(); }
     iterator end() { return list.end(); }
