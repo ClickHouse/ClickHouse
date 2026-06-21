@@ -4,3 +4,5 @@
 {"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}
 {"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":{}}]}
 {"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"p":"1.5"}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","id":18446744073709551615,"geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","id":1.23,"geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}
