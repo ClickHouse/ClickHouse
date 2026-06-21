@@ -3,6 +3,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -33,6 +34,7 @@ enum BasicFeatureMask : UInt8
     NumericMinMax = 1u << 0,
     StringLengthSum = 1u << 1,
     NullCount = 1u << 2,
+    DefaultsCount = 1u << 3,
 };
 
 UInt64 countNullsInColumn(const ColumnPtr & column)
@@ -112,6 +114,9 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
     tracks_numeric = data_type->isValueRepresentedByNumber();
     tracks_string = isStringOrFixedString(data_type);
     tracks_null = isNullableOrLowCardinalityNullable(data_type_);
+    /// The default count is only meaningful for columns that can be stored sparsely; it is the
+    /// signal used to choose sparse serialization from statistics (see `SerializationStatistics`).
+    tracks_defaults = data_type_->supportsSparseSerialization();
 }
 
 void StatisticsBasic::build(const ColumnPtr & column)
@@ -141,6 +146,12 @@ void StatisticsBasic::build(const ColumnPtr & column)
     if (tracks_string)
         string_total_bytes += sumNonNullStringBytes(column);
 
+    if (tracks_defaults)
+    {
+        double ratio = column->getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
+        num_defaults += static_cast<UInt64>(ratio * static_cast<double>(column_size));
+    }
+
     row_count += column_size;
 }
 
@@ -161,6 +172,8 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
         string_total_bytes += other->string_total_bytes;
     if (tracks_null)
         null_count += other->null_count;
+    if (tracks_defaults)
+        num_defaults += other->num_defaults;
 
     row_count += other->row_count;
 }
@@ -176,6 +189,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::StringLengthSum;
     if (tracks_null)
         mask |= BasicFeatureMask::NullCount;
+    if (tracks_defaults)
+        mask |= BasicFeatureMask::DefaultsCount;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -187,6 +202,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         writeIntBinary(string_total_bytes, buf);
     if (tracks_null)
         writeIntBinary(null_count, buf);
+    if (tracks_defaults)
+        writeIntBinary(num_defaults, buf);
 }
 
 void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
@@ -210,6 +227,11 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
     if (mask & BasicFeatureMask::NullCount)
     {
         readIntBinary(null_count, buf);
+    }
+
+    if (mask & BasicFeatureMask::DefaultsCount)
+    {
+        readIntBinary(num_defaults, buf);
     }
 }
 
@@ -255,6 +277,11 @@ String StatisticsBasic::getNameForLogs() const
     {
         sep("null_count");
         result += std::to_string(null_count);
+    }
+    if (tracks_defaults)
+    {
+        sep("num_defaults");
+        result += std::to_string(num_defaults);
     }
     if (first)
         result += "(empty)";

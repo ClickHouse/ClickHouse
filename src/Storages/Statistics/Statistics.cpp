@@ -184,6 +184,11 @@ UInt64 IStatistics::estimateCardinality() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cardinality estimation is not implemented for this type of statistics");
 }
 
+UInt64 IStatistics::estimateDefaults() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Default-count estimation is not implemented for this type of statistics");
+}
+
 Float64 IStatistics::estimateEqual(const Field & /*val*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Equality estimation is not implemented for this type of statistics");
@@ -307,10 +312,24 @@ UInt64 ColumnStatistics::estimateCardinality() const
     return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
+UInt64 ColumnStatistics::estimateDefaults() const
+{
+    if (stats.contains(StatisticsType::Basic))
+        return stats.at(StatisticsType::Basic)->estimateDefaults();
+    return 0;
+}
+
 bool ColumnStatistics::hasNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
         return assert_cast<const StatisticsBasic &>(*it->second).hasNullCount();
+    return false;
+}
+
+bool ColumnStatistics::hasDefaultsCount() const
+{
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+        return assert_cast<const StatisticsBasic &>(*it->second).hasDefaultsCount();
     return false;
 }
 

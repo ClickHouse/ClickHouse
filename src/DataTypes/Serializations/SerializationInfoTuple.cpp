@@ -74,7 +74,7 @@ void SerializationInfoTuple::add(const SerializationInfo & other)
         if (it != other_info->name_to_elem.end())
             elem->add(*it->second);
         else
-            elem->addDefaults(other_info->getData().num_rows);
+            elem->addDefaults(other_info->getStatistics().num_rows);
     }
 }
 
@@ -125,7 +125,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
         elems_cloned.push_back(elem ? elem->clone() : nullptr);
 
     auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names);
-    ret->data = data;
+    ret->statistics = statistics;
     return ret;
 }
 
@@ -165,9 +165,9 @@ void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
         elem->deserializeFromKindsBinary(in);
 }
 
-void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name) const
+void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name, bool has_internal_statistics) const
 {
-    SerializationInfo::writeJSONFields(out, name);
+    SerializationInfo::writeJSONFields(out, name, has_internal_statistics);
     writeString(R"(,"subcolumns":[)", out);
 
     bool first = true;
@@ -177,7 +177,8 @@ void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * n
             writeChar(',', out);
         first = false;
 
-        elem->writeJSON(out, nullptr);
+        /// Subcolumns have no external statistics of their own, so their counts are always stored inline.
+        elem->writeJSON(out, nullptr, /*has_internal_statistics=*/true);
     }
 
     writeChar(']', out);

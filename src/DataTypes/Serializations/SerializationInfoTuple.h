@@ -36,7 +36,7 @@ public:
     ISerialization::KindStack getElementKindStack(size_t i) const { return elems[i]->getKindStack(); }
 
 protected:
-    void writeJSONFields(WriteBuffer & out, const String * name) const override;
+    void writeJSONFields(WriteBuffer & out, const String * name, bool has_internal_statistics) const override;
 
 private:
     MutableSerializationInfos elems;

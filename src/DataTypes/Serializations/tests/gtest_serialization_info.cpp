@@ -37,9 +37,9 @@ SerializationInfoSettings alwaysDefaultSettings()
     return s;
 }
 
-SerializationInfo::Data makeData(size_t num_rows, size_t num_defaults)
+SerializationStatistics makeData(size_t num_rows, size_t num_defaults)
 {
-    SerializationInfo::Data d;
+    SerializationStatistics d;
     d.num_rows = num_rows;
     d.num_defaults = num_defaults;
     return d;
@@ -95,8 +95,8 @@ TEST(SerializationInfoJSON, RoundTripDefault)
     restored.fromJSON(obj);
 
     EXPECT_EQ(restored.getKindStack(), kind_stack);
-    EXPECT_EQ(restored.getData().num_rows, 1000);
-    EXPECT_EQ(restored.getData().num_defaults, 100);
+    EXPECT_EQ(restored.getStatistics().num_rows, 1000);
+    EXPECT_EQ(restored.getStatistics().num_defaults, 100);
 }
 
 TEST(SerializationInfoJSON, RoundTripSparse)
@@ -115,8 +115,8 @@ TEST(SerializationInfoJSON, RoundTripSparse)
     restored.fromJSON(obj);
 
     EXPECT_EQ(restored.getKindStack(), kind_stack);
-    EXPECT_EQ(restored.getData().num_rows, 1000000);
-    EXPECT_EQ(restored.getData().num_defaults, 950000);
+    EXPECT_EQ(restored.getStatistics().num_rows, 1000000);
+    EXPECT_EQ(restored.getStatistics().num_defaults, 950000);
 }
 
 TEST(SerializationInfoJSON, RoundTripDetachedOverSparse)
@@ -140,8 +140,8 @@ TEST(SerializationInfoJSON, RoundTripDetachedOverSparse)
     ISerialization::KindStack expected_after_roundtrip{
         ISerialization::Kind::DEFAULT, ISerialization::Kind::DETACHED, ISerialization::Kind::SPARSE};
     EXPECT_EQ(restored.getKindStack(), expected_after_roundtrip);
-    EXPECT_EQ(restored.getData().num_rows, 500);
-    EXPECT_EQ(restored.getData().num_defaults, 490);
+    EXPECT_EQ(restored.getStatistics().num_rows, 500);
+    EXPECT_EQ(restored.getStatistics().num_defaults, 490);
 }
 
 TEST(SerializationInfoJSON, RoundTripZeroRows)
@@ -155,8 +155,8 @@ TEST(SerializationInfoJSON, RoundTripZeroRows)
     SerializationInfo restored({ISerialization::Kind::DEFAULT}, defaultSettings());
     restored.fromJSON(obj);
 
-    EXPECT_EQ(restored.getData().num_rows, 0);
-    EXPECT_EQ(restored.getData().num_defaults, 0);
+    EXPECT_EQ(restored.getStatistics().num_rows, 0);
+    EXPECT_EQ(restored.getStatistics().num_defaults, 0);
     EXPECT_EQ(restored.getKindStack(), kind_stack);
 }
 
@@ -199,8 +199,8 @@ TEST(SerializationInfoJSON, FromJSONOverwritesExistingData)
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE};
     EXPECT_EQ(info.getKindStack(), expected);
-    EXPECT_EQ(info.getData().num_rows, 2000);
-    EXPECT_EQ(info.getData().num_defaults, 1999);
+    EXPECT_EQ(info.getStatistics().num_rows, 2000);
+    EXPECT_EQ(info.getStatistics().num_defaults, 1999);
 }
 
 TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
@@ -235,6 +235,70 @@ TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
     EXPECT_TRUE(restored.getSettings().propagate_types_serialization_versions_to_nested_types);
     EXPECT_NE(restored.tryGet("string\"with\\escapes"), nullptr);
     EXPECT_NE(restored.tryGet("tuple"), nullptr);
+}
+
+TEST(SerializationInfoByNameJSON, WithExternalStatisticsRoundTrip)
+{
+    SerializationInfoSettings settings;
+    settings.ratio_of_defaults_for_sparse = 0.5;
+    settings.choose_kind = true;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS;
+
+    auto string_type = std::make_shared<DataTypeString>();
+    NamesAndTypesList columns
+    {
+        {"inline_col", string_type},
+        {"external_col", string_type},
+    };
+
+    SerializationInfoByName infos(columns, settings);
+    /// `inline_col` keeps its counts in `serialization.json`; `external_col` is declared to have them
+    /// in external statistics, so they must be omitted and its `has_internal_statistics` flag is false.
+    infos.at("inline_col")->backfillStatistics(1000, 100);
+    NameSet columns_with_external_statistics{"external_col"};
+
+    WriteBufferFromOwnString out;
+    infos.writeJSON(out, columns_with_external_statistics);
+    auto json = out.str();
+
+    EXPECT_THAT(json, testing::HasSubstr(R"("has_internal_statistics":true)"));
+    EXPECT_THAT(json, testing::HasSubstr(R"("has_internal_statistics":false)"));
+
+    auto restored = SerializationInfoByName::readJSONFromString(columns, json);
+    EXPECT_EQ(restored.getVersion(), MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS);
+
+    ASSERT_NE(restored.tryGet("inline_col"), nullptr);
+    ASSERT_NE(restored.tryGet("external_col"), nullptr);
+
+    /// `inline_col` carries its counts inline and is not marked external.
+    EXPECT_FALSE(restored.at("inline_col")->countsAreExternal());
+    EXPECT_EQ(restored.at("inline_col")->getStatistics().num_rows, 1000u);
+    EXPECT_EQ(restored.at("inline_col")->getStatistics().num_defaults, 100u);
+
+    /// `external_col` omits its counts and is marked for backfill from external statistics.
+    EXPECT_TRUE(restored.at("external_col")->countsAreExternal());
+    EXPECT_EQ(restored.at("external_col")->getStatistics().num_rows, 0u);
+    EXPECT_EQ(restored.at("external_col")->getStatistics().num_defaults, 0u);
+
+    /// After backfilling, the column is no longer marked external.
+    restored.at("external_col")->backfillStatistics(2000, 1500);
+    EXPECT_FALSE(restored.at("external_col")->countsAreExternal());
+    EXPECT_EQ(restored.at("external_col")->getStatistics().num_defaults, 1500u);
+}
+
+TEST(SerializationInfoJSON, FromJSONMissingHasInternalStatisticsFlagThrows)
+{
+    /// Under WITH_EXTERNAL_STATISTICS the flag is mandatory (fail-close).
+    SerializationInfoSettings settings;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS;
+
+    SerializationInfo info({ISerialization::Kind::DEFAULT}, settings);
+    Poco::JSON::Object obj;
+    obj.set("kind", "Default");
+    obj.set("num_rows", 100);
+    obj.set("num_defaults", 10);
+    /// missing has_internal_statistics
+    EXPECT_THROW(info.fromJSON(obj), DB::Exception);
 }
 
 /// Malformed kind tests.

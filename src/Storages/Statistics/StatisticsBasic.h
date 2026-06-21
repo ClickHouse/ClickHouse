@@ -21,6 +21,11 @@ namespace DB
 /// The same column may contribute to multiple sub-statistics (e.g. a `Nullable(UInt32)` produces
 /// both numeric min/max and null count). For sub-statistics not applicable to the column type the
 /// corresponding fields stay at their default sentinel values and are not serialized.
+///
+/// For column types that support sparse serialization, `basic` statistics also estimate the number
+/// of default values (`num_defaults`, sampled via `getRatioOfDefaultRows`). When such an external
+/// statistic exists for a column it can serve as the authoritative source of the default count for
+/// choosing the serialization kind, instead of the lightweight per-part count (`SerializationStatistics`).
 class StatisticsBasic : public IStatistics
 {
 public:
@@ -33,11 +38,13 @@ public:
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
     std::optional<Float64> estimateLess(const Field & val) const override;
+    UInt64 estimateDefaults() const override { return num_defaults; }
     String getNameForLogs() const override;
 
     bool hasNumericMinMax() const { return tracks_numeric; }
     bool hasStringLengthAvg() const { return tracks_string; }
     bool hasNullCount() const { return tracks_null; }
+    bool hasDefaultsCount() const { return tracks_defaults; }
 
     const Field & getMin() const { return min; }
     const Field & getMax() const { return max; }
@@ -47,6 +54,8 @@ public:
     /// `getStringTotalBytes()` to distinguish "no data" from "all empty strings".
     Int64 getStringLengthAvg() const;
     UInt64 getNullCount() const { return null_count; }
+    /// Estimated number of default values seen by `build` (only tracked for sparse-supporting types).
+    UInt64 getNumDefaults() const { return num_defaults; }
     UInt64 getRowCount() const { return row_count; }
 
 private:
@@ -54,12 +63,14 @@ private:
     Field max; /// null Field means "not initialized"
     UInt64 string_total_bytes = 0;
     UInt64 null_count = 0;
+    UInt64 num_defaults = 0;
     UInt64 row_count = 0;
 
     DataTypePtr data_type; /// stored with LowCardinality and Nullable removed
     bool tracks_numeric = false;
     bool tracks_string = false;
     bool tracks_null = false;
+    bool tracks_defaults = false;
 };
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

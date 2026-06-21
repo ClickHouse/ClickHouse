@@ -1,6 +1,5 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
-#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
@@ -28,6 +27,7 @@ constexpr auto KEY_VERSION = "version";
 constexpr auto KEY_NUM_ROWS = "num_rows";
 constexpr auto KEY_COLUMNS = "columns";
 constexpr auto KEY_NUM_DEFAULTS = "num_defaults";
+constexpr auto KEY_HAS_INTERNAL_STATISTICS = "has_internal_statistics";
 constexpr auto KEY_KIND = "kind";
 constexpr auto KEY_NAME = "name";
 
@@ -63,83 +63,56 @@ void writeJSONKeyValue(std::string_view key, bool value, WriteBuffer & out)
 
 }
 
-void SerializationInfo::Data::add(const IColumn & column)
-{
-    size_t rows = column.size();
-    double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
-
-    num_rows += rows;
-    num_defaults += static_cast<size_t>(ratio * static_cast<double>(rows));
-}
-
-void SerializationInfo::Data::add(const Data & other)
-{
-    num_rows += other.num_rows;
-    num_defaults += other.num_defaults;
-}
-
-void SerializationInfo::Data::remove(const Data & other)
-{
-    num_rows -= other.num_rows;
-    num_defaults -= other.num_defaults;
-}
-
-void SerializationInfo::Data::addDefaults(size_t length)
-{
-    num_rows += length;
-    num_defaults += length;
-}
-
 SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_)
     : settings(settings_)
     , kind_stack(kind_stack_)
 {
 }
 
-SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_, const Data & data_)
+SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_, const SerializationStatistics & statistics_)
     : settings(settings_)
     , kind_stack(kind_stack_)
-    , data(data_)
+    , statistics(statistics_)
 {
 }
 
 void SerializationInfo::add(const IColumn & column)
 {
-    data.add(column);
+    statistics.add(column);
     if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
+        kind_stack = chooseKindStack(statistics, settings);
 }
 
 void SerializationInfo::add(const SerializationInfo & other)
 {
-    data.add(other.data);
+    statistics.add(other.statistics);
     if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
+        kind_stack = chooseKindStack(statistics, settings);
 }
 
 void SerializationInfo::remove(const SerializationInfo & other)
 {
-    data.remove(other.data);
+    statistics.remove(other.statistics);
     if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
+        kind_stack = chooseKindStack(statistics, settings);
 }
 
 
 void SerializationInfo::addDefaults(size_t length)
 {
-    data.addDefaults(length);
+    statistics.addDefaults(length);
     if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
+        kind_stack = chooseKindStack(statistics, settings);
 }
 
 void SerializationInfo::replaceData(const SerializationInfo & other)
 {
-    data = other.data;
+    statistics = other.statistics;
 }
 
 MutableSerializationInfoPtr SerializationInfo::clone() const
 {
-    return std::make_shared<SerializationInfo>(kind_stack, settings, data);
+    return std::make_shared<SerializationInfo>(kind_stack, settings, statistics);
 }
 
 /// Returns true if all rows with default values of type 'lhs'
@@ -272,7 +245,7 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     }
 }
 
-void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) const
+void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name, bool has_internal_statistics) const
 {
     writeJSONKeyValue(KEY_KIND, ISerialization::kindStackToString(kind_stack), out);
 
@@ -282,43 +255,73 @@ void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) 
         writeJSONKeyValue(KEY_NAME, *name, out);
     }
 
-    writeChar(',', out);
-    writeJSONKeyValue(KEY_NUM_DEFAULTS, data.num_defaults, out);
+    if (settings.version >= MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS)
+    {
+        /// Record whether the counts are stored here (internally) or in the external statistics.
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_HAS_INTERNAL_STATISTICS, has_internal_statistics, out);
+
+        if (!has_internal_statistics)
+            return;
+    }
 
     writeChar(',', out);
-    writeJSONKeyValue(KEY_NUM_ROWS, data.num_rows, out);
+    writeJSONKeyValue(KEY_NUM_DEFAULTS, statistics.num_defaults, out);
+
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_NUM_ROWS, statistics.num_rows, out);
 }
 
-void SerializationInfo::writeJSON(WriteBuffer & out, const String * name) const
+void SerializationInfo::writeJSON(WriteBuffer & out, const String * name, bool has_internal_statistics) const
 {
     writeChar('{', out);
-    writeJSONFields(out, name);
+    writeJSONFields(out, name, has_internal_statistics);
     writeChar('}', out);
 }
 
 void SerializationInfo::toJSON(Poco::JSON::Object & object) const
 {
     object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
-    object.set(KEY_NUM_DEFAULTS, data.num_defaults);
-    object.set(KEY_NUM_ROWS, data.num_rows);
+    object.set(KEY_NUM_DEFAULTS, statistics.num_defaults);
+    object.set(KEY_NUM_ROWS, statistics.num_rows);
 }
 
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 {
-    if (!object.has(KEY_KIND) || !object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Missed field '{}' or '{}' or '{}' in SerializationInfo of columns",
-            KEY_KIND, KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
+    if (!object.has(KEY_KIND))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed field '{}' in SerializationInfo of columns", KEY_KIND);
 
-    data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
-    data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
     kind_stack = ISerialization::stringToKindStack(object.getValue<String>(KEY_KIND));
+
+    if (settings.version >= MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS)
+    {
+        /// The flag is mandatory; do not assume a default (fail-close).
+        if (!object.has(KEY_HAS_INTERNAL_STATISTICS))
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Missed field '{}' in SerializationInfo of columns", KEY_HAS_INTERNAL_STATISTICS);
+
+        /// When the counts are not stored here, they are recovered from the external statistics; leave
+        /// them at 0 and mark the info so the caller backfills them before any kind decision.
+        if (!object.getValue<bool>(KEY_HAS_INTERNAL_STATISTICS))
+        {
+            counts_are_external = true;
+            return;
+        }
+    }
+
+    if (!object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Missed field '{}' or '{}' in SerializationInfo of columns",
+            KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
+
+    statistics.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
+    statistics.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
 }
 
-ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, const Settings & settings)
+ISerialization::KindStack SerializationInfo::chooseKindStack(const SerializationStatistics & statistics, const Settings & settings)
 {
     ISerialization::KindStack kind_stack = {ISerialization::Kind::DEFAULT};
-    double ratio = data.num_rows ? std::min(static_cast<double>(data.num_defaults) / static_cast<double>(data.num_rows), 1.0) : 0.0;
+    double ratio = statistics.num_rows ? std::min(static_cast<double>(statistics.num_defaults) / static_cast<double>(statistics.num_rows), 1.0) : 0.0;
     if (ratio > settings.ratio_of_defaults_for_sparse)
         kind_stack.push_back(ISerialization::Kind::SPARSE);
     return kind_stack;
@@ -422,7 +425,7 @@ bool SerializationInfoByName::needsPersistence() const
     return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
-void SerializationInfoByName::writeJSON(WriteBuffer & out) const
+void SerializationInfoByName::writeJSON(WriteBuffer & out, const NameSet & columns_with_external_statistics) const
 {
     auto version = getVersion();
 
@@ -437,7 +440,10 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
             writeChar(',', out);
         first = false;
 
-        info->writeJSON(out, &name);
+        /// A column whose serialization-relevant count is available in external statistics does not
+        /// store the count inline (only meaningful under `WITH_EXTERNAL_STATISTICS`).
+        bool has_internal_statistics = !columns_with_external_statistics.contains(name);
+        info->writeJSON(out, &name, has_internal_statistics);
     }
     writeChar(']', out);
 

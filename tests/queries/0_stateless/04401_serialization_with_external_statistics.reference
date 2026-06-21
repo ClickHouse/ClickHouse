@@ -1,0 +1,6 @@
+always_on	Sparse
+before_merge	Sparse
+before_merge	Sparse
+after_merge	Sparse
+count	100000
+nonempty	1000

@@ -2103,6 +2103,31 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
         infos = SerializationInfoByName::readJSON(loaded_columns, *in);
 
+    /// Columns persisted under WITH_EXTERNAL_STATISTICS may have omitted their per-column counts; the
+    /// default count then lives in the external statistics. Recover it so that merges/mutations can
+    /// re-decide the serialization kind from complete counts (the only consumer of these counts).
+    {
+        Names columns_to_backfill;
+        for (const auto & [column_name, column_info] : infos)
+            if (column_info->countsAreExternal())
+                columns_to_backfill.push_back(column_name);
+
+        if (!columns_to_backfill.empty())
+        {
+            auto external_statistics = loadStatistics(columns_to_backfill);
+            for (const auto & column_name : columns_to_backfill)
+            {
+                auto stats_it = external_statistics.find(column_name);
+                if (stats_it == external_statistics.end() || !stats_it->second->hasDefaultsCount())
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Serialization info of column '{}' in part {} refers to external statistics, but they are missing",
+                        column_name, name);
+
+                infos.at(column_name)->backfillStatistics(stats_it->second->getNumRows(), stats_it->second->estimateDefaults());
+            }
+        }
+    }
+
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)
     {

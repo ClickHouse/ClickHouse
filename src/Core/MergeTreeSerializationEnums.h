@@ -9,6 +9,11 @@ enum class MergeTreeSerializationInfoVersion : uint8_t
 {
     BASIC = 0,
     WITH_TYPES = 1,
+    /// Like `WITH_TYPES`, but each column also stores a `has_internal_statistics` flag. When a column
+    /// already has the serialization-relevant count in external statistics (e.g. `StatisticsBasic`
+    /// with the default count), the flag is `false` and the per-column counts are omitted from
+    /// `serialization.json` (read from the external statistics instead).
+    WITH_EXTERNAL_STATISTICS = 2,
 };
 
 enum class MergeTreeStringSerializationVersion : uint8_t

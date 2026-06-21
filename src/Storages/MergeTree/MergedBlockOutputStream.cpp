@@ -367,9 +367,20 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     const auto & serialization_infos = new_part->getSerializationInfos();
     if (serialization_infos.needsPersistence())
     {
+        /// Under WITH_EXTERNAL_STATISTICS, omit the per-column counts for columns whose default count
+        /// is persisted in the external statistics; they are read back from there at load time (see
+        /// `SerializationInfo::fromJSON` and `IMergeTreeDataPart::loadColumns`).
+        NameSet columns_with_external_statistics;
+        if (serialization_infos.getVersion() >= MergeTreeSerializationInfoVersion::WITH_EXTERNAL_STATISTICS)
+        {
+            for (const auto & [column_name, column_stats] : gathered_data.statistics)
+                if (column_stats->hasDefaultsCount())
+                    columns_with_external_statistics.insert(column_name);
+        }
+
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
-            serialization_infos.writeJSON(buffer);
+            serialization_infos.writeJSON(buffer, columns_with_external_statistics);
         });
     }
 
