@@ -79,6 +79,11 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
         ostr << " RECOMPRESS ";
         recompression_codec->format(ostr, settings, state, frame);
     }
+    else if (mode == TTLMode::CLEAR_INDEX)
+    {
+        ostr << " CLEAR INDEX ";
+        ostr << backQuoteIfNeed(index_name);
+    }
     else if (mode == TTLMode::DELETE)
     {
         /// It would be better to output "DELETE" here but that will break compatibility with earlier versions.

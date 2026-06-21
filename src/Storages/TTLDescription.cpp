@@ -136,6 +136,7 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     , destination_name(other.destination_name)
     , if_exists(other.if_exists)
     , recompression_codec(other.recompression_codec)
+    , index_name(other.index_name)
 {
 }
 
@@ -166,6 +167,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     destination_type = other.destination_type;
     destination_name = other.destination_name;
     if_exists = other.if_exists;
+    index_name = other.index_name;
 
     if (other.recompression_codec)
         recompression_codec = other.recompression_codec->clone();
@@ -329,9 +331,32 @@ TTLDescription TTLDescription::getTTLFromAST(
                     !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
                     is_attach || context->getSettingsRef()[Setting::allow_experimental_codecs]);
         }
+        else if (ttl_element->mode == TTLMode::CLEAR_INDEX)
+        {
+            result.index_name = ttl_element->index_name;
+        }
     }
 
     checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+    return result;
+}
+
+TTLDescription TTLDescription::getTTLForColumnFromAST(
+    const ASTPtr & definition_ast,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    const KeyDescription & primary_key,
+    bool is_attach)
+{
+    auto result = getTTLFromAST(definition_ast, columns, context, primary_key, is_attach);
+
+    /// The column TTL grammar cannot produce `CLEAR INDEX` today, but check explicitly rather
+    /// than rely on the grammar.
+    if (result.mode == TTLMode::CLEAR_INDEX)
+        throw Exception(
+            ErrorCodes::BAD_TTL_EXPRESSION,
+            "TTL CLEAR INDEX is a table-level TTL action and cannot be used in column TTL");
+
     return result;
 }
 
@@ -343,6 +368,7 @@ TTLTableDescription::TTLTableDescription(const TTLTableDescription & other)
  , move_ttl(other.move_ttl)
  , recompression_ttl(other.recompression_ttl)
  , group_by_ttl(other.group_by_ttl)
+ , index_clear_ttl(other.index_clear_ttl)
 {
 }
 
@@ -361,6 +387,7 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
     move_ttl = other.move_ttl;
     recompression_ttl = other.recompression_ttl;
     group_by_ttl = other.group_by_ttl;
+    index_clear_ttl = other.index_clear_ttl;
 
     return *this;
 }
@@ -404,6 +431,10 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
         else if (ttl.mode == TTLMode::GROUP_BY)
         {
             result.group_by_ttl.emplace_back(std::move(ttl));
+        }
+        else if (ttl.mode == TTLMode::CLEAR_INDEX)
+        {
+            result.index_clear_ttl.emplace_back(std::move(ttl));
         }
         else
         {

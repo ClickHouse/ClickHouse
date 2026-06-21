@@ -936,7 +936,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
+            auto new_ttl_entry = TTLDescription::getTTLForColumnFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
@@ -1051,6 +1051,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         merging_params.allow_tuple_element_aggregation = false;
     }
+
+    metadata.validateTTLIndexClearTargets();
 
     if (replicated)
     {

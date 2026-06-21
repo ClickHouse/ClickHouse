@@ -1492,7 +1492,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(
+        auto new_ttl_entry = TTLDescription::getTTLForColumnFromAST(
             ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
         metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
     }
@@ -1504,6 +1504,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             context,
             metadata_copy.primary_key,
             context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+
+    metadata_copy.validateTTLIndexClearTargets();
 
     metadata = std::move(metadata_copy);
 }
