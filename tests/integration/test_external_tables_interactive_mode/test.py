@@ -11,6 +11,15 @@ node = cluster.add_instance("node")
 TMP_DIR = Path(__file__).resolve().parents[3] / "tmp"
 
 
+def get_client_command(started_cluster, external_users_file):
+    return (
+        f"{started_cluster.get_client_cmd()} --host {node.ip_address} --port 9000 "
+        f"--external --file={external_users_file} --name=users "
+        "--structure='id UInt32, name String' --format=CSV "
+        "--disable_suggestion --highlight=0"
+    )
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -33,14 +42,12 @@ def external_users_file(started_cluster):
 
 
 def test_external_tables_interactive_mode(started_cluster, external_users_file):
-    command = (
-        f"{started_cluster.get_client_cmd()} --host {node.ip_address} --port 9000 "
-        f"--external --file={external_users_file} --name=users "
-        "--structure='id UInt32, name String' --format=CSV "
-        "--disable_suggestion --highlight=0"
-    )
+    command = get_client_command(started_cluster, external_users_file)
 
     with client(command=command) as interactive_client:
+        interactive_client.expect(prompt)
+
+        interactive_client.send("SET max_threads = 3;")
         interactive_client.expect(prompt)
 
         interactive_client.send("SET max_threads = 4; SELECT * FROM users ORDER BY id;")
@@ -68,3 +75,18 @@ def test_external_tables_interactive_mode(started_cluster, external_users_file):
         )
         interactive_client.expect("ReadFromMemoryStorage")
         interactive_client.expect(prompt)
+
+
+def test_set_query_throw_on_missed_external_file(started_cluster):
+    TMP_DIR.mkdir(exist_ok=True)
+    missing_external_users_file = TMP_DIR / "external_tables_interactive_mode_missing_users.csv"
+    missing_external_users_file.unlink(missing_ok=True)
+
+    with client(command=get_client_command(started_cluster, missing_external_users_file)) as interactive_client:
+        interactive_client.expect(prompt)
+
+        interactive_client.send("SET max_block_size = 1000;")
+        interactive_client.expect(prompt)
+
+        assert "Exception" in interactive_client.before
+        assert "No such file" in interactive_client.before
