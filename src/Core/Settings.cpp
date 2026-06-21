@@ -7682,8 +7682,21 @@ Possible values:
   - Unquoted identifiers are case-insensitive
   - Double-quoted identifiers ("...") are case-sensitive
   - Backtick-quoted identifiers (`...`) are case-insensitive (like unquoted)
-  - If multiple columns differ only by case, unquoted access throws an ambiguity error
   - Expression aliases and CTE names follow the same rules
+
+Ambiguity model for column, table, and CTE lookups in `standard` mode:
+  - An exact-case unquoted lookup always binds to the literal object of that name, even when
+    another case variant exists. For example, with columns `Val` and `val` in the same table,
+    `SELECT Val FROM t` returns `Val` and `SELECT val FROM t` returns `val`.
+  - An unquoted lookup whose spelling does not exactly match any object is matched
+    case-insensitively. If two or more objects then match, the lookup throws an ambiguity
+    error (e.g. `SELECT VAL FROM t` when both `Val` and `val` exist).
+  - Built-in dual-case namespaces such as `information_schema` / `INFORMATION_SCHEMA` and their
+    views (`tables`/`TABLES`, ...) are recognised as canonical aliases of one logical schema and
+    are not treated as ambiguous.
+
+Database names follow a stricter rule: collisions among user-defined databases that differ only
+in case are reported as ambiguous unless the lookup is double-quoted.
 
 Example with `standard` mode:
 - `SELECT FirstName FROM t` matches column `firstname`, `FIRSTNAME`, or `FirstName`
