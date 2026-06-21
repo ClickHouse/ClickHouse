@@ -1765,9 +1765,9 @@ void ColumnVariant::applyNullMap(const ColumnVector<UInt8>::Container & null_map
     applyNullMapImpl<false>(null_map);
 }
 
-void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map)
+void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset)
 {
-    applyNullMapImpl<true>(null_map);
+    applyNullMapImpl<true>(null_map, offset);
 }
 
 ColumnPtr ColumnVariant::createNullMap() const
@@ -1781,8 +1781,26 @@ ColumnPtr ColumnVariant::createNullMap() const
 }
 
 template <bool inverted>
-void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map)
+void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map, size_t offset)
 {
+    if (offset + null_map.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Applying a null map to a Variant column is only supported for a suffix range, but offset {} plus "
+            "null map size {} does not reach the column size {}",
+            offset,
+            null_map.size(),
+            size());
+
+    if (offset != 0)
+    {
+        auto range = IColumn::mutate(cut(offset, null_map.size()));
+        assert_cast<ColumnVariant &>(*range).applyNullMapImpl<inverted>(null_map);
+        popBack(null_map.size());
+        insertRangeFrom(*range, 0, range->size());
+        return;
+    }
+
     if (null_map.size() != local_discriminators->size())
         throw Exception(ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT,
                         "Logical error: Sizes of discriminators column and null map data are not equal");

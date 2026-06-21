@@ -353,11 +353,12 @@ void StorageMergeTree::read(
         {
             auto modified_query_info = query_info;
             modified_query_info.cluster = std::move(cluster);
+            auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                 query_plan,
                 getStorageID(),
                 std::move(modified_query_info),
-                getInMemoryMetadataPtr(local_context, false)->getColumns(),
+                metadata_snapshot->getColumns(),
                 storage_snapshot,
                 processed_stage,
                 query_info.query,
@@ -460,8 +461,9 @@ void StorageMergeTree::alter(
     auto old_storage_settings = getSettings();
     const auto & query_settings = local_context->getSettingsRef();
 
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
     auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context);
     if (!maybe_mutation_commands.empty())
@@ -1833,7 +1835,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
         /// which is equal or more fresh than commands themselves. In extremely rare case it can happen that we will have alter
         /// in between we took snapshot above and selected commands. That is why we take new snapshot here.
-        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, getInMemoryMetadataPtr(getContext(), false), mutate_entry, shared_lock, common_assignee_trigger);
+        const auto new_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, new_metadata_snapshot, mutate_entry, shared_lock, common_assignee_trigger);
         return assignee.scheduleMergeMutateTask(task);
     }
     if (has_mutations)
@@ -1969,7 +1972,8 @@ bool StorageMergeTree::optimize(
     assertNotReadonly();
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
-    if (deduplicate && getInMemoryMetadataPtr(local_context, false)->hasProjections()
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    if (deduplicate && metadata_snapshot->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
@@ -2583,7 +2587,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     /// Source-side UK reject (destination-side rejection is centralized in
     /// MergeTreeData::alterPartition). Without this, REPLACE PARTITION FROM a
     /// UK source into a plain table would silently break UK invariants.
-    if (source_table->getInMemoryMetadataPtr(local_context, false)->hasUniqueKey())
+    auto source_uk_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
+    if (source_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "REPLACE/ATTACH PARTITION FROM a source table with UNIQUE KEY is not supported");
 
@@ -2644,7 +2649,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, getLevelForAdoptedPart(src_data, src_part->info.level));
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
         if (replace)
@@ -2744,7 +2749,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     /// Destination-side UK reject (source-side rejection is centralized in
     /// MergeTreeData::alterPartition).
-    if (dest_table_storage->getInMemoryMetadataPtr(local_context, false)->hasUniqueKey())
+    auto dest_uk_metadata_snapshot = dest_table_storage->getInMemoryMetadataPtr(local_context, false);
+    if (dest_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "MOVE PARTITION TO a destination table with UNIQUE KEY is not supported");
     bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(dest_table_storage->getStoragePolicy());
@@ -2811,7 +2817,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, dest_table_storage->getLevelForAdoptedPart(src_data, src_part->info.level));
 
         IDataPartStorage::ClonePartParams clone_params
         {
