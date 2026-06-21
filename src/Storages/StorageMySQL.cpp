@@ -41,6 +41,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool external_table_functions_use_nulls;
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsMySQLDataTypesSupport mysql_datatypes_support_level;
     extern const SettingsUInt64 mysql_max_rows_to_insert;
@@ -719,7 +720,10 @@ ColumnsDescription doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, con
         auto & field = query_result.getField(i);
         columns.add(ColumnDescription(
             query_result.getFieldName(i),
-            convertMySQLDataType(settings[Setting::mysql_datatypes_support_level], field)));
+            convertMySQLDataType(
+                settings[Setting::mysql_datatypes_support_level],
+                field,
+                settings[Setting::external_table_functions_use_nulls])));
     }
 
     /// Drain the (empty) result so that the connection is left in a consistent state for reuse.

@@ -1146,6 +1146,34 @@ def test_query_passing_table_function(started_cluster):
     row = node1.query(f"SELECT * FROM {q_subq} ORDER BY id LIMIT 1").rstrip()
     assert len(row.split("\t")) == 2
 
+    # The external_table_functions_use_nulls setting is honoured by the query-backed schema inference,
+    # exactly as it is by the table-name path: a nullable MySQL column is exposed as Nullable(T) by
+    # default and as plain T when the setting is disabled.
+    null_table = "table_function_query_null"
+    drop_mysql_table(conn, null_table)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{null_table} "
+            f"(id INT NOT NULL, money INT NULL DEFAULT NULL, PRIMARY KEY (id)) ENGINE=InnoDB;"
+        )
+        cursor.execute(f"INSERT INTO clickhouse.{null_table} VALUES (1, 10), (2, NULL)")
+        conn.commit()
+
+    q_null = f"mysql('mysql80:3306', 'clickhouse', query('SELECT id, money FROM {null_table}'), 'root', '{mysql_pass}')"
+    assert (
+        node1.query(
+            f"SELECT toTypeName(money) FROM {q_null} LIMIT 1 SETTINGS external_table_functions_use_nulls = 1"
+        ).rstrip()
+        == "Nullable(Int32)"
+    )
+    assert (
+        node1.query(
+            f"SELECT toTypeName(money) FROM {q_null} LIMIT 1 SETTINGS external_table_functions_use_nulls = 0"
+        ).rstrip()
+        == "Int32"
+    )
+    drop_mysql_table(conn, null_table)
+
     drop_mysql_table(conn, table_name)
     conn.close()
 

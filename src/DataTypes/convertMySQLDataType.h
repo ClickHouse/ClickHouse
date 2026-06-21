@@ -20,7 +20,9 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, 
 #if USE_MYSQL
 /// Convert MySQL type (expressed as the MySQL C API's field) to ClickHouse data type.
 /// Used to infer the structure of a result of an arbitrary query passed to MySQL.
-DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, MYSQL_FIELD & field);
+/// `use_nulls` corresponds to the `external_table_functions_use_nulls` setting: when false, nullable MySQL
+/// fields are not wrapped in `Nullable`, matching the table-name path.
+DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, MYSQL_FIELD & field, bool use_nulls);
 #endif
 
 }

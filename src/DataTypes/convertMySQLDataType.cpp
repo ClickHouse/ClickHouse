@@ -149,9 +149,9 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
 }
 
 #if USE_MYSQL
-DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, MYSQL_FIELD & field)
+DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, MYSQL_FIELD & field, bool use_nulls)
 {
-    const bool is_nullable = !(field.flags & NOT_NULL_FLAG);
+    const bool is_nullable = use_nulls && !(field.flags & NOT_NULL_FLAG);
     const bool is_unsigned = (field.flags & UNSIGNED_FLAG);
 
     DataTypePtr res;
