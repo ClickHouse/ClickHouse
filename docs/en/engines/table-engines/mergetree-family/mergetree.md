@@ -51,7 +51,7 @@ ORDER BY expr
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
 [TTL expr
-    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|RECOMPRESS codec_name|CLEAR INDEX index_name ]
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ]
 [SETTINGS name = value, ...]
@@ -761,11 +761,11 @@ ALTER TABLE tab
 
 ### Table TTL {#mergetree-table-ttl}
 
-Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving or recompressing, all rows of a part must satisfy the `TTL` expression criteria.
+Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes), recompression, or clearing secondary index files. When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving, recompressing, or clearing index files, all rows of a part must satisfy the `TTL` expression criteria.
 
 ```sql
 TTL expr
-    [DELETE|RECOMPRESS codec_name1|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|RECOMPRESS codec_name2|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
+    [DELETE|RECOMPRESS codec_name1|TO DISK 'xxx'|TO VOLUME 'xxx'|CLEAR INDEX index_name][, DELETE|RECOMPRESS codec_name2|TO DISK 'aaa'|TO VOLUME 'bbb'|CLEAR INDEX index_name] ...
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]
 ```
@@ -776,7 +776,10 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 - `RECOMPRESS codec_name` - recompress data part with the `codec_name`;
 - `TO DISK 'aaa'` - move part to the disk `aaa`;
 - `TO VOLUME 'bbb'` - move part to the disk `bbb`;
+- `CLEAR INDEX index_name` - remove the secondary index files for `index_name` from fully expired parts without removing the index definition from table metadata;
 - `GROUP BY` - aggregate expired rows.
+
+A part whose index files were cleared can still be read normally. Queries that would have used the cleared secondary index fall back to reading the part without that index.
 
 `DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
 ```sql
@@ -825,6 +828,59 @@ PARTITION BY toYYYYMM(d)
 ORDER BY d
 TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
 ```
+
+#### Creating a table where expired parts clear secondary index files {#creating-a-table-where-expired-parts-clear-secondary-index-files}
+
+`CLEAR INDEX` removes secondary index files from parts where all rows satisfy the TTL expression. The index definition remains in table metadata, so new parts can still build and use the index. Queries against parts where the index was cleared remain correct and read those parts without that index.
+
+This is useful when an index is important for recent data but not worth keeping for older data. For example, a log table can keep a text index for recent logs and clear the text index files from older parts:
+
+```sql
+CREATE TABLE logs
+(
+    timestamp DateTime,
+    service LowCardinality(String),
+    message String,
+    INDEX message_text message TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(timestamp)
+ORDER BY (service, timestamp)
+TTL timestamp + INTERVAL 7 DAY CLEAR INDEX message_text;
+```
+
+Multiple `CLEAR INDEX` rules can be specified for different indexes:
+
+```sql
+CREATE TABLE events
+(
+    timestamp DateTime,
+    user_id UInt64,
+    url String,
+    message String,
+    INDEX url_idx url TYPE bloom_filter GRANULARITY 4,
+    INDEX message_text message TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY timestamp
+TTL timestamp + INTERVAL 7 DAY CLEAR INDEX message_text,
+    timestamp + INTERVAL 30 DAY CLEAR INDEX url_idx;
+```
+
+You can add or change `CLEAR INDEX` TTL rules with `ALTER TABLE ... MODIFY TTL`:
+
+```sql
+ALTER TABLE logs
+    MODIFY TTL timestamp + INTERVAL 7 DAY CLEAR INDEX message_text;
+```
+
+:::note
+`CLEAR INDEX` is a table-level TTL action. It is not supported in column TTL clauses.
+:::
+
+:::note
+For replicated tables, generation of dedicated `TTLClearIndex` merge log entries is controlled by the `enable_ttl_clear_index_merge_type_generation` setting. Keep this setting disabled during rolling upgrades until all replicas can parse and execute `TTLClearIndex` merge entries. Regular merges may still apply `CLEAR INDEX` TTL rules to their output parts.
+:::
 
 #### Creating a table, where expired rows are recompressed: {#creating-a-table-where-expired-rows-are-recompressed}
 
