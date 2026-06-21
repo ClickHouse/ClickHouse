@@ -419,8 +419,20 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             const std::string text = rx.get_state().text();
             auto priority = extractIdentifiers(text.c_str());
             auto hints = suggest.getHints(context, context_size, word_break_characters, priority, HINTS_MAX_ROWS);
-            hints_visible = !hints.empty();
-            hint_active = false;
+            hint_count = static_cast<int>(hints.size());
+            hint_selection = -1;
+            /// The "popup" is active only if at least one hint actually has something to complete
+            /// (a non-empty suffix). A fully-typed word matches itself with an empty suffix; that
+            /// must not count, otherwise Enter would accept the no-op instead of running the query.
+            hints_visible = false;
+            for (const auto & hint : hints)
+            {
+                if (hint.size() > static_cast<size_t>(context_size))
+                {
+                    hints_visible = true;
+                    break;
+                }
+            }
             return hints;
         };
         rx.set_hint_callback(hint_callback);
@@ -439,6 +451,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     auto commit_action = [this](char32_t code)
     {
+        /// When a hint is chosen, Enter accepts it (like Tab and Right) instead of running the
+        /// query / inserting a newline.
+        if (hintChosen())
+            return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
         /// If we allow multiline and there is already something in the input, start a newline.
         /// Also, when bytes are still queued in the TTY (paste in progress without bracketed
         /// paste support), fold the embedded newline into the same edit buffer instead of
@@ -469,49 +485,58 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     /// When the as-you-type hints are shown, let the arrow keys drive them like the Web UI
     /// completion popup: Down steps into / advances the hint list, Up moves back through it, and
-    /// Right (or Tab) accepts the selected hint. Up only navigates hints once the user has
-    /// stepped into the list with Down (`hint_active`); before that Up keeps recalling command
-    /// history, so the hints never shadow it. Outside the popup these keys behave normally.
-    /// Ctrl-Up/Ctrl-Down (replxx's defaults) are rebound to the same logic so the two stay in
-    /// sync. Note: Esc cannot be used to dismiss the hints, because the bundled replxx reads a
-    /// lone Esc by blocking for the next byte (no escape-key timeout); the Up-to-history
-    /// behavior above covers the need to get back to history instead.
+    /// Tab/Right/Enter accept the chosen hint. Up only navigates the hints once one is selected;
+    /// before that Up keeps recalling command history, so the hints never shadow it. Right and
+    /// Enter act only on a chosen hint and never pop the old-style completion list (only Tab does
+    /// that). Outside the popup these keys behave normally. Ctrl-Up/Ctrl-Down (replxx's defaults)
+    /// are rebound to the same logic so the selection stays in sync. Note: Esc cannot be used to
+    /// dismiss the hints, because the bundled replxx reads a lone Esc by blocking for the next
+    /// byte (no escape-key timeout); the Up-to-history behavior above covers getting back to
+    /// history instead.
     if (options.enable_hints && highlighter)
     {
+        /// Down advances the selection (and steps into the list); these mirror replxx's internal
+        /// wrap (past the last hint -> nothing selected -> first hint) so we know which hint, if
+        /// any, is currently chosen.
         auto hint_next = [this](char32_t code)
         {
             if (hintPopupActive())
             {
-                hint_active = true;
+                hint_selection = (hint_selection + 1 >= hint_count) ? -1 : hint_selection + 1;
                 return rx.invoke(Replxx::ACTION::HINT_NEXT, code);
             }
             return rx.invoke(Replxx::ACTION::LINE_NEXT, code);
         };
+        /// Up navigates the hints only once a hint is selected; before that it keeps recalling
+        /// command history, so the hints do not shadow it.
         auto hint_previous = [this](char32_t code)
         {
-            if (hintPopupActive() && hint_active)
+            if (hintPopupActive() && hint_selection >= 0)
+            {
+                --hint_selection; /// from the first hint this deselects; the next Up recalls history
                 return rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
+            }
             return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
         };
         rx.bind_key(Replxx::KEY::DOWN, hint_next);
         rx.bind_key(Replxx::KEY::UP, hint_previous);
-        /// Ctrl-Up/Ctrl-Down explicitly drive the hints (also entering the list from Up).
+        /// Ctrl-Up/Ctrl-Down explicitly drive the hints (Ctrl-Up also enters the list from the end).
         rx.bind_key(Replxx::KEY::control(Replxx::KEY::DOWN), hint_next);
         rx.bind_key(Replxx::KEY::control(Replxx::KEY::UP), [this](char32_t code)
         {
             if (hintPopupActive())
             {
-                hint_active = true;
+                hint_selection = (hint_selection - 1 < -1) ? hint_count - 1 : hint_selection - 1;
                 return rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
             }
             return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
         });
 
-        /// Right at the end of the line accepts the current hint (moving right there is a no-op
-        /// anyway, so this is non-destructive); elsewhere it keeps moving the cursor.
+        /// Right accepts the chosen hint (the single one shown, or the one selected by navigating);
+        /// it never triggers the old-style completion list. Otherwise it just moves the cursor.
         rx.bind_key(Replxx::KEY::RIGHT, [this](char32_t code)
         {
-            if (hints_visible && isCursorAtEndOfInput())
+            if (hintChosen())
                 return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
             return rx.invoke(Replxx::ACTION::MOVE_CURSOR_RIGHT, code);
         });
@@ -640,6 +665,14 @@ bool ReplxxLineReader::hintPopupActive()
     /// multi-line query), so elsewhere this returns false and Up/Down keep moving between lines
     /// and through history.
     return hints_visible && isCursorAtEndOfInput();
+}
+
+bool ReplxxLineReader::hintChosen()
+{
+    /// A hint is "chosen" when there is a single hint shown (the ghost) or the user has selected
+    /// one by navigating. In both cases accepting it inserts text rather than popping the
+    /// old-style completion list.
+    return hintPopupActive() && (hint_selection >= 0 || hint_count == 1);
 }
 
 ReplxxLineReader::~ReplxxLineReader()

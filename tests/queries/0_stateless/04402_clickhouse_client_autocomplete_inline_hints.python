@@ -150,6 +150,26 @@ def main():
         lambda o: "ReplicatedAggregatingMergeTree" in o and "\x07" not in o,
     )
 
+    # 3d. Enter accepts a chosen hint (after stepping into the list with Down), like Tab/Right.
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "enter_accept",
+        [b"SELECT Replicated", b"\x1b[B", b"\r"],
+        lambda o: "ReplicatedAggregatingMergeTree" in o and "\x07" not in o,
+    )
+
+    # 3e. Right does NOT pop the old-style completion list when several matches are shown and none
+    #     is chosen — it just moves the cursor (a no-op at the end), so typing a letter right after
+    #     leaves the prefix untouched ("count" + Right + "X" -> "countX").
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "right_no_list",
+        [b"SELECT count", b"\x1b[C", b"X"],
+        lambda o: "countX" in o,
+    )
+
     # 4. --hints 0 disables the ghost text (no gray hint color emitted while typing).
     run_with_timeout(
         base[0],
