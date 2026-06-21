@@ -327,23 +327,35 @@ For most functions (`=`, `IN`, `hasPhrase`, `startsWith`, `endsWith`, `LIKE`, `m
 For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts. With a postprocessor, the haystack tokens are also normalized at query time (for any tokenizer, not only `array`), so both sides of the comparison are consistently transformed and the result does not depend on whether the index is read directly (setting `query_plan_direct_read_from_text_index`) or whether a given part has a materialized index — e.g. enabling case-insensitive matching for `hasAllTokens(col, ['FOO'])` with a `lower` postprocessor.
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
-| Function | Preprocessor | Compatible tokenizers | Postprocessor |
+| Function | Supports a preprocessor | Compatible tokenizers | Supports a postprocessor |
 |---|---|---|---|
-| `=`, `IN` | yes | any | yes |
-| [`hasToken`](/sql-reference/functions/string-search-functions.md/#hasToken) | yes | any (designed for `splitByNonAlpha`) | yes |
-| [`hasAnyTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | any | yes |
-| [`hasAnyTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | any | yes |
-| [`hasPhrase`](/sql-reference/functions/string-search-functions.md/#hasPhrase) | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
-| [`startsWith`](/sql-reference/functions/string-functions.md/#startsWith), [`endsWith`](/sql-reference/functions/string-functions.md/#endsWith) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| `LIKE`, `match` | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| `ILIKE` | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
-| [`mapContainsKey`](/sql-reference/functions/tuple-map-functions#mapContainsKey), [`mapContainsValue`](/sql-reference/functions/tuple-map-functions#mapContainsValue) | yes | any | yes |
-| [`mapContainsKeyLike`](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike), [`mapContainsValueLike`](/sql-reference/functions/tuple-map-functions#mapContainsValueLike) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [`has`](/sql-reference/functions/array-functions.md/#has), [`hasAny`](/sql-reference/functions/array-functions.md/#hasAny), [`hasAll`](/sql-reference/functions/array-functions.md/#hasAll) | yes | `array` | yes |
+| `=` | yes | all | yes |
+| `IN` | yes | all | yes |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken) | yes | all (designed for `splitByNonAlpha`) | yes |
+| [hasAnyTokens(col, str)](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) | yes | all | yes |
+| [hasAllTokens(col, str)](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | all | yes |
+| [hasAnyTokens(col, arr)](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
+| [hasAllTokens(col, arr)](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
+| [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
+| [startsWith](/sql-reference/functions/string-functions.md/#startsWith) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [endsWith](/sql-reference/functions/string-functions.md/#endsWith) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [like](/sql-reference/functions/string-search-functions.md/#like) | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [match](/sql-reference/functions/string-search-functions.md/#match) | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [ilike](/sql-reference/functions/string-search-functions.md/#like) | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
+| [mapContainsKey](/sql-reference/functions/tuple-map-functions#mapContainsKey) | yes | all | yes |
+| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue) | yes | all | yes |
+| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [has](/sql-reference/functions/array-functions.md/#has) | yes | `array` | yes |
+| [hasAny](/sql-reference/functions/array-functions.md/#hasAny) | yes | `array` | yes |
+| [hasAll](/sql-reference/functions/array-functions.md/#hasAll) | yes | `array` | yes |
 
-¹ `LIKE` and `match` use the index in Hint mode for the tokenizers shown. `LIKE` additionally supports a *direct-read mode* (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
+¹ `LIKE` and `match` use the index in Hint mode for the tokenizers shown.
+`LIKE` additionally supports a *direct-read mode* (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
 
-² `ILIKE` is only supported via direct-read mode (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer). There is no hint-mode fallback: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`. The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
+² `ILIKE` is only supported via direct-read mode (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
+There is no hint-mode fallback: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
+The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
 The postprocessor is applied to each generated token during index build (for the `array` tokenizer, each array element is a token). At query time, the behavior depends on the function:
 - For `hasToken`, `hasAllTokens`, and `hasAnyTokens` (with any tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search).
