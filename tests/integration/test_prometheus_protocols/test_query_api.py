@@ -159,3 +159,62 @@ def test_query_after_response_sent():
         
         with pytest.raises(requests.exceptions.ChunkedEncodingError):
             response.content  # Reading property response.content hits the chunked-stream abort
+
+
+# Checks the case when the database and table names come from the URL query parameters.
+def test_table_query_param():
+    query = 'foo{shape="square"}'
+    timestamp = 150
+
+    expected = '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [150, "40"]}]}'
+    assert execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp) == expected
+
+    # Both database and table names come from the URL query as two separate parameters
+    # `database` and `table`.
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query_dynamic_table", query, timestamp=timestamp,
+            params={"database": "default", "table": "prometheus"},
+        )
+        == expected
+    )
+
+    # A single `table` parameter carries the qualified `database.table` name.
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query_dynamic_table", query, timestamp=timestamp,
+            params={"table": "default.prometheus"},
+        )
+        == expected
+    )
+
+    # A request without a `table` parameter fails.
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query_dynamic_table", query, timestamp=timestamp,
+        expect_error=True,
+    )
+    assert "table name is not set" in error
+
+    # The table name comes from the URL query, and the database name comes from the configuration.
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query_dynamic_table_and_fixed_db", query, timestamp=timestamp,
+            params={"table": "prometheus"},
+        )
+        == expected
+    )
+
+    # The configured database cannot be overridden by the `database` query parameter.
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query_dynamic_table_and_fixed_db", query, timestamp=timestamp,
+        params={"database": "default", "table": "prometheus"}, expect_error=True,
+    )
+    assert "cannot be overridden" in error
+
+    # A qualified `<table>default.prometheus</table>` in the configuration (the static `/api/v1/query`
+    # handler) sets the database too, so it cannot be overridden by the `database` query parameter.
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+        params={"database": "other"}, expect_error=True,
+    )
+    assert "cannot be overridden" in error
