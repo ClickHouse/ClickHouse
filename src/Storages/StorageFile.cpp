@@ -2742,15 +2742,21 @@ public:
                     try
                     {
                         existing_size = user_files_disk->getFileSize(user_files_disk_relative_path);
-                        mode = WriteMode::Append;
                     }
                     catch (const Exception & e)
                     {
                         if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
                             throw;
                         existing_size = 0;
-                        mode = WriteMode::Rewrite;
                     }
+
+                    /// Append only when there is existing content whose format prefix must
+                    /// be preserved. A zero-byte object has no prefix, so rewrite it instead.
+                    /// This also keeps `INSERT` working after `TRUNCATE TABLE` on disks that
+                    /// emulate truncation by leaving an empty object and reject
+                    /// `WriteMode::Append` (e.g. `s3_plain`).
+                    if (existing_size != 0)
+                        mode = WriteMode::Append;
                 }
             }
             do_not_write_prefix = (mode == WriteMode::Append) && existing_size != 0;

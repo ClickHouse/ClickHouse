@@ -544,3 +544,28 @@ def test_local_disk_glob_recursion_depth_guarded():
         "SELECT count() FROM file('deep_glob/**', 'CSV', 'x UInt64')"
     )
     assert "TOO_DEEP_RECURSION" in err, err
+
+
+def test_s3_truncate_then_insert():
+    """`INSERT` after `TRUNCATE TABLE` must work on an S3-backed `File` table.
+
+    `TRUNCATE` leaves a zero-byte object behind (it rewrites an empty file to mirror
+    local `::truncate` semantics). A subsequent `INSERT` must rewrite that zero-byte
+    object rather than switch to `WriteMode::Append` (a zero-byte object has no format
+    prefix to preserve), because `s3_plain` rejects append and the table would otherwise
+    become un-insertable after truncation."""
+    node_s3.query("DROP TABLE IF EXISTS s3_truncate_insert")
+    node_s3.query(
+        "CREATE TABLE s3_truncate_insert (x UInt64) ENGINE = File(CSV, 's3_truncate_insert.csv')"
+    )
+    node_s3.query("INSERT INTO s3_truncate_insert VALUES (1), (2)")
+    assert node_s3.query("SELECT count() FROM s3_truncate_insert").strip() == "2"
+
+    node_s3.query("TRUNCATE TABLE s3_truncate_insert")
+    assert node_s3.query("SELECT count() FROM s3_truncate_insert").strip() == "0"
+
+    # This INSERT previously failed on `s3_plain`: the zero-byte object left by TRUNCATE
+    # made the sink choose `WriteMode::Append`, which `s3_plain` does not support.
+    node_s3.query("INSERT INTO s3_truncate_insert VALUES (99)")
+    assert node_s3.query("SELECT * FROM s3_truncate_insert").strip() == "99"
+    node_s3.query("DROP TABLE s3_truncate_insert")
