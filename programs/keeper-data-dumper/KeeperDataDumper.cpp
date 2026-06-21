@@ -5,6 +5,8 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperStorageImpl.h>
+#include <Common/assert_cast.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
@@ -27,7 +29,7 @@ namespace
 
 void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
 {
-    auto & storage = machine->getStorageUnsafe();
+    auto & storage = assert_cast<KeeperStorageImpl &>(machine->getStorageUnsafe());
     std::queue<std::string> keys;
     keys.push("/");
 

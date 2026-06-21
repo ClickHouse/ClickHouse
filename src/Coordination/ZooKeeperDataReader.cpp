@@ -11,6 +11,7 @@
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperStorage_fwd.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperStorageImpl.h>
 
 
 namespace DB
@@ -46,7 +47,7 @@ static void deserializeSnapshotMagic(ReadBuffer & in)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Incorrect magic header in file, expected {}, got {}", SNP_HEADER, magic_header);
 }
 
-static int64_t deserializeSessionAndTimeout(KeeperStorage & storage, ReadBuffer & in)
+static int64_t deserializeSessionAndTimeout(KeeperStorageImpl & storage, ReadBuffer & in)
 {
     int32_t count = 0;
     Coordination::read(count, in);
@@ -65,7 +66,7 @@ static int64_t deserializeSessionAndTimeout(KeeperStorage & storage, ReadBuffer 
     return max_session_id;
 }
 
-static void deserializeACLMap(KeeperStorage & storage, ReadBuffer & in)
+static void deserializeACLMap(KeeperStorageImpl & storage, ReadBuffer & in)
 {
     int32_t count = 0;
     Coordination::read(count, in);
@@ -93,7 +94,7 @@ static void deserializeACLMap(KeeperStorage & storage, ReadBuffer & in)
     }
 }
 
-static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
+static int64_t deserializeStorageData(KeeperStorageImpl & storage, ReadBuffer & in, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     int64_t max_zxid = 0;
     std::string path;
@@ -101,7 +102,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
     size_t count = 0;
     while (path != "/")
     {
-        typename KeeperStorage::Node node{};
+        typename KeeperStorageImpl::Node node{};
         String data;
         Coordination::read(data, in);
         node.setData(data);
@@ -161,7 +162,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
             auto parent_path = Coordination::parentNodePath(itr.key);
             storage.container.updateValue(
                 parent_path,
-                [my_path = itr.key](typename KeeperStorage::Node & value)
+                [my_path = itr.key](typename KeeperStorageImpl::Node & value)
                 {
                     value.addChild(Coordination::getBaseNodeName(my_path));
                     value.stats.increaseNumChildren();
@@ -172,7 +173,7 @@ static int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, 
     return max_zxid;
 }
 
-void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
+void deserializeKeeperStorageFromSnapshot(KeeperStorageImpl & storage, const std::string & snapshot_path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     LOG_INFO(log, "Deserializing storage snapshot {}", snapshot_path);
     int64_t zxid = getZxidFromName(snapshot_path);
@@ -213,7 +214,7 @@ void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::st
 
 namespace fs = std::filesystem;
 
-void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std::string & path, LoggerPtr log)
+void deserializeKeeperStorageFromSnapshotsDir(KeeperStorageImpl & storage, const std::string & path, LoggerPtr log)
 {
     std::map<int64_t, std::string> existing_snapshots;
     for (const auto & p : fs::directory_iterator(path))
@@ -501,7 +502,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
 
 }
 
-static bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, LoggerPtr /*log*/) TSA_NO_THREAD_SAFETY_ANALYSIS
+static bool deserializeTxn(KeeperStorageImpl & storage, ReadBuffer & in, LoggerPtr /*log*/) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     int64_t checksum = 0;
     Coordination::read(checksum, in);
@@ -556,7 +557,7 @@ static bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, LoggerPtr /
     return true;
 }
 
-void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string & log_path, LoggerPtr log)
+void deserializeLogAndApplyToStorage(KeeperStorageImpl & storage, const std::string & log_path, LoggerPtr log)
 {
     ReadBufferFromFile reader(log_path);
 
@@ -586,7 +587,7 @@ void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string 
     LOG_INFO(log, "Finished {} deserialization, totally read {} records", log_path, counter);
 }
 
-void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
+void deserializeLogsAndApplyToStorage(KeeperStorageImpl & storage, const std::string & path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     std::map<int64_t, std::string> existing_logs;
     for (const auto & p : fs::directory_iterator(path))

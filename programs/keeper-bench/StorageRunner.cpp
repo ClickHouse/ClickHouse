@@ -183,7 +183,7 @@ void StorageRunner::setupStorage()
     keeper_context->setLocalLogsPreprocessed();
     keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
 
-    storage = std::make_unique<Storage>(tick_time_ms, /*superdigest=*/"", keeper_context);
+    storage = Storage::create(tick_time_ms, /*superdigest=*/"", keeper_context);
 
     /// Allocate one session for setup and one per generator thread.
     /// All subsequent requests from a generator use its dedicated session.

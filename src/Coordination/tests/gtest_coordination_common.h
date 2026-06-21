@@ -10,6 +10,7 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperStorageImpl.h>
 #include <Coordination/KeeperCommon.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -49,9 +50,11 @@ struct ChangelogDirTest
     }
 };
 
-template <bool enable_compression_param>
+/// TODO: Try to remove the TStorage template and make all tests use virtual methods of KeeperStorage instead.
+template <typename TStorage, bool enable_compression_param>
 struct TestParam
 {
+    using Storage = TStorage;
     static constexpr bool enable_compression = enable_compression_param;
 };
 
@@ -59,6 +62,7 @@ template<typename TestType>
 class CoordinationTest : public ::testing::Test
 {
 public:
+    using Storage = typename TestType::Storage;
     static constexpr bool enable_compression = TestType::enable_compression;
     std::string extension;
 
@@ -91,34 +95,40 @@ public:
     }
 };
 
+/// Creates a committed node.
 inline void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, DB::ACLId acl_id = 0)
 {
-    using Node = DB::KeeperStorage::Node;
-    Node node{};
-    node.setData(data);
+    DB::KeeperNodeStats stats;
     if (ephemeral_owner)
-        node.stats.setEphemeralOwner(ephemeral_owner);
-    node.stats.acl_id = acl_id;
-    storage.container.insertOrReplace(path, node);
-    auto child_it = storage.container.find(path);
-    auto child_path = Coordination::getBaseNodeName(child_it->key);
-    storage.container.updateValue(
-        Coordination::parentNodePath(path),
-        [&](auto & parent)
-        {
-            parent.addChild(child_path);
-            parent.stats.increaseNumChildren();
-        });
+        stats.setEphemeralOwner(ephemeral_owner);
+    stats.acl_id = acl_id;
+    storage.addSystemNodeIfNotExists(path, stats, data, /*update_parent_num_children=*/true, /*out_digest=*/nullptr);
 }
 
-inline Coordination::ACLs getUncommittedACLs(const DB::KeeperStorage & storage, std::string_view path)
+/// Reads from the uncommitted state, which is implementation-specific, so this is templated by the
+/// storage type (similar to the request handlers in KeeperStorageImpl.cpp).
+template <typename Storage>
+Coordination::ACLs getUncommittedACLs(Storage & storage, std::string_view path)
 {
-    const auto * node = storage.uncommitted_state.getNode(path).get();
+    const auto * node = storage.getUncommittedNode(path).get();
     Coordination::ACLId acl_id = node ? node->stats.acl_id : 0;
     return storage.acl_map.convertNumber(acl_id);
 }
 
-using Implementation = testing::Types<TestParam<true>, TestParam<false>>;
+/// Committed-node helpers that only use the implementation-agnostic KeeperStorage API.
+inline bool committedNodeExists(DB::KeeperStorage & storage, std::string_view path)
+{
+    return storage.getCommittedNodeSlow(path);
+}
+
+inline std::string committedNodeData(DB::KeeperStorage & storage, std::string_view path)
+{
+    std::string data;
+    EXPECT_TRUE(storage.getCommittedNodeSlow(path, /*out_stats=*/nullptr, &data));
+    return data;
+}
+
+using Implementation = testing::Types<TestParam<DB::KeeperStorageImpl, true>, TestParam<DB::KeeperStorageImpl, false>>;
 TYPED_TEST_SUITE(CoordinationTest, Implementation);
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;

@@ -7,6 +7,8 @@
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperStorageImpl.h>
+#include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -122,7 +124,7 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
 
                 if (full_storage)
                 {
-                    auto storage = std::make_unique<KeeperStorage>(
+                    auto storage = KeeperStorage::create(
                         /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
                     auto result = snapshot_manager.deserializeSnapshotFromBuffer(buffer, *storage);
                     const auto & snapshot_meta = result.snapshot_meta;
@@ -476,12 +478,12 @@ void dumpSessions(const DB::KeeperStorage & storage, const std::string & output_
     }
 }
 
-void dumpNodes(const DB::KeeperStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output, bool with_acl)
+void dumpNodes(const DB::KeeperStorageImpl & storage, const std::string & output_file, const std::string & output_format, bool parallel_output, bool with_acl)
 {
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
-    using PrintFunction = std::function<void(const std::string & key, const DB::KeeperStorage::Node & value)>;
+    using PrintFunction = std::function<void(const std::string & key, const DB::KeeperStorageImpl::Node & value)>;
 
     const auto print_nodes = [&](const PrintFunction print_function)
     {
@@ -724,7 +726,7 @@ int dumpStateMachine(
     if (dump_sessions)
         dumpSessions(state_machine->getStorageUnsafe(), output_file, output_format, parallel_output);
     else
-        dumpNodes(state_machine->getStorageUnsafe(), output_file, output_format, parallel_output, with_acl);
+        dumpNodes(assert_cast<DB::KeeperStorageImpl &>(state_machine->getStorageUnsafe()), output_file, output_format, parallel_output, with_acl);
     return 0;
 }
 

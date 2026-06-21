@@ -638,9 +638,7 @@ std::unique_ptr<KeeperSnapshotReader> KeeperSnapshotManager::makeSnapshotReader(
 SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage) const
 {
     auto reader = makeSnapshotReader(buffer);
-    reader->readMetadata();
-    reader->readACLMapAndNodeCount();
-    storage.loadNodesFromSnapshot(*reader);
+    storage.loadFromSnapshot(*reader);
 
     SnapshotDeserializationResult result;
     result.snapshot_meta = reader->snapshot_meta;

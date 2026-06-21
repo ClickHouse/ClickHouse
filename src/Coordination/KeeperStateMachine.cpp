@@ -144,7 +144,7 @@ void KeeperStateMachine::init()
             std::lock_guard lock(snapshots_lock);
 
             auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-            auto new_storage = std::make_unique<KeeperStorage>(
+            auto new_storage = KeeperStorage::create(
                 keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
                 superdigest, keeper_context, /* initialize_system_nodes */ false);
             auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *new_storage);
@@ -185,7 +185,7 @@ void KeeperStateMachine::init()
         LOG_DEBUG(log, "No existing snapshots, last committed log index {}", last_committed_idx);
 
     if (!storage)
-        storage = std::make_unique<KeeperStorage>(
+        storage = KeeperStorage::create(
             keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
 }
 
@@ -918,7 +918,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
                 try
                 {
                     storage.reset();
-                    storage = std::make_unique<KeeperStorage>(
+                    storage = KeeperStorage::create(
                         keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(),
                         superdigest, keeper_context, /* initialize_system_nodes */ false);
                     auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf, *storage);                    /// This repeats the pre-reset prefix check deliberately. It
