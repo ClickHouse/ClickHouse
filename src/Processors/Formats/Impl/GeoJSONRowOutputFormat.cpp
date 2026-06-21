@@ -347,13 +347,16 @@ void GeoJSONRowOutputFormat::writePrefix()
 
 void GeoJSONRowOutputFormat::writeSuffix()
 {
-    /// On error (when `valid_output_on_exception` is set) append the exception as a final array
-    /// element, mirroring `JSONEachRow`, so the document still closes cleanly.
+    /// On error (when `valid_output_on_exception` is set) append the exception as a final element of the
+    /// `features` array so the document still closes as valid JSON. `writeException` emits a bare
+    /// `"exception": ...` member, so wrap it in an object to keep it a well-formed array element.
     if (!exception_message.empty())
     {
         if (haveWrittenData())
             writeRowBetweenDelimiter();
+        writeChar('{', *ostr);
         JSONUtils::writeException(exception_message, *ostr, settings, 0);
+        writeChar('}', *ostr);
     }
     writeCString("]}\n", *ostr);
 }
