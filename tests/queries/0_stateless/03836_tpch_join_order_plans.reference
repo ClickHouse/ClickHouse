@@ -322,13 +322,12 @@ Expression (Project names)
           Expression (Change column names to column identifiers)
             ShuffleExchange
               ReadFromMergeTree (ParallelRead default.supplier)
-          Expression ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))
-            Filter (((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))))[split])
-              Aggregating
-                Expression (Before GROUP BY)
-                  Expression ((WHERE + Change column names to column identifiers))
-                    ShuffleExchange
-                      ReadFromMergeTree (ParallelRead default.lineitem)
+          Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))))
+            Aggregating
+              Expression (Before GROUP BY)
+                Expression ((WHERE + Change column names to column identifiers))
+                  ShuffleExchange
+                    ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q16
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))
