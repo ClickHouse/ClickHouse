@@ -36,24 +36,22 @@ bool INATSConsumer::isSubscribed() const
 void INATSConsumer::unsubscribe()
 {
     if (stopped)
-    {
         received.finish();
 
-        for (auto & subscription : subscriptions)
+    for (auto & subscription : subscriptions)
+    {
+        auto status = natsSubscription_DrainTimeout(subscription.get(), DRAIN_TIMEOUT_MS);
+        if (status != NATS_OK)
         {
-            auto status = natsSubscription_DrainTimeout(subscription.get(), DRAIN_TIMEOUT_MS);
-            if (status != NATS_OK)
-            {
-                LOG_WARNING(log, "Failed to start draining a subscription of consumer {}: {}",
-                    static_cast<void *>(this), natsStatus_GetText(status));
-                continue;
-            }
-
-            status = natsSubscription_WaitForDrainCompletion(subscription.get(), DRAIN_TIMEOUT_MS);
-            if (status != NATS_OK)
-                LOG_WARNING(log, "A subscription of consumer {} did not finish draining: {}",
-                    static_cast<void *>(this), natsStatus_GetText(status));
+            LOG_WARNING(log, "Failed to start draining a subscription of consumer {}: {}",
+                static_cast<void *>(this), natsStatus_GetText(status));
+            continue;
         }
+
+        status = natsSubscription_WaitForDrainCompletion(subscription.get(), DRAIN_TIMEOUT_MS);
+        if (status != NATS_OK)
+            LOG_WARNING(log, "A subscription of consumer {} did not finish draining: {}",
+                static_cast<void *>(this), natsStatus_GetText(status));
     }
 
     subscriptions.clear();

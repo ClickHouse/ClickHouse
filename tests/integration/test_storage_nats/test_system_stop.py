@@ -929,3 +929,50 @@ def test_detach_last_view_does_not_busy_loop(nats_cluster):
         f"viewless streaming task appears to busy-loop: baseline={baseline} viewless={viewless} "
         f"CPU jiffies over 4s"
     )
+
+
+def test_rapid_stop_start_cycles_drain_unsubscribe(nats_cluster):
+    # Hammer STOP/START so INATSConsumer::unsubscribe()'s always-drain + resubscribe path runs many
+    # times. The drain fences the onMsg callback before destroy; JetStream is at-least-once, so every
+    # message must still arrive and the server must stay up (the use-after-free is caught by TSan CI).
+    stream = "js_cycle_stream"
+    subject = "js_cycle_subject"
+    durable = "js_cycle_durable"
+    table = "nats_stop_start_cycles"
+
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=3)
+
+    instance.query(
+        f"""
+        CREATE TABLE test.{table} (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = '{subject}',
+                     nats_stream = '{stream}',
+                     nats_consumer_name = '{durable}',
+                     nats_format = 'JSONEachRow',
+                     nats_secure = 1,
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}';
+
+        CREATE TABLE test.{table}_dst (key UInt64, value UInt64)
+            ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+            SELECT key, value FROM test.{table};
+        """
+    )
+    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+
+    total = 0
+    for _ in range(8):
+        jetstream_publish(nats_cluster, subject, total, 5)
+        total += 5
+        instance.query(f"SYSTEM STOP test.{table}")  # drains + unsubscribes
+        jetstream_publish(nats_cluster, subject, total, 5)  # retained by the stream while stopped
+        total += 5
+        instance.query(f"SYSTEM START test.{table}")  # resubscribes
+
+    # JetStream redelivers everything published while stopped, so every message eventually arrives.
+    wait_dst_count_at_least(table, total)
+    assert instance.query("SELECT 1") == "1\n"
