@@ -142,9 +142,19 @@ std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const Co
     {
         QueryPipelineBuilder builder;
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            /// The analyzer accepts the `ASTSubquery` wrapper directly (it unwraps it internally).
             builder = InterpreterSelectQueryAnalyzer(body_query, context, {}).buildQueryPipeline();
+        }
         else
-            builder = InterpreterSelectWithUnionQuery(body_query, context, {}).buildQueryPipeline();
+        {
+            /// The old planner's `InterpreterSelectWithUnionQuery` expects an `ASTSelectWithUnionQuery`,
+            /// not the `ASTSubquery` wrapper that is stored for the body. Unwrap it here.
+            ASTPtr select_query = body_query;
+            if (const auto * subquery = body_query->as<ASTSubquery>())
+                select_query = subquery->children.at(0);
+            builder = InterpreterSelectWithUnionQuery(select_query, context, {}).buildQueryPipeline();
+        }
 
         WriteBufferFromOStream out_buf(os);
         auto out_format = context->getOutputFormat(body_format, out_buf, materializeBlock(builder.getHeader()));

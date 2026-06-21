@@ -186,3 +186,14 @@ def test_count_cache_is_body_aware(started_cluster):
     assert count_one == "1"
     # The second count must not reuse the cached count from the first body.
     assert count_three == "3"
+
+
+def test_subquery_body_with_old_analyzer(started_cluster):
+    # The subquery body must be interpreted under the old planner too. The body stores an
+    # `ASTSubquery` wrapper; the old-planner branch must unwrap it before handing it to
+    # `InterpreterSelectWithUnionQuery`, otherwise the query fails before the request is sent.
+    query = (
+        "SELECT * FROM url('http://localhost:8000/', headers('type'='string'), "
+        "body((SELECT 1 + 2))) SETTINGS enable_analyzer = 0"
+    )
+    run_test(query, '{"plus(1, 2)":3}')
