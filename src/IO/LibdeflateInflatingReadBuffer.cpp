@@ -6,6 +6,7 @@
 
 #include <libdeflate.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace DB
@@ -19,6 +20,8 @@ namespace ErrorCodes
 namespace
 {
     constexpr size_t DEFLATE_WINDOW = 32768;
+    /// Max compressed bytes pulled into in_buf per refill (bounds memory regardless of nested buffer size).
+    constexpr size_t INPUT_CHUNK = 1u << 20;
 
     /// gzip header flag bits (RFC 1952).
     constexpr uint8_t GZIP_FHCRC = 1 << 1;
@@ -76,7 +79,10 @@ bool LibdeflateInflatingReadBuffer::fillInput()
     }
 
     in->nextIfAtEnd();
-    const size_t avail = in->buffer().end() - in->position();
+    /// Copy a bounded amount per call so in_buf stays small even when the nested buffer exposes a
+    /// lot at once (e.g. a memory-mapped file): the rest stays in the nested buffer for next time.
+    /// libdeflate consumes whole DEFLATE blocks, so the leftover we must keep is at most one block.
+    const size_t avail = std::min<size_t>(in->buffer().end() - in->position(), INPUT_CHUNK);
     if (avail == 0)
     {
         input_eof = true;
