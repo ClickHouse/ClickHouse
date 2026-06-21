@@ -3990,7 +3990,7 @@ Possible values:
 
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
-    DECLARE(Bool, enable_sharding_aggregator, false, R"(
+    DECLARE(Bool, enable_sharding_aggregator, true, R"(
 Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
 
 This is most efficient for high-cardinality keys. Skewed key distributions are handled as well: keys that prove to be very frequent are detected on the fly and spread across all threads instead of overloading a single one, so highly skewed data and queries with very few distinct keys still run in parallel.
