@@ -30,8 +30,12 @@
 #include <Common/MemoryTracker.h>
 
 #include <Common/DNSResolver.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+
+#include <fmt/ranges.h>
 
 
 namespace CurrentMetrics
@@ -1229,6 +1233,9 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, parts_killer_pool_size, 128, R"(
     Threads for cleanup of shared merge tree parts killer threads. Only available in ClickHouse Cloud
     )", 0) \
+    DECLARE(NonZeroUInt64, parts_killer_max_condemned_parts_per_batch, 100000, R"(
+    Maximum number of condemned parts a SharedMergeTree table fetches from Keeper in a single cleanup cycle. Bounding the batch keeps the listing and multi-get within the Keeper operation timeout, so cleanup keeps making progress even when a table has accumulated a very large condemned-parts backlog. Must be greater than zero: a value of `0` would make Keeper return an empty listing every cycle, permanently stalling cleanup. Only available in ClickHouse Cloud
+    )", 0) \
     DECLARE(UInt64, snapshot_cleaner_period, 120, R"(
     Period to completely remove snapshot parts for SharedMergeTree. Only available in ClickHouse Cloud
     )", 0) \
@@ -1730,7 +1737,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
 // clang-format on
 
-/// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in dumpToSystemServerSettingsColumns below
+/// If you add a setting which can be updated at runtime, please update the 'changeable_settings' map in collectChangeableServerSettings below
 
 DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH, SERVER_SETTINGS_SUPPORTED_TYPES)
 
@@ -1804,21 +1811,43 @@ void ServerSettings::set(std::string_view name, const Field & value)
     impl->set(name, value);
 }
 
+std::vector<std::string_view> ServerSettings::getAllRegisteredNames() const
+{
+    std::vector<std::string_view> setting_names;
+    for (const auto & setting : impl->all())
+        setting_names.emplace_back(setting.getName());
+    return setting_names;
+}
+
+std::string_view ServerSettings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
+}
+
+SettingsTierType ServerSettings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
+}
+
 void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     impl->loadSettingsFromConfig(config);
 }
 
 
-void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const
+namespace
 {
-    MutableColumns & res_columns = params.res_columns;
-    ContextPtr context = params.context;
 
-    /// When the server configuration file is periodically re-loaded from disk, the server components (e.g. memory tracking) are updated
-    /// with new the setting values but the settings themselves are not stored between re-loads. As a result, if one wants to know the
-    /// current setting values, one needs to ask the components directly.
-    std::unordered_map<String, std::pair<String, ChangeableWithoutRestart>> changeable_settings
+using ChangeableSettingsMap = std::unordered_map<String, std::pair<String, ServerSettings::ChangeableWithoutRestart>>;
+
+/// When the server configuration file is periodically re-loaded from disk, the server components (e.g. memory tracking) are updated
+/// with new the setting values but the settings themselves are not stored between re-loads. As a result, if one wants to know the
+/// current setting values, one needs to ask the components directly.
+ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
+{
+    using ChangeableWithoutRestart = ServerSettings::ChangeableWithoutRestart;
+
+    ChangeableSettingsMap changeable_settings
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
@@ -1880,7 +1909,8 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"allow_feature_tier",
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
-            {"s3queue_disable_streaming", {"0", ChangeableWithoutRestart::Yes}},
+            {"s3queue_disable_streaming",
+             {std::to_string(context->getServerSettingsCopy().get("s3queue_disable_streaming").safeGet<bool>()), ChangeableWithoutRestart::Yes}},
             {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::Yes}},
 
             {"max_remote_read_network_bandwidth_for_server",
@@ -1982,6 +2012,29 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
 #endif
+
+    /// `keeper_hosts` is not a regular config setting; it is derived from the `<zookeeper>` config and follows
+    /// it on config reload, so the live value diverges from the empty default stored in `ServerSettings`.
+    const auto & config = context->getConfigRef();
+    if (zkutil::hasZooKeeperConfig(config))
+    {
+        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
+        changeable_settings.insert(
+            {"keeper_hosts", {fmt::format("{}", fmt::join(args.hosts, ",")), ChangeableWithoutRestart::Yes}});
+    }
+
+    return changeable_settings;
+}
+
+}
+
+void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const
+{
+    MutableColumns & res_columns = params.res_columns;
+    ContextPtr context = params.context;
+
+    const auto changeable_settings = collectChangeableServerSettings(context);
+
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
@@ -1999,5 +2052,14 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
         res_columns[6]->insert(is_changeable ? changeable_settings_it->second.second : ChangeableWithoutRestart::No);
         res_columns[7]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
     }
+}
+
+std::optional<String> ServerSettings::tryGetLiveValueAsString(ContextPtr context, std::string_view name) const
+{
+    const auto changeable_settings = collectChangeableServerSettings(context);
+    auto it = changeable_settings.find(String{name});
+    if (it == changeable_settings.end())
+        return std::nullopt;
+    return it->second.first;
 }
 }
