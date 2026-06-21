@@ -18,6 +18,8 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/error/en.h>
 
+#include <Common/JSONParsers/RapidJSONMemoryTrackerAllocator.h>
+
 namespace DB
 {
 
@@ -29,6 +31,13 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// rapidjson types whose internal stacks and output buffer are accounted against the memory
+/// tracker, so a pathological input cannot allocate without bound (see RapidJSONMemoryTrackerAllocator).
+using TrackedStringBuffer = rapidjson::GenericStringBuffer<rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
+using TrackedPrettyWriter
+    = rapidjson::PrettyWriter<TrackedStringBuffer, rapidjson::UTF8<char>, rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
+using TrackedReader = rapidjson::GenericReader<rapidjson::UTF8<char>, rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
 
 class FunctionPrettyPrintJSON : public IFunction
 {
@@ -91,15 +100,17 @@ public:
                     "Invalid JSON string in function {}: embedded NULL byte",
                     getName());
 
-            rapidjson::StringBuffer buffer;
-            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
+            TrackedStringBuffer buffer;
+            TrackedPrettyWriter writer(buffer);
             writer.SetIndent(' ', indent_count);
 
             /// Stream JSON directly from Reader to PrettyWriter without building
             /// a DOM. Both Reader (with kParseIterativeFlag) and PrettyWriter use
-            /// heap-allocated stacks, so arbitrarily deep nesting is safe.
+            /// heap-allocated stacks, so arbitrarily deep nesting is safe. The stacks and the
+            /// output buffer are accounted against the memory tracker, so an input that would
+            /// produce an enormous output is rejected with MEMORY_LIMIT_EXCEEDED.
             rapidjson::MemoryStream ms(str_view.data(), str_view.size());
-            rapidjson::Reader reader;
+            TrackedReader reader;
             auto parse_result = reader.Parse(ms, writer);
 
             if (parse_result.IsError())
