@@ -15,7 +15,7 @@ namespace DB
 /// row to a cold shard chosen from its key hash. Some rows of a hot key slip into a cold shard before we
 /// detect that the key is hot (its "residue"); the divert selector runs later, after the cold shards are
 /// aggregated, and separates that residue out so we can merge it together with the hot keys. Both selectors
-/// decide what is hot with the same `HotKeyState` membership test. `BufferedScatterTransform` applies a
+/// decide what is hot with the same `HotKeyState` membership test. `BufferedShardingTransform` applies a
 /// selector, but the selectors themselves do not depend on it.
 
 /// Builds the selector for the input split (one input, `num_cold_shards` + 1 outputs). We send a cold row

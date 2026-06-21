@@ -36,7 +36,7 @@ SELECT
 
 SELECT 'Pipeline contains skew-split transforms';
 SELECT
-    countIf(explain LIKE '%BufferedScatterTransform%') > 0,
+    countIf(explain LIKE '%BufferedShardingTransform%') > 0,
     countIf(explain LIKE '%FinalizeAggregatedTransform%') > 0,
     countIf(explain LIKE '%MergingAggregatedTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, count() FROM test GROUP BY k SETTINGS enable_sharding_aggregator = 1);

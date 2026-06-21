@@ -1,7 +1,7 @@
 /// Microbenchmark for IColumn::computeHashInto.
 ///
 /// Measures per-row throughput for the hash-production step used by
-/// hash-partitioning operators (e.g. BufferedScatterTransform).
+/// hash-partitioning operators (e.g. BufferedShardingTransform).
 ///
 /// Each benchmark name encodes: <ColumnType>_K<K>_B<batch>
 ///   K = number of key columns chained
@@ -125,7 +125,7 @@ void BM_ComputeHashInto(benchmark::State & state, const std::vector<ColumnPtr> &
 /// ─── End-to-end hash → selector benchmark ────────────────────────────────
 ///
 /// Captures the full pipeline exactly as executed by
-/// BufferedScatterTransform::generateOutputChunks:
+/// BufferedShardingTransform::generateOutputChunks:
 /// seed hash_buffer with WEAK_HASH32_INITIAL_VALUE, chain computeHashInto with
 /// initial=false over every key column (0 allocations), then mapToRange SIMD.
 ///

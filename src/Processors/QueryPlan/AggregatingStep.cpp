@@ -27,7 +27,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/HotKeyState.h>
 #include <Processors/Transforms/ShardedAggregationSelectors.h>
-#include <Processors/Transforms/BufferedScatterTransform.h>
+#include <Processors/Transforms/BufferedShardingTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -613,9 +613,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// (often a default value or NULL) accounts for 90% of the rows, then one shard holds 90% of the data
     /// and serializes the whole pipeline.
     ///
-    /// To avoid that, while scattering we detect which keys are hot by counting them on the fly over the
-    /// first ~130K rows of each scatter. Once a key is found to be hot, we divert it during scatter to a
-    /// separate hot shard, so each scatter feeds one hot shard for the hot keys and N cold shards for the
+    /// To avoid that, while sharding we detect which keys are hot by counting them on the fly over the
+    /// first ~130K rows of each stream. Once a key is found to be hot, we send it to a separate hot shard,
+    /// so each stream feeds one hot shard for the hot keys and N cold shards for the
     /// rest.
     ///
     /// During the warmup some rows of a hot key may have landed in a cold shard before that key was
@@ -624,7 +624,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// at all. The number of hot keys is usually very small (for example about twice the number of
     /// aggregating threads), so merging them is cheap.
 
-    /// The pipeline is built in few top level steps: scatter each stream into cold shards and a hot shard;
+    /// The pipeline is built in few top level steps: shard each stream into cold shards and a hot shard;
     /// the cold path, which aggregates and finalizes the cold keys; the hot path, which aggregates
     /// the hot keys; and the final merge, which finalizes the hot keys together with the residue from cold shards.
     if (use_sharded_aggregation)
@@ -635,7 +635,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         const size_t num_cold_shards = max_threads;
         const size_t num_streams = pipeline.getNumStreams();
 
-        /// Each stream is scattered into one port per cold shard plus a single hot shard.
+        /// Each stream is sharded into one port per cold shard plus a single hot shard.
         /// The cold shards are shared between all streams but each stream has its own hot shard to send the hot keys.
         const size_t ports_per_stream = num_cold_shards + 1;
 
@@ -662,7 +662,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         auto hot_key_state = std::make_shared<HotKeyState>(std::move(key_header));
 
-        /// 1. Scatter each input stream's rows by key. As the rows stream past, the warmup detector counts
+        /// 1. Shard each input stream's rows by key. As the rows stream past, the warmup detector counts
         ///    keys and promotes hot ones into `hot_key_state`; a row whose key is hot goes to the hot shard,
         ///    and every other row goes to the cold shard chosen from its key hash. A hot key may also be
         ///    present in its cold shard, but that's not a problem because we will take care of the hot-key
@@ -670,15 +670,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         pipeline.transform(
             [&](OutputPortRawPtrs ports)
             {
-                Processors scatters;
+                Processors sharders;
                 for (auto * port : ports)
                 {
-                    auto scatter = std::make_shared<BufferedScatterTransform>(
+                    auto sharder = std::make_shared<BufferedShardingTransform>(
                         input_header, ports_per_stream, makeInputHotColdSelector(hot_key_state, input_key_positions, num_cold_shards));
-                    connect(*port, scatter->getInputs().front());
-                    scatters.push_back(scatter);
+                    connect(*port, sharder->getInputs().front());
+                    sharders.push_back(sharder);
                 }
-                return scatters;
+                return sharders;
             });
 
         pipeline.transform(
@@ -717,8 +717,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
                     /// 3. Separate the hot and cold keys into different ports from the cold shard. The hot keys present
                     ///    in the cold shard are the residue: rows that were sent to the cold shard before that key was
-                    ///    detected during scatter.
-                    auto residue_divert = std::make_shared<BufferedScatterTransform>(
+                    ///    detected while sharding.
+                    auto residue_divert = std::make_shared<BufferedShardingTransform>(
                         intermediate_header, 2, makeDivertSelector(hot_key_state, intermediate_key_positions));
                     connect(cold_aggregator->getOutputs().front(), residue_divert->getInputs().front());
                     processors.push_back(residue_divert);
@@ -739,7 +739,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     processors.push_back(cold_finalizer);
                 }
 
-                /// 5. Aggregate the hot keys that were sent to the hot shard during scatter. The same hot keys are
+                /// 5. Aggregate the hot keys that were sent to the hot shard while sharding. The same hot keys are
                 ///    also present as residue in the cold shards; that residue was diverted to the merger
                 ///    inputs in step 3, so we will finalize them together in the merge step later.
                 for (size_t stream = 0; stream < num_streams; ++stream)

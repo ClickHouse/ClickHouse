@@ -34,7 +34,7 @@ SELECT (SELECT sum(s1), sum(s2), sum(s3), count() FROM (SELECT k, count() AS s1,
      = (SELECT sum(s1), sum(s2), sum(s3), count() FROM (SELECT k, count() AS s1, sum(v) AS s2, uniqExact(v) AS s3 FROM test GROUP BY k SETTINGS enable_sharding_aggregator = 1, max_threads = 64));
 
 SELECT 'Pipeline engages at a high thread count';
-SELECT countIf(explain LIKE '%BufferedScatterTransform%') > 0
+SELECT countIf(explain LIKE '%BufferedShardingTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, count() FROM test GROUP BY k SETTINGS enable_sharding_aggregator = 1, max_threads = 64);
 
 DROP TABLE test;

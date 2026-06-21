@@ -28,7 +28,7 @@ HotKeyStatePtr makeState(bool nullable = false)
     return std::make_shared<HotKeyState>(key_header);
 }
 
-/// Feeds one chunk of keys through the input scatter selector, which runs a fresh per-stream warmup
+/// Feeds one chunk of keys through the input shard selector, which runs a fresh per-stream warmup
 /// detector and promotes any hot keys into `state`.
 void observe(const HotKeyStatePtr & state, MutableColumnPtr key_col, size_t num_cold)
 {

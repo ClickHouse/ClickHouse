@@ -3,12 +3,12 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnSparse.h>
 #include <Processors/Port.h>
-#include <Processors/Transforms/BufferedScatterTransform.h>
+#include <Processors/Transforms/BufferedShardingTransform.h>
 
 namespace DB
 {
 
-BufferedScatterTransform::BufferedScatterTransform(SharedHeader header, size_t num_outputs_, SelectorBuilder selector_builder_)
+BufferedShardingTransform::BufferedShardingTransform(SharedHeader header, size_t num_outputs_, SelectorBuilder selector_builder_)
     : IProcessor(InputPorts{header}, OutputPorts{num_outputs_, header})
     , num_outputs(num_outputs_)
     , selector_builder(std::move(selector_builder_))
@@ -18,7 +18,7 @@ BufferedScatterTransform::BufferedScatterTransform(SharedHeader header, size_t n
     chassert(num_outputs > 0);
 }
 
-IProcessor::Status BufferedScatterTransform::prepare()
+IProcessor::Status BufferedShardingTransform::prepare()
 {
     auto & input = getInputs().front();
 
@@ -96,7 +96,7 @@ IProcessor::Status BufferedScatterTransform::prepare()
 }
 
 /// Split pending input chunk into per-output queues, then drain queues to output ports.
-void BufferedScatterTransform::work()
+void BufferedShardingTransform::work()
 {
     if (has_pending_input_chunk)
     {
@@ -127,7 +127,7 @@ void BufferedScatterTransform::work()
     }
 }
 
-void BufferedScatterTransform::generateOutputChunks()
+void BufferedShardingTransform::generateOutputChunks()
 {
     auto columns = pending_input_chunk.detachColumns();
 
@@ -142,7 +142,7 @@ void BufferedScatterTransform::generateOutputChunks()
     const size_t num_rows = columns.front()->size();
 
     /// Fast path: when every row goes to the same output, forward the whole chunk without the
-    /// O(rows * columns) scatter that would otherwise copy every (possibly large) aggregate-state
+    /// O(rows * columns) split that would otherwise copy every (possibly large) aggregate-state
     /// column. This is the common case for the residue divert — the hot set is empty, or a chunk
     /// holds only cold keys — so nothing actually needs to be split off.
     if (num_rows != 0)
