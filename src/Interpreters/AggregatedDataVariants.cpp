@@ -275,7 +275,6 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
     }
 
     bool all_keys_are_numbers_or_strings = true;
-    size_t num_string_keys = 0;
     for (size_t j = 0; j < keys_size; ++j)
     {
         if (!types_removed_nullable[j]->isValueRepresentedByNumber() && !isString(types_removed_nullable[j])
@@ -284,9 +283,6 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
             all_keys_are_numbers_or_strings = false;
             break;
         }
-
-        if (isString(types_removed_nullable[j]))
-            ++num_string_keys;
     }
 
     if (has_nullable_key)
@@ -428,15 +424,21 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
     {
         if (has_low_cardinality)
             return Type::low_cardinality_key_string;
-        return Type::key_ab_string;
+        /// The `ABStringRef` aggregation method (`key_ab_string`) is not selected by default yet, because its
+        /// two-level variant (`AggregatedDataWithABStringKeyTwoLevel = TwoLevelHashMap<ABStringRef>`) assigns
+        /// buckets with `DefaultHash<ABStringRef>` (the low 32 bits of `StringRefHash`), whereas the established
+        /// two-level string method (`TwoLevelStringHashMap`) buckets short strings with `StringHashTableHash`.
+        /// Since `Aggregator::mergeBlocks` combines two-level data strictly by the incoming `bucket_num`, an
+        /// `ABStringRef` partial aggregation and a legacy/older-version one would place equal keys into different
+        /// buckets, so a memory-efficient or mixed-version distributed merge could emit duplicate groups. Keep the
+        /// established bucket-compatible method until the two-level `ABStringRef` bucket assignment reproduces it.
+        return Type::key_string;
     }
 
     if (keys_size > 1 && all_keys_are_numbers_or_strings)
     {
-        /// TODO(ab): We can optimize more cases
-        if (num_string_keys <= 1 && !has_low_cardinality && !has_nullable_key)
-            return Type::ab_serialized;
-
+        /// `ab_serialized` shares the same `TwoLevelHashMap<ABStringRef>` two-level bucketing as `key_ab_string`
+        /// above, so it has the same two-level bucket incompatibility and is likewise not selected by default yet.
         return Type::prealloc_serialized;
     }
 
