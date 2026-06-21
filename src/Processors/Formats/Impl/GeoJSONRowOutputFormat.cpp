@@ -90,11 +90,14 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     /// key/value tuples, for the same reason.
     settings.json.write_map_as_array_of_tuples = false;
 
-    /// Coordinates are plain JSON numbers and must never be quoted, even when
-    /// `output_format_json_quote_64bit_floats` is enabled — that setting still applies to property
-    /// values, so coordinates are written with a separate settings copy that disables it.
-    coordinate_settings = settings;
-    coordinate_settings.json.quote_64bit_floats = false;
+    /// Coordinates and numeric feature ids are plain JSON numbers and must never be quoted, even when
+    /// settings such as `output_format_json_quote_64bit_floats`, `output_format_json_quote_64bit_integers`,
+    /// or `output_format_json_quote_decimals` are enabled — those still apply to ordinary property
+    /// values, so numbers here are written with a separate settings copy that disables the quoting.
+    number_settings = settings;
+    number_settings.json.quote_64bit_floats = false;
+    number_settings.json.quote_64bit_integers = false;
+    number_settings.json.quote_decimals = false;
 
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 
@@ -209,7 +212,7 @@ void GeoJSONRowOutputFormat::writeId(const Columns & columns, size_t row_num)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The GeoJSON output format cannot write a non-finite floating-point id");
 
     writeCString(R"(,"id":)", *ostr);
-    serializations[*id_col_idx]->serializeTextJSON(column, row_num, *ostr, settings);
+    serializations[*id_col_idx]->serializeTextJSON(column, row_num, *ostr, number_settings);
 }
 
 void GeoJSONRowOutputFormat::writeGeometry(const IColumn & column, size_t row_num)
@@ -304,9 +307,9 @@ void GeoJSONRowOutputFormat::writePosition(const IColumn & tuple_column, size_t 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The GeoJSON output format cannot write a non-finite coordinate value");
 
     writeChar('[', *ostr);
-    writeJSONNumber(x, *ostr, coordinate_settings);
+    writeJSONNumber(x, *ostr, number_settings);
     writeChar(',', *ostr);
-    writeJSONNumber(y, *ostr, coordinate_settings);
+    writeJSONNumber(y, *ostr, number_settings);
     writeChar(']', *ostr);
 }
 
