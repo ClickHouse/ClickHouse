@@ -801,3 +801,62 @@ def test_generate_server_error_is_retried(started_cluster):
     events = get_profile_events(qid)
     assert int(events["api_calls"]) == 3  # 1 + 2 retries
     assert int(events["rows_skipped"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# The API-call quota bounds retries: `ai_function_max_api_calls_per_query` caps the
+# total number of HTTP requests per query, including retried requests, so a flaky
+# endpoint cannot dispatch `1 + ai_function_max_retries` requests for a single row/batch.
+# ---------------------------------------------------------------------------
+
+
+def test_generate_retry_respects_api_call_quota(started_cluster):
+    """An HTTP 500 is retriable, but the API-call quota is enforced before every attempt — including
+    retries. With `ai_function_max_api_calls_per_query = 1` and `ai_function_max_retries = 5`, only a
+    single request is dispatched (the quota stops the retries), not `1 + 5`."""
+    qid = unique_query_id("gen_quota_caps_retries")
+    result = instance.query(
+        "SELECT aiGenerate('server error')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_credentials": "ai_error",
+            "ai_function_max_retries": 5,
+            "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
+            "ai_function_max_api_calls_per_query": 1,
+            "ai_function_throw_on_error": 0,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    # Without the per-attempt quota check this would be 6 (1 initial + 5 retries).
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1
+
+
+def test_embed_retry_respects_api_call_quota(started_cluster):
+    """The embedding path enforces the same per-attempt API-call quota: a retriable HTTP 500 is not
+    retried past `ai_function_max_api_calls_per_query`."""
+    qid = unique_query_id("embed_quota_caps_retries")
+    result = instance.query(
+        "SELECT aiEmbed('server error')",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_credentials": "ai_embed_error",
+            "ai_function_max_retries": 5,
+            "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
+            "ai_function_max_api_calls_per_query": 1,
+            "ai_function_throw_on_error": 0,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    # The single live row is skipped (empty array) because its batch never succeeded.
+    assert parse_embedding(result) == []
+    events = get_profile_events(qid)
+    # Without the per-attempt quota check this would be 6 (1 initial + 5 retries).
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1

@@ -220,6 +220,12 @@ public:
             bool batch_ok = false;
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
+                /// Enforce the API-call quota before every provider request, including retries, so a flaky
+                /// endpoint can't dispatch more than `ai_function_max_api_calls_per_query` requests per query.
+                /// Kept outside the `try` so a `throw_on_quota_exceeded` throw is not caught by the retry handler.
+                if (quota.checkQuotas())
+                    break;
+
                 try
                 {
                     /// update api_calls/quotas before call so failed calls are still added to total
