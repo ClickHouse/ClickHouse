@@ -1,4 +1,8 @@
--- Tags: no-fasttest, no-ordinary-database
+-- Tags: no-fasttest, no-ordinary-database, long, no-flaky-check
+-- long: ScaNN index build on 2000+ vectors is slow under instrumentation.
+-- no-flaky-check: the flaky check reruns new tests ~50x concurrently; a real ScaNN
+--   build (MSan ~363s, debug ~228s) is too heavy for that.  The test still runs once
+--   in regular sanitizer builds, so coverage is preserved.
 -- Tests for MergeTree vector_similarity('scann', ...) secondary index.
 -- Tests 1-3 insert >= 2000 vectors so the ScaNN index is actually built.
 -- The original reference rows are padded with distant vectors so that the
