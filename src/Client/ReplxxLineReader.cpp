@@ -451,9 +451,11 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     auto commit_action = [this](char32_t code)
     {
-        /// When a hint is chosen, Enter accepts it (like Tab and Right) instead of running the
-        /// query / inserting a newline.
-        if (hintChosen())
+        /// When the user has navigated to a hint, Enter accepts it (like Tab and Right) instead
+        /// of running the query / inserting a newline. Only an explicitly selected hint is
+        /// accepted (not a single ghost shown while typing), so Enter keeps running the query in
+        /// the normal "type a command and press Enter" flow.
+        if (hintPopupActive() && hint_selection >= 0)
             return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
         /// If we allow multiline and there is already something in the input, start a newline.
         /// Also, when bytes are still queued in the TTY (paste in progress without bracketed

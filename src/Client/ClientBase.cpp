@@ -3640,7 +3640,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
-        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Ctrl-Up/Ctrl-Down, accept with Tab or Right. Requires --highlight. Disable with --hints 0.")
+        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down, accept with Tab, Right, or Enter. Requires --highlight and suggestions (disabled by --disable_suggestion). Disable with --hints 0.")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
@@ -3952,7 +3952,11 @@ void ClientBase::runInteractive()
         .embedded_mode = isEmbeeddedClient(),
         .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
         /// Hints need color, so they are enabled only together with highlighting.
-        .enable_hints = getClientConfiguration().getBool("hints", true) && getClientConfiguration().getBool("highlight", true),
+        /// Hints need color (highlighting) and the suggestion machinery; `--disable_suggestion`
+        /// turns off autocompletion entirely, including the hints.
+        .enable_hints = getClientConfiguration().getBool("hints", true)
+            && getClientConfiguration().getBool("highlight", true)
+            && !getClientConfiguration().getBool("disable_suggestion", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
