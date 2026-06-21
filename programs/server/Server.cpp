@@ -2332,7 +2332,12 @@ try
         {
             /// Validate the new config BEFORE installing it into the global layered config, so a
             /// failed reload does not leave `config()` partially mutated with unvalidated changes.
-            Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
+            /// `*loaded_config` is the file-only config and does not carry command-line options, so
+            /// gate this pre-existing top-level user-setting check on the escape hatch resolved from
+            /// the layered `config()` (which retains `--skip_check_for_incorrect_settings=1` across
+            /// reloads); otherwise the command-line escape hatch would stop working on reload.
+            if (!config().getBool("skip_check_for_incorrect_settings", false))
+                Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
             /// Same as on initial load: validate the reloaded XML config rather than the layered
             /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
             /// The escape hatch is resolved from the layered `config()` (which retains command-line
