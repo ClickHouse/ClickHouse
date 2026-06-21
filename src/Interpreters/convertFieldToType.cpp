@@ -57,31 +57,49 @@ namespace
 {
 
 template <typename From, typename To>
-Field convertNumericTypeImpl(const Field & from)
+Field convertNumericTypeImpl(const Field & from, bool strict)
 {
     To result{};
-    if (!accurate::convertNumeric(from.safeGet<From>(), result))
+
+    /// Conversion to a floating-point type is inherently lossy: most decimal literals
+    /// (e.g. `0.1`) are not exactly representable, so requiring exact equality after the
+    /// conversion would reject otherwise valid values. In non-strict mode (the `VALUES`
+    /// section, the `values` table function, `INSERT`) we accept the nearest representable
+    /// value, matching `CAST`. The range check inside `accurate::convertNumeric` still rejects
+    /// out-of-range values (e.g. `1e300` -> `Float32`), and conversions to integer or `Decimal`
+    /// types stay exact.
+    ///
+    /// In strict mode (the `IN` operator) the exact-equality check is always kept, so set
+    /// membership stays consistent with the `=` operator:
+    /// `toFloat32(0.1) IN (0.1)` is `0`, exactly like `toFloat32(0.1) = 0.1`.
+    const bool exact = strict || !is_floating_point<To>;
+
+    const bool converted = exact
+        ? accurate::convertNumeric<From, To, true>(from.safeGet<From>(), result)
+        : accurate::convertNumeric<From, To, false>(from.safeGet<From>(), result);
+
+    if (!converted)
         return {};
     return result;
 }
 
 template <typename To>
-Field convertNumericType(const Field & from, const IDataType & type)
+Field convertNumericType(const Field & from, const IDataType & type, bool strict)
 {
     if (from.getType() == Field::Types::UInt64 || from.getType() == Field::Types::Bool)
-        return convertNumericTypeImpl<UInt64, To>(from);
+        return convertNumericTypeImpl<UInt64, To>(from, strict);
     if (from.getType() == Field::Types::Int64)
-        return convertNumericTypeImpl<Int64, To>(from);
+        return convertNumericTypeImpl<Int64, To>(from, strict);
     if (from.getType() == Field::Types::Float64)
-        return convertNumericTypeImpl<Float64, To>(from);
+        return convertNumericTypeImpl<Float64, To>(from, strict);
     if (from.getType() == Field::Types::UInt128)
-        return convertNumericTypeImpl<UInt128, To>(from);
+        return convertNumericTypeImpl<UInt128, To>(from, strict);
     if (from.getType() == Field::Types::Int128)
-        return convertNumericTypeImpl<Int128, To>(from);
+        return convertNumericTypeImpl<Int128, To>(from, strict);
     if (from.getType() == Field::Types::UInt256)
-        return convertNumericTypeImpl<UInt256, To>(from);
+        return convertNumericTypeImpl<UInt256, To>(from, strict);
     if (from.getType() == Field::Types::Int256)
-        return convertNumericTypeImpl<Int256, To>(from);
+        return convertNumericTypeImpl<Int256, To>(from, strict);
 
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
         type.getName(), from.getType());
@@ -303,35 +321,35 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         if (which_type.isUInt8())
-            return convertNumericType<UInt8>(src, type);
+            return convertNumericType<UInt8>(src, type, strict);
         if (which_type.isUInt16())
-            return convertNumericType<UInt16>(src, type);
+            return convertNumericType<UInt16>(src, type, strict);
         if (which_type.isUInt32())
-            return convertNumericType<UInt32>(src, type);
+            return convertNumericType<UInt32>(src, type, strict);
         if (which_type.isUInt64())
-            return convertNumericType<UInt64>(src, type);
+            return convertNumericType<UInt64>(src, type, strict);
         if (which_type.isUInt128())
-            return convertNumericType<UInt128>(src, type);
+            return convertNumericType<UInt128>(src, type, strict);
         if (which_type.isUInt256())
-            return convertNumericType<UInt256>(src, type);
+            return convertNumericType<UInt256>(src, type, strict);
         if (which_type.isInt8())
-            return convertNumericType<Int8>(src, type);
+            return convertNumericType<Int8>(src, type, strict);
         if (which_type.isInt16())
-            return convertNumericType<Int16>(src, type);
+            return convertNumericType<Int16>(src, type, strict);
         if (which_type.isInt32())
-            return convertNumericType<Int32>(src, type);
+            return convertNumericType<Int32>(src, type, strict);
         if (which_type.isInt64())
-            return convertNumericType<Int64>(src, type);
+            return convertNumericType<Int64>(src, type, strict);
         if (which_type.isInt128())
-            return convertNumericType<Int128>(src, type);
+            return convertNumericType<Int128>(src, type, strict);
         if (which_type.isInt256())
-            return convertNumericType<Int256>(src, type);
+            return convertNumericType<Int256>(src, type, strict);
         if (which_type.isBFloat16())
-            return convertNumericType<BFloat16>(src, type);
+            return convertNumericType<BFloat16>(src, type, strict);
         if (which_type.isFloat32())
-            return convertNumericType<Float32>(src, type);
+            return convertNumericType<Float32>(src, type, strict);
         if (which_type.isFloat64())
-            return convertNumericType<Float64>(src, type);
+            return convertNumericType<Float64>(src, type, strict);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type))
             return convertDecimalType(src, *ptype, strict);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type))
@@ -351,7 +369,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             /// Date is UInt16 under the hood; range-check so out-of-range integers
             /// don't get silently truncated by the Date serializer downstream.
-            return convertNumericType<UInt16>(src, type);
+            return convertNumericType<UInt16>(src, type, strict);
         }
 
         if ((which_type.isDateTime() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
@@ -428,14 +446,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// by the Date serializer downstream.
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
         {
-            return convertNumericType<UInt16>(src, type);
+            return convertNumericType<UInt16>(src, type, strict);
         }
 
         /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
         /// produce wrong result in some special cases.
         if (which_type.isDate32() && src.getType() == Field::Types::UInt64)
         {
-            return convertNumericType<Int64>(src, type);
+            return convertNumericType<Int64>(src, type, strict);
         }
 
         if (which_type.isDateTime64()
@@ -464,7 +482,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isIPv4() && src.getType() == Field::Types::UInt64)
         {
             /// convert through UInt32 which is the underlying type for native IPv4
-            return static_cast<IPv4>(convertNumericType<UInt32>(src, type).safeGet<UInt32>());
+            return static_cast<IPv4>(convertNumericType<UInt32>(src, type, strict).safeGet<UInt32>());
         }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)

@@ -16,11 +16,13 @@ class IDataType;
   * Checks for the compatibility of types, checks values fall in the range of valid values of the type, makes type conversion.
   * If the value does not fall into the range - returns Null.
   *
-  * When `strict` is false (default), Bool conversion clamps any non-zero integer to 1, and
-  * Decimal conversions may silently round/truncate:
+  * When `strict` is false (default), Bool conversion clamps any non-zero integer to 1, conversion
+  * to a floating-point type returns the nearest representable value (like CAST), and Decimal
+  * conversions may silently round/truncate:
   *   convertFieldToType(Field(255), Bool)                 -> Field(true)   i.e. 1
   *   convertFieldToType(Field(256), Bool)                 -> Field(true)   i.e. 1
   *   convertFieldToType(Field(1),   Bool)                 -> Field(true)   i.e. 1
+  *   convertFieldToType(Field(0.1), Float32)              -> Field(0.1f)   (nearest Float32, not exactly 0.1)
   *   convertFieldToType(Decimal64("33.33"), Decimal64(1)) -> Decimal64("33.3")  (truncated)
   *
   * When `strict` is true, conversions that lose precision return Null instead:
@@ -28,8 +30,14 @@ class IDataType;
   *       convertFieldToType(Field(255), Bool, .., true) -> Field(Null)
   *       convertFieldToType(Field(256), Bool, .., true) -> Field(Null)
   *       convertFieldToType(Field(1),   Bool, .., true) -> Field(true)  i.e. 1
+  *   - Float -> Float (narrowing): rejects values not exactly representable in the target type:
+  *       convertFieldToType(Field(0.1), Float32, .., true) -> Field(Null)
+  *       convertFieldToType(Field(0.5), Float32, .., true) -> Field(0.5f)
   *   - Decimal -> Decimal: rejects any lossy conversion by requiring exact equality after conversion.
   *   - Float64 -> Decimal: converts the Decimal back to Float64 and compares with the original.
+  *
+  * Out-of-range values are always rejected (return Null) regardless of `strict`, e.g.
+  * convertFieldToType(Field(1e300), Float32) -> Field(Null) (no silent overflow to inf).
   *
   * The strict checks apply recursively inside composite types (Tuple, Array, Map),
   * so e.g. a Tuple(Decimal64(2)) element inside an Array is also checked for precision loss.
@@ -38,6 +46,8 @@ class IDataType;
   *   CAST(1, 'Bool') IN (1)   -> 1  (1 is representable as Bool, matches true)
   *   CAST(1, 'Bool') IN (255) -> 0  (255 is not representable, excluded from set)
   *   CAST(1, 'Bool') IN (256) -> 0  (256 is not representable, excluded from set)
+  *   toFloat32(0.1) IN (0.1)  -> 0  (0.1 is not representable as Float32, just like toFloat32(0.1) = 0.1)
+  *   toFloat32(0.5) IN (0.5)  -> 1  (0.5 is representable as Float32)
   *   CAST('33.3', 'Decimal64(1)') IN (CAST('33.33', 'Decimal64(2)'))           -> 0
   *   CAST('33.3', 'Decimal64(1)') IN (33.33)                                   -> 0
   *   (CAST('33.3', 'Decimal64(1)'), 1) IN ((CAST('33.33', 'Decimal64(2)'), 1)) -> 0

@@ -1,0 +1,25 @@
+-- values() with Float32: lossy decimal literals are accepted (issue #43144)
+0	0.1
+1	0.34
+2	0.88
+3	-1.23
+4	-3.3
+5	5.4
+-- single Float32 column
+0.1
+0.5
+1
+-- the converted value matches CAST to Float32
+1
+-- BFloat16 and Float64 columns
+0.5
+0.1
+-- out-of-range values are still rejected (no silent overflow to inf or wrap-around)
+-- IN keeps exact value semantics, consistent with the = operator
+0	0
+1	1
+0	0
+1	1
+-- same IN result without the analyzer
+0
+1

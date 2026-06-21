@@ -260,3 +260,37 @@ INSTANTIATE_TEST_SUITE_P(
         },
     })
 );
+
+/// https://github.com/ClickHouse/ClickHouse/issues/43144
+/// Non-strict conversion to a floating-point type accepts values that are not exactly
+/// representable (used by the `values` table function and `INSERT`), while strict conversion
+/// (used by the `IN` operator) rejects them so that set membership stays consistent with `=`.
+TEST(ConvertFieldToTypeStrictness, Float64ToFloat32)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+    const auto from_type = type_factory.get("Float64");
+    const auto to_type = type_factory.get("Float32");
+
+    /// 0.1 is not exactly representable in Float32.
+    const Field inexact{0.1};
+    /// 0.5 is exactly representable in Float32.
+    const Field exact{0.5};
+
+    /// Non-strict (default): the nearest Float32 value is returned, matching CAST.
+    const Field nearest = convertFieldToType(inexact, *to_type, from_type.get());
+    EXPECT_FALSE(nearest.isNull());
+    EXPECT_EQ(nearest, Field(static_cast<Float32>(0.1)));
+
+    /// Strict: a value that is not exactly representable becomes Null (excluded from an IN set).
+    const Field strict_inexact = convertFieldToType(inexact, *to_type, from_type.get(), {}, /*strict=*/ true);
+    EXPECT_TRUE(strict_inexact.isNull());
+
+    /// An exactly representable value converts identically in both modes.
+    EXPECT_EQ(convertFieldToType(exact, *to_type, from_type.get()), Field(static_cast<Float32>(0.5)));
+    EXPECT_EQ(convertFieldToType(exact, *to_type, from_type.get(), {}, /*strict=*/ true), Field(static_cast<Float32>(0.5)));
+
+    /// Out-of-range values are rejected in both modes (no silent overflow to inf).
+    const Field too_big{1e300};
+    EXPECT_TRUE(convertFieldToType(too_big, *to_type, from_type.get()).isNull());
+    EXPECT_TRUE(convertFieldToType(too_big, *to_type, from_type.get(), {}, /*strict=*/ true).isNull());
+}
