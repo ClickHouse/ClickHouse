@@ -636,14 +636,12 @@ bool ReplxxLineReader::isCursorAtEndOfInput()
     return state.cursor_position() >= static_cast<int>(code_points);
 }
 
-bool ReplxxLineReader::hintPopupActive()
+bool ReplxxLineReader::hintPopupActive() const
 {
-    /// Treat Up/Down as hint navigation for a single-line input while hints are shown (the hints
-    /// may be at the end of the line or in the middle after an identifier fragment). For
-    /// multi-line input keep Up/Down for line movement.
-    if (!hints_visible)
-        return false;
-    return strchr(rx.get_state().text(), '\n') == nullptr;
+    /// Up/Down navigate the hints whenever they are shown (end of the line, in the middle after
+    /// an identifier fragment, or on any line of a multi-line query). When the hints are not
+    /// shown these keys keep their normal line/history movement.
+    return hints_visible;
 }
 
 ReplxxLineReader::~ReplxxLineReader()

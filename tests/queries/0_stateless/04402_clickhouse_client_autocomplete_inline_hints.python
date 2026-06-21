@@ -151,6 +151,18 @@ def main():
         lambda o: "ReplicatedAggregatingMergeTree" in o,
     )
 
+    # 3d. Hints also work in a multi-line query: with the cursor on the first line right after an
+    #     identifier fragment (line 2 below it), the suggestions appear and Down + Tab accepts the
+    #     first one in place. "SELECT Replicated" + newline + "FROM t", then 7 Left moves the
+    #     cursor back over " FROM t"/newline to the end of "Replicated".
+    run_with_timeout(
+        base[0],
+        args + ["--multiline", "--hints", "1"],
+        "multi_line",
+        [b"SELECT Replicated", b"\r", b"FROM t", b"\x1b[D" * 7, b"\x1b[B", b"\t"],
+        lambda o: "ReplicatedAggregatingMergeTree" in o and "\x07" not in o,
+    )
+
     # 4. --hints 0 disables the ghost text (no gray hint color emitted while typing).
     run_with_timeout(
         base[0],
