@@ -8,6 +8,10 @@ SELECT [1, 2] AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON; -- { clientEr
 -- not a valid Feature id.
 SELECT false AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON; -- { clientError BAD_ARGUMENTS }
 
+-- Only one column can map to the Feature id; a second column named `id` is rejected rather than
+-- silently dropped.
+SELECT id, id, (1.0, 2.0)::Point AS geometry FROM (SELECT 1 AS id) FORMAT GeoJSON; -- { clientError BAD_ARGUMENTS }
+
 -- A null id is omitted from the Feature, including when it arrives through a `LowCardinality(Nullable)`
 -- column rather than a plain `Nullable` column.
 SELECT CAST(NULL AS LowCardinality(Nullable(String))) AS id, (1.0, 2.0)::Point AS geometry FORMAT GeoJSON;
