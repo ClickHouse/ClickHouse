@@ -9,7 +9,7 @@
 -- `apply_row_policy_after_final` is enabled by default, so this case is reachable out of the box.
 
 DROP TABLE IF EXISTS t_deferred_pk;
-DROP ROW POLICY IF EXISTS rp_05017 ON t_deferred_pk;
+DROP ROW POLICY IF EXISTS rp_04402 ON t_deferred_pk;
 
 -- Small index_granularity and several parts so there are many more marks than streams,
 -- which is what makes the PK-selectivity guard eligible to fire.
@@ -31,7 +31,7 @@ SET max_threads = 4;
 -- analysis is a full scan, but read-in-order must stay enabled: no PartialSortingTransform.
 -- The predicate is on `value` (not the sorting key `path`) so it is genuinely deferred;
 -- it is always true here so the correctness count below stays deterministic.
-CREATE ROW POLICY rp_05017 ON t_deferred_pk USING value < 1000000 TO ALL;
+CREATE ROW POLICY rp_04402 ON t_deferred_pk USING value < 1000000 TO ALL;
 
 SELECT 'deferred_row_policy_keeps_in_order';
 SELECT count() > 0 FROM (
@@ -40,7 +40,7 @@ SELECT count() > 0 FROM (
     SETTINGS enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5, apply_row_policy_after_final = 1
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
-DROP ROW POLICY rp_05017 ON t_deferred_pk;
+DROP ROW POLICY rp_04402 ON t_deferred_pk;
 
 -- A PREWHERE on a non-sorting-key column, deferred after FINAL (apply_prewhere_after_final = 1),
 -- is likewise excluded from index analysis and must not misfire the guard: no PartialSortingTransform.
@@ -65,13 +65,13 @@ SELECT count() > 0 FROM (
 
 -- Correctness: with the deferred row policy active and read-in-order kept, the result is
 -- the 1000 distinct sorting-key values after FINAL deduplication, in sorted order.
-CREATE ROW POLICY rp_05017 ON t_deferred_pk USING value < 1000000 TO ALL;
+CREATE ROW POLICY rp_04402 ON t_deferred_pk USING value < 1000000 TO ALL;
 SELECT 'correctness';
 SELECT count() FROM (
     SELECT * FROM t_deferred_pk FINAL
     ORDER BY path
     SETTINGS enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5, apply_row_policy_after_final = 1
 );
-DROP ROW POLICY rp_05017 ON t_deferred_pk;
+DROP ROW POLICY rp_04402 ON t_deferred_pk;
 
 DROP TABLE t_deferred_pk;
