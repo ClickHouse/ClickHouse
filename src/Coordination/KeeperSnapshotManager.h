@@ -115,7 +115,7 @@ public:
     /// Sessions credentials
     Storage::SessionAndAuth session_and_auth;
     /// ACLs cache for better performance. Without we cannot deserialize storage.
-    std::unordered_map<ACLId, Coordination::ACLs> acl_map;
+    std::vector<std::pair<ACLId, Coordination::ACLs>> acl_map;
     /// Cluster config from snapshot, can be empty
     ClusterConfigPtr cluster_config;
     /// Last committed ZXID
@@ -246,9 +246,24 @@ public:
     /// Caller must hold `IKeeperStateMachine::snapshots_lock`.
     SnapshotFileInfoPtr getSnapshotPin(uint64_t log_idx) const;
 
+    /// Protect this log index from retention — the file backing `latest_snapshot_meta` must
+    /// stay servable to NuRaft. 0 = none. Caller must hold `IKeeperStateMachine::snapshots_lock`.
+    void setProtectedSnapshotIndex(uint64_t log_idx);
+
+    /// Protect the index of a saved-but-not-yet-applied install from retention until
+    /// `apply_snapshot` consumes it (its file is not the mark, so the mark protection does
+    /// not cover it). 0 = none. Caller must hold `IKeeperStateMachine::snapshots_lock`.
+    void setProtectedPendingSnapshotIndex(uint64_t log_idx);
+
 private:
-    void removeOutdatedSnapshotsIfNeeded();
+    /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
+    void removeOutdatedSnapshotsIfNeeded(uint64_t just_written_log_idx);
     void moveSnapshotsIfNeeded();
+
+    /// Register a just-written snapshot file and return the CANONICAL map entry — callers
+    /// must use the returned pin, not their local twin. A same-(disk, path) collision keeps
+    /// the old entry (in-place overwrite); a different one retires it and repoints the map.
+    SnapshotFileInfoPtr registerSnapshotFile(uint64_t log_idx, const SnapshotFileInfoPtr & snapshot_file_info);
 
     /// Build a `shared_ptr<SnapshotFileInfo>` whose deleter unlinks only when
     /// `retired_for_removal` is set.
@@ -265,6 +280,10 @@ private:
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)
     std::map<uint64_t, SnapshotFileInfoPtr> existing_snapshots;
+    /// See `setProtectedSnapshotIndex` / `setProtectedPendingSnapshotIndex`. Both checked by
+    /// `removeOutdatedSnapshotsIfNeeded`.
+    uint64_t protected_snapshot_log_idx = 0;
+    uint64_t protected_pending_snapshot_log_idx = 0;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
     /// Superdigest for deserialization of storage
