@@ -620,7 +620,8 @@ namespace
             writer = createWriter();
         }
 
-        ~ManifestListWriter() {
+        ~ManifestListWriter()
+        {
             /// Dtor will handle the situation when no records were written, but we still need to write avro's header
             if (writer)
                 writer.reset();
