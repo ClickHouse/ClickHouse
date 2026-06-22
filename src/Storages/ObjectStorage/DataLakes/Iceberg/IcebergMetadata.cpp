@@ -1,11 +1,9 @@
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <base/sleep.h>
-#include "config.h"
 #if USE_AVRO
 
 #include <cstddef>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -1313,6 +1311,10 @@ void IcebergMetadata::drop(ContextPtr context)
 
 void IcebergMetadata::truncate(ContextPtr local_context, std::shared_ptr<DataLake::ICatalog> catalog, const StorageID & table_id_)
 {
+    if (!local_context->getSettingsRef()[Setting::allow_insert_into_iceberg])
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Truncate is not supported for iceberg tables");
+    }
     auto truncate_logger = getLogger("IcebergTruncate");
     size_t max_retries = 100;
 
