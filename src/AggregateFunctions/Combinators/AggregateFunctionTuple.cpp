@@ -198,9 +198,14 @@ void AggregateFunctionTuple::add(AggregateDataPtr __restrict place, const IColum
 
 void AggregateFunctionTuple::addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const
 {
+    /// Reached from the sparse aggregation path for long runs of default values. Materialize the
+    /// outer tuple once and add its default row directly, instead of delegating to
+    /// IAggregateFunctionHelper::addManyDefaults, which would route each of the `length` iterations
+    /// back through add() and rerun recursiveRemoveSparse (allocating a new ColumnTuple) per row.
     ColumnPtr materialized = recursiveRemoveSparse(columns[0]->getPtr());
-    const IColumn * full_columns[1] = {materialized.get()};
-    IAggregateFunctionHelper<AggregateFunctionTuple>::addManyDefaults(place, full_columns, length, arena);
+    const auto & tuple_column = assert_cast<const ColumnTuple &>(*materialized);
+    for (size_t i = 0; i < length; ++i)
+        addRowFromMaterialized(place, tuple_column, 0, arena);
 }
 
 void AggregateFunctionTuple::addBatch( /// NOLINT
