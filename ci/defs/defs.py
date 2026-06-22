@@ -339,7 +339,6 @@ class JobNames:
     STYLE_CHECK = "Style check"
     CODE_REVIEW = "Code Review"
     FAST_TEST = "Fast test"
-    SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -465,12 +464,12 @@ LLVM_FT_ARTIFACTS_LIST = [
 
 LLVM_FT_ARTIFACTS_LIST += [
     # default.profdata files for 6 jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential",
 ]
 
 LLVM_IT_ARTIFACTS_LIST = [
@@ -540,7 +539,7 @@ class ArtifactConfigs:
         name="...",
         type=Artifact.Type.S3,
         path=[
-            f"./*.profdata",
+            "./*.profdata",
         ],
     ).parametrize(names=LLVM_ARTIFACTS_LIST)
 
