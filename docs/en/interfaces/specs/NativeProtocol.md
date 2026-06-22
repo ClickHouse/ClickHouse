@@ -826,7 +826,7 @@ When the negotiated parallel-replicas version is `≥ 8`, the initiator's reques
 
 1. A follower opens its read pipeline and sends `MergeTreeAllRangesAnnouncement` to the initiator.
 2. **Only when the announcement's `mode` is non-`Default`** (`WithOrder = 1` or `ReverseOrder = 2`, both used for in-order parallel reads) the initiator replies with `MergeTreeAllRangesAnnouncementResponse`. For `mode = Default = 0` the initiator stays silent and the follower does not wait — `Default` mode hands out ranges with each `MergeTreeReadTaskRequest` and never needs the up-front parts list.
-3. The follower blocks on the response (when expected) before issuing its first [`MergeTreeReadTaskResponse`](#packet-type-reference), using the returned parts list to filter source construction to exactly the parts its `#split_i` stream owns.
+3. The follower blocks on the response (when expected) before issuing its first [`MergeTreeReadTaskRequest`](#packet-type-reference) (server packet `16` — sent follower→initiator; the initiator replies with `MergeTreeReadTaskResponse`, client packet `10`), using the returned parts list to filter source construction to exactly the parts its `#split_i` stream owns.
 
 Below version `8` the announcement is fire-and-forget regardless of mode, and the follower constructs sources over every locally-known part (the legacy behaviour).
 
