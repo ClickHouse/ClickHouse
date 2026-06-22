@@ -9,6 +9,13 @@
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_1>
+            <my_rule_1_dynamic>
+                <url>regex:^/[^/]+/[^/]+/write$</url>
+                <handler>
+                    <type>remote_write</type>
+                    <enable_table_name_url_routing>true</enable_table_name_url_routing>
+                </handler>
+            </my_rule_1_dynamic>
             <my_rule_2>
                 <url>/read</url>
                 <handler>
