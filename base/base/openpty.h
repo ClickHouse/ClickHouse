@@ -7,4 +7,6 @@
 /// Opens a new pseudo-terminal pair, applies the window size to the slave side,
 /// and writes the master/slave file descriptors into the output references.
 /// Returns 0 on success, -1 on failure with `errno` set.
+///
+/// (Used by dependencies of skim)
 int openPty(int & master_fd, int & slave_fd, const winsize & ws);

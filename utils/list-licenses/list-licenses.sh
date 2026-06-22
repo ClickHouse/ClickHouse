@@ -134,7 +134,7 @@ process_rust_crate() {
     NAME=$(echo "$CRATE" | rev | cut -f2- -d- | rev)
 
     LICENSE_TYPE=$(${GREP_CMD} 'license = "' "$dependency"  | cut -d '"' -f2)
-    if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive|BSL-1.0';
+    if echo "${LICENSE_TYPE}" | ${GREP_CMD} -v -P 'MIT|Apache|MPL|ISC|BSD|Unicode|Zlib|CC0-1.0|CDLA-Permissive|BSL-1.0|WTFPL';
     then
         echo "Fatal error: unrecognized licenses ($LICENSE_TYPE) in the Rust code" >&2
         exit 1
@@ -178,6 +178,7 @@ process_rust_crate() {
            [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
            [ "$LICENSE_TYPE" == "Zlib OR Apache-2.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR Zlib" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception" ] ||
@@ -201,6 +202,9 @@ process_rust_crate() {
         elif [ "$LICENSE_TYPE" == "ISC" ]
         then
             LICENSE_PATH="/utils/list-licenses/ISC.txt"
+        elif [ "$LICENSE_TYPE" == "WTFPL" ]
+        then
+            LICENSE_PATH="/utils/list-licenses/WTFPL.txt"
         else
             echo "Could not find a valid license file for \"${LICENSE_TYPE}\" in $FOLDER" >&2
             ls "$FOLDER" >&2

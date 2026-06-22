@@ -45,7 +45,7 @@ fn skim_impl(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String,
 
     let options = SkimOptionsBuilder::default()
         .height("30%".to_string())
-        .query(Some(prefix.to_str().unwrap().to_string()))
+        .query(prefix.to_str().unwrap().to_string())
         .tac(true)
         // Do not clear on start and clear on exit will clear skim output from the terminal.
         //
@@ -75,23 +75,24 @@ fn skim_impl(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String,
         .unwrap();
 
     let (tx, rx): (SkimItemSender, SkimItemReceiver) = unbounded();
-    for word in words {
-        tx.send(Arc::new(Item::new(word.to_string()))).unwrap();
-    }
+    let items: Vec<Arc<dyn SkimItem>> = words
+        .iter()
+        .map(|word| Arc::new(Item::new(word.to_string())) as Arc<dyn SkimItem>)
+        .collect();
+    tx.send(items).unwrap();
     // so that skim could know when to stop waiting for more items.
     drop(tx);
 
-    let output = Skim::run_with(&options, Some(rx));
-    if output.is_none() {
-        return Err("skim return nothing".to_string());
-    }
-    let output = output.unwrap();
+    let output = match Skim::run_with(options, Some(rx)) {
+        Ok(output) => output,
+        Err(err) => return Err(format!("skim failed: {}", err)),
+    };
     if output.is_abort {
         return Ok("".to_string());
     }
 
     if !output.selected_items.is_empty() {
-        return Ok(output.selected_items[0].output().to_string());
+        return Ok(output.selected_items[0].item.output().to_string());
     }
     if !output.query.is_empty() {
         return Ok(output.query);
