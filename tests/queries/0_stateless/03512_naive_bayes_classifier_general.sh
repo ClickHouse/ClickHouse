@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT -q "DROP DICTIONARY IF EXISTS lang_byte_2"
 $CLICKHOUSE_CLIENT -q "DROP DICTIONARY IF EXISTS lang_codepoint_1"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE nb_byte_data_gen (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram)"
-$CLICKHOUSE_CLIENT -q "INSERT INTO nb_byte_data_gen FROM INFILE '$CURDIR/data_naive_bayes_classifier/nb_model_lang_byte_2.tsv' FORMAT TabSeparated"
+$CLICKHOUSE_CLIENT -q "INSERT INTO nb_byte_data_gen FROM INFILE '$CURDIR/data_naive_bayes_classifier/nb_model_lang_byte_2.tsv.zst' FORMAT TabSeparated"
 
 $CLICKHOUSE_CLIENT -q "
 CREATE DICTIONARY lang_byte_2
@@ -37,7 +37,7 @@ LIFETIME(0)
 "
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE nb_codepoint_data_gen (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram)"
-$CLICKHOUSE_CLIENT -q "INSERT INTO nb_codepoint_data_gen FROM INFILE '$CURDIR/data_naive_bayes_classifier/nb_model_lang_codepoint_1.tsv' FORMAT TabSeparated"
+$CLICKHOUSE_CLIENT -q "INSERT INTO nb_codepoint_data_gen FROM INFILE '$CURDIR/data_naive_bayes_classifier/nb_model_lang_codepoint_1.tsv.zst' FORMAT TabSeparated"
 
 $CLICKHOUSE_CLIENT -q "
 CREATE DICTIONARY lang_codepoint_1
