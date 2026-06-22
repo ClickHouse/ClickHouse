@@ -21,10 +21,4 @@ namespace DB
 template <typename T>
 using DequeWithMemoryTracking = std::deque<T, AllocatorWithMemoryTracking<T>>;
 
-/// Like `DequeWithMemoryTracking`, but charges and enforces only the global/total memory tracker,
-/// never the per-query/per-thread one. For process-wide containers mutated from arbitrary threads.
-/// See `VectorWithGlobalMemoryTracking` and `AllocatorWithMemoryTracking`'s `tracking_level`.
-template <typename T>
-using DequeWithGlobalMemoryTracking = std::deque<T, AllocatorWithMemoryTracking<T, VariableContext::User>>;
-
 }

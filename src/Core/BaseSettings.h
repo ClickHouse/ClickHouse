@@ -1054,8 +1054,8 @@ bool BaseSettings<TTraits>::SettingFieldRef::isHotReload() const
   * - Setting aliases
   */
 
-/// Process-wide, static-initialized alias table shared by all queries (never freed) -> global tracker.
-using AliasMap = UnorderedMapWithGlobalMemoryTracking<std::string_view, std::string_view>;
+/// Process-wide, static-initialized alias table shared by all queries (never freed).
+using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_view>;
 
 // ---------------------------------------------------------------------------
 // Helper macros for constexpr typed-array layout generation.
@@ -1335,10 +1335,9 @@ using AliasMap = UnorderedMapWithGlobalMemoryTracking<std::string_view, std::str
             }; \
             \
             /* Process-wide settings metadata, built once in the Accessor singleton and shared by every */ \
-            /* query (never freed). Charge the global tracker rather than whichever query first touches */ \
-            /* this trait's Accessor (some traits are first-built lazily during a query). */ \
-            VectorWithGlobalMemoryTracking<FieldInfo> field_infos;                        /* Metadata for all settings */ \
-            UnorderedMapWithGlobalMemoryTracking<std::string_view, size_t> name_to_index_map; /* Fast name -> index lookup */ \
+            /* query (never freed; some traits are first-built lazily during a query). */ \
+            VectorWithMemoryTracking<FieldInfo> field_infos;                        /* Metadata for all settings */ \
+            UnorderedMapWithMemoryTracking<std::string_view, size_t> name_to_index_map; /* Fast name -> index lookup */ \
             /* Canonical default-constructed instance. Used to reset individual settings to their */ \
             /* declared defaults via a typed copy (see resetValueToDefault) and to read the default */ \
             /* string representation (see getDefaultValueString). Initialized once via the tag */ \
@@ -1355,12 +1354,12 @@ using AliasMap = UnorderedMapWithGlobalMemoryTracking<std::string_view, std::str
                    LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_)}; \
         \
         /** Reverse map: setting name -> list of aliases */ \
-        using SettingsToAliasesMap = UnorderedMapWithGlobalMemoryTracking<std::string_view, VectorWithGlobalMemoryTracking<std::string_view>>; \
+        using SettingsToAliasesMap = UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
         { \
             static SettingsToAliasesMap setting_to_aliases_mapping = [] \
             { \
-                UnorderedMapWithGlobalMemoryTracking<std::string_view, VectorWithGlobalMemoryTracking<std::string_view>> map; \
+                UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>> map; \
                 for (const auto & [alias, destination] : aliases_to_settings) \
                     map[destination].push_back(alias); \
                 return map; \

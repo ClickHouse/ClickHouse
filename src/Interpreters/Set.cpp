@@ -704,7 +704,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const std::vector<Range> & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
 {
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {

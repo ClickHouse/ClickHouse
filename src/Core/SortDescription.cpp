@@ -191,7 +191,7 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     /// Process-wide compile-attempt counter shared across all queries: keep it on the global memory
     /// tracker rather than charging whichever query first compiles a given sort shape (the entry
     /// outlives that query, so per-query attribution would mis-account and could spuriously throw).
-    static UnorderedMapWithGlobalMemoryTracking<UInt128, UInt64, UInt128Hash> counter;
+    static UnorderedMapWithMemoryTracking<UInt128, UInt64, UInt128Hash> counter;
     static std::mutex mutex;
 
     if (!description.compile_sort_description || sort_description_types.empty())

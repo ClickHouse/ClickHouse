@@ -50,8 +50,8 @@ public:
     struct ConnectionInfo
     {
         /// Persistent connection metadata held by the long-lived client (and stored in the storage's
-        /// `client_connection_info`); built at CREATE, freed on drop -> global tracker, not the query's.
-        VectorWithGlobalMemoryTracking<String> http_proxy_urls;
+        /// `client_connection_info`); built at CREATE, freed on drop.
+        VectorWithMemoryTracking<String> http_proxy_urls;
         String oauth_token;
         String api_version = "v3";
         bool encode_utf8 = false;

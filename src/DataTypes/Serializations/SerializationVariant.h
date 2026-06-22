@@ -76,8 +76,8 @@ public:
     /// tracker rather than the creating query's, which would otherwise pay for shared, process-pooled
     /// metadata. (`VariantTypes` mirrors the per-query `DataTypes` alias but with global tracking, since
     /// here it is a pooled member rather than per-query scratch.)
-    using VariantSerializations = VectorWithGlobalMemoryTracking<SerializationPtr>;
-    using VariantTypes = VectorWithGlobalMemoryTracking<DataTypePtr>;
+    using VariantSerializations = VectorWithMemoryTracking<SerializationPtr>;
+    using VariantTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 private:
     explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
