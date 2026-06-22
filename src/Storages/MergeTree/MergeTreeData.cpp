@@ -9510,7 +9510,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.metadata_version_to_write.has_value())
     {
         chassert(!params.keep_metadata_version);
-        auto out_metadata = dst_part_storage->writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, getContext()->getWriteSettings());
+
+        dst_part_storage->beginTransaction();
+        auto out_metadata = dst_part_storage->writeFile(
+            IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
+            /*buf_size=*/ 4096,
+            getContext()->getWriteSettings());
+
         writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
         out_metadata->finalize();
         if ((*getSettings())[MergeTreeSetting::fsync_after_insert])
@@ -9558,6 +9564,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             }
         }
     }
+
+    auto & destination_storage = dst_data_part->getDataPartStorage();
+    if (destination_storage.hasActiveTransaction())
+        destination_storage.commitTransaction();
 
     /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
     TransactionID tid = params.txn ? params.txn->tid : Tx::NonTransactionalTID;
