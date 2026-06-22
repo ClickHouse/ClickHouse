@@ -12,7 +12,7 @@ user_del="${CLICKHOUSE_DATABASE}_del_04328"
 user_upd="${CLICKHOUSE_DATABASE}_upd_04328"
 
 $CLICKHOUSE_CLIENT -q "
-DROP TABLE IF EXISTS tab;
+DROP TABLE IF EXISTS tab, tab_lw;
 DROP USER IF EXISTS $user_del, $user_upd;
 
 CREATE TABLE tab (id UInt32, val UInt32) ENGINE = MergeTree ORDER BY id;
