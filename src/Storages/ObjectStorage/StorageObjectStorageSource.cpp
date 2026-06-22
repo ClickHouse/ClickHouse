@@ -514,7 +514,11 @@ Chunk StorageObjectStorageSource::generate()
                     .storage_id = storage_snapshot->storage.getStorageID(),
                     .size = object_size,
                     .filename = &filename,
-                    .last_modified = object_metadata->last_modified,
+                    /// Report an unknown modification time (e.g. a web object whose HTTP response has no
+                    /// `Last-Modified` header) as `NULL` in `_time`, not as the default epoch `1970-01-01`.
+                    .last_modified = object_metadata->is_last_modified_known
+                        ? std::optional<Poco::Timestamp>(object_metadata->last_modified)
+                        : std::nullopt,
                     .etag = &(object_metadata->etag),
                     .tags = &(object_metadata->tags),
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
