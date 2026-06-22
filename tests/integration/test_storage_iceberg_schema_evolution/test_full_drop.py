@@ -12,7 +12,6 @@ from helpers.iceberg_utils import (
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_full_drop(started_cluster_iceberg_schema_evolution, format_version, storage_type):
     instance = started_cluster_iceberg_schema_evolution.instances["node1"]
-    spark = started_cluster_iceberg_schema_evolution.spark_session
     TABLE_NAME = "test_full_drop_" + storage_type + "_" + get_uuid_str()
     TABLE_NAME_2 = "test_full_drop_" + storage_type + "_" + get_uuid_str()
 
@@ -43,7 +42,6 @@ def test_full_drop(started_cluster_iceberg_schema_evolution, format_version, sto
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_writes_truncate(started_cluster_iceberg_schema_evolution, format_version, storage_type):
     instance = started_cluster_iceberg_schema_evolution.instances["node1"]
-    spark = started_cluster_iceberg_schema_evolution.spark_session
     TABLE_NAME = "test_writes_truncate_" + storage_type + "_" + get_uuid_str()
 
     schema = "(x String)"
