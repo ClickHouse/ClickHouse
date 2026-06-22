@@ -250,6 +250,12 @@ SELECT naiveBayesClassifierWithProb('nb_err_dict', 123); -- { serverError BAD_AR
 SELECT naiveBayesClassifierAllProbs(123, 'hello');       -- { serverError BAD_ARGUMENTS }
 SELECT naiveBayesClassifierAllProbs('nb_err_dict', 123); -- { serverError BAD_ARGUMENTS }
 
+-- Non-constant dictionary name is rejected — all three functions
+
+SELECT naiveBayesClassifier(materialize('nb_err_dict'), 'hello');          -- { serverError ILLEGAL_COLUMN }
+SELECT naiveBayesClassifierWithProb(materialize('nb_err_dict'), 'hello');  -- { serverError ILLEGAL_COLUMN }
+SELECT naiveBayesClassifierAllProbs(materialize('nb_err_dict'), 'hello');  -- { serverError ILLEGAL_COLUMN }
+
 -- Non-NB dictionary passed to naiveBayesClassifier
 
 DROP DICTIONARY IF EXISTS nb_flat_dict;

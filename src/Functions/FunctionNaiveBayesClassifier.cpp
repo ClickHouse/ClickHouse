@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -46,11 +47,13 @@ void validateNBArguments(const String & func_name, const ColumnsWithTypeAndName 
             arguments[1].type->getName());
 }
 
-/// Drives the per-row work shared by the three Naive Bayes functions. It resolves the dictionary by
-/// name, caches the most recently used one, checks the dictionary access right once per query, validates
-/// the input text, and invokes the callback with the dictionary, the input text, and the row index.
+/// Drives the per-row work shared by the three Naive Bayes functions. The dictionary name (argument 0)
+/// is always constant (enforced by getArgumentsThatAreAlwaysConstant), so the dictionary is resolved and
+/// the dictGet access right is checked once for the whole block; then the callback is invoked with the
+/// dictionary, the input text, and the row index for every row.
 template <typename PerRow>
 void executeNaiveBayes(
+    std::string_view function_name,
     const ContextPtr & context,
     std::atomic<bool> & access_checked,
     const ColumnsWithTypeAndName & arguments,
@@ -60,42 +63,39 @@ void executeNaiveBayes(
     if (input_rows_count == 0)
         return;
 
-    ColumnPtr name_column = arguments[0].column->convertToFullColumnIfConst();
+    /// The dictionary name (argument 0) must be constant (also declared in getArgumentsThatAreAlwaysConstant),
+    /// so the dictionary is resolved and access-checked once for the whole block.
+    const ColumnConst * name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+    if (!name_column)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "The first argument (dictionary name) of function {} must be a constant String",
+            function_name);
+
+    const String dictionary_name = name_column->getValue<String>();
+
+    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+
+    if (!access_checked.load(std::memory_order_relaxed))
+    {
+        context->checkAccess(
+            AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+        access_checked.store(true, std::memory_order_relaxed);
+    }
+
+    const auto * nb_dict = typeid_cast<const NaiveBayesDictionary *>(dictionary.get());
+    if (!nb_dict)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary '{}' is not a NaiveBayes dictionary", dictionary_name);
+
     ColumnPtr text_column = arguments[1].column->convertToFullColumnIfConst();
-
-    const auto & loader = context->getExternalDictionariesLoader();
-
-    std::string_view cached_name;
-    std::shared_ptr<const IDictionary> dict_holder;
-    const NaiveBayesDictionary * nb_dict = nullptr;
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const std::string_view name = name_column->getDataAt(i);
         const std::string_view text = text_column->getDataAt(i);
 
         if (text.empty())
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Input text is empty for dictionary {}. Please provide a non-empty string.", name);
-
-        if (!nb_dict || name != cached_name)
-        {
-            const String name_str{name};
-            dict_holder = loader.getDictionary(name_str, context);
-
-            if (!access_checked.load(std::memory_order_relaxed))
-            {
-                context->checkAccess(
-                    AccessType::dictGet, dict_holder->getDatabaseOrNoDatabaseTag(), dict_holder->getDictionaryID().getTableName());
-                access_checked.store(true, std::memory_order_relaxed);
-            }
-
-            nb_dict = typeid_cast<const NaiveBayesDictionary *>(dict_holder.get());
-            if (!nb_dict)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary '{}' is not a NaiveBayes dictionary", name_str);
-
-            cached_name = name;
-        }
+                ErrorCodes::BAD_ARGUMENTS, "Input text is empty for dictionary {}. Please provide a non-empty string.", dictionary_name);
 
         per_row(*nb_dict, text, i);
     }
@@ -122,6 +122,7 @@ public:
     String getName() const override { return name; }
     bool isVariadic() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -136,7 +137,7 @@ public:
         auto result_column = ColumnUInt32::create(input_rows_count);
         auto & data = result_column->getData();
 
-        executeNaiveBayes(context, access_checked, arguments, input_rows_count,
+        executeNaiveBayes(getName(), context, access_checked, arguments, input_rows_count,
             [&](const NaiveBayesDictionary & dict, std::string_view text, size_t i) { data[i] = dict.classifyText(text); });
 
         return result_column;
@@ -159,6 +160,7 @@ public:
     String getName() const override { return name; }
     bool isVariadic() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -175,7 +177,7 @@ public:
         auto & class_data = class_col->getData();
         auto & prob_data = prob_col->getData();
 
-        executeNaiveBayes(context, access_checked, arguments, input_rows_count,
+        executeNaiveBayes(getName(), context, access_checked, arguments, input_rows_count,
             [&](const NaiveBayesDictionary & dict, std::string_view text, size_t i)
             {
                 auto [best_class, best_prob] = dict.classifyTextWithProb(text);
@@ -206,6 +208,7 @@ public:
     String getName() const override { return name; }
     bool isVariadic() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -224,7 +227,7 @@ public:
         auto offsets_col = ColumnArray::ColumnOffsets::create(input_rows_count);
         auto & offsets = offsets_col->getData();
 
-        executeNaiveBayes(context, access_checked, arguments, input_rows_count,
+        executeNaiveBayes(getName(), context, access_checked, arguments, input_rows_count,
             [&](const NaiveBayesDictionary & dict, std::string_view text, size_t i)
             {
                 for (const auto & [class_id, prob] : dict.classifyTextAllProbs(text))

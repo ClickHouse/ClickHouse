@@ -55,11 +55,8 @@ LIFETIME(0)
 # Batch with numbers()
 $CLICKHOUSE_CLIENT -q "SELECT number, naiveBayesClassifier('lang_byte_2', 'She painted the wall a bright yellow') FROM numbers(10) ORDER BY number"
 
-# Cross join: multiple models x multiple inputs
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS model_names"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE model_names (model_name String) ENGINE = MergeTree() ORDER BY model_name"
-$CLICKHOUSE_CLIENT -q "INSERT INTO model_names VALUES ('lang_byte_2'), ('lang_codepoint_1')"
-
+# Multiple models x multiple inputs. The model name must be a constant, so each model is a
+# separate UNION ALL branch with a literal name.
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS input_texts"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE input_texts (input_text String) ENGINE = MergeTree() ORDER BY input_text"
 $CLICKHOUSE_CLIENT -q "INSERT INTO input_texts VALUES
@@ -75,25 +72,39 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO input_texts VALUES
 ('সে প্রতিদিন ভোরে দৌড়াতে যায়।')"
 
 $CLICKHOUSE_CLIENT -q "
-SELECT model_name, input_text, naiveBayesClassifier(model_name, input_text) AS classification
-FROM model_names CROSS JOIN input_texts
+SELECT model_name, input_text, classification
+FROM
+(
+    SELECT 'lang_byte_2' AS model_name, input_text, naiveBayesClassifier('lang_byte_2', input_text) AS classification FROM input_texts
+    UNION ALL
+    SELECT 'lang_codepoint_1' AS model_name, input_text, naiveBayesClassifier('lang_codepoint_1', input_text) AS classification FROM input_texts
+)
 ORDER BY model_name, input_text
 "
 
 $CLICKHOUSE_CLIENT -q "
-SELECT model_name, input_text, naiveBayesClassifierWithProb(model_name, input_text) AS result
-FROM model_names CROSS JOIN input_texts
+SELECT model_name, input_text, result
+FROM
+(
+    SELECT 'lang_byte_2' AS model_name, input_text, naiveBayesClassifierWithProb('lang_byte_2', input_text) AS result FROM input_texts
+    UNION ALL
+    SELECT 'lang_codepoint_1' AS model_name, input_text, naiveBayesClassifierWithProb('lang_codepoint_1', input_text) AS result FROM input_texts
+)
 ORDER BY model_name, input_text
 "
 
 $CLICKHOUSE_CLIENT -q "
-SELECT model_name, input_text, naiveBayesClassifierAllProbs(model_name, input_text) AS result
-FROM model_names CROSS JOIN input_texts
+SELECT model_name, input_text, result
+FROM
+(
+    SELECT 'lang_byte_2' AS model_name, input_text, naiveBayesClassifierAllProbs('lang_byte_2', input_text) AS result FROM input_texts
+    UNION ALL
+    SELECT 'lang_codepoint_1' AS model_name, input_text, naiveBayesClassifierAllProbs('lang_codepoint_1', input_text) AS result FROM input_texts
+)
 ORDER BY model_name, input_text
 "
 
 # Cleanup
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS model_names"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS input_texts"
 $CLICKHOUSE_CLIENT -q "DROP DICTIONARY IF EXISTS lang_byte_2"
 $CLICKHOUSE_CLIENT -q "DROP DICTIONARY IF EXISTS lang_codepoint_1"
