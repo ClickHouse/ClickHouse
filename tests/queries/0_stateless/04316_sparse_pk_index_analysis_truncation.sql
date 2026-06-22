@@ -14,9 +14,9 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO t_sparse_pk_truncation VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 
--- { echoOn }
-
 SET optimize_redundant_comparisons = 0;
+
+-- { echoOn }
 
 EXPLAIN indexes = 1
 SELECT count() FROM t_sparse_pk_truncation
