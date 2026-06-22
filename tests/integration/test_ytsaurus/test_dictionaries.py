@@ -355,7 +355,7 @@ def test_dictionary_xml_config(started_cluster):
         "/etc/clickhouse-server/dictionaries/yt_config_dict.xml", dict_config
     )
     instance.query("SYSTEM RELOAD CONFIG")
-    assert instance.query(f"SELECT dictGet('yt_dict_xml', 'value', 3)") == "0\n"
+    assert instance.query("SELECT dictGet('yt_dict_xml', 'value', 3)") == "0\n"
     yt.remove_table(path)
 
 
@@ -410,7 +410,7 @@ def test_yt_dictionary_with_named_collection(started_cluster):
             ytsaurus_columns_description = 'id, length(value) as len'
         """)
 
-    instance.query(f"""
+    instance.query("""
         CREATE DICTIONARY yt_dict(id UInt64, len Int32) PRIMARY KEY id SOURCE(YTSAURUS(NAME ytsaurus_nc)) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 1000)
         """)
     assert (
