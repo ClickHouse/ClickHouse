@@ -1227,6 +1227,41 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
 
+            /// A TTL expression can also depend on a *subcolumn* of a rewritten column (e.g.
+            /// `TTL t.k + INTERVAL 1 DAY` while materializing the parent column `t`). The TTL
+            /// dependency is then recorded under the subcolumn name (`t.k`), which the exact-name
+            /// `getAllColumnDependencies` recalculation below does not pick up — and unlike skip
+            /// indices, projections and statistics (handled above via the subcolumn-aware
+            /// `column_required_by`), recomputing the part's `ttl_infos` for a subcolumn dependency
+            /// is not implemented. Following the same fail-close approach used for key columns,
+            /// refuse the command rather than leaving stale TTL bounds in the new part.
+            for (const auto & rewritten_column : rewritten_columns)
+            {
+                auto column_in_storage = columns_desc.tryGetPhysical(rewritten_column);
+                if (!column_in_storage)
+                    continue;
+
+                for (const auto & subcolumn : column_in_storage->type->getSubcolumnNames())
+                {
+                    const String subcolumn_name = Nested::concatenateName(rewritten_column, subcolumn);
+
+                    const bool ttl_depends_on_subcolumn = std::ranges::any_of(
+                        getAllColumnDependencies(metadata_snapshot, NameSet{subcolumn_name}, has_dependency),
+                        [](const auto & dependency)
+                        {
+                            return dependency.kind == ColumnDependency::TTL_EXPRESSION
+                                || dependency.kind == ColumnDependency::TTL_TARGET;
+                        });
+
+                    if (ttl_depends_on_subcolumn)
+                        throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Refused to materialize column {} because a TTL expression depends on its subcolumn {}. "
+                            "Recomputing the column would require recalculating the TTL bounds, which is not "
+                            "supported for subcolumn dependencies",
+                            backQuote(command.column_name), backQuote(subcolumn_name));
+                }
+            }
+
             /// A TTL expression reading any rewritten column must be recalculated too, so the new
             /// part's `ttl_infos` reflect the new values. This mirrors the UPDATE path, which obtains
             /// these dependencies via `getAllColumnDependencies(updated_columns)` at the top of

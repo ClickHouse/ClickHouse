@@ -203,3 +203,14 @@ DROP TABLE IF EXISTS t_mat_dep_sign;
 CREATE TABLE t_mat_dep_sign (a Int, c2 Int MATERIALIZED a, s Int8 MATERIALIZED c2) ENGINE = CollapsingMergeTree(s) ORDER BY a;
 ALTER TABLE t_mat_dep_sign MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_dep_sign;
+
+-- Case 20: A TTL expression reads a subcolumn of the materialized column (TTL t.k while
+-- materializing the parent Tuple column t). Recalculating the part's TTL bounds is not supported
+-- for subcolumn dependencies (unlike a full-column TTL as in Case 16), so — following the same
+-- fail-close approach used for key columns — the command is refused rather than leaving stale
+-- ttl_infos copied from the source part.
+DROP TABLE IF EXISTS t_mat_ttl_subcolumn;
+CREATE TABLE t_mat_ttl_subcolumn (a Int, t Tuple(k DateTime, v UInt64) MATERIALIZED (toDateTime(1800000000 + a), 0))
+    ENGINE = MergeTree() ORDER BY a TTL t.k + INTERVAL 1 DAY;
+ALTER TABLE t_mat_ttl_subcolumn MATERIALIZE COLUMN t; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_subcolumn;
