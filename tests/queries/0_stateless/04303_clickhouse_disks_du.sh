@@ -52,6 +52,11 @@ function run_du_test()
     clickhouse-disks -C "$config" --disk "$disk" --query "du $dir/does_not_exist" 2>&1 >/dev/null \
         | grep -o "doesn't exist" | head -n1
 
+    # Navigate to the subdirectory and run `du` on a file by its relative name.
+    # `cd` and `du` must share one invocation: the current directory is in-memory
+    # process state, so it does not persist across separate `clickhouse-disks` calls.
+    disks "cd $dir/sub; du -h a"
+
     # Clean up.
     disks "remove -r $dir"
 }

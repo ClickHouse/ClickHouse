@@ -32,7 +32,7 @@ public:
         String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
         bool human_readable = options.contains("human-readable");
 
-        if (!disk.getDisk()->existsFileOrDirectory(path))
+        if (!disk.getDisk()->existsFileOrDirectory(disk.getRelativeFromRoot(path)))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path, disk.getDisk()->getName());
 
         LOG_INFO(log, "Computing disk usage of '{}' at disk '{}'", path, disk.getDisk()->getName());
