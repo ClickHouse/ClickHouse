@@ -1796,9 +1796,6 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 
     switch (packet.type)
     {
-        case Protocol::Server::PartUUIDs:
-            return true;
-
         case Protocol::Server::Data:
             if (!cancelled_)
                 onData(packet.block, parsed_query);

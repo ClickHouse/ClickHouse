@@ -1647,18 +1647,11 @@ static BlockIO executeQueryImpl(
             if (quota)
             {
                 quota_checked = true;
-                if (quota->isKeyedByNormalizedQueryHash())
-                {
-                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
-                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
-                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
-                }
-                else
-                {
-                    quota->used(QuotaType::QUERY_INSERTS, 1);
-                    quota->used(QuotaType::QUERIES, 1);
-                    quota->checkExceeded(QuotaType::ERRORS);
-                }
+                /// Each governing quota is accounted appropriately: NORMALIZED_QUERY_HASH quotas
+                /// track against per-hash intervals, the rest against shared session intervals.
+                quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
 
                 /// Track per-normalized-query-hash quota limits (works for all key types).
                 quota->usedPerNormalizedHash(normalized_query_hash);
@@ -1822,26 +1815,15 @@ static BlockIO executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
-                        if (quota->isKeyedByNormalizedQueryHash())
-                        {
-                            /// For NORMALIZED_QUERY_HASH keyed quotas, track all resources
-                            /// against per-hash intervals instead of shared session intervals.
-                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
-                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
-                            else if (out_ast->as<ASTInsertQuery>())
-                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
-                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
-                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
-                        }
-                        else
-                        {
-                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
-                                quota->used(QuotaType::QUERY_SELECTS, 1);
-                            else if (out_ast->as<ASTInsertQuery>())
-                                quota->used(QuotaType::QUERY_INSERTS, 1);
-                            quota->used(QuotaType::QUERIES, 1);
-                            quota->checkExceeded(QuotaType::ERRORS);
-                        }
+                        /// Each governing quota is accounted appropriately: NORMALIZED_QUERY_HASH
+                        /// quotas track against per-hash intervals, the rest against shared session
+                        /// intervals. A user may be governed by several quotas of different key types.
+                        if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                            quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
+                        else if (out_ast->as<ASTInsertQuery>())
+                            quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                        quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                        quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
 
                         /// Track per-normalized-query-hash quota limits (works for all key types).
                         quota->usedPerNormalizedHash(normalized_query_hash);
