@@ -4,7 +4,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
-
 #include <boost/core/noncopyable.hpp>
 
 namespace DB
@@ -32,6 +31,7 @@ enum class StatisticsFileVersion : UInt16
 
 class Field;
 class Block;
+class IAggregateFunction;
 
 struct StatisticsUtils
 {
@@ -46,6 +46,12 @@ struct StatisticsUtils
     /// a common numeric representation.
     static std::optional<Float64> interpolateLessLinear(
         const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
+
+    /// Returns true iff two aggregate functions are compatible for state merging: same state layout
+    /// (sizeOfData) and pairwise-equal argument types (via IDataType::equals). Used by statistics
+    /// implementations to detect hash-domain changes (e.g. numeric → String) that would make
+    /// states of the same byte size semantically incompatible.
+    static bool aggregateEqual(const IAggregateFunction & a, const IAggregateFunction & b);
 };
 
 class IStatistics;

@@ -1,5 +1,6 @@
 #include <Storages/Statistics/Statistics.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
@@ -17,7 +18,7 @@
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
-#include <Storages/Statistics/StatisticsUniqCombined.h>
+#include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/StatisticsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -38,6 +39,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+bool StatisticsUtils::aggregateEqual(const IAggregateFunction & a, const IAggregateFunction & b)
+{
+    if (a.sizeOfData() != b.sizeOfData())
+        return false;
+    const auto & a_types = a.getArgumentTypes();
+    const auto & b_types = b.getArgumentTypes();
+    if (a_types.size() != b_types.size())
+        return false;
+    for (size_t i = 0; i < a_types.size(); ++i)
+        if (!a_types[i]->equals(*b_types[i]))
+            return false;
+    return true;
+}
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
 {
@@ -640,8 +655,8 @@ MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
     registerValidator(StatisticsType::Uniq, uniqStatisticsValidator);
     registerCreator(StatisticsType::Uniq, uniqStatisticsCreator);
 
-    registerValidator(StatisticsType::UniqCombined, uniqCombinedStatisticsValidator);
-    registerCreator(StatisticsType::UniqCombined, uniqCombinedStatisticsCreator);
+    registerValidator(StatisticsType::UniqCombined, uniqV2StatisticsValidator);
+    registerCreator(StatisticsType::UniqCombined, uniqV2StatisticsCreator);
 
 #if USE_DATASKETCHES
     registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);

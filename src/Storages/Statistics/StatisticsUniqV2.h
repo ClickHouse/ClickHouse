@@ -7,11 +7,11 @@
 namespace DB
 {
 
-class StatisticsUniqCombined : public IStatistics
+class StatisticsUniqV2 : public IStatistics
 {
 public:
-    StatisticsUniqCombined(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
-    ~StatisticsUniqCombined() override;
+    StatisticsUniqV2(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+    ~StatisticsUniqV2() override;
 
     void build(const ColumnPtr & column) override;
     void merge(const StatisticsPtr & other_stats) override;
@@ -22,7 +22,7 @@ public:
     UInt64 estimateCardinality() const override;
     bool isCompatibleWith(const IStatistics & other) const override;
 
-    String getNameForLogs() const override { return "UniqCombined : " + std::to_string(estimateCardinality()); }
+    String getNameForLogs() const override { return "UniqV2 : " + std::to_string(estimateCardinality()); }
 
 private:
     std::unique_ptr<Arena> arena;
@@ -30,7 +30,7 @@ private:
     AggregateDataPtr data;
 };
 
-bool uniqCombinedStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
-StatisticsPtr uniqCombinedStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+bool uniqV2StatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+StatisticsPtr uniqV2StatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

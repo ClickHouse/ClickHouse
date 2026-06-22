@@ -1,4 +1,4 @@
-#include <Storages/Statistics/StatisticsUniqCombined.h>
+#include <Storages/Statistics/StatisticsUniqV2.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -14,7 +14,7 @@ namespace DB
 /// The 64-bit hash avoids collisions for high-cardinality columns (32-bit hashes degrade above ~65K distinct values).
 static constexpr UInt64 UNIQ_COMBINED_PRECISION = 12;
 
-StatisticsUniqCombined::StatisticsUniqCombined(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+StatisticsUniqV2::StatisticsUniqV2(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
     : IStatistics(description)
 {
     arena = std::make_unique<Arena>();
@@ -25,12 +25,12 @@ StatisticsUniqCombined::StatisticsUniqCombined(const SingleStatisticsDescription
     collector->create(data);
 }
 
-StatisticsUniqCombined::~StatisticsUniqCombined()
+StatisticsUniqV2::~StatisticsUniqV2()
 {
     collector->destroy(data);
 }
 
-void StatisticsUniqCombined::build(const ColumnPtr & column)
+void StatisticsUniqV2::build(const ColumnPtr & column)
 {
     const IColumn * raw_column_ptr = nullptr;
 
@@ -52,24 +52,21 @@ void StatisticsUniqCombined::build(const ColumnPtr & column)
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
 }
 
-void StatisticsUniqCombined::merge(const StatisticsPtr & other_stats)
+void StatisticsUniqV2::merge(const StatisticsPtr & other_stats)
 {
-    const StatisticsUniqCombined * other = typeid_cast<const StatisticsUniqCombined *>(other_stats.get());
+    const StatisticsUniqV2 * other = typeid_cast<const StatisticsUniqV2 *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
 }
 
-bool StatisticsUniqCombined::isCompatibleWith(const IStatistics & other) const
+bool StatisticsUniqV2::isCompatibleWith(const IStatistics & other) const
 {
-    const auto * other_combined = typeid_cast<const StatisticsUniqCombined *>(&other);
-    if (!other_combined)
+    const auto * other_v2 = typeid_cast<const StatisticsUniqV2 *>(&other);
+    if (!other_v2)
         return false;
-    /// A column type change (e.g. wrapping in Nullable) causes the aggregate function to gain
-    /// a null-wrapper that shifts the HLL state layout. States with different sizes are incompatible
-    /// and must not be merged — signal this so structureEquals routes the part to a rebuild.
-    return collector->sizeOfData() == other_combined->collector->sizeOfData();
+    return StatisticsUtils::aggregateEqual(*collector, *other_v2->collector);
 }
 
-void StatisticsUniqCombined::serialize(WriteBuffer & buf)
+void StatisticsUniqV2::serialize(WriteBuffer & buf)
 {
     if (collector->getNestedFunction())
         writeBinary(true, buf);
@@ -78,7 +75,7 @@ void StatisticsUniqCombined::serialize(WriteBuffer & buf)
     collector->serialize(data, buf);
 }
 
-void StatisticsUniqCombined::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
     bool is_null = false;
     readBinary(is_null, buf);
@@ -102,7 +99,7 @@ void StatisticsUniqCombined::deserialize(ReadBuffer & buf, StatisticsFileVersion
     collector->deserialize(data, buf);
 }
 
-UInt64 StatisticsUniqCombined::estimateCardinality() const
+UInt64 StatisticsUniqV2::estimateCardinality() const
 {
     auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
@@ -113,16 +110,16 @@ UInt64 StatisticsUniqCombined::estimateCardinality() const
     return column->getUInt(0);
 }
 
-bool uniqCombinedStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+bool uniqV2StatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
     return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
 }
 
-StatisticsPtr uniqCombinedStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+StatisticsPtr uniqV2StatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
-    return std::make_shared<StatisticsUniqCombined>(description, data_type);
+    return std::make_shared<StatisticsUniqV2>(description, data_type);
 }
 
 }

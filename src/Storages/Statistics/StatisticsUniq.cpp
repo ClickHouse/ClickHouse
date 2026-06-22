@@ -58,10 +58,7 @@ bool StatisticsUniq::isCompatibleWith(const IStatistics & other) const
     const auto * other_uniq = typeid_cast<const StatisticsUniq *>(&other);
     if (!other_uniq)
         return false;
-    /// A column type change (e.g. wrapping in Nullable) causes the aggregate function to gain
-    /// a null-wrapper that shifts the state layout. States with different sizes are incompatible
-    /// and must not be merged — signal this so structureEquals routes the part to a rebuild.
-    return collector->sizeOfData() == other_uniq->collector->sizeOfData();
+    return StatisticsUtils::aggregateEqual(*collector, *other_uniq->collector);
 }
 
 void StatisticsUniq::serialize(WriteBuffer & buf)
