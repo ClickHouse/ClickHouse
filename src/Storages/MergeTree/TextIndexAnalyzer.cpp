@@ -65,7 +65,11 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken()
         markFailed();
 }
 
-void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, const std::vector<RowsRange> & readable_ranges)
+void TextIndexAnalyzer::QueryBuilder::addTokenInfo(
+    std::string_view token,
+    TokenPostingsInfoPtr token_info,
+    const std::vector<RowsRange> & readable_ranges,
+    const PostingList & readable_bitmap)
 {
     if (is_failed)
         return;
@@ -80,7 +84,7 @@ void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, Token
     addRowsRange(token_rows_range, readable_ranges);
 
     if (token_info->embedded_postings)
-        addPostings(token_info->embedded_postings);
+        addPostings(token_info->embedded_postings, readable_bitmap);
 }
 
 void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range, const std::vector<RowsRange> & readable_ranges)
@@ -123,28 +127,35 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range, c
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings)
+void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings, const PostingList & readable_bitmap)
 {
     if (is_failed)
         return;
 
     ++num_read_postings;
 
-    if (!postings)
-    {
-        postings = *token_postings;
-    }
-    else if (query->search_mode == TextSearchMode::Any)
-    {
-        *postings |= *token_postings;
-    }
-    else
-    {
-        *postings &= *token_postings;
+    /// Clip the token's postings to the readable rows. In `All` mode only the first token needs clipping:
+    /// once the running intersection is within the readable rows, intersecting later tokens keeps it there.
+    /// `Any` mode clips every token, because each union would otherwise re-add rows outside the readable rows.
+    PostingList clipped;
+    const PostingList * postings_to_fold = token_postings.get();
 
-        if (postings->cardinality() == 0)
-            markFailed();
+    if (!readable_bitmap.isEmpty() && (!postings || query->search_mode == TextSearchMode::Any))
+    {
+        clipped = *token_postings & readable_bitmap;
+        postings_to_fold = &clipped;
     }
+
+    if (!postings)
+        postings = *postings_to_fold;
+    else if (query->search_mode == TextSearchMode::Any)
+        *postings |= *postings_to_fold;
+    else
+        *postings &= *postings_to_fold;
+
+    /// `All` mode fails as soon as the running intersection of readable postings becomes empty.
+    if (query->search_mode == TextSearchMode::All && postings->cardinality() == 0)
+        markFailed();
 }
 
 TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text)
@@ -192,7 +203,7 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addTokenInfo(token, token_info, readable_row_ranges);
+        query_builder.addTokenInfo(token, token_info, readable_row_ranges, readable_postings);
     });
 }
 
@@ -202,13 +213,19 @@ void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr posti
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addPostings(postings);
+        query_builder.addPostings(postings, readable_postings);
     });
 }
 
 void TextIndexAnalyzer::setReadableRows(std::vector<RowsRange> readable_ranges)
 {
     readable_row_ranges = std::move(readable_ranges);
+    readable_postings.clear();
+
+    /// Build the single combined bitmap of readable rows used to clip token postings.
+    /// `addRangeClosed` stores contiguous ranges as run containers, so this stays compact (O(number of ranges)).
+    for (const auto & range : readable_row_ranges)
+        readable_postings.addRangeClosed(static_cast<UInt32>(range.begin), static_cast<UInt32>(range.end));
 }
 
 bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
@@ -448,6 +465,7 @@ size_t TextIndexAnalyzer::memoryUsageBytes() const
         result += token.capacity();
 
     result += readable_row_ranges.capacity() * sizeof(RowsRange);
+    result += readable_postings.getSizeInBytes();
     return result;
 }
 

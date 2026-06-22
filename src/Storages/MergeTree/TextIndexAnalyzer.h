@@ -35,9 +35,17 @@ public:
         void markFailed();
         void markBypassed();
         void addMissingToken();
-        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, const std::vector<RowsRange> & readable_ranges);
+
+        /// `readable_ranges`/`readable_postings` describe the rows still
+        /// readable after the analysis of the primary key and prior skip indexes.
+        void addTokenInfo(
+            std::string_view token,
+            TokenPostingsInfoPtr token_info,
+            const std::vector<RowsRange> & readable_ranges,
+            const PostingList & readable_bitmap);
+
         void addRowsRange(RowsRange token_rows_range, const std::vector<RowsRange> & readable_ranges);
-        void addPostings(PostingListPtr token_postings);
+        void addPostings(PostingListPtr token_postings, const PostingList & readable_bitmap);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
     };
 
@@ -103,6 +111,9 @@ private:
     /// Row ranges still readable after the analysis of the primary key and prior skip indexes,
     /// sorted and non-overlapping. Empty means the whole part is readable (no clipping is applied).
     std::vector<RowsRange> readable_row_ranges;
+    /// The same readable rows as a single combined bitmap (built once from `readable_row_ranges`),
+    /// used to clip materialized token postings. Unset when the whole part is readable.
+    PostingList readable_postings;
 };
 
 }
