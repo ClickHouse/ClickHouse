@@ -585,7 +585,7 @@ private:
 
 REGISTER_FUNCTION(RandomHadamardTransform)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description = R"DOCS_MD(
 Applies a randomized Hadamard transform to a float vector: `y = (1/sqrt(k)) * (H * D * x)`, where
 `D` is a diagonal matrix of deterministic +/-1 signs chosen by `seed`, `H` is the Walsh-Hadamard
 matrix, and the input is zero-padded to `m`, the next power of two of its length.
@@ -609,7 +609,7 @@ The result has the same element type as the input; an empty input array returns 
   coordinates. The `1/sqrt(output_dims)` scaling keeps the result norm-preserving for the full
   transform and norm-preserving in expectation when truncated. It must not exceed the transform
   length (the next power of two, or the input length for the exact Kronecker case).
-)";
+)DOCS_MD";
     FunctionDocumentation::Syntax syntax = "randomHadamardTransform(vector[, seed[, output_dims]])";
     FunctionDocumentation::Arguments arguments = {
         {"vector", "Vector to transform.", {"Array(BFloat16)", "Array(Float32)", "Array(Float64)"}},
