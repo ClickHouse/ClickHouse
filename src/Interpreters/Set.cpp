@@ -307,7 +307,7 @@ Columns Set::getSetElements() const
     return result;
 }
 
-static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
+ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
 {
     // Handle nullable columns
     const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
@@ -347,7 +347,7 @@ static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & col
     return precision_null_map_column;
 }
 
-static ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
+ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
 {
     if (!null_map_column1)
         return null_map_column2;

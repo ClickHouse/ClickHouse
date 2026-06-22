@@ -132,7 +132,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 }
 
 
-class SyncKillQuerySource final : public ISource
+class SyncKillQuerySource : public ISource
 {
 public:
     SyncKillQuerySource(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
@@ -477,7 +477,6 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
     return required_access;
 }
 
-void registerInterpreterKillQueryQuery(InterpreterFactory & factory);
 void registerInterpreterKillQueryQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

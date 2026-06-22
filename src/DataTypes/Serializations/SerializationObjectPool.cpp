@@ -32,7 +32,7 @@ struct Pool
 /// any thread (including during thread_local / static destruction of caches
 /// such as DataTypesCache or ColumnObject's getDynamicSerialization).  If the
 /// pool were a regular static it could already be destroyed at that point.
-static Pool & getPool()
+Pool & getPool()
 {
     static Pool * pool = new Pool;
     return *pool;
