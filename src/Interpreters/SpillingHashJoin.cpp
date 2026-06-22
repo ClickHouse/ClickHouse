@@ -118,9 +118,15 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
+    ///
+    /// The projected byte count covers the deferred build of `ConcurrentHashJoin`: while the right
+    /// blocks are only buffered, the maps are still empty, so the plain byte count would let the
+    /// build pass this check and the replay at build finish would then overshoot the cap with no
+    /// spill opportunity left. The projection sizes the would-be hash-table buffers the same way
+    /// the replay reserves them.
     if (concurrent_join)
     {
-        if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+        if (concurrent_join->getProjectedTotalByteCount() * 2 >= max_bytes_before_external_join)
             switchToGraceHashJoin();
     }
     else
@@ -237,9 +243,23 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// Safety net for the terminal block: the proactive pre-insert check in `addBlockToJoin`
         /// fires only on subsequent calls. If the very last block pushed total bytes past
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
-        /// promote it to `GraceHashJoin` here so the configured cap is honored.
-        const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
-        if (total_bytes >= max_bytes_before_external_join)
+        /// promote it to `GraceHashJoin` here so the configured cap is honored. The projected
+        /// byte count matters here even more than in `addBlockToJoin`: this check runs right
+        /// before the deferred build would be replayed (`onBuildPhaseFinish` below), the last
+        /// point where switching to `GraceHashJoin` is still possible.
+        const size_t total_bytes = concurrent_join ? concurrent_join->getProjectedTotalByteCount() : hash_join->getTotalByteCount();
+
+        /// A pending deferred `ConcurrentHashJoin` build has not allocated its `RowRefList` arena
+        /// nodes yet, and `getProjectedTotalByteCount` cannot size them (it lacks the distinct-key
+        /// count). Mirror the pre-insert half-threshold margin in `addBlockToJoin`: trip at half of
+        /// `max_bytes_before_external_join` so the last buffered block cannot push the post-replay
+        /// footprint past the cap with no spill opportunity left here - this is the last point where
+        /// switching to `GraceHashJoin` is still possible. A non-deferred build (or the single
+        /// `HashJoin` path) already has its maps and arena built, so its byte count is exact and the
+        /// full threshold applies.
+        const bool deferred_pending = concurrent_join && concurrent_join->hasPendingDeferredBuild();
+        const size_t effective_bytes = deferred_pending ? total_bytes * 2 : total_bytes;
+        if (effective_bytes >= max_bytes_before_external_join)
         {
             switchToGraceHashJoin();
         }

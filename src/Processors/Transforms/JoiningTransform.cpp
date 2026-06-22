@@ -284,6 +284,17 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
         return Status::Finished;
     }
 
+    if (build_phase_finished)
+    {
+        if (join->hasPostBuildPhase())
+        {
+            post_build_phase = true;
+            return Status::Ready;
+        }
+        output.finish();
+        return Status::Finished;
+    }
+
     /// Check can output.
     if (output.isFinished())
     {
@@ -340,12 +351,12 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
     if (finish_counter->isLast())
     {
-        join->onBuildPhaseFinish();
-        if (join->hasPostBuildPhase())
-        {
-            post_build_phase = true;
-            return Status::Ready;
-        }
+        /// `onBuildPhaseFinish` can be heavy (e.g. the deferred exact-size build of `parallel_hash`
+        /// fills the whole hash table there), so it runs in `work`, not here: `prepare` must stay
+        /// lightweight. Note that `isLast` increments a shared counter, so this branch is entered
+        /// exactly once - the next `prepare` call short-circuits on `build_phase_finished` above.
+        finish_build_phase = true;
+        return Status::Ready;
     }
 
     output.finish();
@@ -354,6 +365,14 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
 void FillingRightJoinSideTransform::work()
 {
+    if (finish_build_phase)
+    {
+        finish_build_phase = false;
+        join->onBuildPhaseFinish();
+        build_phase_finished = true;
+        return;
+    }
+
     if (post_build_phase)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildPostProcessingMicroseconds);
