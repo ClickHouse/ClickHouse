@@ -402,9 +402,23 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     std::vector<std::string> result;
     std::unordered_set<std::string> seen_effective_relative;
     const auto & regex = getURLRegex();
-    const Poco::URI listing_uri(listing_url, false);
+    Poco::URI listing_uri(listing_url, false);
+    listing_uri.normalize();
+    const std::string listing_path = listing_uri.getPath();
     const Poco::URI listing_prefix_uri(listing_prefix_url, false);
     const Poco::URI base_uri(base_url, false);
+
+    /// Apache-style ordering anchors such as `?C=N;O=D` resolve to the current listing directory with
+    /// only a different query or fragment. They are not child directories; treating them as such would
+    /// make recursive wildcard expansion re-fetch the same page and quickly exhaust
+    /// `url_wildcard_max_directories_to_read`. Real child links such as `subdir/?token=abc` carry a
+    /// distinct path component and are kept.
+    auto is_self_directory_link = [&](const Poco::URI & candidate)
+    {
+        return candidate.getPath() == listing_path
+            && (!candidate.getRawQuery().empty() || !candidate.getFragment().empty());
+    };
+
     re2::StringPiece input(page_body);
     re2::StringPiece match;
     bool found_valid_href_url = false;
@@ -438,6 +452,9 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
         candidate_uri.normalize();
 
         if (candidate_uri.getPath().empty())
+            continue;
+
+        if (is_self_directory_link(candidate_uri))
             continue;
 
         if (!WebIndexPage::isSameOrigin(candidate_uri, base_uri))
@@ -486,6 +503,9 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
             candidate_uri.normalize();
 
             if (candidate_uri.getPath().empty())
+                continue;
+
+            if (is_self_directory_link(candidate_uri))
                 continue;
 
             if (!WebIndexPage::isSameOrigin(candidate_uri, base_uri))
