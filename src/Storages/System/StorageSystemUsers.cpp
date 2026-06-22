@@ -427,7 +427,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             column_grantees_except.insertData(except_name.data(), except_name.length());
         column_grantees_except_offsets.push_back(column_grantees_except.size());
 
-        column_default_database.insertData(default_database.data(),default_database.length());
+        column_default_database.insertData(default_database.data(), default_database.length());
     };
 
     /// Fast path: if predicate contains `name = 'literal'` or `name IN (...)`,
