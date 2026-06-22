@@ -33,6 +33,11 @@ namespace Setting
     extern const SettingsString url_base;
 }
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
@@ -121,6 +126,16 @@ StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & compression_method_, bool is_insert_query) const
 {
+    /// The `body(...)` argument only makes sense for reading, where it forms the HTTP request body.
+    /// For `INSERT INTO FUNCTION url(...)` the inserted rows themselves are sent as the request body
+    /// (see `IStorageURLBase::write`), so a user-provided `body` would be silently ignored. Reject it
+    /// explicitly instead of dropping it.
+    if (is_insert_query && !configuration.body.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The 'body' argument is not supported for INSERT INTO FUNCTION url(...): "
+            "the inserted data is sent as the request body.");
+
     const auto & settings = context->getSettingsRef();
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
