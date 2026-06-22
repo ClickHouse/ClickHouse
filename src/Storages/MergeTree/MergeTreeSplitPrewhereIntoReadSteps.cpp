@@ -338,6 +338,7 @@ bool tryBuildPrewhereSteps(
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
                 .need_filter = force_short_circuit_execution,
                 .perform_alter_conversions = true,
+                .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
             };
 

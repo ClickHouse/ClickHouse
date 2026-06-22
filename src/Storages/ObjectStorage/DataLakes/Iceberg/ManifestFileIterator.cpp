@@ -219,13 +219,15 @@ ManifestFileIterator::~ManifestFileIterator() = default;
 
 std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
-    const IcebergPathFromMetadata & path_to_manifest_file_,
+    const String & manifest_file_name_,
     Int32 format_version_,
-    const IcebergPathResolver & path_resolver_,
+    const String & common_path_,
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
+    const String & table_location_,
     DB::ContextPtr context_,
+    const String & path_to_manifest_file_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
 {
@@ -233,7 +235,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         context_,
         manifest_file_deserializer_->getMetadataContent(),
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
-        path_resolver_.getTableRoot(),
+        common_path_,
         path_to_manifest_file_,
         std::nullopt,
         std::nullopt);
@@ -269,7 +271,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
-            path_to_manifest_file_,
+            manifest_file_name_,
             f_schema);
 
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
@@ -313,8 +315,10 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     return std::shared_ptr<ManifestFileIterator>(new ManifestFileIterator(
         std::move(manifest_file_deserializer_),
         path_to_manifest_file_,
+        manifest_file_name_,
         format_version_,
-        path_resolver_,
+        common_path_,
+        table_location_,
         schema_processor,
         inherited_sequence_number_,
         inherited_snapshot_id_,
@@ -329,9 +333,11 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 
 ManifestFileIterator::ManifestFileIterator(
     std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
-    const IcebergPathFromMetadata & path_to_manifest_file_,
+    const String & path_to_manifest_file_,
+    const String & manifest_file_name_,
     Int32 format_version_,
-    const IcebergPathResolver & path_resolver_,
+    const String & common_path_,
+    const String & table_location_,
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
@@ -344,8 +350,10 @@ ManifestFileIterator::ManifestFileIterator(
     Int32 table_snapshot_schema_id_)
     : manifest_file_deserializer(std::move(manifest_file_deserializer_))
     , path_to_manifest_file(path_to_manifest_file_)
+    , manifest_file_name(manifest_file_name_)
     , format_version(format_version_)
-    , path_resolver(path_resolver_)
+    , common_path(common_path_)
+    , table_location(table_location_)
     , inherited_sequence_number(inherited_sequence_number_)
     , inherited_snapshot_id(inherited_snapshot_id_)
     , context(context_)
@@ -379,7 +387,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             context,
             manifest_file_deserializer->getContent(row_index),
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
-            path_resolver.getTableRoot(),
+            common_path,
             path_to_manifest_file,
             row_index,
             std::nullopt);
@@ -387,6 +395,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
 
     /// Compute inherited/resolved fields
+    const auto file_path = getProperFilePathFromMetadataInfo(parsed_entry->file_path_key, common_path, table_location);
 
     Int64 resolved_snapshot_id;
     if (parsed_entry->parsed_snapshot_id.has_value())
@@ -398,7 +407,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
             "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id 'null' for which write file schema is unknown",
-            path_to_manifest_file);
+            manifest_file_name);
     }
     else
     {
@@ -415,7 +424,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
-                path_to_manifest_file,
+                manifest_file_name,
                 resolved_snapshot_id);
         }
         catch (const Exception &)
@@ -445,7 +454,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
 
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
-        parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
+        parsed_entry, common_partition_specification, file_path, resolved_sequence_number, resolved_schema_id);
 
 
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;
@@ -492,7 +501,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         context,
         manifest_file_deserializer->getContent(row_index),
         DB::IcebergMetadataLogLevel::ManifestFileEntry,
-        path_resolver.getTableRoot(),
+        common_path,
         path_to_manifest_file,
         row_index,
         pruning_status);

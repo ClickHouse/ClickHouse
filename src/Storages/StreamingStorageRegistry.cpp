@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/setThreadName.h>
 
@@ -29,12 +30,49 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_ALREADY_EXISTS;
 }
 
 StreamingStorageRegistry & StreamingStorageRegistry::instance()
 {
     static StreamingStorageRegistry ret;
     return ret;
+}
+
+size_t StreamingStorageRegistry::IdentityHash::operator()(const StorageID & storage_id) const
+{
+    SipHash hash;
+    if (storage_id.hasUUID())
+    {
+        const auto & uuid = storage_id.uuid;
+        hash.update(reinterpret_cast<const char *>(&uuid), sizeof(uuid));
+    }
+    else
+    {
+        hash.update(storage_id.database_name.data(), storage_id.database_name.size());
+        hash.update(storage_id.table_name.data(), storage_id.table_name.size());
+    }
+    return hash.get64();
+}
+
+bool StreamingStorageRegistry::IdentityEqual::operator()(const StorageID & lhs, const StorageID & rhs) const
+{
+    const bool lhs_has = lhs.hasUUID();
+    const bool rhs_has = rhs.hasUUID();
+
+    /// Both have UUID — compare by UUID only.
+    if (lhs_has && rhs_has)
+        return lhs.uuid == rhs.uuid;
+
+    /// Mixed: one has UUID, the other does not — treat as non-equal.
+    /// This preserves the hash/equality contract: IdentityHash uses UUID for one
+    /// and name for the other, producing different hashes. Equal elements must
+    /// have identical hashes, so mixed cases must never compare equal.
+    if (lhs_has != rhs_has)
+        return false;
+
+    /// Neither has UUID — fall back to name comparison.
+    return lhs.database_name == rhs.database_name && lhs.table_name == rhs.table_name;
 }
 
 void StreamingStorageRegistry::registerTable(const StorageID & storage)
@@ -46,7 +84,7 @@ void StreamingStorageRegistry::registerTable(const StorageID & storage)
 
     const bool inserted = storages.emplace(storage).second;
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} already registered", storage.getNameForLogs());
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table with storage id {} already registered", storage.getNameForLogs());
 
     LOG_TRACE(log, "Registered table: {}", storage.getNameForLogs());
 }
@@ -84,23 +122,16 @@ void StreamingStorageRegistry::renameTable(const StorageID & from, const Storage
     if (shutdown_called)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Shutdown was called");
 
+    /// With UUID-based identity tracking, `find` locates the entry by UUID (when available),
+    /// so batch renames (e.g., A↔B swap) correctly identify each table regardless of
+    /// intermediate name collisions.
     auto from_it = storages.find(from);
     if (from_it == storages.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is not registered", from.getNameForLogs());
 
     storages.erase(from_it);
-
-    auto to_it = storages.find(to);
-    if (to_it == storages.end())
-    {
-        storages.emplace(to);
-        LOG_TRACE(log, "Unregistered table: {}, registered table: {}", from.getNameForLogs(), to.getNameForLogs());
-    }
-    else
-    {
-        /// This could happen because of exchange/replace tables.
-        LOG_TRACE(log, "Unregistered table: {}, table {} was already registered", from.getNameForLogs(), to.getNameForLogs());
-    }
+    storages.emplace(to);
+    LOG_TRACE(log, "Renamed table: {} -> {}", from.getNameForLogs(), to.getNameForLogs());
 }
 
 void StreamingStorageRegistry::shutdown()

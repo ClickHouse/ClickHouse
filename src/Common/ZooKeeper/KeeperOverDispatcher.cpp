@@ -9,7 +9,6 @@
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -75,8 +74,7 @@ void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCall
         callback_state->callbacks[request->xid] = std::move(callback);
     }
 
-    if (!keeper_dispatcher->putRequest(request, session_id, false))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session was disconnected");
+    keeper_dispatcher->putRequest(request, session_id, false);
 }
 
 void KeeperOverDispatcher::create(
@@ -140,11 +138,17 @@ void KeeperOverDispatcher::exists(
 
     const auto request = std::make_shared<ZooKeeperExistsRequest>();
     request->path = path;
+    request->xid = next_xid++;
 
-    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        callback(dynamic_cast<const ExistsResponse &>(*response));
-    });
+        std::lock_guard lock(callback_state->callbacks_mutex);
+        callback_state->callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        {
+            callback(dynamic_cast<const ExistsResponse &>(*response));
+        };
+    }
+
+    keeper_dispatcher->putLocalReadRequest(request, session_id);
 }
 
 void KeeperOverDispatcher::get(
@@ -157,11 +161,17 @@ void KeeperOverDispatcher::get(
 
     const auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = path;
+    request->xid = next_xid++;
 
-    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        callback(dynamic_cast<const GetResponse &>(*response));
-    });
+        std::lock_guard lock(callback_state->callbacks_mutex);
+        callback_state->callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        {
+            callback(dynamic_cast<const GetResponse &>(*response));
+        };
+    }
+
+    keeper_dispatcher->putLocalReadRequest(request, session_id);
 }
 
 void KeeperOverDispatcher::set(
@@ -197,11 +207,17 @@ void KeeperOverDispatcher::list(
     const auto request = std::make_shared<ZooKeeperFilteredListRequest>();
     request->path = path;
     request->list_request_type = list_request_type;
+    request->xid = next_xid++;
 
-    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        callback(dynamic_cast<const ListResponse &>(*response));
-    });
+        std::lock_guard lock(callback_state->callbacks_mutex);
+        callback_state->callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        {
+            callback(dynamic_cast<const ListResponse &>(*response));
+        };
+    }
+
+    keeper_dispatcher->putLocalReadRequest(request, session_id);
 }
 
 void KeeperOverDispatcher::check(
@@ -212,11 +228,17 @@ void KeeperOverDispatcher::check(
     const auto request = std::make_shared<ZooKeeperCheckRequest>();
     request->path = path;
     request->version = version;
+    request->xid = next_xid++;
 
-    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        callback(dynamic_cast<const CheckResponse &>(*response));
-    });
+        std::lock_guard lock(callback_state->callbacks_mutex);
+        callback_state->callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        {
+            callback(dynamic_cast<const CheckResponse &>(*response));
+        };
+    }
+
+    keeper_dispatcher->putLocalReadRequest(request, session_id);
 }
 
 void KeeperOverDispatcher::sync(
@@ -274,11 +296,17 @@ void KeeperOverDispatcher::getACL(const String & path, GetACLCallback callback)
 {
     const auto request = std::make_shared<ZooKeeperGetACLRequest>();
     request->path = path;
+    request->xid = next_xid++;
 
-    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        callback(dynamic_cast<const GetACLResponse &>(*response));
-    });
+        std::lock_guard lock(callback_state->callbacks_mutex);
+        callback_state->callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        {
+            callback(dynamic_cast<const GetACLResponse &>(*response));
+        };
+    }
+
+    keeper_dispatcher->putLocalReadRequest(request, session_id);
 }
 
 

@@ -124,6 +124,59 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
     nodes["node0"].query("DROP TABLE tbl ON CLUSTER 'test_auto_cluster' SYNC")
 
 
+def test_cluster_discovery_no_crash_on_empty_static_cluster(start_cluster):
+    """
+    Regression test: server must not crash when a static cluster temporarily has no nodes.
+
+    Crash path (without fix):
+    1. All member nodes stop → ZK ephemeral nodes deleted → observer detects empty cluster.
+    2. upsertCluster sees nodes_info.empty() → calls removeCluster() → erases watch callback
+       from get_nodes_callbacks.
+    3. A member node restarts → old ZK watch fires → cluster re-queued for update.
+    4. upsertCluster is called again → on_exit calls getNodeNames(set_callback=True).
+    5. Callback not found, zk_root_index==0 → multicluster_discovery_paths[0-1] OOB → crash.
+    """
+    import time
+
+    observer = nodes["node_observer"]
+    member_nodes = [nodes[n] for n in ("node0", "node1", "node2", "node3", "node4")]
+
+    # Wait for cluster to be fully up before the test
+    check_on_cluster(
+        [observer], len(member_nodes), what="count()", msg="Pre-test cluster count wrong"
+    )
+
+    # Stop all member nodes gracefully — closes ZK sessions immediately,
+    # deleting their ephemeral registration nodes in ZK.
+    for node in member_nodes:
+        node.stop_clickhouse()
+
+    # Wait for the observer to detect the now-empty cluster.
+    # This triggers upsertCluster → nodes_info.empty() → removeCluster() erasing the
+    # watch callback (the step that sets up the crash on the subsequent call).
+    check_on_cluster(
+        [observer], 0, what="count()", msg="Cluster should appear empty to observer"
+    )
+
+    assert observer.query("SELECT 1").strip() == "1", "Observer crashed after cluster became empty"
+
+    # Restart one member node. It registers in ZK, which triggers the old watch callback
+    # that was stored in the ZK client (independently of get_nodes_callbacks).
+    # On unfixed code this triggers the second upsertCluster call that crashes.
+    nodes["node0"].start_clickhouse()
+    time.sleep(10)
+
+    assert observer.query("SELECT 1").strip() == "1", "Observer crashed after member node restarted"
+
+    # Restore all nodes for subsequent tests
+    for node in member_nodes[1:]:
+        node.start_clickhouse()
+
+    check_on_cluster(
+        [observer], len(member_nodes), what="count()", msg="Cluster should recover after restart"
+    )
+
+
 def test_cluster_discovery_macros(start_cluster):
     # wait for all nodes to be started
     check_nodes_count = functools.partial(

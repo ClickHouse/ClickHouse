@@ -27,7 +27,7 @@ public:
         , storage(part_->storage)
         , partition_id(part_->info.getPartitionId())
     {
-        setInMemoryMetadata(*storage.getInMemoryMetadataPtr(storage.getContext(), false));
+        setInMemoryMetadata(storage.getInMemoryMetadata());
         setVirtuals(*storage.getVirtualsPtr());
     }
 
@@ -37,7 +37,7 @@ public:
         ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
-        setInMemoryMetadata(*storage.getInMemoryMetadataPtr(storage.getContext(), false));
+        setInMemoryMetadata(storage.getInMemoryMetadata());
         setVirtuals(*storage.getVirtualsPtr());
     }
 
@@ -73,7 +73,7 @@ public:
 
     bool materializeTTLRecalculateOnly() const;
 
-    bool hasLightweightDeletedMask() const override
+    bool hasLightweightDeletedMask() const
     {
         return !parts.empty() && parts.front().data_part->hasLightweightDelete();
     }
