@@ -1919,10 +1919,6 @@ public:
     }
 
 private:
-    /// skip_typed_path_check: when true, skip the typed path insertion for the current path and instead
-    /// enter the object traversal block to process children. Used when a typed non-nested path (e.g. Int32)
-    /// has a duplicate key with both literal and object values — the literal fills the typed path,
-    /// while the object is traversed with this flag so its children go to dynamic/shared data.
     bool traverseAndInsert(
         ColumnObject & column_object,
         const typename JSONParser::Element & element,
