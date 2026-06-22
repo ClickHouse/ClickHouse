@@ -91,7 +91,15 @@ CREATE TABLE test_circ_regular (
 SELECT 'test_circ_tuple';
 DROP TABLE IF EXISTS test_circ_tuple;
 CREATE TABLE test_circ_tuple (
+    id Int32,
     a Tuple(x Int32, y Int32) DEFAULT (b.x, b.x),
     b Tuple(x Int32, y Int32) DEFAULT (c.x, 2),
     c Tuple(x Int32, y Int32) DEFAULT (a.x, 2)
-) ENGINE = Memory; -- { serverError UNKNOWN_IDENTIFIER }
+) ENGINE = Memory;
+
+INSERT INTO test_circ_tuple (id) VALUES (1); -- {serverErrror UNKNOWN_IDENTIFIER }
+INSERT INTO test_circ_tuple (id, a) VALUES (2, (1, 1));
+INSERT INTO test_circ_tuple (id, b) VALUES (3, (1, 1));
+INSERT INTO test_circ_tuple (id, c) VALUES (4, (1, 1));
+
+SELECT * FROM test_circ_tuple ORDER BY id;

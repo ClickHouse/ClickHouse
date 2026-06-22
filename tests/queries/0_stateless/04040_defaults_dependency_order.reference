@@ -17,3 +17,6 @@ test_tuple_elem2: Bug, expected to have same result as test_tuple_elem, but miss
 (5,6)	(10,20)
 test_circ_regular
 test_circ_tuple
+2	(1,1)	(1,2)	(1,2)
+3	(1,1)	(1,1)	(1,2)
+4	(1,1)	(1,2)	(1,1)
