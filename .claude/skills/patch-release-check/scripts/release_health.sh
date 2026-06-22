@@ -26,9 +26,11 @@ STALE_DAYS="${STALE_DAYS:-18}"   # a targeted version older than this with new c
 
 # ponytail: hardcoded exclusion per request (e.g. an LTS handled out-of-band).
 # Override with EXCLUDE_VERSIONS="" (analyze everything) or a different list.
+# Uses ${VAR-default} (not :-) so an explicit empty value IS respected.
 # Revisit every release cycle — version numbers go stale, and a skip can silently
-# hide a real gap once that line moves out of support.
-EXCLUDE_VERSIONS="${EXCLUDE_VERSIONS:-25.8}"
+# hide a real gap once that line moves out of support; the verdict names what was
+# excluded so an overdue version is never hidden behind a green "all healthy".
+EXCLUDE_VERSIONS="${EXCLUDE_VERSIONS-25.8}"
 
 GH() { command gh "$@"; }
 
@@ -82,6 +84,11 @@ echo
 # ============================================================================
 echo "== 2. Per-version staleness (latest patch, age, unreleased commits) =="
 RELEASES_JSON="$(GH api "repos/$REPO/releases?per_page=100" --jq '[.[] | {tag: .tag_name, published: .published_at}]' 2>/dev/null)"
+# Fail-close: a releases-fetch failure must NOT silently become a healthy verdict.
+if ! printf '%s' "$RELEASES_JSON" | python3 -c 'import sys,json; d=json.load(sys.stdin); sys.exit(0 if isinstance(d,list) and d else 1)' 2>/dev/null; then
+    echo "ERROR: could not fetch releases for $REPO (API failure / empty) — aborting (fail-close)." >&2
+    exit 3
+fi
 printf "   %-7s %-26s %6s  %-10s %s\n" "branch" "latest patch" "age" "commits" "verdict"
 printf "   %-7s %-26s %6s  %-10s %s\n" "------" "------------" "---" "-------" "-------"
 MISSING_LIST=""
@@ -106,10 +113,14 @@ print(top["tag"], top["published"][:10], age)
         continue
     fi
     AHEAD="$(GH api "repos/$REPO/compare/${TAG}...${v}" --jq '.ahead_by' 2>/dev/null)"
-    [[ -z "$AHEAD" ]] && AHEAD="?"
+    # Fail-close: a failed/garbled compare must NOT be silently treated as "ok".
+    if ! [[ "$AHEAD" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: could not compare ${TAG}...${v} for branch $v (API failure) — aborting (fail-close)." >&2
+        exit 3
+    fi
 
     verdict="ok"
-    if [[ "$AGE" -gt "$STALE_DAYS" && "$AHEAD" != "0" && "$AHEAD" != "?" ]]; then
+    if [[ "$AGE" -gt "$STALE_DAYS" && "$AHEAD" != "0" ]]; then
         verdict="⚠️  MISSING (stale + unreleased commits)"
         MISSING_LIST="$MISSING_LIST $v"
     fi
@@ -118,6 +129,8 @@ done
 echo
 if [[ -n "${MISSING_LIST// /}" ]]; then
     echo "   VERDICT: missing/overdue ->$MISSING_LIST"
+elif [[ -n "${EXCLUDE_VERSIONS// /}" ]]; then
+    echo "   VERDICT: all ANALYZED versions have a recent patch — NOT checked (excluded):$EXCLUDE_VERSIONS"
 else
     echo "   VERDICT: all targeted versions have a recent patch."
 fi
