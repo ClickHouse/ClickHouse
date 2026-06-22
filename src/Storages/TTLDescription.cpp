@@ -84,7 +84,7 @@ namespace
 ///
 /// Higher-order functions (e.g. `arrayMap`) keep their lambda body in a separate inner DAG owned by a
 /// `FunctionCapture`. Executing the outer node on a synthetic empty array would reduce the lambda over
-/// zero rows and never reach the body, so we recurse into the lambda DAG instead. Only the type error 
+/// zero rows and never reach the body, so we recurse into the lambda DAG instead. Only the type error
 /// is translated into a clear message; all other exceptions are rethrown.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {

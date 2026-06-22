@@ -63,7 +63,7 @@ ORDER BY tuple()
 TTL toDateTime(toUInt32(ts)) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
 
 -- Nested state inside a Tuple: the AggregateFunction is not the top-level type, so it must be
--- found via the recursive type walk 
+-- found via the recursive type walk.
 CREATE TABLE test_ttl_agg_tuple
 (
     key1 String,
@@ -118,7 +118,7 @@ TTL d + INTERVAL 1 DAY;
 DROP TABLE test_ttl_agg_tuple_not_referenced;
 
 -- Valid: a data-dependent error of a function that does not itself consume the AggregateFunction state
--- must NOT fail validation. 
+-- must NOT fail validation.
 CREATE TABLE test_ttl_agg_divzero
 (
     ts AggregateFunction(sum, UInt32)
@@ -200,8 +200,7 @@ TTL toDateTime(intDiv(ts, denom)) + INTERVAL 1 DAY;
 DROP TABLE test_ttl_intdiv;
 
 -- GROUP BY SET: an unsupported AggregateFunction consumer inside a SET aggregate argument must be
--- rejected. The main TTL expression only depends on `d`, so the SET assignment expression is checked
--- separately (it is executed later by the TTL aggregation algorithm).
+-- rejected.
 CREATE TABLE test_ttl_agg_group_by_set
 (
     key UInt64,
