@@ -14,19 +14,19 @@
 /** quantizeBFloat16ToInt8 / dequantizeInt8ToBFloat16
   *
   * A scalar codec pair for compressing embedding components with a 256-level Gaussian
-  * Lloyd-Max quantizer (the entropy-optimal scalar quantizer for a standard-normal source).
+  * Lloyd-Max quantizer (the MSE-optimal scalar quantizer for a standard-normal source).
   *
-  * It is intended for vectors whose components are approximately N(0, 1) -- e.g. unit-norm
-  * embeddings after a random orthogonal (randomized Hadamard) rotation, where the rotation
-  * makes the per-component distribution data-independent and Gaussian. Apply over a vector
-  * with arrayMap, e.g.
-  *     arrayMap(x -> quantizeBFloat16ToInt8(x), rotated_embedding)
+  * It is intended for values that are approximately N(0, 1). A random orthogonal (randomized
+  * Hadamard) rotation preserves the norm, so for a d-dimensional unit-norm embedding each rotated
+  * coordinate has variance 1/d; multiply the rotated vector by sqrt(d) to reach unit variance
+  * before quantizing. Apply over a vector with arrayMap, e.g.
+  *     arrayMap(x -> quantizeBFloat16ToInt8(x), rotated_embedding)  -- rotated_embedding ~ N(0, 1)
   *
   * quantizeBFloat16ToInt8 maps a value to the index (0..255) of the Lloyd-Max cell it falls
-  * into and stores it as Int8 (index - 128), so the sign bit equals the sign of the value and
-  * the top b bits form a valid 2^b-level (embedded) quantizer -- truncating bits yields coarser
-  * Int4/Int2/binary codes.  dequantizeInt8ToBFloat16 maps the code back to the cell's
-  * reconstruction level.  The codebook is symmetric, so the round trip is sign-preserving.
+  * into and stores it as Int8 (index - 128), so the sign bit equals the sign of the value (+0 and
+  * -0 map to the positive and negative central cells respectively) and the top b bits form a valid
+  * 2^b-level (embedded) quantizer -- truncating bits yields coarser Int4/Int2/binary codes.
+  * dequantizeInt8ToBFloat16 maps the code back to the cell's reconstruction level.
   */
 namespace DB
 {
@@ -122,9 +122,15 @@ const std::array<Int8, 65536> & quantizeCodeLUT()
         for (UInt32 bits = 0; bits <= 0xFFFFu; ++bits)
         {
             const Float32 x = static_cast<Float32>(BFloat16::fromBits(static_cast<UInt16>(bits)));
-            const size_t index = std::isnan(x)
-                ? 128
-                : static_cast<size_t>(
+            size_t index;
+            if (std::isnan(x))
+                index = 128;
+            else if (x == 0.0f)
+                /// The central decision boundary is exactly 0; break the tie by sign so the sign
+                /// bit always matches the input (+0 -> positive central cell, -0 -> negative).
+                index = std::signbit(x) ? 127 : 128;
+            else
+                index = static_cast<size_t>(
                     std::lower_bound(std::begin(LLOYD_MAX_BOUNDARIES), std::end(LLOYD_MAX_BOUNDARIES), x)
                     - std::begin(LLOYD_MAX_BOUNDARIES));
             table[bits] = static_cast<Int8>(static_cast<Int16>(index) - 128);
@@ -231,16 +237,18 @@ REGISTER_FUNCTION(QuantizeLloydMax)
     {
         FunctionDocumentation::Description description = R"(
 Quantizes a `BFloat16` value to `Int8` using a 256-level Gaussian Lloyd-Max quantizer
-(the entropy-optimal scalar quantizer for a standard-normal source).
+(the MSE-optimal scalar quantizer for a standard-normal source).
 
-Intended for embedding components that are approximately distributed as `N(0, 1)` — for
-example, the components of a unit-norm vector after a random orthogonal (randomized Hadamard)
-rotation, which makes the per-component distribution data-independent and Gaussian. Apply it
-over a vector with [`arrayMap`](/sql-reference/functions/array-functions#arrayMap).
+Intended for values that are approximately distributed as `N(0, 1)`. A random orthogonal
+(randomized Hadamard) rotation preserves the norm, so for a `d`-dimensional unit-norm embedding
+each rotated coordinate has variance `1/d`; scale the rotated vector by `sqrt(d)` to reach unit
+variance before quantizing. Apply it over a vector with
+[`arrayMap`](/sql-reference/functions/array-functions#arrayMap).
 
 The result is the index `0..255` of the Lloyd-Max cell, stored as `Int8` as `index - 128`, so
-the sign bit equals the sign of the value and the top `b` bits form a valid embedded `2^b`-level
-quantizer: bit-truncation of the code yields coarser Int4/Int2/binary codes.
+the sign bit equals the sign of the value (`+0`/`-0` map to the positive/negative central cells)
+and the top `b` bits form a valid embedded `2^b`-level quantizer: bit-truncation of the code
+yields coarser Int4/Int2/binary codes.
 
 Use [`dequantizeInt8ToBFloat16`](#dequantizeInt8ToBFloat16) to reconstruct the value.
 )";
@@ -248,7 +256,7 @@ Use [`dequantizeInt8ToBFloat16`](#dequantizeInt8ToBFloat16) to reconstruct the v
         FunctionDocumentation::Arguments arguments = {{"x", "Value to quantize (expected to be ~N(0,1)).", {"BFloat16"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"The Lloyd-Max cell index minus 128.", {"Int8"}};
         FunctionDocumentation::Examples examples = {
-            {"Quantize a vector", "SELECT arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5, 2.0]::Array(BFloat16))", "[3,-65,113]"}};
+            {"Quantize a vector", "SELECT arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5, 2.0]::Array(BFloat16))", "[10,-49,116]"}};
         FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::QBit;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
@@ -264,7 +272,7 @@ reconstruction level of its Gaussian Lloyd-Max cell.
         FunctionDocumentation::Arguments arguments = {{"x", "Code produced by quantizeBFloat16ToInt8.", {"Int8"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"The reconstruction level of the cell.", {"BFloat16"}};
         FunctionDocumentation::Examples examples = {
-            {"Round trip", "SELECT dequantizeInt8ToBFloat16(quantizeBFloat16ToInt8(0.5::BFloat16))", "0.5"}};
+            {"Round trip", "SELECT round(toFloat32(dequantizeInt8ToBFloat16(quantizeBFloat16ToInt8(0.5::BFloat16))), 4)", "0.4961"}};
         FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::QBit;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
