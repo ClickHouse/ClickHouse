@@ -27,6 +27,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -47,6 +48,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/operators.hpp>
+#include <Common/FailPoint.h>
 #include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
@@ -58,6 +60,7 @@
 #endif
 
 #include <fmt/ranges.h>
+#include <base/sleep.h>
 #include <Common/ProfileEvents.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Field.h>
@@ -1737,6 +1740,10 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     if (current_index >= buffer.size())
     {
         auto task = callback();
+
+        if (auto query_status = getContext()->getProcessListElement())
+            query_status->checkTimeLimit();
+
         if (!task || task->isEmpty())
             return nullptr;
         object_info = task->getObjectInfo();
