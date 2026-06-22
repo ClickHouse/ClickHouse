@@ -713,6 +713,15 @@ def tsv_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes"}
 
 
+def float_or(value: Any, default: float) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
 RAW_ALL_QUERY_METRICS_COLUMNS = [
     "metric_name",
     "left",
@@ -726,6 +735,8 @@ RAW_ALL_QUERY_METRICS_COLUMNS = [
     "changed_threshold",
     "unstable_threshold",
 ]
+DEFAULT_CHANGED_THRESHOLD = 0.15
+DEFAULT_UNSTABLE_THRESHOLD = 0.25
 
 
 def iter_tsv_dicts(path: str) -> list[dict[str, str]]:
@@ -766,22 +777,20 @@ def parse_perf_tsv(paths: list[str], metric_filter: str = "client_time", arch_fi
                 threshold = float(src.get("stat_threshold") or src.get("threshold") or 0)
             except Exception:
                 continue
+            changed_threshold = float_or(src.get("changed_threshold"), DEFAULT_CHANGED_THRESHOLD)
+            unstable_threshold = float_or(src.get("unstable_threshold"), DEFAULT_UNSTABLE_THRESHOLD)
             if "is_changed" in src:
                 is_changed = tsv_bool(src.get("is_changed"))
             else:
-                changed_threshold = src.get("changed_threshold") or src.get("stat_threshold") or src.get("threshold") or 0
-                try:
-                    is_changed = abs(diff) >= float(changed_threshold) and abs(diff) > 0
-                except Exception:
-                    is_changed = abs(diff) >= threshold and abs(diff) > 0
+                # Match ci/jobs/scripts/perf/compare.sh changed_fail:
+                # abs(diff) > changed_threshold AND abs(diff) >= stat_threshold
+                is_changed = abs(diff) > changed_threshold and abs(diff) >= threshold
             if "is_unstable" in src:
                 is_unstable = tsv_bool(src.get("is_unstable"))
             else:
-                unstable_threshold = src.get("unstable_threshold")
-                try:
-                    is_unstable = (not is_changed) and abs(diff) >= float(unstable_threshold or 0) and abs(diff) > 0
-                except Exception:
-                    is_unstable = (not is_changed) and threshold > 0.2
+                # Match compare.sh unstable_fail:
+                # NOT changed_fail AND stat_threshold > unstable_threshold
+                is_unstable = (not is_changed) and threshold > unstable_threshold
             direction_raw = (src.get("direction") or "").lower()
             if direction_raw in {"slower", "slowdown"}:
                 direction = "slowdown"
