@@ -2525,6 +2525,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             {
                 auto column_decl = storage_columns.get(column);
                 column_expr = cloneAndExpandColumnDefaultExpression(*column_default, storage_columns, context);
+                validateNoCyclicAliasesAfterExpansion(column, column_expr, storage_columns, context);
                 // recursive visit for alias to alias
                 replaceAliasColumnsInQuery(
                     column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->array_join_result_to_source, context);
