@@ -59,4 +59,5 @@ ORDER BY l.id
 
 SELECT * FROM view(SELECT t0.id as a, t1.id as b FROM t0 INNER JOIN t1 ON t0.id = t1.id) AS v
 INNER JOIN t2 ON v.a = t2.id and v.b = t2.id
+ORDER BY ALL
 ;
