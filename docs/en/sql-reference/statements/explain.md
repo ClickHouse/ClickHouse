@@ -198,11 +198,6 @@ By default, `explain_query_plan_default = 'pretty'`, so `actions`, `compact`, an
 
 Prior to ClickHouse 26.6 the defaults for `actions`, `compact`, and `pretty` were `0`. You can still get that output by setting `explain_query_plan_default = 'legacy'` (globally or in per-query `SETTINGS`), or by setting `compatibility` to any version older than `26.6`.
 
-The combinations of these options control how much detail is shown:
-- `actions = 1, pretty = 0` — shows the internal (machine) names of tables and expressions, and conveys the parent-child relation between steps through indentation instead of line-drawing characters.
-- `actions = 1, compact = 0` — shows the full plan with all expression steps and detailed action info (inputs, functions, aliases, and output positions).
-- `actions = 0` — shows only step descriptions; in this case `compact` has no effect, and `pretty` only switches between line-drawing characters and indentation.
-
 The `json` and `distributed` options do not enable the `pretty` defaults (`actions`, `compact`, and `pretty`), even when `explain_query_plan_default = 'pretty'`. To include action details in their output, set `actions = 1` manually.
 :::
 
@@ -475,21 +470,32 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-With `compact = 1`, each `Expression` step is removed. Along with that, if `actions = 1` is set, then `Actions` and `Positions` lines are hidden, leaving only the step descriptions:
+With `compact = 0` and `actions = 1`, the `Expression` steps can be seen along with detailed information about expressions:
 
 ```sql
-EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw SETTINGS explain_query_plan_default = 'legacy';
+EXPLAIN actions = 1, compact = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
 ```
 
 ```text
-Aggregating
-Keys: modulo(__table1.number, 4_UInt8)
-Aggregates:
-    sum(__table1.number)
-      Function: sum(UInt64) → UInt64
-      Arguments: __table1.number
-Skip merging: 0
-  ReadFromSystemNumbers
+Output: sum(number)
+
+Expression ((Project names + Projection))
+│  Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
+│           INPUT :: 1 -> modulo(__table1.number, 4_UInt8) UInt8 : 1
+│           ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
+│  Positions: 2
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  Actions: INPUT : 0 -> number UInt64 : 0
+      │           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
+      │           ALIAS number :: 0 -> __table1.number UInt64 : 2
+      │           FUNCTION modulo(__table1.number : 2, 4_UInt8 :: 1) -> modulo(__table1.number, 4_UInt8) UInt8 : 0
+      │  Positions: 0 2
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 With `distributed` = 1, the output includes not only the local query plan but also the query plans that will be executed on remote nodes. This is useful for analyzing and debugging distributed queries.
@@ -570,20 +576,7 @@ when table statistics are available.
 
 The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and detailed action info, making the plan easier to read.
 
-```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw SETTINGS explain_query_plan_default = 'legacy';
-```
-
-```text
-Output: sum(number)
-
-Expression ((Project names + Projection))
-└──Aggregating
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      └──ReadFromSystemNumbers
-```
-
-A more detailed example with joins:
+A detailed example with joins:
 
 ```sql
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;

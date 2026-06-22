@@ -519,6 +519,9 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool 
 {
     ExplainSettings<Settings> settings;
 
+    /// These lines are needed to impose the default settings for EXPLAIN PLAN
+    /// We set them here instead of QueryPlanSettings, because internally 
+    /// we sometimes use EXPLAIN PLAN output for logging
     if constexpr (std::is_same_v<Settings, QueryPlanSettings>)
     {
         if (set_default_pretty_explain_settings)
