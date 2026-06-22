@@ -15,7 +15,6 @@ class DistributedQueryStatusSource : public ISource
 {
 public:
     DistributedQueryStatusSource(
-        const String & zookeeper_name_,
         const String & zk_node_path,
         const String & zk_replicas_path,
         SharedHeader block,
@@ -56,7 +55,6 @@ protected:
         UNFINISHED = 3,
     };
 
-    String zookeeper_name;
     String node_path;
     String replicas_path;
     ContextPtr context;

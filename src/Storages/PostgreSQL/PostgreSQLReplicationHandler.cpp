@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -15,7 +16,9 @@
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/getTableOverride.h>
+#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -74,14 +77,7 @@ public:
 
     ~TemporaryReplicationSlot()
     {
-        try
-        {
-            handler->dropReplicationSlot(*tx, /* temporary */true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException("TemporaryReplicationSlot");
-        }
+        handler->dropReplicationSlot(*tx, /* temporary */true);
     }
 
 private:
@@ -97,13 +93,6 @@ namespace
 
     String getPublicationName(const String & postgres_database, const String & postgres_table)
     {
-        /// The publication name preserves the case of the database/table name. It is created via
-        /// `CREATE PUBLICATION "<name>"` (case-preserving) and looked up by exact `pubname` match,
-        /// so it must not be folded to lower case here — otherwise two tables whose names differ
-        /// only by case would collide on a single publication. The consumer takes care to quote the
-        /// name when it hands it to the `pgoutput` plugin via the `publication_names` option (which
-        /// PostgreSQL parses with `SplitIdentifierString`, folding unquoted identifiers to lower
-        /// case), so both sides agree even for names with upper-case letters.
         return fmt::format(
             "{}_ch_publication",
             postgres_table.empty() ? postgres_database : fmt::format("{}_{}", postgres_database, postgres_table));
@@ -199,9 +188,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
-    startup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
-    consumer_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
-    cleanup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
+    startup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
+    consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
+    cleanup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
 }
 
 
@@ -487,8 +476,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /// We should not use columns list from getTableAllowedColumns because it may have broken columns order
         Strings allowed_columns;
         for (const auto & column : table_structure->physical_columns->columns)
-            allowed_columns.push_back(doubleQuoteString(column.name));
-
+            allowed_columns.push_back(column.name);
         query_str = fmt::format("SELECT {} FROM ONLY {}", boost::algorithm::join(allowed_columns, ","), quoted_name);
     }
 
@@ -498,7 +486,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
 
-    auto insert = make_intrusive<ASTInsertQuery>();
+    auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = nested_storage->getStorageID();
 
     auto insert_context = materialized_storage->getNestedTableContext();
@@ -512,8 +500,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    auto nested_metadata = nested_storage->getInMemoryMetadataPtr(insert_context, false);
-    const StorageInMemoryMetadata & storage_metadata = *nested_metadata;
+    const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
     auto sample_block = std::make_shared<const Block>(storage_metadata.getSampleBlockNonMaterialized());
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
@@ -605,7 +592,7 @@ bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
     pqxx::result result{tx.exec(query_str)};
-    chassert(!result.empty());
+    assert(!result.empty());
     return result[0][0].as<std::string>() == "t";
 }
 
@@ -639,15 +626,6 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             }
             tables_list = buf.str();
             tables_list.resize(tables_list.size() - 1);
-        }
-        else if (!is_materialized_postgresql_database)
-        {
-            /// Single `MaterializedPostgreSQL` storage: `tables_list` is the raw remote table name
-            /// (see the `StorageMaterializedPostgreSQL` constructor) and is never passed through the
-            /// quoting pass that `fetchRequiredTables` applies for the database engine. Quote it here,
-            /// otherwise `CREATE PUBLICATION ... FOR TABLE ONLY <name>` folds an upper-case table name
-            /// to lower case and fails with `relation "..." does not exist`.
-            tables_list = doubleQuoteWithSchema(tables_list);
         }
 
         if (tables_list.empty())
@@ -700,7 +678,7 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
 void PostgreSQLReplicationHandler::createReplicationSlot(
         pqxx::nontransaction & tx, String & start_lsn, String & snapshot_name, bool temporary)
 {
-    chassert(temporary || !user_managed_slot);
+    assert(temporary || !user_managed_slot);
 
     String query_str;
     String slot_name;
@@ -728,7 +706,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 
 void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx, bool temporary)
 {
-    chassert(temporary || !user_managed_slot);
+    assert(temporary || !user_managed_slot);
 
     std::string slot_name;
     if (temporary)
@@ -828,14 +806,11 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     {
         shutdown();
 
-        /// Do not use fault injection during cleanup: leaked replication slots
-        /// can exhaust PostgreSQL's max_replication_slots and break subsequent
-        /// MaterializedPostgreSQL databases.
         postgres::Connection connection(connection_info);
-        connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx){ dropPublication(tx); });
         String last_committed_lsn;
 
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
                 dropReplicationSlot(tx, /* temporary */true);
@@ -844,7 +819,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         if (user_managed_slot)
             return;
 
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
                 dropReplicationSlot(tx, /* temporary */false);
@@ -862,7 +837,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 {
     postgres::Connection connection(connection_info);
     std::set<String> result_tables;
-    bool publication_exists_before_startup = false;
+    bool publication_exists_before_startup;
 
     {
         pqxx::nontransaction tx(connection.getRef());
@@ -1184,9 +1159,9 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
 
 void PostgreSQLReplicationHandler::execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const
 {
-    if (fault_injection_probability > 0.f)
+    if (fault_injection_probability > 0.)
     {
-        std::bernoulli_distribution fault(static_cast<double>(fault_injection_probability));
+        std::bernoulli_distribution fault(fault_injection_probability);
         if (fault(thread_local_rng))
             throw pqxx::broken_connection("Fault injected");
     }

@@ -4,15 +4,10 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/FractionalLimitStep.h>
-#include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/NegativeLimitByStep.h>
-#include <Processors/QueryPlan/NegativeLimitStep.h>
-#include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
@@ -21,10 +16,11 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
+
 
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-
 
 namespace DB::QueryPlanOptimizations
 {
@@ -67,16 +63,11 @@ public:
 
         if (typeid_cast<LimitStep *>(current_step)
             || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<NegativeLimitStep *>(current_step) /// negative LIMIT depends on order, so the ORDER BY is non-removable
-            || typeid_cast<NegativeLimitByStep *>(current_step) /// negative LIMIT BY depends on order, so the ORDER BY is non-removable
-            || typeid_cast<FractionalLimitStep *>(current_step) /// (2) FractionalLimit Steps on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FractionalOffsetStep *>(current_step) /// (3) FractionalOffset Steps on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<OffsetStep *>(current_step) /// (4) OFFSET on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<NegativeOffsetStep *>(current_step) /// negative OFFSET depends on order, so the ORDER BY is non-removable
-            || typeid_cast<FillingStep *>(current_step) /// (5) if ORDER BY is with FILL WITH, it is non-removable
-            || typeid_cast<SortingStep *>(current_step) /// (6) ORDER BY will change order of previous sorting
-            || typeid_cast<AggregatingStep *>(current_step) /// (7) aggregation change order
-            )
+            || typeid_cast<OffsetStep *>(current_step) /// (2) OFFSET on top of ORDER BY, the ORDER BY is non-removable
+            || typeid_cast<FillingStep *>(current_step) /// (3) if ORDER BY is with FILL WITH, it is non-removable
+            || typeid_cast<SortingStep *>(current_step) /// (4) ORDER BY will change order of previous sorting
+            || typeid_cast<AggregatingStep *>(current_step) /// (5) aggregation change order
+            || typeid_cast<CustomMetricLogViewStep *>(current_step))
         {
             logStep("nodes_affect_order/push", current_node);
             nodes_affect_order.push_back(current_node);
@@ -162,6 +153,9 @@ private:
         /// if ORDER BY is with FILL WITH, it is non-removable
         if (typeid_cast<LimitStep *>(step_affect_order) || typeid_cast<LimitByStep *>(step_affect_order)
             || typeid_cast<FillingStep *>(step_affect_order))
+            return false;
+
+        if (typeid_cast<CustomMetricLogViewStep *>(step_affect_order))
             return false;
 
         /// (1) aggregation
