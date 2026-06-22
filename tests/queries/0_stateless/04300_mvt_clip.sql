@@ -83,3 +83,9 @@ SELECT MVTEncodeGeom((13.37, 52.52)::Point, CAST(10, 'Nullable(UInt8)'), 550, 33
 
 SELECT '-- the largest valid tile index for a zoom is accepted';
 SELECT MVTBoundingBox(1, 1, 1) IS NOT NULL, MVTEncodeGeom((13.37, 52.52)::Point, 1, 1, 0, 4096, 0, false) IS NOT NULL;
+
+SELECT '-- MVTEncodeGeom: a point that rounds onto the tile edge is kept (snapped to the grid before clipping)';
+SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0);
+
+SELECT '-- MVTEncodeGeom: a sub-pixel line straddling a tile edge clips to a single edge line, not disjoint fragments';
+SELECT MVTEncodeGeom([(0.005, 10.0), (-0.005, 20.0), (-0.006, 30.0), (0.004, 40.0), (0.005, 50.0)]::LineString, 2, 2, 1, 4096, 0);

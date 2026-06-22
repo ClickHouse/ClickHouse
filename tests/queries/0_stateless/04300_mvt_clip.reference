@@ -39,3 +39,7 @@
 1
 -- the largest valid tile index for a zoom is accepted
 1	1
+-- MVTEncodeGeom: a point that rounds onto the tile edge is kept (snapped to the grid before clipping)
+(4096,2664)
+-- MVTEncodeGeom: a sub-pixel line straddling a tile edge clips to a single edge line, not disjoint fragments
+[[(0,3639),(0,3167),(0,2664),(0,2107),(0,1461)]]

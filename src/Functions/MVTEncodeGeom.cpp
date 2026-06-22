@@ -136,8 +136,8 @@ struct GeometryVariantBuilder
 /// MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]]) -> Geometry
 ///
 /// Projects a geometry (in geographic lon/lat) into the tile-local pixel space of the slippy-map tile identified by
-/// zoom/tile_x/tile_y, optionally clips it to the tile expanded by `buffer` pixels, snaps to the integer pixel grid, and
-/// returns the tile-space geometry as a `Geometry` (NULL when the geometry falls entirely outside the clip window). The
+/// zoom/tile_x/tile_y, snaps it to the integer pixel grid, optionally clips it to the tile expanded by `buffer` pixels,
+/// and returns the tile-space geometry as a `Geometry` (NULL when the geometry falls entirely outside the clip window). The
 /// result feeds the aggregate function `MVTEncode`. Analogue of PostGIS `ST_AsMVTGeom` (registered alias `ST_AsMVTGeom`).
 class FunctionMVTEncodeGeom final : public IFunction
 {
@@ -274,19 +274,24 @@ public:
         auto process_point = [&](BPoint p, const Projection & projection, const BBox & box, bool clip)
         {
             projection(p);
+            /// Snap to the integer pixel grid before clipping, so a coordinate a fraction of a pixel outside the
+            /// tile rounds onto the boundary pixel and is kept rather than dropped.
+            bg::set<0>(p, roundCoordinate(bg::get<0>(p)));
+            bg::set<1>(p, roundCoordinate(bg::get<1>(p)));
             if (clip && !bg::covered_by(p, box))
             {
                 builder.addNull();
                 return;
             }
-            bg::set<0>(p, roundCoordinate(bg::get<0>(p)));
-            bg::set<1>(p, roundCoordinate(bg::get<1>(p)));
             builder.addPoint(p);
         };
 
         auto process_lines = [&](MultiLineString<BPoint> lines, const Projection & projection, const BBox & box, bool clip)
         {
             bg::for_each_point(lines, projection);
+            /// Snap to the integer pixel grid before clipping (see process_point), then round again after clipping
+            /// because intersecting with the box can introduce fractional crossing points on its edges.
+            roundToGrid(lines);
             MultiLineString<BPoint> result;
             if (clip)
                 bg::intersection(lines, box, result);
@@ -306,6 +311,9 @@ public:
         auto process_polygons = [&](MultiPolygon<BPoint> polygons, const Projection & projection, const BBox & box, bool clip)
         {
             bg::for_each_point(polygons, projection);
+            /// Snap to the integer pixel grid before clipping (see process_point), then round again after clipping
+            /// because intersecting with the box can introduce fractional crossing points on its edges.
+            roundToGrid(polygons);
             bg::correct(polygons);
             MultiPolygon<BPoint> result;
             if (clip)
