@@ -79,6 +79,12 @@ ParseResult parseChunkedSnapshotImpl(SeekableReadBuffer & in, bool check_version
             "Chunked snapshot chunk_count below the minimum of {} (need METADATA + >=1 NODES)",
             KEEPER_CHUNKED_SNAPSHOT_MIN_CHUNK_COUNT);
 
+    /// Guard against overflow in footer_size = 25 * chunk_count before the multiply.
+    const size_t buf_size = static_cast<size_t>(in.seek(0, SEEK_END));
+    if (buf_size < header_size || chunk_count > (buf_size - header_size) / KEEPER_CHUNKED_SNAPSHOT_DESCRIPTOR_SIZE)
+        return makeParseError(
+            ErrorCodes::CORRUPTED_DATA, "Chunked snapshot chunk_count {} does not fit in a {}-byte buffer", chunk_count, buf_size);
+
     const size_t footer_size = chunkedSnapshotFooterSize(chunk_count);
     const uint64_t footer_offset = static_cast<uint64_t>(in.seek(-static_cast<off_t>(footer_size), SEEK_END));
 

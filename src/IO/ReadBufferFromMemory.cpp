@@ -1,6 +1,7 @@
 #include <IO/ReadBufferFromMemory.h>
 
 #include <Common/Exception.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -19,49 +20,44 @@ off_t ReadBufferFromMemoryHelper<Derived>::seekImpl(off_t offset, int whence)
     auto & internal_buffer = derived.internal_buffer;
     auto & working_buffer = derived.working_buffer;
 
+    const size_t buffer_size = static_cast<size_t>(internal_buffer.end() - internal_buffer.begin());
+
     if (whence == SEEK_SET)
     {
-        if (offset >= 0 && internal_buffer.begin() + offset <= internal_buffer.end())
+        if (offset >= 0 && static_cast<UInt64>(offset) <= buffer_size)
         {
             pos = internal_buffer.begin() + offset;
             working_buffer = internal_buffer; /// We need to restore `working_buffer` in case the position was at EOF before this seek().
-            return static_cast<size_t>(pos - internal_buffer.begin());
+            return offset;
         }
         throw Exception(
             ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
             "Seek position is out of bounds. Offset: {}, Max: {}",
             offset,
-            static_cast<size_t>(internal_buffer.end() - internal_buffer.begin()));
+            buffer_size);
     }
     if (whence == SEEK_CUR)
     {
-        BufferBase::Position new_pos = pos + offset;
-        if (new_pos >= internal_buffer.begin() && new_pos <= internal_buffer.end())
-        {
-            pos = new_pos;
-            working_buffer = internal_buffer; /// We need to restore `working_buffer` in case the position was at EOF before this seek().
-            return static_cast<size_t>(pos - internal_buffer.begin());
-        }
-        throw Exception(
-            ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
-            "Seek position is out of bounds. Offset: {}, Max: {}",
-            offset,
-            static_cast<size_t>(internal_buffer.end() - internal_buffer.begin()));
+        const off_t cur = static_cast<off_t>(pos - internal_buffer.begin());
+        if (offset < -cur || offset > static_cast<off_t>(buffer_size) - cur)
+            throw Exception(
+                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}", offset, buffer_size);
+        pos = internal_buffer.begin() + (cur + offset);
+        working_buffer = internal_buffer;
+        return cur + offset;
     }
     if (whence == SEEK_END)
     {
-        BufferBase::Position new_pos = internal_buffer.end() + offset;
-        if (new_pos >= internal_buffer.begin() && new_pos <= internal_buffer.end())
-        {
-            pos = new_pos;
-            working_buffer = internal_buffer;
-            return static_cast<size_t>(pos - internal_buffer.begin());
-        }
-        throw Exception(
-            ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
-            "Seek position is out of bounds. Offset: {}, Max: {}",
-            offset,
-            static_cast<size_t>(internal_buffer.end() - internal_buffer.begin()));
+        if (offset > 0)
+            throw Exception(
+                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}", offset, buffer_size);
+        const size_t back = static_cast<size_t>(-static_cast<UInt64>(offset)); /// |offset|, overflow-safe incl. INT64_MIN
+        if (back > buffer_size)
+            throw Exception(
+                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}", offset, buffer_size);
+        pos = internal_buffer.end() - back;
+        working_buffer = internal_buffer;
+        return static_cast<off_t>(buffer_size - back);
     }
     throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET, SEEK_CUR and SEEK_END seek modes allowed.");
 }

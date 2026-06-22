@@ -1354,7 +1354,6 @@ KeeperSnapshotManager<Storage>::deserializeChunkedSnapshotFromBuffer(ReadBufferF
                 if (!cleanup_acl_global && node.acl_id != 0)
                     ++current_handle.acl_usage[node.acl_id];
 
-                // Allocate the path key in the shared arena and enqueue in the batch.
                 const size_t path_size = path_str.size();
                 auto key = current_handle.nodes.allocateKey(path_size);
                 std::memcpy(key.get(), path_str.data(), path_size);

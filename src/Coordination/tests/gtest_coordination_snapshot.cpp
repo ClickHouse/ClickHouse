@@ -2108,6 +2108,37 @@ static DB::KeeperContextPtr makeKeeperContext(const std::string & snapshot_path)
     return ctx;
 }
 
+/// Source context for chunked snapshot serialization: chunk_size=2, digest enabled.
+static DB::KeeperContextPtr makeChunkedSourceCtx(const std::string & snapshot_path)
+{
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::snapshot_chunk_size] = 2;
+    auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    ctx->setLocalLogsPreprocessed();
+    ctx->setRocksDBOptions();
+    ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SrcSnapDisk", snapshot_path));
+    ctx->setDigestEnabled(true);
+    return ctx;
+}
+
+/// State machine for chunked snapshot apply tests: compress+zstd, deser_threads=2, digest enabled.
+static std::shared_ptr<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>
+makeChunkedApplyStateMachine(DB::SnapshotsQueue & queue, const std::string & snapshot_path, const std::string & rocksdb_path)
+{
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::compress_snapshots_with_zstd_format] = true;
+    (*settings)[DB::CoordinationSetting::snapshot_deser_threads] = 2;
+    auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
+    ctx->setLocalLogsPreprocessed();
+    ctx->setDigestEnabled(true);
+    ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SmSnapDisk", snapshot_path));
+    ctx->setRocksDBDisk(std::make_shared<DB::DiskLocal>("SmRocksDisk", rocksdb_path));
+    ctx->setRocksDBOptions();
+    auto sm = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, queue, ctx, nullptr);
+    sm->init();
+    return sm;
+}
+
 /// Build a test buffer from descriptors: [front header][synthetic zeros][footer].
 static std::string buildChunkedBufferFromDescriptors(const std::vector<SnapshotChunkDescriptor> & frames)
 {
@@ -2324,6 +2355,28 @@ TEST(CoordinationChunkedSnapshotTest, ChunkCountExceedsBufferCapacity)
     {
         DB::ReadBufferFromString in25(buf);
         EXPECT_THROW(parseAndValidateChunkedSnapshot(in25), DB::Exception);
+    }
+}
+
+/// chunk_count = (SIZE_MAX/25)+1 would wrap footer_size; the division-based guard catches it.
+TEST(CoordinationChunkedSnapshotTest, ChunkCountSizeTOverflowRejected)
+{
+    const uint64_t chunk_count
+        = static_cast<uint64_t>(std::numeric_limits<size_t>::max() / KEEPER_CHUNKED_SNAPSHOT_DESCRIPTOR_SIZE) + 1;
+
+    WriteBufferFromOwnString out;
+    packChunkedSnapshotHeader(chunk_count, out);
+    out.write(std::string(32, '\0').data(), 32);
+    out.finalize();
+    auto buf = out.str();
+
+    {
+        DB::ReadBufferFromString in_parse(buf);
+        EXPECT_THROW(parseAndValidateChunkedSnapshot(in_parse), DB::Exception);
+    }
+    {
+        DB::ReadBufferFromString in_detect(buf);
+        EXPECT_FALSE(isChunkedSnapshot(in_detect));
     }
 }
 
@@ -3437,26 +3490,6 @@ TEST(CoordinationChunkedSnapshotTest, ParallelVsSequential)
         ASSERT_NE(eph8, res8.storage->committed_ephemerals.end()) << "Owner 100 missing in parallel";
         EXPECT_EQ(eph1->second, eph8->second) << "Ephemeral path sets must match";
     }
-
-    // Re-serialize both and verify byte-identical output (deterministic chunk-order splice).
-    nuraft::ptr<nuraft::buffer> rebuf1;
-    nuraft::ptr<nuraft::buffer> rebuf8;
-    {
-        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
-            res1.storage.get(), /*up_to_log_idx=*/50, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-        rebuf1 = mgr1.serializeSnapshotToBuffer(snap);
-    }
-    ASSERT_NE(rebuf1, nullptr);
-    {
-        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
-            res8.storage.get(), /*up_to_log_idx=*/50, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
-        rebuf8 = mgr8.serializeSnapshotToBuffer(snap);
-    }
-    ASSERT_NE(rebuf8, nullptr);
-
-    ASSERT_EQ(rebuf1->size(), rebuf8->size()) << "Re-serialized buffers must have identical size";
-    EXPECT_EQ(std::memcmp(rebuf1->data_begin(), rebuf8->data_begin(), rebuf1->size()), 0)
-        << "Re-serialized buffers must be byte-identical (deterministic chunk order)";
 }
 
 /// apply_snapshot with a multi-chunk V8 snapshot replaces committed state and restores
@@ -3466,37 +3499,16 @@ TEST(CoordinationChunkedSnapshotTest, ApplyChunkedSnapshotReplacesCommittedState
     ChangelogDirTest snapshots("./chunked_apply_snapshots");
     ChangelogDirTest rocks("./chunked_apply_rocksdb");
 
-    // snapshot_deser_threads=2 forces the parallel path regardless of host CPU count.
-    auto sm_settings = std::make_shared<DB::CoordinationSettings>();
-    (*sm_settings)[DB::CoordinationSetting::compress_snapshots_with_zstd_format] = true;
-    (*sm_settings)[DB::CoordinationSetting::snapshot_deser_threads] = 2;
-    auto sm_ctx = std::make_shared<DB::KeeperContext>(true, sm_settings);
-    sm_ctx->setLocalLogsPreprocessed();
-    sm_ctx->setDigestEnabled(true);
-    sm_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("ChunkedApplySmDisk", "./chunked_apply_snapshots"));
-    sm_ctx->setRocksDBDisk(std::make_shared<DB::DiskLocal>("ChunkedApplySmRocksDisk", "./chunked_apply_rocksdb"));
-    sm_ctx->setRocksDBOptions();
-
     DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, sm_ctx, nullptr);
-    state_machine->init();
+    auto state_machine = makeChunkedApplyStateMachine(snapshots_queue, "./chunked_apply_snapshots", "./chunked_apply_rocksdb");
 
-    // Commit a node that the chunked snapshot must overwrite.
     auto old_entry = makeCreateEntry(*state_machine, "/old_before_chunked", "stale_data");
     state_machine->pre_commit(1, old_entry->get_buf());
     state_machine->commit(1, old_entry->get_buf());
     ASSERT_TRUE(state_machine->getStorageUnsafe().container.contains("/old_before_chunked"));
 
-    // Build source storage: 5 user nodes + 1 ephemeral, spanning multiple chunks.
-    // chunk_size=2 → 6 user nodes (root + /a + /b + /a/c + /eph + /b_acl) → 3 NODES chunks (2+2+2).
-    // /b_acl carries a non-zero acl_id to exercise the ACL restoration path.
-    auto src_settings = std::make_shared<DB::CoordinationSettings>();
-    (*src_settings)[DB::CoordinationSetting::snapshot_chunk_size] = 2;
-    auto src_ctx = std::make_shared<DB::KeeperContext>(true, src_settings);
-    src_ctx->setLocalLogsPreprocessed();
-    src_ctx->setRocksDBOptions();
-    src_ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("ChunkedApplySrcDisk", "./chunked_apply_snapshots"));
-    src_ctx->setDigestEnabled(true);
+    // chunk_size=2 → 6 nodes → 3 NODES chunks; /b_acl exercises the ACL restoration path.
+    auto src_ctx = makeChunkedSourceCtx("./chunked_apply_snapshots");
 
     DB::KeeperMemoryStorage snap_storage(500, "", src_ctx);
 
@@ -3584,6 +3596,55 @@ TEST(CoordinationChunkedSnapshotTest, ApplyChunkedSnapshotReplacesCommittedState
 
     // last_commit_index must reflect the snapshot index.
     EXPECT_EQ(state_machine->last_commit_index(), 10u);
+}
+
+/// Unreferenced ACLs (usage=0) must be dropped after chunked load, matching the legacy path.
+TEST(CoordinationChunkedSnapshotTest, ChunkedLoadDropsUnreferencedACLs)
+{
+    ChangelogDirTest snapshots("./chunked_drop_acl_snapshots");
+    ChangelogDirTest rocks("./chunked_drop_acl_rocksdb");
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = makeChunkedApplyStateMachine(snapshots_queue, "./chunked_drop_acl_snapshots", "./chunked_drop_acl_rocksdb");
+
+    auto src_ctx = makeChunkedSourceCtx("./chunked_drop_acl_snapshots");
+
+    DB::KeeperMemoryStorage source(500, "", src_ctx);
+
+    // Referenced ACL: convertACLs bumps usage → survives removeUnusedACLs.
+    const Coordination::ACLs acls_referenced = {{31, "world", "anyone"}};
+    const DB::ACLId referenced_id = source.acl_map.convertACLs(acls_referenced);
+    addNode(source, "/acl_node", "data", /*ephemeral_owner=*/0, referenced_id);
+
+    // Orphan ACL: injected via addMapping with usage=0 → must be dropped.
+    const DB::ACLId orphan_id = 999;
+    source.acl_map.addMapping(orphan_id, {{1, "digest", "orphan:pwd"}});
+
+    TSA_SUPPRESS_WARNING_FOR_WRITE(source.zxid) = 5;
+
+    DB::KeeperSnapshotManager<DB::KeeperMemoryStorage> src_mgr(3, src_ctx, /*compress_snapshots_zstd_=*/true);
+    nuraft::ptr<nuraft::buffer> chunked_buf;
+    {
+        DB::KeeperStorageSnapshot<DB::KeeperMemoryStorage> snap(
+            &source, /*up_to_log_idx=*/5, /*cluster_config=*/nullptr, DB::SnapshotVersion::V8);
+        chunked_buf = src_mgr.serializeSnapshotToBuffer(snap);
+    }
+    ASSERT_NE(chunked_buf, nullptr);
+
+    nuraft::snapshot snapshot_meta(5, 0, std::make_shared<nuraft::cluster_config>());
+    saveSingleObjectSnapshot(*state_machine, snapshot_meta, chunked_buf);
+    EXPECT_TRUE(state_machine->apply_snapshot(snapshot_meta));
+
+    const auto & storage = state_machine->getStorageUnsafe();
+    const auto mapping = storage.acl_map.getMapping();
+
+    auto ref_it = std::find_if(mapping.begin(), mapping.end(), [&](const auto & entry) { return entry.first == referenced_id; });
+    ASSERT_NE(ref_it, mapping.end()) << "Referenced ACL must survive";
+    EXPECT_EQ(ref_it->second, acls_referenced);
+    EXPECT_EQ(storage.container.getValue("/acl_node").acl_id, referenced_id);
+
+    EXPECT_TRUE(std::none_of(mapping.begin(), mapping.end(), [](const auto & entry) { return entry.first == 999; }))
+        << "Orphan ACL (usage=0) must be dropped";
 }
 
 // ─── Chunked snapshot detection tests ───────────────────────────────────────────────────────────

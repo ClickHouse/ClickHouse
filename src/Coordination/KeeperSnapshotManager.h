@@ -311,12 +311,8 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    /// Thread pool for parallel chunked snapshot deserialization.
-    /// Pre-created in the constructor (never under snapshots_lock).
-    /// Empty when deser_threads == 1 (serial path used instead).
-    /// mutable: deserializeChunkedSnapshotFromBuffer is called from const methods.
+    /// Thread pool for parallel chunked snapshot deserialization (absent when deser_threads == 1).
     mutable std::optional<ThreadPool> deser_pool;
-    /// Effective thread count (1 = serial fallback, >1 = parallel).
     size_t deser_threads = 1;
 
     LoggerPtr log = getLogger("KeeperSnapshotManager");

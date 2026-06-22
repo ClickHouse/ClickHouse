@@ -786,7 +786,7 @@ struct MemorySnapshotLoadHandle
     std::unordered_map<ACLId, uint64_t> acl_usage;
 };
 
-/// Create a handle backed by `storage.container`'s arena. Thread-safe, no locks.
+/// Create a load handle. Thread-safe, takes no locks.
 MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperMemoryStorage & storage);
 
 /// Merge handles into `storage`: splice nodes, validate structure, merge side state.

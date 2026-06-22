@@ -2,7 +2,7 @@
     <zookeeper>
         <use_compression>true</use_compression>
         <node index="1">
-            <host>node1</host>
+            <host>node_v8</host>
             <port>9181</port>
         </node>
     </zookeeper>

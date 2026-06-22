@@ -4704,6 +4704,9 @@ void finalizeMemorySnapshotLoad(KeeperMemoryStorage & storage, std::span<MemoryS
         if (!h.acl_usage.empty())
             storage.acl_map.addUsageBatch(h.acl_usage);
     }
+
+    /// Drop unreferenced ACLs, matching the legacy path. Must run after all ACL usage is merged.
+    storage.acl_map.removeUnusedACLs();
 }
 }
 
