@@ -388,7 +388,7 @@ Chunk SystemReplicasSource::generate()
             }
         }
 
-        const TStatus * status;
+        const TStatus * status = nullptr;
         try
         {
             status = &futures[i].get();

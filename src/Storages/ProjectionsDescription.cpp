@@ -376,7 +376,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
     mut_context->setQueryKindInitial();
 
-    bool is_aggregate;
+    bool is_aggregate = false;
     {
         /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
         /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
@@ -472,7 +472,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     {
         result.type = ProjectionDescription::Type::Normal;
 
-        const auto virtuals = storage->getInMemoryMetadataPtr(query_context, false)->virtuals;
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+        const auto virtuals = metadata_snapshot->virtuals;
         metadata.sorting_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context);
         metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context);
         metadata.primary_key.definition_ast = nullptr;

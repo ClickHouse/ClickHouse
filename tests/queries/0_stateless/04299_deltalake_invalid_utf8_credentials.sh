@@ -21,5 +21,5 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_LOCAL --query "SELECT * FROM deltaLakeAzure('\0', MD5('')) SETTINGS allow_experimental_delta_kernel_rs = 1" 2>&1 \
+$CLICKHOUSE_LOCAL --query "SELECT * FROM deltaLakeAzure('\0', UNHEX('D41D8CD98F00B204E9800998ECF8427E')) SETTINGS allow_experimental_delta_kernel_rs = 1" 2>&1 \
     | grep -o -m1 BAD_ARGUMENTS

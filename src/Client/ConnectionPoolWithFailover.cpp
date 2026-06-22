@@ -47,11 +47,15 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
 
     get_priority_load_balancing.hostname_prefix_distance.resize(nested_pools.size());
     get_priority_load_balancing.hostname_levenshtein_distance.resize(nested_pools.size());
+    get_priority_load_balancing.hostname_longest_common_prefix.resize(nested_pools.size());
+    get_priority_load_balancing.hostname_longest_common_suffix.resize(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
     {
         ConnectionPool & connection_pool = dynamic_cast<ConnectionPool &>(*nested_pools[i]);
         get_priority_load_balancing.hostname_prefix_distance[i] = getHostNamePrefixDistance(local_hostname, connection_pool.getHost());
         get_priority_load_balancing.hostname_levenshtein_distance[i] = getHostNameLevenshteinDistance(local_hostname, connection_pool.getHost());
+        get_priority_load_balancing.hostname_longest_common_prefix[i] = getHostNameLongestCommonPrefix(local_hostname, connection_pool.getHost());
+        get_priority_load_balancing.hostname_longest_common_suffix[i] = getHostNameLongestCommonSuffix(local_hostname, connection_pool.getHost());
     }
 }
 
@@ -209,7 +213,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     size_t min_entries = skip_unavailable_endpoints.value() ? 0 : 1;
 
     size_t max_tries = settings[Setting::connections_with_failover_max_tries];
-    size_t max_entries;
+    size_t max_entries = 0;
     if (pool_mode == PoolMode::GET_ALL)
     {
         min_entries = nested_pools.size();

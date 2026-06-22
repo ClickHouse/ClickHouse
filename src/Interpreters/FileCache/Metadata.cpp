@@ -130,42 +130,29 @@ KeyMetadata::KeyState KeyMetadata::getState()
     return key_state;
 }
 
-bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
+std::error_code KeyMetadata::createBaseDirectory()
 {
     if (created_base_directory.load())
-        return true;
+        return {};
 
     std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
 
     if (created_base_directory.load(std::memory_order_relaxed))
-        return true;
+        return {};
 
-    try
+    std::error_code ec;
+    fs::create_directories(getPath(), ec);
+
+    if (!ec)
     {
-        fs::create_directories(getPath());
         created_base_directory.store(true);
         ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedKeyDirectories);
     }
-    catch (const fs::filesystem_error & e)
-    {
-        created_base_directory = false;
+    else if (ec != std::errc::no_space_on_device && ec != std::errc::too_many_files_open)
+        LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, {}", key, ec.message());
 
-        if (!throw_if_failed &&
-            (e.code() == std::errc::no_space_on_device
-                || e.code() == std::errc::read_only_file_system
-                || e.code() == std::errc::permission_denied
-                || e.code() == std::errc::too_many_files_open
-                || e.code() == std::errc::operation_not_permitted))
-        {
-            LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
-                        "because no space left on device", key);
 
-            return false;
-        }
-        throw;
-    }
-
-    return true;
+    return ec;
 }
 
 std::string KeyMetadata::getPath() const
@@ -625,7 +612,7 @@ class CleanupQueue
 public:
     void add(const FileCacheKey & key)
     {
-        bool inserted;
+        bool inserted = false;
         {
             std::lock_guard lock(mutex);
             if (cancelled)
@@ -766,7 +753,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
     while (true)
     {
         Key key;
-        size_t offset;
+        size_t offset = 0;
         std::weak_ptr<FileSegment> file_segment_weak;
 
         {

@@ -66,7 +66,7 @@ inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_tim
 
 __attribute__((__weak__)) extern bool inside_main;
 
-DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
+DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut and lut_saturated are fully assigned below
     : time_zone(time_zone_)
 {
     /// DateLUT should not be initialized in global constructors for the following reasons:
@@ -80,7 +80,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
 
     constexpr cctz::civil_day epoch{1970, 1, 1};
     constexpr cctz::civil_day lut_start{DATE_LUT_MIN_YEAR, 1, 1};
-    time_t start_of_day;
+    time_t start_of_day = 0;
 
     /// Note: it's validated against all timezones in the system.
     static_assert((epoch - lut_start) == daynum_offset_epoch);
@@ -237,6 +237,48 @@ unsigned int DateLUTImpl::toMillisecond(const DB::DateTime64 & datetime, Int64 s
 
     UInt16 millisecond = static_cast<UInt16>(fractional / divider);
     return millisecond;
+}
+
+
+unsigned int DateLUTImpl::toMicrosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
+{
+    constexpr Int64 microsecond_multiplier = 1'000'000;
+
+    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
+
+    if (datetime.value < 0 && components.fractional)
+    {
+        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+        --components.whole;
+    }
+    Int64 fractional = components.fractional;
+    if (scale_multiplier > microsecond_multiplier)
+        fractional = fractional / (scale_multiplier / microsecond_multiplier);
+    else if (scale_multiplier < microsecond_multiplier)
+        fractional = fractional * (microsecond_multiplier / scale_multiplier);
+
+    return static_cast<unsigned>(fractional);
+}
+
+
+unsigned int DateLUTImpl::toNanosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
+{
+    constexpr Int64 nanosecond_multiplier = 1'000'000'000;
+
+    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
+
+    if (datetime.value < 0 && components.fractional)
+    {
+        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+        --components.whole;
+    }
+    Int64 fractional = components.fractional;
+    if (scale_multiplier > nanosecond_multiplier)
+        fractional = fractional / (scale_multiplier / nanosecond_multiplier);
+    else if (scale_multiplier < nanosecond_multiplier)
+        fractional = fractional * (nanosecond_multiplier / scale_multiplier);
+
+    return static_cast<unsigned>(fractional);
 }
 
 

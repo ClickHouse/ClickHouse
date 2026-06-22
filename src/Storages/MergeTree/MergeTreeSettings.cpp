@@ -669,6 +669,22 @@ namespace ErrorCodes
     ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
     ```
     )", 0) \
+    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 512, R"(
+    Default dictionary block size for text indexes.
+    Can be overridden by explicit `dictionary_block_size` index argument.
+    )", 0) \
+    DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
+    Default front-coding compression for text index dictionary blocks.
+    Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
+    )", 0) \
+    DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
+    Default posting list block size for text indexes (rows).
+    Can be overridden by explicit `posting_list_block_size` index argument.
+    )", 0) \
+    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
+    Default posting list codec for text indexes.
+    Can be overridden by explicit `posting_list_codec` index argument.
+    )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
@@ -1625,6 +1641,13 @@ namespace ErrorCodes
     DECLARE(Bool, allow_suspicious_indices, false, R"(
     Reject primary/secondary indexes and sorting keys with identical expressions
     )", 0) \
+    DECLARE(Bool, allow_tuple_element_aggregation, false, R"(
+    When enabled, individual elements within Tuple columns participate in
+    aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
+    CoalescingMergeTree. Nested Tuples are expanded recursively so that all
+    leaf elements are aggregated independently. This setting is immutable
+    and must be specified at table creation time.
+    )", 0) \
     DECLARE(Bool, compatibility_allow_sampling_expression_not_in_primary_key, false, R"(
     Allow to create a table with sampling expression not in primary key. This is
     needed only to temporarily allow to run the server with wrong tables for
@@ -1898,8 +1921,40 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: tdigest, countmin, minmax, uniq.
+    Supported statistics types: basic, tdigest, countmin, minmax, uniq.
     )", 0) \
+    DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
+    Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
+    chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
+    archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
+    file. Substreams larger than this stay in the legacy per-file layout. The decision is
+    made independently per substream at write time, so a single part can have small indices
+    (e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
+    to disable packing entirely (default).
+
+    Each skip-index substream actually consists of a data file and a marks file; both buffer
+    in memory up to the threshold before the spill decision is made. So peak memory while
+    writing scales with `2 * packed_skip_index_max_bytes * (number of substreams that stay
+    below the threshold)`.
+
+    Full-text indices are not supported by this setting and are never packed.
+
+    Packing reduces inode pressure when many skip indices are defined on a table (for example
+    with `add_minmax_index_for_numeric_columns`).
+
+    The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
+    substreams from inside it transparently. Changing this setting affects newly written parts
+    only; existing parts retain whatever layout they had at write time.
+
+    Known limitation: `system.data_skipping_indices.data_uncompressed_bytes` and
+    `system.parts.secondary_indices_uncompressed_bytes` report the compressed size for packed
+    substreams (the archive index doesn't store uncompressed sizes). This is cosmetic in
+    monitoring with one functional consequence:
+    `distributed_index_analysis_min_indexes_bytes_to_activate` compares against
+    `data_uncompressed`, so a packed index that compresses well (`set` or `bloom_filter` over
+    strings) may not cross the activation threshold even if the real uncompressed size would.
+    The fallback is the normal query plan, not a wrong result.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.
@@ -2014,36 +2069,6 @@ namespace ErrorCodes
     Possible values:
     - `true`
     - `false`
-    )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_reverse_key, false, R"(
-    Enables support for descending sort order in MergeTree sorting keys. This
-    setting is particularly useful for time series analysis and Top-N queries,
-    allowing data to be stored in reverse chronological order to optimize query
-    performance.
-
-    With `allow_experimental_reverse_key` enabled, you can define descending sort
-    orders within the `ORDER BY` clause of a MergeTree table. This enables the
-    use of more efficient `ReadInOrder` optimizations instead of `ReadInReverseOrder`
-    for descending queries.
-
-    **Example**
-
-    ```sql
-    CREATE TABLE example
-    (
-    time DateTime,
-    key Int32,
-    value String
-    ) ENGINE = MergeTree
-    ORDER BY (time DESC, key)  -- Descending order on 'time' field
-    SETTINGS allow_experimental_reverse_key = 1;
-
-    SELECT * FROM example WHERE key = 'xxx' ORDER BY time DESC LIMIT 10;
-    ```
-
-    By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
-
-    **Default Value:** false
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_commit_order_projection, false, R"(
     Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
@@ -2200,6 +2225,19 @@ namespace ErrorCodes
     DECLARE(Bool, table_readonly, false, R"(
     If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
     )", 0) \
+    DECLARE(Bool, materialize_projections_on_insert, true, R"(
+    When enabled, INSERTs create new parts with projections.
+    Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
+    or during merges with [materialize_projections_on_merge](/operations/settings/merge-tree-settings.md/#materialize_projections_on_merge).
+    )", 0) \
+    DECLARE(Bool, materialize_projections_on_merge, false, R"(
+    When enabled, a merge rebuilds a projection that is missing from all of its source parts (for example because they were
+    inserted with `materialize_projections_on_insert = 0`), so the merged part has the projection.
+
+    Merges still only combine parts that share the same set of projections. To backfill a projection to all existing parts,
+    use an explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection). Projections
+    are also created during INSERTs with [materialize_projections_on_insert](/operations/settings/merge-tree-settings.md/#materialize_projections_on_insert).
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
@@ -2235,6 +2273,7 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period_random_add, 10) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -2588,10 +2627,7 @@ MergeTreeSettings::MergeTreeSettings(const MergeTreeSettings & settings) : impl(
 {
 }
 
-MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept
-    : impl(std::make_unique<MergeTreeSettingsImpl>(std::move(*settings.impl)))
-{
-}
+MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept = default;
 
 MergeTreeSettings::~MergeTreeSettings() = default;
 
@@ -2671,6 +2707,25 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
         setting_names.emplace_back(setting.getName());
     }
     return setting_names;
+}
+
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
+std::string_view MergeTreeSettings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
+}
+
+SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
 }
 
 void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
@@ -2852,6 +2907,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_block_number_column"
         || name == "add_minmax_index_for_block_offset_column"
         || name == "table_disk"
+        || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
     ;
 }
