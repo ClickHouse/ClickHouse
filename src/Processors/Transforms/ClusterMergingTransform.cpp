@@ -44,7 +44,7 @@ Int64 safeFloorToInt64(Float64 v)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "GROUP BY ... WITH CLUSTER: cluster key is not finite (value = {})", v);
 
-    Int64 result;
+    Int64 result = 0;
     if (!accurate::convertNumeric<Float64, Int64, /*strict=*/false>(std::floor(v), result))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "GROUP BY ... WITH CLUSTER: cluster key produces an out-of-range bucket id "
@@ -388,7 +388,7 @@ Chunk ClusterMergingTransform::generate1D()
     {
         Float64 cluster_val = cluster_vals[i];
 
-        Int64 bucket_id;
+        Int64 bucket_id = 0;
         if (cluster_distance > 0)
             bucket_id = safeFloorToInt64(cluster_val / cluster_distance);
         else
@@ -684,8 +684,8 @@ Chunk ClusterMergingTransform::generate2D()
     {
         Float64 xv = x_vals[i];
         Float64 yv = y_vals[i];
-        Int64 cx;
-        Int64 cy;
+        Int64 cx = 0;
+        Int64 cy = 0;
         if (d == 0)
         {
             static_assert(sizeof(Float64) == sizeof(Int64));
@@ -746,8 +746,8 @@ Chunk ClusterMergingTransform::generate2D()
         {
             /// `safeFloorToInt64` lets `A.cx`/`A.cy` reach `INT64_MIN..INT64_MAX`,
             /// so a raw add can overflow (UB).
-            Int64 ncx;
-            Int64 ncy;
+            Int64 ncx = 0;
+            Int64 ncy = 0;
             if (__builtin_add_overflow(A.cx, static_cast<Int64>(dx), &ncx)
                 || __builtin_add_overflow(A.cy, static_cast<Int64>(dy), &ncy))
                 continue;
@@ -885,7 +885,7 @@ Chunk ClusterMergingTransform::generateString()
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "GROUP BY ... WITH CLUSTER on String: distance must be finite, got {}", cluster_distance);
 
-    size_t max_edits;
+    size_t max_edits = 0;
     if (!accurate::convertNumeric<Float64, size_t, /*strict=*/true>(cluster_distance, max_edits))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "GROUP BY ... WITH CLUSTER on String: distance must be a non-negative integer, got {}",
