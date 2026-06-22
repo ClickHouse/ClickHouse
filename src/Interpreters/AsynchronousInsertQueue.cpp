@@ -124,18 +124,12 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const ASTPtr & query_,
     const std::optional<UUID> & user_id_,
     const std::vector<UUID> & current_roles_,
-    const String & current_user_,
-    const String & initial_user_,
-    const String & authenticated_user_,
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
     , query_str(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
-    , current_user(current_user_)
-    , initial_user(initial_user_)
-    , authenticated_user(authenticated_user_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -153,13 +147,6 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         }
     }
 
-    /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
-    /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
-    for (const String & identity_field : {current_user, initial_user, authenticated_user})
-    {
-        siphash.update(identity_field.size());
-        siphash.update(identity_field);
-    }
 
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
@@ -185,9 +172,6 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     query_str = other.query_str;
     user_id = other.user_id;
     current_roles = other.current_roles;
-    current_user = other.current_user;
-    initial_user = other.initial_user;
-    authenticated_user = other.authenticated_user;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -203,9 +187,6 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         query_str = other.query_str;
         user_id = other.user_id;
         current_roles = other.current_roles;
-        current_user = other.current_user;
-        initial_user = other.initial_user;
-        authenticated_user = other.authenticated_user;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -498,7 +479,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         {
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
-            ConcatReadBuffer::Buffers buffers;
+            std::vector<std::unique_ptr<ReadBuffer>> buffers;
             buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
             buffers.emplace_back(std::move(read_buf));
 
@@ -552,16 +533,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     if (insert_query.format == "Values")
         entry->query_parameters = query_context->getQueryParameters();
 
-    const auto & client_info = query_context->getClientInfo();
-    InsertQuery key{
-        query,
-        query_context->getUserID(),
-        query_context->getCurrentRoles(),
-        client_info.current_user,
-        client_info.initial_user,
-        client_info.authenticated_user,
-        settings,
-        data_kind};
+    InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, data_kind};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
 
@@ -599,7 +571,9 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         data->entries.emplace_back(entry);
         progress_future = entry->getFuture();
 
-        LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data for the async insert queries '{}'",
+        LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data",
+            data->entries.size(), size_t(shard_num), data->size_in_bytes);
+        LOG_TEST(log, "Have {} pending inserts in shard {} with total {} bytes of data for the async insert queries '{}'",
             data->entries.size(), size_t(shard_num), data->size_in_bytes, fmt::join(getInsertQueryIds(*data), ", "));
 
         bool has_enough_bytes = data->size_in_bytes >= (*key.settings)[Setting::async_insert_max_data_size];
@@ -1006,14 +980,6 @@ try
         insert_context->setCurrentRoles(key.current_roles);
     }
 
-    /// Context::setUser only restores the access-control identity, not the ClientInfo user
-    /// names. Restore them from the originating query so currentUser()/user()/
-    /// authenticatedUser() and the materialized views triggered by the flush observe the
-    /// inserting user instead of an empty string.
-    insert_context->setCurrentUserName(key.current_user);
-    insert_context->setInitialUserName(key.initial_user);
-    insert_context->setAuthenticatedUserName(key.authenticated_user);
-
     insert_context->setSettings(*key.settings);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
@@ -1042,7 +1008,8 @@ try
     else
         query_scope = QueryScope::create(insert_context);
 
-    LOG_DEBUG(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
+    LOG_TRACE(log, "Processing batch insert of {} async inserts with {} bytes of data", data->entries.size(), data->size_in_bytes);
+    LOG_TEST(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
 
     String query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
     UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
@@ -1156,12 +1123,6 @@ try
 
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
-
-        /// Propagate the process list element to the pipeline so that the executor enables
-        /// per-processor profiling (otherwise elapsed_us and *_wait_elapsed_us stay zero in
-        /// system.processors_profile_log for async insert flushes). The normal query path does
-        /// this in executeQuery, but the flush builds and runs the pipeline directly.
-        pipeline.setProcessListElement(insert_context->getProcessListElement());
 
         query_log_elem = logQueryStart(
             query_start_time,

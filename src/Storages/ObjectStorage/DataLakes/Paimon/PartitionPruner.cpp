@@ -21,7 +21,7 @@ extern const int BAD_ARGUMENTS;
 
 namespace Paimon
 {
-    static boost::intrusive_ptr<DB::IAST> createPartitionKeyAST(const DB::PaimonTableSchema & table_schema)
+    boost::intrusive_ptr<DB::IAST> createPartitionKeyAST(const DB::PaimonTableSchema & table_schema)
     {
         auto partition_key_ast = DB::make_intrusive<DB::ASTFunction>();
         partition_key_ast->name = "tuple";
@@ -36,7 +36,7 @@ namespace Paimon
         return partition_key_ast;
     }
 
-    static DB::ColumnsDescription getPartitionColumnsDescription(
+    DB::ColumnsDescription getPartitionColumnsDescription(
         const DB::PaimonTableSchema & table_schema)
     {
         DB::NamesAndTypesList names_and_types;

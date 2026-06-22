@@ -101,7 +101,7 @@ public:
     /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
-        bool is_large = false;
+        bool is_large;
         readBinary(is_large, in);
 
         if (is_large)
