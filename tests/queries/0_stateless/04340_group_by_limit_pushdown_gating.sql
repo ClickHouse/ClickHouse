@@ -40,13 +40,13 @@ SELECT 'nullable key eviction: result matches optimization off';
 SELECT count(), countIf(same) FROM (
     SELECT l.c = r.c AND l.s = r.s AS same FROM (
         SELECT k, count() AS c, sum(v) AS s FROM (
-            SELECT if(number % 500 = 0, NULL, toNullable(toString(999999 - number))) AS k, number AS v FROM numbers(200000)
+            SELECT if(number % 500 = 0, NULL, toNullable(toString(999999 - number))) AS k, number AS v FROM numbers(40000)
         ) GROUP BY k ORDER BY k ASC NULLS FIRST LIMIT 10
-        SETTINGS enable_group_by_top_k_optimization = 1, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0
+        SETTINGS enable_group_by_top_k_optimization = 1, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_block_size = 4096
     ) AS l
     INNER JOIN (
         SELECT k, count() AS c, sum(v) AS s FROM (
-            SELECT if(number % 500 = 0, NULL, toNullable(toString(999999 - number))) AS k, number AS v FROM numbers(200000)
+            SELECT if(number % 500 = 0, NULL, toNullable(toString(999999 - number))) AS k, number AS v FROM numbers(40000)
         ) GROUP BY k ORDER BY k ASC NULLS FIRST LIMIT 10
         SETTINGS enable_group_by_top_k_optimization = 0
     ) AS r ON l.k IS NOT DISTINCT FROM r.k
@@ -64,10 +64,10 @@ SELECT count() FROM (EXPLAIN actions = 1
 
 SELECT 'non-prefix ORDER BY: result matches optimization off';
 SELECT count() FROM (
-    SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(100000)) GROUP BY a, b ORDER BY b, a LIMIT 5
+    SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(20000)) GROUP BY a, b ORDER BY b, a LIMIT 5
     SETTINGS enable_group_by_top_k_optimization = 1
 ) AS l
 INNER JOIN (
-    SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(100000)) GROUP BY a, b ORDER BY b, a LIMIT 5
+    SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(20000)) GROUP BY a, b ORDER BY b, a LIMIT 5
     SETTINGS enable_group_by_top_k_optimization = 0
 ) AS r USING (a, b);

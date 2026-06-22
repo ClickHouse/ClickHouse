@@ -77,24 +77,26 @@ SELECT k, count(), sum(v) FROM (SELECT 2::UInt32 AS k, 1 AS v FROM numbers(5) UN
 SELECT 'LowCardinality eviction: result matches optimization off';
 SELECT count() FROM
 (
-    SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(200000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1
+    SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(30000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1, max_block_size = 4096
 ) AS optimized
 INNER JOIN
 (
-    SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(200000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0
+    SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(30000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0
 ) AS full USING (k, c, s);
 
 -- A mid-block eviction must invalidate the consecutive-key cache: a key admitted by
 -- the stale skip bitmap, pushed, then evicted, must not hand its destroyed state to
 -- a later equal row.  Runs of equal keys + a stateful aggregate make it observable.
+-- Small max_block_size guarantees multiple blocks (so the heap is full at a block
+-- start and the precomputed skip bitmap is exercised) without a large row count.
 SELECT 'consecutive-key cache after eviction: result matches optimization off';
 SELECT count() FROM
 (
-    SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(400000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1
+    SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(40000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1, max_block_size = 4096
 ) AS optimized
 INNER JOIN
 (
-    SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(400000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0
+    SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(40000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0
 ) AS full USING (k, u, s);
 
 SELECT 'optimization_applied_guard';
