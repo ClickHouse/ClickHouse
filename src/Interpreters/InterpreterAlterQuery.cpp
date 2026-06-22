@@ -555,19 +555,22 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     return res;
 }
 
+bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr & storage, const ContextPtr & context_)
+{
+    /// `_row_exists` is the hidden lightweight-delete marker only when it is not an ordinary physical
+    /// column of the table (on e.g. a `Memory` table it can be a real column). A null storage
+    /// (non-local ON CLUSTER target) fails closed -> treated as a regular column.
+    if (!storage)
+        return false;
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
+    return !metadata_snapshot->getColumns().hasPhysical(RowExistsColumn::name);
+}
+
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    /// `_row_exists` is the hidden lightweight-delete marker only when it is not an ordinary physical
-    /// column of the target table (on e.g. a `Memory` table it can be a real column). A null storage
-    /// (non-local ON CLUSTER target) fails closed -> treated as a regular column.
-    bool row_exists_is_marker = false;
-    if (storage)
-    {
-        const auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), false);
-        row_exists_is_marker = !metadata_snapshot->getColumns().hasPhysical(RowExistsColumn::name);
-    }
+    const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
     for (const auto & child : alter.command_list->children)
         required_access.append_range(
             getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_is_marker));

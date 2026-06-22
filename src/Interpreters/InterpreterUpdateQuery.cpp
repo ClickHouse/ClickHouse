@@ -12,7 +12,6 @@
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -93,12 +92,7 @@ BlockIO InterpreterUpdateQuery::execute()
     StoragePtr table_for_access;
     if (auto table_id_for_access = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
         table_for_access = DatabaseCatalog::instance().tryGetTable(table_id_for_access, getContext());
-    bool row_exists_is_marker = false;
-    if (table_for_access)
-    {
-        const auto metadata_snapshot = table_for_access->getInMemoryMetadataPtr(getContext(), false);
-        row_exists_is_marker = !metadata_snapshot->getColumns().hasPhysical(RowExistsColumn::name);
-    }
+    const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(table_for_access, getContext());
 
     bool deletes_via_row_exists = false;
     bool updates_columns = false;

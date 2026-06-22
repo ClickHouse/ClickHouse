@@ -30,6 +30,11 @@ public:
     static AccessRightsElements getRequiredAccessForCommand(
         const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker);
 
+    /// True when `_row_exists` is the hidden virtual lightweight-delete marker of `storage`, i.e. not
+    /// an ordinary physical column with that name (as is possible on engines like `Memory`). Null
+    /// storage returns false (fail closed). Used to decide whether `_row_exists = 0` is a delete.
+    static bool isRowExistsLightweightDeleteMarker(const StoragePtr & storage, const ContextPtr & context_);
+
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
     bool supportsTransactions() const override { return true; }
