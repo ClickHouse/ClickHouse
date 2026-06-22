@@ -1,18 +1,14 @@
 import logging
 import time
 import uuid
-import random
 from multiprocessing.dummy import Pool
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_queue_common import (
     run_query,
-    random_str,
     generate_random_files,
-    put_s3_file_content,
-    put_azure_file_content,
     create_table,
     create_mv,
     generate_random_string,
@@ -110,7 +106,7 @@ def test_replicated(started_cluster):
 
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     mv_name = f"{table_name}_mv"
-    db_name = f"r"
+    db_name = "r"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
@@ -427,7 +423,7 @@ def test_alter_settings(started_cluster):
 
     assert 0 == int(
         node1.query(
-            f"select alterable from system.s3_queue_settings where name = 'mode'"
+            "select alterable from system.s3_queue_settings where name = 'mode'"
         )
     )
 
