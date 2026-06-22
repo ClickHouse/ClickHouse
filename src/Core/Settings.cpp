@@ -2485,6 +2485,11 @@ DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
     Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
     Value is the maximum number of tables to optimize.
 )", 0) \
+DECLARE(UInt64, query_plan_optimize_join_order_max_searched_plans, 100000, R"(
+Maximum number of partial plans the join order optimizer may enumerate before giving up and falling back to the next algorithm in `query_plan_optimize_join_order_algorithm`.
+This bounds optimization time deterministically (independent of wall-clock) on dense join graphs such as cliques or stars, where the search space grows exponentially.
+Set to 0 to disable the limit. Has no effect on the default `query_plan_optimize_join_order_limit`, where the search always stays well below this bound.
+)", EXPERIMENTAL) \
 DECLARE(UInt64, query_plan_optimize_join_order_randomize, 0, R"(
 When non-zero, the join order optimizer uses randomly generated cardinalities and NDVs instead of real statistics.
 When set to 1, a random seed is generated, when set to a value > 1, that value is used as the seed directly.
@@ -8286,9 +8291,10 @@ Allow to use hive partitioning with S3Queue/AzureQueue engines
     )", EXPERIMENTAL) \
 DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
- - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
- - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
-Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
+ - `greedy` - basic greedy algorithm - works fast but might not produce the best join order
+ - `dpsize` - implements DPsize algorithm currently only for inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates
+ - `dphyp` - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
+Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
@@ -8729,6 +8735,11 @@ bool Settings::isChanged(std::string_view name) const
 SettingsTierType Settings::getTier(std::string_view name) const
 {
     return impl->getTier(name);
+}
+
+std::string_view Settings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
 }
 
 bool Settings::tryGet(std::string_view name, Field & value) const

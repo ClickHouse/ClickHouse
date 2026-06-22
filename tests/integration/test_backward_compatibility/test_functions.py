@@ -95,6 +95,10 @@ def test_aggregate_states(start_cluster):
                 "BAD_ARGUMENTS",
                 # aggThrow
                 "AGGREGATE_FUNCTION_THROW",
+                # Numerically-stable variants (stddevPopStable, varSampStable, ...) reject a String argument
+                "NOT_IMPLEMENTED",
+                # Introspection aggregates (flameGraph) are disabled by default
+                "FUNCTION_NOT_ALLOWED",
             ]
             if any(map(lambda x: x in error_message, allowed_errors)):
                 logging.info("Skipping %s", aggregate_function)
@@ -181,11 +185,27 @@ def test_string_functions(start_cluster):
         "randCanonical",
         "generateUUIDv4",
         "generateULID",
+        "generateUUIDv7",
+        "generateSnowflakeID",
+        # Needs a Keeper connection and is non-deterministic anyway.
+        "generateSerialID",
         # Syntax error otherwise
         "position",
         "substring",
         "CAST",
         "getTypeSerializationStreams",
+        # The argument is a query / structure declaration, so 'foo' is a syntax error.
+        "formatQuery",
+        "formatQuerySingleLine",
+        "structureToProtobufSchema",
+        "structureToCapnProtoSchema",
+        # The argument is effectively a server port name (and we don't have one named foo).
+        "getServerPort",
+        # The argument must be a human-readable size / a datetime.
+        "parseReadableSize",
+        "parseDateTime64",
+        # Newer versions require an even number of arguments; older versions accepted a single one.
+        "caseWithExpression",
         # NOTE: no need to ignore now()/now64() since they will fail because they don't accept any argument
         # 22.8 Backward Incompatible Change: Extended range of Date32
         "toDate32OrZero",
@@ -272,6 +292,8 @@ def test_string_functions(start_cluster):
                 # String foo is obviously not a valid IP address.
                 "CANNOT_PARSE_IPV4",
                 "CANNOT_PARSE_IPV6",
+                # neighbor / runningDifference / runningAccumulate are deprecated and disabled by default.
+                "DEPRECATED_FUNCTION",
             ]
             if any(map(lambda x: x in error_message, allowed_errors)):
                 logging.info("Skipping %s", function)

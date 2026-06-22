@@ -1,6 +1,5 @@
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
