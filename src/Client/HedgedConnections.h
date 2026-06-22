@@ -120,8 +120,6 @@ public:
 
     void sendCancel() override;
 
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) override;
-
     Packet drain() override;
 
     std::string dumpAddresses() const override;

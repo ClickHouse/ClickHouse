@@ -1,4 +1,3 @@
-import psycopg2
 import pytest
 import socket
 import uuid
