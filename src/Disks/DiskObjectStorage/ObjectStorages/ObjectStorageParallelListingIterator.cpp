@@ -1,10 +1,12 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageParallelListingIterator.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/setThreadName.h>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 
 
 namespace CurrentMetrics
@@ -32,6 +34,10 @@ namespace
     /// sub-range still holds all the keys. A single level captures the win for uniformly distributed keys
     /// without ever being slower than serial for clustered keys.
     constexpr size_t FLAT_SPLIT_BUDGET = 1;
+
+    /// Query cancellation does not notify our condition variables, so the consumer waits in bounded
+    /// slices and re-checks `check_cancellation` on each timeout instead of blocking indefinitely.
+    constexpr std::chrono::milliseconds CANCELLATION_POLL_INTERVAL{100};
 }
 
 ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
@@ -40,11 +46,14 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     size_t max_buffered_keys_,
     ListLevelFunction list_level_,
     std::function<bool(const std::string & common_prefix)> should_descend_,
-    bool allow_keyspace_split_)
+    bool allow_keyspace_split_,
+    std::function<void()> check_cancellation_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
     , list_level(std::move(list_level_))
     , should_descend(std::move(should_descend_))
+    , check_cancellation(std::move(check_cancellation_))
+    , thread_group(getCurrentThreadGroup())
     , pool(
           CurrentMetrics::ObjectStorageParallelListingThreads,
           CurrentMetrics::ObjectStorageParallelListingThreadsActive,
@@ -105,6 +114,10 @@ void ObjectStorageParallelListingIterator::enqueueLocked(
 
 void ObjectStorageParallelListingIterator::worker()
 {
+    /// Inherit the owning query's thread group (if any) so listing memory is accounted to the query and
+    /// in-flight listing requests observe its cancellation, like the serial listing path.
+    ThreadGroupSwitcher thread_group_switcher(thread_group, ThreadName::S3_LIST_POOL);
+    /// Set the name explicitly as well: the switcher sets no name when there is no thread group (tests).
     setThreadName(ThreadName::S3_LIST_POOL);
 
     while (true)
@@ -340,7 +353,29 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
 
 std::optional<RelativePathsWithMetadata> ObjectStorageParallelListingIterator::popBatch(std::unique_lock<std::mutex> & lock)
 {
-    result_available.wait(lock, [this] { return !ready_batches.empty() || finished || stop; });
+    /// Wait in bounded slices rather than indefinitely: query cancellation (a `KILL` or a timeout) does
+    /// not notify our condition variables, so on each timeout `check_cancellation` throws the proper
+    /// exception if the query was cancelled. Without this the consumer (e.g. the query's main thread in
+    /// `getPathSample`) could block forever when the producers stall, ignoring cancellation entirely.
+    while (!result_available.wait_for(lock, CANCELLATION_POLL_INTERVAL, [this] { return !ready_batches.empty() || finished || stop; }))
+    {
+        if (!check_cancellation)
+            continue;
+        try
+        {
+            check_cancellation();
+        }
+        catch (...)
+        {
+            /// Stop the workers right away so the destructor's `pool.wait()` does not have to wait for a
+            /// worker that is about to issue another listing request.
+            stop = true;
+            lock.unlock();
+            work_available.notify_all();
+            space_available.notify_all();
+            throw;
+        }
+    }
 
     if (first_exception)
         std::rethrow_exception(first_exception);

@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -53,13 +54,17 @@ public:
     /// requests with an empty delimiter). Set it to false for storages that do not support `StartAfter`
     /// or a non-'/' delimiter (e.g. S3 Express / directory buckets); such flat ranges are then paginated
     /// serially, while the hierarchical delimiter walk stays parallel.
+    /// `check_cancellation`, if set, must throw when the query owning this listing was cancelled; it is
+    /// polled while the consumer waits for a batch (a `KILL`/timeout does not notify our condition
+    /// variables), so the listing fails fast instead of hanging. Empty in non-query contexts (tests).
     ObjectStorageParallelListingIterator(
         std::string root_prefix_,
         size_t num_threads_,
         size_t max_buffered_keys_,
         ListLevelFunction list_level_,
         std::function<bool(const std::string & common_prefix)> should_descend_,
-        bool allow_keyspace_split_ = true);
+        bool allow_keyspace_split_ = true,
+        std::function<void()> check_cancellation_ = {});
 
     ~ObjectStorageParallelListingIterator() override;
 
@@ -105,6 +110,13 @@ private:
     const size_t max_buffered_objects;
     const ListLevelFunction list_level;
     const std::function<bool(const std::string & common_prefix)> should_descend;
+    /// Throws (the proper `TIMEOUT_EXCEEDED` / `QUERY_WAS_CANCELLED`) when the owning query was
+    /// cancelled; empty in non-query contexts. Polled by the consumer while waiting for a batch.
+    const std::function<void()> check_cancellation;
+    /// The owning query's thread group, captured at construction (on the consumer thread). Workers
+    /// attach to it so listing memory is accounted to the query and in-flight requests observe its
+    /// cancellation, mirroring the serial listing path. Null in non-query contexts.
+    const ThreadGroupPtr thread_group;
 
     mutable std::mutex mutex;
     std::condition_variable work_available;

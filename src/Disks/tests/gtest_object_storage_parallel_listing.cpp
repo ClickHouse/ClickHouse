@@ -8,9 +8,11 @@
 #include <atomic>
 #include <algorithm>
 #include <cstdint>
+#include <future>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <fmt/format.h>
@@ -414,4 +416,50 @@ TEST(ObjectStorageParallelListing, EmptyResult)
     s3.finalize();
     ObjectStorageParallelListingIterator iterator("nothing/", 4, 1000, makeListLevel(s3), descendAll);
     EXPECT_TRUE(drain(iterator).empty());
+}
+
+TEST(ObjectStorageParallelListing, CancellationUnblocksBlockedConsumer)
+{
+    /// Regression test for the `Hung check` deadlock: while the producers make no progress (a stalled
+    /// listing request) the consumer must not block forever — `check_cancellation` is polled and, once it
+    /// throws, the wait is interrupted and the exception propagates. Without the fix the consumer would
+    /// wait indefinitely (nothing buffered, not finished, not stopped), ignoring query cancellation.
+    std::promise<void> entered_listing;     /// fulfilled when the (simulated) listing request starts
+    std::atomic<bool> entered_done{false};
+    std::promise<void> release_listing;     /// fulfilled to let the (simulated) listing request return
+    auto release_future = release_listing.get_future().share();
+
+    auto list_level = [&](const std::string &, const std::string &, const std::string &, const std::string &) -> ObjectStorageListResult
+    {
+        if (!entered_done.exchange(true))
+            entered_listing.set_value();
+        /// Simulate a `ListObjectsV2` that stalls and does not return until released, so the consumer is
+        /// forced to wait with nothing buffered and the walk not finished.
+        release_future.wait();
+        return {};
+    };
+
+    std::atomic<bool> cancelled{false};
+    std::function<void()> check_cancellation = [&]
+    {
+        if (cancelled.load())
+            throw std::runtime_error("query cancelled");
+    };
+
+    ObjectStorageParallelListingIterator iterator(
+        "root/", 4, /* max_buffered_keys */ 256, list_level, descendAll,
+        /* allow_keyspace_split */ true, std::move(check_cancellation));
+
+    /// Cancel only once a worker is actually parked inside the stalled listing request.
+    std::thread canceller([&]
+    {
+        entered_listing.get_future().wait();
+        cancelled.store(true);
+    });
+
+    EXPECT_THROW(drain(iterator), std::runtime_error);
+
+    canceller.join();
+    /// Let the stalled request return so the iterator can be destroyed without blocking on the worker.
+    release_listing.set_value();
 }

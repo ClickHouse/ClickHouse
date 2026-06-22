@@ -1341,13 +1341,22 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 return storage->listObjectsSingleLevel(prefix, delimiter, list_object_keys_size, with_tags, start_after, continuation_token);
             };
 
+            /// Make the parallel listing observe query cancellation: it waits on its own condition
+            /// variables, which a `KILL` or a timeout does not notify, so give it a way to throw the
+            /// proper exception instead of hanging (the parallel listing runs synchronously on the
+            /// query's main thread, e.g. inside `getPathSample`).
+            std::function<void()> check_cancellation;
+            if (auto query_status = local_context->getProcessListElementSafe())
+                check_cancellation = [query_status] { query_status->throwIfKilled(); };
+
             object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
                 key_prefix,
                 list_object_parallelism,
                 /* max_buffered_keys */ list_object_keys_size * list_object_parallelism * 2,
                 std::move(list_level),
                 makeShouldDescendPredicate(key_with_globs.path),
-                /* allow_keyspace_split */ object_storage->supportsListingKeyspaceSplit());
+                /* allow_keyspace_split */ object_storage->supportsListingKeyspaceSplit(),
+                std::move(check_cancellation));
         }
         else
         {
