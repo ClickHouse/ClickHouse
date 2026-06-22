@@ -4627,7 +4627,9 @@ document.getElementById('download-button').addEventListener('click', async funct
 
     /// Keep the icon's `href` pointing at the current `/webterminal` URL, so that a native
     /// middle-click or Ctrl/Shift+click opens the right address even after the user edits the
-    /// server URL. An empty `href` is left in place when the URL is currently unparsable.
+    /// server URL. The `href` is removed when the URL is currently unparsable: an empty `href`
+    /// would resolve to the current page, so a modifier/middle-click would open Play itself
+    /// instead of doing nothing.
     ///
     /// The non-empty Play username is carried over as a `user` query parameter so a new-tab
     /// terminal connects as the same user instead of falling back to the server default user.
@@ -4638,7 +4640,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     /// iframe from waiting for the credentials `play.html` sends via `postMessage`.
     function updateTerminalHref() {
         const base = getTerminalURL();
-        if (!base) { terminalIcon.setAttribute('href', ''); return; }
+        if (!base) { terminalIcon.removeAttribute('href'); return; }
         try {
             const url = new URL(base);
             if (user_elem.value) url.searchParams.set('user', user_elem.value);
