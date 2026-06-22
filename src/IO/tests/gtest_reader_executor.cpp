@@ -3392,17 +3392,14 @@ TEST(ReaderExecutor, ResidentRunOverlapsDownstreamGapPrefetch)
     EXPECT_TRUE(executor.readNextWindow().empty());
 }
 
-/// Cache populates are split by the context that produced them: a foreground
-/// (synchronous) read credits `ReaderExecutorBytesPushedToCacheSync`, while a
-/// prefetch worker credits `ReaderExecutorBytesPushedToCacheAsync`. `stats` are
-/// flushed to `ProfileEvents` in `~ReaderExecutor`, so each delta is read only
-/// after the executor scope closes.
-TEST(ReaderExecutor, PopulateSplitsSyncAndDeferredByPath)
+/// Every cache populate is synchronous (inline on the read thread): both the
+/// foreground gap fill and the prefetch-collect fill credit
+/// `ReaderExecutorBytesPushedToCacheSync`. The deferred (async) path was retired
+/// with the put lane, so `ReaderExecutorBytesPushedToCacheAsync` stays zero whether
+/// or not a prefetch pool is present. `stats` are flushed to `ProfileEvents` in
+/// `~ReaderExecutor`, so each delta is read only after the executor scope closes.
+TEST(ReaderExecutor, PopulatesInlineWithOrWithoutPool)
 {
-    /// The write-side split: a sync-path window populates synchronously on the
-    /// foreground (`BytesPushedToCacheSync`); a machine-collected window defers
-    /// its fill to a put step (`BytesPushedToCacheAsync`). Every byte lands in
-    /// exactly one of the two.
     constexpr size_t file_size = 2048;
     constexpr size_t window = 512;
     String content(file_size, 'P');
@@ -3430,10 +3427,8 @@ TEST(ReaderExecutor, PopulateSplitsSyncAndDeferredByPath)
         EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before, 0u);
     }
 
-    /// `SyncPrefetchPool` runs each submitted job inline: machine-collected
-    /// windows defer their fill to put steps, and with pools present the
-    /// sync-path windows defer through put-only machines too - so EVERY
-    /// populate is deferred (async) and together they still cover the file.
+    /// With a prefetch pool the worker fetches the gap bytes, but the collect writes
+    /// them INLINE on the read thread - so the populate is synchronous too.
     {
         const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
         const auto async_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed);
@@ -3449,8 +3444,8 @@ TEST(ReaderExecutor, PopulateSplitsSyncAndDeferredByPath)
         }
         const auto sync_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before;
         const auto async_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before;
-        EXPECT_EQ(sync_delta, 0u) << "with pools present no populate runs on the client thread";
-        EXPECT_EQ(async_delta, file_size) << "every window defers its fill to a put step";
+        EXPECT_EQ(sync_delta, file_size) << "the prefetch-collect fill writes inline on the read thread";
+        EXPECT_EQ(async_delta, 0u) << "the deferred (async) populate path is retired";
     }
 }
 
@@ -3936,13 +3931,13 @@ struct PageCacheFixture
 
 }
 
-TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
+TEST(ReaderExecutor, MachineCollectFillsCacheInline)
 {
-    /// Stage-3 contract: a machine-collected window's cache fill runs as a
-    /// background put step (`BytesPushedToCacheAsync`); the first window (sync
-    /// path, no machine yet) still writes synchronously. The warm pass is
-    /// deterministic: `observeAndSchedule` joins every deferred fill before
-    /// rebuilding, so after seek(0) the whole file is page-cache resident.
+    /// A machine-collected window's cache fill runs INLINE on the read thread
+    /// (`BytesPushedToCacheSync`), exactly like the first sync-path window; the
+    /// async fill path is retired with the put lane. The warm pass is
+    /// deterministic: `observeAndSchedule` settles every fill before rebuilding,
+    /// so after seek(0) the whole file is page-cache resident.
     constexpr size_t FILE_SIZE = 16000;
     constexpr size_t WINDOW = 2000;
     constexpr size_t BLOCK = 500;
@@ -3960,9 +3955,9 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
     caches.push_back(pc.provider(BLOCK, FILE_SIZE));
 
     /// Inline pool: machine fetches complete at launch, so every collect is a
-    /// full one and deterministically defers its fill to a put step. (A real
-    /// pool in a zero-think-time drain loop revokes/interrupts most machines
-    /// before their first block - covered by the gated takeover test.)
+    /// full one and deterministically writes its fill inline. (A real pool in a
+    /// zero-think-time drain loop revokes/interrupts most machines before their
+    /// first block - covered by the gated takeover test.)
     auto pool = std::make_shared<SyncPrefetchPool>();
     TestThreadGroup tg;
     {
@@ -3984,17 +3979,17 @@ TEST(ReaderExecutor, MachineCollectDefersCacheFillToPutStep)
                 cold.append(node.data(), node.size);
         }
         EXPECT_EQ(cold, content);
-        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync), 0u)
-            << "machine-collected windows must defer their fill to put steps";
-        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheSync), 0u)
-            << "with pools present even the sync-path window defers (put-only machine)";
+        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheSync), 0u)
+            << "machine-collected windows fill the cache inline on the read thread";
+        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync), 0u)
+            << "the deferred (async) fill path is retired";
         EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorPutAbandoned), 0u);
     }
-    /// Cold executor destroyed: its teardown joined every deferred fill, so the
-    /// page cache now holds the whole file.
+    /// Cold executor destroyed: its fills already landed inline, so the page cache
+    /// now holds the whole file.
 
     /// Warm pass with a FRESH executor over the same cache: its residency plan
-    /// sees the deferred fills as plain hits - nothing from the source. (A seek
+    /// sees the inline fills as plain hits - nothing from the source. (A seek
     /// within the cold executor would NOT show this: its plan geometry is an
     /// immutable all-miss snapshot, so its machines re-fetch and only the
     /// collect prefers the cache copies.)

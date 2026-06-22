@@ -1015,11 +1015,10 @@ ChainedBuffers ReaderExecutor::readPhysicalWindow(ByteRange physical_window,
     /// the end needs its writers home.
     flushPutLaneOverlapping(fetch_window);
 
-    /// With a `CacheFiller` pool present the sync path defers its cache fill
-    /// exactly like a machine collect: assemble only, then hand the writers +
-    /// chain to a put-only machine below. Without one, the put step runs
-    /// synchronously inline (the `push_to_writers` write here).
-    const bool defer_fill = put_runner != nullptr;
+    /// The foreground gap fill is ALWAYS inline now: the elected segment downloader must be
+    /// the thread that writes+completes it, so a coordinated fill cannot be deferred to another
+    /// thread. (P1 of dropping the put lane; the prefetch-collect fill follows.)
+    const bool defer_fill = false;
 
     /// Serve resident bytes over the ALIGNED window: a byte that is a miss on the tier
     /// driving the alignment but resident on a faster tier is covered here, so the gap
@@ -2118,10 +2117,9 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
     /// retrieve overlapping this window (`buildSchedule`'s `into`). A cell holding the
     /// request is a target in every missing tier (promotion); a slack-only cell is a
     /// target ONLY in its owning lower tier - so a faster tier never receives
-    /// un-requested slack bytes. The writers are NOT moved out: the put lane's single
-    /// in-flight slot serializes writes, so the step writes them in place and the reap
-    /// returns nothing. Runs AFTER `finalizeAssembledWindow`, so the in-flight pin was
-    /// taken first.
+    /// un-requested slack bytes. The writers are NOT moved out: the fill runs inline on
+    /// THIS read thread, so the views stay valid in place. Runs AFTER
+    /// `finalizeAssembledWindow`, so the in-flight pin was taken first.
     for (size_t i = 0; i < read_plan.bufs.size(); ++i)
     {
         auto & buf = read_plan.bufs[i];
@@ -2136,6 +2134,9 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
     if (m->writer_views.empty())
         return;  /// nothing to fill for this window
 
+    /// Inline now: this fill writes synchronously on the read thread, so it credits the
+    /// sync populate counter (the async counter is retired with the put lane).
+    m->put_bytes_counter = Stats::BytesPushedToCacheSync;
     m->fill_chain = assembled;
     /// The machine is being re-armed for a second step: a takeover collect set
     /// `interrupt_requested` to stop the FETCH - the put must not inherit it.
@@ -2166,9 +2167,17 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
         return self->interrupt_requested.load() ? StepResult::Interrupted : StepResult::Done;
     };
 
-    /// Append to the FIFO and arm the head if idle. Re-arm after a completion is
-    /// foreground-driven (`sweepPutLane`); the worker never schedules the next step.
-    enqueuePutLane(std::move(m));
+    /// Run the fill inline on the read thread - no deferral. A failed fill is logged in
+    /// `reapPutMachine`, never thrown: a read must not fail because cache population did.
+    try
+    {
+        m->run_step();
+    }
+    catch (...)
+    {
+        m->failure = std::current_exception();
+    }
+    reapPutMachine(*m);
 }
 
 void ReaderExecutor::reapPutMachine(FetchMachine & m)
