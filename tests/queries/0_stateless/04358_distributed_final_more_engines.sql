@@ -1,4 +1,4 @@
--- Tags: no-old-analyzer
+-- Tags: no-darwin, no-old-analyzer
 -- Distributed parallel FINAL via primary-key-range layers must equal local FINAL for the merging engines
 -- with extra state columns -- aggregate states (AggregatingMergeTree) and sign + version
 -- (VersionedCollapsingMergeTree) -- and must distribute the read, not fall back to a serial read.

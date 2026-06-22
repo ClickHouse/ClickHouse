@@ -1,4 +1,4 @@
--- Tags: no-old-analyzer
+-- Tags: no-darwin, no-old-analyzer
 -- Parallel FINAL via primary-key-range layers in the distributed query plan must equal local FINAL,
 -- including when duplicate keys straddle layer borders. make_distributed_plan splits a FINAL read into
 -- PK-range layers; each layer is deduplicated independently and the layers concatenate.

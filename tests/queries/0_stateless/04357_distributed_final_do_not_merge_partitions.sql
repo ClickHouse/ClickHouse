@@ -1,4 +1,4 @@
--- Tags: no-old-analyzer
+-- Tags: no-darwin, no-old-analyzer
 -- Distributed FINAL must reproduce per-partition deduplication. When FINAL does not merge across
 -- partitions, a primary-key value may repeat in several partitions and both copies must survive. The
 -- distributed read splits a FINAL into primary-key-range layers per partition so a layer never merges

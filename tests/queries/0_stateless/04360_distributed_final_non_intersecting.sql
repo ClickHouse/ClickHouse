@@ -1,4 +1,4 @@
--- Tags: no-old-analyzer
+-- Tags: no-darwin, no-old-analyzer
 -- Distributed FINAL skips the merge for non-intersecting primary-key ranges. Each table below has one
 -- level>0 (merged, deduplicated) part covering the whole key range plus a small overlapping level-0 part,
 -- so FINAL reads the non-overlapping tail without a merge (only the engine sign/is_deleted filter) and

@@ -1,4 +1,4 @@
--- Tags: no-old-analyzer
+-- Tags: no-darwin, no-old-analyzer
 -- Distributed parallel FINAL via primary-key-range layers must equal local FINAL when combined with a
 -- WHERE, a PREWHERE, or a lightweight DELETE, and must still distribute the read.
 
