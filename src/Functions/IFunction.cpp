@@ -849,19 +849,24 @@ namespace
         static std::mutex cache_mutex;
         static std::unordered_map<String, std::shared_ptr<FunctionSignature>> cache; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
+        /// Parsing *and* applying a signature resolves its internal type and aggregate-function
+        /// names through `DataTypeFactory` / `AggregateFunctionFactory`, which record them in
+        /// `query_log.used_data_type_families` / `used_aggregate_functions` via
+        /// `Context::addQueryFactoriesInfo`. These names come from the signature text, not from the
+        /// user's query (e.g. parsing resolves a literal `UInt8`, and evaluating `bitmapBuild`'s
+        /// return type resolves `AggregateFunction('groupBitmap', T)`), so suppress factory-usage
+        /// tracking for the whole parse + check — otherwise analyzing a converted function pollutes
+        /// the user-facing factory attribution (`01656_test_query_log_factories_info`). User-written
+        /// types and aggregates are resolved on other paths (CAST, DDL, the analyzer's aggregate
+        /// resolution) and keep being recorded.
+        Context::SuppressQueryFactoriesInfoScope suppress_factory_info;
+
         std::shared_ptr<FunctionSignature> sig;
         {
             std::lock_guard lock(cache_mutex);
             auto it = cache.find(signature_str);
             if (it == cache.end())
             {
-                /// Parsing a signature resolves its literal type names (e.g. `UInt8`, `Float64`)
-                /// through `DataTypeFactory`, which records them in `query_log.used_data_type_families`
-                /// via `Context::addQueryFactoriesInfo`. These types come from the signature text, not
-                /// from the user's query, so suppress factory-usage tracking while parsing — otherwise
-                /// analyzing a converted function pollutes the user-facing factory attribution
-                /// (`01656_test_query_log_factories_info`).
-                Context::SuppressQueryFactoriesInfoScope suppress_factory_info;
                 sig = std::make_shared<FunctionSignature>(signature_str);
                 cache.emplace(signature_str, sig);
             }
