@@ -50,6 +50,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool extremes;
@@ -63,6 +64,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -342,6 +344,12 @@ void StorageView::readImpl(
         const size_t /*max_block_size*/,
         const size_t /*num_streams*/)
 {
+    if (security_barrier && !context->getSettingsRef()[Setting::additional_table_filters].value.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot use `additional_table_filters` with security barrier view `{}`",
+            getStorageID().getFullTableName());
+
     ASTPtr current_inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
 
     if (query_info.view_query)
