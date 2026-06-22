@@ -101,7 +101,8 @@ BlockIO InterpreterUpdateQuery::execute()
 
         if (StoragePtr resolved_table = DatabaseCatalog::instance().tryGetTable(resolved_id, getContext()))
         {
-            const auto & metadata = *resolved_table->getInMemoryMetadataPtr(getContext(), false);
+            const auto metadata_snapshot = resolved_table->getInMemoryMetadataPtr(getContext(), false);
+            const auto & metadata = *metadata_snapshot;
             addExpressionColumnsSelectAccess(read_access, update_query.predicate.get(), resolved_id.database_name, resolved_id.table_name, metadata);
             for (const ASTPtr & assignment : update_query.assignments->children)
                 addExpressionColumnsSelectAccess(
