@@ -93,7 +93,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     MapsTemplate & maps,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
-    const ColumnsInfo * stored_columns_info,
+    const StoredBlock * stored_block,
     UInt32 stored_block_no,
     const ScatteredBlock::Selector & selector,
     ConstNullMapPtr null_map,
@@ -116,11 +116,11 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
         if (selector.isContinuousRange()) \
             insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                join, *maps.TYPE, key_columns, key_sizes, stored_columns_info, stored_block_no, selector.getRange(), null_map, join_mask, pool, is_inserted, all_values_unique); \
+                join, *maps.TYPE, key_columns, key_sizes, stored_block, stored_block_no, selector.getRange(), null_map, join_mask, pool, is_inserted, all_values_unique); \
         else \
             insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                join, *maps.TYPE, key_columns, key_sizes, stored_columns_info, stored_block_no, selector.getIndexes(), null_map, join_mask, pool, is_inserted, all_values_unique); \
+                join, *maps.TYPE, key_columns, key_sizes, stored_block, stored_block_no, selector.getIndexes(), null_map, join_mask, pool, is_inserted, all_values_unique); \
         break;
 
             APPLY_FOR_JOIN_VARIANTS(M)
@@ -252,7 +252,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     HashMap & map,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
-    const ColumnsInfo * stored_columns_info,
+    const StoredBlock * stored_block,
     UInt32 stored_block_no,
     const Selector & selector,
     ConstNullMapPtr null_map,
@@ -310,7 +310,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
             continue;
 
         if constexpr (is_asof_join)
-            Inserter<HashMap, KeyGetter>::insertAsof(join, map, key_getter, stored_columns_info, ind, pool, *asof_column);
+            Inserter<HashMap, KeyGetter>::insertAsof(join, map, key_getter, stored_block, ind, pool, *asof_column);
         else if constexpr (mapped_one)
             is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(join, map, key_getter, stored_block_no, ind, pool);
         else
@@ -508,7 +508,7 @@ void processMatch(
         const IColumn & left_asof_key = added_columns.leftAsofKey();
 
         auto row_ref = mapped->findAsof(left_asof_key, ind);
-        if (row_ref && row_ref->columns_info)
+        if (row_ref && row_ref->block)
         {
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
             /// ASOF join never uses flags (MapGetter<*, Asof>::flagged is false), so both
@@ -880,8 +880,8 @@ static ColumnPtr buildAdditionalFilter(
                 auto col = req_col.type->createColumn();
                 for (const UInt64 selected_row : selected_rows)
                 {
-                    const auto * columns_info = added_columns.lazy_output.stored_columns[refWordBlockNo(selected_row)];
-                    const auto [src_col, row_pos] = getBlockColumnAndRow(columns_info, refWordRowNo(selected_row), rhs_pos_it->second);
+                    const auto * block = added_columns.lazy_output.stored_columns[refWordBlockNo(selected_row)];
+                    const auto [src_col, row_pos] = getBlockColumnAndRow(block, refWordRowNo(selected_row), rhs_pos_it->second);
                     col->insertFrom(*src_col, row_pos);
                 }
                 required_columns[pos].column = std::move(col);

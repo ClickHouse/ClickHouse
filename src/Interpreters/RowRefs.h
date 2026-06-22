@@ -12,6 +12,7 @@
 #include <Core/TypeId.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/defines.h>
 
 
@@ -20,44 +21,31 @@ namespace DB
 
 class Block;
 class ColumnReplicated;
+/// The stored right-side block (columns + replicated handles + selector + block_no). Defined in
+/// Interpreters/HashJoin/ScatteredBlock.h; only pointers to it are needed here, so a forward
+/// declaration keeps this widely-included header free of the heavier ScatteredBlock.h.
+struct StoredBlock;
 
-struct ColumnsInfo
-{
-    explicit ColumnsInfo(Columns && columns_);
-
-    Columns columns;
-    /// Sometimes we need to insert rows into a regular column from a Replicated column.
-    /// And to avoid virtual calls and casts per each row insertion we store pointer
-    /// to the replicated column for each column in the list above.
-    /// If columns is not Replicated, pointer will be nullptr.
-    PODArray<const ColumnReplicated *> replicated_columns;
-
-    /// Must be called after `columns` are replaced in-place (e.g. by cloneResized).
-    /// Raw pointers in `replicated_columns` point into the old column objects and become
-    /// dangling as soon as those objects are released.
-    void rebuildReplicatedColumns();
-};
-
-/// Reference to the row in block.
+/// Reference to a row in a stored block.
 /// Used by ASOF join (sorted lookup vectors) and as a transient decoded form at emit time.
 /// Hash map cells do NOT store this type any more, see BuildRef / BuildRefList below.
 struct RowRef
 {
     using SizeT = uint32_t; /// Do not use size_t cause of memory economy
 
-    const ColumnsInfo * columns_info = nullptr;
+    const StoredBlock * block = nullptr;
     SizeT row_num = 0;
 
     RowRef() = default;
-    RowRef(const ColumnsInfo * columns_, size_t row_num_)
-        : columns_info(columns_)
+    RowRef(const StoredBlock * block_, size_t row_num_)
+        : block(block_)
         , row_num(static_cast<SizeT>(row_num_))
     {}
 };
 
 /// Compact 8-byte index-based reference to a row of the right table: (block_no, row_no).
 /// `block_no` indexes the per-join `StoredColumnsIndex` (see below) that resolves it to the
-/// stored block's `ColumnsInfo`. This is the mapped value of MapsOne join hash maps.
+/// stored block. This is the mapped value of MapsOne join hash maps.
 ///
 /// Layout: `row_no` occupies the LOW half and `block_no` the HIGH half of the 8-byte word
 /// (little-endian), so the MSB of the `block_no` field is bit 63 of the whole word.
@@ -380,27 +368,48 @@ private:
 static_assert(sizeof(BuildRefList) == 8, "BuildRefList must stay 8 bytes: it is the hash map cell payload");
 static_assert(sizeof(BuildRefList::Batch) == 64, "BuildRefList::Batch must stay one cache line");
 
-/// Maps `block_no` (the high half of BuildRef) to the stored block's ColumnsInfo.
+/// Maps `block_no` (the high half of BuildRef) to the stored block.
 /// Appended under mutex during the build phase (possibly from several ConcurrentHashJoin
 /// slots sharing one index, so that block numbers are globally unique across slots and
 /// remain valid after the slot block lists are spliced together in onBuildPhaseFinish).
 /// Read lock-free at probe/emit time, which is safe because probing starts only after
 /// the build phase is finished.
+///
+/// On top of the block map it builds a direct-pointer emit table: for each requested output column the
+/// resolved `const IColumn *` per block (see `EmitColumn`). The hot emit loop then resolves a row ref to a
+/// column with one indexed load instead of going through the stored block and its column vector.
+/// `resolveEmitColumns` builds the requested positions lazily under `mutex` and hands back the per-column
+/// base pointers; positions already built for the current generation are reused. The table is keyed by
+/// `blocks_generation`, bumped whenever the stored blocks change (add/clearEntry, and in-place column
+/// replacement via `invalidateEmitTable`), so a stale table is dropped and rebuilt. This matters for
+/// `StorageJoin`, which (a) inserts more blocks between queries and (b) lets different queries select
+/// different right-column subsets while sharing one index. StorageJoin serializes mutations (write lock)
+/// against read-locked queries, so a rebuild never races a reader. The hot per-row emit loop stays
+/// lock-free; only the per-probe-batch resolution takes the (briefly held) `mutex`.
 class StoredColumnsIndex
 {
 public:
+    /// Resolved column pointers for one output (saved-block) column position, indexed by block_no.
+    struct EmitColumn
+    {
+        /// `by_block[b]` is the source column for this position in block `b` (nullptr for a cleared block).
+        PODArray<const IColumn *> by_block;
+        /// `repl_by_block[b]` is that column as `ColumnReplicated *` if it is one, otherwise nullptr.
+        PODArray<const ColumnReplicated *> repl_by_block;
+    };
+
     /// Registers a stored block, returns its block_no. Throws when the 2^31 limit
     /// (BuildRef::BLOCK_NO_MASK, the MSB is the singleton flag) is exceeded.
-    UInt32 add(const ColumnsInfo * columns_info);
+    UInt32 add(const StoredBlock * block);
 
     /// Protection against dangling pointers: a popped/replaced block keeps its slot,
     /// but the slot is nulled so that a stale ref fails loudly instead of reading freed memory.
     void clearEntry(UInt32 block_no);
 
     /// Raw pointer for hot decode loops. Must not be called before the build phase is finished.
-    const ColumnsInfo * const * blocksData() const { return blocks.data(); }
+    const StoredBlock * const * blocksData() const { return blocks.data(); }
 
-    const ColumnsInfo * at(UInt32 block_no) const
+    const StoredBlock * at(UInt32 block_no) const
     {
         chassert(block_no < blocks.size());
         /// A cleared entry (see `clearEntry`) must never be reached: no refs to such a block exist.
@@ -410,9 +419,35 @@ public:
         return blocks[block_no];
     }
 
+    /// Resolve the emit table for the given saved-block column `positions` (the output columns of one
+    /// probe), building any not-yet-built positions for the current generation (and dropping the whole
+    /// table first if the blocks changed). Fills `out_columns[k]`/`out_replicated[k]` with the per-block
+    /// base pointers for `positions[k]` (stable for as long as the generation does not change, which a
+    /// StorageJoin read lock or a normal join's build-then-probe guarantees for the caller's lifetime).
+    /// Holds `mutex` for the duration; called once per probe batch, never in the per-row loop.
+    void resolveEmitColumns(
+        size_t saved_columns_count,
+        const std::vector<size_t> & positions,
+        std::vector<const IColumn * const *> & out_columns,
+        std::vector<const ColumnReplicated * const *> & out_replicated);
+
+    /// Invalidate the emit table after the stored columns are replaced in place (e.g. shrinkStoredBlocksToFit
+    /// `cloneResized`), which would otherwise leave the cached `const IColumn *` dangling. Bumps the generation.
+    void invalidateEmitTable();
+
 private:
     mutable std::mutex mutex;
-    std::vector<const ColumnsInfo *> blocks;
+    /// One entry per stored block (data-proportional): use the throwing memory tracker so a huge build
+    /// fails the query at the limit instead of letting the process get OOM-killed.
+    VectorWithMemoryTracking<const StoredBlock *> blocks;
+
+    /// Built by `resolveEmitColumns`; indexed by saved-block position, nullptr for not-yet-requested ones.
+    std::vector<std::unique_ptr<EmitColumn>> emit_columns;
+    /// `blocks_generation` is bumped under `mutex` whenever the blocks change (add/clearEntry/invalidateEmitTable).
+    /// `emit_columns` is valid for `emit_generation`; when it differs from `blocks_generation` the table is
+    /// dropped and rebuilt. Both are guarded by `mutex`. `emit_generation` starts at SIZE_MAX (never built).
+    size_t blocks_generation = 0;
+    size_t emit_generation = std::numeric_limits<size_t>::max();
 };
 
 using StoredColumnsIndexPtr = std::shared_ptr<StoredColumnsIndex>;
@@ -431,7 +466,7 @@ struct SortedLookupVectorBase
     static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
 
     // This will be synchronized by the rwlock mutex in Join.h
-    virtual void insert(const IColumn &, const ColumnsInfo *, size_t) = 0;
+    virtual void insert(const IColumn &, const StoredBlock *, size_t) = 0;
 
     // This needs to be synchronized internally
     virtual RowRef * findAsof(const IColumn &, size_t) = 0;

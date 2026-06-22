@@ -841,7 +841,7 @@ private:
     size_t fillColumns(const Map & map, MutableColumns & columns)
     {
         size_t rows_added = 0;
-        const ColumnsInfo * const * stored_columns = join->getJoinedData()->stored_columns_index->blocksData();
+        const StoredBlock * const * stored_columns = join->getJoinedData()->stored_columns_index->blocksData();
 
         if (!position)
             position = decltype(position)(
@@ -902,31 +902,31 @@ private:
 
     template <typename Map>
     static void fillOne(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const std::optional<size_t> & key_pos, size_t & rows_added, const ColumnsInfo * const * stored_columns)
+                        const std::optional<size_t> & key_pos, size_t & rows_added, const StoredBlock * const * stored_columns)
     {
         const UInt64 ref_word = anyRefWord(it->getMapped());
-        const ColumnsInfo * columns_info = stored_columns[refWordBlockNo(ref_word)];
+        const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
         for (size_t j = 0; j < columns.size(); ++j)
             if (j == key_pos)
                 columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
             else
-                columns[j]->insertFrom(*columns_info->columns[column_indices[j]], refWordRowNo(ref_word));
+                columns[j]->insertFrom(*block->columns[column_indices[j]], refWordRowNo(ref_word));
         ++rows_added;
     }
 
     template <typename Map>
     static void fillAll(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const std::optional<size_t> & key_pos, size_t & rows_added, const ColumnsInfo * const * stored_columns)
+                        const std::optional<size_t> & key_pos, size_t & rows_added, const StoredBlock * const * stored_columns)
     {
         for (auto ref_it = it->getMapped().begin(); ref_it.ok(); ++ref_it)
         {
             const UInt64 ref_word = *ref_it;
-            const ColumnsInfo * columns_info = stored_columns[refWordBlockNo(ref_word)];
+            const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
             for (size_t j = 0; j < columns.size(); ++j)
                 if (j == key_pos)
                     columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                 else
-                    columns[j]->insertFrom(*columns_info->columns[column_indices[j]], refWordRowNo(ref_word));
+                    columns[j]->insertFrom(*block->columns[column_indices[j]], refWordRowNo(ref_word));
             ++rows_added;
         }
     }

@@ -14,8 +14,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
@@ -23,13 +23,14 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
-#include <Core/Field.h>
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/RowRefs.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 
@@ -564,7 +565,13 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
 /// Fills column values from encoded join row refs
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <bool row_refs_are_ranges, typename ColumnType>
-static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const ColumnsInfo * const * stored_columns)
+static void fillColumnFromRowRefs(
+    ColumnType * col,
+    const DataTypePtr & type,
+    const UInt64 * row_refs_begin,
+    const UInt64 * row_refs_end,
+    const IColumn * const * block_columns,
+    const ColumnReplicated * const * block_replicated)
 {
     for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
     {
@@ -590,9 +597,9 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
                     rows = batch->total_rows;
                 }
 
-                const ColumnsInfo * columns_info = stored_columns[refWordBlockNo(start_word)];
+                const UInt32 block_no = refWordBlockNo(start_word);
                 const size_t start_row = refWordRowNo(start_word);
-                if (const auto * source_replicated = columns_info->replicated_columns[source_column_index_in_block])
+                if (const auto * source_replicated = block_replicated[block_no])
                 {
                     const auto & source_nested_column = source_replicated->getNestedColumn();
                     const auto & source_indexes = source_replicated->getIndexes();
@@ -601,7 +608,8 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
                 }
                 else
                 {
-                    col->insertRangeFrom(*columns_info->columns[source_column_index_in_block], start_row, rows);
+                    chassert(block_columns[block_no] != nullptr);
+                    col->insertRangeFrom(*block_columns[block_no], start_row, rows);
                 }
             }
             else
@@ -612,7 +620,8 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
                 /// any key whose duplicates were inserted consecutively) stores a key's rows
                 /// contiguously, so its refs form one long run; a scattered build degrades to the
                 /// per-row path (runs of length one) for the cost of one extra comparison per ref.
-                const ColumnsInfo * run_columns = nullptr;
+                const IColumn * run_column = nullptr;
+                const ColumnReplicated * run_replicated = nullptr;
                 UInt32 run_block_no = 0;
                 size_t run_start_row = 0;
                 size_t run_length = 0;
@@ -621,17 +630,17 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
                 {
                     if (!run_length)
                         return;
-                    if (const auto * source_replicated = run_columns->replicated_columns[source_column_index_in_block])
+                    if (run_replicated)
                     {
-                        const auto & source_nested_column = source_replicated->getNestedColumn();
-                        const auto & source_indexes = source_replicated->getIndexes();
+                        const auto & source_nested_column = run_replicated->getNestedColumn();
+                        const auto & source_indexes = run_replicated->getIndexes();
                         for (size_t i = run_start_row; i != run_start_row + run_length; ++i)
                             col->insertFrom(*source_nested_column, source_indexes.getIndexAt(i));
                     }
                     else if (run_length == 1)
-                        col->insertFrom(*run_columns->columns[source_column_index_in_block], run_start_row);
+                        col->insertFrom(*run_column, run_start_row);
                     else
-                        col->insertRangeFrom(*run_columns->columns[source_column_index_in_block], run_start_row, run_length);
+                        col->insertRangeFrom(*run_column, run_start_row, run_length);
                     run_length = 0;
                 };
 
@@ -647,7 +656,9 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
                     else
                     {
                         flush_run();
-                        run_columns = stored_columns[block_no];
+                        chassert(block_columns[block_no] != nullptr);
+                        run_column = block_columns[block_no];
+                        run_replicated = block_replicated[block_no];
                         run_block_no = block_no;
                         run_start_row = row_num;
                         run_length = 1;
@@ -662,23 +673,35 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
 }
 
 /// Fills column values from encoded join row refs
-void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges, const ColumnsInfo * const * stored_columns)
+void IColumn::fillFromRowRefs(
+    const DataTypePtr & type,
+    const UInt64 * row_refs_begin,
+    const UInt64 * row_refs_end,
+    bool row_refs_are_ranges,
+    const IColumn * const * block_columns,
+    const ColumnReplicated * const * block_replicated)
 {
     if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end, stored_columns);
+        fillColumnFromRowRefs<true>(this, type, row_refs_begin, row_refs_end, block_columns, block_replicated);
     else
-        fillColumnFromRowRefs<false>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end, stored_columns);
+        fillColumnFromRowRefs<false>(this, type, row_refs_begin, row_refs_end, block_columns, block_replicated);
 }
 
 /// Fills column values from encoded join row refs
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges, const ColumnsInfo * const * stored_columns)
+void IColumnHelper<Derived, Parent>::fillFromRowRefs(
+    const DataTypePtr & type,
+    const UInt64 * row_refs_begin,
+    const UInt64 * row_refs_end,
+    bool row_refs_are_ranges,
+    const IColumn * const * block_columns,
+    const ColumnReplicated * const * block_replicated)
 {
     auto & self = static_cast<Derived &>(*this);
     if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end, stored_columns);
+        fillColumnFromRowRefs<true>(&self, type, row_refs_begin, row_refs_end, block_columns, block_replicated);
     else
-        fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end, stored_columns);
+        fillColumnFromRowRefs<false>(&self, type, row_refs_begin, row_refs_end, block_columns, block_replicated);
 }
 
 /// Fills column values from list of blocks and row numbers

@@ -389,15 +389,9 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
-    struct ScatteredColumns
-    {
-        ColumnsInfo columns_info;
-        ScatteredBlock::Selector selector;
-        /// Index of this block in RightTableData::stored_columns_index; the high half of BuildRef.
-        UInt32 block_no = 0;
-
-        size_t allocatedBytes() const;
-    };
+    /// The stored right-side block. Defined in ScatteredBlock.h (columns + replicated handles + selector
+    /// + block_no), where the emit table that resolves it to direct column pointers also lives.
+    using ScatteredColumns = StoredBlock;
 
     struct NullMapHolder
     {
@@ -433,7 +427,7 @@ public:
         ScatteredColumnsList columns; /// Columns of "right" table.
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
-        /// Resolves BuildRef::block_no to the stored block's ColumnsInfo.
+        /// Resolves BuildRef::block_no to the stored block.
         /// Shared between all slots of a ConcurrentHashJoin so that block numbers stay
         /// globally unique: cells built by any slot end up in the shared two-level map.
         StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();

@@ -50,9 +50,16 @@ struct LazyOutput
     size_t row_count = 0;   /// Total number of rows in all refs and ref lists
 
     /// Resolves BuildRef::block_no at emit time; points into the join's StoredColumnsIndex,
-    /// which is immutable once the build phase is finished.
-    const ColumnsInfo * const * stored_columns = nullptr;
+    /// which is immutable once the build phase is finished. Used by the cold paths
+    /// (joinGet / ColumnsWithRowNumbers / ASOF).
+    const StoredBlock * const * stored_columns = nullptr;
     bool row_refs_are_pointers = false;
+
+    /// Per output column (parallel to `right_indexes`): the StoredColumnsIndex emit table base pointers,
+    /// i.e. the resolved source `const IColumn *` per block and its `ColumnReplicated *` counterpart.
+    /// Filled in the AddedColumns ctor for the hot `fillFromRowRefs` path; empty for joinGet / ASOF.
+    std::vector<const IColumn * const *> emit_block_columns;
+    std::vector<const ColumnReplicated * const *> emit_block_replicated;
 
     std::vector<size_t> right_indexes;
     NamesAndTypes type_name;
@@ -193,6 +200,22 @@ public:
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
+
+        /// Resolve the StoredColumnsIndex emit table for the hot `fillFromRowRefs` path: cache, per output
+        /// column, the per-block base pointers it hands to `fillFromRowRefs`. Only normal joins reach it
+        /// (joinGet and ASOF use the cold per-block paths). `resolveEmitColumns` builds exactly the
+        /// requested positions (this query's `right_indexes`) under the index mutex, so StorageJoin queries
+        /// selecting different right-column subsets each get their columns built rather than reusing a
+        /// table scoped to some other query's columns.
+        if constexpr (lazy)
+        {
+            if (!is_join_get && !is_asof_join)
+                join.getJoinedData()->stored_columns_index->resolveEmitColumns(
+                    saved_block_sample.columns(),
+                    lazy_output.right_indexes,
+                    lazy_output.emit_block_columns,
+                    lazy_output.emit_block_replicated);
+        }
     }
 
     size_t size() const { return columns.size(); }
@@ -272,7 +295,7 @@ public:
 private:
 
     /// Materializes one right-table row into the output columns (non-lazy mode and joinGet).
-    void appendFromBlockImpl(const ColumnsInfo * columns_info, size_t row_num);
+    void appendFromBlockImpl(const StoredBlock * block, size_t row_num);
 
     void checkColumns(const Columns & to_check)
     {
@@ -325,6 +348,6 @@ private:
 };
 
 std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index);
-std::pair<const IColumn *, size_t> getBlockColumnAndRow(const ColumnsInfo * columns_info, size_t row_num, size_t column_index);
+std::pair<const IColumn *, size_t> getBlockColumnAndRow(const StoredBlock * block, size_t row_num, size_t column_index);
 
 }

@@ -51,7 +51,7 @@ struct Inserter
         HashJoin & join,
         HashMap & map,
         KeyGetter & key_getter,
-        const ColumnsInfo * stored_columns_info,
+        const StoredBlock * stored_block,
         size_t i,
         Arena & pool,
         const IColumn & asof_column)
@@ -62,7 +62,7 @@ struct Inserter
         TypeIndex asof_type = *join.getAsofType();
         if (emplace_result.isInserted())
             time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
-        (*time_series_map)->insert(asof_column, stored_columns_info, i);
+        (*time_series_map)->insert(asof_column, stored_block, i);
         return emplace_result.isInserted();
     }
 };
@@ -78,7 +78,7 @@ public:
         MapsTemplate & maps,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        const ColumnsInfo * stored_columns_info,
+        const StoredBlock * stored_block,
         UInt32 stored_block_no,
         const ScatteredBlock::Selector & selector,
         ConstNullMapPtr null_map,
@@ -113,7 +113,7 @@ private:
         HashMap & map,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        const ColumnsInfo * stored_columns_info,
+        const StoredBlock * stored_block,
         UInt32 stored_block_no,
         const Selector & selector,
         ConstNullMapPtr null_map,
