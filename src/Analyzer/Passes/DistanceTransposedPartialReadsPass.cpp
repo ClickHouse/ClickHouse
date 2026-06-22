@@ -156,9 +156,11 @@ public:
             new_args.push_back(last_size_constant);
         }
 
-        /// If the precision node was nullable, the result needs to be nullable too. As this pass removes precision_node, we force
-        /// the nullability on the last size constant (if former was the case) to preserve the nullability of the result
-        if (precision_node->getResultType()->isNullable() || precision_node->getResultType()->isLowCardinalityNullable())
+        /// If the precision node (or the optional dims node) was nullable, the result needs to be nullable too. As this pass removes
+        /// those nodes, we force the nullability onto the last size constant to preserve the nullability of the result.
+        auto is_nullable = [](const ConstantNode * n)
+        { return n->getResultType()->isNullable() || n->getResultType()->isLowCardinalityNullable(); };
+        if (is_nullable(precision_node) || (dims_node && is_nullable(dims_node)))
             last_size_constant->convertToNullable();
 
         /// Cast reference vector to match QBit type. This is the only information about the type of the QBit after this pass is applied

@@ -31,6 +31,13 @@ WITH arrayMap(i -> toFloat32(i), range(16)) AS ref SELECT id, round(L2DistanceTr
 SELECT 'Reduced precision on first 8 dims';
 WITH [toFloat32(0), 1, 2, 3, 4, 5, 6, 7] AS ref SELECT id, round(L2DistanceTransposed(vec, ref, 8, 8), 4) FROM qbit_strided ORDER BY id;
 
+-- A nullable precision or a nullable dims argument must propagate to a Nullable result, even though the
+-- DistanceTransposedPartialReadsPass rewrites the call and removes those arguments (regression: it used to throw a logical error).
+SELECT 'Nullable precision / dims propagate to a Nullable result';
+WITH [toFloat32(0), 1, 2, 3, 4, 5, 6, 7] AS ref SELECT DISTINCT toTypeName(L2DistanceTransposed(vec, ref, toNullable(32), 8)) FROM qbit_strided;
+WITH [toFloat32(0), 1, 2, 3, 4, 5, 6, 7] AS ref SELECT DISTINCT toTypeName(L2DistanceTransposed(vec, ref, 32, toNullable(8))) FROM qbit_strided;
+WITH [toFloat32(0), 1, 2, 3, 4, 5, 6, 7] AS ref SELECT id, round(L2DistanceTransposed(vec, ref, 32, toNullable(8)), 4) FROM qbit_strided ORDER BY id;
+
 SELECT 'Validation errors';
 -- dims must be a multiple of the stride (8)
 WITH [toFloat32(0), 1, 2, 3] AS ref SELECT L2DistanceTransposed(vec, ref, 32, 4) FROM qbit_strided; -- { serverError BAD_ARGUMENTS }
