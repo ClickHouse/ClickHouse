@@ -14,6 +14,7 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/StringHashMap.h>
 #include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -226,7 +227,9 @@ struct TokenPolicy
 
 using ClassCountMap = HashMap<UInt32, UInt64, HashCRC32<UInt32>>;
 
-using NGramIndexMap = HashMap<std::string_view, UInt32, StringViewHash>;
+/// Maps an n-gram to its dense index. StringHashMap packs short keys (the common byte/codepoint n-grams) into
+/// integer sub-tables, which is denser and faster to probe than a string_view-keyed HashMap.
+using NGramIndexMap = StringHashMap<UInt32>;
 using ClassIndexMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 using LogProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
@@ -398,7 +401,7 @@ private:
         auto accumulate = [&](std::string_view ngram)
         {
             ++num_ngrams;
-            const auto it = model.ngram_to_index.find(ngram);
+            auto it = model.ngram_to_index.find(ngram);
             if (!it)
                 return;
             const UInt32 index = it->getMapped();
