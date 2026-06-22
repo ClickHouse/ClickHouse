@@ -639,4 +639,24 @@ def test_oid_columns_named_argument(started_cluster):
         == "100\n"
     )
 
+    # A named `oid_columns` must also take effect (not merely be accepted) in the `host:port`
+    # form when `options` is omitted. The named argument is stripped to a positional value, so it
+    # used to land in the `options` slot and be silently ignored. With `oid_columns='data'` the
+    # `data` column is treated as an oid, so filtering by a non-oid string must raise.
+    long_form = (
+        "mongodb('mongo1:27017', 'test_oid_columns_named_argument', 'oid_table', 'root', "
+        f"'{mongo_pass}', structure='key UInt64, data String', oid_columns='data')"
+    )
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM {long_form} WHERE data = 'not-oid'")
+
+    # Sanity check: without `oid_columns`, `data` is a plain string column and the same filter
+    # just matches no rows instead of raising. This confirms the failure above is caused by
+    # `oid_columns` taking effect.
+    plain_form = (
+        "mongodb('mongo1:27017', 'test_oid_columns_named_argument', 'oid_table', 'root', "
+        f"'{mongo_pass}', structure='key UInt64, data String')"
+    )
+    assert node.query(f"SELECT count() FROM {plain_form} WHERE data = 'not-oid'") == "0\n"
+
     oid_table.drop()

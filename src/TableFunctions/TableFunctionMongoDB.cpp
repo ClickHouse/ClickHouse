@@ -10,6 +10,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -96,9 +97,18 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
                         "mongodb('host:port', database, collection, user, password, structure[, options[, oid_columns]]) or mongodb(uri, collection, structure[, oid_columns]).",
                         getName());
 
+    /// `getConfiguration` reads its arguments positionally, with `options` preceding `oid_columns`
+    /// in the `host:port` form. Named arguments may be given in any order and `options` may be
+    /// omitted, so collect `options` and `oid_columns` separately and place them into their
+    /// canonical positions afterwards instead of pushing them in the order encountered. Otherwise
+    /// a named `oid_columns` without `options` would be misread as `options` and silently ignored.
     ASTs main_arguments;
     main_arguments.reserve(args.size() - 1);
-    const size_t structure_position = args.size() <= 4 ? 2 : 5;
+    const bool is_uri_form = args.size() <= 4;
+    const size_t structure_position = is_uri_form ? 2 : 5;
+    ASTPtr options_argument;
+    ASTPtr oid_columns_argument;
+    size_t positional_optional_count = 0;
     for (size_t i = 0; i < args.size(); ++i)
     {
         if (const auto * ast_func = typeid_cast<const ASTFunction *>(args[i].get()))
@@ -106,14 +116,35 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
             const auto & [arg_name, arg_value] = getKeyValueMongoDBArgument(ast_func);
             if (arg_name == "structure")
                 structure = checkAndGetLiteralArgument<String>(arg_value, arg_name);
-            else if (arg_name == "options" || arg_name == "oid_columns")
-                main_arguments.push_back(arg_value);
+            else if (arg_name == "options")
+                options_argument = arg_value;
+            else if (arg_name == "oid_columns")
+                oid_columns_argument = arg_value;
         }
         else if (i == structure_position)
             structure = checkAndGetLiteralArgument<String>(args[i], "structure");
-        else
+        else if (i < structure_position)
             main_arguments.push_back(args[i]);
+        else if (is_uri_form)
+            oid_columns_argument = args[i];
+        else if (positional_optional_count++ == 0)
+            options_argument = args[i];
+        else
+            oid_columns_argument = args[i];
     }
+
+    /// `oid_columns` occupies the slot after `options` in the `host:port` form, so insert an empty
+    /// `options` placeholder when `oid_columns` is given without `options`. An empty `options`
+    /// string is equivalent to omitting it.
+    if (!is_uri_form)
+    {
+        if (oid_columns_argument && !options_argument)
+            options_argument = make_intrusive<ASTLiteral>(Field(String()));
+        if (options_argument)
+            main_arguments.push_back(options_argument);
+    }
+    if (oid_columns_argument)
+        main_arguments.push_back(oid_columns_argument);
 
     configuration = std::make_shared<MongoDBConfiguration>(StorageMongoDB::getConfiguration(main_arguments, context));
 }
