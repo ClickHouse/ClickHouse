@@ -66,11 +66,11 @@ ORDER BY id, category
 LIMIT 1 BY id, category
 LIMIT 2;
 
--- Test 8: Negative LIMIT BY
+-- Test 8: Negative LIMIT BY should throw an exception
 SELECT id, category, value
 FROM test_limit_by_all_old_planner
 ORDER BY id, category, value
-LIMIT -1 BY id;
+LIMIT -1 BY id; -- { serverError NOT_IMPLEMENTED }
 
 -- Test 9: LIMIT BY with OFFSET
 SELECT id, category
