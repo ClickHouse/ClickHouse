@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
 
+#include <IO/Expect404ResponseScope.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -204,7 +205,7 @@ bool DataPartStorageOnDiskPacked::existsFile(const std::string & file_name) cons
     /// must consult the skip-indices overlay before falling through to the outer reader.
     if (looksLikePackedSkipIndexFile(file_name))
     {
-        if (const auto * skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
+        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
             return true;
     }
 
@@ -223,7 +224,7 @@ size_t DataPartStorageOnDiskPacked::getFileSize(const String & file_name) const
     /// See existsFile() for why we consult the skip-indices overlay first.
     if (looksLikePackedSkipIndexFile(file_name))
     {
-        if (const auto * skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
+        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(file_name))
             return skip_reader->getFileSize(file_name);
     }
 
@@ -307,15 +308,14 @@ void DataPartStorageOnDiskPacked::prepareRead(
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    /// See existsFile() for why we consult the skip-indices overlay first. We can't just call
-    /// skip_reader->readFile here — the skip-indices reader's data_file_name points at the
-    /// storage-relative path ".../skp_idx.packed" which doesn't exist as a standalone file in
-    /// packed-part storage (skp_idx.packed is itself a virtual file inside data.packed). So
-    /// compose: get the virtual file's offset+size from the inner overlay, then sub-view the
-    /// outer reader's bytes for skp_idx.packed.
+    /// See existsFile() for why we consult the skip-indices overlay first. The overlay's offsets
+    /// are relative to skp_idx.packed, which is itself a virtual file inside data.packed rather
+    /// than a standalone file on disk. So compose: get the virtual file's offset+size from the
+    /// inner overlay, then sub-view the outer reader's bytes for skp_idx.packed (read through the
+    /// outer reader at the part's current location).
     if (looksLikePackedSkipIndexFile(name))
     {
-        if (const auto * skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(name))
+        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(name))
         {
             if (!reader)
                 throw Exception(ErrorCodes::NOT_INITIALIZED,
@@ -326,7 +326,8 @@ void DataPartStorageOnDiskPacked::prepareRead(
                 [this, file_name = name, inner](const StoredObject &, const ReadSettings & s, bool, bool)
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
-                    auto outer_buf = reader->readFile(String(SKIP_INDICES_PACKED_FILENAME), s, std::nullopt);
+                    auto outer_buf = reader->readFile(
+                        volume->getDisk(), getRelativeDataPath(), String(SKIP_INDICES_PACKED_FILENAME), s, std::nullopt);
                     return std::make_unique<ReadBufferFromFileView>(std::move(outer_buf), file_name, inner.offset, inner.offset + inner.size);
                 };
             pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
@@ -349,7 +350,7 @@ void DataPartStorageOnDiskPacked::prepareRead(
         [this, file_name = name, read_hint](const StoredObject &, const ReadSettings & read_settings, bool, bool)
             -> std::unique_ptr<ReadBufferFromFileBase>
         {
-            return reader->readFile(file_name, read_settings, read_hint);
+            return reader->readFile(volume->getDisk(), getRelativeDataPath(), file_name, read_settings, read_hint);
         },
         StoredObjects{StoredObject(name, "", reader->getFileSize(name))},
         settings);
@@ -363,13 +364,13 @@ void DataPartStorageOnDiskPacked::rename(
     bool fsync_part_dir)
 {
     DataPartStorageOnDiskBase::rename(std::move(new_root_path), std::move(new_part_dir), log, remove_new_dir_if_exists, fsync_part_dir);
-    resetReader(getReadSettings());
+    /// The reader's index is path-independent and reads resolve the current path via readFile, so
+    /// the relocation needs no reader refresh.
 }
 
 void DataPartStorageOnDiskPacked::changeRootPath(const std::string & from_root, const std::string & to_root)
 {
     DataPartStorageOnDiskBase::changeRootPath(from_root, to_root);
-    resetReader(getReadSettings());
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskPacked::writeFile(
@@ -551,37 +552,25 @@ bool DataPartStorageOnDiskPacked::isWrittenSeparately(const String & file_name) 
 
 void DataPartStorageOnDiskPacked::resetReader(const ReadSettings & read_settings)
 {
+    /// The reader caches only the archive index, which is path-independent: a rename or move does
+    /// not change the offsets inside data.packed, and reads resolve the archive's current location
+    /// through readFile. So there is nothing to refresh on relocation, and the skip-indices
+    /// overlay (also path-independent) does not need dropping either. Only load the reader once,
+    /// when it has not been initialized yet.
     if (reader)
-    {
-        /// Just update data path for the reader.
-        auto index = reader->getIndex();
-        reader.emplace(volume->getDisk(), getRelativeDataPath(), index);
-    }
-    else
-    {
-        /// Initialize reader from index of data file.
-        auto data_path = getRelativeDataPath();
-        if (volume->getDisk()->existsFile(data_path))
-            reader.emplace(volume->getDisk(), data_path, read_settings);
-    }
+        return;
 
-    /// The skip-indices overlay (if any) is now stale relative to the new path/reader. Drop it
-    /// so the next access reprobes via the override below, which routes through the (just
-    /// refreshed) outer reader. Doing this eagerly avoids subtle bugs where a seeded overlay
-    /// from before resetReader keeps serving stale offsets.
-    {
-        std::lock_guard lock(skip_indices_packed_mutex);
-        skip_indices_packed_probed = false;
-        skip_indices_packed_reader.reset();
-    }
+    auto data_path = getRelativeDataPath();
+    if (volume->getDisk()->existsFile(data_path))
+        reader.emplace(volume->getDisk(), data_path, read_settings);
 }
 
-const PackedFilesReader * DataPartStorageOnDiskPacked::getSkipIndicesPackedReader() const
+std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipIndicesPackedReader() const
 {
     {
         std::lock_guard lock(skip_indices_packed_mutex);
         if (skip_indices_packed_probed)
-            return skip_indices_packed_reader.get();
+            return skip_indices_packed_reader;
     }
 
     auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskPacked::getSkipIndicesPackedReader");
@@ -590,9 +579,31 @@ const PackedFilesReader * DataPartStorageOnDiskPacked::getSkipIndicesPackedReade
     /// disk->existsFile probe would always miss it. Route through the outer reader.
     if (reader && reader->exists(String(SKIP_INDICES_PACKED_FILENAME)))
     {
-        auto inner_archive_buf = reader->readFile(String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
-        auto inner_index = PackedFilesReader::readIndex(*inner_archive_buf);
-        seedSkipIndicesPackedReader(inner_index);
+        /// On shared storage another replica may delete or relocate data.packed between the check
+        /// above and the read below, so the read fails with a "no such key" error. Expect404ResponseScope
+        /// keeps that 404 from being logged or counted as a DiskS3NoSuchKeyError (which fails stress
+        /// tests); catching alone is not enough. If data.packed is still present it is a genuine read
+        /// error -> rethrow. Otherwise it was removed or moved: do NOT cache a miss (leave probed
+        /// unset), so the next access re-probes -- after a relocation the outer reader reads
+        /// data.packed at its current path and the overlay must not be lost.
+        ///
+        /// Resolve the path once and reuse it for both the read and the existence recheck: a
+        /// concurrent rename can change getRelativeDataPath() in between, and rechecking a different
+        /// path could find the relocated archive and spuriously rethrow the old-path 404.
+        Expect404ResponseScope scope;
+        const String data_path = getRelativeDataPath();
+        try
+        {
+            auto inner_archive_buf = reader->readFile(
+                volume->getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
+            auto inner_index = PackedFilesReader::readIndex(*inner_archive_buf);
+            seedSkipIndicesPackedReader(inner_index);
+        }
+        catch (const Exception &)
+        {
+            if (volume->getDisk()->existsFile(data_path))
+                throw;
+        }
     }
     else
     {
@@ -601,7 +612,7 @@ const PackedFilesReader * DataPartStorageOnDiskPacked::getSkipIndicesPackedReade
     }
 
     std::lock_guard lock(skip_indices_packed_mutex);
-    return skip_indices_packed_reader.get();
+    return skip_indices_packed_reader;
 }
 
 void DataPartStorageOnDiskPacked::resetWriterFromTransaction()
@@ -634,7 +645,7 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
             if (writer->isWritten(name))
                 continue;
 
-            auto in = reader->readFile(name, {}, {});
+            auto in = reader->readFile(volume->getDisk(), getRelativeDataPath(), name, {}, {});
             auto out = writer->writeFile(name);
 
             copyData(*in, *out);
@@ -675,7 +686,7 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
     };
 
     auto new_index = writer->finalize(std::move(out_buffer_getter), preferred_file_order);
-    reader.emplace(volume->getDisk(), getRelativeDataPath(), new_index);
+    reader.emplace(new_index);
     writer.reset();
 }
 
@@ -814,7 +825,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             }
             else
             {
-                auto read_buf = reader->readFile(file, read_settings, {});
+                auto read_buf = reader->readFile(volume->getDisk(), getRelativeDataPath(), file, read_settings, {});
                 auto write_buf = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
                 copyData(*read_buf, *write_buf);
                 write_buf->finalize();
@@ -915,7 +926,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
             }
             else
             {
-                auto read_buf = reader->readFile(file, read_settings, {});
+                auto read_buf = reader->readFile(volume->getDisk(), getRelativeDataPath(), file, read_settings, {});
                 auto write_buf = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
                 copyData(*read_buf, *write_buf);
                 write_buf->finalize();
@@ -992,7 +1003,7 @@ void DataPartStorageOnDiskPacked::deserializeAuxiliaryInfo(ReadBuffer & in)
 
     in >> "part header: \n";
     auto index = PackedFilesReader::readIndex(in);
-    reader.emplace(volume->getDisk(), getRelativeDataPath(), index);
+    reader.emplace(index);
     in >> "\n";
 }
 #endif

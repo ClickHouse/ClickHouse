@@ -135,7 +135,7 @@ private:
     /// Override the base-class disk probe: on packed-part storage skp_idx.packed is a virtual
     /// file inside data.packed and can't be opened via disk->readFile against its part-relative
     /// path. We route the inner-archive header read through the outer reader instead.
-    const PackedFilesReader * getSkipIndicesPackedReader() const override;
+    std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const override;
 
     void resetReader(const ReadSettings & read_settings);
     void resetWriterFromTransaction();
