@@ -11,6 +11,8 @@
 #include <base/EnumReflection.h>
 #include <Core/UUID.h>
 
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -348,6 +350,11 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
     auto arr = r.getArray("targets");
     if (!arr)
         return;
+    /// The SQL parser builds `targets` through setters (`setTableID`, `setInnerEngine`, `setInnerColumns`, ...) that
+    /// merge by `ViewTarget::Kind`, so it can never produce two targets of the same kind. JSON input could append
+    /// duplicates, which would make formatting (`tryGetTarget` sees only the first match) disagree with execution and
+    /// access checks (which iterate every entry in `targets`). Reject duplicates to match the parser-produced shape.
+    std::unordered_set<ViewTarget::Kind> seen_kinds;
     for (unsigned int i = 0; i < arr->size(); ++i)
     {
         /// Each view target is a non-AST struct; count it against `max_ast_elements`.
@@ -361,6 +368,8 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
         if (!kind_opt)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization", kind_str, i);
         target.kind = *kind_opt;
+        if (!seen_kinds.insert(target.kind).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization; each kind may appear at most once", kind_str, i);
         if (target_obj->has("table_name"))
         {
             /// Restore the `StorageID` parts separately (see `writeJSON`); the database may be empty
