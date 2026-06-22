@@ -3,7 +3,6 @@
 import uuid
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
-import time
 import pytest
 from kazoo.retry import RetryFailedError
 
