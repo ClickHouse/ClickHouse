@@ -1,0 +1,18 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_disk>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+
+                <s3_max_get_rps>500</s3_max_get_rps>
+                <s3_max_put_rps>100</s3_max_put_rps>
+                <max_connections>10000</max_connections>
+                <request_timeout_ms>3600000</request_timeout_ms>
+                <metadata_keep_free_space_bytes>104857600</metadata_keep_free_space_bytes>
+            </s3_disk>
+        </disks>
+    </storage_configuration>
+</clickhouse>

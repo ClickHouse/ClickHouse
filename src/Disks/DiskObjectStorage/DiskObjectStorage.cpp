@@ -1,3 +1,5 @@
+#include <unordered_set>
+
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/IOSchedulingSettings.h>
 #include <Common/CurrentThread.h>
@@ -94,6 +96,7 @@ DiskObjectStorage::DiskObjectStorage(
     ClusterConfigurationPtr cluster_,
     MetadataStoragePtr metadata_storage_,
     ObjectStorageRouterPtr object_storages_,
+    ConfigurationFields configuration_fields_,
     DiskObjectStorageConstPtr wrapped_disk_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
@@ -104,6 +107,7 @@ DiskObjectStorage::DiskObjectStorage(
     , cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
+    , configuration_fields(std::move(configuration_fields_))
     , blob_killer(std::make_shared<BlobKillerThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages, wrapped_disk ? wrapped_disk->blob_killer : nullptr))
     , blob_copier(std::make_shared<BlobCopierThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages))
     , copy_object_pool(std::make_shared<ThreadPool>(
@@ -930,6 +934,12 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
 {
     IDisk::applyNewSettings(config, context, config_prefix, map);
 
+    {
+        auto new_configuration_fields = getWhitelistedDiskConfigurationFields(config, config_prefix);
+        std::lock_guard lock(configuration_fields_mutex);
+        configuration_fields = std::move(new_configuration_fields);
+    }
+
     cluster->applyNewSettings(config, config_prefix);
 
     metadata_storage->applyNewSettings(config, config_prefix, context);
@@ -965,6 +975,38 @@ std::shared_ptr<const S3::Client> DiskObjectStorage::tryGetS3StorageClient() con
     return object_storages->takePointingTo(cluster->getLocalLocation())->tryGetS3StorageClient();
 }
 #endif
+
+ConfigurationFields DiskObjectStorage::getWhitelistedDiskConfigurationFields(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix) {
+    static const std::unordered_set<String> whitelist =
+    {
+#if USE_AWS_S3
+        "s3_max_get_rps",
+        "s3_max_get_burst",
+        "s3_max_put_rps",
+        "s3_max_put_burst",
+        "s3_max_redirects",
+        "s3_max_single_read_retries",
+        "s3_max_single_download_retries",
+#endif
+        "max_connections",
+        "request_timeout_ms",
+        "connect_timeout_ms",
+        "metadata_keep_free_space_bytes",
+    };
+
+    ConfigurationFields result;
+
+    for (const auto & key : whitelist)
+    {
+        const auto full_key = config_prefix + "." + key;
+        if (config.has(full_key))
+            result.emplace(key, config.getString(full_key));
+    }
+
+    return result;
+}
 
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {

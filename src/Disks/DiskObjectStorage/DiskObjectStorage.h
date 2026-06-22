@@ -37,6 +37,7 @@ public:
         ClusterConfigurationPtr cluster_,
         MetadataStoragePtr metadata_storage_,
         ObjectStorageRouterPtr object_storages_,
+        ConfigurationFields configuration_fields_,
         DiskObjectStorageConstPtr wrapped_disk_,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
@@ -47,6 +48,11 @@ public:
     DiskTransactionPtr createTransaction() override;
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
+
+    ConfigurationFields getConfigurationFields() const override {
+        std::lock_guard lock(configuration_fields_mutex);
+        return configuration_fields;
+    }
 
     bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
 
@@ -236,6 +242,10 @@ public:
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() const override;
 #endif
 
+    static ConfigurationFields getWhitelistedDiskConfigurationFields(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix);
+
 private:
 
     /// Create actual disk object storage transaction for operations
@@ -256,6 +266,8 @@ private:
     MetadataStoragePtr metadata_storage;
     ObjectStorageRouterPtr object_storages;
     DataSourceDescription data_source_description;
+    mutable std::mutex configuration_fields_mutex;
+    ConfigurationFields configuration_fields;
 
     BlobKillerThreadPtr blob_killer;
     BlobCopierThreadPtr blob_copier;
