@@ -5,7 +5,6 @@ import pytest
 from helpers.iceberg_utils import (
     create_iceberg_table,
     get_uuid_str,
-    default_download_directory,
 )
 
 @pytest.mark.parametrize("format_version", [1, 2])
