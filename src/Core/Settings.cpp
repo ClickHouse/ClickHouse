@@ -1708,6 +1708,24 @@ Possible values:
 Validate checksums on reading. It is enabled by default and should be always enabled in production. Please do not expect any benefits in disabling this setting. It may only be used for experiments and benchmarks. The setting is only applicable for tables of MergeTree family. Checksums are always validated for other table engines and when receiving data over the network.
 )", 0) \
     \
+    DECLARE(Bool, use_lightweight_primary_key_index_analysis, true, R"(
+Optimize primary key index analysis for `MergeTree` tables with long primary keys.
+
+When enabled, the run time of index analysis mainly depends on the complexity of the query's filter (the key columns it actually uses), not on the length of the primary key — so extending the sorting key has negligible extra overhead on index analysis for queries that filter on only a few of its columns.
+
+Possible values:
+
+- 0 — Disabled. All primary key columns are processed during index analysis.
+- 1 — Enabled.
+)", 0) \
+    DECLARE_WITH_ALIAS(Bool, use_partition_pruning, true, R"(
+Use partition key to prune partitions during query execution for MergeTree tables.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, use_partition_key) \
     DECLARE(Bool, force_index_by_date, false, R"(
 Disables query execution if the index can't be used by date.
 
@@ -1723,14 +1741,6 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, use_partition_pruning, true, R"(
-Use partition key to prune partitions during query execution for MergeTree tables.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-)", 0, use_partition_key) \
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
 
@@ -2478,6 +2488,11 @@ DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
     Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
     Value is the maximum number of tables to optimize.
 )", 0) \
+DECLARE(UInt64, query_plan_optimize_join_order_max_searched_plans, 100000, R"(
+Maximum number of partial plans the join order optimizer may enumerate before giving up and falling back to the next algorithm in `query_plan_optimize_join_order_algorithm`.
+This bounds optimization time deterministically (independent of wall-clock) on dense join graphs such as cliques or stars, where the search space grows exponentially.
+Set to 0 to disable the limit. Has no effect on the default `query_plan_optimize_join_order_limit`, where the search always stays well below this bound.
+)", EXPERIMENTAL) \
 DECLARE(UInt64, query_plan_optimize_join_order_randomize, 0, R"(
 When non-zero, the join order optimizer uses randomly generated cardinalities and NDVs instead of real statistics.
 When set to 1, a random seed is generated, when set to a value > 1, that value is used as the seed directly.
@@ -8125,10 +8140,6 @@ Changes made with `SET` or query-level `SETTINGS` do not change extracted subcol
 To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
 )", 0) \
     \
-    /** Experimental feature for moving data between shards. */ \
-    DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
-Experimental data deduplication for SELECT queries based on part UUIDs
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 )", EXPERIMENTAL) \
@@ -8284,9 +8295,10 @@ Allow to use hive partitioning with S3Queue/AzureQueue engines
     )", EXPERIMENTAL) \
 DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
- - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
- - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
-Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
+ - `greedy` - basic greedy algorithm - works fast but might not produce the best join order
+ - `dpsize` - implements DPsize algorithm currently only for inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates
+ - `dphyp` - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
+Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
@@ -8351,6 +8363,7 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
@@ -8727,6 +8740,11 @@ bool Settings::isChanged(std::string_view name) const
 SettingsTierType Settings::getTier(std::string_view name) const
 {
     return impl->getTier(name);
+}
+
+std::string_view Settings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
 }
 
 bool Settings::tryGet(std::string_view name, Field & value) const
