@@ -472,7 +472,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     {
         result.type = ProjectionDescription::Type::Normal;
 
-        const auto virtuals = storage->getInMemoryMetadataPtr(query_context, false)->virtuals;
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+        const auto virtuals = metadata_snapshot->virtuals;
         metadata.sorting_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context);
         metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context);
         metadata.primary_key.definition_ast = nullptr;

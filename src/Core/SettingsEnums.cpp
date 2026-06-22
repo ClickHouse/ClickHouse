@@ -64,7 +64,8 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
     {{"greedy",             JoinOrderAlgorithm::GREEDY},
      {"dpsize",             JoinOrderAlgorithm::DPSIZE},
-     {"dpsub",             JoinOrderAlgorithm::DPSUB}})
+     {"dpsub",              JoinOrderAlgorithm::DPSUB},
+     {"dphyp",              JoinOrderAlgorithm::DPHYP}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
