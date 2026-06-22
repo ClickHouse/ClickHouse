@@ -173,6 +173,70 @@ inline bool tryReadLongIntegerToFloat(T & x, const char * first, const char * la
 }
 
 
+/// Correctly-rounded parse of a pure decimal integer with MORE than 38 significant digits (does not
+/// fit in unsigned __int128). Such an input goes through fast_float's big-integer path, but
+/// fast_float wastefully accumulates every digit and then recomputes the mantissa from the first 19.
+/// Instead, build the parsed_number_string_t ourselves: accumulate only the first 19 significant
+/// digits, then SWAR-skip (count) the rest, and hand the result to fast_float::from_chars_advanced,
+/// which keeps the proven Eisel-Lemire + digit_comp rounding. Returns false (fall back) for
+/// non-integers. This mirrors parse_number_string's too_many_digits semantics for an integer.
+template <typename T>
+inline bool tryReadBigIntegerToFloat(T & x, const char * first, const char * last, fast_float::from_chars_result_t<char> & result)
+{
+    const char * p = first;
+    bool negative = false;
+    if (p < last && (*p == '-' || *p == '+'))
+    {
+        negative = (*p == '-');
+        ++p;
+    }
+
+    const char * const integer_begin = p;
+    while (p < last && *p == '0') /// leading zeros are part of the integer span but not significant
+        ++p;
+
+    uint64_t mantissa = 0;
+    int significant = 0;
+    while (p < last && significant < 19 && isNumericASCII(*p))
+    {
+        mantissa = mantissa * 10 + static_cast<unsigned>(*p - '0');
+        ++p;
+        ++significant;
+    }
+
+    /// Count (do not accumulate) the remaining significant digits, 8 at a time.
+    const char * const rest_begin = p;
+    while (p + 8 <= last && is_made_of_eight_digits_fast(p))
+        p += 8;
+    while (p < last && isNumericASCII(*p))
+        ++p;
+
+    /// Pure integer only; a fraction/exponent must go through the general parser.
+    if (p < last && (*p == '.' || *p == 'e' || *p == 'E'))
+        return false;
+
+    const auto total_significant = significant + (p - rest_begin);
+    if (total_significant <= max_u128_integer_digits) /// handled by the exact unsigned __int128 path
+        return false;
+
+    fast_float::parsed_number_string_t<char> pns;
+    pns.valid = true;
+    pns.too_many_digits = true;
+    pns.negative = negative;
+    pns.mantissa = mantissa;                       /// first 19 significant digits, truncated
+    pns.exponent = total_significant - 19;         /// integer scaling, matching parse_number_string
+    pns.lastmatch = p;
+    pns.integer = fast_float::span<const char>(integer_begin, static_cast<size_t>(p - integer_begin));
+    pns.fraction = fast_float::span<const char>(p, 0);
+
+    /// Return the backend result directly, including result_out_of_range (e.g. a >38-digit
+    /// integer that overflows Float32) — falling back to fromCharsLong would just re-scan and
+    /// reach the same error more slowly.
+    result = fast_float::from_chars_advanced(pns, x);
+    return true;
+}
+
+
 /// Variant of fast_float::from_chars tuned for inputs known to have many significant digits.
 /// Built on fast_float's existing primitives (no fork of the library): parse once with the
 /// integer/fraction spans materialized (store_spans=true) and run the full algorithm, so the
@@ -201,9 +265,28 @@ fromCharsLong(const char * first, const char * last, T & value, fast_float::char
 }
 
 
+/// Length, capped just past the 38-digit boundary, of the leading run of float characters at
+/// [first, last) -- i.e. the size of the numeric token, NOT of the whole remaining buffer. The
+/// dispatch below must classify by the token: a short token like "1" sitting in a large buffer
+/// (e.g. "1.5 GiB", or any non-exact ReadBuffer) must still take the fast from_chars path. The
+/// cap is enough to tell short / <=38-digit / longer apart; the chosen parser still receives the
+/// real `last` and consumes the full token.
+inline ptrdiff_t floatTokenClassLength(const char * first, const char * last)
+{
+    const char * const scan_end = (last - first > max_u128_integer_digits + 2) ? first + (max_u128_integer_digits + 2) : last;
+    const char * p = first;
+    if (p < scan_end && (*p == '-' || *p == '+'))
+        ++p;
+    while (p + 8 <= scan_end && is_made_of_eight_digits_fast(p)) /// skip digit runs 8 at a time
+        p += 8;
+    while (p < scan_end && (isNumericASCII(*p) || *p == '.' || *p == 'e' || *p == 'E' || *p == '+' || *p == '-'))
+        ++p;
+    return p - first;
+}
+
 /// The whole length-based dispatch for parsing a float from a contiguous [first, last) range,
 /// shared by the no-copy and copy paths of readFloatTextPreciseImpl (inlined). Picks:
-///   - short input (<= max_short_float_chars)        -> fast_float::from_chars,
+///   - short token (<= max_short_float_chars)         -> fast_float::from_chars,
 ///   - long pure integer (<= 38 digits)              -> unsigned __int128 (correctly rounded, cheap),
 ///   - otherwise (long fraction / huge integer)      -> fromCharsLong (single parse).
 /// On big-endian, fast_float parsing directly to float can misbehave, so parse as double and
@@ -212,17 +295,31 @@ template <typename T>
 inline fast_float::from_chars_result_t<char>
 parseFloatFromRange(T & x, const char * first, const char * last, fast_float::chars_format fmt)
 {
-    const auto length = last - first;
+    /// Classify by the token length, but only scan when the buffer holds more than a short token's
+    /// worth of bytes (so short inputs cost nothing extra).
+    const auto length = (last - first <= max_short_float_chars) ? (last - first) : floatTokenClassLength(first, last);
 
-    if (length > max_short_float_chars && length <= max_u128_integer_digits + 1)
+    if (length > max_short_float_chars)
     {
-        const char * int_end = nullptr;
-        if (tryReadLongIntegerToFloat(x, first, last, int_end))
+        /// <= 38-digit integer: exact via unsigned __int128 (always in range, so a plain success).
+        if (length <= max_u128_integer_digits + 1)
+        {
+            const char * int_end = nullptr;
+            if (tryReadLongIntegerToFloat(x, first, last, int_end))
+            {
+                fast_float::from_chars_result_t<char> answer;
+                answer.ptr = int_end;
+                answer.ec = std::errc();
+                return answer;
+            }
+        }
+        /// Longer integer: build the parsed_number_string_t directly (lean wide scan) and use
+        /// fast_float's rounding backend; its result (incl. out-of-range) is returned as-is.
+        else
         {
             fast_float::from_chars_result_t<char> answer;
-            answer.ptr = int_end;
-            answer.ec = std::errc();
-            return answer;
+            if (tryReadBigIntegerToFloat(x, first, last, answer))
+                return answer;
         }
     }
 
