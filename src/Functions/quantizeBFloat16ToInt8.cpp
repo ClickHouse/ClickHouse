@@ -40,6 +40,8 @@ namespace
 
 /// 256-level Gaussian Lloyd-Max quantizer (for ~N(0,1) input).
 /// Reconstruction levels (sorted ascending; symmetric; index 0..255).
+// NOLINTBEGIN(modernize-use-std-numbers): these are quantizer table values that happen to lie near
+// math constants such as 1/sqrt(3) and ln(2); they are data, not approximations of those constants.
 constexpr Float32 LLOYD_MAX_LEVELS[256] = {
     -3.94331723f, -3.46399932f, -3.16034096f, -2.93314607f, -2.74992207f, -2.59575919f, -2.46251620f, -2.34523372f,
     -2.24065008f, -2.14649281f, -2.06110438f, -1.98322915f, -1.91188474f, -1.84628084f, -1.78576605f, -1.72979202f,
@@ -110,6 +112,7 @@ constexpr Float32 LLOYD_MAX_BOUNDARIES[255] = {
     1.75777904f, 1.81602345f, 1.87908279f, 1.94755695f, 2.02216677f, 2.10379860f, 2.19357144f, 2.29294190f,
     2.40387496f, 2.52913769f, 2.67284063f, 2.84153407f, 3.04674351f, 3.31217014f, 3.70365827f,
 };
+// NOLINTEND(modernize-use-std-numbers)
 
 /// Direct lookup table keyed by the raw BFloat16 bit pattern. BFloat16 has only 65536 possible
 /// values, so the whole quantizer is precomputed once: at runtime quantization is a single load
@@ -118,11 +121,11 @@ const std::array<Int8, 65536> & quantizeCodeLUT()
 {
     static const std::array<Int8, 65536> lut = []
     {
-        std::array<Int8, 65536> table;
+        std::array<Int8, 65536> table{};
         for (UInt32 bits = 0; bits <= 0xFFFFu; ++bits)
         {
             const Float32 x = static_cast<Float32>(BFloat16::fromBits(static_cast<UInt16>(bits)));
-            size_t index;
+            size_t index = 0;
             if (std::isnan(x))
                 index = 128;
             else if (x == 0.0f)
@@ -147,7 +150,7 @@ const std::array<BFloat16, 256> & dequantizeLevels()
 {
     static const std::array<BFloat16, 256> levels = []
     {
-        std::array<BFloat16, 256> table;
+        std::array<BFloat16, 256> table{};
         for (size_t i = 0; i < 256; ++i)
             table[i] = BFloat16(LLOYD_MAX_LEVELS[i]);
         return table;
