@@ -55,17 +55,35 @@ namespace Setting
 namespace
 {
 
-/// Try to read a constant string column attached to `node` and return its single value.
+/// Try to read a constant string from `node` and return its single value.
+/// Unwraps aliases and reads the value via `ColumnConst::getField`, which works
+/// even for a `ColumnConst` of logical size 0 (a "pure" constant, as produced by
+/// the analyzer) — unlike `column[0]`, which an `empty()` check has to guard.
 std::optional<String> tryReadConstString(const ActionsDAG::Node * node)
 {
-    if (!node || node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+    while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children[0];
+    if (!node || !node->column)
         return {};
-    if (!isColumnConst(*node->column) || node->column->empty())
+    const IColumn * column = node->column.get();
+    /// Unwrap `ColumnConst` to its single-row data column. This reads the value
+    /// even for a `ColumnConst` of logical size 0 (the analyzer's "pure" constant).
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(column))
+        column = &const_column->getDataColumn();
+    if (column->empty())
         return {};
-    Field field = (*node->column)[0];
+    Field field = (*column)[0];
     if (field.getType() != Field::Types::String)
         return {};
     return field.safeGet<String>();
+}
+
+/// Unwrap ALIAS nodes to reach the underlying node.
+const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
+{
+    while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children[0];
+    return node;
 }
 
 /// Escape SQL LIKE wildcards (`%`, `_`) and the escape char (`\`) so a literal
@@ -121,11 +139,17 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
 
         const auto & fn_name = conjunct->function_base->getName();
 
-        const auto * lhs = conjunct->children[0];
-        const auto * rhs = conjunct->children[1];
+        const auto * lhs = skipAliases(conjunct->children[0]);
+        const auto * rhs = skipAliases(conjunct->children[1]);
 
-        const bool lhs_is_name = (lhs->type == ActionsDAG::ActionType::INPUT && lhs->result_name == "name");
-        const bool rhs_is_name = (rhs->type == ActionsDAG::ActionType::INPUT && rhs->result_name == "name");
+        /// The `name` column reads as an INPUT named "name" once aliases are
+        /// unwrapped. (A constant carries `column`; the column reference does not.)
+        auto is_name_column = [](const ActionsDAG::Node * n)
+        {
+            return n && n->result_name == "name" && !n->column;
+        };
+        const bool lhs_is_name = is_name_column(lhs);
+        const bool rhs_is_name = is_name_column(rhs);
         if (!lhs_is_name && !rhs_is_name)
             continue;
 
