@@ -1,3 +1,8 @@
+-- Tags: no-fasttest
+-- no-fasttest: the fast-test build has no SSL, so the Encrypted codec creator throws and
+-- `SELECT * FROM system.codecs` (which builds every codec for its metadata) cannot run; this
+-- matches 01222_system_codecs. The Chimp round trip itself is also covered by 00950_test_chimp_codec.
+
 -- Regression test for the Chimp codec no-column construction path.
 -- The codec builder must stay constructible without an explicit width or a column type, because
 -- that path is used for method-byte decoding (CompressionCodecFactory::get(uint8_t)) and for codec
