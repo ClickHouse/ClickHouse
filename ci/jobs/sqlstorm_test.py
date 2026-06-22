@@ -6,6 +6,8 @@ import os
 import sys
 from pathlib import Path
 
+from praktika import Secret
+from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
 
@@ -17,6 +19,23 @@ temp_dir = f"{Utils.cwd()}/ci/tmp/"
 MIN_TOTAL_QUERIES = 18_000
 MIN_SUCCESS_RATE = 0.50  # at least 50% queries should succeed
 
+# Export of the server's `system.*_log` tables to the central CI logs cluster,
+# matching the setup used by other checks (e.g. `clickbench`). Defined here to
+# keep the values in sync with `ci/jobs/scripts/clickhouse_proc.py`.
+LOG_EXPORT_CONFIG_TEMPLATE = """
+remote_servers:
+    {CLICKHOUSE_CI_LOGS_CLUSTER}:
+        shard:
+            replica:
+                secure: 1
+                user: '{CLICKHOUSE_CI_LOGS_USER}'
+                host: '{CLICKHOUSE_CI_LOGS_HOST}'
+                port: 9440
+                password: '{CLICKHOUSE_CI_LOGS_PASSWORD}'
+"""
+CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
+CLICKHOUSE_CI_LOGS_USER = "ci"
+
 
 class ClickHouseBinary:
     def __init__(self):
@@ -27,6 +46,7 @@ class ClickHouseBinary:
         )
         self.log_file = f"{temp_dir}/server.log"
         self.port = 9000
+        self.log_export_host, self.log_export_password = None, None
 
     def install(self):
         Utils.add_to_PATH(self.path)
@@ -101,6 +121,84 @@ class ClickHouseBinary:
             )
             return False
         return True
+
+    def create_log_export_config(self):
+        # Write the remote cluster definition into the server's own `config.d`
+        # so the `Distributed` engine used by the log senders can resolve the
+        # central CI logs cluster. Must run before the server is started.
+        print("Create log export config")
+        config_file = Path(self.config_path) / "config.d" / "system_logs_export.yaml"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # The log-replication materialized views are created with
+        # `DEFINER = ci_logs_sender`, so that user must exist on the server.
+        Shell.check(
+            f"mkdir -p {self.config_path}/users.d"
+            f" && cp ./tests/config/users.d/ci_logs_sender.yaml {self.config_path}/users.d/",
+            verbose=True,
+            strict=True,
+        )
+
+        self.log_export_host, self.log_export_password = (
+            Secret.Config(
+                name="clickhouse_ci_logs_host",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
+            )
+            .join_with(
+                Secret.Config(
+                    name="clickhouse_ci_logs_password",
+                    type=Secret.Type.AWS_SSM_PARAMETER,
+                    region="us-east-1",
+                )
+            )
+            .get_value()
+        )
+
+        config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
+            CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
+            CLICKHOUSE_CI_LOGS_HOST=self.log_export_host,
+            CLICKHOUSE_CI_LOGS_USER=CLICKHOUSE_CI_LOGS_USER,
+            CLICKHOUSE_CI_LOGS_PASSWORD=self.log_export_password,
+        )
+
+        with open(config_file, "w") as f:
+            f.write(config_content)
+        return True
+
+    def start_log_exports(self, check_start_time):
+        # Create the remote `system.*_log` tables and the materialized views
+        # that replicate freshly inserted rows to them. Must run after the
+        # server is ready and before the benchmark queries, so their
+        # `query_log` (and other) records are captured.
+        print("Start log export")
+        if self.log_export_host:
+            os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
+            os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
+            os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
+            os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = self.log_export_password
+        info = Info()
+        os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
+            f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
+        )
+
+        return Shell.check(
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication",
+            verbose=True,
+        )
+
+    @staticmethod
+    def stop_log_exports():
+        # Flush any buffered system-log records so the final benchmark queries
+        # are exported, then detach the replication views.
+        Shell.check(
+            'clickhouse-client --query "SYSTEM FLUSH LOGS"',
+            verbose=True,
+        )
+        return Shell.check(
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
+            verbose=True,
+        )
 
 
 def check_thresholds(stats):
@@ -232,6 +330,7 @@ def main():
     results = []
     stop_watch = Utils.Stopwatch()
     ch = ClickHouseBinary()
+    info = Info()
 
     sqlstorm_dir = os.path.join(Utils.cwd(), "tests", "sqlstorm")
     sqlstorm_repo = os.path.join(temp_dir, "sqlstorm")
@@ -255,7 +354,18 @@ def main():
     print("Start ClickHouse")
 
     def start():
-        return ch.install() and ch.start()
+        if not ch.install():
+            return False
+        # Configure export of system log tables to the central CI logs cluster
+        # (skipped for local runs, where the credentials are not available).
+        if not info.is_local_run:
+            ch.create_log_export_config()
+        if not ch.start():
+            return False
+        if not info.is_local_run:
+            if not ch.start_log_exports(check_start_time=stop_watch.start_time):
+                print("WARNING: Failed to start log export")
+        return True
 
     results.append(
         Result.from_commands_run(
@@ -438,6 +548,10 @@ def main():
                 command=report_and_thresholds,
             )
         )
+
+    # Detach log replication (flushes the remaining records first).
+    if not info.is_local_run:
+        ch.stop_log_exports()
 
     Result.create_from(
         results=results,
