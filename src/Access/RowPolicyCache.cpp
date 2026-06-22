@@ -364,7 +364,14 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled, const std::unor
             mixed_filter->database_and_table_name = std::move(mixer.database_and_table_name);
             mixed_filter->expression = std::move(mixer.mixer).getResult(users_without_row_policies_can_read_rows);
             mixed_filter->policies = std::move(mixer.policies);
-            mixed_filters->emplace(key, std::move(mixed_filter));
+
+            /// The key's string_view-s must borrow from the value's own pair (which the filter
+            /// owns), not from `key` built at first insertion: several policies can share one
+            /// (database, table) key while the value's pair is reassigned to the last of them,
+            /// so a key borrowing another policy's pair would dangle once that policy is dropped.
+            const auto & names = *mixed_filter->database_and_table_name;
+            MixedFiltersKey owned_key{names.first, names.second, key.filter_type};
+            mixed_filters->emplace(owned_key, std::move(mixed_filter));
         }
     }
 
