@@ -14,7 +14,7 @@ CREATE TABLE R1 (
     A_Description String
 ) ENGINE = MergeTree()
 PRIMARY KEY (A_ID)
-SETTINGS auto_statistics_types = 'uniqcombined';
+SETTINGS auto_statistics_types = 'uniq_v2';
 
 -- R2: Large fact table (Demo size: 1,000)
 -- Joins only with R1.
@@ -24,7 +24,7 @@ CREATE TABLE R2 (
     B_Data Float64
 ) ENGINE = MergeTree()
 PRIMARY KEY (B_ID)
-SETTINGS auto_statistics_types = 'uniqcombined';
+SETTINGS auto_statistics_types = 'uniq_v2';
 
 -- R3: Another large fact table (Demo size: 1,000)
 -- Joins with R1 and R4.
@@ -35,7 +35,7 @@ CREATE TABLE R3 (
     C_Value Int32
 ) ENGINE = MergeTree()
 PRIMARY KEY (C_ID)
-SETTINGS auto_statistics_types = 'uniqcombined';
+SETTINGS auto_statistics_types = 'uniq_v2';
 
 -- R4: Small lookup table (Demo size: 10)
 -- Joins only with R3.
@@ -44,7 +44,7 @@ CREATE TABLE R4 (
     D_LookupCode String
 ) ENGINE = MergeTree()
 PRIMARY KEY (D_ID)
-SETTINGS auto_statistics_types = 'uniqcombined';
+SETTINGS auto_statistics_types = 'uniq_v2';
 
 
 -- Populate R1 (Small: 10 rows)

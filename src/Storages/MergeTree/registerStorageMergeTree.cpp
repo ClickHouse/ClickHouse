@@ -2409,7 +2409,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     A three-phase cardinality estimator (exact small-value set → hash set → HyperLogLog) equivalent to `uniqCombined64(12)`. Provides a distinct-value estimate for numeric types, `String`, and `FixedString` (including `Nullable` and `LowCardinality` wrappers).
 
-    Syntax: `uniqcombined`
+    Syntax: `uniq_v2`
 
 - `CountMin`
 
