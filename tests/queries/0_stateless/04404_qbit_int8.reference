@@ -16,3 +16,8 @@ TEST INSERTS THROUGH convertFieldToType
 3	[-9]
 TEST CAST between Array and Int8 QBit
 [-128,-100,-50,-10,-1,0,1,10,50,100,126,127]
+TEST out-of-range values wrap to Int8, consistently with Int8 / Array(Int8)
+-128	127	0	44
+[-128,127,0,44]
+[-128,127,0,44]
+[-128,127,0,44]

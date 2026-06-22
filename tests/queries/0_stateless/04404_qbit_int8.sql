@@ -53,3 +53,15 @@ SELECT vec FROM qbit_8 ORDER BY id;
 
 DROP TABLE array_8;
 DROP TABLE qbit_8;
+
+SELECT 'TEST out-of-range values wrap to Int8, consistently with Int8 / Array(Int8)';
+-- Reference: toInt8 wraps (128 -> -128, -129 -> 127, 256 -> 0, 300 -> 44)
+SELECT toInt8(128), toInt8(-129), toInt8(256), toInt8(300);
+SELECT CAST([128, -129, 256, 300] AS Array(Int8));
+-- QBit(Int8) wraps the same way through VALUES
+CREATE TABLE qbits_8 (vec QBit(Int8, 4)) ENGINE = Memory;
+INSERT INTO qbits_8 VALUES ([128, -129, 256, 300]);
+SELECT vec FROM qbits_8;
+DROP TABLE qbits_8;
+-- ... and through CAST
+SELECT CAST([128, -129, 256, 300] AS QBit(Int8, 4));
