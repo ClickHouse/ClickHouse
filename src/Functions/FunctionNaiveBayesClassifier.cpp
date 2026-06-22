@@ -5,10 +5,12 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Dictionaries/NaiveBayesDictionary.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -24,36 +26,31 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-void validateNBArguments(const String & func_name, const ColumnsWithTypeAndName & arguments)
+/// The dictionary name must be a constant String so the dictionary can be resolved once per block;
+/// the input text is any String column. `validateFunctionArguments` rejects a non-constant name with
+/// ILLEGAL_COLUMN and a wrong type with ILLEGAL_TYPE_OF_ARGUMENT.
+void validateNBArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
 {
-    if (!WhichDataType(arguments[0].type).isStringOrFixedString())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Function {} first argument (dictionary name) must be String, got {}",
-            func_name,
-            arguments[0].type->getName());
-
-    if (!WhichDataType(arguments[1].type).isStringOrFixedString())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Function {} second argument (input text) must be String, got {}",
-            func_name,
-            arguments[1].type->getName());
+    validateFunctionArguments(
+        func,
+        arguments,
+        {
+            {"dictionary_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
+            {"input_text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
+        });
 }
 
 /// Drives the per-row work shared by the three Naive Bayes functions. The dictionary name (argument 0)
-/// is always constant (enforced by getArgumentsThatAreAlwaysConstant), so the dictionary is resolved and
-/// the dictGet access right is checked once for the whole block; then the callback is invoked with the
-/// dictionary, the input text, and the row index for every row.
+/// is validated as a constant in getReturnTypeImpl, so the dictionary is resolved and the dictGet access
+/// right is checked once for the whole block; then the callback is invoked with the dictionary, the input
+/// text, and the row index for every row.
 template <typename PerRow>
 void executeNaiveBayes(
-    std::string_view function_name,
     const ContextPtr & context,
     std::atomic<bool> & access_checked,
     const ColumnsWithTypeAndName & arguments,
@@ -63,16 +60,7 @@ void executeNaiveBayes(
     if (input_rows_count == 0)
         return;
 
-    /// The dictionary name (argument 0) must be constant (also declared in getArgumentsThatAreAlwaysConstant),
-    /// so the dictionary is resolved and access-checked once for the whole block.
-    const ColumnConst * name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
-    if (!name_column)
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "The first argument (dictionary name) of function {} must be a constant String",
-            function_name);
-
-    const String dictionary_name = name_column->getValue<String>();
+    const String dictionary_name{arguments[0].column->getDataAt(0)};
 
     auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
 
@@ -128,7 +116,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateNBArguments(getName(), arguments);
+        validateNBArguments(*this, arguments);
         return std::make_shared<DataTypeUInt32>();
     }
 
@@ -137,7 +125,7 @@ public:
         auto result_column = ColumnUInt32::create(input_rows_count);
         auto & data = result_column->getData();
 
-        executeNaiveBayes(getName(), context, access_checked, arguments, input_rows_count,
+        executeNaiveBayes(context, access_checked, arguments, input_rows_count,
             [&](const NaiveBayesDictionary & dict, std::string_view text, size_t i) { data[i] = dict.classifyText(text); });
 
         return result_column;
@@ -166,7 +154,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateNBArguments(getName(), arguments);
+        validateNBArguments(*this, arguments);
         return makeClassProbTuple();
     }
 
@@ -177,7 +165,7 @@ public:
         auto & class_data = class_col->getData();
         auto & prob_data = prob_col->getData();
 
-        executeNaiveBayes(getName(), context, access_checked, arguments, input_rows_count,
+        executeNaiveBayes(context, access_checked, arguments, input_rows_count,
             [&](const NaiveBayesDictionary & dict, std::string_view text, size_t i)
             {
                 auto [best_class, best_prob] = dict.classifyTextWithProb(text);
@@ -214,7 +202,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateNBArguments(getName(), arguments);
+        validateNBArguments(*this, arguments);
         return std::make_shared<DataTypeArray>(makeClassProbTuple());
     }
 
@@ -227,7 +215,7 @@ public:
         auto offsets_col = ColumnArray::ColumnOffsets::create(input_rows_count);
         auto & offsets = offsets_col->getData();
 
-        executeNaiveBayes(getName(), context, access_checked, arguments, input_rows_count,
+        executeNaiveBayes(context, access_checked, arguments, input_rows_count,
             [&](const NaiveBayesDictionary & dict, std::string_view text, size_t i)
             {
                 for (const auto & [class_id, prob] : dict.classifyTextAllProbs(text))

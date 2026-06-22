@@ -243,12 +243,12 @@ SELECT naiveBayesClassifierAllProbs('nb_err_dict', '');  -- { serverError BAD_AR
 
 -- Wrong argument types — all three functions
 
-SELECT naiveBayesClassifier(123, 'hello');               -- { serverError BAD_ARGUMENTS }
-SELECT naiveBayesClassifier('nb_err_dict', 123);         -- { serverError BAD_ARGUMENTS }
-SELECT naiveBayesClassifierWithProb(123, 'hello');       -- { serverError BAD_ARGUMENTS }
-SELECT naiveBayesClassifierWithProb('nb_err_dict', 123); -- { serverError BAD_ARGUMENTS }
-SELECT naiveBayesClassifierAllProbs(123, 'hello');       -- { serverError BAD_ARGUMENTS }
-SELECT naiveBayesClassifierAllProbs('nb_err_dict', 123); -- { serverError BAD_ARGUMENTS }
+SELECT naiveBayesClassifier(123, 'hello');               -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT naiveBayesClassifier('nb_err_dict', 123);         -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT naiveBayesClassifierWithProb(123, 'hello');       -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT naiveBayesClassifierWithProb('nb_err_dict', 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT naiveBayesClassifierAllProbs(123, 'hello');       -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT naiveBayesClassifierAllProbs('nb_err_dict', 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Non-constant dictionary name is rejected — all three functions
 
