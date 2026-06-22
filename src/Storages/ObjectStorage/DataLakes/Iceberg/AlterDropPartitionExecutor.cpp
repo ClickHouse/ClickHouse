@@ -603,54 +603,6 @@ namespace
     };
 }
 
-namespace
-{
-    /// Writing empty manifests list is allowed, but apparently you can't call avro::DataFileWriter<...>::close()
-    /// if you haven't written anything - it will lead to segfault (it's encoder field is lazy initialized)
-    class ManifestListWriter
-    {
-        using WriterPtr = std::unique_ptr<avro::DataFileWriter<avro::GenericDatum>>;
-
-    public:
-        explicit ManifestListWriter(std::unique_ptr<WriteBufferFromFileBase> _buffer, const avro::ValidSchema & _schema)
-            : schema(_schema)
-            , buffer(std::move(_buffer))
-        {
-            chassert(buffer);
-            writer = createWriter();
-        }
-
-        ~ManifestListWriter()
-        {
-            /// Dtor will handle the situation when no records were written, but we still need to write avro's header
-            if (writer)
-                writer.reset();
-
-            buffer->finalize();
-        }
-
-        void write(const avro::GenericDatum & datum)
-        {
-            if unlikely (!writer)
-                writer = createWriter();
-
-            writer->write(datum);
-        }
-
-    private:
-        WriterPtr createWriter()
-        {
-            auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(*buffer);
-            return std::make_unique<avro::DataFileWriter<avro::GenericDatum>>(std::move(adapter), schema);
-        }
-
-        const avro::ValidSchema & schema;
-
-        std::unique_ptr<WriteBufferFromFileBase> buffer;
-        WriterPtr writer;
-    };
-}
-
 AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::writeManifestList(
     SnapshotState & state,
     const DropPlan & plan,
@@ -676,19 +628,23 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     for (const auto & tm : plan.target_manifests.partially_matched)
         skip_manifest_paths.insert(tm.manifest_path.serialize());
 
+    LOG_TRACE(log, "ALTER DROP PARTITION writing new manifest list {}", storage_manifest_list_path);
+
+    auto buf = object_storage->writeObject(
+        StoredObject(storage_manifest_list_path),
+        WriteMode::Rewrite,
+        /*attributes=*/ std::nullopt,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        context->getWriteSettings());
+
+    /// avro::DataFileWriter should be destroyed before the buffer and
+    /// its dtor handles sitation where no records were written by writing
+    /// necessary header, otherwise call `close()` will lead to segfault
     {
-        LOG_TRACE(log, "ALTER DROP PARTITION writing new manifest list {}", storage_manifest_list_path);
-
-        auto buf = object_storage->writeObject(
-            StoredObject(storage_manifest_list_path),
-            WriteMode::Rewrite,
-            /*attributes=*/ std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-
+        auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(*buf);
         auto schema = compileAvroSchema(manifest_list_v2_schema);
 
-        ManifestListWriter writer(std::move(buf), schema);
+        avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
 
         for (const auto & r : replacements)
         {
@@ -731,6 +687,8 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
                     writer.write(datum);
             });
     }
+
+    buf->finalize();
 
     return ManifestListWriteResult{new_snapshot, metadata_info};
 }
