@@ -365,7 +365,13 @@ FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std:
             std::find(required_dag_indices.begin(), required_dag_indices.end(), filter_col_pre_erase_pos)
             != required_dag_indices.end();
         if (!filter_column_required_by_caller)
+        {
             remove_filter_column = true;
+            /// the filter column is now dropped, apply the materialize-fold here too (#78166) -
+            /// `tryMergeExpressions` skipped this filter back when the column still survived
+            actions_dag.pushMaterializeOutwardForConstants(filter_column_name);
+            actions_dag.unwrapMaterializeWrapAtOutput(filter_column_name);
+        }
     }
 
     /// Build the list of pass-through input columns.
