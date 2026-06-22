@@ -245,7 +245,7 @@
     M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
     M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
     M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment. Zero until ReaderExecutor live source-buffer reuse is introduced.", ValueType::Number) \
-    M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextChunk (opening, seeking and reading the served chunk). Direct contributor to query read latency.", ValueType::Microseconds) \
+    M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextWindow (opening, seeking and reading the served window). Direct contributor to query read latency.", ValueType::Microseconds) \
     M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorRequestedBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
@@ -563,6 +563,14 @@
     \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.", ValueType::Number) \
     M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds", ValueType::Microseconds) \
+    M(RowPolicyCacheRecalculations, "Number of times the row policy cache re-mixed filters for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(RowPolicyCacheRecalculationMicroseconds, "Total time spent re-mixing row policy filters for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
+    M(RoleCacheRecalculations, "Number of times the role cache recalculated all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(RoleCacheRecalculationMicroseconds, "Total time spent recalculating all live enabled role sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
+    M(SettingsProfileCacheRecalculations, "Number of times the settings profile cache re-merged settings and constraints for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(SettingsProfileCacheRecalculationMicroseconds, "Total time spent re-merging settings and constraints for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
+    M(QuotaCacheRecalculations, "Number of times the quota cache re-chose quotas for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(QuotaCacheRecalculationMicroseconds, "Total time spent re-choosing quotas for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
     M(FileProgressCallbackInvocations, "Number of times the per-query `FileProgressCallback` was invoked (counts each per-file `FileProgress` event delivered to the client over native TCP or via `clickhouse-local`).", ValueType::Number) \
     \
     M(StorageBufferFlush, "Number of times a buffer in a 'Buffer' table was flushed.", ValueType::Number) \
@@ -857,6 +865,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time", ValueType::Microseconds) \
     M(FilesystemCacheBackgroundEvictedFileSegments, "Number of file segments evicted by background thread", ValueType::Number) \
     M(FilesystemCacheBackgroundEvictedBytes, "Number of bytes evicted by background thread", ValueType::Number) \
+    M(FilesystemCacheBackgroundRemovedInvalidatedEntries, "Number of invalidated (lazily-removed) priority queue entries purged by the background cleanup thread", ValueType::Number) \
+    M(FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, "Time for which the background thread executed the invalidated priority queue entries cleanup job", ValueType::Milliseconds) \
     M(FilesystemCacheCheckCorrectness, "Number of times FileCache::assertCacheCorrectness was called", ValueType::Number) \
     M(FilesystemCacheCheckCorrectnessMicroseconds, "How much time does FileCache::assertCacheCorrectness takes", ValueType::Microseconds) \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state", ValueType::Microseconds) \
@@ -1362,10 +1372,10 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by WriteBufferFromHTTP. Doesn't include HTTP headers.", ValueType::Bytes) \
     \
     M(ConcurrencyControlSlotsGranted, "Number of CPU slot granted according to guarantee of 1 thread per query and for queries with setting 'use_concurrency_control' = 0", ValueType::Number) \
-    M(ConcurrencyControlSlotsDelayed, "Number of CPU slot not granted initially and required to wait for a free CPU slot", ValueType::Number) \
+    M(ConcurrencyControlSlotsDelayed, "Number of CPU slots not granted at allocation time due to capacity pressure. Excludes slots held back by lazy allocation.", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquired, "Total number of CPU slots acquired", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquiredNonCompeting, "Total number of noncompeting CPU slot acquired", ValueType::Number) \
-    M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
+    M(ConcurrencyControlQueriesDelayed, "Number of queries delayed by CPU slot capacity pressure. Contention indicator — excludes lazy-upscale waits on an uncontested server.", ValueType::Number) \
     M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
     M(ConcurrencyControlPreemptedMicroseconds, "Total time a query was waiting due to preemption of CPU slots.", ValueType::Microseconds) \
     M(ConcurrencyControlPreemptions, "Total number of CPU preemptions", ValueType::Number) \
