@@ -1,5 +1,4 @@
 #pragma once
-#include <Interpreters/StorageID.h>
 #include "config.h"
 
 #if USE_PARQUET
@@ -63,19 +62,14 @@ private:
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 
     DB::Names getTablesForSchema(const std::string & schema, size_t limit = 0) const;
-    void getCredentials(const String & table_id, TableMetadata & metadata) const;
-
-    Poco::JSON::Object::Ptr requestReadCredentials(const String & table_id) const;
-
-    std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;
-    std::shared_ptr<IStorageCredentials> parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const;
+    void getCredentials(const std::string & table_id, TableMetadata & metadata) const;
 
     bool getTableMetadataImpl(
         const std::string & namespace_name,
         const std::string & table_name,
         TableMetadata & result) const;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 };
 
 }
