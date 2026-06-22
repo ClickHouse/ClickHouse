@@ -347,4 +347,27 @@ SELECT count() FROM tab WHERE hasAnyTokens(val, 'zzz') SETTINGS query_plan_direc
 
 DROP TABLE tab;
 
+SELECT '13. Array tokenizer + postprocessor: empty elements are dropped before postprocessing (row-scan agrees).';
+-- The build path tokenizes each element via forEachToken, which skips empty elements before the
+-- postprocessor. The row-scan fallback must drop them too, otherwise a postprocessor mapping '' to a
+-- non-empty token matches rows whose empty element was never indexed.
+
+CREATE TABLE tab (id UInt64, val Array(String)) ENGINE = MergeTree ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, ['', 'foo']);  -- old part: no index, evaluated by the row-scan fallback
+
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'array', postprocessor = if(empty(val), 'EMPTY', val));
+
+INSERT INTO tab VALUES (2, ['', 'foo']);  -- new part: indexed
+
+-- '' is dropped before postprocessing, so 'EMPTY' is never a token: no part matches it.
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['EMPTY']);  -- 0
+-- 'foo' is a real token in both parts.
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['foo']);    -- 2
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;

@@ -118,7 +118,9 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
 
     /// Build the token stream the postprocessor maps over so that it matches the index-build path
     /// (tokenize first, then postprocess each token). Three cases:
-    ///   - Array column + 'array' tokenizer: the elements are already the final tokens, use them as-is.
+    ///   - Array column + 'array' tokenizer: the elements are the final tokens, but drop empty ones first:
+    ///     the build path tokenizes each element via forEachToken, which skips empty elements, so a
+    ///     postprocessor mapping '' to a non-empty token must not fabricate a token the index never stored.
     ///   - Array column + any other tokenizer: tokenize every element and flatten, mirroring
     ///     tokenizeToArray which runs the tokenizer per element. Using the elements directly here would
     ///     postprocess whole multi-token elements (e.g. 'foo bar') instead of their tokens ('foo', 'bar').
@@ -136,6 +138,13 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
                             make_intrusive<ASTIdentifier>(postprocessor_element_arg),
                             make_intrusive<ASTLiteral>(Field(tokenizer_description)))),
                     std::move(tokens_ast)));
+        else
+            tokens_ast = makeASTFunction("arrayFilter",
+                makeASTLambda({postprocessor_element_arg},
+                    makeASTFunction("notEquals",
+                        make_intrusive<ASTIdentifier>(postprocessor_element_arg),
+                        make_intrusive<ASTLiteral>(Field(String{})))),
+                std::move(tokens_ast));
     }
     else
     {

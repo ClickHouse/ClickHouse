@@ -88,3 +88,6 @@ wo	1
 1
 0
 0
+13. Array tokenizer + postprocessor: empty elements are dropped before postprocessing (row-scan agrees).
+0
+2
