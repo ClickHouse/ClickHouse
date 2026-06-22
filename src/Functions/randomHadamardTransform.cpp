@@ -9,6 +9,7 @@
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -79,27 +80,19 @@ inline UInt64 splitmix64Next(UInt64 & state)
 template <typename Compute>
 using SignMask = std::conditional_t<sizeof(Compute) == 4, UInt32, UInt64>;
 
-/// Deterministic +-1 signs of length m derived from the seed (a splitmix64 stream), stored as a
-/// sign-bit mask per element (the compute type's high bit for a negative sign, 0 otherwise) so the
-/// sign can be applied as an XOR instead of a multiply. Cached per length m within one function
-/// call (the seed is constant for the call). Distinct lengths are rare (usually one), so a linear
-/// lookup is cheaper than a hash map.
+/// Deterministic +-1 signs of length m derived from the seed (a splitmix64 stream), written into
+/// `out` as a sign-bit mask per element (the compute type's high bit for a negative sign, 0
+/// otherwise) so the sign can be applied as an XOR instead of a multiply. The caller caches the
+/// result and only regenerates when the working dimension changes (it is usually constant).
 template <typename Compute>
-const PaddedPODArray<SignMask<Compute>> & getSignMasks(
-    std::vector<std::pair<size_t, PaddedPODArray<SignMask<Compute>>>> & cache, UInt64 seed, size_t m)
+void generateSignMasks(PaddedPODArray<SignMask<Compute>> & out, UInt64 seed, size_t m)
 {
     using Mask = SignMask<Compute>;
-    for (auto & entry : cache)
-        if (entry.first == m)
-            return entry.second;
-
     static constexpr Mask sign_bit = Mask(1) << (sizeof(Mask) * 8 - 1);
-    PaddedPODArray<Mask> masks(m);
+    out.resize(m);
     UInt64 state = seed;
     for (size_t i = 0; i < m; ++i)
-        masks[i] = (splitmix64Next(state) >> 63) ? sign_bit : Mask(0);
-    cache.emplace_back(m, std::move(masks));
-    return cache.back().second;
+        out[i] = (splitmix64Next(state) >> 63) ? sign_bit : Mask(0);
 }
 
 /// Apply a +-1 sign as a sign-bit flip: bit-identical to multiplying by +1 or -1 (including +-0).
@@ -147,74 +140,56 @@ inline KroneckerFactor hadamardOrderFor(size_t length)
     return {};
 }
 
-/// Build an m x m Hadamard matrix via the Paley type I construction: m = p + 1 for a prime
-/// p = 3 (mod 4) (here p in {11, 19}). H = I + C where C is the +-1 conference matrix built from the
-/// Legendre symbol. Returns the sign pattern (1 means the entry is -1, 0 means +1).
-inline std::vector<uint8_t> buildHadamardSigns(size_t m)
-{
-    const size_t p = m - 1;
-    std::vector<uint8_t> is_quadratic_residue(p, 0);
-    for (size_t x = 1; x < p; ++x)
-        is_quadratic_residue[(x * x) % p] = 1;
-
-    auto legendre = [&](Int64 v) -> int
-    {
-        const Int64 pp = static_cast<Int64>(p);
-        const Int64 r = ((v % pp) + pp) % pp;
-        if (r == 0)
-            return 0;
-        return is_quadratic_residue[static_cast<size_t>(r)] ? 1 : -1;
-    };
-
-    std::vector<uint8_t> signs(m * m, 0);
-    auto put = [&](size_t i, size_t j, int v) { signs[i * m + j] = (v < 0) ? 1 : 0; };
-
-    put(0, 0, 1);
-    for (size_t b = 0; b < p; ++b)
-    {
-        put(0, 1 + b, 1);
-        put(1 + b, 0, -1);
-    }
-    for (size_t a = 0; a < p; ++a)
-        for (size_t b = 0; b < p; ++b)
-            put(1 + a, 1 + b, (a == b) ? 1 : legendre(static_cast<Int64>(a) - static_cast<Int64>(b)));
-
-    return signs;
-}
-
-/// Cached +-1 sign-bit masks of an m x m Hadamard matrix in both row-major (row[i*m+j]) and
-/// column-major (col[j*m+i]) layouts; the latter lets the NEON kernel load four output rows at once.
+/// +-1 sign-bit masks of an m x m Hadamard matrix in both row-major (row[i*m+j]) and column-major
+/// (col[j*m+i]) layouts; the column-major copy lets the NEON kernel load four output rows at once.
 template <typename Compute>
 struct HmMasks
 {
-    size_t m = 0;
+    size_t order = 0;
     PaddedPODArray<SignMask<Compute>> row;
     PaddedPODArray<SignMask<Compute>> col;
 };
 
+/// Build the sign-bit masks of an m x m Hadamard matrix via the Paley type I construction:
+/// m = p + 1 for a prime p = 3 (mod 4) (here p in {11, 19}). H = I + C, where C is the +-1
+/// conference matrix from the Legendre symbol: H[0][*] = +1, H[*][0] = -1, the diagonal is +1, and
+/// H[1+a][1+b] = chi(a - b) mod p otherwise. The caller caches the result per order m.
 template <typename Compute>
-const HmMasks<Compute> & getHmMasks(std::vector<HmMasks<Compute>> & cache, size_t m)
+void buildHmMasks(HmMasks<Compute> & out, size_t m)
 {
     using Mask = SignMask<Compute>;
-    for (const auto & entry : cache)
-        if (entry.m == m)
-            return entry;
-
     static constexpr Mask sign_bit = Mask(1) << (sizeof(Mask) * 8 - 1);
-    const std::vector<uint8_t> signs = buildHadamardSigns(m);
-    HmMasks<Compute> masks;
-    masks.m = m;
-    masks.row.resize(m * m);
-    masks.col.resize(m * m);
+
+    const size_t p = m - 1;
+    std::array<uint8_t, max_hadamard_block> is_quadratic_residue{};
+    for (size_t x = 1; x < p; ++x)
+        is_quadratic_residue[(x * x) % p] = 1;
+
+    auto entry_is_negative = [&](size_t i, size_t j) -> bool
+    {
+        if (i == 0)
+            return false;
+        if (j == 0)
+            return true;
+        const size_t a = i - 1;
+        const size_t b = j - 1;
+        if (a == b)
+            return false;
+        const Int64 pp = static_cast<Int64>(p);
+        const Int64 r = ((static_cast<Int64>(a) - static_cast<Int64>(b)) % pp + pp) % pp;
+        return is_quadratic_residue[static_cast<size_t>(r)] == 0;  /// non-residue -> -1
+    };
+
+    out.order = m;
+    out.row.resize(m * m);
+    out.col.resize(m * m);
     for (size_t i = 0; i < m; ++i)
         for (size_t j = 0; j < m; ++j)
         {
-            const Mask mask = signs[i * m + j] ? sign_bit : Mask(0);
-            masks.row[i * m + j] = mask;
-            masks.col[j * m + i] = mask;
+            const Mask mask = entry_is_negative(i, j) ? sign_bit : Mask(0);
+            out.row[i * m + j] = mask;
+            out.col[j * m + i] = mask;
         }
-    cache.push_back(std::move(masks));
-    return cache.back();
 }
 
 /// Apply a dense m x m Hadamard matrix to one block of m elements (the I (x) H_m part), in place.
@@ -505,8 +480,12 @@ private:
         [[maybe_unused]] const FwhtKernel kernel = selectKernel();
 #endif
 
-        std::vector<std::pair<size_t, PaddedPODArray<Mask>>> sign_cache;
-        std::vector<HmMasks<Compute>> hm_cache;
+        /// Single-entry caches, regenerated only when the dimension changes (it is usually constant
+        /// across a column). The seed is constant for the whole call, so the signs depend only on
+        /// the working dimension.
+        PaddedPODArray<Mask> sign_masks;
+        size_t sign_dim = 0;
+        HmMasks<Compute> hm;
         PaddedPODArray<Compute> buffer;
         size_t written = 0;
         size_t start = 0;
@@ -527,7 +506,12 @@ private:
                         "output_dims ({}) of function {} exceeds the transform length {}",
                         k, name, working_dim);
 
-                const PaddedPODArray<Mask> & signs = getSignMasks<Compute>(sign_cache, seed, working_dim);
+                if (sign_dim != working_dim)
+                {
+                    generateSignMasks<Compute>(sign_masks, seed, working_dim);
+                    sign_dim = working_dim;
+                }
+                const PaddedPODArray<Mask> & signs = sign_masks;
                 const Compute scale = static_cast<Compute>(1.0 / std::sqrt(static_cast<double>(k)));
                 const In * in = input.data() + start;
                 result.resize(written + k);
@@ -545,7 +529,8 @@ private:
                 /// supported non-power-of-two dimensions, or a fast Walsh-Hadamard transform otherwise.
                 if (kron_m)
                 {
-                    const HmMasks<Compute> & hm = getHmMasks<Compute>(hm_cache, kron_m);
+                    if (hm.order != kron_m)
+                        buildHmMasks<Compute>(hm, kron_m);
 #if defined(__aarch64__)
                     if constexpr (std::is_same_v<Compute, float>)
                     {
