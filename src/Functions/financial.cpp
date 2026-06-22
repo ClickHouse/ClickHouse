@@ -385,7 +385,15 @@ public:
         /// no Nullable), date accepts Date or Date32. Without these
         /// restrictions, unsupported nested types pass analyzer-time
         /// validation and fail at runtime with `LOGICAL_ERROR`.
-        return "(Array(NativeInt | NativeFloat), Array(Date | Date32), [NativeFloat], [String]) -> Float64";
+        ///
+        /// The optional `guess` (`NativeFloat`) and `daycount` (`String`) are positional:
+        /// execution treats argument 3 as `guess` and argument 4 as `daycount`. Spell the legal
+        /// arities as explicit alternatives rather than two independent optional groups
+        /// `[NativeFloat], [String]`, which would let a three-argument call skip `guess` and bind a
+        /// `daycount` string in the `guess` position (then fail at execution reading it as a float).
+        return "(Array(NativeInt | NativeFloat), Array(Date | Date32)) -> Float64"
+               " OR (Array(NativeInt | NativeFloat), Array(Date | Date32), NativeFloat) -> Float64"
+               " OR (Array(NativeInt | NativeFloat), Array(Date | Date32), NativeFloat, String) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
