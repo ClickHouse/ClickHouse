@@ -113,6 +113,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
+extern const int LIMIT_EXCEEDED;
 }
 
 namespace Setting
@@ -1312,106 +1313,137 @@ void IcebergMetadata::drop(ContextPtr context)
 
 void IcebergMetadata::truncate(ContextPtr local_context, std::shared_ptr<DataLake::ICatalog> catalog, const StorageID & table_id_)
 {
-    /// Fetch the latest metadata object first (before deleting anything) and use it as a template
-    /// for the new, empty table state. This keeps `IcebergMetadata` stateless: we read the metadata
-    /// through the regular getters instead of relying on a cached `latest_metadata_object` member.
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage,
-        persistent_components.table_path,
-        data_lake_settings,
-        persistent_components.metadata_cache,
-        local_context,
-        log.get(),
-        persistent_components.table_uuid,
-        persistent_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ true);
+    auto truncate_logger = getLogger("IcebergTruncate");
+    size_t max_retries = 100;
 
-    /// `getMetadataJSONObject` returns a freshly parsed object (only the JSON string is cached),
-    /// so it is safe to mutate it below.
-    auto metadata_object = getMetadataJSONObject(
-        metadata_file_path,
-        object_storage,
-        persistent_components.metadata_cache,
-        local_context,
-        log,
-        compression_method,
-        persistent_components.table_uuid);
-
-    /// List all existing files of the table (data and metadata). We delete them below, after the new
-    /// empty metadata file is written. Note that the prefix must be empty here: `listFiles` builds the
-    /// listing key as `path / prefix`, so passing the table path as the prefix as well would either
-    /// duplicate it (relative paths, e.g. S3) or be silently ignored (absolute paths, e.g. local disk).
-    auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
-    /// Reset the metadata object to represent an empty table while preserving its schema.
-    if (metadata_object->getArray(f_snapshots))
-        metadata_object->getArray(f_snapshots)->clear();
-    if (metadata_object->getArray(f_snapshot_log))
-        metadata_object->getArray(f_snapshot_log)->clear();
-    if (metadata_object->getArray(f_metadata_log))
-        metadata_object->getArray(f_metadata_log)->clear();
-    if (metadata_object->getArray(f_statistics))
-        metadata_object->getArray(f_statistics)->clear();
-    if (metadata_object->getArray(f_partition_statistics))
-        metadata_object->getArray(f_partition_statistics)->clear();
-    // resetting refs like we do in createEmptyMetadataFile
-    if (metadata_object->getObject(f_refs))
+    while (--max_retries > 0)
     {
+        /// Fetch the latest metadata object first (before deleting anything) and use it as a template
+        /// for the new, empty table state. This keeps `IcebergMetadata` stateless: we read the metadata
+        /// through the regular getters instead of relying on a cached `latest_metadata_object` member.
+        const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+            object_storage,
+            persistent_components.table_path,
+            data_lake_settings,
+            persistent_components.metadata_cache,
+            local_context,
+            truncate_logger.get(),
+            persistent_components.table_uuid,
+            persistent_components.metadata_compression_method,
+            /* force_fetch_latest_metadata */ true,
+            /* ignore_explicit_metadata_file_path */ true);
+
+        /// `getMetadataJSONObject` returns a freshly parsed object (only the JSON string is cached),
+        /// so it is safe to mutate it below.
+        auto metadata_object = getMetadataJSONObject(
+            metadata_file_path,
+            object_storage,
+            persistent_components.metadata_cache,
+            local_context,
+            truncate_logger,
+            compression_method,
+            persistent_components.table_uuid);
+
+        /// Reset the metadata object to represent an empty table while preserving its schema.
+        if (metadata_object->getArray(f_snapshots))
+            metadata_object->getArray(f_snapshots)->clear();
+        if (metadata_object->getArray(f_snapshot_log))
+            metadata_object->getArray(f_snapshot_log)->clear();
+        if (metadata_object->getArray(f_metadata_log))
+            metadata_object->getArray(f_metadata_log)->clear();
+        if (metadata_object->getArray(f_statistics))
+            metadata_object->getArray(f_statistics)->clear();
+        if (metadata_object->getArray(f_partition_statistics))
+            metadata_object->getArray(f_partition_statistics)->clear();
+        // resetting refs like we do in createEmptyMetadataFile
         Poco::JSON::Object::Ptr refs = new Poco::JSON::Object;
         Poco::JSON::Object::Ptr main_branch = new Poco::JSON::Object;
         main_branch->set(f_metadata_snapshot_id, -1);
         main_branch->set(f_type, f_branch);
         refs->set(f_main, main_branch);
         metadata_object->set(f_refs, refs);
+        metadata_object->set(f_current_snapshot_id, -1);
+        // reset commit counter and timestamps
+        auto format_version = metadata_object->getValue<Int64>(f_format_version);
+        auto now = std::chrono::system_clock::now();
+        auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+        metadata_object->set(f_last_updated_ms, ms.count());
+        if (format_version > 1)
+            metadata_object->set(f_last_sequence_number, 0);
+        if (format_version >= 3)
+            metadata_object->set(f_next_row_id, 0);
+
+        // generate new metadata path and version hint path on each loop iteration
+        FileNamesGenerator filename_generator(
+            persistent_components.path_resolver.getTableLocation(),
+            (catalog != nullptr && catalog->isTransactional()),
+            CompressionMethod::None,
+            write_format);
+        filename_generator.setVersion(metadata_version + 1);
+        filename_generator.setCompressionMethod(compression_method);
+
+        auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+        auto metadata_hint_path = filename_generator.generateVersionHint();
+
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
+        std::string json_repr = removeEscapedSlashes(oss.str());
+        bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value;
+
+        if (!writeMetadataFileAndVersionHint(
+            persistent_components.path_resolver,
+            metadata_info,
+            json_repr,
+            metadata_hint_path,
+            object_storage,
+            local_context,
+            use_version_hint))
+            {
+                continue;
+            }
+
+        if (catalog)
+        {
+            auto catalog_filename = persistent_components.path_resolver.resolveForCatalog(metadata_info.path);
+            const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
+            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, nullptr))
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Failed to update catalog metadata after truncating table {}", table_id_.getTableName());
+            }
+        }
+
+        /// List all existing files of the table (data and metadata). We delete them below, after the new
+        /// empty metadata file is written. Note that the prefix must be empty here: `listFiles` builds the
+        /// listing key as `path / prefix`, so passing the table path as the prefix as well would either
+        /// duplicate it (relative paths, e.g. S3) or be silently ignored (absolute paths, e.g. local disk).
+        auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
+
+        /// Write the new, empty metadata file (and version hint) before deleting the old files. This keeps
+        /// the `metadata` directory non-empty throughout the deletion: otherwise, on local object storage,
+        /// `removeObject` removes parent directories once they become empty and would walk up to the
+        /// storage root. We overwrite unconditionally (no `If-None-Match`) because we reuse the `v1` name.
+        const auto new_metadata_storage_path = persistent_components.path_resolver.resolve(metadata_info.path);
+        const auto new_metadata_hint_storage_path = persistent_components.path_resolver.resolve(metadata_hint_path);
+        // delete all files except the new metadata and version hint
+        for (const auto & file : files)
+        {
+            if (file == new_metadata_storage_path)
+                continue;
+            if (use_version_hint && file == new_metadata_hint_storage_path)
+                continue;
+            LOG_DEBUG(truncate_logger, "Deleting file {} while truncating table {}", file, table_id_.getTableName());
+            object_storage->removeObjectIfExists(StoredObject(file));
+        }
+
+        persistent_components.invalidateMetadataCache();
+        break;
     }
-    metadata_object->set(f_current_snapshot_id, -1);
-    // reset commit counter and timestamps
-    auto format_version = metadata_object->getValue<Int64>(f_format_version);
-    auto now = std::chrono::system_clock::now();
-    auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
-    metadata_object->set(f_last_updated_ms, ms.count());
-    if (format_version > 1)
-        metadata_object->set(f_last_sequence_number, 0);
-    if (format_version >= 3)
-        metadata_object->set(f_next_row_id, 0);
-
-    auto compression_suffix = toContentEncodingName(persistent_components.metadata_compression_method);
-    if (!compression_suffix.empty())
-        compression_suffix = "." + compression_suffix;
-
-    auto filename = fmt::format("{}metadata/v1{}.metadata.json", persistent_components.table_path, compression_suffix);
-    auto filename_version_hint = persistent_components.table_path + "metadata/version-hint.text";
-    bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value;
-
-    /// Write the new, empty metadata file (and version hint) before deleting the old files. This keeps
-    /// the `metadata` directory non-empty throughout the deletion: otherwise, on local object storage,
-    /// `removeObject` removes parent directories once they become empty and would walk up to the
-    /// storage root. We overwrite unconditionally (no `If-None-Match`) because we reuse the `v1` name.
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
-    writeMessageToFile(
-        removeEscapedSlashes(oss.str()), filename, object_storage, local_context, "", "", persistent_components.metadata_compression_method);
-
-    if (use_version_hint)
-        writeMessageToFile("1", filename_version_hint, object_storage, local_context, "", "");
-
-    /// Delete all previously existing files except the ones we have just written.
-    for (const auto & file : files)
+    if (max_retries == 0)
     {
-        if (file == filename || (use_version_hint && file == filename_version_hint))
-            continue;
-        object_storage->removeObjectIfExists(StoredObject(file));
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessful retries while truncating table {}", table_id_.getTableName());
     }
-
-    if (catalog)
-    {
-        auto catalog_filename = persistent_components.path_resolver.resolveForCatalog(
-            IcebergPathFromMetadata::deserialize(persistent_components.table_path + "metadata/v1.metadata.json"));
-        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
-        catalog->createTable(namespace_name, table_name, catalog_filename, metadata_object);
-    }
-
-    persistent_components.invalidateMetadataCache();
 }
 
 
