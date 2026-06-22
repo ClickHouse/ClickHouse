@@ -457,6 +457,13 @@ TTLDescription TTLDescription::getTTLFromAST(
                 set_part.expression_result_column_name = value->getColumnName();
                 set_part.expression = expr_analyzer.getActions(false);
 
+                /// The post-aggregation expression (including the implicit cast to the target column type)
+                /// is executed later by TTLAggregationAlgorithm. When an aggregate returns an AggregateFunction
+                /// state itself (e.g. `any(ts)`), casting it to an incompatible target type (e.g. `DateTime`)
+                /// must be rejected here instead of failing during the TTL merge.
+                if (!is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
+                    checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
+
                 result.set_parts.emplace_back(set_part);
 
                 for (const auto & descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)

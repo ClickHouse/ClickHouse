@@ -226,6 +226,20 @@ TTL d + INTERVAL 1 DAY GROUP BY key SET out = max(toDateTime(finalizeAggregation
 
 DROP TABLE test_ttl_agg_group_by_set_finalize;
 
+-- GROUP BY SET: an aggregate that returns the AggregateFunction state itself (e.g. `any(ts)`) and is then
+-- implicitly cast to an incompatible target column type must be rejected. The aggregate argument is just
+-- `ts`, so this is caught by validating the post-aggregation (casted) SET expression, not the argument.
+CREATE TABLE test_ttl_agg_group_by_set_cast
+(
+    key UInt64,
+    d DateTime,
+    ts AggregateFunction(max, DateTime64(3)),
+    out DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY GROUP BY key SET out = any(ts); -- { serverError BAD_TTL_EXPRESSION }
+
 -- Valid: AggregateFunction column exists but is not referenced in TTL
 CREATE TABLE test_ttl_agg_not_referenced
 (
