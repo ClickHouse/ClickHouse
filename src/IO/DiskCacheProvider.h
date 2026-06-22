@@ -98,7 +98,11 @@ public:
         ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return aligned_range; }
-    const IntervalSet & committed() const override { return committed_ranges; }
+    IntervalSet committed() const override
+    {
+        std::lock_guard lock(committed_mutex);
+        return committed_ranges;
+    }
     bool complete() const override;
     size_t write(ChainedBuffers data) override;
     ChainedBuffers read(ByteRange sub) override;
@@ -116,6 +120,10 @@ private:
     FilesystemCacheSettings cache_settings;
     FileSegmentsHolderPtr holder;
     IntervalSet committed_ranges;
+    /// Guards `committed_ranges` only. Per-segment write exclusion is the FileCache
+    /// downloader (`getOrSetDownloader`), but the worker and the foreground can append
+    /// disjoint segments of the SAME writer concurrently, racing this `IntervalSet`.
+    mutable std::mutex committed_mutex;
     ByteRange aligned_range;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };

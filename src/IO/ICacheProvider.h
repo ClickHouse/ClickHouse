@@ -57,7 +57,10 @@ public:
     virtual ByteRange range() const = 0;
 
     /// Bytes within `range()` already committed by this buffer (any order).
-    virtual const IntervalSet & committed() const = 0;
+    /// Returned BY VALUE: a writer may be written concurrently (the prefetch worker
+    /// writes its led segments while the foreground touches the same writer object),
+    /// so the writer hands back a snapshot taken under its own lock.
+    virtual IntervalSet committed() const = 0;
 
     virtual bool complete() const = 0;
 

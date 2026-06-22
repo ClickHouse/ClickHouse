@@ -339,7 +339,7 @@ public:
         : range_member(aligned_range), storage(storage_), block_size(block_size_) {}
 
     ByteRange range() const override { return range_member; }
-    const IntervalSet & committed() const override { return committed_ranges; }
+    IntervalSet committed() const override { return committed_ranges; }
     bool complete() const override { return committed_ranges.subtract(range_member).empty(); }
 
     size_t write(ChainedBuffers data) override
@@ -1801,7 +1801,7 @@ public:
         : aligned_range(aligned_range_), seg_idx(seg_idx_), cache(cache_) {}
 
     ByteRange range() const override { return aligned_range; }
-    const IntervalSet & committed() const override { return committed_ranges; }
+    IntervalSet committed() const override { return committed_ranges; }
     bool complete() const override { return committed_ranges.subtract(aligned_range).empty(); }
 
     size_t write(ChainedBuffers data) override
@@ -2688,7 +2688,7 @@ public:
         : range_member(aligned_range), storage(storage_), put_log(put_log_), block_size(block_size_) {}
 
     ByteRange range() const override { return range_member; }
-    const IntervalSet & committed() const override { return committed_ranges; }
+    IntervalSet committed() const override { return committed_ranges; }
     bool complete() const override { return committed_ranges.subtract(range_member).empty(); }
 
     size_t write(ChainedBuffers data) override
@@ -3168,7 +3168,7 @@ namespace
     public:
         explicit TrackingWriteBuffer(ByteRange aligned_range_) : aligned_range(aligned_range_) {}
         ByteRange range() const override { return aligned_range; }
-        const IntervalSet & committed() const override { return committed_ranges; }
+        IntervalSet committed() const override { return committed_ranges; }
         bool complete() const override { return false; }
         size_t write(ChainedBuffers) override { return 0; }
         ChainedBuffers read(ByteRange) override { return {}; }

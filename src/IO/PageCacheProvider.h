@@ -6,6 +6,8 @@
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -68,7 +70,11 @@ public:
         ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return range_member; }
-    const IntervalSet & committed() const override { return committed_ranges; }
+    IntervalSet committed() const override
+    {
+        std::lock_guard lock(state_mutex);
+        return committed_ranges;
+    }
     bool complete() const override;
     size_t write(ChainedBuffers data) override;
     ChainedBuffers read(ByteRange sub) override;
@@ -92,6 +98,9 @@ private:
     ByteRange range_member;
     IntervalSet committed_ranges;
     VectorWithMemoryTracking<AdoptedBlock> blocks;
+    /// Guards `committed_ranges` and `blocks`: the prefetch worker may write this writer
+    /// while the foreground reads the self-populated blocks of the same writer.
+    mutable std::mutex state_mutex;
     LoggerPtr log = getLogger("PageCacheWriter");
 };
 

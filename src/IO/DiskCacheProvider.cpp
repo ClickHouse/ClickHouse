@@ -265,6 +265,7 @@ DiskCacheWriter::DiskCacheWriter(
 bool DiskCacheWriter::complete() const
 {
     /// `committed_ranges` covers the whole aligned range iff subtracting it leaves nothing.
+    std::lock_guard lock(committed_mutex);
     return committed_ranges.subtract(aligned_range).empty();
 }
 
@@ -387,7 +388,10 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
             continue;
 
         /// File-level committed interval.
-        committed_ranges.add(ByteRange{write_offset + object_file_offset, contiguous});
+        {
+            std::lock_guard lock(committed_mutex);
+            committed_ranges.add(ByteRange{write_offset + object_file_offset, contiguous});
+        }
         bytes_written += contiguous;
 
         LOG_TRACE(log, "DiskCacheWriter::write: wrote {} bytes to [{}, {}] at offset {}",

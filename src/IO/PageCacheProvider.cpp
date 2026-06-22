@@ -82,6 +82,7 @@ PageCacheWriter::PageCacheWriter(
 
 bool PageCacheWriter::complete() const
 {
+    std::lock_guard lock(state_mutex);
     return committed_ranges.subtract(range_member).empty();
 }
 
@@ -103,8 +104,11 @@ size_t PageCacheWriter::write(ChainedBuffers data)
         size_t this_block_size = std::min(block_size, file_size_in_bytes - offset);
         ByteRange block_range{offset, this_block_size};
 
-        if (committed_ranges.subtract(block_range).empty())
-            continue;
+        {
+            std::lock_guard lock(state_mutex);
+            if (committed_ranges.subtract(block_range).empty())
+                continue;
+        }
 
         if (!data.covers(block_range))
             continue;
@@ -164,9 +168,11 @@ size_t PageCacheWriter::write(ChainedBuffers data)
             adopted.byte_range = byte_range;
             adopted.key_hash = key_hash;
             adopted.cell = cell;
-            blocks.push_back(std::move(adopted));
-
-            committed_ranges.add(block_range);
+            {
+                std::lock_guard lock(state_mutex);
+                blocks.push_back(std::move(adopted));
+                committed_ranges.add(block_range);
+            }
 
             if (loaded)
             {
@@ -193,7 +199,9 @@ ChainedBuffers PageCacheWriter::read(ByteRange sub)
         sub = ByteRange{lo, hi - lo};
     }
 
-    /// Serve the self-populated blocks overlapping `sub`, zero-copy.
+    /// Serve the self-populated blocks overlapping `sub`, zero-copy. Under the lock:
+    /// a concurrent `write` on the same writer appends to `blocks`.
+    std::lock_guard lock(state_mutex);
     for (const auto & block : blocks)
     {
         if (!block.cell)
