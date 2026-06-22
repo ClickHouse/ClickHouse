@@ -6,6 +6,7 @@
 #include <Parsers/NullsAction.h>
 
 #include <initializer_list>
+#include <vector>
 
 
 namespace DB
@@ -175,5 +176,8 @@ inline bool tryGetFunctionNameInto(const ASTPtr & ast, String & name) { return t
 
 /// Checks if function is a lambda function definition `lambda((x, y), x + y)`
 bool isASTLambdaFunction(const ASTFunction & function);
+
+/// Extracts argument names from a lambda function definition `lambda((x, y), x + y)`.
+std::vector<String> getASTLambdaArgumentNames(const ASTFunction & function);
 
 }

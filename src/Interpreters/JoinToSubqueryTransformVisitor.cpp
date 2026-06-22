@@ -3,7 +3,6 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -473,7 +472,7 @@ struct CollectColumnIdentifiersMatcher
     {
         if (func.name == "lambda")
         {
-            data.pushIgnored(RequiredSourceColumnsMatcher::extractNamesFromLambda(func));
+            data.pushIgnored(getASTLambdaArgumentNames(func));
 
             Visitor(data).visit(func.arguments->children[1]);
 

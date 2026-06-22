@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <map>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <IO/WriteHelpers.h>
@@ -24,20 +25,7 @@ namespace
 
 bool lambdaArgumentShadowsName(const ASTFunction & lambda, const String & name)
 {
-    if (!lambda.arguments || lambda.arguments->children.size() != 2)
-        return false;
-
-    const auto * lambda_args_tuple = lambda.arguments->children[0]->as<ASTFunction>();
-    if (!lambda_args_tuple || lambda_args_tuple->name != "tuple" || !lambda_args_tuple->arguments)
-        return false;
-
-    for (const auto & argument : lambda_args_tuple->arguments->children)
-    {
-        if (auto argument_name = tryGetIdentifierName(argument); argument_name && *argument_name == name)
-            return true;
-    }
-
-    return false;
+    return std::ranges::contains(getASTLambdaArgumentNames(lambda), name);
 }
 
 void replaceLambdaArgument(ASTPtr & ast, const ASTPtr & replacement, const String & lambda_arg, bool is_masked = false)

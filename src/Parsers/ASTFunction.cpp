@@ -30,6 +30,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int UNKNOWN_FUNCTION;
 }
@@ -922,6 +924,29 @@ bool isASTLambdaFunction(const ASTFunction & function)
     }
 
     return false;
+}
+
+std::vector<String> getASTLambdaArgumentNames(const ASTFunction & function)
+{
+    if (!function.arguments || function.arguments->children.size() != 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "lambda requires two arguments");
+
+    const auto * lambda_args_tuple = function.arguments->children[0]->as<ASTFunction>();
+
+    if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "First argument of lambda must be a tuple");
+
+    std::vector<String> names;
+    for (auto & child : lambda_args_tuple->arguments->children)
+    {
+        const auto * identifier = child->as<ASTIdentifier>();
+        if (!identifier)
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "lambda argument declarations must be identifiers");
+
+        names.push_back(identifier->name());
+    }
+
+    return names;
 }
 
 }

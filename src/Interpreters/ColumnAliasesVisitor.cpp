@@ -1,6 +1,5 @@
 #include <Interpreters/ColumnAliasesVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -44,7 +43,7 @@ void ColumnAliasesMatcher::visit(ASTFunction & node, ASTPtr & /*ast*/, Data & da
     if (node.name == "lambda")
     {
         Names local_aliases;
-        auto names_from_lambda = RequiredSourceColumnsMatcher::extractNamesFromLambda(node);
+        auto names_from_lambda = getASTLambdaArgumentNames(node);
         for (const auto & name : names_from_lambda)
         {
             if (data.private_aliases.insert(name).second)
