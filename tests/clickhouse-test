@@ -1716,6 +1716,10 @@ class MergeTreeSettingsRandomizer:
         "packed_skip_index_max_bytes": lambda: random.choice(
             [0, 100, 1024, 1024 * 1024, 10 * 1024 * 1024]
         ),
+        # Randomize the default compression codec used for columns without an explicit
+        # CODEC. The value is the bare codec string (no SQL quoting); it is shell-quoted
+        # only where it is embedded into a .sql test command line (see cli_format_settings).
+        "default_compression_codec": lambda: random.choice(["LZ4", "ZSTD(1)", "ZSTD(3)"]),
     }
 
     @staticmethod
@@ -2095,10 +2099,16 @@ class TestCase:
         return testcase_args
 
     @staticmethod
-    def cli_format_settings(settings_list) -> str:
+    def cli_format_settings(settings_list, shell_quote=False) -> str:
         out = []
         for k, v in settings_list.items():
-            out.extend([f"--{k}", str(v)])
+            value = str(v)
+            # Some setting values contain shell metacharacters (e.g. the parentheses
+            # in a codec like ZSTD(3)). When the result is embedded into a shell
+            # command line (the .sql test path), such values must be quoted.
+            if shell_quote:
+                value = shlex.quote(value)
+            out.extend([f"--{k}", value])
         return " ".join(out)
 
     @staticmethod
@@ -2109,7 +2119,16 @@ class TestCase:
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
     def add_effective_settings(self, client_options):
-        new_options = ""
+        # Build two representations of the randomized settings:
+        # - bare: stored in the CLICKHOUSE_CLIENT_OPT env var. .sh tests expand it
+        #   unquoted (via $CLICKHOUSE_CLIENT), so shell metacharacters such as the
+        #   parentheses in a codec like ZSTD(3) must stay bare here — any quotes
+        #   would be passed through to the client literally.
+        # - shell-quoted: returned and embedded directly into the .sql test command
+        #   line, which is parsed by the shell, so the same values must be quoted to
+        #   keep the shell from interpreting those metacharacters.
+        new_options_bare = ""
+        new_options_quoted = ""
         if self.effective_settings:
             http_params = self.http_format_settings(self.effective_settings)
             if len(self.base_url_params) == 0:
@@ -2119,18 +2138,21 @@ class TestCase:
                     self.base_url_params + "&" + http_params
                 )
 
-            new_options += f" {self.cli_format_settings(self.effective_settings)}"
+            new_options_bare += f" {self.cli_format_settings(self.effective_settings)}"
+            new_options_quoted += f" {self.cli_format_settings(self.effective_settings, shell_quote=True)}"
 
         if self.effective_merge_tree_settings:
-            new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
+            new_options_bare += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
+            new_options_quoted += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings, shell_quote=True)}"
 
         # Put randomized settings BEFORE base_client_options / client_options so
         # that user-supplied --client-option values win over them: with
         # --allow_repeated_settings, the last occurrence is what takes effect.
-        if new_options != "":
-            new_options += " --allow_repeated_settings"
+        if new_options_bare != "":
+            new_options_bare += " --allow_repeated_settings"
+            new_options_quoted += " --allow_repeated_settings"
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                new_options + " " + self.base_client_options + " "
+                new_options_bare + " " + self.base_client_options + " "
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
@@ -2141,7 +2163,7 @@ class TestCase:
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
 
-        return new_options + " " + client_options
+        return new_options_quoted + " " + client_options
 
     def remove_settings_from_env(self):
         os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
@@ -2149,9 +2171,9 @@ class TestCase:
 
     def add_info_about_settings(self, description):
         if self.effective_settings:
-            description += f"\nSettings used in the test: {self.cli_format_settings(self.effective_settings)}"
+            description += f"\nSettings used in the test: {self.cli_format_settings(self.effective_settings, shell_quote=True)}"
         if self.effective_merge_tree_settings:
-            description += f"\n\nMergeTree settings used in test: {self.cli_format_settings(self.effective_merge_tree_settings)}"
+            description += f"\n\nMergeTree settings used in test: {self.cli_format_settings(self.effective_merge_tree_settings, shell_quote=True)}"
 
         return description + "\n"
 
@@ -2381,11 +2403,11 @@ class TestCase:
         if culprit_settings or culprit_mt_settings:
             if culprit_settings:
                 diagnosis_lines.append(
-                    f"Culprit settings: {self.cli_format_settings(culprit_settings)}"
+                    f"Culprit settings: {self.cli_format_settings(culprit_settings, shell_quote=True)}"
                 )
             if culprit_mt_settings:
                 diagnosis_lines.append(
-                    f"Culprit MergeTree settings: {self.cli_format_settings(culprit_mt_settings)}"
+                    f"Culprit MergeTree settings: {self.cli_format_settings(culprit_mt_settings, shell_quote=True)}"
                 )
         else:
             # Could not isolate — the failure requires the full combination
@@ -2395,11 +2417,11 @@ class TestCase:
             )
             if failed_settings:
                 diagnosis_lines.append(
-                    f"All randomized settings: {self.cli_format_settings(failed_settings)}"
+                    f"All randomized settings: {self.cli_format_settings(failed_settings, shell_quote=True)}"
                 )
             if failed_mt_settings:
                 diagnosis_lines.append(
-                    f"All randomized MergeTree settings: {self.cli_format_settings(failed_mt_settings)}"
+                    f"All randomized MergeTree settings: {self.cli_format_settings(failed_mt_settings, shell_quote=True)}"
                 )
 
         return "\n".join(diagnosis_lines) + "\n"
@@ -4277,9 +4299,9 @@ def run_diagnose_from_artifacts(args, stop_testing):
             print(f"\n{'='*70}")
             print(f"Diagnosing: {test_name}")
             if settings:
-                print(f"  Settings: {TestCase.cli_format_settings(settings)}")
+                print(f"  Settings: {TestCase.cli_format_settings(settings, shell_quote=True)}")
             if mt_settings:
-                print(f"  MergeTree settings: {TestCase.cli_format_settings(mt_settings)}")
+                print(f"  MergeTree settings: {TestCase.cli_format_settings(mt_settings, shell_quote=True)}")
             print(f"{'='*70}")
 
             try:
