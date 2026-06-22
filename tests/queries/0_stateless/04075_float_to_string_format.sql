@@ -3,6 +3,10 @@
 --   Scientific notation: no '+' on positive exponent, no zero-padding.
 --   NaN never has a sign. Inf preserves sign.
 
+-- This test is about float-to-string formatting, so parse the input literals precisely to get the
+-- same values on every platform (the fast parser may round a literal differently between archs).
+SET precise_float_parsing = 1;
+
 -- Float64: Fixed notation boundaries
 SELECT '--- Float64 fixed/scientific boundaries ---';
 SELECT 0.000001;             -- dec_exp = -6 → fixed

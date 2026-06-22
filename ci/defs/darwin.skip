@@ -1,4 +1,3 @@
-00558_parse_floats
 00564_versioned_collapsing_merge_tree
 00565_enum_order
 00573_shard_aggregation_by_empty_set
@@ -962,7 +961,6 @@
 02898_input_format_values_allow_data_after_semicolon
 02898_parallel_replicas_progress_bar
 02900_clickhouse_local_drop_current_database
-02900_issue_55858
 02901_parallel_replicas_rollup
 02902_show_databases_limit
 02903_parameterized_view_explain_ast

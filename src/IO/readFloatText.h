@@ -624,8 +624,21 @@ template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in)
         return readFloatTextPreciseImpl<T, bool>(x, in);
 }
 
+/// The fast float parser relies on `long double` being wider than `double` for its precision.
+/// On platforms where it is not (e.g. Apple arm64, where `long double == double`), the fast parser
+/// is less precise, and making it correctly rounded (e.g. with a double-double powers-of-ten table)
+/// was measured to be both slower and no more precise than the precise (fast_float) parser. So the
+/// fast path has nothing to offer there - neither speed nor accuracy - and we defer to precise.
+inline constexpr bool fast_float_parsing_is_useful = std::numeric_limits<long double>::digits > std::numeric_limits<double>::digits;
+
 template <typename T> void readFloatTextFast(T & x, ReadBuffer & in)
 {
+    if constexpr (!fast_float_parsing_is_useful)
+    {
+        readFloatTextPrecise(x, in);
+        return;
+    }
+
     bool has_fractional = false;
     if constexpr (std::is_same_v<T, BFloat16>)
     {
@@ -639,6 +652,9 @@ template <typename T> void readFloatTextFast(T & x, ReadBuffer & in)
 
 template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in)
 {
+    if constexpr (!fast_float_parsing_is_useful)
+        return tryReadFloatTextPrecise(x, in);
+
     bool has_fractional = false;
     if constexpr (std::is_same_v<T, BFloat16>)
     {
