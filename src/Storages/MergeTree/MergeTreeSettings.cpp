@@ -1178,6 +1178,12 @@ namespace ErrorCodes
     down `Async Inserts` because it needs to compare more entries.
     The hash sum is calculated from the composition of the field names and types
     and the data of the insert (stream of bytes).
+
+    This setting applies only under `insert_deduplication_version = old_separate_hashes` or
+    `compatible_double_hashes`, which keep async-insert hashes in a separate `async_blocks`
+    directory. Under the default `new_unified_hash`, async inserts share the unified
+    `deduplication_hashes` directory with sync inserts and are governed by
+    `replicated_deduplication_window` / `replicated_deduplication_window_seconds` instead.
     )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds_for_async_inserts, 7 * 24 * 60 * 60 /* one week */, R"(
     The number of seconds after which the hash sums of the async inserts are
@@ -1195,6 +1201,10 @@ namespace ErrorCodes
 
     The time is relative to the time of the most recent record, not to the wall
     time. If it's the only record it will be stored forever.
+
+    Like `replicated_deduplication_window_for_async_inserts`, this applies only under
+    `insert_deduplication_version = old_separate_hashes` / `compatible_double_hashes`; under the
+    default `new_unified_hash`, async inserts use `replicated_deduplication_window_seconds`.
     )", 0) \
     DECLARE(Milliseconds, async_block_ids_cache_update_wait_ms, 100, R"(
     How long each insert iteration will wait for async_block_ids_cache update

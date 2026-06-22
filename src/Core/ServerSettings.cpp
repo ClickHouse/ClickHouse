@@ -78,6 +78,7 @@ namespace
         This value should be enabled for some time (see replicated_deduplication_window and non_replicated_deduplication_window settings) to make sure that no sync or async inserts are lost during migration.
         Finally the value `new_unified_hash` means that ClickHouse will use the new deduplication hash for sync and async inserts. This value could be enabled on new instances of ClickHouse or on instances which already used `compatible_double_hashes` value for some time.
         With `new_unified_hash`, the deduplication hash covers the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not per individual partition.
+        Under `new_unified_hash` async inserts also use the unified hash and share the sync deduplication window (`replicated_deduplication_window` / `replicated_deduplication_window_seconds`); the `*_for_async_inserts` window settings apply only to the legacy `old_separate_hashes` / `compatible_double_hashes` path.
         The default was `compatible_double_hashes` for one phase of the migration and is now `new_unified_hash`, which completes the migration in a safe way in two phases.
         Instances upgraded directly from `old_separate_hashes` should run with `compatible_double_hashes` for some time (see replicated_deduplication_window and non_replicated_deduplication_window settings) before relying on the unified hash.
     )", 0) \
