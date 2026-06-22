@@ -47,10 +47,10 @@ public:
 
         void markFailed();
         void markBypassed();
-        void addMissingToken();
-        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, ReadableRows * readable);
-        void addRowsRange(RowsRange token_rows_range, ReadableRows * readable);
-        void addPostings(PostingListPtr token_postings, ReadableRows * readable);
+        void addMissingToken(std::string_view token);
+        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range);
+        void addRowsRange(RowsRange token_rows_range);
+        void addPostings(const PostingList & token_postings);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
     };
 

@@ -81,49 +81,27 @@ void TextIndexAnalyzer::QueryBuilder::markBypassed()
     /// Bypassing a query makes sense only for direct read optimization.
 }
 
-void TextIndexAnalyzer::QueryBuilder::addMissingToken()
+void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
 {
+    tokens.erase(token);
+
     if (query->search_mode == TextSearchMode::All)
         markFailed();
 }
 
-void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, ReadableRows * readable)
+void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range)
 {
     if (is_failed || tokens.contains(token))
         return;
 
     tokens[token] = token_info;
-
-    chassert(!token_info->ranges.empty());
-    RowsRange token_rows_range(token_info->ranges.front().begin, token_info->ranges.back().end);
-    addRowsRange(token_rows_range, readable);
-
-    if (token_info->embedded_postings)
-        addPostings(token_info->embedded_postings, readable);
+    addRowsRange(token_rows_range);
 }
 
-void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range, ReadableRows * readable)
+void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
 {
     if (is_failed)
         return;
-
-    /// Clip the token's row range to the rows that are still readable.
-    if (readable)
-    {
-        auto clipped_range = readable->clipRowsRange(token_rows_range);
-
-        if (!clipped_range)
-        {
-            /// The token never occurs in a readable row.
-            if (query->search_mode == TextSearchMode::All)
-                markFailed();
-
-            /// In `Any` mode it simply contributes nothing to the union, so skip it.
-            return;
-        }
-
-        token_rows_range = *clipped_range;
-    }
 
     if (!rows_range)
     {
@@ -142,31 +120,19 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range, R
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings, ReadableRows * readable)
+void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_postings)
 {
     if (is_failed)
         return;
 
     ++num_read_postings;
 
-    /// Clip the token's postings to the readable rows. In `All` mode only the first token needs clipping:
-    /// once the running intersection is within the readable rows, intersecting later tokens keeps it there.
-    /// `Any` mode clips every token, because each union would otherwise re-add rows outside the readable rows.
-    PostingList clipped;
-    const PostingList * postings_to_fold = token_postings.get();
-
-    if (readable && (!postings || query->search_mode == TextSearchMode::Any))
-    {
-        clipped = readable->clipPostings(*token_postings);
-        postings_to_fold = &clipped;
-    }
-
     if (!postings)
-        postings = *postings_to_fold;
+        postings = token_postings;
     else if (query->search_mode == TextSearchMode::Any)
-        *postings |= *postings_to_fold;
+        *postings |= token_postings;
     else
-        *postings &= *postings_to_fold;
+        *postings &= token_postings;
 
     /// `All` mode fails as soon as the running intersection of readable postings becomes empty.
     if (query->search_mode == TextSearchMode::All && postings->cardinality() == 0)
@@ -206,32 +172,74 @@ void TextIndexAnalyzer::addMissingToken(std::string_view token)
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addMissingToken();
+        query_builder.addMissingToken(token);
     });
 }
 
 void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
     all_token_infos[token] = token_info;
-    auto * readable = readable_rows.has_value() ? &readable_rows.value() : nullptr;
 
-    if (token_info->embedded_postings)
-        tokens_with_postings.emplace(token);
+    /// Clip the token's row range to the readable rows once.
+    chassert(!token_info->ranges.empty());
+    RowsRange token_rows_range(token_info->ranges.front().begin, token_info->ranges.back().end);
+
+    if (readable_rows)
+    {
+        auto clipped_range = readable_rows->clipRowsRange(token_rows_range);
+
+        if (!clipped_range)
+        {
+            processTokenOperation(token, [&](QueryBuilder & query_builder)
+            {
+                query_builder.addMissingToken(token);
+            });
+
+            queries_by_token.erase(token);
+            return;
+        }
+
+        token_rows_range = *clipped_range;
+    }
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addTokenInfo(token, token_info, readable);
+        query_builder.addTokenInfo(token, token_info, token_rows_range);
     });
+
+    if (token_info->embedded_postings)
+        addPostings(token, token_info->embedded_postings);
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
 {
     tokens_with_postings.emplace(token);
-    auto * readable = readable_rows.has_value() ? &readable_rows.value() : nullptr;
+
+    /// Clip the postings to the readable rows once.
+    std::optional<PostingList> clipped_postings;
+    const auto * postings_ptr = postings.get();
+
+    if (readable_rows)
+    {
+        clipped_postings = readable_rows->clipPostings(*postings);
+
+        if (clipped_postings->cardinality() == 0)
+        {
+            processTokenOperation(token, [&](QueryBuilder & query_builder)
+            {
+                query_builder.addMissingToken(token);
+            });
+
+            queries_by_token.erase(token);
+            return;
+        }
+
+        postings_ptr = &*clipped_postings;
+    }
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addPostings(postings, readable);
+        query_builder.addPostings(*postings_ptr);
     });
 }
 
