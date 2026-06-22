@@ -5,6 +5,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
