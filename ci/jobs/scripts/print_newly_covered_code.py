@@ -95,12 +95,16 @@ def _parse_info(path: str) -> dict:
                 continue
             elif line.startswith("DA:"):
                 parts = line[3:].split(",", 2)
-                ln, cnt = int(parts[0]), int(parts[1])
+                # lcov may emit counts in scientific notation (e.g. 3.69e+19) when
+                # multiple .info files are merged and counters overflow. Use float
+                # first to handle that, then convert to int (coverage only cares
+                # whether the count is zero or non-zero).
+                ln, cnt = int(parts[0]), int(float(parts[1]))
                 data[cur_rel]["lines"][ln] = data[cur_rel]["lines"].get(ln, 0) + cnt
             elif line.startswith("FNDA:"):
                 cnt_str, name = line[5:].split(",", 1)
                 data[cur_rel]["fns"][name] = (
-                    data[cur_rel]["fns"].get(name, 0) + int(cnt_str)
+                    data[cur_rel]["fns"].get(name, 0) + int(float(cnt_str))
                 )
             elif line == "end_of_record":
                 cur_rel = None

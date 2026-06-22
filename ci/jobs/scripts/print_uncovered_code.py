@@ -91,12 +91,14 @@ def _parse_info(path: str) -> dict:
                 continue
             elif line.startswith("DA:"):
                 parts = line[3:].split(",", 2)
-                ln, cnt = int(parts[0]), int(parts[1])
+                # Use float() first: lcov may emit scientific notation (e.g. 3.69e+19)
+                # when merging many .info files and counts overflow.
+                ln, cnt = int(parts[0]), int(float(parts[1]))
                 data[cur_rel]["lines"][ln] = data[cur_rel]["lines"].get(ln, 0) + cnt
             elif line.startswith("FNDA:"):
                 rest = line[5:]
                 cnt_str, name = rest.split(",", 1)
-                data[cur_rel]["fns"][name] = data[cur_rel]["fns"].get(name, 0) + int(cnt_str)
+                data[cur_rel]["fns"][name] = data[cur_rel]["fns"].get(name, 0) + int(float(cnt_str))
             elif line == "end_of_record":
                 cur = cur_rel = None
     return data
@@ -275,7 +277,7 @@ if __name__ == "__main__":
                 # DA:<line>,<count>[,<checksum>]
                 parts = line[3:].split(",", 2)
                 ln = int(parts[0])
-                cnt = int(parts[1])
+                cnt = int(float(parts[1]))
 
                 # check if ln is in any changed range (ranges are small; linear scan OK)
                 in_changed = any(a <= ln <= b for a, b in active_ranges)
