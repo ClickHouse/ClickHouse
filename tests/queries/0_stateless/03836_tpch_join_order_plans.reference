@@ -127,11 +127,11 @@ Expression ((Project names + Projection))
             ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q07
 Expression (Project names)
-  GatherExchange
-    Expression ((Before ORDER BY + Projection))
-      Sorting
-        Aggregating
-          ShuffleExchange
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      MergingAggregated
+        GatherExchange
+          Aggregating
             Expression (Before GROUP BY)
               Filter (WHERE)
                 JoinLogical (Broadcast HashJoin )
@@ -158,11 +158,11 @@ Expression (Project names)
                         ReadFromMergeTree (default.nation)
 -- Q08
 Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
-  GatherExchange
-    Expression ((Before ORDER BY + Projection))
-      Sorting
-        Aggregating
-          ShuffleExchange
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      MergingAggregated
+        GatherExchange
+          Aggregating
             Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + )))))
               JoinLogical (Broadcast HashJoin )
                 JoinLogical (Shuffle HashJoin  swapped)
