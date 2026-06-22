@@ -112,14 +112,14 @@ public:
     static std::unique_ptr<DeleteBitmap> deserialize(ReadBuffer & in);
 
     /// File name convention: `delete_bitmap_{csn}.rbm`.
-    static std::string fileNameForCsn(BitmapVersion csn);
+    static std::string fileNameForCSN(BitmapVersion csn);
 
     /// True if `file_name` matches the canonical `delete_bitmap_{csn}.rbm` form.
     static bool isDeleteBitmapFile(std::string_view file_name);
 
     /// Extract csn from `delete_bitmap_{csn}.rbm`. Caller must have screened
     /// the name via `isDeleteBitmapFile`; throws if `file_name` does not match.
-    static BitmapVersion parseCsnFromFileName(std::string_view file_name);
+    static BitmapVersion parseCSNFromFileName(std::string_view file_name);
 
     /// File-format constants. Exposed so tests can corrupt bytes deterministically.
     static constexpr UInt32 MAGIC = 0x314D4252; /// "RBM1" little-endian

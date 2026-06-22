@@ -57,9 +57,9 @@ namespace
         std::filesystem::path partFile(const std::string & name) const { return base_path / part_dir / name; }
     };
 
-    DeleteBitmapCache makeCache(size_t bytes = 8 * 1024 * 1024)
+    DeleteBitmapCachePtr makeCache(size_t bytes = 8 * 1024 * 1024)
     {
-        return DeleteBitmapCache(
+        return std::make_shared<DeleteBitmapCache>(
             "LRU",
             CurrentMetrics::DeleteBitmapCacheBytes,
             CurrentMetrics::DeleteBitmapCacheEntries,
@@ -123,7 +123,7 @@ TEST(MergeTreeBitmapStoreTest, ReadBitmapUsesCache)
 {
     PartStorageFixture fx;
     auto cache = makeCache();
-    MergeTreeBitmapStore store{&cache};
+    MergeTreeBitmapStore store{cache};
     store.installBitmap(*fx.storage, "p", "part", /*csn=*/11, bitmapWithRow(77));
 
     auto [first, _v1] = store.readBitmap(*fx.storage, /*snapshot_csn=*/100, "p");
@@ -178,7 +178,7 @@ TEST(MergeTreeBitmapStoreTest, DropPartErasesInMemoryStateAndCache)
 {
     PartStorageFixture fx;
     auto cache = makeCache();
-    MergeTreeBitmapStore store{&cache};
+    MergeTreeBitmapStore store{cache};
     store.installBitmap(*fx.storage, "p", "part", /*csn=*/9, bitmapWithRow(90));
 
     auto [bm_first, _v_first] = store.readBitmap(*fx.storage, /*snapshot_csn=*/100, "p");
@@ -197,13 +197,13 @@ TEST(MergeTreeBitmapStoreTest, DropPartEvictsCacheAfterInstallInvalidatedVersion
 {
     PartStorageFixture fx;
     auto cache = makeCache();
-    MergeTreeBitmapStore store{&cache};
+    MergeTreeBitmapStore store{cache};
 
     /// Install v3 and read it so the content cache holds an entry for (p, 3).
     store.installBitmap(*fx.storage, "p", "part", /*csn=*/3, bitmapWithRow(30));
     auto [bm3, v3] = store.readBitmap(*fx.storage, /*snapshot_csn=*/3, "p");
     ASSERT_EQ(v3, 3u);
-    ASSERT_NE(cache.get(DeleteBitmapCache::makeKey("p", 3)), nullptr);
+    ASSERT_NE(cache->get(DeleteBitmapCache::makeKey("p", 3)), nullptr);
 
     /// Installing a newer version invalidates the store's in-memory version index for "p".
     store.installBitmap(*fx.storage, "p", "part", /*csn=*/7, bitmapWithRow(70));
@@ -212,17 +212,17 @@ TEST(MergeTreeBitmapStoreTest, DropPartEvictsCacheAfterInstallInvalidatedVersion
     /// Regression: dropPart used to early-return when the index entry was absent, leaving a stale
     /// bitmap that a reused disk:path identity could read.
     store.dropPart("p");
-    EXPECT_EQ(cache.get(DeleteBitmapCache::makeKey("p", 3)), nullptr);
+    EXPECT_EQ(cache->get(DeleteBitmapCache::makeKey("p", 3)), nullptr);
 }
 
-/// The monotonicity violation is a LOGICAL_ERROR: it aborts in debug/sanitizer
-/// builds and throws otherwise. Death tests are unreliable under the sanitizer
-/// fork-in-threaded-context, so exercise the rejection only on the throw path
+/// `installBitmap` rejects bad input (non-monotonic csn, or csn 0) with a LOGICAL_ERROR, which
+/// aborts in debug/sanitizer builds and throws otherwise. Death tests are unreliable under the
+/// sanitizer fork-in-threaded-context, so exercise the rejection only on the throw path
 /// (coverage/release lanes) and skip where it aborts.
 #ifdef DEBUG_OR_SANITIZER_BUILD
-#define EXPECT_MONOTONICITY_REJECTS(stmt) GTEST_SKIP() << "monotonicity LOGICAL_ERROR aborts in debug/sanitizer builds"
+#define EXPECT_INSTALL_REJECTS(stmt) GTEST_SKIP() << "installBitmap LOGICAL_ERROR aborts in debug/sanitizer builds"
 #else
-#define EXPECT_MONOTONICITY_REJECTS(stmt) EXPECT_THROW(stmt, DB::Exception)
+#define EXPECT_INSTALL_REJECTS(stmt) EXPECT_THROW(stmt, DB::Exception)
 #endif
 
 TEST(MergeTreeBitmapStoreTest, InstallBitmapMonotonicityRejected)
@@ -231,48 +231,22 @@ TEST(MergeTreeBitmapStoreTest, InstallBitmapMonotonicityRejected)
     MergeTreeBitmapStore store{/*cache=*/nullptr};
     store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(1));
 
-    EXPECT_MONOTONICITY_REJECTS(store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(2)));
-    EXPECT_MONOTONICITY_REJECTS(store.installBitmap(*fx.storage, "p", "part", /*csn=*/5, bitmapWithRow(3)));
+    EXPECT_INSTALL_REJECTS(store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(2)));
+    EXPECT_INSTALL_REJECTS(store.installBitmap(*fx.storage, "p", "part", /*csn=*/5, bitmapWithRow(3)));
 }
 
-TEST(MergeTreeBitmapStoreTest, InstallBitmapAfterDropPartReseesAllVersions)
+TEST(MergeTreeBitmapStoreTest, InstallBitmapRejectsCsnZero)
 {
+    /// CSN 0 is the no-bitmap sentinel `readBitmap` returns, so it must never name a real bitmap.
     PartStorageFixture fx;
     MergeTreeBitmapStore store{/*cache=*/nullptr};
-
-    store.installBitmap(*fx.storage, "p", "part", /*csn=*/3, bitmapWithRow(30));
-    store.installBitmap(*fx.storage, "p", "part", /*csn=*/7, bitmapWithRow(70));
-
-    /// `dropPart` clears the in-memory index but never touches disk;
-    /// the next install must rebuild from disk truth, not from {csn} alone.
-    store.dropPart("p");
-    store.installBitmap(*fx.storage, "p", "part", /*csn=*/9, bitmapWithRow(90));
-
-    auto [bm_mid, chosen_mid] = store.readBitmap(*fx.storage, /*snapshot_csn=*/5, "p");
-    EXPECT_EQ(chosen_mid, 3u);
-    EXPECT_TRUE(bm_mid->contains(30));
-
-    auto [bm_latest, chosen_latest] = store.readBitmap(*fx.storage, /*snapshot_csn=*/100, "p");
-    EXPECT_EQ(chosen_latest, 9u);
-    EXPECT_TRUE(bm_latest->contains(90));
-}
-
-TEST(MergeTreeBitmapStoreTest, InstallBitmapMonotonicityHoldsAcrossDropPart)
-{
-    /// Monotonicity re-snapshots from disk after a drop, so reinstalling
-    /// an existing on-disk csn must still be rejected.
-    PartStorageFixture fx;
-    MergeTreeBitmapStore store{/*cache=*/nullptr};
-    store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(1));
-    store.dropPart("p");
-
-    EXPECT_MONOTONICITY_REJECTS(store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(2)));
+    EXPECT_INSTALL_REJECTS(store.installBitmap(*fx.storage, "p", "part", /*csn=*/0, bitmapWithRow(1)));
 }
 
 TEST(MergeTreeBitmapStoreTest, CorruptFileSurfacesError)
 {
     PartStorageFixture fx;
-    auto file_path = fx.partFile(DeleteBitmap::fileNameForCsn(1));
+    auto file_path = fx.partFile(DeleteBitmap::fileNameForCSN(1));
     {
         WriteBufferFromFile out(file_path.string());
         DeleteBitmap bm;

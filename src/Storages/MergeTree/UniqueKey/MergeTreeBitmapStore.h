@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Common/SharedMutex.h>
 
 #include <memory>
@@ -14,7 +15,6 @@ namespace DB
 
 class IDataPartStorage;
 class IMergeTreeDataPart;
-class DeleteBitmapCache;
 
 /// UNIQUE KEY — MergeTree-backed bitmap store. Bitmap files are named
 /// `delete_bitmap_<csn>.rbm`; each commit allocates a global
@@ -22,12 +22,12 @@ class DeleteBitmapCache;
 /// at that csn. Readers pin a `snapshot_csn` and pick the file with
 /// `max csn ≤ snapshot_csn` per part.
 ///
-/// The cache pointer is non-owning; the cache lifetime is the caller's
-/// (typically the `Context`).
+/// Holds a shared_ptr to the process-wide `DeleteBitmapCache` (owned by `Context`); null when
+/// caching is disabled. Shared ownership avoids a dangling cache reference.
 class MergeTreeBitmapStore
 {
 public:
-    explicit MergeTreeBitmapStore(DeleteBitmapCache * cache_ = nullptr);
+    explicit MergeTreeBitmapStore(DeleteBitmapCachePtr cache_ = nullptr);
 
     /// Install `bitmap` for `part` at `csn`. Atomic. Caller has already
     /// computed the cumulative `prev_bitmap ∪ new_kills`. Caller MUST
@@ -79,7 +79,7 @@ public:
     void dropPart(const std::string & part_id);
 
 private:
-    DeleteBitmapCache * cache;
+    DeleteBitmapCachePtr cache;
 
     /// Per-`part_id` sorted ascending csn list. Lazily populated on
     /// first access; updated by `installBitmap` and `gcObsoleteBitmaps`.
@@ -91,7 +91,7 @@ private:
     mutable SharedMutex csns_mutex;
     mutable std::unordered_map<std::string, std::vector<BitmapVersion>> csns_per_part;
 
-    std::vector<BitmapVersion> snapshotCsns(
+    std::vector<BitmapVersion> getSnapshotCSNs(
         const IDataPartStorage & storage,
         const std::string & part_id);
 };

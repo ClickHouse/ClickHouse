@@ -29,8 +29,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeBitmapStore::MergeTreeBitmapStore(DeleteBitmapCache * cache_)
-    : cache(cache_)
+MergeTreeBitmapStore::MergeTreeBitmapStore(DeleteBitmapCachePtr cache_)
+    : cache(std::move(cache_))
 {
 }
 
@@ -47,7 +47,7 @@ namespace
     }
 }
 
-std::vector<BitmapVersion> MergeTreeBitmapStore::snapshotCsns(
+std::vector<BitmapVersion> MergeTreeBitmapStore::getSnapshotCSNs(
     const IDataPartStorage & storage,
     const std::string & part_id)
 {
@@ -92,43 +92,38 @@ void MergeTreeBitmapStore::installBitmap(
     BitmapVersion csn,
     const DeleteBitmap & bitmap)
 {
-    /// Check against the local snapshot (not the map); the caller's
-    /// per-partition mutex serializes installs, so the snapshot is the
-    /// authoritative pre-install state even if `dropPart` races.
-    auto pre_install_csns = snapshotCsns(storage, part_id);
-    if (!pre_install_csns.empty() && csn <= pre_install_csns.back())
+    /// CSN 0 is the "no bitmap" sentinel `readBitmap` returns for an empty selection, so a real
+    /// bitmap may never be installed at version 0.
+    if (csn == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "UNIQUE KEY: bitmap version (csn) must be non-zero for part {}; 0 is the no-bitmap sentinel",
+            part_name);
+
+    /// The store is the in-memory authority for a part's installed versions; no disk read is needed
+    /// to manage the index. Hold the lock across the whole install so the monotonicity check, the
+    /// durable write, and the in-memory index update are one critical section — a concurrent reader
+    /// (shared lock) observes either the pre- or post-install state, never a half-state where the
+    /// file is on disk but the index doesn't list it (or vice versa).
+    ///
+    /// Pre-existing on-disk versions are expected to be loaded into `csns_per_part` at part-load by
+    /// the write-integration slice; install does not enumerate disk to rediscover them.
+    ///
+    /// TODO(unique-key): the lock spans writeBitmapToStorage (disk I/O), serializing the store-wide
+    /// index during the write. Acceptable now (installs serialized per partition, small/infrequent
+    /// writes, no production caller), but could be narrowed later — reserve the csn slot under the
+    /// lock, write outside it, then publish — once a concurrent workload justifies it.
+    std::unique_lock lock(csns_mutex);
+    auto & csns = csns_per_part[part_id];
+    if (!csns.empty() && csn <= csns.back())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Bitmap version {} for part {} must be strictly greater "
             "than the latest installed version {}",
-            csn, part_name, pre_install_csns.back());
+            csn, part_name, csns.back());
 
     DeleteBitmapFileOps::writeBitmapToStorage(storage, csn, bitmap, part_name);
     ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapUpdates);
 
-    /// The durable write above is the commit point; now republish the version index from disk truth.
-    /// ASSIGN it under the lock (do not erase): a concurrent reader in `snapshotCsns` may have scanned
-    /// the pre-install file set and be about to `try_emplace` it — assigning the fresh list overwrites
-    /// that stale publish, whereas erasing would let the reader's stale list win and miss `csn`.
-    /// If the re-enumeration throws after the durable write, drop the entry so the next read re-scans
-    /// disk truth (which already includes `csn`) instead of trusting a stale cached list.
-    try
-    {
-        auto files = DeleteBitmapFileOps::enumerateFiles(storage);
-        std::vector<BitmapVersion> csns;
-        csns.reserve(files.size());
-        for (const auto & f : files)
-            csns.push_back(f.version);
-        std::sort(csns.begin(), csns.end());
-
-        std::unique_lock lock(csns_mutex);
-        csns_per_part[part_id] = std::move(csns);
-    }
-    catch (...)
-    {
-        std::unique_lock lock(csns_mutex);
-        csns_per_part.erase(part_id);
-        throw;
-    }
+    csns.push_back(csn); /// csn > csns.back() (checked above) keeps the list sorted ascending
 }
 
 std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapStore::readBitmap(
@@ -136,14 +131,14 @@ std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapSto
     BitmapVersion snapshot_csn,
     const std::string & part_id)
 {
-    auto csns = snapshotCsns(storage, part_id);
+    auto csns = getSnapshotCSNs(storage, part_id);
 
     auto it = std::upper_bound(csns.begin(), csns.end(), snapshot_csn);
     if (it == csns.begin())
         return {std::make_shared<DeleteBitmap>(), 0};
     const BitmapVersion chosen_csn = *(--it);
 
-    const String file_name = DeleteBitmap::fileNameForCsn(chosen_csn);
+    const String file_name = DeleteBitmap::fileNameForCSN(chosen_csn);
     if (!cache)
     {
         std::shared_ptr<const DeleteBitmap> bm = readFromStorage(storage, file_name);
@@ -173,7 +168,7 @@ size_t MergeTreeBitmapStore::gcObsoleteBitmaps(
     /// per-partition UK mutex: both mutate the part's on-disk files and the in-memory CSN index, and
     /// a gc that unlinks a version while an install is mid-flight could otherwise leave the index
     /// listing a removed version.
-    auto csns = snapshotCsns(storage, part_id);
+    auto csns = getSnapshotCSNs(storage, part_id);
 
     std::vector<BitmapVersion> committed;
     committed.reserve(csns.size());
@@ -214,7 +209,7 @@ size_t MergeTreeBitmapStore::gcObsoleteBitmaps(
 
     for (auto v : to_remove)
     {
-        storage.removeFileIfExists(DeleteBitmap::fileNameForCsn(v));
+        storage.removeFileIfExists(DeleteBitmap::fileNameForCSN(v));
         removed.push_back(v);
         if (cache)
             cache->remove(DeleteBitmapCache::makeKey(part_id, v));

@@ -29,7 +29,7 @@ std::vector<BitmapFile> enumerateFiles(const IDataPartStorage & storage)
     {
         const auto & file_name = it->name();
         if (DeleteBitmap::isDeleteBitmapFile(file_name))
-            result.push_back({DeleteBitmap::parseCsnFromFileName(file_name), file_name});
+            result.push_back({DeleteBitmap::parseCSNFromFileName(file_name), file_name});
     }
     return result;
 }
@@ -51,7 +51,7 @@ void writeBitmapToStorage(
     const DeleteBitmap & bitmap,
     const String & /*diag_part_name*/)
 {
-    const String final_name = DeleteBitmap::fileNameForCsn(version);
+    const String final_name = DeleteBitmap::fileNameForCSN(version);
     const String tmp_name = final_name + ".tmp";
 
     /// Clear any stale `.tmp` from a previous failed attempt.
@@ -76,7 +76,7 @@ std::shared_ptr<DeleteBitmap> readBitmapFromStorage(
     BitmapVersion version,
     const String & diag_part_name)
 {
-    const String file_name = DeleteBitmap::fileNameForCsn(version);
+    const String file_name = DeleteBitmap::fileNameForCSN(version);
     if (!storage.existsFile(file_name))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
             "Delete bitmap file '{}' does not exist in part '{}'",

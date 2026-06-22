@@ -64,7 +64,7 @@ namespace
 
     /// `{csn}` slice of `delete_bitmap_{csn}.rbm`, or empty view if `file_name`
     /// doesn't match the prefix/suffix shape.
-    std::string_view extractCsnPart(std::string_view file_name)
+    std::string_view extractCSNPart(std::string_view file_name)
     {
         if (file_name.size() <= FILE_PREFIX.size() + FILE_SUFFIX.size())
             return {};
@@ -509,35 +509,35 @@ DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values)
     return result;
 }
 
-std::string DeleteBitmap::fileNameForCsn(BitmapVersion csn)
+std::string DeleteBitmap::fileNameForCSN(BitmapVersion csn)
 {
     return fmt::format("{}{}{}", FILE_PREFIX, csn, FILE_SUFFIX);
 }
 
 bool DeleteBitmap::isDeleteBitmapFile(std::string_view file_name)
 {
-    auto csn_part = extractCsnPart(file_name);
+    auto csn_part = extractCSNPart(file_name);
     if (csn_part.empty())
         return false;
     /// `tryParse<UInt64>` accepts leading `+` and ignores leading zeros, so a
     /// noncanonical name would resolve to the same csn as the canonical one
     /// and confuse the later read. Require digit-only, then round-trip
-    /// against `fileNameForCsn` to accept only the canonical form.
+    /// against `fileNameForCSN` to accept only the canonical form.
     for (char c : csn_part)
         if (c < '0' || c > '9')
             return false;
     UInt64 parsed = 0;
     if (!tryParse<UInt64>(parsed, csn_part))
         return false;
-    return fileNameForCsn(parsed) == file_name;
+    return fileNameForCSN(parsed) == file_name;
 }
 
-BitmapVersion DeleteBitmap::parseCsnFromFileName(std::string_view file_name)
+BitmapVersion DeleteBitmap::parseCSNFromFileName(std::string_view file_name)
 {
     /// Caller is expected to have screened the name via `isDeleteBitmapFile`.
     /// If they didn't, `parse<UInt64>` throws on a malformed slice rather than
     /// silently returning 0.
-    auto csn_part = extractCsnPart(file_name);
+    auto csn_part = extractCSNPart(file_name);
     return parse<BitmapVersion>(csn_part);
 }
 

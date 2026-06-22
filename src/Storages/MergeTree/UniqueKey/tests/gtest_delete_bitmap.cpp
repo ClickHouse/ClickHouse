@@ -453,8 +453,8 @@ TEST(DeleteBitmapTest, TrailingBytesAfterCRCRejected)
 
 TEST(DeleteBitmapTest, FileNameRoundtrip)
 {
-    EXPECT_EQ(DeleteBitmap::fileNameForCsn(0), "delete_bitmap_0.rbm");
-    EXPECT_EQ(DeleteBitmap::fileNameForCsn(12345), "delete_bitmap_12345.rbm");
+    EXPECT_EQ(DeleteBitmap::fileNameForCSN(0), "delete_bitmap_0.rbm");
+    EXPECT_EQ(DeleteBitmap::fileNameForCSN(12345), "delete_bitmap_12345.rbm");
 
     EXPECT_TRUE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_0.rbm"));
     EXPECT_TRUE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_999.rbm"));
@@ -471,9 +471,9 @@ TEST(DeleteBitmapTest, FileNameRoundtrip)
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_007.rbm"));
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_ 7.rbm"));
 
-    EXPECT_EQ(DeleteBitmap::parseCsnFromFileName("delete_bitmap_0.rbm"), 0U);
-    EXPECT_EQ(DeleteBitmap::parseCsnFromFileName("delete_bitmap_999.rbm"), 999U);
-    EXPECT_THROW(DeleteBitmap::parseCsnFromFileName("foo.rbm"), Exception);
+    EXPECT_EQ(DeleteBitmap::parseCSNFromFileName("delete_bitmap_0.rbm"), 0U);
+    EXPECT_EQ(DeleteBitmap::parseCSNFromFileName("delete_bitmap_999.rbm"), 999U);
+    EXPECT_THROW(DeleteBitmap::parseCSNFromFileName("foo.rbm"), Exception);
 }
 
 /// ---------- cache ----------
