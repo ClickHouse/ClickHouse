@@ -936,10 +936,16 @@ void SLRUFileCachePriority::SLRUIterator::decrementSize(size_t size)
     lru_iterator.decrementSize(size);
 }
 
-void SLRUFileCachePriority::SLRUIterator::invalidate()
+void SLRUFileCachePriority::SLRUIterator::invalidate() noexcept
 {
     assertValid();
     lru_iterator.invalidate();
+}
+
+void SLRUFileCachePriority::SLRUIterator::invalidateBeforeRemove(const CachePriorityGuard::WriteLock & lock) noexcept
+{
+    assertValid();
+    lru_iterator.invalidateBeforeRemove(lock);
 }
 
 bool SLRUFileCachePriority::SLRUIterator::isValid(const CachePriorityGuard::WriteLock & lock) const
