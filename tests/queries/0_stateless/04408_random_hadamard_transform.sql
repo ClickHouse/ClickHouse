@@ -8,6 +8,12 @@ SELECT length(randomHadamardTransform([1, 2, 3]::Array(Float32))),
 SELECT round(abs(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Float32))) - 30), 4);
 SELECT round(abs(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 123)) - 204), 4);
 
+-- Exact values pin the sign stream, the D then H order, and the padding/stage logic.
+SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32));        -- default seed
+SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32), 42);    -- another seed
+SELECT randomHadamardTransform([1, 2, 3]::Array(Float32));           -- padded length 3 -> 4
+SELECT randomHadamardTransform([1, 2, 3, 4]::Array(BFloat16));       -- BFloat16 path
+
 -- Deterministic in the seed; the default seed is 0.
 SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32), 42) = randomHadamardTransform([1, 2, 3, 4]::Array(Float32), 42);
 SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32), 1) = randomHadamardTransform([1, 2, 3, 4]::Array(Float32), 2);
@@ -43,5 +49,6 @@ SELECT length(randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 7, 500
 -- Errors.
 SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32), 0, 8); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 0, 800); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT randomHadamardTransform([]::Array(Float32), 0, -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT randomHadamardTransform([1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT randomHadamardTransform([1, 2]::Array(Float32), materialize(1)); -- { serverError ILLEGAL_COLUMN }

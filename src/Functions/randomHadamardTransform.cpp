@@ -438,6 +438,11 @@ public:
         {
             if (!isColumnConst(*arguments[2].column))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The 'output_dims' argument of function {} must be a constant", getName());
+            /// Reject a non-positive constant up front (validated independently of the input data):
+            /// a negative signed value would otherwise wrap to a huge UInt64 and only be caught per
+            /// row via the `k > working_dim` check below, which is skipped for empty arrays.
+            if (WhichDataType(arguments[2].type).isNativeInt() && arguments[2].column->getInt(0) <= 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The 'output_dims' argument of function {} must be positive", getName());
             fixed_out_dims = arguments[2].column->getUInt(0);
             if (fixed_out_dims == 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The 'output_dims' argument of function {} must be positive", getName());
