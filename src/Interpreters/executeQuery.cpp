@@ -1038,6 +1038,43 @@ static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
     }
 }
 
+/// Remove the resource-limit settings that executeASTFuzzerQueries pins on the fuzz context from
+/// every SETTINGS clause embedded in the fuzzed AST. These caps (row/time/memory/result limits)
+/// keep a single fuzzed query from running away. They are applied to the fuzz context up front,
+/// but executeQueryImpl re-applies the query's own SETTINGS on top of the context, so a seed or
+/// fuzzed `SETTINGS max_rows_to_read = 0` (etc.) would otherwise silently lift the guard. Stripping
+/// them from the AST before formatting makes the fuzz-context values authoritative.
+static void stripFuzzerSafetyLimitSettings(const ASTPtr & ast)
+{
+    static const std::string_view limit_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+    };
+
+    std::vector<ASTPtr> nodes_to_process{ast};
+    while (!nodes_to_process.empty())
+    {
+        auto node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (auto * set_query = node->as<ASTSetQuery>())
+        {
+            for (const auto & name : limit_settings)
+                set_query->changes.removeSetting(name);
+        }
+
+        for (const auto & child : node->children)
+        {
+            if (child)
+                nodes_to_process.push_back(child);
+        }
+    }
+}
+
 class ImplicitTransactionControlExecutor
 {
 public:
@@ -2086,6 +2123,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         {
             continue;
         }
+
+        /// Drop any SETTINGS that would override the fuzz-context resource caps below; otherwise a
+        /// seed/fuzzed `SETTINGS max_rows_to_read = 0` (etc.) lets the heavy query run unbounded.
+        stripFuzzerSafetyLimitSettings(fuzzed_ast);
 
         /// The fuzzer can produce structurally invalid ASTs (e.g. mismatched children counts)
         /// that cause crashes during formatting. Catch and skip those.
