@@ -138,7 +138,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
@@ -1301,8 +1300,6 @@ ContextData::ContextData(const ContextData &o) :
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
     kitchen_sink(o.kitchen_sink),
-    part_uuids(o.part_uuids),
-    ignored_part_uuids(o.ignored_part_uuids),
     query_parameters(o.query_parameters),
     host_context(o.host_context),
     metadata_transaction(o.metadata_transaction),
@@ -2225,9 +2222,9 @@ std::shared_ptr<const EnabledQuota> Context::getQuota() const
 }
 
 
-std::optional<QuotaUsage> Context::getQuotaUsage() const
+std::vector<QuotaUsage> Context::getQuotaUsages() const
 {
-    return getAccess()->getQuotaUsage();
+    return getAccess()->getQuotaUsages();
 }
 
 void Context::setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2813,7 +2810,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
-            auto query = table->getInMemoryMetadataPtr(getQueryContext(), false)->getSelectQuery().inner_query->clone();
+            auto view_metadata = table->getInMemoryMetadataPtr(getQueryContext(), false);
+            auto query = view_metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
             StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
@@ -7475,20 +7473,6 @@ void Context::setServerCompletelyStarted()
     shared->is_server_completely_started = true;
 }
 
-PartUUIDsPtr Context::getPartUUIDs() const
-{
-    std::lock_guard lock(mutex);
-
-    if (!part_uuids)
-        /// For context itself, only this initialization is not const.
-        /// We could have done in constructor.
-        /// TODO: probably, remove this from Context.
-        const_cast<PartUUIDsPtr &>(part_uuids) = std::make_shared<PartUUIDs>();
-
-    return part_uuids;
-}
-
-
 ClusterFunctionReadTaskCallback Context::getClusterFunctionReadTaskCallback() const
 {
     if (!next_task_callback.has_value())
@@ -7559,15 +7543,6 @@ void Context::setParallelReplicasGroupUUID(UUID uuid)
 UUID Context::getParallelReplicasGroupUUID() const
 {
     return parallel_replicas_group_uuid;
-}
-
-PartUUIDsPtr Context::getIgnoredPartUUIDs() const
-{
-    std::lock_guard lock(mutex);
-    if (!ignored_part_uuids)
-        const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
-
-    return ignored_part_uuids;
 }
 
 AsynchronousInsertQueue * Context::tryGetAsynchronousInsertQueue() const

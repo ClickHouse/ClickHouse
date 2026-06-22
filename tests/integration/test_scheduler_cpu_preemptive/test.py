@@ -2,7 +2,6 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-import random
 import threading
 import time
 
@@ -35,7 +34,7 @@ def start_cluster():
 @pytest.fixture(scope="function", autouse=True)
 def clear_workloads_and_resources():
     node.query(
-        f"""
+        """
         drop workload if exists production2;
         drop workload if exists development2;
         drop workload if exists staging;
@@ -69,7 +68,7 @@ def with_custom_config(request):
             [
                 "bash",
                 "-c",
-                f"rm -f /etc/clickhouse-server/config.d/99-custom_config.xml",
+                "rm -f /etc/clickhouse-server/config.d/99-custom_config.xml",
             ]
         )
         node.query("system reload config")
@@ -87,7 +86,7 @@ def assert_profile_event(node, query_id, profile_event, check):
 
 def test_create_workload():
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=100;
         create workload admin in all settings priority=0;
@@ -99,37 +98,37 @@ def test_create_workload():
     def do_checks():
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin' and type='workload' and priority=0"
+                "select count() from system.scheduler where path ilike '%/admin' and type='workload' and priority=0"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production' and type='workload' and weight=9"
+                "select count() from system.scheduler where path ilike '%/production' and type='workload' and weight=9"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='cpu' and max_requests=100"
+                "select count() from system.scheduler where path ilike '%/all/%' and type='inflight_limit' and resource='cpu' and max_requests=100"
             )
             == "1\n"
         )
@@ -159,7 +158,7 @@ def test_independent_pools(with_custom_config):
         pytest.skip("doesn't fit in timeouts due to heavy workload")
 
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all;
         create workload production in all settings max_concurrent_threads=15;
@@ -375,7 +374,7 @@ def ensure_shares(minimum_runtime: float, assertions: list[tuple[str, float]]) -
 
 def test_threads_oversubscription():
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=1;
         create workload production in all;
@@ -405,7 +404,7 @@ def test_cpu_time_fairness(queries, threads, production_length, development_leng
     # In CI we should have at least one CPU core, so we never hit CPU bottleneck w/o hitting scheduler limit.
     # This turns ON fair scheduling and we test should not be flaky.
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=8, max_cpus=1;
         create workload production in all settings weight=3;
@@ -491,7 +490,7 @@ def test_downscaling(with_custom_config):
         pytest.skip("doesn't fit in timeouts due to heavy workload")
 
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=2;
         create workload development in all;
@@ -523,7 +522,7 @@ def test_drop_workload_during_query():
     Uses short queries to maximize the chance of hitting the race condition with query finish.
     """
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all;
         create workload production in all;
@@ -567,7 +566,7 @@ def test_drop_workload_during_query():
 def test_create_workload_under_load():
     """Test that creating a WORKLOAD while queries are running does not cause crashes or deadlocks."""
     node.query(
-        f"""
+        """
         create resource cpu (master thread, worker thread);
         create workload all settings max_concurrent_threads=3;
         create workload production in all settings weight=1;
@@ -587,7 +586,7 @@ def test_create_workload_under_load():
     # Try to create a new workload while the queries are running
     # This is sibling workload, so it should not affect existing queries
     node.query(
-        f"create workload staging in all settings weight=2, max_cpus=1;"
+        "create workload staging in all settings weight=2, max_cpus=1;"
     )
     time.sleep(1)
     assert production.get_errors() == 0, "Errors occurred in production workload"
@@ -595,7 +594,7 @@ def test_create_workload_under_load():
 
     # This make production non-usable, as it will be not a leaf workload anymore
     node.query(
-        f"create workload production2 in production;"
+        "create workload production2 in production;"
     )
     time.sleep(1)
     production.wait_for_all_errors()
@@ -607,7 +606,7 @@ def test_create_workload_under_load():
 
     # This make development non-usable, as it will be not a leaf workload anymore
     node.query(
-        f"create workload development2 in development;"
+        "create workload development2 in development;"
     )
     time.sleep(1)
     development.wait_for_all_errors()

@@ -32,7 +32,7 @@ def start_cluster():
 @pytest.fixture(scope="function", autouse=True)
 def clear_workloads_and_resources():
     node.query(
-        f"""
+        """
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists admin;
@@ -60,7 +60,7 @@ def get_current_metric(metric_name):
 
 def test_create_workload():
     node.query(
-        f"""
+        """
         create resource memory (memory reservation);
         create workload all settings max_memory='1G';
         create workload admin in all settings precedence=-1;
@@ -73,26 +73,26 @@ def test_create_workload():
         # Check that allocation_queue nodes are created for memory resource
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/admin/%' and type='allocation_queue'"
+                "select count() from system.scheduler where path ilike '%/admin/%' and type='allocation_queue'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/production/%' and type='allocation_queue'"
+                "select count() from system.scheduler where path ilike '%/production/%' and type='allocation_queue'"
             )
             == "1\n"
         )
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/development/%' and type='allocation_queue'"
+                "select count() from system.scheduler where path ilike '%/development/%' and type='allocation_queue'"
             )
             == "1\n"
         )
         # Check that allocation_limit node is created with max_memory setting
         assert (
             node.query(
-                f"select count() from system.scheduler where path ilike '%/all/%' and type='allocation_limit' and resource='memory'"
+                "select count() from system.scheduler where path ilike '%/all/%' and type='allocation_limit' and resource='memory'"
             )
             == "1\n"
         )
@@ -104,7 +104,7 @@ def test_create_workload():
 
 def test_reserve_memory():
     node.query(
-        f"""
+        """
         create resource memory (memory reservation);
         create workload all settings max_memory='10Gi';
         create workload production in all;
@@ -136,7 +136,7 @@ def test_reserve_memory():
 
 def test_max_memory_limit():
     node.query(
-        f"""
+        """
         create resource memory (memory reservation);
         create workload all settings max_memory='5Mi';
         create workload production in all;
@@ -173,7 +173,7 @@ def test_max_memory_limit():
 def test_max_waiting_queries_rejects_extra():
     """Test that when the waiting queue is full, new queries are rejected."""
     node.query(
-        f"""
+        """
         create resource memory (memory reservation);
         create workload all settings max_memory='10Mi';
         create workload production in all settings max_waiting_queries=2;
@@ -187,8 +187,8 @@ def test_max_waiting_queries_rejects_extra():
             # This query reserves all memory and runs for a while
             # If 3 seconds is not enough, and this is flaky - just remove the whole test, max_waiting_queries is covered by the unittests anyway.
             node.query(
-                f"select sleep(3) from numbers(1) "
-                f"settings workload='production', reserve_memory='9Mi'",
+                "select sleep(3) from numbers(1) "
+                "settings workload='production', reserve_memory='9Mi'",
                 query_id=query_id,
             )
         except QueryRuntimeException as e:
@@ -205,7 +205,7 @@ def test_max_waiting_queries_rejects_extra():
             ):
                 time.sleep(0.1)
             node.query(
-                f"select count(*) from numbers(100) settings workload='production', reserve_memory='5Mi'",
+                "select count(*) from numbers(100) settings workload='production', reserve_memory='5Mi'",
                 query_id=query_id,
             )
         except QueryRuntimeException as e:
@@ -227,7 +227,7 @@ def test_max_waiting_queries_rejects_extra():
 def test_precedence_kills_lower_priority():
     """Test that higher precedence workload queries can kill lower precedence queries."""
     node.query(
-        f"""
+        """
         create resource memory (memory reservation);
         create workload all settings max_memory='50Mi';
         create workload production in all settings precedence=2;
@@ -314,7 +314,7 @@ def test_memory_reservation_concurrency():
     (the queries must outlive the polling) without putting any sleeps in test code.
     """
     node.query(
-        f"""
+        """
         create resource memory (memory reservation);
         create workload all settings max_memory='100Mi';
         create workload production in all;
@@ -327,7 +327,7 @@ def test_memory_reservation_concurrency():
         try:
             # Server-side sleep — holds the reservation until the query is killed below.
             node.query(
-                f"select sleepEachRow(1) from numbers(60) settings max_block_size=1, workload='production', reserve_memory='40Mi'",
+                "select sleepEachRow(1) from numbers(60) settings max_block_size=1, workload='production', reserve_memory='40Mi'",
                 query_id=query_id,
             )
         except QueryRuntimeException:
@@ -361,7 +361,7 @@ def test_cancel_query_with_memory_reservation():
     before the reservation is destroyed.
     """
     node.query(
-        f"""
+        """
         create resource memory (memory reservation);
         create workload all settings max_memory='1Gi';
         create workload production in all;
