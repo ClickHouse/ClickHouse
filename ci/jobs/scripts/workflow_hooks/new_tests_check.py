@@ -216,7 +216,7 @@ def check():
             "No new tests have been added, but the PR description has a link to a CI report - pass"
         )
         return True
-    print(f"No new tests have been added")
+    print("No new tests have been added")
     return False
 
 
