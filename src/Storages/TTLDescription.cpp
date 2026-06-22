@@ -117,7 +117,7 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
                 if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                         "TTL expression uses AggregateFunction column in a function that cannot handle it. "
-                        "Use finalizeAggregation() to extract the value first: {}", e.message());
+                        "Use `finalizeAggregation` to extract the value first: {}", e.message());
             }
         }
     }
