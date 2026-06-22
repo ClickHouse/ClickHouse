@@ -2099,15 +2099,24 @@ class TestCase:
         return testcase_args
 
     @staticmethod
-    def cli_format_settings(settings_list, shell_quote=False) -> str:
+    def cli_format_settings(settings_list, shell_quote=False, omit_unsafe=False) -> str:
         out = []
         for k, v in settings_list.items():
             value = str(v)
             # Some setting values contain shell metacharacters (e.g. the parentheses
-            # in a codec like ZSTD(3)). When the result is embedded into a shell
-            # command line (the .sql test path), such values must be quoted.
-            if shell_quote:
-                value = shlex.quote(value)
+            # in a codec like ZSTD(3)).
+            if shlex.quote(value) != value:
+                if omit_unsafe:
+                    # The bare CLICKHOUSE_CLIENT_OPT env var is expanded unquoted by
+                    # .sh tests, and some of them re-parse it through a second shell
+                    # (e.g. perl `qx{}`, `eval`). Such values cannot be carried there
+                    # safely (neither bare nor quoted survives both uses), so drop
+                    # them; a .sh test that needs the value sets it explicitly in SQL.
+                    continue
+                if shell_quote:
+                    # Embedded into a shell command line (the .sql test path): quote so
+                    # the shell does not interpret the metacharacters.
+                    value = shlex.quote(value)
             out.extend([f"--{k}", value])
         return " ".join(out)
 
@@ -2120,12 +2129,13 @@ class TestCase:
 
     def add_effective_settings(self, client_options):
         # Build two representations of the randomized settings:
-        # - bare: stored in the CLICKHOUSE_CLIENT_OPT env var. .sh tests expand it
-        #   unquoted (via $CLICKHOUSE_CLIENT), so shell metacharacters such as the
-        #   parentheses in a codec like ZSTD(3) must stay bare here — any quotes
-        #   would be passed through to the client literally.
+        # - bare: stored in the CLICKHOUSE_CLIENT_OPT env var, used by .sh tests. They
+        #   expand it unquoted (via $CLICKHOUSE_CLIENT) and some re-parse it through a
+        #   second shell (perl `qx{}`, `eval`), so only shell-safe tokens can be carried
+        #   here. Values with shell metacharacters (e.g. a codec like ZSTD(3)) are
+        #   dropped (omit_unsafe); a .sh test that needs such a value sets it in SQL.
         # - shell-quoted: returned and embedded directly into the .sql test command
-        #   line, which is parsed by the shell, so the same values must be quoted to
+        #   line, which is parsed once by the shell, so the same values are quoted to
         #   keep the shell from interpreting those metacharacters.
         new_options_bare = ""
         new_options_quoted = ""
@@ -2138,11 +2148,11 @@ class TestCase:
                     self.base_url_params + "&" + http_params
                 )
 
-            new_options_bare += f" {self.cli_format_settings(self.effective_settings)}"
+            new_options_bare += f" {self.cli_format_settings(self.effective_settings, omit_unsafe=True)}"
             new_options_quoted += f" {self.cli_format_settings(self.effective_settings, shell_quote=True)}"
 
         if self.effective_merge_tree_settings:
-            new_options_bare += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
+            new_options_bare += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings, omit_unsafe=True)}"
             new_options_quoted += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings, shell_quote=True)}"
 
         # Put randomized settings BEFORE base_client_options / client_options so
