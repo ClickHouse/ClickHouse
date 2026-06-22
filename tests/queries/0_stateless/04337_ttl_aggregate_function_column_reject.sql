@@ -118,9 +118,7 @@ TTL d + INTERVAL 1 DAY;
 DROP TABLE test_ttl_agg_tuple_not_referenced;
 
 -- Valid: a data-dependent error of a function that does not itself consume the AggregateFunction state
--- must NOT fail validation. Here intDiv only sees finalized values, so the synthetic state finalizing to
--- 0 (and the resulting division by zero on the validation row) must not turn this into a DDL failure;
--- rows whose state finalizes to a nonzero value evaluate like any other TTL expression with intDiv.
+-- must NOT fail validation. 
 CREATE TABLE test_ttl_agg_divzero
 (
     ts AggregateFunction(sum, UInt32)
@@ -141,6 +139,28 @@ CREATE TABLE test_ttl_agg_if_branch
 ENGINE = MergeTree()
 ORDER BY tuple()
 TTL if(cond, toDateTime(ts), toDateTime(finalizeAggregation(ts))) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+-- Lambda body: an unsupported AggregateFunction consumer inside a higher-order function's lambda must
+-- be rejected. Validation recurses into the lambda DAG instead of executing the outer arrayMap over the
+-- empty default array (which would never reach the lambda body).
+CREATE TABLE test_ttl_agg_lambda
+(
+    ts Array(AggregateFunction(max, DateTime64(3)))
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL arrayMap(x -> toDateTime(x), ts)[1] + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+-- Valid: a state-aware consumer inside a lambda body must be accepted.
+CREATE TABLE test_ttl_agg_lambda_finalize
+(
+    ts Array(AggregateFunction(max, DateTime64(3)))
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL arrayMap(x -> toDateTime(finalizeAggregation(x)), ts)[1] + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_lambda_finalize;
 
 -- Valid: finalizeAggregation can operate on AggregateFunction states
 CREATE TABLE test_ttl_agg_finalize

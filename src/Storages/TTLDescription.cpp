@@ -5,6 +5,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
@@ -79,22 +80,43 @@ namespace
 /// error from an unrelated downstream function - e.g. division by zero in `intDiv(100, finalizeAggregation(state))`
 /// when the default state finalizes to 0 - would turn a perfectly valid TTL into a CREATE TABLE failure.
 /// Walking nodes individually also makes the check independent of short-circuit evaluation, so an
-/// unsupported consumer hidden in a not-taken `if`/`multiIf` branch is still validated. Only the type
-/// error is translated into a clear message; all other exceptions are rethrown.
-void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expression, std::string_view expression_kind)
+/// unsupported consumer hidden in a not-taken `if`/`multiIf` branch is still validated.
+///
+/// Higher-order functions (e.g. `arrayMap`) keep their lambda body in a separate inner DAG owned by a
+/// `FunctionCapture`. Executing the outer node on a synthetic empty array would reduce the lambda over
+/// zero rows and never reach the body, so we recurse into the lambda DAG instead - its inputs carry the
+/// AggregateFunction argument and captured columns. Only the type error is translated into a clear
+/// message; all other exceptions are rethrown.
+void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
-    for (const auto & node : expression->getActionsDAG().getNodes())
+    for (const auto & node : actions_dag.getNodes())
     {
         if (node.type != ActionsDAG::ActionType::FUNCTION)
             continue;
 
+        /// Descend into lambda bodies of higher-order functions to validate consumers hidden inside them.
+        if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node.function_base.get()))
+        {
+            checkActionsDAGForAggregateFunctions(function_capture->getAcionsDAG(), expression_kind);
+            continue;
+        }
+
         bool consumes_aggregate_state = false;
+        bool has_lambda_argument = false;
         ColumnsWithTypeAndName arguments;
         arguments.reserve(node.children.size());
         for (const auto * child : node.children)
         {
             if (hasAggregateFunctionType(child->result_type))
                 consumes_aggregate_state = true;
+
+            /// A lambda argument cannot be materialized into a column; the higher-order function that
+            /// receives it is validated through the captured lambda DAG above, so skip executing it here.
+            if (WhichDataType(child->result_type).isFunction())
+            {
+                has_lambda_argument = true;
+                break;
+            }
 
             /// Preserve constant arguments as constants - some functions (e.g. `CAST`) require a
             /// constant argument and otherwise throw an unrelated error during this synthetic execution.
@@ -104,7 +126,7 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
             arguments.emplace_back(std::move(column), child->result_type, child->result_name);
         }
 
-        if (!consumes_aggregate_state)
+        if (!consumes_aggregate_state || has_lambda_argument)
             continue;
 
         try
@@ -120,6 +142,11 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
             throw;
         }
     }
+}
+
+void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expression, std::string_view expression_kind)
+{
+    checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
 
 void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
