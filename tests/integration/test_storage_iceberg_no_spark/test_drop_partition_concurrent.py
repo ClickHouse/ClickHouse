@@ -1,11 +1,9 @@
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
-    default_download_directory,
     get_uuid_str,
 )
 
