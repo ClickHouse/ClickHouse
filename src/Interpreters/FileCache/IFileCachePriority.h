@@ -3,6 +3,7 @@
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Core/Types.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
@@ -21,10 +22,17 @@ struct FileSegmentInfo;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsageStatGuard;
+class BackgroundSchedulePool;
 
 
 class IFileCachePriority : private boost::noncopyable
 {
+    /// SplitFileCachePriority reaches its inner priorities through base references.
+    friend class SplitFileCachePriority;
+    /// OvercommitFileCachePriority reaches its per-user priorities through base pointers.
+    template <typename BasePriority>
+    friend class OvercommitFileCachePriority;
+
 public:
     using Key = FileCacheKey;
 
@@ -50,12 +58,16 @@ public:
     {
         const Key key;
         const size_t offset;
-        const KeyMetadataPtr key_metadata;
+        /// Weak so invalidated entries awaiting lazy removal do not pin KeyMetadata.
+        /// While Active it is kept alive by the metadata bucket.
+        const KeyMetadataWeakPtr key_metadata;
 
         std::atomic<size_t> size;
-        std::atomic<size_t> hits = 0;
 
         std::string toString(const std::string & prefix = "") const;
+
+        /// Locks `key_metadata`, throwing if it expired.
+        KeyMetadataPtr getKeyMetadata() const;
 
         enum class State
         {
@@ -171,7 +183,13 @@ public:
 
         virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
 
-        virtual void invalidate() = 0;
+        virtual void invalidate() noexcept = 0;
+
+        /// Same as invalidate, but for callers which remove the entry under the same
+        /// write lock right after: the entry is not registered for the background
+        /// cleanup of invalidated entries (such a ref would be stale from birth and
+        /// would only pin the entry allocation until the cleanup discards it).
+        virtual void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept { invalidate(); }
 
         virtual QueueEntryType getType() const = 0;
 
@@ -347,6 +365,18 @@ public:
     /// Used to cleanup invalidated queue entries.
     static void removeEntries(const std::vector<InvalidatedEntryInfo> & entries, const CachePriorityGuard::WriteLock &);
 
+    /// Configure the background invalidated-entries cleanup (before startup).
+    void setCleanupSettings(size_t threshold, size_t interval_ms, size_t batch)
+    {
+        invalidated_threshold.store(threshold, std::memory_order_relaxed);
+        cleanup_interval_ms = interval_ms;
+        cleanup_batch = batch;
+    }
+
+    void startup(BackgroundSchedulePool & pool, CachePriorityGuard & cache_guard);
+
+    void deactivateBackgroundOperations();
+
     struct UsageStat
     {
         size_t size = 0;
@@ -425,9 +455,34 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
+    /// Register a hook called from invalidate() once the number of pending
+    /// invalidated entries reaches `threshold`.
+    virtual void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate)
+    {
+        invalidated_threshold.store(threshold, std::memory_order_relaxed);
+        invalidate_notifier = on_invalidate;
+    }
+
+    /// Remove up to `max_batch` pending invalidated entries from the queue under the write
+    /// lock. Returns the number of pending entries removed.
+    virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
+
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
+
+    /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
+    std::atomic<size_t> invalidated_threshold = 0;
+    std::function<void()> invalidate_notifier;
+
+private:
+    void cleanupTaskFunc();
+
+    /// The single cleanup task lives on the top-level priority only.
+    BackgroundSchedulePoolTaskHolder cleanup_task;
+    CachePriorityGuard * cleanup_guard = nullptr;
+    size_t cleanup_interval_ms = 0;
+    size_t cleanup_batch = 0;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
