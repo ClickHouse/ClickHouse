@@ -37,7 +37,7 @@ dictGet(dictionary_name, 'class_id', input_text)
 
 **Arguments**
 
-- `dictionary_name` — Name of a dictionary with `NAIVE_BAYES` layout. [String](../data-types/string.md)
+- `dictionary_name` — Name of a dictionary with `NAIVE_BAYES` layout. Must be a constant. [String](../data-types/string.md)
 - `input_text` — Text to classify. [String](../data-types/string.md)
   Input is processed exactly as provided (case/punctuation preserved).
 
