@@ -479,6 +479,26 @@ std::optional<String> optimizeUseNormalProjections(
         next_node = &expr_or_filter_node;
     }
 
+    /// The rewritten projection stream must keep the same structure as the subplan it replaces:
+    /// columns from `required_columns` that `query.dag` does not consume survive as pass-throughs
+    /// and would otherwise widen the output header, breaking the parent step's header contract.
+    /// Materialize constants if needed and require equal structure, else skip (regular read stays correct).
+    const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
+    const auto * proj_stream = &next_node->step->getOutputHeader();
+
+    if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
+    {
+        auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
+        proj_stream = &converting->getOutputHeader();
+        auto & expr_node = nodes.emplace_back();
+        expr_node.step = std::move(converting);
+        expr_node.children.push_back(next_node);
+        next_node = &expr_node;
+    }
+
+    if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
+        return {};
+
     if (parent_reading_select_result->parts_with_ranges.empty())
     {
         /// All parts are taken from projection
@@ -486,25 +506,6 @@ std::optional<String> optimizeUseNormalProjections(
     }
     else
     {
-        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
-        const auto * proj_stream = &next_node->step->getOutputHeader();
-
-        if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
-        {
-            auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
-            proj_stream = &converting->getOutputHeader();
-            auto & expr_node = nodes.emplace_back();
-            expr_node.step = std::move(converting);
-            expr_node.children.push_back(next_node);
-            next_node = &expr_node;
-        }
-
-        /// Verify headers are compatible before creating the Union.
-        /// If they differ (e.g., different columns due to different query DAGs being applied),
-        /// skip this optimization to avoid "Block structure mismatch" errors.
-        if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
-            return {};
-
         auto & union_node = nodes.emplace_back();
         SharedHeaders input_headers = {main_stream, *proj_stream};
         union_node.step = std::make_unique<UnionStep>(std::move(input_headers));

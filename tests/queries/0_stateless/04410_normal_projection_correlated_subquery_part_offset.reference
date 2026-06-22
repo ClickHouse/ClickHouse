@@ -1,0 +1,18 @@
+-- { echo ON }
+SET allow_suspicious_low_cardinality_types = 1;
+DROP TABLE IF EXISTS t_proj_corr;
+-- Normal projection that materializes the _part_offset virtual column; disable merges to keep 5 parts.
+CREATE TABLE t_proj_corr (i LowCardinality(Int32), j LowCardinality(Int32), PROJECTION p (SELECT *, _part_offset ORDER BY j) WITH SETTINGS (index_granularity = 64)) ENGINE = MergeTree ORDER BY i SETTINGS index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
+INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
+INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
+INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
+INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
+INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
+-- A correlated scalar subquery decorrelates into a CROSS JOIN whose input reads via the normal
+-- projection (forced by PREWHERE on _part_offset). With join kind 'left' the projection-rewritten
+-- read used to leak the unused i/j columns past the join's declared header, aborting the server with
+-- "Invalid number of columns in chunk pushed to OutputPort". Both queries must run without crashing.
+SELECT count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left';
+20
+SELECT i, j FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) = 8 ORDER BY ALL SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left';
+DROP TABLE t_proj_corr;
