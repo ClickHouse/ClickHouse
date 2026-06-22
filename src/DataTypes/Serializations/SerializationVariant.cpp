@@ -87,8 +87,6 @@ SerializationVariant::SerializationVariant(
     const VariantSerializations & variant_serializations_,
     const Names & variant_names_,
     const String & variant_name_)
-    /// Copy element-wise: `variant_types_` is the per-query `DataTypes` alias, while the member is the
-    /// global-tracked `VariantTypes` (this object is process-pooled). Same single copy as before.
     : variant_types(variant_types_.begin(), variant_types_.end())
     , variant_serializations(variant_serializations_)
     , variant_names(variant_names_)

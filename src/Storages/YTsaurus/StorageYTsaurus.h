@@ -18,8 +18,6 @@ struct StorageID;
 struct YTsaurusStorageConfiguration
 {
     YTsaurusSettings settings;
-    /// Persistent storage/dictionary-owned connection config (built from engine args at CREATE,
-    /// lives until drop). See `PoolWithFailover`.
     VectorWithMemoryTracking<String> http_proxy_urls{};
     String cypress_path{};
     String oauth_token{};

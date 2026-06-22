@@ -86,8 +86,8 @@ private:
     /// mutated) from `BackgroundSchedulePoolTaskHolder`/`PauseHolder` destructors and other cleanup
     /// paths that can run while the stack is already unwinding from another exception. A throwing
     /// allocation (`MEMORY_LIMIT_EXCEEDED`) on such a path would be a second in-flight exception and
-    /// call `std::terminate`, killing the server. Plain `std` containers never enforce the memory
-    /// limit, so they cannot throw here.
+    /// call `std::terminate`, killing the server.
+    /// In theory all this code should be made exception-safe, in practice we chose to avoid dealing with it for now.
     using DelayedTasks = std::multimap<Poco::Timestamp, TaskInfoPtr>; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     /// BackgroundSchedulePool schedules a task on its own task queue, there's no need to construct/restore tracing context on this level.
     /// This is also how ThreadPool class treats the tracing context. See ThreadPool for more information.

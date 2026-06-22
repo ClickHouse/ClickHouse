@@ -1785,8 +1785,6 @@ public:
     }
 
 private:
-    /// Prepared statements persist for the connection's lifetime across many queries: a `PREPARE` on
-    /// one query inserts, a `DEALLOCATE` on another frees.
     UnorderedMapWithMemoryTracking<String, String> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;

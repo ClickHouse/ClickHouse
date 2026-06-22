@@ -1054,7 +1054,6 @@ bool BaseSettings<TTraits>::SettingFieldRef::isHotReload() const
   * - Setting aliases
   */
 
-/// Process-wide, static-initialized alias table shared by all queries (never freed).
 using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_view>;
 
 // ---------------------------------------------------------------------------
@@ -1334,8 +1333,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
                 size_t data_offset;                             /* Byte offset within Data struct */ \
             }; \
             \
-            /* Process-wide settings metadata, built once in the Accessor singleton and shared by every */ \
-            /* query (never freed; some traits are first-built lazily during a query). */ \
             VectorWithMemoryTracking<FieldInfo> field_infos;                        /* Metadata for all settings */ \
             UnorderedMapWithMemoryTracking<std::string_view, size_t> name_to_index_map; /* Fast name -> index lookup */ \
             /* Canonical default-constructed instance. Used to reset individual settings to their */ \

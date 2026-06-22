@@ -49,8 +49,6 @@ public:
 
     struct ConnectionInfo
     {
-        /// Persistent connection metadata held by the long-lived client (and stored in the storage's
-        /// `client_connection_info`); built at CREATE, freed on drop.
         VectorWithMemoryTracking<String> http_proxy_urls;
         String oauth_token;
         String api_version = "v3";

@@ -62,9 +62,6 @@ private:
 
     /// Highest priority is 0, the bigger the number in map, the less the priority
     using PoolHolderPtr = std::shared_ptr<PoolHolder>;
-    /// `replicas_with_priority` is persistent, storage-owned metadata: it is built once when the
-    /// `PoolWithFailover` is created during CREATE/ATTACH and lives until the storage is dropped or the
-    /// server shuts down (it also feeds the process-wide reconnector), and is freed on that later path.
     using Replicas = DB::VectorWithMemoryTracking<PoolHolderPtr>;
     using ReplicasWithPriority = DB::MapWithMemoryTracking<size_t, Replicas>;
 

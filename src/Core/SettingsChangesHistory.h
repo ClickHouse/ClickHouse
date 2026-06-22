@@ -25,9 +25,6 @@ namespace SettingsChangesHistory
     using SettingsChanges = VectorWithMemoryTracking<SettingChange>;
 }
 
-/// Process-wide settings-change history: a single `static` table built once (lazily, often first on a
-/// query thread applying `compatibility`) with the full history across all versions, then read-only and
-/// never freed.
 using VersionToSettingsChangesMap = MapWithMemoryTracking<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>;
 
 const VersionToSettingsChangesMap & getSettingsChangesHistory();

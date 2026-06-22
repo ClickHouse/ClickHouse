@@ -70,12 +70,6 @@ public:
         Value value;
     };
 
-    /// A `SerializationVariant` is interned into the process-wide `SerializationObjectPool` by
-    /// `create` (via `ISerialization::pooled`), so it is shared across queries and freed under a
-    /// different lifetime than the query that first built it. Charge its container members to the global
-    /// tracker rather than the creating query's, which would otherwise pay for shared, process-pooled
-    /// metadata. (`VariantTypes` mirrors the per-query `DataTypes` alias but with global tracking, since
-    /// here it is a pooled member rather than per-query scratch.)
     using VariantSerializations = VectorWithMemoryTracking<SerializationPtr>;
     using VariantTypes = VectorWithMemoryTracking<DataTypePtr>;
 
