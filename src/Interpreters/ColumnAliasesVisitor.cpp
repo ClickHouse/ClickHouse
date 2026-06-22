@@ -77,6 +77,14 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
             // If expanded alias is used in array join, avoid expansion, otherwise the column will be mis-array joined
             if (data.array_join_result_columns.contains(original_column) || data.array_join_source_columns.contains(original_column))
                 return;
+
+            /// Normalize the alias body outside the caller lambda scope.
+            /// Lambdas inside the alias body will add their own private aliases.
+            auto alias_data = data;
+            alias_data.private_aliases.clear();
+            alias_data.changed = false;
+            Visitor(alias_data).visit(alias_expr);
+
             if (data.replacement_mode == ColumnAliasReplacementMode::QueryAnalysis)
                 ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
             else
@@ -91,8 +99,6 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
             }
 
             data.changed = true;
-            // revisit ast to track recursive alias columns
-            Visitor(data).visit(ast);
         }
     }
 }
