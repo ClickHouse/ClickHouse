@@ -58,6 +58,7 @@ extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 extern const int THERE_IS_NO_COLUMN;
 extern const int INCORRECT_DATA;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -793,7 +794,8 @@ static void getFileReader(
     const FormatSettings & format_settings,
     bool use_prefetch,
     size_t min_bytes_for_seek,
-    std::atomic<int> & is_stopped)
+    std::atomic<int> & is_stopped,
+    const std::string & serialized_tail = {})
 {
     if (is_stopped)
         return;
@@ -805,6 +807,11 @@ static void getFileReader(
     uint64_t hole_size_limit = std::min<uint64_t>(min_bytes_for_seek, std::numeric_limits<uint64_t>::max() - 1);
     uint64_t range_size_limit = std::max(default_range_size_limit, hole_size_limit + 1);
     options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = hole_size_limit, .rangeSizeLimit = range_size_limit});
+
+    /// If we have a cached file tail (PostScript + Footer + Metadata), inject it so that the
+    /// reader does not need to re-read and re-parse the footer from (remote) disk.
+    if (!serialized_tail.empty())
+        options.setSerializedFileTail(serialized_tail);
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
@@ -950,7 +957,9 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(
     const FormatSettings & format_settings_,
     bool use_prefetch_,
     size_t min_bytes_for_seek_,
-    FormatFilterInfoPtr format_filter_info_)
+    FormatFilterInfoPtr format_filter_info_,
+    ORCMetadataCachePtr metadata_cache_,
+    const std::optional<RelativePathWithMetadata> & object_with_metadata_)
     : IInputFormat(std::move(header_), &in_)
     , block_missing_values(getPort().getHeader().columns())
     , format_settings(format_settings_)
@@ -958,12 +967,60 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(
     , use_prefetch(use_prefetch_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , format_filter_info(std::move(format_filter_info_))
+    , metadata_cache(std::move(metadata_cache_))
+    , object_with_metadata(object_with_metadata_)
 {
 }
 
 void NativeORCBlockInputFormat::prepareFileReader()
 {
-    getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
+    if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
+    {
+        const String file_name = object_with_metadata->getPath();
+        const String etag = object_with_metadata->metadata->etag;
+        const ORCMetadataCacheKey cache_key = ORCMetadataCache::createKey(file_name, etag);
+
+        /// On a cache miss the loader builds the real `file_reader` (reading the footer
+        /// from `in`) and reuses it, so we never construct two readers on the same
+        /// `ReadBuffer`. This matters for non-seekable buffers, where reading the footer
+        /// drains `in` entirely (`asORCInputStreamLoadIntoMemory`): a second construction
+        /// would fail with "Not an ORC file".
+        std::string serialized_tail;
+        try
+        {
+            serialized_tail = metadata_cache->getOrSetMetadata(
+                cache_key,
+                [&]() -> String
+                {
+                    getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
+                    /// If the query was cancelled the reader is not built. Throw instead of returning
+                    /// an empty tail: `getOrSet` never caches a value produced by a throwing loader,
+                    /// so we avoid poisoning the cache with an empty entry that would turn every
+                    /// subsequent read of this key into a false hit.
+                    if (is_stopped || !file_reader)
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while reading ORC file footer");
+                    return file_reader->getSerializedFileTail();
+                });
+        }
+        catch (const Exception & e)
+        {
+            /// Cancellation is handled gracefully by the caller (`generate` returns an empty chunk
+            /// when `is_stopped`), matching the non-cached path. Re-throw any other error.
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED && is_stopped)
+                return;
+            throw;
+        }
+
+        /// On a cache hit the loader did not run, so `in` is untouched: build the reader
+        /// once with the cached tail injected (skips re-reading/parsing the footer).
+        if (!file_reader && !is_stopped)
+            getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped, serialized_tail);
+    }
+    else
+    {
+        getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
+    }
+
     if (is_stopped)
         return;
 

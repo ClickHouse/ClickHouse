@@ -109,6 +109,10 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 
 Clears the parquet metadata cache.
 
+## SYSTEM DROP ORC METADATA CACHE {#drop-orc-metadata-cache}
+
+Clears the ORC metadata cache.
+
 ## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
 Clears the text index's header, dictionary and postings caches.
