@@ -950,7 +950,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         /// DAG consts are size 0, resize to 1 for `execute` (matches `getFunctionArguments`)
         if (const auto * cc = typeid_cast<const ColumnConst *>(col.get()); cc && cc->empty())
             col = ColumnConst::create(cc->getDataColumnPtr(), 1);
-        args.push_back({std::move(col), child->result_type, child->result_name});
+        args.push_back({col, child->result_type, child->result_name});
         all_det = all_det && folded->deterministic;
     }
 
