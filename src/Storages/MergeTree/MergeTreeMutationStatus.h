@@ -31,6 +31,8 @@ struct MergeTreeMutationStatus
     String id = "";
     String command = "";
     time_t create_time = 0;
+    /// Time when this replica completed the mutation. Unfinished mutations have zero finish time
+    time_t finish_time = 0;
     std::map<String, Int64> block_numbers{};
 
     /// Parts that are currently being mutated.

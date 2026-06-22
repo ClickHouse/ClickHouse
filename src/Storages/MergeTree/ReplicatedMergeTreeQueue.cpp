@@ -1220,7 +1220,24 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 
         auto entries = zookeeper->tryGet(entry_paths);
 
+        /// Fetch persisted finish times so newly-loaded mutations that already finished on
+        /// this replica (e.g. after a restart) get their `finish_time` on the `MutationStatus`.
+        /// Missing keeper node leaves it at zero.
+        std::vector<String> finish_time_paths;
+        finish_time_paths.reserve(entries_to_load.size());
+        for (const String & entry : entries_to_load)
+            finish_time_paths.emplace_back(fs::path(replica_path) / "mutation_finish_times" / entry);
+        auto finish_time_responses = zookeeper->tryGet(finish_time_paths);
+
         std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
+        new_mutations.reserve(entries_to_load.size());
+        std::vector<time_t> new_mutations_finish_times;
+        new_mutations_finish_times.reserve(entries_to_load.size());
+
+        /// Pre-create finish-time znodes for mutations that do not have one yet
+        zkutil::AsyncResponses<Coordination::CreateResponse> precreate_futures;
+        precreate_futures.reserve(entries_to_load.size());
+
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
             const auto & maybe_response = entries[i];
@@ -1234,15 +1251,35 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
             }
             new_mutations.push_back(std::make_shared<ReplicatedMergeTreeMutationEntry>(
                 ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i])));
+
+            /// If the finish-time znode already exists, use the persisted timestamp
+            const auto & finish_time_response = finish_time_responses[i];
+            time_t finish_time = 0;
+            if (finish_time_response.error == Coordination::Error::ZOK && !finish_time_response.data.empty())
+                finish_time = parse<time_t>(finish_time_response.data);
+            else if (finish_time_response.error == Coordination::Error::ZNONODE)
+                precreate_futures.emplace_back(
+                    finish_time_paths[i],
+                    zookeeper->asyncTryCreateNoThrow(finish_time_paths[i], String(), zkutil::CreateMode::Persistent));
+            new_mutations_finish_times.push_back(finish_time);
+        }
+
+        for (auto & [path, future] : precreate_futures)
+        {
+            auto res = future.get();
+            if (res.error != Coordination::Error::ZOK && res.error != Coordination::Error::ZNODEEXISTS)
+                throw zkutil::KeeperException::fromPath(res.error, path);
         }
 
         bool some_mutations_are_probably_done = false;
         {
             std::lock_guard state_lock(state_mutex);
 
-            for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
+            for (size_t i = 0; i < new_mutations.size(); ++i)
             {
+                const ReplicatedMergeTreeMutationEntryPtr & entry = new_mutations[i];
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
+                mutation.finish_time = new_mutations_finish_times[i];
                 incrementMutationsCounters(mutation_counters, entry->commands);
 
                 NOEXCEPT_SCOPE({
@@ -2567,7 +2604,20 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     if (!finished.empty())
     {
-        zookeeper->set(fs::path(replica_path) / "mutation_pointer", finished.back()->znode_name);
+        time_t now = time(nullptr);
+        const fs::path mutation_finish_times_path = fs::path(replica_path) / "mutation_finish_times";
+
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "mutation_pointer", finished.back()->znode_name, -1));
+        /// Finish times znodes are pre-created
+        for (const ReplicatedMergeTreeMutationEntry * entry : finished)
+        {
+            ops.emplace_back(zkutil::makeSetRequest(
+                mutation_finish_times_path / entry->znode_name,
+                toString(now),
+                -1));
+        }
+        zookeeper->multi(ops);
 
         std::lock_guard lock(state_mutex);
 
@@ -2580,6 +2630,8 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Mutation {} is done", entry->znode_name);
                 it->second.is_done = true;
+                if (!it->second.finish_time)
+                    it->second.finish_time = now;
                 it->second.latest_fail_reason.clear();
                 it->second.latest_fail_error_code_name.clear();
                 if (entry->isAlterMutation())
@@ -2697,6 +2749,7 @@ std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMu
     const MutationStatus & status = current_mutation_it->second;
     MergeTreeMutationStatus result
     {
+        .finish_time = status.finish_time,
         .is_done = status.is_done,
         .latest_failed_part = status.latest_failed_part,
         .latest_fail_time = status.latest_fail_time,
@@ -2762,6 +2815,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 entry.znode_name,
                 command.ast_text,
                 entry.create_time,
+                status.finish_time,
                 entry.block_numbers,
                 parts_in_progress,
                 parts_to_mutate,

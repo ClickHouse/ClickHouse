@@ -158,6 +158,9 @@ private:
         /// Also we can jump over mutation when we download mutated part from other replica.
         bool is_done = false;
 
+        /// Time when this replica completed the mutation. Unfinished mutations have zero finish time
+        time_t finish_time = 0;
+
         String latest_failed_part;
         MergeTreePartInfo latest_failed_part_info;
         time_t latest_fail_time = 0;

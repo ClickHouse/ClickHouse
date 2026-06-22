@@ -995,6 +995,11 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodesAttempt() const
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lightweight_updates", String(), zkutil::CreateMode::Persistent));
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lightweight_updates/in_progress", String(), zkutil::CreateMode::Persistent));
 
+    /// Per-mutation finish times. Stored as children of replica_path/mutation_finish_times so each
+    /// mutation keeps its own finish_time across restarts. Created here for the upgrade path —
+    /// existing replicas that pre-date this node will create it on first run.
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(replica_path + "/mutation_finish_times", String(), zkutil::CreateMode::Persistent));
+
     for (auto & future : futures)
     {
         auto res = future.get();
@@ -1150,6 +1155,8 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/max_processed_insert_time", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
+            zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_finish_times", "",
             zkutil::CreateMode::Persistent));
 
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", toString(getStorageID().uuid) + "|" + toString(ServerUUID::get()),
@@ -1323,6 +1330,8 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/max_processed_insert_time", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
+            zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_finish_times", "",
             zkutil::CreateMode::Persistent));
 
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", creator_info,

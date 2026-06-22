@@ -1,0 +1,7 @@
+empty	2	2	2	2	0
+unfinished	1	1	1	1
+finished	6	6	6	6	0
+max_finish_time	3	3	3	3
+after_restart	6	6	6	6	0
+replicated_mutations_finish_time_r1	40
+replicated_mutations_finish_time_r2	40
