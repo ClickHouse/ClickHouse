@@ -97,7 +97,7 @@ CREATE TABLE test_circ_tuple (
     c Tuple(x Int32, y Int32) DEFAULT (a.x, 2)
 ) ENGINE = Memory;
 
-INSERT INTO test_circ_tuple (id) VALUES (1); -- {serverErrror UNKNOWN_IDENTIFIER }
+INSERT INTO test_circ_tuple (id) VALUES (1); -- { serverError UNKNOWN_IDENTIFIER }
 INSERT INTO test_circ_tuple (id, a) VALUES (2, (1, 1));
 INSERT INTO test_circ_tuple (id, b) VALUES (3, (1, 1));
 INSERT INTO test_circ_tuple (id, c) VALUES (4, (1, 1));
