@@ -37,7 +37,8 @@ Local comparison requires two executable `clickhouse` binary paths:
 The helper does **not** download or build ClickHouse:
 
 ```bash
-scripts/local_servers.sh /path/to/old/clickhouse /path/to/new/clickhouse /tmp/ch-perf-local
+mkdir -p tmp
+scripts/local_servers.sh /path/to/old/clickhouse /path/to/new/clickhouse tmp/ch-perf-local
 ```
 
 If either path is missing, ask the user/caller for it before starting servers. Do not silently guess a binary, build from source, or download artifacts without confirmation.
@@ -90,9 +91,9 @@ curl -sfI "$URL"
 If the URL exists and the user approves:
 
 ```bash
-mkdir -p /tmp/ch-binaries
-curl -fL "$URL" -o "/tmp/ch-binaries/clickhouse-${SHA}-${ARCH}"
-chmod +x "/tmp/ch-binaries/clickhouse-${SHA}-${ARCH}"
+mkdir -p tmp/ch-binaries
+curl -fL "$URL" -o "tmp/ch-binaries/clickhouse-${SHA}-${ARCH}"
+chmod +x "tmp/ch-binaries/clickhouse-${SHA}-${ARCH}"
 ```
 
 For PR artifacts, prefer the URL returned by `artifact_report_${JOB}.json`; for master/reference artifacts, verify the exact `REFs/<branch>/<sha>/<job>/clickhouse` URL with `curl -sfI`. Avoid non-exact `master/amd64/clickhouse` or `master/aarch64/clickhouse` fallbacks for validation unless the user explicitly accepts that they are not SHA-pinned.
@@ -104,7 +105,8 @@ If the user already has two servers, use them.
 If not, this skill includes an optional helper:
 
 ```bash
-scripts/local_servers.sh /path/to/old/clickhouse /path/to/new/clickhouse /tmp/ch-perf-local
+mkdir -p tmp
+scripts/local_servers.sh /path/to/old/clickhouse /path/to/new/clickhouse tmp/ch-perf-local
 ```
 
 It starts by default:
@@ -115,8 +117,9 @@ It starts by default:
 Override ports if defaults are busy:
 
 ```bash
+mkdir -p tmp
 OLD_TCP_PORT=9100 NEW_TCP_PORT=9101 OLD_HTTP_PORT=8223 NEW_HTTP_PORT=8224 \
-  scripts/local_servers.sh /path/to/old/clickhouse /path/to/new/clickhouse /tmp/ch-perf-local
+  scripts/local_servers.sh /path/to/old/clickhouse /path/to/new/clickhouse tmp/ch-perf-local
 ```
 
 Verify:
@@ -129,7 +132,7 @@ clickhouse-client --port ${NEW_TCP_PORT:-9001} -q "SELECT version(), buildId()"
 Stop using the printed PID files or:
 
 ```bash
-kill "$(cat /tmp/ch-perf-local/old/clickhouse.pid)" "$(cat /tmp/ch-perf-local/new/clickhouse.pid)"
+kill "$(cat tmp/ch-perf-local/old/clickhouse.pid)" "$(cat tmp/ch-perf-local/new/clickhouse.pid)"
 ```
 
 The helper is intentionally minimal. If a test requires special config, use an existing project config instead.
@@ -172,22 +175,24 @@ tests/performance/scripts/perf.py --print-settings tests/performance/$TEST.xml
 ## Run one test
 
 ```bash
+mkdir -p tmp
 tests/performance/scripts/perf.py \
   --host 127.0.0.1 127.0.0.1 \
   --port ${OLD_TCP_PORT:-9000} ${NEW_TCP_PORT:-9001} \
   --runs 7 \
-  tests/performance/$TEST.xml | tee /tmp/${TEST}.perf.tsv
+  tests/performance/$TEST.xml | tee tmp/${TEST}.perf.tsv
 ```
 
 Run one query index:
 
 ```bash
+mkdir -p tmp
 tests/performance/scripts/perf.py \
   --host 127.0.0.1 127.0.0.1 \
   --port ${OLD_TCP_PORT:-9000} ${NEW_TCP_PORT:-9001} \
   --runs 7 \
   --queries-to-run "$QUERY_INDEX" \
-  tests/performance/$TEST.xml | tee /tmp/${TEST}_${QUERY_INDEX}.perf.tsv
+  tests/performance/$TEST.xml | tee tmp/${TEST}_${QUERY_INDEX}.perf.tsv
 ```
 
 Allow long tests only when expected:
@@ -207,7 +212,7 @@ Profiling can perturb measurements; do not mix profiled timings with normal timi
 ## Parse perf.py output
 
 ```bash
-python3 scripts/parse_perf_py.py /tmp/${TEST}_${QUERY_INDEX}.perf.tsv
+python3 scripts/parse_perf_py.py tmp/${TEST}_${QUERY_INDEX}.perf.tsv
 ```
 
 Important output lines:

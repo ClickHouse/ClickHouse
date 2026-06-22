@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any

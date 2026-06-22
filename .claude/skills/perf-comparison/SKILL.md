@@ -62,7 +62,8 @@ python3 scripts/perf_api.py pr-query-history \
   --arch arm
 
 # Parse local tests/performance/scripts/perf.py output.
-python3 scripts/parse_perf_py.py /tmp/perf-output.tsv
+mkdir -p tmp
+python3 scripts/parse_perf_py.py tmp/perf-output.tsv
 ```
 
 References:
@@ -218,28 +219,30 @@ tests/performance/scripts/perf.py --print-queries tests/performance/$TEST.xml
 Compare two already-running servers:
 
 ```bash
+mkdir -p tmp
 tests/performance/scripts/perf.py \
   --host 127.0.0.1 127.0.0.1 \
   --port ${OLD_TCP_PORT:-9000} ${NEW_TCP_PORT:-9001} \
   --runs 7 \
-  tests/performance/$TEST.xml | tee /tmp/${TEST}.perf.tsv
+  tests/performance/$TEST.xml | tee tmp/${TEST}.perf.tsv
 ```
 
 Run one query index:
 
 ```bash
+mkdir -p tmp
 tests/performance/scripts/perf.py \
   --host 127.0.0.1 127.0.0.1 \
   --port ${OLD_TCP_PORT:-9000} ${NEW_TCP_PORT:-9001} \
   --runs 7 \
   --queries-to-run "$QUERY_INDEX" \
-  tests/performance/$TEST.xml | tee /tmp/${TEST}_${QUERY_INDEX}.perf.tsv
+  tests/performance/$TEST.xml | tee tmp/${TEST}_${QUERY_INDEX}.perf.tsv
 ```
 
 Parse output:
 
 ```bash
-python3 scripts/parse_perf_py.py /tmp/${TEST}_${QUERY_INDEX}.perf.tsv
+python3 scripts/parse_perf_py.py tmp/${TEST}_${QUERY_INDEX}.perf.tsv
 ```
 
 If servers are not running and the user wants help, use `references/local-perf.md` and optionally `scripts/local_servers.sh`. Prefer release/static builds. Do not compare debug/sanitizer builds unless the user explicitly wants that.

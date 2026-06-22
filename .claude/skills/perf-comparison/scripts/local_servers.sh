@@ -2,7 +2,7 @@
 # Start two minimal isolated ClickHouse servers for local performance comparison.
 # This is a convenience helper, not a CI-equivalent environment.
 
-set -euo pipefail
+set -Eeuo pipefail
 
 if [[ $# -lt 2 ]]; then
   cat >&2 <<'USAGE'
@@ -16,7 +16,8 @@ Starts by default:
 Override ports with OLD_TCP_PORT, NEW_TCP_PORT, OLD_HTTP_PORT, NEW_HTTP_PORT.
 
 Then run:
-  tests/performance/scripts/perf.py --host 127.0.0.1 127.0.0.1 --port "$OLD_TCP_PORT" "$NEW_TCP_PORT" --runs 7 tests/performance/<test>.xml
+  mkdir -p tmp
+  tests/performance/scripts/perf.py --host 127.0.0.1 127.0.0.1 --port "$OLD_TCP_PORT" "$NEW_TCP_PORT" --runs 7 tests/performance/<test>.xml | tee tmp/<test>.perf.tsv
 
 Stop:
   kill "$(cat WORKDIR/old/clickhouse.pid)" "$(cat WORKDIR/new/clickhouse.pid)"
@@ -26,7 +27,7 @@ fi
 
 OLD_BIN="$1"
 NEW_BIN="$2"
-ROOT="${3:-$PWD/ch-perf-local}"
+ROOT="${3:-$PWD/tmp/ch-perf-local}"
 OLD_TCP_PORT="${OLD_TCP_PORT:-9000}"
 NEW_TCP_PORT="${NEW_TCP_PORT:-9001}"
 OLD_HTTP_PORT="${OLD_HTTP_PORT:-8123}"
@@ -90,12 +91,37 @@ XML
 XML
 }
 
+STARTED_DIRS=()
+
+cleanup_started() {
+  local status="${1:-1}"
+  trap - ERR INT TERM
+  if [[ ${#STARTED_DIRS[@]} -gt 0 ]]; then
+    echo "Cleaning up partially started ClickHouse servers..." >&2
+  fi
+  for dir in "${STARTED_DIRS[@]}"; do
+    if [[ -s "$dir/clickhouse.pid" ]]; then
+      local pid
+      pid="$(cat "$dir/clickhouse.pid" 2>/dev/null || true)"
+      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+      fi
+    fi
+  done
+  exit "$status"
+}
+
+trap 'cleanup_started $?' ERR
+trap 'cleanup_started 130' INT
+trap 'cleanup_started 143' TERM
+
 start_server() {
   local bin="$1"
   local dir="$2"
   local port="$3"
   echo "Starting $bin on TCP $port in $dir"
   "$bin" server --config-file="$dir/config.xml" --daemon --pid-file="$dir/clickhouse.pid"
+  STARTED_DIRS+=("$dir")
   for _ in {1..60}; do
     if "$bin" client --port "$port" --query "SELECT 1" >/dev/null 2>&1; then
       "$bin" client --port "$port" --query "SELECT version(), buildId()"
@@ -112,6 +138,7 @@ write_config "$ROOT/old" "$OLD_TCP_PORT" "$OLD_HTTP_PORT"
 write_config "$ROOT/new" "$NEW_TCP_PORT" "$NEW_HTTP_PORT"
 start_server "$OLD_BIN" "$ROOT/old" "$OLD_TCP_PORT"
 start_server "$NEW_BIN" "$ROOT/new" "$NEW_TCP_PORT"
+trap - ERR INT TERM
 
 cat <<EOF
 

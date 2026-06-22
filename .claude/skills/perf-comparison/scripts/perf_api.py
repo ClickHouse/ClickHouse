@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import sys
 from datetime import datetime, timezone
 import urllib.parse
 import urllib.request
@@ -714,59 +713,108 @@ def tsv_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes"}
 
 
+RAW_ALL_QUERY_METRICS_COLUMNS = [
+    "metric_name",
+    "left",
+    "right",
+    "diff",
+    "times_change",
+    "stat_threshold",
+    "test",
+    "query_index",
+    "query_display_name",
+    "changed_threshold",
+    "unstable_threshold",
+]
+
+
+def iter_tsv_dicts(path: str) -> list[dict[str, str]]:
+    """Read named TSV or headerless raw all-query-metrics.tsv rows."""
+    with open(path, newline="") as f:
+        reader = csv.reader(f, delimiter="\t")
+        raw_rows = [row for row in reader if row]
+    if not raw_rows:
+        return []
+    first = raw_rows[0]
+    header_names = {"metric", "metric_name", "test", "query_index", "queryIndex", "diff"}
+    if header_names.intersection(first):
+        header = first
+        data_rows = raw_rows[1:]
+    else:
+        header = RAW_ALL_QUERY_METRICS_COLUMNS
+        data_rows = raw_rows
+    out: list[dict[str, str]] = []
+    for row in data_rows:
+        padded = row + [""] * max(0, len(header) - len(row))
+        out.append(dict(zip(header, padded)))
+    return out
+
+
 def parse_perf_tsv(paths: list[str], metric_filter: str = "client_time", arch_filter: str = "") -> list[dict[str, Any]]:
     """Parse fetch_perf_report.py --tsv output or raw all-query-metrics.tsv-like files."""
     rows: list[dict[str, Any]] = []
     for path in paths:
-        with open(path, newline="") as f:
-            reader = csv.DictReader(f, delimiter="\t")
-            for src in reader:
-                metric = src.get("metric") or src.get("metric_name") or metric_filter
-                if metric_filter and metric != metric_filter:
-                    continue
-                arch = src.get("arch") or arch_filter or ""
-                if arch_filter and arch != arch_filter:
-                    continue
+        for src in iter_tsv_dicts(path):
+            metric = src.get("metric") or src.get("metric_name") or metric_filter
+            if metric_filter and metric != metric_filter:
+                continue
+            arch = src.get("arch") or arch_filter or ""
+            if arch_filter and arch != arch_filter:
+                continue
+            try:
+                diff = float(src.get("diff") or 0)
+                threshold = float(src.get("stat_threshold") or src.get("threshold") or 0)
+            except Exception:
+                continue
+            if "is_changed" in src:
+                is_changed = tsv_bool(src.get("is_changed"))
+            else:
+                changed_threshold = src.get("changed_threshold") or src.get("stat_threshold") or src.get("threshold") or 0
                 try:
-                    diff = float(src.get("diff") or 0)
-                    threshold = float(src.get("stat_threshold") or src.get("threshold") or 0)
+                    is_changed = abs(diff) >= float(changed_threshold) and abs(diff) > 0
                 except Exception:
-                    continue
-                is_changed = tsv_bool(src.get("is_changed")) if "is_changed" in src else (abs(diff) >= threshold and abs(diff) > 0.1)
-                is_unstable = tsv_bool(src.get("is_unstable")) if "is_unstable" in src else ((not is_changed) and threshold > 0.2)
-                direction_raw = (src.get("direction") or "").lower()
-                if direction_raw in {"slower", "slowdown"}:
-                    direction = "slowdown"
-                elif direction_raw in {"faster", "speedup"}:
-                    direction = "speedup"
-                elif diff > 0:
-                    direction = "slowdown"
-                elif diff < 0:
-                    direction = "speedup"
-                else:
-                    direction = "same"
+                    is_changed = abs(diff) >= threshold and abs(diff) > 0
+            if "is_unstable" in src:
+                is_unstable = tsv_bool(src.get("is_unstable"))
+            else:
+                unstable_threshold = src.get("unstable_threshold")
                 try:
-                    query_index: int | str = int(src.get("query_index") or src.get("queryIndex") or 0)
+                    is_unstable = (not is_changed) and abs(diff) >= float(unstable_threshold or 0) and abs(diff) > 0
                 except Exception:
-                    query_index = src.get("query_index") or src.get("queryIndex") or "—"
-                rows.append({
-                    "source": path,
-                    "bucket": "changed" if is_changed else ("unstable" if is_unstable else "unchanged"),
-                    "metric": metric,
-                    "arch": arch,
-                    "shard": src.get("shard") or src.get("shard_num") or "",
-                    "test": src.get("test") or "",
-                    "queryIndex": query_index,
-                    "queryDisplayName": src.get("query") or src.get("query_display_name") or "",
-                    "oldValue": src.get("old") or src.get("left"),
-                    "newValue": src.get("new") or src.get("right"),
-                    "diffPercent": diff,
-                    "timesChange": src.get("times_change"),
-                    "statThreshold": threshold,
-                    "isChanged": is_changed,
-                    "isUnstable": is_unstable,
-                    "direction": direction,
-                })
+                    is_unstable = (not is_changed) and threshold > 0.2
+            direction_raw = (src.get("direction") or "").lower()
+            if direction_raw in {"slower", "slowdown"}:
+                direction = "slowdown"
+            elif direction_raw in {"faster", "speedup"}:
+                direction = "speedup"
+            elif diff > 0:
+                direction = "slowdown"
+            elif diff < 0:
+                direction = "speedup"
+            else:
+                direction = "same"
+            try:
+                query_index: int | str = int(src.get("query_index") or src.get("queryIndex") or 0)
+            except Exception:
+                query_index = src.get("query_index") or src.get("queryIndex") or "—"
+            rows.append({
+                "source": path,
+                "bucket": "changed" if is_changed else ("unstable" if is_unstable else "unchanged"),
+                "metric": metric,
+                "arch": arch,
+                "shard": src.get("shard") or src.get("shard_num") or "",
+                "test": src.get("test") or "",
+                "queryIndex": query_index,
+                "queryDisplayName": src.get("query") or src.get("query_display_name") or "",
+                "oldValue": src.get("old") or src.get("left"),
+                "newValue": src.get("new") or src.get("right"),
+                "diffPercent": diff,
+                "timesChange": src.get("times_change"),
+                "statThreshold": threshold,
+                "isChanged": is_changed,
+                "isUnstable": is_unstable,
+                "direction": direction,
+            })
     return rows
 
 

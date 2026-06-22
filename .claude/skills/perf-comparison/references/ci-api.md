@@ -83,7 +83,7 @@ When available, raw `all-query-metrics.tsv` / `fetch_perf_report.py --tsv` outpu
 - query display text,
 - and, in `fetch_perf_report.py --tsv`, `arch`, `shard`, `is_changed`, `is_unstable`, `direction`.
 
-Use this helper only when dashboard/API cannot provide required artifact-level data:
+Use this helper only when dashboard/API cannot provide required artifact-level data. It supports both named TSV output from `fetch_perf_report.py --tsv` and headerless raw `all-query-metrics.tsv` rows with the current CI column order.
 
 ```bash
 python3 scripts/perf_api.py tsv-inventory --tsv pr_${PR}_amd.tsv pr_${PR}_arm.tsv --limit 20
