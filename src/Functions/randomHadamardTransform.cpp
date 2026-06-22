@@ -11,8 +11,15 @@
 
 #include <bit>
 #include <cmath>
+#include <cstdlib>
+#include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
+
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 
 /** randomHadamardTransform(vector [, seed] [, output_dims])
   *
@@ -32,6 +39,15 @@
   *   norm-preserving in expectation when truncated. Must not exceed m.
   *
   * The result has the same element type as the input. An empty input array yields an empty array.
+  *
+  * Implementation notes:
+  * - The +-1 sign multiply (D) is applied as a sign-bit XOR of the IEEE float, not a multiply
+  *   (x ^ sign_bit == x * -1 bit-for-bit); the Hadamard butterflies (H) are pure add/sub. So the
+  *   only multiply left is the final 1/sqrt(k) scale, one per kept coordinate.
+  * - The core transform is a swappable kernel: a portable scalar FWHT and a NEON + ILP kernel for
+  *   float32 on AArch64. Both perform exactly the same butterflies in the same stage order, so
+  *   they are bit-for-bit identical; the kernel can be selected for testing with the environment
+  *   variable CLICKHOUSE_RHT_KERNEL = "scalar" | "neon" (default: neon on AArch64, scalar elsewhere).
   */
 namespace DB
 {
@@ -55,23 +71,149 @@ inline UInt64 splitmix64Next(UInt64 & state)
     return z ^ (z >> 31);
 }
 
-/// Deterministic +-1 signs of length m derived from the seed (a splitmix64 stream).
-/// Cached per length m within one function call (the seed is constant for the call). Distinct
-/// lengths are rare (usually one), so a linear lookup is cheaper than a hash map.
-template <typename T>
-const PaddedPODArray<T> & getSigns(std::vector<std::pair<size_t, PaddedPODArray<T>>> & cache, UInt64 seed, size_t m)
+/// The unsigned integer of the same width as the compute type, used to flip its sign bit.
+template <typename Compute>
+using SignMask = std::conditional_t<sizeof(Compute) == 4, UInt32, UInt64>;
+
+/// Deterministic +-1 signs of length m derived from the seed (a splitmix64 stream), stored as a
+/// sign-bit mask per element (the compute type's high bit for a negative sign, 0 otherwise) so the
+/// sign can be applied as an XOR instead of a multiply. Cached per length m within one function
+/// call (the seed is constant for the call). Distinct lengths are rare (usually one), so a linear
+/// lookup is cheaper than a hash map.
+template <typename Compute>
+const PaddedPODArray<SignMask<Compute>> & getSignMasks(
+    std::vector<std::pair<size_t, PaddedPODArray<SignMask<Compute>>>> & cache, UInt64 seed, size_t m)
 {
+    using Mask = SignMask<Compute>;
     for (auto & entry : cache)
         if (entry.first == m)
             return entry.second;
 
-    PaddedPODArray<T> signs(m);
+    static constexpr Mask sign_bit = Mask(1) << (sizeof(Mask) * 8 - 1);
+    PaddedPODArray<Mask> masks(m);
     UInt64 state = seed;
     for (size_t i = 0; i < m; ++i)
-        signs[i] = (splitmix64Next(state) >> 63) ? static_cast<T>(-1) : static_cast<T>(1);
-    cache.emplace_back(m, std::move(signs));
+        masks[i] = (splitmix64Next(state) >> 63) ? sign_bit : Mask(0);
+    cache.emplace_back(m, std::move(masks));
     return cache.back().second;
 }
+
+/// Apply a +-1 sign as a sign-bit flip: bit-identical to multiplying by +1 or -1 (including +-0).
+template <typename Compute>
+inline Compute applySign(Compute x, SignMask<Compute> mask)
+{
+    using Mask = SignMask<Compute>;
+    return std::bit_cast<Compute>(static_cast<Mask>(std::bit_cast<Mask>(x) ^ mask));
+}
+
+/// In-place unnormalized fast Walsh-Hadamard transform on m (a power of two) elements.
+template <typename T>
+void fwhtScalar(T * a, size_t m)
+{
+    for (size_t h = 1; h < m; h <<= 1)
+        for (size_t i = 0; i < m; i += (h << 1))
+            for (size_t j = i; j < i + h; ++j)
+            {
+                const T x = a[j];
+                const T y = a[j + h];
+                a[j] = x + y;
+                a[j + h] = x - y;
+            }
+}
+
+#if defined(__aarch64__)
+
+/// 4-point Walsh-Hadamard transform (stages h = 1 then h = 2) within one float32x4 lane group.
+/// The add/sub operands and their order match fwhtScalar exactly, so the result is bit-identical.
+inline float32x4_t fourPointWHT(float32x4_t v)
+{
+    const float32x2_t lo = vget_low_f32(v);    /// [x0, x1]
+    const float32x2_t hi = vget_high_f32(v);   /// [x2, x3]
+    const float32x2_t ev = vuzp1_f32(lo, hi);  /// [x0, x2]
+    const float32x2_t od = vuzp2_f32(lo, hi);  /// [x1, x3]
+    const float32x2_t s1 = vadd_f32(ev, od);   /// [x0+x1, x2+x3]
+    const float32x2_t d1 = vsub_f32(ev, od);   /// [x0-x1, x2-x3]
+    const float32x2_t low2 = vzip1_f32(s1, d1);   /// [x0+x1, x0-x1]
+    const float32x2_t high2 = vzip2_f32(s1, d1);  /// [x2+x3, x2-x3]
+    return vcombine_f32(vadd_f32(low2, high2), vsub_f32(low2, high2));
+}
+
+/// In-place unnormalized FWHT on m (a power of two) float32 values using NEON + ILP. Performs the
+/// same butterflies in the same stage order as fwhtScalar, so the result is bit-for-bit identical.
+void fwhtNeon(float * a, size_t m)
+{
+    /// Block of 8 NEON vectors (32 floats): stages h = 1 .. 16 are done entirely in registers
+    /// (they never cross a 32-element block), turning 5 memory passes into one.
+    constexpr size_t vectors_per_block = 16;
+    constexpr size_t block = vectors_per_block * 4;
+    if (m < block)
+    {
+        fwhtScalar(a, m);
+        return;
+    }
+
+    for (size_t i = 0; i < m; i += block)
+    {
+        float32x4_t v[vectors_per_block];
+        for (size_t t = 0; t < vectors_per_block; ++t)
+            v[t] = fourPointWHT(vld1q_f32(a + i + 4 * t));  /// stages h = 1, 2
+
+        /// Vector-level stages h = 4, 8, 16 (a stride of hv vectors == 4*hv elements).
+        for (size_t hv = 1; hv < vectors_per_block; hv <<= 1)
+            for (size_t base = 0; base < vectors_per_block; base += (hv << 1))
+                for (size_t t = 0; t < hv; ++t)
+                {
+                    const float32x4_t x = v[base + t];
+                    const float32x4_t y = v[base + t + hv];
+                    v[base + t] = vaddq_f32(x, y);
+                    v[base + t + hv] = vsubq_f32(x, y);
+                }
+
+        for (size_t t = 0; t < vectors_per_block; ++t)
+            vst1q_f32(a + i + 4 * t, v[t]);
+    }
+
+    /// High stages h = block, 2*block, ..., m/2: contiguous SIMD butterflies. Each h is a multiple
+    /// of 8, so the inner loop processes two vectors per step for instruction-level parallelism.
+    for (size_t h = block; h < m; h <<= 1)
+        for (size_t i = 0; i < m; i += (h << 1))
+            for (size_t j = i; j < i + h; j += 8)
+            {
+                const float32x4_t x0 = vld1q_f32(a + j);
+                const float32x4_t x1 = vld1q_f32(a + j + 4);
+                const float32x4_t y0 = vld1q_f32(a + j + h);
+                const float32x4_t y1 = vld1q_f32(a + j + h + 4);
+                vst1q_f32(a + j,         vaddq_f32(x0, y0));
+                vst1q_f32(a + j + 4,     vaddq_f32(x1, y1));
+                vst1q_f32(a + j + h,     vsubq_f32(x0, y0));
+                vst1q_f32(a + j + h + 4, vsubq_f32(x1, y1));
+            }
+}
+
+enum class FwhtKernel
+{
+    Scalar,
+    Neon,
+};
+
+/// Read the kernel choice once from CLICKHOUSE_RHT_KERNEL (default: NEON on AArch64).
+inline FwhtKernel selectKernel()
+{
+    static const FwhtKernel kernel = []
+    {
+        if (const char * env = std::getenv("CLICKHOUSE_RHT_KERNEL"))  /// NOLINT(concurrency-mt-unsafe)
+        {
+            if (std::string_view(env) == "scalar")
+                return FwhtKernel::Scalar;
+            if (std::string_view(env) == "neon")
+                return FwhtKernel::Neon;
+        }
+        return FwhtKernel::Neon;
+    }();
+    return kernel;
+}
+
+#endif
 
 class FunctionRandomHadamardTransform : public IFunction
 {
@@ -157,6 +299,8 @@ private:
     static ColumnPtr run(
         const IColumn & nested, const ColumnArray::Offsets & offsets, size_t rows, UInt64 seed, size_t fixed_out_dims)
     {
+        using Mask = SignMask<Compute>;
+
         const auto & input = assert_cast<const ColumnVector<In> &>(nested).getData();
 
         auto result_column = ColumnVector<Out>::create();
@@ -165,7 +309,11 @@ private:
         auto & result_offsets = result_offsets_column->getData();
         result_offsets.resize(rows);
 
-        std::vector<std::pair<size_t, PaddedPODArray<Compute>>> sign_cache;
+#if defined(__aarch64__)
+        [[maybe_unused]] const FwhtKernel kernel = selectKernel();
+#endif
+
+        std::vector<std::pair<size_t, PaddedPODArray<Mask>>> sign_cache;
         PaddedPODArray<Compute> buffer;
         size_t written = 0;
         size_t start = 0;
@@ -182,93 +330,39 @@ private:
                         "output_dims ({}) of function {} exceeds the padded length {} (next power of two of {})",
                         k, name, m, length);
 
-                const PaddedPODArray<Compute> & signs = getSigns(sign_cache, seed, m);
+                const PaddedPODArray<Mask> & signs = getSignMasks<Compute>(sign_cache, seed, m);
                 const Compute scale = static_cast<Compute>(1.0 / std::sqrt(static_cast<double>(k)));
                 const In * in = input.data() + start;
                 result.resize(written + k);
                 Out * out = result.data() + written;
 
-                if (m == 1)
+                /// Populate the working buffer: cast to the compute type and apply the +-1 sign as a
+                /// sign-bit flip (no multiply); zero-pad the tail to the padded length m.
+                buffer.resize(m);
+                for (size_t i = 0; i < length; ++i)
+                    buffer[i] = applySign<Compute>(static_cast<Compute>(in[i]), signs[i]);
+                for (size_t i = length; i < m; ++i)
+                    buffer[i] = 0;
+
+                /// Core (unnormalized) fast Walsh-Hadamard transform via the selected kernel.
+#if defined(__aarch64__)
+                if constexpr (std::is_same_v<Compute, float>)
                 {
-                    /// A 1-element transform is the identity (times the sign and scale).
-                    out[0] = static_cast<Out>(scale * static_cast<Compute>(in[0]) * signs[0]);
+                    if (kernel == FwhtKernel::Neon)
+                        fwhtNeon(buffer.data(), m);
+                    else
+                        fwhtScalar(buffer.data(), m);
                 }
                 else
-                {
-                    /// First Hadamard stage (h = 1) fused with the input load: cast, apply the sign,
-                    /// zero-pad past the input length, and write the h = 1 butterfly into the buffer.
-                    buffer.resize(m);
-                    /// Pairs fully inside the input: no padding branch in the hot loop.
-                    const size_t even_length = length & ~static_cast<size_t>(1);
-                    for (size_t j = 0; j < even_length; j += 2)
-                    {
-                        const Compute x = static_cast<Compute>(in[j])     * signs[j];
-                        const Compute y = static_cast<Compute>(in[j + 1]) * signs[j + 1];
-                        buffer[j]     = x + y;
-                        buffer[j + 1] = x - y;
-                    }
-                    /// A straddling pair (one real element, one padding zero) when length is odd.
-                    if (even_length < length)
-                    {
-                        const Compute x = static_cast<Compute>(in[even_length]) * signs[even_length];
-                        buffer[even_length]     = x;
-                        buffer[even_length + 1] = x;
-                    }
-                    /// Remaining pairs are pure padding; the h = 1 butterfly of (0, 0) is (0, 0).
-                    for (size_t j = (length + 1) & ~static_cast<size_t>(1); j < m; j += 2)
-                    {
-                        buffer[j]     = 0;
-                        buffer[j + 1] = 0;
-                    }
+                    fwhtScalar(buffer.data(), m);
+#else
+                fwhtScalar(buffer.data(), m);
+#endif
 
-                    if (m == 2)
-                    {
-                        /// h = 1 was the only stage; scale and cast the kept outputs.
-                        for (size_t i = 0; i < k; ++i)
-                            out[i] = static_cast<Out>(scale * buffer[i]);
-                    }
-                    else
-                    {
-                        /// Middle stages h = 2 .. m/4 (in place on the buffer).
-                        for (size_t h = 2; h < m / 2; h <<= 1)
-                            for (size_t i = 0; i < m; i += (h << 1))
-                                for (size_t j = i; j < i + h; ++j)
-                                {
-                                    const Compute a = buffer[j];
-                                    const Compute b = buffer[j + h];
-                                    buffer[j] = a + b;
-                                    buffer[j + h] = a - b;
-                                }
+                /// Scale by 1/sqrt(k) (the only multiply) and cast to the output element type.
+                for (size_t i = 0; i < k; ++i)
+                    out[i] = static_cast<Out>(scale * buffer[i]);
 
-                        /// Last stage (h = m/2) fused with the scale and output cast: write the kept
-                        /// coordinates straight to the result, skipping the separate buffer round-trip.
-                        const size_t half = m / 2;
-                        if (k == m)
-                        {
-                            /// Full transform (no truncation): branch-free, both halves are kept.
-                            for (size_t j = 0; j < half; ++j)
-                            {
-                                const Compute a = buffer[j];
-                                const Compute b = buffer[j + half];
-                                out[j]        = static_cast<Out>(scale * (a + b));
-                                out[j + half] = static_cast<Out>(scale * (a - b));
-                            }
-                        }
-                        else
-                        {
-                            /// Truncated to the first k coordinates.
-                            for (size_t j = 0; j < half; ++j)
-                            {
-                                const Compute a = buffer[j];
-                                const Compute b = buffer[j + half];
-                                if (j < k)
-                                    out[j] = static_cast<Out>(scale * (a + b));
-                                if (j + half < k)
-                                    out[j + half] = static_cast<Out>(scale * (a - b));
-                            }
-                        }
-                    }
-                }
                 written += k;
             }
             result_offsets[row] = written;
