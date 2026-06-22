@@ -43,20 +43,19 @@ struct JoinOnKeyColumns
 struct LazyOutput
 {
     /// Entries share the encoding of the join hash map cell values (see RowRefs.h):
-    ///   0 - default row; bit 63 set - inline encoded BuildRef; otherwise - a count-tagged
-    ///   BuildRefList list word (pointer to a Batch node in the low 48 bits).
-    /// Exception: for ASOF joins (`row_refs_are_pointers`) non-zero entries are `const RowRef *`.
+    ///   0 - default row; bit 63 set - inline encoded RowRef; otherwise - a count-tagged
+    ///   RowRefList list word (pointer to a Batch node in the low 48 bits).
+    /// ASOF matches are inline encoded RowRef words too (the leaf of the sorted lookup vector).
     PaddedPODArray<UInt64> row_refs;
     size_t row_count = 0;   /// Total number of rows in all refs and ref lists
 
-    /// Resolves BuildRef::block_no at emit time; points into the join's StoredColumnsIndex,
+    /// Resolves RowRef::block_no at emit time; points into the join's StoredColumnsIndex,
     /// which is immutable once the build phase is finished. Used by the cold paths
     /// (joinGet / ColumnsWithRowNumbers / ASOF). These keep the raw `StoredBlock *` rather than
     /// the hot-path emit table below because they need the whole block, not just a resolved column:
     /// per-row `byteSizeAt` accounting (`buildOutputFromBlocksLimitAndOffset`), nullable-column
     /// dispatch (`buildJoinGetOutput`), and feeding `ColumnsWithRowNumbers` (`buildOutputFromBlocks`).
     const StoredBlock * const * stored_columns = nullptr;
-    bool row_refs_are_pointers = false;
 
     /// Per output column (parallel to `right_indexes`): the StoredColumnsIndex emit table base pointers,
     /// i.e. the resolved source `const IColumn *` per block and its `ColumnReplicated *` counterpart.
@@ -77,21 +76,14 @@ struct LazyOutput
 
     void reserve(size_t size) { row_refs.reserve(size); }
 
-    /// `ref_word` is either an inline single ref or a count-tagged BuildRefList list word.
+    /// `ref_word` is either an inline single ref or a count-tagged RowRefList list word.
     void addRef(UInt64 ref_word)
     {
         chassert(ref_word != 0);
         row_refs.emplace_back(ref_word);
-        BuildRefList list;
+        RowRefList list;
         list.word = ref_word;
         row_count += list.rows();
-    }
-
-    void addAsofRowRef(const RowRef * row_ref)
-    {
-        chassert(row_refs_are_pointers);
-        row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
-        ++row_count;
     }
 
     void addDefault()
@@ -170,7 +162,6 @@ public:
         lazy_output.join_data_sorted = join.getJoinedData()->sorted;
         lazy_output.join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
         lazy_output.stored_columns = join.getJoinedData()->stored_columns_index->blocksData();
-        lazy_output.row_refs_are_pointers = is_asof_join;
 
         for (const auto & src_column : block_with_columns_to_add)
         {
@@ -228,11 +219,9 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
-    /// Encoded BuildRef word (inline single ref) or count-tagged BuildRefList list word.
+    /// Encoded RowRef word (inline single ref, including an ASOF match) or count-tagged
+    /// RowRefList list word.
     void appendFromBlock(UInt64 ref_word, bool has_default);
-
-    /// ASOF join only: a pointer into the sorted lookup vector storage.
-    void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow()
     {
@@ -270,7 +259,7 @@ public:
     IColumn::Offsets matched_rows;
 
     /// for lazy
-    // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,
+    // The default row is represented by a zero ref word, so that fixed-size blocks can be generated sequentially,
     // default_count cannot represent the position of the row
     LazyOutput lazy_output;
     bool has_columns_to_add;
@@ -350,7 +339,6 @@ private:
     }
 };
 
-std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index);
 std::pair<const IColumn *, size_t> getBlockColumnAndRow(const StoredBlock * block, size_t row_num, size_t column_index);
 
 }

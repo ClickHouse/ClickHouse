@@ -730,7 +730,7 @@ public:
         return getPtr();
     }
 
-    /// Fills column values from encoded join row refs (see BuildRef / BuildRefList in Interpreters/RowRefs.h).
+    /// Fills column values from encoded join row refs (see RowRef / RowRefList in Interpreters/RowRefs.h).
     /// `block_columns[block_no]` is the resolved source column for this output column in that block, and
     /// `block_replicated[block_no]` is that column as ColumnReplicated* if it is one (else nullptr). Both
     /// are pre-resolved per block by StoredColumnsIndex::emitColumn, so the inner loop is one indexed load.

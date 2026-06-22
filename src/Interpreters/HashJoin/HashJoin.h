@@ -383,8 +383,8 @@ public:
 /// NOLINTEND(bugprone-macro-parentheses)
     };
 
-    using MapsOne = MapsTemplate<BuildRef>;
-    using MapsAll = MapsTemplate<BuildRefList>;
+    using MapsOne = MapsTemplate<RowRef>;
+    using MapsAll = MapsTemplate<RowRefList>;
     using MapsAsof = MapsTemplate<AsofRowRefs>;
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
@@ -427,7 +427,7 @@ public:
         ScatteredColumnsList columns; /// Columns of "right" table.
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
-        /// Resolves BuildRef::block_no to the stored block.
+        /// Resolves RowRef::block_no to the stored block.
         /// Shared between all slots of a ConcurrentHashJoin so that block numbers stay
         /// globally unique: cells built by any slot end up in the shared two-level map.
         StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();

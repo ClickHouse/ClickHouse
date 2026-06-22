@@ -6,14 +6,14 @@
 
 using namespace DB;
 
-TEST(BuildRefList, InsertInitialElementFromEmpty)
+TEST(RowRefList, InsertInitialElementFromEmpty)
 {
     Arena pool;
 
-    const UInt64 ref_word = BuildRef(/*block_no=*/7, /*row_no=*/42).word();
+    const UInt64 ref_word = RowRef(/*block_no=*/7, /*row_no=*/42).word();
 
     /// Key point: default construction, empty list
-    BuildRefList list;
+    RowRefList list;
     ASSERT_EQ(list.word, 0u);
     ASSERT_FALSE(list.begin().ok());
 
@@ -37,15 +37,15 @@ TEST(BuildRefList, InsertInitialElementFromEmpty)
     EXPECT_FALSE(it.ok());
 }
 
-TEST(BuildRefList, InsertWithinOneNodeKeepsInsertionOrder)
+TEST(RowRefList, InsertWithinOneNodeKeepsInsertionOrder)
 {
     Arena pool;
 
     /// Up to MAX_LOCAL (7) rows live in the cell node only (head + slots), and one overflow node
     /// holds the rest; with a single overflow node iteration is exact insertion order.
-    BuildRefList list(/*block_no=*/3, /*row_no=*/0);
+    RowRefList list(/*block_no=*/3, /*row_no=*/0);
     for (size_t row = 1; row < 10; ++row)
-        list.insert(BuildRef(3, row).word(), pool);
+        list.insert(RowRef(3, row).word(), pool);
 
     ASSERT_FALSE(list.isSingleton());
     EXPECT_EQ(list.rows(), 10u);
@@ -59,15 +59,15 @@ TEST(BuildRefList, InsertWithinOneNodeKeepsInsertionOrder)
     EXPECT_EQ(order, expected);
 }
 
-TEST(BuildRefList, EvictionBoundaryKeepsInsertionOrder)
+TEST(RowRefList, EvictionBoundaryKeepsInsertionOrder)
 {
     Arena pool;
 
     /// Exactly at the chaining boundary (8 rows: head + 6 local + 1 evicted into the first
     /// overflow node) the order is still pure insertion order, and total_rows is correct.
-    BuildRefList list(/*block_no=*/0, /*row_no=*/0);
+    RowRefList list(/*block_no=*/0, /*row_no=*/0);
     for (size_t row = 1; row < 8; ++row)
-        list.insert(BuildRef(0, row).word(), pool);
+        list.insert(RowRef(0, row).word(), pool);
 
     EXPECT_EQ(list.rows(), 8u);
 
@@ -79,14 +79,14 @@ TEST(BuildRefList, EvictionBoundaryKeepsInsertionOrder)
     EXPECT_EQ(order, expected);
 }
 
-TEST(BuildRefList, MultiNodeChainOrder)
+TEST(RowRefList, MultiNodeChainOrder)
 {
     Arena pool;
 
     /// With two overflow nodes the order is head, local slots, then overflow nodes newest-first.
-    BuildRefList list(/*block_no=*/2, /*row_no=*/0);
+    RowRefList list(/*block_no=*/2, /*row_no=*/0);
     for (size_t row = 1; row < 16; ++row)
-        list.insert(BuildRef(2, row).word(), pool);
+        list.insert(RowRef(2, row).word(), pool);
 
     EXPECT_EQ(list.rows(), 16u);
     EXPECT_EQ(refWordRowNo(list.firstWord()), 0u);
@@ -102,23 +102,23 @@ TEST(BuildRefList, MultiNodeChainOrder)
     EXPECT_EQ(order, expected);
 }
 
-TEST(BuildRefList, CountSaturationStillIteratesEveryRow)
+TEST(RowRefList, CountSaturationStillIteratesEveryRow)
 {
     Arena pool;
 
     /// Below the count sentinel rows() reads the word; at/after saturation it loads total_rows.
     /// Either way the iterator must yield every inserted row exactly once, in order.
-    const size_t n = BuildRefList::COUNT_SAT + 5;
-    BuildRefList list(/*block_no=*/0, /*row_no=*/0);
+    const size_t n = RowRefList::COUNT_SAT + 5;
+    RowRefList list(/*block_no=*/0, /*row_no=*/0);
 
     EXPECT_EQ(list.rows(), 1u);
-    for (size_t row = 1; row < BuildRefList::COUNT_SAT - 1; ++row)
-        list.insert(BuildRef(0, row).word(), pool);
+    for (size_t row = 1; row < RowRefList::COUNT_SAT - 1; ++row)
+        list.insert(RowRef(0, row).word(), pool);
     /// Exact count straight from the word, no node load.
-    EXPECT_EQ(list.rows(), BuildRefList::COUNT_SAT - 1);
+    EXPECT_EQ(list.rows(), RowRefList::COUNT_SAT - 1);
 
-    for (size_t row = BuildRefList::COUNT_SAT - 1; row < n; ++row)
-        list.insert(BuildRef(0, row).word(), pool);
+    for (size_t row = RowRefList::COUNT_SAT - 1; row < n; ++row)
+        list.insert(RowRef(0, row).word(), pool);
     /// Saturated: rows() now reflects total_rows loaded from the node.
     EXPECT_EQ(list.rows(), n);
 
@@ -136,12 +136,12 @@ TEST(BuildRefList, CountSaturationStillIteratesEveryRow)
     EXPECT_EQ(seen_xor, expected_xor);
 }
 
-TEST(BuildRefList, RangeRepresentation)
+TEST(RowRefList, RangeRepresentation)
 {
     Arena pool;
 
-    BuildRefList list;
-    list.setRange(BuildRef(/*block_no=*/1, /*row_no=*/100).word(), /*rows_=*/5, pool);
+    RowRefList list;
+    list.setRange(RowRef(/*block_no=*/1, /*row_no=*/100).word(), /*rows_=*/5, pool);
 
     ASSERT_FALSE(list.isSingleton());
     list.asBatch()->assertIsRange();

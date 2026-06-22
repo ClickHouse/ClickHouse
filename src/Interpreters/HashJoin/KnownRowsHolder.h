@@ -19,7 +19,7 @@ template<>
 class KnownRowsHolder<true>
 {
 public:
-    /// The encoded BuildRef word (the SINGLETON_FLAG bit is always set, so equality of
+    /// The encoded RowRef word (the SINGLETON_FLAG bit is always set, so equality of
     /// words is equality of (block_no, row_no) pairs).
     using Type = UInt64;
 
@@ -131,7 +131,7 @@ void addFoundRowAll(
     }
     else
     {
-        /// No single-row fast path needed here (unlike the pre-BuildRef code): a singleton lives
+        /// No single-row fast path needed here (unlike the pre-RowRef code): a singleton lives
         /// inline in the cell word and the iterator decodes it without touching the arena node.
         for (auto it = mapped.begin(); it.ok(); ++it)
         {

@@ -577,7 +577,7 @@ static void fillColumnFromRowRefs(
     {
         if (*row_ref)
         {
-            BuildRefList ref_list;
+            RowRefList ref_list;
             ref_list.word = *row_ref;
             if constexpr (row_refs_are_ranges)
             {

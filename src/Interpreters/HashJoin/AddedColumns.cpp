@@ -64,11 +64,6 @@ void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColum
     }
 }
 
-std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index)
-{
-    return getBlockColumnAndRow(row_ref->block, row_ref->row_num, column_index);
-}
-
 std::pair<const IColumn *, size_t> getBlockColumnAndRow(const StoredBlock * block, size_t row_num, size_t column_index)
 {
     if (const auto * replicated_column_from_block = block->replicated_columns[column_index])
@@ -78,7 +73,6 @@ std::pair<const IColumn *, size_t> getBlockColumnAndRow(const StoredBlock * bloc
 
 void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
-    chassert(!row_refs_are_pointers);
     for (size_t i = 0; i < columns.size(); ++i)
     {
         auto & col = columns[i];
@@ -119,12 +113,11 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     size_t row_idx = 0;
     size_t total_byte_size = 0;
     size_t left_idx = 0; /// position in non-replicated left block
-    chassert(!row_refs_are_pointers);
     for (const UInt64 * row_ref_i = row_refs_begin; rows_limit > 0 && row_ref_i != row_refs_end; ++row_ref_i)
     {
         if (*row_ref_i)
         {
-            BuildRefList ref_list;
+            RowRefList ref_list;
             ref_list.word = *row_ref_i;
             for (auto it = ref_list.begin(); rows_limit > 0 && it.ok(); ++it)
             {
@@ -201,8 +194,7 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
         {
             if constexpr (from_row_list)
             {
-                chassert(!row_refs_are_pointers);
-                BuildRefList ref_list;
+                RowRefList ref_list;
                 ref_list.word = *row_ref_i;
                 for (auto it = ref_list.begin(); it.ok(); ++it)
                 {
@@ -211,15 +203,9 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
                     row_nums.emplace_back(refWordRowNo(ref_word));
                 }
             }
-            else if (row_refs_are_pointers)
-            {
-                /// ASOF join: the entry is a pointer into the sorted lookup vector storage.
-                const RowRef * row_ref = reinterpret_cast<const RowRef *>(*row_ref_i); /// NOLINT(performance-no-int-to-ptr)
-                many_columns.emplace_back(row_ref->block);
-                row_nums.emplace_back(row_ref->row_num);
-            }
             else
             {
+                /// A single inline ref word (a unique-key match or an ASOF match).
                 chassert(refWordIsInline(*row_ref_i));
                 many_columns.emplace_back(stored_columns[refWordBlockNo(*row_ref_i)]);
                 row_nums.emplace_back(refWordRowNo(*row_ref_i));
@@ -296,34 +282,13 @@ void AddedColumns<true>::appendFromBlock(UInt64 ref_word, bool)
 #ifndef NDEBUG
     /// `ref_word` may be an inline single ref or a count-tagged list word; firstWord() yields the
     /// head ref of either, whose block is valid for the column-structure assertion.
-    BuildRefList list;
+    RowRefList list;
     list.word = ref_word;
     checkColumns(lazy_output.stored_columns[refWordBlockNo(list.firstWord())]->columns);
 #endif
     if (has_columns_to_add)
     {
         lazy_output.addRef(ref_word);
-    }
-}
-
-template <>
-void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has_defaults)
-{
-    if (has_defaults)
-        applyLazyDefaults();
-
-    appendFromBlockImpl(row_ref->block, row_ref->row_num);
-}
-
-template <>
-void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
-{
-#ifndef NDEBUG
-    checkColumns(row_ref->block->columns);
-#endif
-    if (has_columns_to_add)
-    {
-        lazy_output.addAsofRowRef(row_ref);
     }
 }
 

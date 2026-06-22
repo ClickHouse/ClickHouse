@@ -75,7 +75,7 @@ public:
 
     /// True while a deferred build is still parked in the buffers (blocks not yet replayed). The
     /// wrapping `SpillingHashJoin` uses this to know that `getProjectedTotalByteCount` is an estimate
-    /// that omits the `BuildRefList` arena nodes, so its terminal spill check must keep a margin.
+    /// that omits the `RowRefList` arena nodes, so its terminal spill check must keep a margin.
     bool hasPendingDeferredBuild() const;
 
     bool alwaysReturnsEmptySet() const override;
@@ -160,7 +160,7 @@ private:
     bool deferred_build = false;
 
     /// Set when a deferred build buffered a block with `check_limits` and active size limits. The
-    /// limits cannot be enforced at buffering time (the distinct-key count and `BuildRefList` arena
+    /// limits cannot be enforced at buffering time (the distinct-key count and `RowRefList` arena
     /// bytes are unknown until the replay), so they are re-checked against the real maps in
     /// `onBuildPhaseFinish`. Only `throw` reaches this path; `break` disables the deferral.
     std::atomic<bool> deferred_limits_check_requested = false;

@@ -883,7 +883,6 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             map,
                             key_columns,
                             key_sizes[onexpr_idx],
-                            stored_columns,
                             stored_columns->block_no,
                             stored_columns->selector,
                             null_map,
@@ -1473,7 +1472,7 @@ struct CollectorNonJoined
         VectorWithMemoryTracking<UInt32> & row_numbers)
     {
         constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
-        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, BuildRef>;
+        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, RowRef>;
 
         if constexpr (mapped_asof)
         {
@@ -1998,7 +1997,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
     {
         const StoredBlock * const * stored_columns = data->stored_columns_index->blocksData();
 
-        auto merge_rows_into_one_block = [&](ScatteredColumnsList & columns_list, BuildRefList & rows_ref)
+        auto merge_rows_into_one_block = [&](ScatteredColumnsList & columns_list, RowRefList & rows_ref)
         {
             auto it = rows_ref.begin();
             if (!it.ok())
@@ -2057,11 +2056,11 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
             {
                 const size_t merged_rows = new_rows - start_row;
                 if (merged_rows == 1)
-                    rows_ref = BuildRefList(merged.block_no, start_row);
+                    rows_ref = RowRefList(merged.block_no, start_row);
                 else
                 {
-                    BuildRefList range_ref;
-                    range_ref.setRange(BuildRef(merged.block_no, start_row).word(), merged_rows, data->pool);
+                    RowRefList range_ref;
+                    range_ref.setRange(RowRef(merged.block_no, start_row).word(), merged_rows, data->pool);
                     rows_ref = range_ref;
                 }
             }
@@ -2073,7 +2072,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
             {
 #define M(TYPE) \
     case Type::TYPE: { \
-        rows_map.TYPE->forEachMapped([&](BuildRefList & rows_ref) { merge_rows_into_one_block(columns, rows_ref); }); \
+        rows_map.TYPE->forEachMapped([&](RowRefList & rows_ref) { merge_rows_into_one_block(columns, rows_ref); }); \
         break; \
     }
                 APPLY_FOR_JOIN_VARIANTS(M)

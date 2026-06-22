@@ -89,7 +89,7 @@ public:
     static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
     static constexpr bool is_strict = (inequality == ASOFJoinInequality::Less) || (inequality == ASOFJoinInequality::Greater);
 
-    void insert(const IColumn & asof_column, const StoredBlock * block, size_t row_num) override
+    void insert(const IColumn & asof_column, UInt32 block_no, size_t row_num) override
     {
         using ColumnType = ColumnVectorOrDecimal<TKey>;
         const auto & column = assert_cast<const ColumnType &>(asof_column);
@@ -98,7 +98,7 @@ public:
         chassert(!sorted.load(std::memory_order_acquire));
 
         entries.emplace_back(key, static_cast<UInt32>(row_refs.size()));
-        row_refs.emplace_back(RowRef(block, row_num));
+        row_refs.emplace_back(RowRef(block_no, row_num));
     }
 
     /// Unrolled version of upper_bound and lower_bound
@@ -153,7 +153,7 @@ public:
         return low;
     }
 
-    RowRef * findAsof(const IColumn & asof_column, size_t row_num) override
+    const RowRef * findAsof(const IColumn & asof_column, size_t row_num) override
     {
         sort();
 
@@ -240,17 +240,17 @@ void StoredBlock::rebuildReplicatedColumns()
         replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());
 }
 
-void throwBuildRefPointerTooLarge()
+void throwRowRefPointerTooLarge()
 {
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
-        "Arena pointer does not fit in 48 bits; BuildRefList count tagging is invalid on this platform");
+        "Arena pointer does not fit in 48 bits; RowRefList count tagging is invalid on this platform");
 }
 
 UInt32 StoredColumnsIndex::add(const StoredBlock * block)
 {
     std::lock_guard guard(mutex);
-    if (blocks.size() > BuildRef::BLOCK_NO_MASK)
+    if (blocks.size() > RowRef::BLOCK_NO_MASK)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many stored blocks in HashJoin: {}", blocks.size());
     blocks.push_back(block);
     ++blocks_generation; /// Invalidate any previously built emit table (StorageJoin can insert between joins).

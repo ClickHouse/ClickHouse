@@ -369,7 +369,7 @@ private:
 using ScatteredBlocks = std::vector<ScatteredBlock>;
 
 /// A right-side block as stored by HashJoin for the build/probe lifetime. Owns the (already projected)
-/// columns together with the partition `selector` and the `block_no` that compact row refs (BuildRef)
+/// columns together with the partition `selector` and the `block_no` that compact row refs (RowRef)
 /// index through `StoredColumnsIndex`. Replaces the former `ColumnsInfo` + `ScatteredColumns` split:
 /// the column bundle is inlined here, so the emit path can resolve a column to a direct `IColumn *`
 /// (see `StoredColumnsIndex::EmitColumn`) instead of going through a `ColumnsInfo` wrapper.

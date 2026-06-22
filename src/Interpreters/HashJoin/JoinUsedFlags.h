@@ -17,7 +17,7 @@ public:
     using UsedFlagsForColumns = std::vector<std::atomic_bool>;
 
     /// For multiple disjuncts each entry in hashmap stores flags for a particular stored block,
-    /// keyed by BuildRef::block_no (globally unique across ConcurrentHashJoin slots).
+    /// keyed by RowRef::block_no (globally unique across ConcurrentHashJoin slots).
     std::unordered_map<UInt32, UsedFlagsForColumns> per_row_flags;
 
     /// For single disjunct we store all flags in a dedicated container to avoid calculating hash(nullptr) on each access.
@@ -94,7 +94,7 @@ public:
         if constexpr (flag_per_row)
         {
             auto & mapped = f.getMapped();
-            if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, BuildRefList>)
+            if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
             {
                 for (auto it = mapped.begin(); it.ok(); ++it)
                 {
@@ -140,12 +140,12 @@ public:
         }
     }
 
-    /// The flag of the key's FIRST row: for BuildRefList this preserves the semantics of the
+    /// The flag of the key's FIRST row: for RowRefList this preserves the semantics of the
     /// old RowRefList, whose head row fields were used through the RowRef base class.
     template <typename Mapped>
     std::atomic_bool & headRowFlag(const Mapped & mapped)
     {
-        if constexpr (std::is_same_v<std::decay_t<Mapped>, BuildRefList>)
+        if constexpr (std::is_same_v<std::decay_t<Mapped>, RowRefList>)
         {
             const UInt64 ref_word = mapped.firstWord();
             return per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
