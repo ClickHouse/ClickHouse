@@ -155,8 +155,11 @@ void CreatingSetsTransform::startSubquery()
         LOG_TRACE(log, "Filling temporary table.");
 
     if (set_and_key->external_table)
+    {
         /// TODO: make via port
-        table_out = QueryPipeline(set_and_key->external_table->write({}, set_and_key->external_table->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false), nullptr, /*async_insert=*/false));
+        const auto metadata_snapshot = set_and_key->external_table->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        table_out = QueryPipeline(set_and_key->external_table->write({}, metadata_snapshot, nullptr, /*async_insert=*/false));
+    }
 
     done_with_set = !set_and_key->set || set_from_cache;
     done_with_table = !set_and_key->external_table;

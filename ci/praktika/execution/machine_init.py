@@ -31,7 +31,7 @@ class StateMachine:
             self.state_updated_at = int(time.time())
             # TODO: add monitoring
             if not self.machine.is_actions_process_healthy():
-                print(f"ERROR: GH runner process unexpectedly died")
+                print("ERROR: GH runner process unexpectedly died")
                 self.machine.self_terminate(decrease_capacity=False)
         elif self.state == self.StateNames.WAIT:
             res = self.machine.check_job_assigned()
@@ -59,7 +59,7 @@ class StateMachine:
             return
         if ScalingType.AUTOMATIC_SCALE_UP_DOWN and not self.forked:
             print(
-                f"Scaling type is AUTOMATIC_SCALE_UP_DOWN and machine has not run a job - do not scale down"
+                "Scaling type is AUTOMATIC_SCALE_UP_DOWN and machine has not run a job - do not scale down"
             )
             return
         if (
@@ -108,7 +108,7 @@ class StateMachine:
 class Machine:
     @staticmethod
     def get_latest_gh_actions_release():
-        url = f"https://api.github.com/repos/actions/runner/releases/latest"
+        url = "https://api.github.com/repos/actions/runner/releases/latest"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             latest_release = response.json()
@@ -152,9 +152,9 @@ class Machine:
                 strict=True,
                 verbose=True,
             )
-            Shell.check(f"tar xzf *tar.gz", strict=True, verbose=True)
-            Shell.check(f"rm -f *tar.gz", strict=True, verbose=True)
-            Shell.check(f"sudo ./bin/installdependencies.sh", strict=True, verbose=True)
+            Shell.check("tar xzf *tar.gz", strict=True, verbose=True)
+            Shell.check("rm -f *tar.gz", strict=True, verbose=True)
+            Shell.check("sudo ./bin/installdependencies.sh", strict=True, verbose=True)
             Shell.check(
                 f"chown -R ubuntu:ubuntu {ExecutionSettings.GH_ACTIONS_DIRECTORY}",
                 strict=True,
@@ -209,7 +209,7 @@ class Machine:
 
     def check_job_running(self):
         if self.proc is None:
-            print(f"WARNING: No job started")
+            print("WARNING: No job started")
             return False
         exit_code = self.proc.poll()
         if exit_code is None:
@@ -271,7 +271,7 @@ class Machine:
                 print(f"Error output: {stderr}")
                 return False
             else:
-                print(f"GH Action process is not running")
+                print("GH Action process is not running")
                 return False
         except Exception as e:
             print(f"GH Action process exception: {e}")
