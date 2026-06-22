@@ -547,17 +547,13 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(con
     {
         tokenizer->stringToTokens(raw.data(), raw.size(), tokens);
     }
-    /// Containment-based compaction (sparseGrams drops a shorter gram covered by a longer one) relies on the
-    /// index guaranteeing that a document holding the longer gram also holds the shorter one. A postprocessor
-    /// maps each token independently, breaking that guarantee, so dropping the shorter gram would under-check
-    /// and yield false positives in Exact direct read. Deduplicate only; plain dedup is always sound.
-    if (has_postprocessor)
-    {
-        tokens = postprocessor->processTokens(std::move(tokens));
-        std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
-        return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
-    }
-    return tokenizer->compactTokens(tokens);
+    if (!has_postprocessor)
+        return tokenizer->compactTokens(tokens);
+
+    /// Containment compaction is unsound after a postprocessor (it maps tokens independently), so only dedup.
+    tokens = postprocessor->processTokens(std::move(tokens));
+    std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
+    return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
 }
 
 VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
@@ -572,10 +568,13 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(
         return tokens;
 
     tokenizer->substringToTokens(input.data(), input.size(), tokens, is_prefix, is_suffix);
-    /// See stringToTokens: postprocess before compaction.
-    if (has_postprocessor)
-        tokens = postprocessor->processTokens(std::move(tokens));
-    return tokenizer->compactTokens(tokens);
+    if (!has_postprocessor)
+        return tokenizer->compactTokens(tokens);
+
+    /// See stringToTokens: only dedup after a postprocessor.
+    tokens = postprocessor->processTokens(std::move(tokens));
+    std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
+    return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
 }
 
 std::vector<VectorWithMemoryTracking<String>> MergeTreeIndexConditionText::regexpToTokensForQueries(const String & regexp_string) const
@@ -602,7 +601,14 @@ std::vector<VectorWithMemoryTracking<String>> MergeTreeIndexConditionText::regex
         {
             auto tokens = substringToTokens(alternative, false, false);
             tokens.insert(tokens.end(), required_tokens.begin(), required_tokens.end());
-            tokens_for_queries.push_back(tokenizer->compactTokens(tokens));
+            if (has_postprocessor)
+            {
+                /// Tokens are already postprocessed; only dedup (no compaction) after a postprocessor.
+                std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
+                tokens_for_queries.emplace_back(unique_tokens.begin(), unique_tokens.end());
+            }
+            else
+                tokens_for_queries.push_back(tokenizer->compactTokens(tokens));
         }
     }
 
@@ -627,10 +633,13 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
     {
         tokenizer->stringLikeToTokens(raw.data(), raw.size(), tokens);
     }
-    /// See stringToTokens: postprocess before compaction.
-    if (has_postprocessor)
-        tokens = postprocessor->processTokens(std::move(tokens));
-    return tokenizer->compactTokens(tokens);
+    if (!has_postprocessor)
+        return tokenizer->compactTokens(tokens);
+
+    /// See stringToTokens: only dedup after a postprocessor.
+    tokens = postprocessor->processTokens(std::move(tokens));
+    std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
+    return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
 }
 
 std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
