@@ -1667,6 +1667,39 @@ TEST(PostingListCursorTest, MultiBlockSingleBlockWithTail)
     EXPECT_EQ(result, docs);
 }
 
+#if USE_FASTPFOR
+TEST(PostingListCursorTest, FastPFORLazyCursorDecodesBlocksAndTail)
+{
+    /// Covers PostingListCursor over a FastPFOR segment: advance decodes a selected block lazily,
+    /// next crosses block boundaries, and linearOr decodes all overlapping blocks including the tail.
+    std::vector<uint32_t> docs = generateRange(7, 333, 3);
+    auto data = makeMultiBlockData({docs}, IPostingListCodec::Type::FastPFOR);
+
+    {
+        auto cursor = makeMultiBlockCursor(data);
+        cursor->advance(docs[150]);
+        ASSERT_TRUE(cursor->valid());
+        EXPECT_EQ(cursor->value(), docs[150]);
+
+        std::vector<uint32_t> suffix;
+        while (cursor->valid())
+        {
+            suffix.push_back(cursor->value());
+            cursor->next();
+        }
+
+        std::vector<uint32_t> expected_suffix(docs.begin() + 150, docs.end());
+        EXPECT_EQ(suffix, expected_suffix);
+    }
+
+    {
+        auto cursor = makeMultiBlockCursor(data);
+        auto result = linearOrToDocIds(cursor, 0, docs.back() + 1);
+        EXPECT_EQ(result, docs);
+    }
+}
+#endif
+
 TEST(PostingListCursorTest, MultiBlockTwoBlocks)
 {
     /// Two large blocks.

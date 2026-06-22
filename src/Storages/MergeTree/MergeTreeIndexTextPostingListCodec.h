@@ -24,7 +24,7 @@ namespace ErrorCodes
 /// Segment + block + delta framework for serializing a posting list in a compact block-compressed format.
 ///
 /// Values are delta-compressed, then each fixed-size block (physical chunk, controlled by BLOCK_SIZE) is encoded
-/// by a per-block payload codec (IPostingListBlockCodec — currently bitpacking). The block payload is the only
+/// by a per-block payload codec (IPostingListBlockCodec — bitpacking or FastPFOR). The block payload is the only
 /// codec-specific part; the segment / block / Index Section layout below is shared by all block codecs.
 ///
 /// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
@@ -57,8 +57,9 @@ class SegmentedPostingListCodecImpl
         {
             UInt64 v = 0;
             readVarUInt(v, in);
-            if (v != static_cast<uint8_t>(IPostingListCodec::Type::Bitpacking))
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected codec type Bitpacking, got {}", v);
+            if (v != static_cast<uint8_t>(IPostingListCodec::Type::Bitpacking)
+                && v != static_cast<uint8_t>(IPostingListCodec::Type::FastPFOR))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected codec type Bitpacking or FastPFOR, got {}", v);
             codec_type = static_cast<IPostingListCodec::Type>(v);
 
             readVarUInt(v, in);
@@ -71,7 +72,7 @@ class SegmentedPostingListCodecImpl
             first_row_id = static_cast<uint32_t>(v);
         }
 
-        /// Block codec used for this segment's payload. Filled by read.
+        /// Block codec used for this segment's payload (Bitpacking or FastPFOR). Filled by read.
         IPostingListCodec::Type codec_type = IPostingListCodec::Type::Bitpacking;
         /// Number of compressed bytes (per segment) following this header
         uint64_t payload_bytes = 0;
@@ -199,8 +200,8 @@ private:
 
     /// Decode one compressed block into `current_segment` and reconstruct absolute row ids.
     ///
-    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which fills
-    ///   `current_segment` with delta values
+    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte; FastPFOR reads a
+    ///   self-delimited payload), which fills `current_segment` with delta values
     /// - inclusive_scan converts deltas -> row ids using `prev_row_id` as initial prefix
     /// - Updates prev_row_id to the last decoded row id
     /// Decodes into the `current_segment` member and advances `prev_row_id`.
@@ -222,7 +223,7 @@ private:
     size_t row_ids_in_current_segment = 0;
     /// Segment size
     const size_t max_rowids_in_segment = 1024 * 1024;
-    /// Per-block payload codec (bitpacking). On encode it is fixed by the constructor; on decode it
+    /// Per-block payload codec (bitpacking or FastPFOR). On encode it is fixed by the constructor; on decode it
     /// is created from the segment header. One instance is reused across all blocks of a single encode/decode call.
     std::unique_ptr<IPostingListBlockCodec> block_codec;
 };
@@ -243,6 +244,27 @@ public:
     static const char * getName() { return "bitpacking"; }
 
     PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
+
+    void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    void decode(ReadBuffer & in, PostingList & postings) const override;
+};
+
+/// A posting list codec that compresses each physical block with FastPFOR (patched frame-of-reference).
+///
+/// Shares the exact segment / block / Index Section layout with PostingListCodecBitpacking; only the
+/// per-block payload format differs (FastPFOR self-delimited payload instead of [1 byte bits][bitpacked]).
+/// Compared to bitpacking it compresses better when deltas are mostly small with occasional large gaps.
+///
+/// Only available when ClickHouse is built with FastPFOR (x86-64-v2+/AArch64); otherwise the underlying
+/// FastPFORBlockCodec throws SUPPORT_IS_DISABLED.
+///
+/// Assumes that input row ids are strictly increasing.
+class PostingListCodecFastPFOR : public IPostingListCodec
+{
+public:
+    static const char * getName() { return "fastpfor"; }
+
+    PostingListCodecFastPFOR() : IPostingListCodec(Type::FastPFOR) {}
 
     void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
     void decode(ReadBuffer & in, PostingList & postings) const override;

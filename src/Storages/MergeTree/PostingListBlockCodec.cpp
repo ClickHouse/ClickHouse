@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
+#include <Storages/MergeTree/FastPFORBlockCodec.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -96,6 +97,35 @@ namespace
         IPostingListCodec::Type type() const override { return IPostingListCodec::Type::Bitpacking; }
     };
 
+    /// [self-delimited FastPFOR payload] (no bits byte). Wraps FastPFORBlockCodec, whose own constructor enforces
+    /// FastPFOR availability (throws SUPPORT_IS_DISABLED on a build without FastPFOR).
+    class FastPFORPostingListBlockCodec : public IPostingListBlockCodec
+    {
+    public:
+        size_t encodeBlock(std::span<uint32_t> deltas, std::string & out) override
+        {
+            /// FastPFOR is not exactly pre-sizable: reserve the per-block cap, encode into it, then shrink to fit.
+            const size_t offset = out.size();
+            out.resize(offset + FastPFORBlockCodec::maxBlockBytes());
+            std::span<char> out_span(out.data() + offset, FastPFORBlockCodec::maxBlockBytes());
+            std::span<const uint32_t> view(deltas.data(), deltas.size());
+            const size_t used = codec.encode(view, out_span);
+            out.resize(offset + used);
+            return used;
+        }
+
+        size_t decodeBlock(std::span<const std::byte> & in, size_t count, std::span<uint32_t> out) override
+        {
+            return codec.decode(in, count, out);
+        }
+
+        size_t maxBlockBytes() const override { return FastPFORBlockCodec::maxBlockBytes(); }
+
+        IPostingListCodec::Type type() const override { return IPostingListCodec::Type::FastPFOR; }
+
+    private:
+        FastPFORBlockCodec codec;
+    };
 }
 
 std::unique_ptr<IPostingListBlockCodec> createPostingListBlockCodec(IPostingListCodec::Type type)
@@ -106,6 +136,8 @@ std::unique_ptr<IPostingListBlockCodec> createPostingListBlockCodec(IPostingList
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Posting list codec 'None' has no per-block codec");
         case IPostingListCodec::Type::Bitpacking:
             return std::make_unique<BitpackingPostingListBlockCodec>();
+        case IPostingListCodec::Type::FastPFOR:
+            return std::make_unique<FastPFORPostingListBlockCodec>();
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown posting list codec type: {}", static_cast<int>(type));

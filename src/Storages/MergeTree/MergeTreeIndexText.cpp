@@ -1098,7 +1098,9 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         UInt64 codec_type = 0;
         readVarUInt(codec_type, istr);
 
-        if (codec_type > static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
+        /// FastPFOR availability is enforced when the codec is created (createPostingListCodec throws
+        /// SUPPORT_IS_DISABLED on a build without FastPFOR); here we only validate the type is known.
+        if (codec_type > static_cast<UInt64>(IPostingListCodec::Type::FastPFOR))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown posting list codec type in text index header: {}", codec_type);
 
         header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);

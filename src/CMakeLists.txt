@@ -914,6 +914,10 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdcomp)
     endif()
 
+    if (TARGET ch_contrib::fastpfor)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::fastpfor)
+    endif()
+
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()

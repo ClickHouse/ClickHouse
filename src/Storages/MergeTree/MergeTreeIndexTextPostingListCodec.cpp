@@ -222,5 +222,18 @@ void PostingListCodecBitpacking::encode(
 {
     encodePostingsInBlocks(postings, max_rowids_in_segment, IPostingListCodec::Type::Bitpacking, info, out);
 }
+
+void PostingListCodecFastPFOR::decode(ReadBuffer & in, PostingList & postings) const
+{
+    /// The segment header records the codec, so the same impl decodes FastPFOR payloads.
+    SegmentedPostingListCodecImpl impl;
+    impl.decode(in, postings);
+}
+
+void PostingListCodecFastPFOR::encode(
+        const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
+{
+    encodePostingsInBlocks(postings, max_rowids_in_segment, IPostingListCodec::Type::FastPFOR, info, out);
+}
 }
 

@@ -35,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 /// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately
@@ -180,11 +181,18 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
     UInt64 codec_type = 0;
     readVarUInt(codec_type, *data_buffer);
 
-    if (codec_type != static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
+    if (codec_type != static_cast<UInt64>(IPostingListCodec::Type::Bitpacking)
+        && codec_type != static_cast<UInt64>(IPostingListCodec::Type::FastPFOR))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupted data in lazy cursor: expected codec type Bitpacking, got {}", codec_type);
+            "Corrupted data in lazy cursor: expected codec type Bitpacking or FastPFOR, got {}", codec_type);
 
     segment.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
+
+#if !USE_FASTPFOR
+    if (segment.codec_type == IPostingListCodec::Type::FastPFOR)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "FastPFOR posting list codec is not available: ClickHouse was built without FastPFOR");
+#endif
 
     UInt64 payload_bytes = 0;
     readVarUInt(payload_bytes, *data_buffer);
