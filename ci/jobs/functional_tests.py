@@ -185,6 +185,15 @@ def invert_bugfix_validation_status(test_result: Result) -> None:
     masking the `ERROR` and flipping the job to green. Treat any per-row
     `ERROR` the same as an aggregate `ERROR`. Mirrors the `has_error`
     dominant guard in `integration_test_job.py`.
+
+    Rows produced by `check_fatal_messages_in_logs` (labelled `LOG_CHECK`:
+    "Lost s3 keys", "OOM in dmesg", "Exception in test runner", etc.) are
+    server-log / runner health checks, not test cases. A LOG_CHECK *failure*
+    on the validated binary is itself evidence the bug reproduced (a crash /
+    sanitizer assert / lost key triggered by the regression test), so it is
+    flipped like a test failure. But a *clean* LOG_CHECK must stay `OK`: the
+    absence of a fatal is not "failed to reproduce", and flipping it to
+    `FAIL` is what produced the spurious xfail rows.
     """
     if test_result.status == Result.Status.ERROR or any(
         r.status == Result.Status.ERROR for r in test_result.results
@@ -200,8 +209,14 @@ def invert_bugfix_validation_status(test_result: Result) -> None:
 
     has_failure = False
     for r in test_result.results:
+        if r.status == Result.Status.OK and r.has_label(Result.Label.LOG_CHECK):
+            # A clean health check is not a test that "failed to reproduce";
+            # leave it untouched so it does not become a spurious failure.
+            continue
         r.set_label(Result.Label.XFAIL)
         if r.status == Result.Status.FAIL:
+            # A failing test, or a fatal / sanitizer assert / lost key on the
+            # validated binary, both mean the bug was reproduced.
             r.status = Result.Status.OK
             has_failure = True
         elif r.status == Result.Status.OK:
@@ -285,6 +300,13 @@ def main():
             is_shared_catalog = True
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
+
+    if is_llvm_coverage:
+        # Pin random-by-default fault injection seeds server-side (in the default
+        # profile) so coverage is deterministic, instead of injecting them as
+        # per-query client settings (which broke tests that switch to readonly
+        # mode mid-session). See tests/config/users.d/coverage_fault_injection_seeds.xml.
+        config_installs_args += " --llvm-coverage"
 
     if is_shared_catalog or is_parallel_replicas:
         pass
@@ -371,7 +393,7 @@ def main():
 
     if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
         config_installs_args += " --encrypted-storage"
-        runner_options += f" --encrypted-storage"
+        runner_options += " --encrypted-storage"
 
     if is_bugfix_validation:
         os.environ["GLOBAL_TAGS"] = "no-random-settings"
@@ -561,9 +583,9 @@ def main():
         print(f"Using mark/uncompressed cache policy: {cache_policy}")
 
         commands = [
-            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
+            "rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
-            f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
+            "mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-client",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-compressor",
@@ -573,9 +595,9 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-format",
             f"ln -sf {ch_path}/clickhouse {ch_path}/ch",
             f"ln -sf /usr/bin/clickhouse-odbc-bridge {ch_path}/clickhouse-odbc-bridge",
-            f"cp programs/server/config.xml programs/server/users.xml /etc/clickhouse-server/",
+            "cp programs/server/config.xml programs/server/users.xml /etc/clickhouse-server/",
             f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client {config_installs_args}",
-            f"clickhouse-server --version",
+            "clickhouse-server --version",
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
             CH.set_random_timezone,
         ]
@@ -785,7 +807,7 @@ def main():
                     # racing the half-written binary fails with
                     # `open: Is a directory`.
                     Shell.run(
-                        f"clickhouse-server --version",
+                        "clickhouse-server --version",
                         verbose=True,
                         strict=True,
                     )
