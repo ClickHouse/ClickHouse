@@ -73,13 +73,15 @@ TryResult tryParseBestEffort(std::string_view s, const DateLUTImpl & tz)
 /// where a value can be delivered across two refills - the case the canonical fast path must handle.
 TryResult tryParseBestEffortSplit(std::string_view s, size_t split, const DateLUTImpl & tz)
 {
-    ReadBufferFromMemory part1(s.data(), split);
-    ReadBufferFromMemory part2(s.data() + split, s.size() - split);
+    const std::string_view head = s.substr(0, split);
+    const std::string_view tail = s.substr(split);
+    ReadBufferFromMemory part1(head.data(), head.size());
+    ReadBufferFromMemory part2(tail.data(), tail.size());
     ConcatReadBuffer in(part1, part2);
     /// Prime the buffer so the first chunk becomes the working buffer (its end is the split point).
     /// Without this the buffer is empty on entry and the fast path skips it - it would not exercise
     /// the boundary at all. A real streaming buffer is likewise already filled when parsing starts.
-    char probe;
+    char probe = 0;
     in.peek(probe);
     time_t res = 0;
     bool ok = tryParseDateTimeBestEffort(res, in, tz, DateLUT::instance("UTC"));
