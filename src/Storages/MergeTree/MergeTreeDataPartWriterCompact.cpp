@@ -449,6 +449,20 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 
     plain_file->finalize();
     marks_file->finalize();
+
+    /// Release the data (`data.bin`) and marks (`data.cmrk*`) file descriptors now that everything
+    /// has been flushed and synced. Otherwise the writer keeps these handles open until it is
+    /// destroyed, which happens only after the part's temporary directory has been renamed to its
+    /// final name. Renaming a directory that still has open file descriptors inside fails on
+    /// filesystems backed by Windows (WSL, CIFS/SMB, Docker Desktop bind mounts).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/56288.
+    ///
+    /// Only plain_file and marks_file own the file descriptors. The wrapper buffers
+    /// (plain_hashing, streams_by_codec, marks_*_hashing, marks_compressor) were already finalized in
+    /// fillDataChecksums, and a finalized WriteBuffer never touches its underlying buffer on
+    /// destruction, so releasing the file streams here is safe even though the wrappers outlive them.
+    plain_file = nullptr;
+    marks_file = nullptr;
 }
 
 static void fillIndexGranularityImpl(
