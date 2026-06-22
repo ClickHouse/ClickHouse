@@ -225,7 +225,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_export_merge_tree_part;
     extern const SettingsBool export_merge_tree_partition_force_export;
     extern const SettingsUInt64 export_merge_tree_partition_max_retries;
-    extern const SettingsUInt64 export_merge_tree_partition_manifest_ttl;
     extern const SettingsUInt64 export_merge_tree_partition_task_timeout_seconds;
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsBool output_format_parquet_parallel_encoding;
@@ -8625,36 +8624,11 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperExists);
     if (zookeeper->exists(partition_exports_path))
     {
-        LOG_INFO(log, "Export with key {} is already exported or it is being exported. Checking if it has expired so that we can overwrite it", export_key);
+        LOG_INFO(log, "Export with key {} is already exported or it is being exported", export_key);
 
-        bool has_expired = false;
-
-        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
-        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperExists);
-        if (zookeeper->exists(fs::path(partition_exports_path) / "metadata.json"))
+        if (!query_context->getSettingsRef()[Setting::export_merge_tree_partition_force_export])
         {
-            std::string metadata_json;
-            ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
-            ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperGet);
-            if (zookeeper->tryGet(fs::path(partition_exports_path) / "metadata.json", metadata_json))
-            {
-                const auto manifest = ExportReplicatedMergeTreePartitionManifest::fromJsonString(metadata_json);
-
-                const auto now = time(nullptr);
-                const auto expiration_time = manifest.create_time + manifest.ttl_seconds;
-
-                LOG_INFO(log, "Export with key {} has expiration time {}, now is {}", export_key, expiration_time, now);
-
-                if (static_cast<time_t>(expiration_time) < now)
-                {
-                    has_expired = true;
-                }
-            }
-        }
-
-        if (!has_expired && !query_context->getSettingsRef()[Setting::export_merge_tree_partition_force_export])
-        {
-            throw Exception(ErrorCodes::EXPORT_PARTITION_ALREADY_EXPORTED, "Export with key {} already exported or it is being exported, and it has not expired. Set `export_merge_tree_partition_force_export` to overwrite it.", export_key);
+            throw Exception(ErrorCodes::EXPORT_PARTITION_ALREADY_EXPORTED, "Export with key {} already exported or it is being exported. Set `export_merge_tree_partition_force_export` to overwrite it.", export_key);
         }
 
         LOG_INFO(log, "Overwriting export with key {}", export_key);
@@ -8736,7 +8710,6 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     manifest.parts = part_names;
     manifest.create_time = time(nullptr);
     manifest.max_retries = query_context->getSettingsRef()[Setting::export_merge_tree_partition_max_retries];
-    manifest.ttl_seconds = query_context->getSettingsRef()[Setting::export_merge_tree_partition_manifest_ttl];
     manifest.task_timeout_seconds = query_context->getSettingsRef()[Setting::export_merge_tree_partition_task_timeout_seconds];
     manifest.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     manifest.parallel_formatting = query_context->getSettingsRef()[Setting::output_format_parallel_formatting];

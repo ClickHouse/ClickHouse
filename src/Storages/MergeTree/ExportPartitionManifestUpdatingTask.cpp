@@ -128,54 +128,35 @@ namespace
     }
 
     /*
-        Remove expired entries and fix non-committed exports that have already exported all parts.
-
-        Return values:
-        - true: the cleanup was successful, the entry is removed from the entries_by_key container and the function returns true. Proceed to the next entry.
-        - false: the cleanup was not successful, the entry is not removed from the entries_by_key container and the function returns false.
+        Enforce the PENDING task timeout and recover non-committed exports that have already
+        exported all parts. Entries are never removed for age — `system.replicated_partition_exports`
+        is append-only history, so the entry always stays in the in-memory container: a KILLED
+        transition is driven by the status watch, and a deferred commit is handled by the caller
+        after the lock is released.
 
         Side outputs:
         - `deferred_commits`: when a PENDING entry has all parts processed but the export was
           never committed, this function appends a CommitRecoveryWork item to be executed by
           the caller after releasing the storage-wide mutex. The actual commit() call (which
           performs network I/O to the destination catalog and S3) MUST NOT run under the lock.
-          The function still returns `false` in that case so the outer poll() loop falls through
-          to `addTask`, keeping the in-memory entry consistent regardless of whether the
-          deferred commit ultimately succeeds.
     */
-    bool tryCleanup(
+    void tryCleanup(
         const zkutil::ZooKeeperPtr & zk,
         const std::string & entry_path,
         const LoggerPtr & log,
         const ContextPtr & storage_context,
         StorageReplicatedMergeTree & storage,
-        const std::string & key,
         const ExportReplicatedMergeTreePartitionManifest & metadata,
         const time_t now,
         const bool is_pending,
-        auto & entries_by_key,
         std::vector<CommitRecoveryWork> & deferred_commits
     )
     {
-        bool has_expired = metadata.create_time < now - static_cast<time_t>(metadata.ttl_seconds);
-
         bool task_timed_out = is_pending
             && metadata.task_timeout_seconds > 0
             && metadata.create_time + static_cast<time_t>(metadata.task_timeout_seconds) < now;
 
-        if (has_expired && !is_pending)
-        {
-            zk->tryRemoveRecursive(fs::path(entry_path));
-            ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
-            ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRemoveRecursive);
-            auto it = entries_by_key.find(key);
-            if (it != entries_by_key.end())
-                entries_by_key.erase(it);
-            LOG_INFO(log, "ExportPartition Manifest Updating Task: Removed {}: expired", key);
-
-            return true;
-        }
-        else if (task_timed_out)
+        if (task_timed_out)
         {
             const std::string status_path = fs::path(entry_path) / "status";
 
@@ -187,14 +168,14 @@ namespace
             if (!zk->tryGet(status_path, status_string, &status_stat))
             {
                 LOG_INFO(log, "ExportPartition Manifest Updating Task: Failed to read status for {} while enforcing task timeout, skipping", entry_path);
-                return false;
+                return;
             }
 
             const auto current_status = magic_enum::enum_cast<ExportReplicatedMergeTreePartitionTaskEntry::Status>(status_string);
             if (!current_status || *current_status != ExportReplicatedMergeTreePartitionTaskEntry::Status::PENDING)
             {
                 LOG_INFO(log, "ExportPartition Manifest Updating Task: Task {} is not PENDING, can't set to KILLED, skipping", entry_path);
-                return false;
+                return;
             }
 
             const auto timeout_message = fmt::format(
@@ -234,9 +215,9 @@ namespace
                     entry_path, rc);
             }
 
-            /// Return false so the entry remains in entries_by_key; the status watch will drive
+            /// The entry remains in entries_by_key; the status watch will drive
             /// handleStatusChanges -> killExportPart on every replica, mirroring user-initiated KILL.
-            return false;
+            return;
         }
         else if (is_pending)
         {
@@ -249,7 +230,7 @@ namespace
             {
 
                 LOG_INFO(log, "ExportPartition Manifest Updating Task: Failed to get parts in processing or pending, skipping");
-                return false;
+                return;
             }
 
             if (parts_in_processing_or_pending.empty())
@@ -261,7 +242,7 @@ namespace
                 if (!destination_storage)
                 {
                     LOG_INFO(log, "ExportPartition Manifest Updating Task: Failed to reconstruct destination storage: {}, skipping", destination_storage_id.getNameForLogs());
-                    return false;
+                    return;
                 }
 
                 /// A replica exported the last part but the commit never landed. Capture everything
@@ -270,22 +251,18 @@ namespace
                 /// MAX_TRANSACTION_RETRIES = 100 retries; holding the storage-wide mutex across
                 /// that work is what caused `system.replicated_partition_exports` to hang.
                 ///
-                /// Returning false here keeps the outer poll() loop on the normal path: it will
-                /// call addTask() so the in-memory container reflects the PENDING entry. The
-                /// status watch registered by poll() will transition the local entry to
-                /// COMPLETED/FAILED once the deferred commit (or a peer's commit) updates
-                /// /status in ZooKeeper.
+                /// The outer poll() loop stays on the normal path: it will call addTask() so the
+                /// in-memory container reflects the PENDING entry. The status watch registered by
+                /// poll() will transition the local entry to COMPLETED/FAILED once the deferred
+                /// commit (or a peer's commit) updates /status in ZooKeeper.
                 deferred_commits.push_back(CommitRecoveryWork{
                     .metadata = metadata,
                     .entry_path = entry_path,
                     .destination_storage = destination_storage,
                     .context = context,
                 });
-                return false;
             }
         }
-
-        return false;
     }
 }
 
@@ -365,8 +342,8 @@ void ExportPartitionManifestUpdatingTask::poll()
     const std::string cleanup_lock_path = fs::path(storage.zookeeper_path) / "exports_cleanup_lock";
 
     /// The `exports_cleanup_lock` is an ephemeral ZK node that serializes cleanup work
-    /// across replicas: only the replica holding it walks `tryCleanup` (entry expiry +
-    /// commit recovery). It MUST outlive the deferred-commit loop below; otherwise a peer
+    /// across replicas: only the replica holding it walks `tryCleanup` (task-timeout
+    /// enforcement + commit recovery). It MUST outlive the deferred-commit loop below; otherwise a peer
     /// replica's next poll() could acquire it and race us on the same commit-recovery work,
     /// duplicating REST-catalog round-trips and snapshot writes. The EphemeralNodeHolder
     /// destructor removes the node, so we declare it at function scope and let it die
@@ -468,25 +445,20 @@ void ExportPartitionManifestUpdatingTask::poll()
                 continue;
             }
 
-            /// if we have the cleanup lock, try to cleanup
-            /// if we successfully cleaned it up, early exit
+            /// If we hold the cleanup lock, enforce the task timeout and recover uncommitted exports.
+            /// Entries are never removed here, so we always fall through to refresh / addTask below.
             if (cleanup_lock)
             {
-                bool cleanup_successful = tryCleanup(
+                tryCleanup(
                     zk,
                     entry_path,
                     storage.log.load(),
                     storage.getContext(),
                     storage,
-                    key,
                     metadata,
                     now,
                     *status == ExportReplicatedMergeTreePartitionTaskEntry::Status::PENDING,
-                    entries_by_key,
                     deferred_commits);
-
-                if (cleanup_successful)
-                    continue;
             }
 
             if (has_local_entry_and_is_up_to_date)

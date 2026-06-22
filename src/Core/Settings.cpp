@@ -8043,18 +8043,21 @@ Ignore existing partition export and overwrite the zookeeper entry
     DECLARE(UInt64, export_merge_tree_partition_max_retries, 3, R"(
 Maximum number of retries for exporting a merge tree part in an export partition task
 )", 0) \
+<<<<<<< HEAD
     DECLARE(UInt64, export_merge_tree_partition_manifest_ttl, 86400, R"(
 Determines how long the manifest will live in ZooKeeper. It prevents the same partition from being exported twice to the same destination.
 This setting does not affect / delete in progress tasks. It'll only cleanup the completed ones.
 )", 0) \
     DECLARE(UInt64, export_merge_tree_partition_task_timeout_seconds, 3600, R"(
+=======
+    DECLARE(UInt64, export_merge_tree_partition_task_timeout_seconds, 86400, R"(
+>>>>>>> 1e5a11cb4eb (Merge pull request #1917 from Altinity/do_not_evict_entries_from_replicated_partition_exports_table)
 Maximum wall-clock duration (in seconds) an export partition task is allowed to remain in the PENDING state before it is auto-killed by the background cleanup loop.
 The timeout is measured from the manifest's create_time. Set to 0 to disable the timeout.
 When the timeout is exceeded the task transitions to KILLED (same terminal state as `KILL QUERY ... EXPORT PARTITION`), and `last_exception` is populated with a timeout reason.
 
 Notes:
 - Enforcement is best-effort: actual kill latency is bounded by one manifest-updater poll cycle (~30s) plus ZooKeeper watch propagation.
-- Since both this timeout and `export_merge_tree_partition_manifest_ttl` are measured from `create_time`, keep `export_merge_tree_partition_manifest_ttl` greater than `export_merge_tree_partition_task_timeout_seconds` if you want the KILLED entry to remain visible in `system.replicated_partition_exports` after the timeout fires.
 )", 0) \
     DECLARE(MergeTreePartExportFileAlreadyExistsPolicy, export_merge_tree_part_file_already_exists_policy, MergeTreePartExportFileAlreadyExistsPolicy::skip, R"(
 Possible values:
@@ -8491,7 +8494,11 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+<<<<<<< HEAD
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
+=======
+    MAKE_OBSOLETE(M, UInt64, export_merge_tree_partition_manifest_ttl, 86400) \
+>>>>>>> 1e5a11cb4eb (Merge pull request #1917 from Altinity/do_not_evict_entries_from_replicated_partition_exports_table)
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \

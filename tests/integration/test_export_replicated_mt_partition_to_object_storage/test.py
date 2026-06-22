@@ -627,42 +627,6 @@ def test_inject_short_living_failures(cluster):
     assert int(exception_count.strip()) >= 1, "Expected at least one exception"
 
 
-def test_export_ttl(cluster):
-    node = cluster.instances["replica1"]
-
-    postfix = str(uuid.uuid4()).replace("-", "_")
-    mt_table = f"export_ttl_mt_table_{postfix}"
-    s3_table = f"export_ttl_s3_table_{postfix}"
-
-    expiration_time = 3
-
-    create_tables_and_insert_data(node, mt_table, s3_table, "replica1")
-
-    # start export
-    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table} SETTINGS export_merge_tree_partition_manifest_ttl={expiration_time};")
-
-    # assert that I get an error when trying to export the same partition again, query_and_get_error
-    error = node.query_and_get_error(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table};")
-    assert "Export with key" in error, "Expected error about expired export"
-
-    # wait for the export to finish and for the manifest to expire
-    wait_for_export_status(node, mt_table, s3_table, "2020", "COMPLETED")
-    time.sleep(expiration_time * 2)
-
-    # assert that the export succeeded, check the commit file
-    assert node.query(f"SELECT count() FROM s3(s3_conn, filename='{s3_table}/commit_2020_*', format=LineAsString)") == '1\n', "Export did not succeed"
-
-    # start export again
-    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}")
-
-    # wait for the export to finish
-    wait_for_export_status(node, mt_table, s3_table, "2020", "COMPLETED")
-
-    # assert that the export succeeded, check the commit file
-    # there should be two commit files now, one for the first export and one for the second export
-    assert node.query(f"SELECT count() FROM s3(s3_conn, filename='{s3_table}/commit_2020_*', format=LineAsString)") == '2\n', "Export did not succeed"
-
-
 def test_export_partition_file_already_exists_policy(cluster):
     node = cluster.instances["replica1"]
 
