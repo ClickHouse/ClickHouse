@@ -1221,6 +1221,24 @@ namespace
         storage.set(storage.engine, engine_ast);
     }
 
+    /// Merge the storage settings of the source table (in `CREATE TABLE x AS y`) into the settings
+    /// explicitly specified for the new table. The explicitly specified settings take precedence;
+    /// the rest are inherited from the source table.
+    void mergeStorageSettings(ASTStorage & storage, const ASTSetQuery * source_settings)
+    {
+        if (!source_settings || source_settings->changes.empty())
+            return;
+
+        if (!storage.settings)
+        {
+            storage.set(storage.settings, source_settings->clone());
+            return;
+        }
+
+        for (const auto & change : source_settings->changes)
+            storage.settings->changes.insertSetting(change.name, change.value);
+    }
+
     void setNullTableEngine(ASTStorage & storage)
     {
         storage.forEachPointerToChild([](IAST ** ptr, boost::intrusive_ptr<IAST> *)
@@ -1346,30 +1364,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
     }
 
-    if (create.storage)
-    {
-        /// This table already has a storage definition.
-        if (!create.storage->engine)
-        {
-            /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
-            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_table_engine].value);
-        }
-        /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
-        /// Null table engine.
-        else if (getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
-        {
-            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
-            {
-                setNullTableEngine(*create.storage);
-            }
-        }
-        return;
-    }
-
     /// We'll try to extract a storage definition from clause `AS`:
-    ///     CREATE TABLE table_name AS other_table_name
+    ///     CREATE TABLE table_name AS other_table_name [storage_clauses]
+    /// It is needed both when no storage clause is specified at all and when storage clauses such as
+    /// PARTITION BY, ORDER BY or SETTINGS are specified without an explicit ENGINE: in the latter case
+    /// the engine and the settings are inherited from `other_table_name`.
     boost::intrusive_ptr<ASTStorage> storage_def;
-    if (!create.as_table.empty())
+    if (!create.as_table.empty() && (!create.storage || !create.storage->engine))
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
@@ -1406,8 +1407,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         else if (as_create.as_table_function)
         {
-            create.set(create.as_table_function, as_create.as_table_function->ptr());
-            return;
+            /// The source table is backed by a table function. Forward the table function only when no storage
+            /// clauses were specified for the new table; otherwise keep the explicit storage definition.
+            if (!create.storage)
+            {
+                create.set(create.as_table_function, as_create.as_table_function->ptr());
+                return;
+            }
         }
         else if (as_create.storage)
         {
@@ -1418,6 +1424,36 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
         }
+    }
+
+    if (create.storage)
+    {
+        /// This table already has a (possibly partial) storage definition.
+        if (!create.storage->engine)
+        {
+            if (storage_def && storage_def->engine)
+            {
+                /// `CREATE TABLE x AS y [storage_clauses]` without an explicit ENGINE: inherit the engine of `y`
+                /// and merge its settings under the explicitly specified ones (the latter take precedence).
+                create.storage->set(create.storage->engine, storage_def->engine->clone());
+                mergeStorageSettings(*create.storage, storage_def->settings);
+            }
+            else
+            {
+                /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
+                setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_table_engine].value);
+            }
+        }
+        /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
+        /// Null table engine.
+        else if (getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
+        {
+            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
+            {
+                setNullTableEngine(*create.storage);
+            }
+        }
+        return;
     }
 
     if (!storage_def)
