@@ -9,6 +9,15 @@ node = cluster.add_instance(
     stay_alive=True,
 )
 
+# A second node whose `query_cache.path` is deliberately misconfigured to an unsafe value (an absolute path,
+# then a parent-traversal path). It must start with the on-disk cache disabled instead of touching data outside
+# the configured cache directory.
+node_bad_path = cluster.add_instance(
+    "node_bad_path",
+    main_configs=["configs/unsafe_query_cache_path.xml"],
+    stay_alive=True,
+)
+
 QUERY = "SELECT id, c FROM t ORDER BY id"
 
 
@@ -366,3 +375,65 @@ def test_disk_cache_tag_with_special_chars_survives_restart(start_cluster):
     )
     assert res == expected
     assert disk_hits_for(query_id) == 1
+
+
+def _assert_unsafe_path_disables_disk_cache(cache_root):
+    # `cache_root` is where the (unsafe) `query_cache.path` resolves on disk. Plant a cache-shaped directory
+    # (`<bucket>/<low64>_<high64>`, see `Key::getKeyPath`) that holds unrelated data. Without the fail-closed
+    # guard, `loadEntrysFromDisk` would walk this path, fail to parse the planted directory as a cache entry,
+    # and `removeRecursive` it as "broken" - deleting data outside the configured cache directory.
+    node_bad_path.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p '{cache_root}/999/123_456' && echo keep > '{cache_root}/999/123_456/important.txt'",
+        ],
+        user="root",
+    )
+
+    node_bad_path.restart_clickhouse(kill=True)
+
+    # The on-disk cache must be disabled, so a write with `enable_writes_to_query_cache_disk = 1` produces no
+    # disk entry (the memory cache still works) and the server logs that the cache was disabled.
+    node_bad_path.query("SYSTEM DROP QUERY CACHE")
+    node_bad_path.query("DROP TABLE IF EXISTS t SYNC")
+    node_bad_path.query("CREATE TABLE t (id Int64, c String) ENGINE = MergeTree ORDER BY id")
+    node_bad_path.query("INSERT INTO t SELECT number, concat('abc_', number) FROM numbers(10)")
+    node_bad_path.query(
+        QUERY,
+        settings={
+            "use_query_cache": 1,
+            "enable_writes_to_query_cache_disk": 1,
+            "enable_reads_from_query_cache_disk": 1,
+        },
+    )
+    assert (
+        node_bad_path.query(
+            "SELECT count() FROM system.query_cache WHERE type = 'Disk'"
+        ).strip()
+        == "0"
+    )
+    assert node_bad_path.contains_in_log("on-disk query result cache is disabled")
+
+    # The planted data outside the configured cache directory must be untouched (never walked or removed).
+    assert (
+        node_bad_path.exec_in_container(
+            ["bash", "-c", f"cat '{cache_root}/999/123_456/important.txt'"], user="root"
+        ).strip()
+        == "keep"
+    )
+
+
+def test_unsafe_disk_path_disables_cache_and_preserves_data(start_cluster):
+    # An absolute `query_cache.path` replaces the disk root entirely on `DiskLocal` (`fs::path(root) / path`),
+    # so it must be rejected and the on-disk cache disabled.
+    _assert_unsafe_path_disables_disk_cache("/var/lib/protected_qrc_abs")
+
+    # A parent-traversal `query_cache.path` (`../protected_qrc_rel`) escapes the disk root (`/var/lib/clickhouse`),
+    # resolving to `/var/lib/protected_qrc_rel`; it must be rejected too.
+    node_bad_path.replace_in_config(
+        "/etc/clickhouse-server/config.d/unsafe_query_cache_path.xml",
+        "/var/lib/protected_qrc_abs",
+        "../protected_qrc_rel",
+    )
+    _assert_unsafe_path_disables_disk_cache("/var/lib/protected_qrc_rel")

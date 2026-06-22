@@ -1,0 +1,10 @@
+<clickhouse>
+    <!-- A deliberately unsafe `query_cache.path` (initially an absolute path; the test also rewrites it to a
+         parent-traversal path). `query_cache.path` is documented as relative to the configured disk, so such a
+         value must be rejected and the on-disk query result cache disabled instead of letting the server scan,
+         write, or recursively delete data outside the configured cache directory. -->
+    <query_cache>
+        <disk>default</disk>
+        <path>/var/lib/protected_qrc_abs</path>
+    </query_cache>
+</clickhouse>

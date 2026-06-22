@@ -1131,6 +1131,37 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
     return std::move(source_from_chunks_extremes);
 }
 
+namespace
+{
+
+/// `query_cache.path` is documented as a directory *relative to the configured disk*. On `DiskLocal`, file
+/// operations join paths as `fs::path(disk_root) / path`, so an absolute `path` silently replaces the disk root
+/// and a `..` component escapes it. Because the on-disk query result cache scans `path`, writes entries under it,
+/// and `removeRecursive`s cache-shaped subdirectories (broken/expired/evicted entries and `SYSTEM DROP QUERY
+/// CACHE`), a misconfigured `path` could otherwise read, write and recursively delete data outside the configured
+/// cache directory. Fail closed: accept only a non-empty relative path that, once normalized, stays within the
+/// disk root (i.e. has no `..` component); reject absolute paths and parent-traversal. An unsafe path disables the
+/// on-disk cache entirely (see the constructor) rather than risking destructive operations outside the cache root.
+bool isQueryResultCacheDiskPathSafe(const fs::path & path)
+{
+    if (path.empty() || path.is_absolute())
+        return false;
+
+    const fs::path normalized = path.lexically_normal();
+    if (normalized.empty() || normalized == "." || normalized == "..")
+        return false;
+
+    /// A normalized relative path escapes its root if and only if it still contains a `..` component
+    /// (e.g. `../data` or `a/../../b` -> `../b`); an in-root `..` such as `a/../b` normalizes to `b`.
+    for (const auto & component : normalized)
+        if (component == "..")
+            return false;
+
+    return true;
+}
+
+}
+
 QueryResultCache::QueryResultCache(
     size_t max_size_in_bytes,
     size_t max_entries,
@@ -1147,6 +1178,19 @@ QueryResultCache::QueryResultCache(
     , disk(disk_)
     , path(path_)
 {
+    /// Disable the on-disk cache when `path` is not a safe relative path within the disk root: every disk
+    /// operation (load, write, read, cleanup) is gated on `disk`, so clearing it here fails closed in one place
+    /// and prevents scanning/writing/`removeRecursive` outside the configured cache directory.
+    if (disk && !isQueryResultCacheDiskPathSafe(path))
+    {
+        LOG_ERROR(
+            logger,
+            "Query result cache path '{}' is not a safe relative path within the disk root "
+            "(absolute paths and '..' components are rejected); the on-disk query result cache is disabled.",
+            path.string());
+        disk = nullptr;
+    }
+
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_, max_disk_size_in_bytes, max_disk_entries);
 
     loadEntrysFromDisk();
@@ -1703,15 +1747,17 @@ void QueryResultCache::loadEntrysFromDisk()
     if (!disk)
         return;
 
-    /// `loadEntrysFromDisk` removes directories under `path` that it cannot load as cache entries, so an
-    /// empty, root or "."/".." `query_cache.path` (a misconfiguration) must never be walked. Fail closed:
-    /// log and skip loading rather than risk recursively deleting unrelated data on the configured disk.
-    const fs::path normalized_path = path.lexically_normal();
-    if (path.empty() || normalized_path == "/" || normalized_path == "." || normalized_path == "..")
+    /// `loadEntrysFromDisk` removes directories under `path` that it cannot load as cache entries, so an unsafe
+    /// `query_cache.path` (a misconfiguration) must never be walked. The constructor already disables the disk
+    /// cache (sets `disk = nullptr`) for an unsafe path, so this is normally unreachable; re-check defensively
+    /// before any `iterateDirectory`/`removeRecursive`. Fail closed: skip loading and cleanup rather than risk
+    /// recursively deleting unrelated data on the configured disk.
+    if (!isQueryResultCacheDiskPathSafe(path))
     {
         LOG_ERROR(
             logger,
-            "Query result cache path '{}' is not a dedicated cache subdirectory; skipping on-disk cache load and cleanup.",
+            "Query result cache path '{}' is not a safe relative path within the disk root; "
+            "skipping on-disk cache load and cleanup.",
             path.string());
         return;
     }
