@@ -378,7 +378,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 {
     const auto & data_part = getDataPart();
 
-    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
     if (index_format.version != 2)
         return;
 
