@@ -5,19 +5,20 @@
                 <type>object_storage</type>
                 <object_storage_type>local</object_storage_type>
                 <metadata_type>local</metadata_type>
-                <path>disks/04303/test_disk/</path>
+                <path from_env="TEST_DISK_04303_PATH"></path>
+                <metadata_path from_env="TEST_DISK_04303_METADATA_PATH"></metadata_path>
             </test_disk_04303>
             <test_disk_plain_04303>
                 <type>object_storage</type>
                 <object_storage_type>local</object_storage_type>
                 <metadata_type>plain</metadata_type>
-                <path>disks/04303/test_disk_plain/</path>
+                <path from_env="TEST_DISK_PLAIN_04303_PATH"></path>
             </test_disk_plain_04303>
             <test_disk_plain_rewritable_04303>
                 <type>object_storage</type>
                 <object_storage_type>local</object_storage_type>
                 <metadata_type>plain_rewritable</metadata_type>
-                <path>disks/04303/test_disk_plain_rewritable/</path>
+                <path from_env="TEST_DISK_PLAIN_REWRITABLE_04303_PATH"></path>
             </test_disk_plain_rewritable_04303>
         </disks>
     </storage_configuration>

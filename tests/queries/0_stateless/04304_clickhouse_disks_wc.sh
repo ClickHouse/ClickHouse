@@ -5,8 +5,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-config="$CUR_DIR/04304_disks_app_wc.xml"
+config="$CUR_DIR/04304_clickhouse_disks_wc.xml"
 disk_name="test_disk_04304_wc"
+
+disk_dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_wc"
+mkdir -p "$disk_dir/data" "$disk_dir/metadata"
+export TEST_DISK_04304_WC_PATH="$(realpath "$disk_dir/data")/"
+export TEST_DISK_04304_WC_METADATA_PATH="$(realpath "$disk_dir/metadata")/"
+
 dir="$CLICKHOUSE_TEST_UNIQUE_NAME"
 
 run() {

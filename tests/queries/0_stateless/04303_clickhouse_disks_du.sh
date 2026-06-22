@@ -6,6 +6,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 config="$CUR_DIR/04303_clickhouse_disks_du.xml"
+
+base_dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+mkdir -p \
+    "$base_dir/local/data" "$base_dir/local/metadata" \
+    "$base_dir/plain" \
+    "$base_dir/plain_rewritable"
+export TEST_DISK_04303_PATH="$(realpath "$base_dir/local/data")/"
+export TEST_DISK_04303_METADATA_PATH="$(realpath "$base_dir/local/metadata")/"
+export TEST_DISK_PLAIN_04303_PATH="$(realpath "$base_dir/plain")/"
+export TEST_DISK_PLAIN_REWRITABLE_04303_PATH="$(realpath "$base_dir/plain_rewritable")/"
+
 dir="$CLICKHOUSE_TEST_UNIQUE_NAME"
 
 function disks()
