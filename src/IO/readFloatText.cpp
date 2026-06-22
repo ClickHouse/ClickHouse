@@ -93,6 +93,154 @@ bool assertOrParseNaN(ReadBuffer & buf)
 }
 
 
+// credit: https://johnnylee-sde.github.io/Fast-numeric-string-to-int/
+inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
+{
+    return (((val & 0xF0F0F0F0F0F0F0F0) | (((val + 0x0606060606060606) & 0xF0F0F0F0F0F0F0F0) >> 4)) == 0x3333333333333333);
+}
+
+inline bool is_made_of_eight_digits_fast(const char * chars) noexcept
+{
+    uint64_t val = 0;
+    ::memcpy(&val, chars, 8);
+    return is_made_of_eight_digits_fast(val);
+}
+
+/// Convert 8 ASCII decimal digits (read as a little-endian uint64) into their integer value. credit: @aqrit
+inline uint32_t parse_eight_digits_unrolled(uint64_t val) noexcept
+{
+    const uint64_t mask = 0x000000FF000000FF;
+    const uint64_t mul1 = 0x000F424000000064; // 100 + (1000000ULL << 32)
+    const uint64_t mul2 = 0x0000271000000001; // 1 + (10000ULL << 32)
+    val -= 0x3030303030303030;
+    val = (val * 10) + (val >> 8);
+    val = (((val & mask) * mul1) + (((val >> 16) & mask) * mul2)) >> 32;
+    return static_cast<uint32_t>(val);
+}
+
+/// A pure decimal integer of up to 38 digits fits exactly in unsigned __int128, and the conversion
+/// to double/float is correctly rounded. That is far cheaper than fast_float's big-integer path for
+/// long inputs (e.g. 19-20 digit integers), and exactly as correct.
+/// Returns true (and sets @x and @parse_end) on a pure integer; false to fall back otherwise
+/// (decimal point, exponent, sign issues, or more than 38 digits).
+static constexpr int max_u128_integer_digits = 38;
+
+/// A value of at most this many characters has at most this many significant digits, so
+/// fast_float's default from_chars (store_spans=false) never hits the too_many_digits double-parse
+/// and is fastest. Longer inputs use the unsigned __int128 integer path or fromCharsLong.
+static constexpr ptrdiff_t max_short_float_chars = 19;
+
+template <typename T>
+inline bool tryReadLongIntegerToFloat(T & x, const char * first, const char * last, const char *& parse_end)
+{
+    const char * p = first;
+    bool negative = false;
+    if (p < last && (*p == '-' || *p == '+'))
+    {
+        negative = (*p == '-');
+        ++p;
+    }
+
+    const char * const digits_begin = p;
+    unsigned __int128 value = 0;
+    /// Accumulate 8 digits at a time via SWAR (byteswap on big-endian; see parse_eight_digits_unrolled).
+    while (p + 8 <= last && is_made_of_eight_digits_fast(p))
+    {
+        uint64_t chunk;
+        ::memcpy(&chunk, p, 8);
+        if constexpr (std::endian::native == std::endian::big)
+            chunk = std::byteswap(chunk);
+        value = value * 100000000ULL + parse_eight_digits_unrolled(chunk);
+        p += 8;
+    }
+    while (p < last && isNumericASCII(*p))
+    {
+        value = value * 10 + static_cast<unsigned>(*p - '0');
+        ++p;
+    }
+
+    const auto num_digits = p - digits_begin;
+    /// Not a pure integer (fraction/exponent follows), empty, or too many digits to fit exactly.
+    if (num_digits == 0 || num_digits > max_u128_integer_digits)
+        return false;
+    if (p < last && (*p == '.' || *p == 'e' || *p == 'E'))
+        return false;
+
+    auto result = static_cast<T>(value);
+    x = negative ? -result : result;
+    parse_end = p;
+    return true;
+}
+
+
+/// Variant of fast_float::from_chars tuned for inputs known to have many significant digits.
+/// Built on fast_float's existing primitives (no fork of the library): parse once with the
+/// integer/fraction spans materialized (store_spans=true) and run the full algorithm, so the
+/// >19-significant-digit case is handled in one pass instead of from_chars's store_spans=false
+/// hot path re-parsing the whole string.
+template <typename T>
+fast_float::from_chars_result_t<char>
+fromCharsLong(const char * first, const char * last, T & value, fast_float::chars_format fmt)
+{
+    const fast_float::parse_options_t<char> options(fmt);
+    const fast_float::chars_format adjusted = fast_float::detail::adjust_for_feature_macros(fmt);
+
+    auto pns = fast_float::parse_number_string<false, char>(first, last, options, /*store_spans=*/true);
+    if (!pns.valid)
+    {
+        if (uint64_t(adjusted & fast_float::chars_format::no_infnan))
+        {
+            fast_float::from_chars_result_t<char> answer;
+            answer.ec = std::errc::invalid_argument;
+            answer.ptr = first;
+            return answer;
+        }
+        return fast_float::detail::parse_infnan(first, last, value, adjusted);
+    }
+    return fast_float::from_chars_advanced(pns, value);
+}
+
+
+/// The whole length-based dispatch for parsing a float from a contiguous [first, last) range,
+/// shared by the no-copy and copy paths of readFloatTextPreciseImpl (inlined). Picks:
+///   - short input (<= max_short_float_chars)        -> fast_float::from_chars,
+///   - long pure integer (<= 38 digits)              -> unsigned __int128 (correctly rounded, cheap),
+///   - otherwise (long fraction / huge integer)      -> fromCharsLong (single parse).
+/// On big-endian, fast_float parsing directly to float can misbehave, so parse as double and
+/// narrow (the unsigned __int128 path is endian-independent and needs no such workaround).
+template <typename T>
+inline fast_float::from_chars_result_t<char>
+parseFloatFromRange(T & x, const char * first, const char * last, fast_float::chars_format fmt)
+{
+    const auto length = last - first;
+
+    if (length > max_short_float_chars && length <= max_u128_integer_digits + 1)
+    {
+        const char * int_end = nullptr;
+        if (tryReadLongIntegerToFloat(x, first, last, int_end))
+        {
+            fast_float::from_chars_result_t<char> answer;
+            answer.ptr = int_end;
+            answer.ec = std::errc();
+            return answer;
+        }
+    }
+
+    const bool is_short = length <= max_short_float_chars;
+    if constexpr (std::endian::native == std::endian::little)
+        return is_short ? fast_float::from_chars(first, last, x, fmt)
+                        : fromCharsLong(first, last, x, fmt);
+    else
+    {
+        Float64 wide = 0.0;
+        auto answer = is_short ? fast_float::from_chars(first, last, wide, fmt)
+                               : fromCharsLong(first, last, wide, fmt);
+        x = static_cast<T>(wide);
+        return answer;
+    }
+}
+
+
 template <typename T, typename ReturnType>
 ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 {
@@ -101,14 +249,15 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     static constexpr int MAX_LENGTH = 316;
+    static constexpr auto float_fmt = fast_float::chars_format::general | fast_float::chars_format::allow_leading_plus;
 
-    /// NOLINTBEGIN(readability-else-after-return)
-    ReadBufferFromMemory * buf_from_memory = dynamic_cast<ReadBufferFromMemory *>(&buf);
-    /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes or buf is ReadBufferFromMemory
-    if (likely(!buf.eof() && (buf_from_memory || buf.position() + MAX_LENGTH <= buf.buffer().end())))
+    /// Fast path (avoid copying) if the buffer has at least MAX_LENGTH bytes or the whole input is in memory.
+    /// isMemoryBuffer() is a cheap virtual call, replacing a per-value dynamic_cast.
+    if (likely(!buf.eof() && (buf.isMemoryBuffer() || buf.position() + MAX_LENGTH <= buf.buffer().end())))
     {
         auto * initial_position = buf.position();
-        auto res = fast_float::from_chars(initial_position, buf.buffer().end(), x, fast_float::chars_format::general | fast_float::chars_format::allow_leading_plus);
+        auto * const buf_end = buf.buffer().end();
+        auto res = parseFloatFromRange(x, initial_position, buf_end, float_fmt);
 
         if (unlikely(res.ec != std::errc()))
         {
@@ -125,152 +274,123 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
         return ReturnType(true);
     }
-    else
+
+    /// Slow path. Copy characters that may be present in floating point number to temporary buffer.
+    bool negative = false;
+
+    /// We check eof here because we can parse +inf +nan
+    while (!buf.eof())
     {
-        /// Slow path. Copy characters that may be present in floating point number to temporary buffer.
-        bool negative = false;
-
-        /// We check eof here because we can parse +inf +nan
-        while (!buf.eof())
+        switch (*buf.position())
         {
-            switch (*buf.position())
+            case '+':
+                ++buf.position();
+                continue;
+
+            case '-':
             {
-                case '+':
-                    ++buf.position();
-                    continue;
-
-                case '-':
-                {
-                    negative = true;
-                    ++buf.position();
-                    continue;
-                }
-
-                case 'i': [[fallthrough]];
-                case 'I':
-                {
-                    if (assertOrParseInfinity<throw_exception>(buf))
-                    {
-                        x = std::numeric_limits<T>::infinity();
-                        if (negative)
-                            x = -x;
-                        return ReturnType(true);
-                    }
-                    return ReturnType(false);
-                }
-
-                case 'n': [[fallthrough]];
-                case 'N':
-                {
-                    if (assertOrParseNaN<throw_exception>(buf))
-                    {
-                        x = std::numeric_limits<T>::quiet_NaN();
-                        if (negative)
-                            x = -x;
-                        return ReturnType(true);
-                    }
-                    return ReturnType(false);
-                }
-
-                default:
-                    break;
+                negative = true;
+                ++buf.position();
+                continue;
             }
 
-            break;
-        }
-
-        char tmp_buf[MAX_LENGTH];
-        int num_copied_chars = 0;
-
-        while (!buf.eof() && num_copied_chars < MAX_LENGTH)
-        {
-            char c = *buf.position();
-            if (!(isNumericASCII(c) || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'))
-                break;
-
-            tmp_buf[num_copied_chars] = c;
-            ++buf.position();
-            ++num_copied_chars;
-        }
-
-        fast_float::from_chars_result res;
-        if constexpr (std::endian::native == std::endian::little)
-            res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x);
-        else
-        {
-            Float64 x64 = 0.0;
-            res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x64);
-            x = static_cast<T>(x64);
-        }
-        if (unlikely(res.ec != std::errc() || res.ptr - tmp_buf != num_copied_chars))
-        {
-            if constexpr (throw_exception)
-                throw Exception(
-                    ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value here: {}", String(tmp_buf, num_copied_chars));
-            else
+            case 'i': [[fallthrough]];
+            case 'I':
+            {
+                if (assertOrParseInfinity<throw_exception>(buf))
+                {
+                    x = std::numeric_limits<T>::infinity();
+                    if (negative)
+                        x = -x;
+                    return ReturnType(true);
+                }
                 return ReturnType(false);
+            }
+
+            case 'n': [[fallthrough]];
+            case 'N':
+            {
+                if (assertOrParseNaN<throw_exception>(buf))
+                {
+                    x = std::numeric_limits<T>::quiet_NaN();
+                    if (negative)
+                        x = -x;
+                    return ReturnType(true);
+                }
+                return ReturnType(false);
+            }
+
+            default:
+                break;
         }
 
-        if (negative)
-            x = -x;
-
-        return ReturnType(true);
+        break;
     }
-    /// NOLINTEND(readability-else-after-return)
+
+    char tmp_buf[MAX_LENGTH];
+    int num_copied_chars = 0;
+
+    while (!buf.eof() && num_copied_chars < MAX_LENGTH)
+    {
+        char c = *buf.position();
+        if (!(isNumericASCII(c) || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'))
+            break;
+
+        tmp_buf[num_copied_chars] = c;
+        ++buf.position();
+        ++num_copied_chars;
+    }
+
+    /// Sign was already consumed above (tracked in `negative`), so tmp_buf holds no leading sign.
+    auto res = parseFloatFromRange(x, tmp_buf, tmp_buf + num_copied_chars, fast_float::chars_format::general);
+    if (unlikely(res.ec != std::errc() || res.ptr - tmp_buf != num_copied_chars))
+    {
+        if constexpr (throw_exception)
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value here: {}", String(tmp_buf, num_copied_chars));
+        else
+            return ReturnType(false);
+    }
+
+    if (negative)
+        x = -x;
+
+    return ReturnType(true);
 }
 
-
-// credit: https://johnnylee-sde.github.io/Fast-numeric-string-to-int/
-static inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
-{
-    return (((val & 0xF0F0F0F0F0F0F0F0) | (((val + 0x0606060606060606) & 0xF0F0F0F0F0F0F0F0) >> 4)) == 0x3333333333333333);
-}
-
-static inline bool is_made_of_eight_digits_fast(const char * chars) noexcept
-{
-    uint64_t val = 0;
-    ::memcpy(&val, chars, 8);
-    return is_made_of_eight_digits_fast(val);
-}
 
 template <size_t N, typename T>
-static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
+inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 {
-    /// In optimistic case we can skip bound checking for first loop.
-    if (buf.position() + N <= buf.buffer().end())
+    size_t digits = 0;
+
+    /// Accumulate 8 significant digits at a time with SWAR while a full 8-digit run is in the buffer
+    /// and within the significant-digit budget. Bit-identical to the digit-by-digit loop, much faster
+    /// for long mantissas (fractional parts, big integers). parse_eight_digits_unrolled expects the
+    /// digits in little-endian byte order, so byteswap the read on big-endian targets.
+    while (digits + 8 <= N && buf.position() + 8 <= buf.buffer().end() && is_made_of_eight_digits_fast(buf.position()))
     {
-        for (size_t i = 0; i < N; ++i)
-        {
-            if (isNumericASCII(*buf.position()))
-            {
-                x *= 10;
-                x += *buf.position() & 0x0F;
-                ++buf.position();
-            }
-            else
-                return;
-        }
-    }
-    else
-    {
-        for (size_t i = 0; i < N; ++i)
-        {
-            if (!buf.eof() && isNumericASCII(*buf.position()))
-            {
-                x *= 10;
-                x += *buf.position() & 0x0F;
-                ++buf.position();
-            }
-            else
-                return;
-        }
+        uint64_t val;
+        ::memcpy(&val, buf.position(), 8);
+        if constexpr (std::endian::native == std::endian::big)
+            val = std::byteswap(val);
+        x = x * 100000000ULL + parse_eight_digits_unrolled(val);
+        buf.position() += 8;
+        digits += 8;
     }
 
-    while (!buf.eof() && (buf.position() + 8 <= buf.buffer().end()) &&
-         is_made_of_eight_digits_fast(buf.position()))
+    /// Remaining significant digits, one at a time.
+    while (digits < N && !buf.eof() && isNumericASCII(*buf.position()))
     {
-        buf.position() += 8;
+        x *= 10;
+        x += *buf.position() & 0x0F;
+        ++buf.position();
+        ++digits;
     }
+
+    /// Skip any extra digits beyond the significant-digit budget (8 at a time, then one by one).
+    while (!buf.eof() && (buf.position() + 8 <= buf.buffer().end()) && is_made_of_eight_digits_fast(buf.position()))
+        buf.position() += 8;
 
     while (!buf.eof() && isNumericASCII(*buf.position()))
         ++buf.position();
@@ -637,12 +757,9 @@ template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in)
 }
 
 
-/// Implementation that is selected as default.
-
 template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatTextFast(x, in); }
 template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextFast(x, in); }
 
-/// Don't read exponent part of the number.
 template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in)
 {
     bool has_fractional = false;
@@ -659,8 +776,6 @@ template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in)
         return readFloatTextFastImpl<T, bool, false>(x, in, has_fractional);
 }
 
-/// With a @has_fractional flag
-/// Used for input_format_try_infer_integers
 template <typename T> bool tryReadFloatTextExt(T & x, ReadBuffer & in, bool & has_fractional)
 {
     if constexpr (std::is_same_v<T, BFloat16>)
