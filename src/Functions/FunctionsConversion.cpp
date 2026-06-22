@@ -1415,7 +1415,11 @@ DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSett
         case TypeIndex::DateTime:
         {
             if (format_settings.try_infer_datetimes)
+            {
+                if (format_settings.try_infer_datetimes_only_datetime64)
+                    return std::make_shared<DataTypeDateTime64>(9);
                 return std::make_shared<DataTypeDateTime>();
+            }
             return std::make_shared<DataTypeString>();
         }
         case TypeIndex::DateTime64:
@@ -1825,8 +1829,16 @@ ColumnPtr convertObjectColumns(
 
         for (const auto & regexp : compiled_new_skip_regexps)
         {
-            if (RE2::PartialMatch(re2::StringPiece(path.data(), path.size()), *regexp))
-                return true;
+            if (format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp)
+            {
+                if (RE2::PartialMatch(re2::StringPiece(path.data(), path.size()), *regexp))
+                    return true;
+            }
+            else
+            {
+                if (RE2::FullMatch(re2::StringPiece(path.data(), path.size()), *regexp))
+                    return true;
+            }
         }
 
         return false;
@@ -2226,7 +2238,10 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         }
 
         /// Optimized path: reuse sub-columns by pointer, CAST only changed paths.
-        if (plan.canOptimize() && settings.json_use_optimized_type_conversion)
+        /// Skip for accurateCastOrNull — the format+parse fallback already handles
+        /// OrNull semantics (catches exceptions and returns NULL on failure).
+        if (plan.canOptimize() && settings.json_use_optimized_type_conversion
+            && cast_type != CastType::accurateOrNull)
         {
             auto captured_format_settings = settings.format_settings;
             return [captured_plan = std::move(plan), captured_format_settings]

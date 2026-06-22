@@ -1,9 +1,3 @@
--- Tags: no-fasttest
--- Test optimized JSON-to-JSON type conversion that avoids full serialize+parse
--- when only a subset of paths are affected by parameter changes.
--- All INSERT statements use multi-value VALUES to ensure multi-row blocks.
-
-SET allow_experimental_json_type = 1;
 SET json_use_optimized_type_conversion = 1;
 
 SELECT '--- Identity conversion (only metadata changes) ---';
@@ -105,7 +99,7 @@ SELECT '--- Removed typed path: Nullable with NULLs ---';
 DROP TABLE IF EXISTS t_json_opt;
 CREATE TABLE t_json_opt (data JSON(a Nullable(Int32))) ENGINE = Memory;
 INSERT INTO t_json_opt VALUES ('{"a": 1}'), ('{"a": null}'), ('{"a": 3}'), ('{"b": 99}');
-SELECT data::JSON as converted FROM t_json_opt ORDER BY toString(data.a);
+SELECT data::JSON as converted FROM t_json_opt ORDER BY toString(data::JSON);
 DROP TABLE t_json_opt;
 
 SELECT '--- Removed typed path: overflow to shared data (no dynamic slots) ---';
@@ -297,4 +291,14 @@ CREATE TABLE t_json_opt (data JSON(max_dynamic_paths = 0)) ENGINE = Memory;
 INSERT INTO t_json_opt VALUES ('{"a": 1, "b": 2}'), ('{"a": 10}'), ('{"b": 20, "c": 30}');
 -- Adding typed path "b": present in rows 1 and 3 shared data, absent in row 2.
 SELECT data::JSON(b Int32, max_dynamic_paths = 0) as converted FROM t_json_opt ORDER BY toString(data.a);
+DROP TABLE t_json_opt;
+
+SELECT '--- Removed typed path: DateTime with try_infer_datetimes_only_datetime64 ---';
+DROP TABLE IF EXISTS t_json_opt;
+CREATE TABLE t_json_opt (data JSON(a DateTime)) ENGINE = Memory;
+INSERT INTO t_json_opt VALUES ('{"a": "2024-01-15 12:30:00"}'), ('{"a": "2024-06-01 00:00:00"}');
+SELECT 'optimized:', JSONDynamicPathsWithTypes(data::JSON) FROM t_json_opt ORDER BY data.a
+SETTINGS input_format_try_infer_datetimes_only_datetime64 = 1;
+SELECT 'format_parse:', JSONDynamicPathsWithTypes(data::JSON) FROM t_json_opt ORDER BY data.a
+SETTINGS input_format_try_infer_datetimes_only_datetime64 = 1, json_use_optimized_type_conversion = 0;
 DROP TABLE t_json_opt;

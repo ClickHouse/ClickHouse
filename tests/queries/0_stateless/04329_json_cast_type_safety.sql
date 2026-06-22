@@ -1,12 +1,4 @@
--- Tags: no-fasttest
--- Test that optimized JSON-to-JSON conversion (via accurateCast) produces the
--- same results as the format+parse path for all type combinations allowed by
--- isDynamicElementToTypedCastSafe.
---
--- For each case we run the conversion twice — once with the optimized path and
--- once with format+parse — and compare the output.
-
-SET allow_experimental_json_type = 1;
+set session_timezone = 'UTC';
 
 -- ============================================================================
 -- 1. Numeric Dynamic → Numeric typed path (accurateCast, values that fit)
@@ -428,3 +420,16 @@ CREATE TABLE t (data JSON) ENGINE = Memory;
 INSERT INTO t VALUES ('{"a": "-200", "b": 1}');
 SELECT (data::JSON(a Int8)).a FROM t SETTINGS json_use_optimized_type_conversion = 1; -- { serverError CANNOT_PARSE_TEXT }
 DROP TABLE t;
+
+-- ============================================================================
+-- 11. accurateCastOrNull: should return NULL instead of throwing
+-- ============================================================================
+
+SELECT '--- accurateCastOrNull: type mismatch returns NULL ---';
+SELECT accurateCastOrNull('{"a" : 42}'::JSON, 'JSON(a Array(String))');
+
+SELECT '--- accurateCastOrNull: valid conversion returns value ---';
+SELECT accurateCastOrNull('{"a" : 42}'::JSON, 'JSON(a String)');
+
+SELECT '--- accurateCast: type mismatch still throws ---';
+SELECT accurateCast('{"a" : 42}'::JSON, 'JSON(a Array(String))'); -- { serverError INCORRECT_DATA }

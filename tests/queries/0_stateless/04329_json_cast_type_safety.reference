@@ -222,3 +222,8 @@ format_parse:	2024-01-15
 --- Overflow: String("-1") → UInt32 typed ---
 --- Overflow: String("99999999999") → Int32 typed ---
 --- Overflow: String("-200") → Int8 typed ---
+--- accurateCastOrNull: type mismatch returns NULL ---
+\N
+--- accurateCastOrNull: valid conversion returns value ---
+{"a":"42"}
+--- accurateCast: type mismatch still throws ---

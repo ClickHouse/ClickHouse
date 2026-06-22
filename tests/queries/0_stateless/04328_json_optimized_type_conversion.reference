@@ -53,8 +53,8 @@
 --- Removed typed path: Nullable with NULLs ---
 {"a":1}
 {"a":3}
-{}
 {"b":99}
+{}
 --- Removed typed path: overflow to shared data (no dynamic slots) ---
 {"a":1,"b":2,"c":3}
 {"a":10,"b":20,"c":30}
@@ -143,3 +143,8 @@ format_parse:
 {"b":20,"c":30}
 {"a":1,"b":2}
 {"a":10,"b":0}
+--- Removed typed path: DateTime with try_infer_datetimes_only_datetime64 ---
+optimized:	{'a':'DateTime64(9)'}
+optimized:	{'a':'DateTime64(9)'}
+format_parse:	{'a':'DateTime64(9)'}
+format_parse:	{'a':'DateTime64(9)'}
