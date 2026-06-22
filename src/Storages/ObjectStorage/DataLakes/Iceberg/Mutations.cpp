@@ -940,7 +940,7 @@ void IcebergMetadata::alterPartitionDropImpl(const PartitionCommand & command, C
         data_lake_settings,
         write_format,
         log,
-        [this, context]() { return getRelevantState(context, /*force_fetch_latest_metadata=*/true); });
+        [this, context]() { return getRelevantState(context, /*force_fetch_latest_metadata=*/true, /*ignore_explicit_metadata_file_path=*/true); });
     executor.run();
 }
 
