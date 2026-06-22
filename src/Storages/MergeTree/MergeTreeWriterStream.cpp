@@ -115,11 +115,13 @@ MergeTreeWriterStream::MergeTreeWriterStream(
     is_size_adaptive(packed_writer != nullptr && (!packed_data_name_.empty() || !packed_marks_name_.empty())),
     plain_file(openStreamFile(data_part_storage, packed_writer, packed_data_name_, data_path_ + data_file_extension, max_compress_block_size_, query_write_settings, packed_spill_threshold_, &spool_coupled_spilled)),
     plain_hashing(*plain_file),
-    compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
+    /// This stream is the sole writer of plain_hashing, so the compressor may write NONE-coded data
+    /// directly into the output buffer without copying (out_buffer_is_exclusive = true).
+    compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size, /*out_buffer_is_exclusive=*/ true),
     compressed_hashing(compressor),
     marks_file(openStreamFile(data_part_storage, packed_writer, packed_marks_name_, marks_path_ + marks_file_extension, 4096, query_write_settings, packed_spill_threshold_, &spool_coupled_spilled)),
     marks_hashing(*marks_file),
-    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
+    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size, /*out_buffer_is_exclusive=*/ true),
     marks_compressed_hashing(marks_compressor),
     compress_marks(MarkType(marks_file_extension).compressed)
 {

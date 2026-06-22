@@ -63,10 +63,13 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
     if (index_granularity_info.mark_type.compressed)
     {
+        /// The marks compressor is the sole writer of marks_file_hashing, so it may write NONE-coded
+        /// data directly into the output buffer without copying.
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
             *marks_file_hashing,
              CompressionCodecFactory::instance().get(settings_.marks_compression_codec),
-            settings_.marks_compress_block_size);
+            settings_.marks_compress_block_size,
+            /*use_adaptive_buffer_size_=*/ false, DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE, /*out_buffer_is_exclusive=*/ true);
 
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
     }

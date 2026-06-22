@@ -88,13 +88,19 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::Compressing);
 
-    dest[0] = getMethodByte();
     UInt8 header_size = getHeaderSize();
     /// Write data from header_size
     UInt32 compressed_bytes_written = doCompressData(source, source_size, &dest[header_size]);
-    unalignedStoreLittleEndian<UInt32>(&dest[1], compressed_bytes_written + header_size);
-    unalignedStoreLittleEndian<UInt32>(&dest[5], source_size);
-    return header_size + compressed_bytes_written;
+    return writeHeader(dest, compressed_bytes_written, source_size);
+}
+
+UInt32 ICompressionCodec::writeHeader(char * dest, UInt32 compressed_data_size, UInt32 uncompressed_size) const
+{
+    UInt8 header_size = getHeaderSize();
+    dest[0] = getMethodByte();
+    unalignedStoreLittleEndian<UInt32>(&dest[1], compressed_data_size + header_size);
+    unalignedStoreLittleEndian<UInt32>(&dest[5], uncompressed_size);
+    return header_size + compressed_data_size;
 }
 
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
