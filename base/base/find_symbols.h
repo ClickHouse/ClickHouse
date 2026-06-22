@@ -222,30 +222,14 @@ enum class ReturnMode : uint8_t
 
 
 #if defined(__aarch64__)
-/// NEON body for long haystacks (>= 16 bytes), kept out-of-line so the inline
-/// dispatcher above stays small enough for the compiler to keep auto-vectorising
-/// the scalar fast path and avoid extra branches in callers that handle one
-/// short string per row (e.g. `trim`).
+/// NEON loop for long haystacks. The inline dispatcher has already scanned the
+/// first 8 bytes scalar, so this starts at `begin + 8` and runs only the SIMD
+/// loop (plus a scalar tail for the final partial chunk). Kept out-of-line
+/// ([[gnu::noinline]]) so the SIMD loop never bloats short-string callers such
+/// as `trim`, which take the dispatcher's scalar fast path and never reach here.
 template <bool positive, ReturnMode return_mode, char... symbols>
-[[gnu::noinline]] const char * find_first_symbols_neon_long(const char * pos, const char * const end)
+[[gnu::noinline]] const char * find_first_symbols_neon_loop(const char * pos, const char * const end)
 {
-    /// Many callers (CSV/TSV/JSON format readers, URL parsers) find a
-    /// match within the first few bytes of the haystack. In that case the
-    /// per-iteration NEON cost (load + 3-4 vceqq + vorrq + shrn + ctz)
-    /// exceeds what a handful of byte compares would do, so an unguarded
-    /// SIMD body regresses such workloads. An 8-byte scalar pre-check
-    /// covers the common short-distance hit and leaves the SIMD body for
-    /// the sparse case.
-    if (maybe_negate<positive>(is_in<symbols...>(pos[0]))) return pos;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[1]))) return pos + 1;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[2]))) return pos + 2;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[3]))) return pos + 3;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[4]))) return pos + 4;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[5]))) return pos + 5;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[6]))) return pos + 6;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[7]))) return pos + 7;
-    pos += 8;
-
     for (; pos + 15 < end; pos += 16)
     {
         uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(pos));
@@ -284,10 +268,23 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
     }
 #elif defined(__aarch64__)
     /// Short haystacks (< 16 bytes) dominate many callers (e.g. `trim` on
-    /// `toString(number)`). Tail-call the out-of-line NEON helper so the
-    /// inline body collapses to the original scalar loop on master.
+    /// `toString(number)`); they fall through to the scalar loop below.
+    /// Format readers (CSV/TSV/JSON) pass a haystack ending at the far buffer
+    /// end but whose delimiter is within the first bytes. Scan the first 8
+    /// bytes scalar inline so that common case never pays a SIMD call, then
+    /// hand the remaining sparse scan to the out-of-line NEON loop.
     if (end - begin >= 16) [[unlikely]]
-        return find_first_symbols_neon_long<positive, return_mode, symbols...>(begin, end);
+    {
+        if (maybe_negate<positive>(is_in<symbols...>(begin[0]))) return begin;
+        if (maybe_negate<positive>(is_in<symbols...>(begin[1]))) return begin + 1;
+        if (maybe_negate<positive>(is_in<symbols...>(begin[2]))) return begin + 2;
+        if (maybe_negate<positive>(is_in<symbols...>(begin[3]))) return begin + 3;
+        if (maybe_negate<positive>(is_in<symbols...>(begin[4]))) return begin + 4;
+        if (maybe_negate<positive>(is_in<symbols...>(begin[5]))) return begin + 5;
+        if (maybe_negate<positive>(is_in<symbols...>(begin[6]))) return begin + 6;
+        if (maybe_negate<positive>(is_in<symbols...>(begin[7]))) return begin + 7;
+        return find_first_symbols_neon_loop<positive, return_mode, symbols...>(begin + 8, end);
+    }
 #endif
 
     for (; pos < end; ++pos)
@@ -298,23 +295,13 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
 }
 
 #if defined(__aarch64__)
-/// Runtime-needle NEON body for long haystacks. Always returns either a
-/// matching pointer or `end` (treated by the caller as "no match"). Kept
-/// out-of-line so short-haystack callers stay free of the SIMD prologue
-/// (no stack frame, no extra branches).
+/// Runtime-needle NEON loop for long haystacks. The dispatcher has already
+/// scanned the first 8 bytes scalar, so this starts at `begin + 8`. Always
+/// returns either a matching pointer or `end` ("no match"). Kept out-of-line
+/// for the same reason as the compile-time variant.
 template <bool positive>
-[[gnu::noinline]] const char * find_first_symbols_neon_long_rt(const char * pos, const char * const end, const char * symbols, size_t num_chars)
+[[gnu::noinline]] const char * find_first_symbols_neon_loop_rt(const char * pos, const char * const end, const char * symbols, size_t num_chars)
 {
-    if (maybe_negate<positive>(is_in(pos[0], symbols, num_chars))) return pos;
-    if (maybe_negate<positive>(is_in(pos[1], symbols, num_chars))) return pos + 1;
-    if (maybe_negate<positive>(is_in(pos[2], symbols, num_chars))) return pos + 2;
-    if (maybe_negate<positive>(is_in(pos[3], symbols, num_chars))) return pos + 3;
-    if (maybe_negate<positive>(is_in(pos[4], symbols, num_chars))) return pos + 4;
-    if (maybe_negate<positive>(is_in(pos[5], symbols, num_chars))) return pos + 5;
-    if (maybe_negate<positive>(is_in(pos[6], symbols, num_chars))) return pos + 6;
-    if (maybe_negate<positive>(is_in(pos[7], symbols, num_chars))) return pos + 7;
-    pos += 8;
-
     for (; pos + 15 < end; pos += 16)
     {
         uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(pos));
@@ -356,13 +343,20 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
         }
     }
 #elif defined(__aarch64__)
-    /// See the compile-time variant above for why the SIMD body is out of line.
-    /// `neon_is_in` (rather than the prepare/execute pair) avoids forcing the
-    /// compiler to reserve stack space for a `std::array<uint8x16_t, 16>` in
-    /// every call to this function.
+    /// See the compile-time variant above. `neon_is_in` (rather than the
+    /// prepare/execute pair) avoids forcing the compiler to reserve stack space
+    /// for a `std::array<uint8x16_t, 16>` in every call to this function.
     if (end - begin >= 16) [[unlikely]]
     {
-        const char * found = find_first_symbols_neon_long_rt<positive>(begin, end, symbols, num_chars);
+        if (maybe_negate<positive>(is_in(begin[0], symbols, num_chars))) return begin;
+        if (maybe_negate<positive>(is_in(begin[1], symbols, num_chars))) return begin + 1;
+        if (maybe_negate<positive>(is_in(begin[2], symbols, num_chars))) return begin + 2;
+        if (maybe_negate<positive>(is_in(begin[3], symbols, num_chars))) return begin + 3;
+        if (maybe_negate<positive>(is_in(begin[4], symbols, num_chars))) return begin + 4;
+        if (maybe_negate<positive>(is_in(begin[5], symbols, num_chars))) return begin + 5;
+        if (maybe_negate<positive>(is_in(begin[6], symbols, num_chars))) return begin + 6;
+        if (maybe_negate<positive>(is_in(begin[7], symbols, num_chars))) return begin + 7;
+        const char * found = find_first_symbols_neon_loop_rt<positive>(begin + 8, end, symbols, num_chars);
         if (found != end)
             return found;
         return return_mode == ReturnMode::End ? end : nullptr;
@@ -378,22 +372,14 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
 
 
 #if defined(__aarch64__)
-/// See the forward variant above. Out-of-lined for the same reason.
-/// Always returns either a matching pointer or `nullptr`; the inline caller
-/// translates `nullptr` to `end` when `return_mode == End`.
+/// See the forward variant above. The dispatcher has already scanned the last
+/// 8 bytes scalar, so `pos` arrives at `end - 8` and this runs only the SIMD
+/// loop. Returns a matching pointer or `nullptr`; the inline caller translates
+/// `nullptr` to `end` when `return_mode == End`. Out-of-lined for the same
+/// reason as the forward variant.
 template <bool positive, char... symbols>
-[[gnu::noinline]] const char * find_last_symbols_neon_long(const char * const begin, const char * pos)
+[[gnu::noinline]] const char * find_last_symbols_neon_loop(const char * const begin, const char * pos)
 {
-    if (maybe_negate<positive>(is_in<symbols...>(pos[-1]))) return pos - 1;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[-2]))) return pos - 2;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[-3]))) return pos - 3;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[-4]))) return pos - 4;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[-5]))) return pos - 5;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[-6]))) return pos - 6;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[-7]))) return pos - 7;
-    if (maybe_negate<positive>(is_in<symbols...>(pos[-8]))) return pos - 8;
-    pos -= 8;
-
     for (; pos - 16 >= begin; pos -= 16)
     {
         uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(pos - 16));
@@ -432,9 +418,20 @@ inline const char * find_last_symbols_sse2(const char * const begin, const char 
             return pos - 1 - (__builtin_clz(bit_mask) - 16);    /// because __builtin_clz works with mask as uint32.
     }
 #elif defined(__aarch64__)
+    /// Callers such as `basename` find the last `/` a few bytes before `end`.
+    /// Scan the last 8 bytes scalar inline so that case never pays a SIMD call,
+    /// then hand the remaining sparse scan to the out-of-line NEON loop.
     if (end - begin >= 16) [[unlikely]]
     {
-        const char * found = find_last_symbols_neon_long<positive, symbols...>(begin, end);
+        if (maybe_negate<positive>(is_in<symbols...>(end[-1]))) return end - 1;
+        if (maybe_negate<positive>(is_in<symbols...>(end[-2]))) return end - 2;
+        if (maybe_negate<positive>(is_in<symbols...>(end[-3]))) return end - 3;
+        if (maybe_negate<positive>(is_in<symbols...>(end[-4]))) return end - 4;
+        if (maybe_negate<positive>(is_in<symbols...>(end[-5]))) return end - 5;
+        if (maybe_negate<positive>(is_in<symbols...>(end[-6]))) return end - 6;
+        if (maybe_negate<positive>(is_in<symbols...>(end[-7]))) return end - 7;
+        if (maybe_negate<positive>(is_in<symbols...>(end[-8]))) return end - 8;
+        const char * found = find_last_symbols_neon_loop<positive, symbols...>(begin, end - 8);
         if (found)
             return found;
         return return_mode == ReturnMode::End ? end : nullptr;
@@ -450,22 +447,13 @@ inline const char * find_last_symbols_sse2(const char * const begin, const char 
 }
 
 #if defined(__aarch64__)
-/// Runtime-needle NEON body for long haystacks (find_last). Returns either a
-/// matching pointer or `nullptr`. Kept out-of-line for the same reasons as
-/// the forward variant.
+/// Runtime-needle NEON loop for long haystacks (find_last). The dispatcher has
+/// already scanned the last 8 bytes scalar, so `pos` arrives at `end - 8` and
+/// this runs only the SIMD loop. Returns a matching pointer or `nullptr`. Kept
+/// out-of-line for the same reasons as the forward variant.
 template <bool positive>
-[[gnu::noinline]] const char * find_last_symbols_neon_long_rt(const char * const begin, const char * pos, const char * symbols, size_t num_chars)
+[[gnu::noinline]] const char * find_last_symbols_neon_loop_rt(const char * const begin, const char * pos, const char * symbols, size_t num_chars)
 {
-    if (maybe_negate<positive>(is_in(pos[-1], symbols, num_chars))) return pos - 1;
-    if (maybe_negate<positive>(is_in(pos[-2], symbols, num_chars))) return pos - 2;
-    if (maybe_negate<positive>(is_in(pos[-3], symbols, num_chars))) return pos - 3;
-    if (maybe_negate<positive>(is_in(pos[-4], symbols, num_chars))) return pos - 4;
-    if (maybe_negate<positive>(is_in(pos[-5], symbols, num_chars))) return pos - 5;
-    if (maybe_negate<positive>(is_in(pos[-6], symbols, num_chars))) return pos - 6;
-    if (maybe_negate<positive>(is_in(pos[-7], symbols, num_chars))) return pos - 7;
-    if (maybe_negate<positive>(is_in(pos[-8], symbols, num_chars))) return pos - 8;
-    pos -= 8;
-
     for (; pos - 16 >= begin; pos -= 16)
     {
         uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(pos - 16));
@@ -508,10 +496,19 @@ inline const char * find_last_symbols_sse2(const char * const begin, const char 
         }
     }
 #elif defined(__aarch64__)
-    /// See the forward variant above. Out-of-lined for the same reason.
+    /// See the forward variant above. Scan the last 8 bytes scalar inline, then
+    /// hand the remaining sparse scan to the out-of-line NEON loop.
     if (end - begin >= 16) [[unlikely]]
     {
-        const char * found = find_last_symbols_neon_long_rt<positive>(begin, end, symbols, num_chars);
+        if (maybe_negate<positive>(is_in(end[-1], symbols, num_chars))) return end - 1;
+        if (maybe_negate<positive>(is_in(end[-2], symbols, num_chars))) return end - 2;
+        if (maybe_negate<positive>(is_in(end[-3], symbols, num_chars))) return end - 3;
+        if (maybe_negate<positive>(is_in(end[-4], symbols, num_chars))) return end - 4;
+        if (maybe_negate<positive>(is_in(end[-5], symbols, num_chars))) return end - 5;
+        if (maybe_negate<positive>(is_in(end[-6], symbols, num_chars))) return end - 6;
+        if (maybe_negate<positive>(is_in(end[-7], symbols, num_chars))) return end - 7;
+        if (maybe_negate<positive>(is_in(end[-8], symbols, num_chars))) return end - 8;
+        const char * found = find_last_symbols_neon_loop_rt<positive>(begin, end - 8, symbols, num_chars);
         if (found)
             return found;
         return return_mode == ReturnMode::End ? end : nullptr;
