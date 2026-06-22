@@ -12,7 +12,7 @@ user_del="${CLICKHOUSE_DATABASE}_del_04328"
 user_upd="${CLICKHOUSE_DATABASE}_upd_04328"
 
 $CLICKHOUSE_CLIENT -q "
-DROP TABLE IF EXISTS tab, tab_lw;
+DROP TABLE IF EXISTS tab, tab_lw, tab_mem;
 DROP USER IF EXISTS $user_del, $user_upd;
 
 CREATE TABLE tab (id UInt32, val UInt32) ENGINE = MergeTree ORDER BY id;
@@ -23,15 +23,21 @@ CREATE TABLE tab_lw (id UInt32, val UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 INSERT INTO tab_lw SELECT number, number FROM numbers(10);
 
+-- A mutable engine where \`_row_exists\` is an ordinary physical column, not the hidden marker.
+CREATE TABLE tab_mem (id UInt32, \`_row_exists\` UInt8) ENGINE = Memory;
+INSERT INTO tab_mem SELECT number, 1 FROM numbers(10);
+
 -- One user has only ALTER DELETE, the other has only ALTER UPDATE.
 -- Both can read, so the predicate columns are accessible.
 CREATE USER $user_del IDENTIFIED WITH plaintext_password BY 'password';
 GRANT SELECT, ALTER DELETE ON $CLICKHOUSE_DATABASE.tab TO $user_del;
 GRANT SELECT, ALTER DELETE ON $CLICKHOUSE_DATABASE.tab_lw TO $user_del;
+GRANT SELECT, ALTER DELETE ON $CLICKHOUSE_DATABASE.tab_mem TO $user_del;
 
 CREATE USER $user_upd IDENTIFIED WITH plaintext_password BY 'password';
 GRANT SELECT, ALTER UPDATE ON $CLICKHOUSE_DATABASE.tab TO $user_upd;
 GRANT SELECT, ALTER UPDATE ON $CLICKHOUSE_DATABASE.tab_lw TO $user_upd;
+GRANT SELECT, ALTER UPDATE ON $CLICKHOUSE_DATABASE.tab_mem TO $user_upd;
 "
 
 function check_access()
@@ -81,7 +87,13 @@ check_access "$user_upd" "UPDATE tab_lw SET _row_exists = 0 WHERE id = 9 SETTING
 check_access "$user_del" "UPDATE tab_lw SET _row_exists = 1 WHERE id = 9 SETTINGS enable_lightweight_update = 1"
 check_access "$user_upd" "UPDATE tab_lw SET _row_exists = 1 WHERE id = 9 SETTINGS enable_lightweight_update = 1"
 
+# On an engine where `_row_exists` is an ordinary physical column (Memory), it is not the hidden
+# lightweight-delete marker, so `_row_exists = 0` is a normal update requiring ALTER UPDATE.
+echo "-- physical _row_exists column (Memory): _row_exists = 0 is an ordinary update, needs ALTER UPDATE"
+check_access "$user_del" "ALTER TABLE tab_mem UPDATE _row_exists = 0 WHERE id = 1"
+check_access "$user_upd" "ALTER TABLE tab_mem UPDATE _row_exists = 0 WHERE id = 1"
+
 $CLICKHOUSE_CLIENT -q "
-DROP TABLE IF EXISTS tab, tab_lw;
+DROP TABLE IF EXISTS tab, tab_lw, tab_mem;
 DROP USER IF EXISTS $user_del, $user_upd;
 "

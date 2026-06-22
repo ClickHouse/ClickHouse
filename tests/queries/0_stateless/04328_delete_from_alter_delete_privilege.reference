@@ -19,3 +19,6 @@ OK
 ACCESS_DENIED
 ACCESS_DENIED
 OK
+-- physical _row_exists column (Memory): _row_exists = 0 is an ordinary update, needs ALTER UPDATE
+ACCESS_DENIED
+OK

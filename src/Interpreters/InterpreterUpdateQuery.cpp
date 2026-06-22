@@ -12,6 +12,7 @@
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -86,12 +87,24 @@ BlockIO InterpreterUpdateQuery::execute()
     /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
     /// (`DELETE FROM` may rewrite to `UPDATE ... SET _row_exists = 0`), so govern that exact form by
     /// ALTER DELETE. Any other assignment - including `_row_exists = <expr>` that edits the deletion
-    /// mask - stays a real update requiring ALTER UPDATE.
+    /// mask - stays a real update requiring ALTER UPDATE. The shortcut applies only when `_row_exists`
+    /// is the hidden virtual marker; on an engine where it is an ordinary physical column it is a normal
+    /// update. Resolve the table best-effort (null for a non-local ON CLUSTER target) and fail closed.
+    StoragePtr table_for_access;
+    if (auto table_id_for_access = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
+        table_for_access = DatabaseCatalog::instance().tryGetTable(table_id_for_access, getContext());
+    bool row_exists_is_marker = false;
+    if (table_for_access)
+    {
+        const auto metadata_snapshot = table_for_access->getInMemoryMetadataPtr(getContext(), false);
+        row_exists_is_marker = !metadata_snapshot->getColumns().hasPhysical(RowExistsColumn::name);
+    }
+
     bool deletes_via_row_exists = false;
     bool updates_columns = false;
     for (const ASTPtr & assignment_ast : update_query.assignments->children)
     {
-        if (isLightweightDeleteAssignment(assignment_ast->as<const ASTAssignment &>()))
+        if (row_exists_is_marker && isLightweightDeleteAssignment(assignment_ast->as<const ASTAssignment &>()))
             deletes_via_row_exists = true;
         else
             updates_columns = true;
