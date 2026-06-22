@@ -1,6 +1,5 @@
 #include <Storages/StorageMergeTreeCodecBlockCounts.h>
 
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -82,17 +81,13 @@ ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getActualTableStructu
     columns.add({"part_name", std::make_shared<DataTypeString>(), "Active data part the column belongs to."});
     columns.add({"column", std::make_shared<DataTypeString>(), "Column name."});
     columns.add(
+        {"substream",
+         std::make_shared<DataTypeString>(),
+         "Physical stream of the column the counts are for. Matches `system.parts_columns.substreams`."});
+    columns.add(
         {"codec_block_counts",
          codec_map,
-         "The number of compressed blocks grouped by codec across all substreams of the column. Empty for `Compact` parts."});
-    columns.add(
-        {"subcolumns.names",
-         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
-         "Names of the subcolumns of the column."});
-    columns.add(
-        {"subcolumns.codec_block_counts",
-         std::make_shared<DataTypeArray>(codec_map),
-         "The number of compressed blocks of each subcolumn grouped by codec."});
+         "The number of compressed blocks of this substream grouped by codec. Empty for `Compact` parts."});
     return columns;
 }
 
@@ -117,8 +112,8 @@ void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & facto
 void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeCodecBlockCounts>(
-        {.description = "Shows compressed-block counts by codec, per (part, column) of a MergeTree table. "
-                        "Selecting either codec-counts column reads data files, not just metadata.",
+        {.description = "Shows compressed-block counts by codec, per (part, column, substream) of a MergeTree table."
+                        "Selecting `codec_block_counts` reads data files, not just metadata.",
          .examples = {{"mergeTreeCodecBlockCounts", "SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), mt_table)", ""}},
          .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = true});

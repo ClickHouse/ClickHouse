@@ -1,5 +1,7 @@
-a	['LZ4']	1
-b	['Delta(1), LZ4']	1
-t	['LZ4']	1
-['x','y']	[['LZ4'],['LZ4']]
-3
+a	a	['LZ4']	1
+b	b	['Delta(1), LZ4']	1
+t	t%2Ex	['LZ4']	1
+t	t%2Ey	['LZ4']	1
+t%2Ex	['LZ4']
+t%2Ey	['LZ4']
+4

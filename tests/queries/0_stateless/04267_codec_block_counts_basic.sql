@@ -16,22 +16,24 @@ INSERT INTO t_basic
 SELECT number, number, (toUInt32(number), toUInt32(number * 2))
 FROM numbers(100000);
 
--- Top-level codec_block_counts: codec name presence and that block counts are positive.
+-- One row per (column, substream): the tuple `t` is two streams `t.x`, `t.y`.
 SELECT
     column,
+    substream,
     mapKeys(codec_block_counts) AS codecs,
     arrayMin(mapValues(codec_block_counts)) > 0 AS all_positive
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic)
-ORDER BY column;
+ORDER BY column, substream;
 
--- Subcolumns for the tuple: subcolumn names and per-subcolumn codec names.
+-- The tuple's streams listed on their own.
 SELECT
-    `subcolumns.names`,
-    arrayMap(m -> mapKeys(m), `subcolumns.codec_block_counts`) AS subcolumn_codecs
+    substream,
+    mapKeys(codec_block_counts) AS codecs
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic)
-WHERE column = 't';
+WHERE column = 't'
+ORDER BY substream;
 
--- A query that selects no codec column stays metadata-only and still returns one row per (part, column).
+-- A query that selects no codec column stays metadata-only and still returns one row per (part, column, substream).
 SELECT count() FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic);
 
 DROP TABLE t_basic;

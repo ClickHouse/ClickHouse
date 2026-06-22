@@ -1,7 +1,7 @@
 -- Tags: no-random-merge-tree-settings
--- no-random-merge-tree-settings: random settings would change max_compress_block_size and skew the per-subcolumn block counts.
+-- no-random-merge-tree-settings: random settings would change max_compress_block_size and skew the per-substream block counts.
 
--- Verify `subcolumns.codec_block_counts[i]` corresponds to `subcolumns.names[i]`
+-- Each tuple element is its own stream, sized so every stream gets a distinct block count. Verify the count is tied to the right substream.
 
 DROP TABLE IF EXISTS t_order;
 
@@ -49,9 +49,10 @@ SELECT (
 FROM numbers(100000);
 
 SELECT
-    `subcolumns.names`,
-    arrayZip(`subcolumns.names`, `subcolumns.codec_block_counts`) AS by_subcolumn
+    substream,
+    codec_block_counts
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_order)
-WHERE column = 't';
+WHERE column = 't'
+ORDER BY substream;
 
 DROP TABLE t_order;

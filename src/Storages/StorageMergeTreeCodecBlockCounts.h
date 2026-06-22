@@ -6,9 +6,8 @@
 namespace DB
 {
 
-/// Backing storage for `mergeTreeCodecBlockCounts(database, table)`.
-/// One row per (part, column); counts compressed blocks per codec by walking `.bin` headers (reading data files).
-/// Selecting only `part_name`/`column`/`subcolumns.names` is metadata-only.
+/// Backing storage for `mergeTreeCodecBlockCounts(database, table)`. One row per (part, column, substream).
+/// Counts compressed blocks per codec by reading each stream's `.bin` header. Selecting `part_name`/`column`/`substream` is metadata-only.
 class StorageMergeTreeCodecBlockCounts final : public IStorage
 {
 public:
@@ -27,7 +26,6 @@ public:
 
 private:
     StoragePtr source_table;
-    MergeTreeSettingsPtr storage_settings;
     MergeTreeData::DataPartsVector data_parts;
 };
 

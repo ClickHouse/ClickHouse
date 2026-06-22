@@ -1,7 +1,7 @@
 -- Tags: no-random-merge-tree-settings
 -- no-random-merge-tree-settings: random settings could flip the part to Wide and break the empty-maps assertion.
 
--- Compact parts interleave all columns into a single data.bin, so per-column codec attribution from block headers is not possible. 
+-- Compact parts interleave all columns into a single data.bin, so per-column codec attribution from block headers is not possible.
 
 DROP TABLE IF EXISTS t_compact;
 
@@ -15,8 +15,9 @@ INSERT INTO t_compact SELECT number, number FROM numbers(1000);
 SELECT part_type FROM system.parts
 WHERE database = currentDatabase() AND table = 't_compact' AND active;
 
-SELECT column, codec_block_counts, length(`subcolumns.codec_block_counts`)
+-- Streams are still listed (one row per substream), but the maps are empty: Compact has no per-stream `.bin`.
+SELECT column, substream, codec_block_counts
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_compact)
-ORDER BY column;
+ORDER BY column, substream;
 
 DROP TABLE t_compact;

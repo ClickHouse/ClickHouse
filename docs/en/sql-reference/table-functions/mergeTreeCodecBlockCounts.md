@@ -1,5 +1,5 @@
 ---
-description: 'Reports, per (part, column) of a MergeTree table, how many compressed blocks use each codec.'
+description: 'Reports, per (part, column, substream) of a MergeTree table, how many compressed blocks use each codec.'
 sidebar_label: 'mergeTreeCodecBlockCounts'
 sidebar_position: 77
 slug: /sql-reference/table-functions/mergeTreeCodecBlockCounts
@@ -7,9 +7,9 @@ title: 'mergeTreeCodecBlockCounts'
 doc_type: 'reference'
 ---
 
-Reports, for each (part, column) of a MergeTree table, how many compressed blocks use each codec. This is the way to observe adaptive codec selection (see the `allow_experimental_adaptive_codec_selection` setting), which can pick a different codec per block for columns that use the default codec.
+Reports, per (part, column, substream) of a MergeTree table, how many compressed blocks use each codec. This is how you observe adaptive codec selection (the `allow_experimental_adaptive_codec_selection` setting), which can pick a codec per block for default-codec columns.
 
-Selecting a codec-counts column walks the column's `.bin` block headers, so such a query reads the table's data files, not just metadata. Selecting only `part_name`/`column`/`subcolumns.names` stays metadata-only.
+Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The other columns are metadata-only.
 
 ## Syntax {#syntax}
 
@@ -26,13 +26,12 @@ mergeTreeCodecBlockCounts(database, table)
 
 ## Returned value {#returned_value}
 
-A table object with one row per (active part, column) of the source table:
+A table object with one row per (active part, column, substream) of the source table:
 
 - `part_name` ([String](/sql-reference/data-types/string)) — The active data part the column belongs to.
 - `column` ([String](/sql-reference/data-types/string)) — The column name.
-- `codec_block_counts` ([Map(String, UInt64)](/sql-reference/data-types/map)) — The number of compressed blocks grouped by codec across all substreams of the column. Empty for `Compact` parts, whose columns share one data file and so have no per-column codec attribution.
-- `subcolumns.names` ([Array(String)](/sql-reference/data-types/array)) — The names of the subcolumns of the column.
-- `subcolumns.codec_block_counts` ([Array(Map(String, UInt64))](/sql-reference/data-types/array)) — The number of compressed blocks of each subcolumn grouped by codec.
+- `substream` ([String](/sql-reference/data-types/string)) — The physical stream of the column the counts are for. Matches `system.parts_columns.substreams`.
+- `codec_block_counts` ([Map(String, UInt64)](/sql-reference/data-types/map)) — The number of compressed blocks of this substream grouped by codec. Empty for `Compact` parts, whose columns share one data file and so have no per-stream codec attribution.
 
 ## Usage example {#usage-example}
 
@@ -42,12 +41,41 @@ SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO mt SELECT number FROM numbers(100000);
 
-SELECT column, codec_block_counts
+SELECT column, substream, codec_block_counts
 FROM mergeTreeCodecBlockCounts(currentDatabase(), mt);
 ```
 
 ```text
-┌─column─┬─codec_block_counts─┐
-│ a      │ {'LZ4':13}         │
-└────────┴────────────────────┘
+┌─column─┬─substream─┬─codec_block_counts─┐
+│ a      │ a         │ {'LZ4':13}         │
+└────────┴───────────┴────────────────────┘
+```
+
+Column-level totals are a `GROUP BY column` with [`sumMap`](/sql-reference/aggregate-functions/reference/summap):
+
+```sql
+SELECT column, sumMap(codec_block_counts)
+FROM mergeTreeCodecBlockCounts(currentDatabase(), mt)
+GROUP BY column;
+```
+
+A `LowCardinality` column reports its dictionary and indexes streams separately:
+
+```sql
+CREATE TABLE mt_lc (s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO mt_lc SELECT toString(number % 1000) FROM numbers(1000000);
+
+SELECT substream, codec_block_counts
+FROM mergeTreeCodecBlockCounts(currentDatabase(), mt_lc)
+WHERE column = 's'
+ORDER BY substream;
+```
+
+```text
+┌─substream─┬─codec_block_counts─┐
+│ s         │ {'LZ4':31}         │
+│ s.dict    │ {'LZ4':1}          │
+└───────────┴────────────────────┘
 ```

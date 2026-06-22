@@ -1,31 +1,43 @@
 Adaptive ON
-a	1
-b	0
-c	0
-d	0
-e	1
-f	1
+all_1_2_1	a	a	{'T64':13}
+all_1_2_1	b	b	{'LZ4':13}
+all_1_2_1	c	c	{'LZ4':7}
+all_1_2_1	c	c.size	{'LZ4':13}
+all_1_2_1	d	d	{'LZ4':13}
+all_1_2_1	e	e	{'T64':13}
+all_1_2_1	e	e.null	{'LZ4':2}
+all_1_2_1	f	f	{'T64':7}
+all_1_2_1	f	f.size0	{'LZ4':13}
 Adaptive OFF
-a	0
-b	0
-c	0
-d	0
-e	0
-f	0
+all_1_2_1	a	a	{'LZ4':13}
+all_1_2_1	b	b	{'LZ4':13}
+all_1_2_1	c	c	{'LZ4':7}
+all_1_2_1	c	c.size	{'LZ4':13}
+all_1_2_1	d	d	{'LZ4':13}
+all_1_2_1	e	e	{'LZ4':13}
+all_1_2_1	e	e.null	{'LZ4':2}
+all_1_2_1	f	f	{'LZ4':7}
+all_1_2_1	f	f.size0	{'LZ4':13}
 Adaptive INSERT
-a	0
-b	0
-c	0
-d	0
-e	0
-f	0
+all_1_1_0	a	a	{'LZ4':13}
+all_1_1_0	b	b	{'LZ4':13}
+all_1_1_0	c	c	{'LZ4':7}
+all_1_1_0	c	c.size	{'LZ4':13}
+all_1_1_0	d	d	{'LZ4':13}
+all_1_1_0	e	e	{'LZ4':13}
+all_1_1_0	e	e.null	{'LZ4':2}
+all_1_1_0	f	f	{'LZ4':7}
+all_1_1_0	f	f.size0	{'LZ4':13}
 Adaptive MUTATION
-a	0
-b	0
-c	0
-d	0
-e	1
-f	0
+all_1_1_0_2	a	a	{'LZ4':13}
+all_1_1_0_2	b	b	{'LZ4':13}
+all_1_1_0_2	c	c	{'LZ4':7}
+all_1_1_0_2	c	c.size	{'LZ4':13}
+all_1_1_0_2	d	d	{'LZ4':13}
+all_1_1_0_2	e	e	{'T64':13}
+all_1_1_0_2	e	e.null	{'LZ4':2}
+all_1_1_0_2	f	f	{'LZ4':7}
+all_1_1_0_2	f	f.size0	{'LZ4':13}
 Adaptive COMPACT
 2000	1999000
 Compact

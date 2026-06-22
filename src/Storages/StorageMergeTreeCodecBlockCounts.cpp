@@ -5,7 +5,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Field.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Processors/ISource.h>
@@ -27,9 +26,8 @@ namespace
 
 const String PART_NAME_COLUMN = "part_name";
 const String COLUMN_COLUMN = "column";
+const String SUBSTREAM_COLUMN = "substream";
 const String CODEC_BLOCK_COUNTS_COLUMN = "codec_block_counts";
-const String SUBCOLUMNS_NAMES_COLUMN = "subcolumns.names";
-const String SUBCOLUMNS_CODEC_BLOCK_COUNTS_COLUMN = "subcolumns.codec_block_counts";
 
 Map codecCountsToField(const std::map<String, UInt64> & counts)
 {
@@ -40,31 +38,16 @@ Map codecCountsToField(const std::map<String, UInt64> & counts)
     return result;
 }
 
-/// Per-(part, column) result: the maps come from walking the column's `.bin` headers, `subcolumn_names` from metadata.
-struct ColumnCodecInfo
-{
-    Map column_map;
-    Array subcolumn_names;
-    Array subcolumn_maps;
-};
-
 class MergeTreeCodecBlockCountsSource final : public ISource
 {
 public:
-    MergeTreeCodecBlockCountsSource(
-        SharedHeader header_,
-        MergeTreeData::DataPartsVector data_parts_,
-        MergeTreeSettingsPtr storage_settings_,
-        ReadSettings read_settings_)
+    MergeTreeCodecBlockCountsSource(SharedHeader header_, MergeTreeData::DataPartsVector data_parts_, ReadSettings read_settings_)
         : ISource(header_)
         , header(std::move(header_))
         , data_parts(std::move(data_parts_))
-        , storage_settings(std::move(storage_settings_))
         , read_settings(std::move(read_settings_))
     {
-        need_column_map = header->has(CODEC_BLOCK_COUNTS_COLUMN);
-        need_subcolumn_maps = header->has(SUBCOLUMNS_CODEC_BLOCK_COUNTS_COLUMN);
-        need_subcolumn_names = header->has(SUBCOLUMNS_NAMES_COLUMN);
+        need_counts = header->has(CODEC_BLOCK_COUNTS_COLUMN);
     }
 
     String getName() const override { return "MergeTreeCodecBlockCounts"; }
@@ -72,147 +55,85 @@ public:
 protected:
     Chunk generate() override
     {
-        /// Each call processes the next part and returns one row for each of its columns.
-        if (part_index >= data_parts.size())
-            return {};
-
-        const auto & part = data_parts[part_index++];
-        const auto part_columns = part->getColumns();
-        const size_t num_rows = part_columns.size();
-
-        MutableColumns result(header->columns());
-        for (size_t pos = 0; pos < header->columns(); ++pos)
-            result[pos] = header->getByPosition(pos).type->createColumn();
-
-        size_t column_position = 0;
-        for (const auto & column : part_columns)
+        /// One part per call. Skip parts with empty ColumnsSubstreams (e.g. Compact without substream marks), else getColumnSubstreams throws.
+        while (part_index < data_parts.size())
         {
-            ++column_position;
-            ColumnCodecInfo info = computeForColumn(part, column, column_position);
+            const auto & part = data_parts[part_index++];
+            const auto & columns_substreams = part->getColumnsSubstreams();
+            if (columns_substreams.empty())
+                continue;
 
+            MutableColumns result(header->columns());
             for (size_t pos = 0; pos < header->columns(); ++pos)
+                result[pos] = header->getByPosition(pos).type->createColumn();
+
+            size_t num_rows = 0;
+            size_t column_position = 0;
+            for (const auto & column : part->getColumns())
             {
-                const auto & name = header->getByPosition(pos).name;
-                if (name == PART_NAME_COLUMN)
-                    result[pos]->insert(part->name);
-                else if (name == COLUMN_COLUMN)
-                    result[pos]->insert(column.name);
-                else if (name == CODEC_BLOCK_COUNTS_COLUMN)
-                    result[pos]->insert(info.column_map);
-                else if (name == SUBCOLUMNS_NAMES_COLUMN)
-                    result[pos]->insert(info.subcolumn_names);
-                else if (name == SUBCOLUMNS_CODEC_BLOCK_COUNTS_COLUMN)
-                    result[pos]->insert(info.subcolumn_maps);
-                else
-                    throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column {}", name);
+                for (const auto & substream : columns_substreams.getColumnSubstreams(column_position))
+                {
+                    Map codec_counts;
+                    if (need_counts)
+                        codec_counts = computeForSubstream(part, substream);
+
+                    for (size_t pos = 0; pos < header->columns(); ++pos)
+                    {
+                        const auto & name = header->getByPosition(pos).name;
+                        if (name == PART_NAME_COLUMN)
+                            result[pos]->insert(part->name);
+                        else if (name == COLUMN_COLUMN)
+                            result[pos]->insert(column.name);
+                        else if (name == SUBSTREAM_COLUMN)
+                            result[pos]->insert(substream);
+                        else if (name == CODEC_BLOCK_COUNTS_COLUMN)
+                            result[pos]->insert(codec_counts);
+                        else
+                            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column: {}", name);
+                    }
+                    ++num_rows;
+                }
+                ++column_position;
             }
+
+            if (num_rows == 0)
+                continue;
+
+            return Chunk(std::move(result), num_rows);
         }
 
-        return Chunk(std::move(result), num_rows);
+        return {};
     }
 
 private:
-    /// Walking `.bin` headers reads data files, so it runs only when a counts column is selected.
-    bool needWalk() const { return need_column_map || need_subcolumn_maps; }
-    bool needSubcolumns() const { return need_subcolumn_names || need_subcolumn_maps; }
-
-    ColumnCodecInfo computeForColumn(const MergeTreeDataPartPtr & part, const NameAndTypePair & column, size_t column_position)
+    /// Counts the codec of every compressed block in the substream's `.bin`. Returns {} for Compact parts.
+    /// Their columns share one `data.bin` (not per substream), and a compressed block can span several substreams.
+    Map computeForSubstream(const MergeTreeDataPartPtr & part, const String & substream)
     {
-        ColumnCodecInfo info;
-        auto serialization = part->getSerialization(column.name);
+        if (isCompactPart(part))
+            return {};
 
-        std::map<String, std::map<String, UInt64>> per_substream_codec_counts;
-        std::map<String, UInt64> column_codec_counts;
+        auto filename = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", part->checksums);
+        if (!filename)
+            return {};
 
-        /// Never walk Compact parts as their columns share one `data.bin` (per-column attribution is not derivable via header).
-        if (needWalk() && !isCompactPart(part))
+        auto read_buffer = part->getDataPartStorage().readFile(*filename + ".bin", read_settings, std::nullopt);
+        std::map<String, UInt64> counts;
+        while (!read_buffer->eof())
         {
-            /// Gather the column's [sub]stream `.bin` file names.
-            Strings filenames;
-            if (column.type->hasDynamicSubcolumns() && !part->getColumnsSubstreams().empty())
-            {
-                const auto & column_substreams = part->getColumnsSubstreams().getColumnSubstreams(column_position - 1);
-                for (const auto & substream : column_substreams)
-                {
-                    auto filename = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", part->checksums);
-                    filenames.push_back(filename.value_or(""));
-                }
-            }
-            else
-            {
-                serialization->enumerateStreams(
-                    [&](const auto & subpath)
-                    {
-                        auto filename
-                            = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, ".bin", part->checksums, storage_settings);
-                        filenames.push_back(filename.value_or(""));
-                    });
-            }
-
-            /// Walk each substream's blocks and count the codec of every block.
-            for (const auto & fname : filenames)
-            {
-                if (fname.empty())
-                    continue;
-
-                const String bin_path = fname + ".bin";
-                if (!part->checksums.files.contains(bin_path))
-                    continue;
-
-                auto read_buffer = part->getDataPartStorage().readFile(bin_path, read_settings, std::nullopt);
-                auto & substream_counts = per_substream_codec_counts[fname];
-                while (!read_buffer->eof())
-                {
-                    UInt32 size_compressed = 0;
-                    UInt32 size_decompressed = 0;
-                    auto codec = getCompressionCodecForFile(*read_buffer, size_compressed, size_decompressed, true);
-                    const auto codec_name = codec->getCodecDesc()->formatForLogging();
-                    ++substream_counts[codec_name];
-                    ++column_codec_counts[codec_name];
-                }
-            }
+            UInt32 size_compressed = 0;
+            UInt32 size_decompressed = 0;
+            auto codec = getCompressionCodecForFile(*read_buffer, size_compressed, size_decompressed, true);
+            ++counts[codec->getCodecDesc()->formatForLogging()];
         }
-
-        if (need_column_map)
-            info.column_map = codecCountsToField(column_codec_counts);
-
-        if (needSubcolumns())
-        {
-            IDataType::forEachSubcolumn(
-                [&](const auto & subpath, const auto & name, const auto & data)
-                {
-                    /// Keep only file-backed subcolumns; no `.bin` means an intermediate composite or ephemeral subcolumn.
-                    NameAndTypePair subcolumn(column.name, name, column.type, data.type);
-                    auto stream_name
-                        = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, storage_settings);
-                    if (!stream_name)
-                        return;
-
-                    info.subcolumn_names.push_back(name);
-
-                    if (need_subcolumn_maps)
-                    {
-                        Map field;
-                        if (auto it = per_substream_codec_counts.find(*stream_name); it != per_substream_codec_counts.end())
-                            field = codecCountsToField(it->second);
-                        info.subcolumn_maps.emplace_back(std::move(field));
-                    }
-                },
-                ISerialization::SubstreamData(serialization).withType(column.type));
-        }
-
-        return info;
+        return codecCountsToField(counts);
     }
 
     SharedHeader header;
     MergeTreeData::DataPartsVector data_parts;
-    MergeTreeSettingsPtr storage_settings;
     ReadSettings read_settings;
 
-    bool need_column_map = false;
-    bool need_subcolumn_maps = false;
-    bool need_subcolumn_names = false;
-
+    bool need_counts = false;
     size_t part_index = 0;
 };
 
@@ -228,7 +149,6 @@ StorageMergeTreeCodecBlockCounts::StorageMergeTreeCodecBlockCounts(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeCodecBlockCounts expected MergeTree table, got: {}", source_table->getName());
 
-    storage_settings = merge_tree->getSettings();
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
@@ -237,7 +157,7 @@ StorageMergeTreeCodecBlockCounts::StorageMergeTreeCodecBlockCounts(
     setInMemoryMetadata(storage_metadata);
 }
 
-/// TODO: no filter pushdown. A `part_name`/`column` predicate still walks every part. Prune via a QueryPlan step.
+/// TODO: WHERE pushdown. Right now, `SELECT ... WHERE part_name = 'p'` reads every part's `.bin` and filters rows after the read.
 Pipe StorageMergeTreeCodecBlockCounts::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -253,9 +173,7 @@ Pipe StorageMergeTreeCodecBlockCounts::read(
     context->checkAccess(AccessType::SELECT, source_table->getStorageID(), source_metadata->getColumns().getNamesOfPhysical());
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
-    return Pipe(
-        std::make_shared<MergeTreeCodecBlockCountsSource>(
-            std::move(sample_block), data_parts, storage_settings, context->getReadSettings()));
+    return Pipe(std::make_shared<MergeTreeCodecBlockCountsSource>(std::move(sample_block), data_parts, context->getReadSettings()));
 }
 
 }
