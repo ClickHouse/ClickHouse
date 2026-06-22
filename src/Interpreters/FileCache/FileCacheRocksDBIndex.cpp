@@ -60,6 +60,11 @@ FileCacheRocksDBIndex::FileCacheRocksDBIndex(const std::string & cache_base_path
 
 FileCacheRocksDBIndex::~FileCacheRocksDBIndex()
 {
+    /// Subtract whatever this instance accounted for so the metric reflects only live indices.
+    const auto accounted = accounted_elements.exchange(0);
+    if (accounted)
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheRocksDBIndexElements, accounted);
+
     if (db)
     {
         auto status = db->Close();
@@ -68,20 +73,26 @@ FileCacheRocksDBIndex::~FileCacheRocksDBIndex()
     }
 }
 
-std::string FileCacheRocksDBIndex::serializeKey(const FileCacheKey & key, size_t offset)
+std::string FileCacheRocksDBIndex::serializeKey(const FileCacheKey & key, size_t offset, const std::string & user_id)
 {
-    /// Key format: UInt128 key (16 bytes, native endian) + UInt64 offset (8 bytes, native endian).
+    /// Key format: UInt128 key (16 bytes, native endian) + UInt64 offset (8 bytes, native endian) + user_id bytes.
+    /// user_id is appended raw; its length is derived from the total RocksDB key size on read.
+    /// user_id is part of the key so per-user caches (write_cache_per_user_id_directory) cannot collide.
     static_assert(std::is_same_v<decltype(key.key), UInt128>, "FileCacheKey::key must be UInt128");
     std::string result;
-    result.resize(sizeof(key.key) + sizeof(UInt64));
+    result.resize(sizeof(key.key) + sizeof(UInt64) + user_id.size());
     memcpy(result.data(), &key.key, sizeof(key.key));
     UInt64 offset_val = static_cast<UInt64>(offset);
     memcpy(result.data() + sizeof(key.key), &offset_val, sizeof(UInt64));
+    if (!user_id.empty())
+        memcpy(result.data() + sizeof(key.key) + sizeof(UInt64), user_id.data(), user_id.size());
     return result;
 }
 
 void FileCacheRocksDBIndex::deserializeKey(std::string_view slice, FileCacheKey & key, size_t & offset)
 {
+    /// Caller validates min length; user_id from the suffix is not returned here
+    /// (its authoritative copy lives in the value alongside the rest of the origin).
     memcpy(&key.key, slice.data(), sizeof(key.key));
     UInt64 offset_val = 0;
     memcpy(&offset_val, slice.data() + sizeof(key.key), sizeof(UInt64));
@@ -140,7 +151,7 @@ static void deserializeValue(const rocksdb::Slice & slice, Int64 & size, FileCac
 
 void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 size, const FileCacheOriginInfo & origin, bool is_new_entry)
 {
-    auto serialized_key = serializeKey(key, offset);
+    auto serialized_key = serializeKey(key, offset, origin.user_id);
     auto serialized_value = serializeValue(size, origin);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -163,12 +174,15 @@ void FileCacheRocksDBIndex::put(const FileCacheKey & key, size_t offset, Int64 s
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to write to RocksDB index: {}", status.ToString());
 
     if (is_new_entry)
+    {
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheRocksDBIndexElements);
+        accounted_elements.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 
-void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset)
+void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset, const std::string & user_id)
 {
-    auto serialized_key = serializeKey(key, offset);
+    auto serialized_key = serializeKey(key, offset, user_id);
 
     rocksdb::WriteOptions write_options;
     write_options.sync = true;
@@ -178,11 +192,12 @@ void FileCacheRocksDBIndex::remove(const FileCacheKey & key, size_t offset)
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to delete from RocksDB index: {}", status.ToString());
 
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheRocksDBIndexElements);
+    accounted_elements.fetch_sub(1, std::memory_order_relaxed);
 }
 
-bool FileCacheRocksDBIndex::exists(const FileCacheKey & key, size_t offset) const
+bool FileCacheRocksDBIndex::exists(const FileCacheKey & key, size_t offset, const std::string & user_id) const
 {
-    auto serialized_key = serializeKey(key, offset);
+    auto serialized_key = serializeKey(key, offset, user_id);
     rocksdb::ReadOptions read_options;
     std::string value;
     auto status = db->Get(read_options, serialized_key, &value);
@@ -202,9 +217,10 @@ std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::loadAll() const
         auto key_slice = it->key();
         auto value_slice = it->value();
 
-        static constexpr size_t expected_key_size = 24;
+        /// 16 bytes FileCacheKey + 8 bytes offset; user_id suffix is optional (empty for the common user).
+        static constexpr size_t min_key_size = sizeof(FileCacheKey::key) + sizeof(UInt64);
 
-        if (key_slice.size() != expected_key_size)
+        if (key_slice.size() < min_key_size)
         {
             LOG_WARNING(log, "Skipping malformed RocksDB entry: key_size={}", key_slice.size());
             chassert(false);
@@ -240,8 +256,8 @@ std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLo
     auto entries = loadAll();
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheRocksDBIndexElements, entries.size());
+    accounted_elements.fetch_add(static_cast<Int64>(entries.size()), std::memory_order_relaxed);
 
-    LOG_INFO(log, "Loaded {} entries from RocksDB metadata index", entries.size());
     return entries;
 }
 

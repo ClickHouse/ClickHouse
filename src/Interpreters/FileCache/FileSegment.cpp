@@ -1173,22 +1173,26 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
     {
         if (auto index = cache->getRocksDBIndex())
         {
-            bool in_rocksdb = index->exists(file_key, offset());
-
-            if (reserved_size == 0)
-            {
-                chassert(!added_to_rocksdb);
-                chassert(!in_rocksdb);
-            }
-            else if (added_to_rocksdb)
-                chassert(in_rocksdb);
-            else
-                chassert(!in_rocksdb);
-
             if (download_state == State::DETACHED)
             {
+                /// detach() cleared key_metadata together with the state transition, so user_id
+                /// is no longer reachable to query RocksDB. detach() also resets added_to_rocksdb
+                /// only after the row is removed, so the local flag is the surviving invariant.
                 chassert(!added_to_rocksdb);
-                chassert(!in_rocksdb);
+            }
+            else
+            {
+                bool in_rocksdb = index->exists(file_key, offset(), getKeyMetadata()->origin.user_id);
+
+                if (reserved_size == 0)
+                {
+                    chassert(!added_to_rocksdb);
+                    chassert(!in_rocksdb);
+                }
+                else if (added_to_rocksdb)
+                    chassert(in_rocksdb);
+                else
+                    chassert(!in_rocksdb);
             }
         }
     }
@@ -1279,6 +1283,14 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     if (download_state == State::DETACHED)
         return;
 
+#if USE_ROCKSDB
+    /// Capture user_id before setDetachedState() clears key_metadata; we need it to address the
+    /// RocksDB row (the key is (FileCacheKey, offset, user_id) for per-user mode correctness).
+    std::string user_id_for_index;
+    if (added_to_rocksdb)
+        user_id_for_index = getKeyMetadata()->origin.user_id;
+#endif
+
     if (!downloader_id.empty())
         resetDownloaderUnlocked(lock);
     setDetachedState(lock);
@@ -1294,7 +1306,7 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
         {
             if (auto index = cache->getRocksDBIndex())
             {
-                index->remove(file_key, offset());
+                index->remove(file_key, offset(), user_id_for_index);
                 added_to_rocksdb = false;
             }
         }

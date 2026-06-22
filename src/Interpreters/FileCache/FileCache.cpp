@@ -331,7 +331,19 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
 #if USE_ROCKSDB
     if (settings[FileCacheSetting::use_rocksdb_metadata_index])
-        rocksdb_index = std::make_shared<FileCacheRocksDBIndex>(settings[FileCacheSetting::path], cache_name);
+    {
+        try
+        {
+            rocksdb_index = std::make_shared<FileCacheRocksDBIndex>(settings[FileCacheSetting::path], cache_name);
+        }
+        catch (...)
+        {
+            if (!skip_cache_on_disk_failure)
+                throw;
+            tryLogCurrentException(log, "Failed to open RocksDB metadata index, continuing without it (skip_cache_on_disk_failure=1)");
+            rocksdb_index.reset();
+        }
+    }
 #endif
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, settings[FileCacheSetting::max_size]);
@@ -1743,7 +1755,7 @@ void FileCache::loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> 
 
         auto cleanup_on_failure = [&]()
         {
-            rocksdb_index->remove(entry.key, entry.offset);
+            rocksdb_index->remove(entry.key, entry.offset, origin.user_id);
             /// Clean up the key metadata if it is empty (has no successfully loaded segments).
             if (key_metadata->sizeUnlocked() == 0)
                 metadata.removeKey(entry.key, /* if_exists */ true, origin.user_id);

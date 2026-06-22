@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <Common/Logger.h>
 
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -22,13 +23,15 @@ namespace DB
 
 /// RocksDB-based index that stores file segment metadata for fast cache loading on startup.
 ///
-/// Each entry is (FileCacheKey, offset) -> (size, origin), where size = -1 means the segment
-/// was not fully downloaded (requires stat on startup).
+/// Each entry is (FileCacheKey, offset, user_id) -> (size, origin), where size = -1 means the segment
+/// was not fully downloaded (requires stat on startup). user_id is part of the key so the index
+/// stays unambiguous in `write_cache_per_user_id_directory` mode, where two users may cache the same
+/// remote file at the same offset under different physical paths.
 ///
 /// Operation ordering:
 /// - Segment created: put(key, offset, -1, origin) BEFORE writing file data.
 /// - Segment fully downloaded: put(key, offset, actual_size, origin) AFTER file is fsynced.
-/// - Segment removed: remove(key, offset) BEFORE file is deleted from disk (in detach).
+/// - Segment removed: remove(key, offset, user_id) BEFORE file is deleted from disk (in detach).
 /// - Startup: iterate all entries. size >= 0 -> use as-is. size == -1 -> stat the file.
 class FileCacheRocksDBIndex
 {
@@ -42,10 +45,10 @@ public:
     void put(const FileCacheKey & key, size_t offset, Int64 size, const FileCacheOriginInfo & origin, bool is_new_entry);
 
     /// Remove a segment's entry. Called BEFORE the file is deleted from disk (in detach).
-    void remove(const FileCacheKey & key, size_t offset);
+    void remove(const FileCacheKey & key, size_t offset, const std::string & user_id);
 
     /// Check if an entry exists in the index.
-    bool exists(const FileCacheKey & key, size_t offset) const;
+    bool exists(const FileCacheKey & key, size_t offset, const std::string & user_id) const;
 
     struct Entry
     {
@@ -67,7 +70,11 @@ private:
     LoggerPtr log;
     bool initialized = false;
 
-    static std::string serializeKey(const FileCacheKey & key, size_t offset);
+    /// Number of entries this instance has added to FilesystemCacheRocksDBIndexElements.
+    /// Subtracted on destruction so the metric is idempotent across cache re-initialization.
+    std::atomic<Int64> accounted_elements{0};
+
+    static std::string serializeKey(const FileCacheKey & key, size_t offset, const std::string & user_id);
     static void deserializeKey(std::string_view slice, FileCacheKey & key, size_t & offset);
 };
 
