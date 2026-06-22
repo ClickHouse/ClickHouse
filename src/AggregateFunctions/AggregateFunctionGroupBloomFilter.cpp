@@ -304,6 +304,7 @@ AggregateFunctionPtr createAggregateFunctionGroupBloomFilter(
 }
 
 
+void registerAggregateFunctionGroupBloomFilter(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupBloomFilter(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
