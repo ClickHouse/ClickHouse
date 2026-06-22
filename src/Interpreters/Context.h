@@ -101,6 +101,8 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
+class UniqueKeyIndexCache;
+class DeleteBitmapCache;
 class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
@@ -221,8 +223,6 @@ using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundEx
 class RoundRobinRuntimeQueue;
 using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
-struct PartUUIDs;
-using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 struct WriteSettings;
 
@@ -278,6 +278,12 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
 
+/// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles under (random) names.
+/// Runtime filters optimize some JOINs by building a filter from the right side and pre-filtering the left side.
+struct IRuntimeFilterLookup;
+using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
+RuntimeFilterLookupPtr createRuntimeFilterLookup();
+
 class ContextTimeSeriesTagsCollector;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
@@ -295,12 +301,6 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
-
-/// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
-/// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
-/// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
-struct IRuntimeFilterLookup;
-using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 
 class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
@@ -629,7 +629,7 @@ protected:
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
 
-    /// Used at query runtime to save per-query runtime filters and find them by names
+    /// Used at query runtime to save per-query runtime-filter handles and find them by (random) names.
     RuntimeFilterLookupPtr runtime_filter_lookup;
 
 public:
@@ -658,15 +658,20 @@ public:
 
     void resetSharedContext();
 
+    /// Returns the global configuration, or nullptr after resetSharedContext()
+    /// (late shutdown), when the global Context object may still be reachable
+    /// via getGlobalContextInstance() while its shared part is already
+    /// destroyed. The check and the config copy happen under one lock, and the
+    /// returned pointer keeps the configuration alive afterwards - unlike
+    /// getConfigRef, this cannot race with the shutdown thread.
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> tryGetConfig() const;
+
 protected:
     using SampleBlockCache = std::unordered_map<std::string, SharedHeader>;
     mutable SampleBlockCache sample_block_cache;
     mutable std::mutex sample_block_cache_mutex;
 
     QueryMetadataCacheWeakPtr query_metadata_cache;
-
-    PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
-    PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -777,6 +782,7 @@ public:
         MAX_ATTACHED_VIEWS,
         MAX_NAMED_COLLECTIONS,
         MAX_NUM_THREADS_LOWER_THAN_LIMIT,
+        MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAYBE_BROKEN_TABLES,
@@ -892,7 +898,7 @@ public:
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
-    std::optional<QuotaUsage> getQuotaUsage() const;
+    std::vector<QuotaUsage> getQuotaUsages() const;
 
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
@@ -913,7 +919,8 @@ public:
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
-    std::pair<UInt64, String> setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler);
+    bool getConcurrentThreadsLazyAllocation() const;
+    std::pair<UInt64, String> setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler, bool lazy_allocation);
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -956,6 +963,7 @@ public:
     void setCurrentUserName(const String & current_user_name);
     void setCurrentAddress(const Poco::Net::SocketAddress & current_address);
     void setInitialUserName(const String & initial_user_name);
+    void setAuthenticatedUserName(const String & authenticated_user_name);
     void setInitialAddress(const Poco::Net::SocketAddress & initial_address);
     void setInitialQueryId(const String & initial_query_id);
     void setInitialQueryStartTime(std::chrono::time_point<std::chrono::system_clock> initial_query_start_time);
@@ -1169,7 +1177,7 @@ public:
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
-    IWorkloadEntityStorage & getWorkloadEntityStorage() const;
+    std::shared_ptr<IWorkloadEntityStorage> getWorkloadEntityStoragePtr() const;
 
     bool hasWasmModuleManager() const;
     WasmModuleManager & getWasmModuleManager() const;
@@ -1402,6 +1410,21 @@ public:
     std::shared_ptr<MarkCache> getMarkCache() const;
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
+
+    /// UNIQUE KEY index cache: ClickHouse-side `CacheBase` adapter
+    /// over the RocksDB block cache used by SST-backed UNIQUE KEY indexes.
+    void setUniqueKeyIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<UniqueKeyIndexCache> getUniqueKeyIndexCache() const;
+    void clearUniqueKeyIndexCache() const;
+
+    /// UNIQUE KEY delete-bitmap cache. Registration mirrors `setMarkCache` /
+    /// `setPrimaryIndexCache`. `max_cache_size_in_bytes == 0` leaves the
+    /// cache unregistered — callers get `nullptr` from `getDeleteBitmapCache`.
+    void setDeleteBitmapCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateDeleteBitmapCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<DeleteBitmapCache> getDeleteBitmapCache() const;
+    void clearDeleteBitmapCache() const;
 
     void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
@@ -1746,9 +1769,6 @@ public:
     bool isServerCompletelyStarted() const;
     void setServerCompletelyStarted();
 
-    PartUUIDsPtr getPartUUIDs() const;
-    PartUUIDsPtr getIgnoredPartUUIDs() const;
-
     AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 
@@ -1813,8 +1833,8 @@ public:
 
     ReverseLookupCache & getReverseLookupCache() const;
 
-    /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
-    /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.
+    /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles by (random) names,
+    /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
 
@@ -1822,6 +1842,13 @@ public:
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
+
+    /// Returns a consistent snapshot (copy) of the server settings taken under `shared->mutex`.
+    /// A few server settings are mutated at runtime on config reload (e.g. `s3queue_disable_streaming`),
+    /// so reading the whole struct without synchronization races with those writers. Use this accessor
+    /// whenever a copy of the settings is needed; the reference returned by `getServerSettings` must only
+    /// be used to read fields that are never changed after startup.
+    ServerSettings getServerSettingsCopy() const;
 
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;

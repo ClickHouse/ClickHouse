@@ -168,7 +168,7 @@ void signalHandler(int, siginfo_t * info, void * context)
     if (!query_id.empty())
         memcpy(query_id_data, query_id.data(), query_id_size);
 
-    untracked_memory_data = current_thread ? current_thread->untracked_memory.load() : 0;
+    untracked_memory_data = current_thread ? current_thread->untracked_memory : 0;
 
     /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
     data_ready_num.store(notification_num, std::memory_order_release);
@@ -732,7 +732,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
-        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
+        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread atomic-less counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);

@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <limits>
 #include <Common/CurrentThread.h>
+#include <Common/Logger.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerUtils.h>
+#include <Common/logger_useful.h>
 
 std::optional<UInt64> getMostStrictAvailableSystemMemory()
 {
@@ -63,9 +65,7 @@ Int64 getCurrentQueryMemoryUsage()
 }
 
 
-extern MemoryTracker total_memory_tracker;
-
-size_t getMaxThreadsForAvailableMemory(size_t max_threads, UInt64 min_free_per_thread)
+static size_t getMaxThreadsForAvailableMemoryImpl(size_t max_threads, UInt64 min_free_per_thread)
 {
     if (min_free_per_thread == 0 || max_threads <= 1)
         return max_threads;
@@ -86,4 +86,11 @@ size_t getMaxThreadsForAvailableMemory(size_t max_threads, UInt64 min_free_per_t
     if (allowed < max_threads)
         return allowed;
     return max_threads;
+}
+size_t getMaxThreadsForAvailableMemory(size_t max_threads, UInt64 min_free_per_thread)
+{
+    size_t effective_threads = getMaxThreadsForAvailableMemoryImpl(max_threads, min_free_per_thread);
+    if (effective_threads != max_threads)
+        LOG_DEBUG(getLogger("MemoryTrackerUtils"), "Lower number of threads for query to {} ({} requested)", effective_threads, max_threads);
+    return effective_threads;
 }
