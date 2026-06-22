@@ -175,6 +175,66 @@ ReturnType parseDateTimeBestEffortImpl(
             || (len == 6 && 0 == strncasecmp(word, "Sunday", 6));
     };
 
+    /// Fast path for the canonical 'YYYY-MM-DD hh:mm:ss' / 'YYYY-MM-DD' layout (what toString(DateTime/DateTime64)
+    /// emits). Reads the fixed-offset fields directly, then falls through to the general loop below for any
+    /// optional fractional/timezone tail and to the shared finalization. It is a strict subset of the general
+    /// parser: it only engages when the token matches exactly and ends cleanly, otherwise the general loop runs.
+    {
+        const char * const s = in.position();
+        const char * const buffer_end = in.buffer().end();
+        static constexpr size_t date_length = 10;       /// YYYY-MM-DD
+        static constexpr size_t date_time_length = 19;  /// YYYY-MM-DD hh:mm:ss
+
+        auto is_two_digits = [](const char * p) { return isNumericASCII(p[0]) && isNumericASCII(p[1]); };
+
+        const bool date_matches =
+            s + date_length <= buffer_end
+            && isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
+            && s[4] == '-' && is_two_digits(s + 5)
+            && s[7] == '-' && is_two_digits(s + 8)
+            && isSymbolIn('-', allowed_date_delimiters);
+
+        if (date_matches)
+        {
+            const bool time_matches =
+                s + date_time_length <= buffer_end
+                && (s[10] == ' ' || s[10] == 'T')
+                && is_two_digits(s + 11) && s[13] == ':'
+                && is_two_digits(s + 14) && s[16] == ':'
+                && is_two_digits(s + 17);
+
+            const size_t length = time_matches ? date_time_length : date_length;
+            const char * const next = s + length;
+
+            /// Defer to the general parser if the token does not end cleanly, so the fast path never diverges:
+            /// a trailing digit means an over-long field, and a ' '/'T' after a date-only match means a time
+            /// part the fast path did not cover.
+            bool clean_end = true;
+            if (next < buffer_end)
+            {
+                if (isNumericASCII(*next))
+                    clean_end = false;
+                else if (!time_matches && (*next == ' ' || *next == 'T'))
+                    clean_end = false;
+            }
+
+            if (clean_end)
+            {
+                year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+                month = (s[5] - '0') * 10 + (s[6] - '0');
+                day_of_month = (s[8] - '0') * 10 + (s[9] - '0');
+                if (time_matches)
+                {
+                    hour = (s[11] - '0') * 10 + (s[12] - '0');
+                    minute = (s[14] - '0') * 10 + (s[15] - '0');
+                    second = (s[17] - '0') * 10 + (s[18] - '0');
+                    has_time = true;
+                }
+                in.position() += length;
+            }
+        }
+    }
+
     while (!in.eof())
     {
         if ((year && !has_time) || (!year && has_time))
