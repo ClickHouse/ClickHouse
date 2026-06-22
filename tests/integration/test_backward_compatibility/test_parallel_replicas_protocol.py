@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 cluster_name = "parallel_replicas"
@@ -10,7 +10,7 @@ nodes = [
         main_configs=["configs/clusters.xml"],
         with_zookeeper=True,
         image="clickhouse/clickhouse-server",
-        tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+        tag="24.3",  # earlier versions lead to "Not found column sum(a) in block." exception 🤷
         stay_alive=True,
         use_old_analyzer=False,
         with_installed_binary=True,

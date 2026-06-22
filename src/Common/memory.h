@@ -1,13 +1,13 @@
 #pragma once
 
-#include <cstdlib>
 #include <new>
 #include <base/defines.h>
 
 #include <Common/AllocationInterceptors.h>
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/ProfileEvents.h>
 
 #if defined(OS_LINUX)
 #    include <malloc.h>
@@ -45,14 +45,7 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
 
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
 {
-    size_t alignment = static_cast<size_t>(align);
-#if !USE_JEMALLOC
-    /// POSIX `aligned_alloc` requires alignment >= `sizeof(void *)` (strictly enforced on macOS).
-    /// Mirror libc++'s `operator_new_aligned_impl` in `contrib/llvm-project/libcxx/src/new.cpp`.
-    if (alignment < sizeof(void *))
-        alignment = sizeof(void *);
-#endif
-    return __real_aligned_alloc(alignment, alignUp(size, alignment));
+    return __real_aligned_alloc(static_cast<size_t>(align), alignUp(size, static_cast<size_t>(align)));
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
@@ -112,24 +105,9 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align
     return actual_size;
 }
 
-/// Throwing variant — used by the throwing `operator new` overloads. The
-/// tracker may raise `MEMORY_LIMIT_EXCEEDED` when the allocation size is at
-/// least `min_allocation_size_to_throw_on_memory_limit`.
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t trackMemory(std::size_t size, AllocationTrace & trace, TAlign... align)
-{
-    std::size_t actual_size = getActualAllocationSize(size, align...);
-    trace = CurrentMemoryTracker::allocThrow(actual_size);
-    return actual_size;
-}
-
-/// Nothrow variant — call sites spell it out via `std::nothrow`, matching the
-/// standard `operator new(..., std::nothrow_t)` convention. The tracker never
-/// raises through this path.
-template <std::same_as<std::align_val_t>... TAlign>
-requires DB::OptionalArgument<TAlign...>
-inline ALWAYS_INLINE size_t trackMemory(std::size_t size, AllocationTrace & trace, std::nothrow_t, TAlign... align)
 {
     std::size_t actual_size = getActualAllocationSize(size, align...);
     trace = CurrentMemoryTracker::allocNoThrow(actual_size);
@@ -141,7 +119,7 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t trackMemoryFromC(std::size_t size, AllocationTrace & trace, TAlign... align)
 {
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     std::size_t actual_size = getActualAllocationSize(size, align...);
     trace = CurrentMemoryTracker::allocNoThrow(actual_size);
     return actual_size;
