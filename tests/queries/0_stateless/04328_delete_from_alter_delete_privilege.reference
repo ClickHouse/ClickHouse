@@ -9,3 +9,8 @@ OK
 -- DELETE FROM in lightweight-update mode also needs only ALTER DELETE
 OK
 ACCESS_DENIED
+-- _row_exists = 0 is a delete (ALTER DELETE); _row_exists = <non-zero> is an update (ALTER UPDATE)
+OK
+ACCESS_DENIED
+ACCESS_DENIED
+OK

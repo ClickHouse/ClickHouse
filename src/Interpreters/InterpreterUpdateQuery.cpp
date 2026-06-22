@@ -83,22 +83,24 @@ BlockIO InterpreterUpdateQuery::execute()
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
-    /// Assigning to the `_row_exists` lightweight-delete marker is a delete, not an update
-    /// (`DELETE FROM` may rewrite to `UPDATE ... SET _row_exists = 0`), so govern it by ALTER DELETE.
-    bool updates_row_exists = false;
-    bool updates_other_columns = false;
+    /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
+    /// (`DELETE FROM` may rewrite to `UPDATE ... SET _row_exists = 0`), so govern that exact form by
+    /// ALTER DELETE. Any other assignment - including `_row_exists = <expr>` that edits the deletion
+    /// mask - stays a real update requiring ALTER UPDATE.
+    bool deletes_via_row_exists = false;
+    bool updates_columns = false;
     for (const ASTPtr & assignment_ast : update_query.assignments->children)
     {
-        if (assignment_ast->as<const ASTAssignment &>().column_name == RowExistsColumn::name)
-            updates_row_exists = true;
+        if (isLightweightDeleteAssignment(assignment_ast->as<const ASTAssignment &>()))
+            deletes_via_row_exists = true;
         else
-            updates_other_columns = true;
+            updates_columns = true;
     }
 
     AccessRightsElements required_access;
-    if (updates_row_exists)
+    if (deletes_via_row_exists)
         required_access.emplace_back(AccessType::ALTER_DELETE, update_query.getDatabase(), update_query.getTable());
-    if (updates_other_columns || !updates_row_exists)
+    if (updates_columns)
         required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
 
     if (!update_query.cluster.empty())

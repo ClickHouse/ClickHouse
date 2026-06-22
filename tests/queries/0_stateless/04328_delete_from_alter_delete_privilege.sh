@@ -65,6 +65,15 @@ echo "-- DELETE FROM in lightweight-update mode also needs only ALTER DELETE"
 check_access "$user_del" "DELETE FROM tab_lw WHERE id = 7 $lw_settings"
 check_access "$user_upd" "DELETE FROM tab_lw WHERE id = 8 $lw_settings"
 
+# Only `_row_exists = 0` is the delete form (governed by ALTER DELETE). Setting the marker to any
+# other value edits the deletion mask (e.g. resurrects rows) and is a real update, so it must still
+# require ALTER UPDATE -- otherwise ALTER DELETE alone could modify the mask arbitrarily.
+echo "-- _row_exists = 0 is a delete (ALTER DELETE); _row_exists = <non-zero> is an update (ALTER UPDATE)"
+check_access "$user_del" "ALTER TABLE tab UPDATE _row_exists = 0 WHERE id = 9"
+check_access "$user_upd" "ALTER TABLE tab UPDATE _row_exists = 0 WHERE id = 9"
+check_access "$user_del" "ALTER TABLE tab UPDATE _row_exists = 1 WHERE id = 9"
+check_access "$user_upd" "ALTER TABLE tab UPDATE _row_exists = 1 WHERE id = 9"
+
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS tab, tab_lw;
 DROP USER IF EXISTS $user_del, $user_upd;

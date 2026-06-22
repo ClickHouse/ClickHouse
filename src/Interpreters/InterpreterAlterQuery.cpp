@@ -574,22 +574,24 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
     {
         case ASTAlterCommand::UPDATE:
         {
-            /// Assigning to the `_row_exists` lightweight-delete marker is a delete, not an update:
-            /// `DELETE FROM` rewrites to `ALTER ... UPDATE _row_exists = 0`. Govern it by ALTER DELETE
-            /// so that `DELETE FROM` needs only the documented ALTER DELETE privilege.
+            /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update:
+            /// `DELETE FROM` rewrites to `ALTER ... UPDATE _row_exists = 0`. Govern that exact form by
+            /// ALTER DELETE so `DELETE FROM` needs only the documented ALTER DELETE privilege. Any other
+            /// assignment - including `_row_exists = <expr>` that resurrects/edits the deletion mask -
+            /// stays a real update requiring ALTER UPDATE.
             std::vector<std::string_view> updated_columns;
-            bool updates_row_exists = false;
+            bool deletes_via_row_exists = false;
             for (const ASTPtr & assignment_ast : command.update_assignments->children)
             {
-                const auto & column = assignment_ast->as<const ASTAssignment &>().column_name;
-                if (column == RowExistsColumn::name)
-                    updates_row_exists = true;
+                const auto & assignment = assignment_ast->as<const ASTAssignment &>();
+                if (isLightweightDeleteAssignment(assignment))
+                    deletes_via_row_exists = true;
                 else
-                    updated_columns.emplace_back(column);
+                    updated_columns.emplace_back(assignment.column_name);
             }
             if (!updated_columns.empty())
                 required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, updated_columns);
-            if (updates_row_exists)
+            if (deletes_via_row_exists)
                 required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
             break;
         }
