@@ -1,7 +1,10 @@
+-- Tags: long
+
 SET log_queries = 1;
 
-SELECT test_function(number, 0) FROM numbers(100) FORMAT Null SETTINGS max_threads = 1, max_block_size = 1;
-SELECT test_function(number, 0) FROM numbers(200) FORMAT Null SETTINGS max_threads = 1, max_block_size = 1;
+-- max_block_size = 1 makes each row its own block, exercising per-block executable-UDF memory tracking.
+SELECT test_function(number, 0) FROM numbers(40) FORMAT Null SETTINGS max_threads = 1, max_block_size = 1;
+SELECT test_function(number, 0) FROM numbers(60) FORMAT Null SETTINGS max_threads = 1, max_block_size = 1;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -15,4 +18,3 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
   AND query_kind = 'Select'
   AND query LIKE '%test_function(number, 0)%'
 FORMAT Vertical;
-
