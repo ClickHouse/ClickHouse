@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/sort.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
@@ -40,7 +41,7 @@ void mergeEventsList(T & events_list, size_t prefix_size, bool prefix_sorted, bo
 {
     /// either sort whole container or do so partially merging ranges afterwards
     if (!prefix_sorted && !suffix_sorted)
-        std::stable_sort(std::begin(events_list), std::end(events_list));
+        ::stableSort(std::begin(events_list), std::end(events_list));
     else
     {
         const auto begin = std::begin(events_list);
@@ -48,10 +49,10 @@ void mergeEventsList(T & events_list, size_t prefix_size, bool prefix_sorted, bo
         const auto end = std::end(events_list);
 
         if (!prefix_sorted)
-            std::stable_sort(begin, middle);
+            ::stableSort(begin, middle);
 
         if (!suffix_sorted)
-            std::stable_sort(middle, end);
+            ::stableSort(middle, end);
 
         std::inplace_merge(begin, middle, end);
     }
@@ -103,7 +104,7 @@ struct AggregateFunctionWindowFunnelData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(events_list), std::end(events_list));
+            ::stableSort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -224,7 +225,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(events_list), std::end(events_list));
+            ::stableSort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
