@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
     extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 /**
@@ -188,8 +189,8 @@ public:
         for (ssize_t i = 0; i < num_elements_in_array_col; ++i)
         {
             /// This loop is O(total array elements) and also runs uninterruptibly inside executeImpl().
-            if (process_list_element && (i & 0xFFFFF) == 0)
-                process_list_element->checkTimeLimit();
+            if ((i & 0xFFFFF) == 0)
+                checkQueryTimeLimit();
 
             selector[i] = cur_element_in_cur_array;
             ++cur_element_in_cur_array;
@@ -241,8 +242,7 @@ public:
             /// a very long array (e.g. range(number) with a result-growing lambda) ignores KILL QUERY and
             /// max_execution_time and keeps running. Each iteration performs a full lambda->reduce(), so the
             /// per-iteration check is negligible.
-            if (process_list_element)
-                process_list_element->checkTimeLimit();
+            checkQueryTimeLimit();
 
             IColumn::Selector prev_selector(unfinished_rows); /// 1 for rows which have slice_i-many elements, otherwise 0
             size_t prev_index = 0;
@@ -318,6 +318,15 @@ public:
 
 private:
     QueryStatusPtr process_list_element;
+
+    /// checkTimeLimit() throws for KILL QUERY and for the 'throw' overflow mode, but for the 'break'
+    /// overflow mode it returns false instead. A fold has no meaningful partial result (a half-folded
+    /// accumulator is a wrong value, not a smaller one), so a 'break' request is turned into a hard stop here.
+    void checkQueryTimeLimit() const
+    {
+        if (process_list_element && !process_list_element->checkTimeLimit())
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+    }
 
     String getName() const override
     {
