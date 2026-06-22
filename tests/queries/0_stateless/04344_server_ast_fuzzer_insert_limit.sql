@@ -10,8 +10,14 @@ SET max_execution_time = 20;
 -- Each seed carries SETTINGS that would lift the fuzzer's safety caps; the fix strips them from
 -- the fuzzed query and bounds it, so the fuzzer cannot run away and the server stays responsive.
 
+-- `= value` form: the override is parked in ASTSetQuery::changes.
 SELECT sum(number) FROM numbers(100)
 SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw', max_execution_time = 0, max_result_rows = 0;
+
+-- `= DEFAULT` form: the override is parked in ASTSetQuery::default_settings; on re-parse it would
+-- reset the pinned fuzz-context cap back to its unbounded default unless it is stripped too.
+SELECT sum(number) FROM numbers(100)
+SETTINGS max_rows_to_read = DEFAULT, read_overflow_mode = DEFAULT, max_execution_time = DEFAULT, max_result_rows = DEFAULT;
 
 DROP TABLE IF EXISTS t_04344;
 CREATE TABLE t_04344 (a UInt64, b String, c Array(UInt64)) ENGINE = MergeTree ORDER BY a;

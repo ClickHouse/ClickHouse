@@ -8,9 +8,9 @@
 namespace DB
 {
 
-/// Remove the named settings from every SETTINGS clause embedded in the query AST, and detach any
-/// SETTINGS node that becomes empty from its owner (so the formatter does not emit a bare `SETTINGS`
-/// keyword that fails to re-parse).
+/// Remove the named settings from every SETTINGS clause embedded in the query AST (both the
+/// `name = value` and the `name = DEFAULT` forms), and detach any SETTINGS node that becomes empty
+/// from its owner (so the formatter does not emit a bare `SETTINGS` keyword that fails to re-parse).
 ///
 /// The server-side AST fuzzer pins resource-limit settings on a throwaway context before running a
 /// fuzzed query, but executeQueryImpl re-applies the query's own SETTINGS on top of the context

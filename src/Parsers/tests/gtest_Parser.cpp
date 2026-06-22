@@ -522,6 +522,31 @@ bool hasEmptySettingsNode(const ASTPtr & ast)
     return false;
 }
 
+/// True if any SETTINGS node still references `name`, either as `name = value` (in `changes`) or as
+/// `name = DEFAULT` (in `default_settings`). A surviving `default_settings` entry is what re-parsing
+/// the query would feed to InterpreterSetQuery::resetSettingsToDefaultValue, undoing a fuzz-context cap.
+bool settingNamePresent(const ASTPtr & ast, std::string_view name)
+{
+    std::vector<const IAST *> nodes{ast.get()};
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.back();
+        nodes.pop_back();
+        if (const auto * set_query = node->as<ASTSetQuery>())
+        {
+            if (set_query->changes.tryGet(name))
+                return true;
+            for (const auto & default_name : set_query->default_settings)
+                if (default_name == name)
+                    return true;
+        }
+        for (const auto & child : node->children)
+            if (child)
+                nodes.push_back(child.get());
+    }
+    return false;
+}
+
 }
 
 /// The server-side AST fuzzer strips its safety-limit settings from a fuzzed query so they cannot be
@@ -585,5 +610,71 @@ TEST(RemoveSettingsFromQuery, PrunesEmptySettingsAndKeepsQueryParseable)
         const String formatted = ast->formatWithSecretsOneLine();
         EXPECT_NE(String::npos, formatted.find("max_threads")) << "dropped a non-safety setting: " << formatted;
         EXPECT_EQ(String::npos, formatted.find("max_rows_to_read")) << "kept a safety setting: " << formatted;
+    }
+}
+
+/// `SETTINGS max_rows_to_read = DEFAULT` parks the name in ASTSetQuery::default_settings, not in
+/// `changes`. On re-parse InterpreterSetQuery::executeForCurrentContext calls
+/// resetSettingsToDefaultValue(default_settings), which would reset the fuzz-context cap back to its
+/// unbounded default. The transform must strip the names from `default_settings` too, so a fuzzed
+/// `= DEFAULT` cannot re-open the read cap.
+TEST(RemoveSettingsFromQuery, StripsResetToDefaultOverrides)
+{
+    static constexpr std::string_view safety_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+    };
+
+    /// Every safety setting appears as `= DEFAULT`; some clauses also carry a `= value` form and a
+    /// non-safety setting. Covers SELECT, SELECT-UNION (ASTQueryWithOutput), INSERT and a subquery.
+    const std::vector<String> queries = {
+        "SELECT sum(number) FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT, read_overflow_mode = DEFAULT",
+        "SELECT 1 UNION ALL SELECT 2 SETTINGS max_rows_to_read = DEFAULT, max_execution_time = DEFAULT",
+        "INSERT INTO t SELECT number FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT, read_overflow_mode = 'throw'",
+        "SELECT number FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT, max_threads = 4",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        /// Sanity: a safety setting really is parked in default_settings before the strip.
+        ASSERT_TRUE(settingNamePresent(ast, "max_rows_to_read")) << "setup: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        /// No safety setting may survive, in either list, in any clause.
+        for (const auto & name : safety_settings)
+            EXPECT_FALSE(settingNamePresent(ast, name))
+                << "safety setting '" << name << "' survived for: " << query;
+
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "empty SETTINGS left for: " << query;
+
+        /// The serialized query still re-parses (no bare `SETTINGS`, no stray `= DEFAULT`).
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_EQ(String::npos, formatted.find("DEFAULT")) << "kept a `= DEFAULT` override: " << formatted;
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+
+    /// A non-safety `= DEFAULT` must be preserved (we only strip the named caps).
+    {
+        const String query = "SELECT 1 SETTINGS max_rows_to_read = DEFAULT, max_threads = DEFAULT";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        removeSettingsFromQuery(ast, safety_settings);
+
+        EXPECT_TRUE(settingNamePresent(ast, "max_threads")) << "dropped a non-safety `= DEFAULT`";
+        EXPECT_FALSE(settingNamePresent(ast, "max_rows_to_read")) << "kept a safety `= DEFAULT`";
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "query: " << query;
     }
 }

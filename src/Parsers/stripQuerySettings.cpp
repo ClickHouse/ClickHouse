@@ -79,13 +79,20 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
     /// First strip the settings from every SETTINGS clause, then prune the clauses that became empty.
     /// Two passes: a node owning a SETTINGS clause is visited before that clause, so its emptiness is
     /// only known after the whole tree has been stripped.
+    /// Strip both lists: `changes` (`name = value`) and `default_settings` (`name = DEFAULT`). The
+    /// latter matters because re-applying the query's SETTINGS runs InterpreterSetQuery::
+    /// executeForCurrentContext, which calls resetSettingsToDefaultValue on `default_settings` and
+    /// would reset a fuzz-context cap back to its (unbounded) default.
     visitAllNodes(
         ast,
         [&](IAST & node)
         {
             if (auto * set_query = node.as<ASTSetQuery>())
                 for (const auto & name : setting_names)
+                {
                     set_query->changes.removeSetting(name);
+                    std::erase(set_query->default_settings, name);
+                }
         });
 
     visitAllNodes(ast, [](IAST & node) { pruneEmptySettingsOwner(node); });
