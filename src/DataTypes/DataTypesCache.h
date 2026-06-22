@@ -12,8 +12,7 @@ namespace DB
 /// Cache of simple (parameterless) data types and their serializations,
 /// pre-filled at construction time. Avoids repeated DataTypeFactory lookups
 /// and shared_ptr allocations for commonly used types.
-/// Thread-local to avoid atomic refcount contention on shared_ptr
-/// when multiple threads return copies of the same DataTypePtr.
+/// Thread-safe: immutable after construction.
 class SimpleDataTypesCache
 {
 public:
@@ -23,6 +22,8 @@ public:
         DataTypePtr type;
         SerializationPtr serialization;
     };
+
+    static const SimpleDataTypesCache & instance();
 
     bool hasElement(BinaryTypeIndex index) const;
 
@@ -46,20 +47,19 @@ public:
     /// for simple types, falls back to DataTypeFactory for others.
     SerializationPtr getSerialization(const String & type_name) const;
 
-    SimpleDataTypesCache();
-
 private:
+    SimpleDataTypesCache();
     void addSimpleType(BinaryTypeIndex index, const String & type_name);
 
     std::array<Element, BINARY_TYPE_INDEX_SIZE> by_index{};
     std::unordered_map<String, Element> by_name;
 };
 
-/// Return a thread-local instance of the simple data type cache.
+/// Return the singleton instance of the simple data type cache.
 const SimpleDataTypesCache & getSimpleDataTypesCache();
 
 /// Thread-local cache for data type lookups by name.
-/// Checks the thread-local SimpleDataTypesCache first; only caches
+/// Checks the global SimpleDataTypesCache first; only caches
 /// non-simple types (e.g. DateTime64(9), Variant types) in its own map.
 class DataTypesCache
 {

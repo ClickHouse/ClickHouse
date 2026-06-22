@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Access/Common/AccessType.h>
-#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
@@ -69,7 +68,6 @@ public:
     {
         CreatorFn creator_fn;
         EngineFeatures features;
-        Documentation documentation;
     };
 
     DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
@@ -82,7 +80,7 @@ public:
         .supports_table_overrides = false,
         .is_external = false,
         .source_access_type = std::nullopt,
-    }, Documentation documentation = {});
+    });
 
     const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
 
