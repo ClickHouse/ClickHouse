@@ -24,4 +24,7 @@ L2DistanceTransposed, reduced precision (4 bits)
 1	11.832
 2	11.832
 3	55.534
+========== large dimension (no int32 overflow) ==========
+46341.295
+2
 ========== precision validation ==========

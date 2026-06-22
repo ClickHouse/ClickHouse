@@ -49,6 +49,9 @@ struct L2DistanceTransposed
     static constexpr auto name = "L2DistanceTransposed";
 #if USE_SIMSIMD
     static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_l2_k;
+    /// Largest term the SimSIMD i8 kernel adds per element (max (a - b)^2 = 255^2). Used to bound the
+    /// dimension before that kernel's int32 accumulator overflows; beyond it we use the scalar path.
+    static constexpr UInt64 max_int8_simd_term = 255 * 255;
 #endif
 
     template <typename T>
@@ -84,6 +87,9 @@ struct CosineDistanceTransposed
     static constexpr auto name = "cosineDistanceTransposed";
 #if USE_SIMSIMD
     static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_cos_k;
+    /// Largest term the SimSIMD i8 kernel adds per element (max a^2 = 128^2). Used to bound the
+    /// dimension before that kernel's int32 accumulator overflows; beyond it we use the scalar path.
+    static constexpr UInt64 max_int8_simd_term = 128 * 128;
 #endif
 
     template <typename T>
@@ -483,7 +489,12 @@ private:
         auto block_row = [&](size_t r) -> CalcT * { return block.data() + r * padded_array_size; };
 
 #if USE_SIMSIMD
-        const simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<CalcT>();
+        simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<CalcT>();
+        /// SimSIMD's i8 kernels accumulate in int32, which overflows for large dimensions (the scalar
+        /// fallback accumulates in Float64). Use the scalar path beyond the overflow-safe dimension.
+        if constexpr (std::is_same_v<CalcT, Int8>)
+            if (qbit_size > static_cast<size_t>(std::numeric_limits<Int32>::max()) / Kernel::max_int8_simd_term)
+                simd_kernel = nullptr;
 #endif
 
 #if USE_MULTITARGET_CODE
