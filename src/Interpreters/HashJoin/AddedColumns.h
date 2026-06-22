@@ -51,7 +51,10 @@ struct LazyOutput
 
     /// Resolves BuildRef::block_no at emit time; points into the join's StoredColumnsIndex,
     /// which is immutable once the build phase is finished. Used by the cold paths
-    /// (joinGet / ColumnsWithRowNumbers / ASOF).
+    /// (joinGet / ColumnsWithRowNumbers / ASOF). These keep the raw `StoredBlock *` rather than
+    /// the hot-path emit table below because they need the whole block, not just a resolved column:
+    /// per-row `byteSizeAt` accounting (`buildOutputFromBlocksLimitAndOffset`), nullable-column
+    /// dispatch (`buildJoinGetOutput`), and feeding `ColumnsWithRowNumbers` (`buildOutputFromBlocks`).
     const StoredBlock * const * stored_columns = nullptr;
     bool row_refs_are_pointers = false;
 

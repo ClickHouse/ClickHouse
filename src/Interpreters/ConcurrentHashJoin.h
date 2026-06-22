@@ -7,6 +7,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/TableJoin.h>
 #include <atomic>
 
@@ -134,7 +135,7 @@ public:
         /// replay would build on top of them, so the wrapping `SpillingHashJoin` can still decide to
         /// spill. On a spill the buffered blocks are handed to `GraceHashJoin` directly (see
         /// `releaseSlotBlocks`), without ever building the in-memory map.
-        std::vector<ScatteredBlock> buffered_blocks;
+        VectorWithMemoryTracking<ScatteredBlock> buffered_blocks;
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
     };

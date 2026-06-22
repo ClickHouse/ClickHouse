@@ -368,6 +368,17 @@ private:
 static_assert(sizeof(BuildRefList) == 8, "BuildRefList must stay 8 bytes: it is the hash map cell payload");
 static_assert(sizeof(BuildRefList::Batch) == 64, "BuildRefList::Batch must stay one cache line");
 
+/// Encoded ref word of a key's first row: the "any row of the key" semantics used by ANY/RightAny/Semi
+/// matches and by `StorageJoin` fills, on both MapsOne (BuildRef) and MapsAll (BuildRefList) cells.
+template <typename Mapped>
+ALWAYS_INLINE UInt64 firstRefWord(const Mapped & mapped)
+{
+    if constexpr (std::is_same_v<std::decay_t<Mapped>, BuildRefList>)
+        return mapped.firstWord();
+    else
+        return mapped.word();
+}
+
 /// Maps `block_no` (the high half of BuildRef) to the stored block.
 /// Appended under mutex during the build phase (possibly from several ConcurrentHashJoin
 /// slots sharing one index, so that block numbers are globally unique across slots and
@@ -386,6 +397,10 @@ static_assert(sizeof(BuildRefList::Batch) == 64, "BuildRefList::Batch must stay 
 /// different right-column subsets while sharing one index. StorageJoin serializes mutations (write lock)
 /// against read-locked queries, so a rebuild never races a reader. The hot per-row emit loop stays
 /// lock-free; only the per-probe-batch resolution takes the (briefly held) `mutex`.
+///
+/// Invalidation is generation-based (a counter compare) rather than rebuilding the table on every
+/// probe: a rebuild would re-resolve every block for every probe batch under the mutex, whereas the
+/// generation almost never changes after the build phase, so the table is built once and reused.
 class StoredColumnsIndex
 {
 public:

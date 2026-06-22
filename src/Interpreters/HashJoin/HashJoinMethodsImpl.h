@@ -471,17 +471,6 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
     }
 }
 
-/// Encoded ref word of the key's first row: the "any row of the key" semantics used by
-/// ANY/RightAny/Semi matches on both MapsOne (BuildRef) and MapsAll (BuildRefList) cells.
-template <typename Mapped>
-ALWAYS_INLINE UInt64 firstRefWord(const Mapped & mapped)
-{
-    if constexpr (std::is_same_v<std::decay_t<Mapped>, BuildRefList>)
-        return mapped.firstWord();
-    else
-        return mapped.word();
-}
-
 template <
     JoinKind KIND,
     JoinStrictness STRICTNESS,

@@ -895,16 +895,13 @@ private:
         return rows_added;
     }
 
-    /// The mapped value of MapsOne is a single encoded ref; the mapped value of MapsAll
-    /// (RightAny under preferUseMapsAll) is a tagged ref list whose first element is taken.
-    static UInt64 anyRefWord(const BuildRef & mapped) { return mapped.word(); }
-    static UInt64 anyRefWord(const BuildRefList & mapped) { return mapped.firstWord(); }
-
     template <typename Map>
     static void fillOne(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
                         const std::optional<size_t> & key_pos, size_t & rows_added, const StoredBlock * const * stored_columns)
     {
-        const UInt64 ref_word = anyRefWord(it->getMapped());
+        /// The mapped value of MapsOne is a single encoded ref; the mapped value of MapsAll
+        /// (RightAny under preferUseMapsAll) is a tagged ref list whose first element is taken.
+        const UInt64 ref_word = firstRefWord(it->getMapped());
         const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
         for (size_t j = 0; j < columns.size(); ++j)
             if (j == key_pos)
