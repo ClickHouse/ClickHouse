@@ -277,8 +277,62 @@ void KafkaConsumer::commit()
     offsets_stored = 0;
 }
 
+void KafkaConsumer::setStickyPartitions(std::vector<int32_t> partition_ids)
+{
+    chassert(!partition_ids.empty());
+    /// Must be called before createConsumer() / subscribe() — guard against misuse.
+    chassert(!consumer.get());
+    sticky_partitions = std::move(partition_ids);
+    LOG_INFO(log, "Sticky partition assignment configured: partitions [{}]", fmt::join(sticky_partitions, ", "));
+}
+
+void KafkaConsumer::assignViaSticky()
+{
+    chassert(consumer.get());
+    chassert(!sticky_partitions.empty());
+
+    cleanUnprocessed();
+
+    if (stalled_status != CONSUMER_STOPPED)
+        stalled_status = NO_MESSAGES_RETURNED;
+
+    /// Build the TopicPartitionList for all owned partitions across all topics.
+    /// In practice Kafka tables have a single topic, but the API supports multiple.
+    cppkafka::TopicPartitionList tp_list;
+    tp_list.reserve(topics.size() * sticky_partitions.size());
+    for (const auto & topic : topics)
+        for (int32_t pid : sticky_partitions)
+            tp_list.emplace_back(topic, pid);
+
+    /// assign() is a pure client-side operation — it does NOT join a consumer group,
+    /// does NOT trigger broker-side rebalancing, and does NOT impose a 15 s assignment
+    /// wait on other consumers. Offsets are still committed to the broker for crash recovery.
+    consumer->assign(tp_list);
+
+    assignment = tp_list;
+    num_rebalance_assignments++;
+
+    CurrentMetrics::add(CurrentMetrics::KafkaAssignedPartitions, tp_list.size());
+    CurrentMetrics::add(CurrentMetrics::KafkaConsumersWithAssignment, 1);
+
+    LOG_INFO(log, "Sticky assign() completed: topics [{}], partitions [{}]",
+        fmt::join(topics, ", "), fmt::join(sticky_partitions, ", "));
+
+    current_subscription_valid = true;
+
+    /// Immediately poll to flush any pending librdkafka callbacks.
+    doPoll();
+}
+
 void KafkaConsumer::subscribe()
 {
+    /// In sticky mode, bypass the broker-managed consumer group entirely.
+    if (!sticky_partitions.empty())
+    {
+        assignViaSticky();
+        return;
+    }
+
     cleanUnprocessed();
 
     // we can reset any flags (except of CONSUMER_STOPPED) before attempt of reading new block of data
