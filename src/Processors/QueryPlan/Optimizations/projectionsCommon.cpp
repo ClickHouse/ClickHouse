@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 
+#include <Columns/ColumnConst.h>
+#include <Common/assert_cast.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -19,7 +21,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
-    extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsMaxThreads max_threads;
@@ -70,10 +71,6 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
         if (!support_projection || enable_aggregation_in_order)
             return false;
     }
-
-    // Currently projection don't support deduplication when moving parts between shards.
-    if (query_settings[Setting::allow_experimental_query_deduplication])
-        return false;
 
     // Currently projection don't support settings which implicitly modify aggregate functions.
     if (query_settings[Setting::aggregate_functions_null_for_empty])
@@ -135,15 +132,10 @@ static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::strin
             {
                 outputs.erase(it);
             }
-            else
-            {
-                ColumnWithTypeAndName col;
-                col.name = node->result_name;
-                col.type = node->result_type;
-                col.column = col.type->createColumnConst(1, 1);
-                *it = &dag.addColumn(std::move(col));
-            }
-
+            /// When the filter column survives (`remove == false`), it must be left alone:
+            /// its `result_name` may also denote a downstream-used data column (e.g.
+            /// `WHERE c GROUP BY c`), and replacing the output with a const-1 placeholder
+            /// would corrupt that column for every consumer of `query.dag`.
             return node;
         }
     }
