@@ -152,9 +152,6 @@ ActionsDAG::Nodes ActionsDAG::detachNodes(ActionsDAG && dag) { return std::move(
 
 bool ActionsDAG::Node::isDeterministic() const
 {
-    /// folded constants honor `is_deterministic_constant` on FUNCTION nodes too
-    if (column && !is_deterministic_constant)
-        return false;
     bool deterministic_if_func = type != ActionType::FUNCTION || function_base->isDeterministic();
     bool deterministic_if_const = type != ActionType::COLUMN || is_deterministic_constant;
     return deterministic_if_func && deterministic_if_const;
@@ -887,81 +884,95 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 namespace
 {
 
-struct Resolved
+/// value-only predicate functions, safe to evaluate on a Const argument even when the original
+/// argument was non-Const at runtime - their output doesn't observe column representation
+const std::unordered_set<std::string> & foldablePredicateFunctions()
+{
+    static const std::unordered_set<std::string> set{
+        "equals", "notEquals", "less", "greater",
+        "lessOrEquals", "greaterOrEquals", "and", "or",
+    };
+    return set;
+}
+
+struct FoldResult
 {
     ColumnPtr column;
     bool deterministic;
-    bool through_materialize;
 };
 
-const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
+/// Walk a predicate subtree. Accepted: literal const COLUMN leaves, `alias`/`materialize`
+/// walk-through, and whitelisted value-only functions. Returns the folded const if every
+/// node fits, nullopt otherwise. Leaves restricted to COLUMN nodes so we don't propagate
+/// `is_deterministic_constant` defaults from `addFunctionImpl`-folded FUNCTION-with-column
+std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
 {
-    while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-        node = node->children.front();
-    return node;
-}
-
-/// `Node::isDeterministic` is shallow, walk the subtree so `toDate(now())` doesn't look deterministic
-bool isSubtreeDeterministic(const ActionsDAG::Node * node)
-{
-    std::unordered_set<const ActionsDAG::Node *> seen;
-    std::vector<const ActionsDAG::Node *> stack;
-    stack.push_back(node);
-    while (!stack.empty())
+    while (node)
     {
-        const auto * n = stack.back();
-        stack.pop_back();
-        if (!n || !seen.insert(n).second)
+        if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        {
+            node = node->children.front();
             continue;
-        if (!n->isDeterministic())
-            return false;
-        for (const auto * c : n->children)
-            stack.push_back(c);
-    }
-    return true;
-}
-
-/// walk a folded node's subtree, an earlier fold can hide a materialize behind a plain const
-bool subtreeContainsMaterialize(const ActionsDAG::Node * node)
-{
-    std::unordered_set<const ActionsDAG::Node *> seen;
-    std::vector<const ActionsDAG::Node *> stack{node};
-    while (!stack.empty())
-    {
-        const auto * n = stack.back();
-        stack.pop_back();
-        if (!n || !seen.insert(n).second)
+        }
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && node->function_base
+            && node->function_base->getName() == "materialize"
+            && node->children.size() == 1)
+        {
+            node = node->children.front();
             continue;
-        if (n->type == ActionsDAG::ActionType::FUNCTION
-            && n->function_base
-            && n->function_base->getName() == "materialize")
-            return true;
-        for (const auto * c : n->children)
-            stack.push_back(c);
+        }
+        break;
     }
-    return false;
-}
+    if (!node)
+        return std::nullopt;
 
-std::optional<Resolved> resolveConstThroughMaterialize(const ActionsDAG::Node * node)
-{
-    bool through_materialize = false;
-    node = skipAliases(node);
-    while (node
-        && node->type == ActionsDAG::ActionType::FUNCTION
-        && node->function_base
-        && node->function_base->getName() == "materialize"
-        && node->children.size() == 1)
+    if (node->type == ActionsDAG::ActionType::COLUMN
+        && node->column && isColumnConst(*node->column))
+        return FoldResult{node->column, node->is_deterministic_constant};
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION
+        || !node->function_base
+        || !node->function
+        || !node->function_base->isDeterministic()
+        || !foldablePredicateFunctions().contains(node->function_base->getName()))
+        return std::nullopt;
+
+    ColumnsWithTypeAndName args;
+    args.reserve(node->children.size());
+    bool all_det = true;
+    for (const auto * child : node->children)
     {
-        through_materialize = true;
-        node = skipAliases(node->children.front());
+        auto folded = tryFoldPredicate(child);
+        if (!folded)
+            return std::nullopt;
+        ColumnPtr col = folded->column;
+        /// DAG consts are size 0, resize to 1 for `execute` (matches `getFunctionArguments`)
+        if (const auto * cc = typeid_cast<const ColumnConst *>(col.get()); cc && cc->empty())
+            col = ColumnConst::create(cc->getDataColumnPtr(), 1);
+        args.push_back({std::move(col), child->result_type, child->result_name});
+        all_det = all_det && folded->deterministic;
     }
-    if (node && node->column && isColumnConst(*node->column))
+
+    ColumnPtr result;
+    try
     {
-        if (!through_materialize && subtreeContainsMaterialize(node))
-            through_materialize = true;
-        return Resolved{node->column, isSubtreeDeterministic(node), through_materialize};
+        result = node->function->execute(args, node->result_type, 1, true);
     }
-    return std::nullopt;
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: speculative fold, throw means "cannot fold"
+    {
+        return std::nullopt;
+    }
+    if (!result)
+        return std::nullopt;
+    const auto * column_const = typeid_cast<const ColumnConst *>(result.get());
+    if (!column_const)
+        return std::nullopt;
+
+    ColumnPtr canonical = column_const->empty()
+        ? result
+        : ColumnPtr{ColumnConst::create(column_const->getDataColumnPtr(), 0)};
+    return FoldResult{std::move(canonical), all_det};
 }
 
 /// dummy columns (ColumnSet for IN, ColumnFunction for lambdas) don't have a Field-representable value
@@ -1185,169 +1196,40 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
 
 }
 
-void ActionsDAG::unwrapMaterializeWrapAtOutput(const std::string & name)
+void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filter_column_name)
 {
-    auto * root = const_cast<Node *>(tryFindInOutputs(name));
-    if (!root || root->type != ActionType::FUNCTION || !root->function_base)
+    if (filter_column_name.empty())
         return;
-    if (root->function_base->getName() != "materialize" || root->children.size() != 1)
-        return;
-    const Node * inner = root->children.front();
-    if (!inner->column || !isColumnConst(*inner->column))
+    const Node * filter_node = tryFindInOutputs(filter_column_name);
+    if (!filter_node)
         return;
 
-    /// compute determinism from the subtree, inner can be a FUNCTION folded by `addFunctionImpl`
-    /// whose `is_deterministic_constant` defaulted to true even when a non-det descendant exists
-    bool det = isSubtreeDeterministic(inner);
-
-    /// Mutate in place so the output (same Node pointer) becomes the const
-    /// The unused inner node stays in the DAG and is cleaned up by `removeUnusedActions`
-    root->type = ActionType::COLUMN;
-    root->column = inner->column;
-    root->children.clear();
-    root->function_base.reset();
-    root->function.reset();
-    root->is_deterministic_constant = det;
-}
-
-void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_output_name)
-{
-    /// no dropped output means every output survives, no safe path to fold
-    if (dropped_output_name.empty())
+    auto folded = tryFoldPredicate(filter_node);
+    if (!folded || !folded->column)
         return;
-    const Node * dropped_output = tryFindInOutputs(dropped_output_name);
-    if (!dropped_output)
+    const auto * column_const = typeid_cast<const ColumnConst *>(folded->column.get());
+    if (!column_const)
         return;
 
-    /// nodes feeding surviving outputs are observed downstream and must not be folded
-    std::unordered_set<const Node *> surviving;
+    ColumnConstPtr canonical;
+    if (column_const->empty())
+        canonical = column_const->getPtr();
+    else
+        canonical = ColumnConst::create(column_const->getDataColumnPtr(), 0);
+
+    /// add a fresh const COLUMN and re-route the filter output, leave the original predicate
+    /// subtree intact so other parents that may share parts of it are unaffected -
+    /// `removeUnusedActions` prunes the now-orphan subtree later
+    const Node & new_const = addColumn(
+        std::move(canonical), filter_node->result_type,
+        std::string(filter_column_name), folded->deterministic);
+    for (auto & out : outputs)
     {
-        std::vector<const Node *> stack;
-        for (const auto * out : outputs)
-            if (out != dropped_output)
-                stack.push_back(out);
-        while (!stack.empty())
+        if (out == filter_node)
         {
-            const Node * n = stack.back();
-            stack.pop_back();
-            if (!surviving.insert(n).second)
-                continue;
-            for (const auto * c : n->children)
-                stack.push_back(c);
+            out = &new_const;
+            break;
         }
-    }
-
-    /// descendants of any lazy short-circuit arg may not run at execution time
-    /// (e.g. the `then` branch of `if`); folding them eagerly here could throw
-    std::unordered_set<const Node *> short_circuit_lazy;
-    {
-        std::vector<const Node *> stack;
-        for (const auto & node : nodes)
-        {
-            if (node.type != ActionType::FUNCTION || !node.function_base)
-                continue;
-            IFunctionBase::ShortCircuitSettings sc;
-            if (!node.function_base->isShortCircuit(sc, node.children.size()))
-                continue;
-            for (size_t i = 0; i < node.children.size(); ++i)
-                if (!sc.arguments_with_disabled_lazy_execution.contains(i))
-                    stack.push_back(node.children[i]);
-        }
-        while (!stack.empty())
-        {
-            const Node * n = stack.back();
-            stack.pop_back();
-            if (!short_circuit_lazy.insert(n).second)
-                continue;
-            for (const auto * c : n->children)
-                stack.push_back(c);
-        }
-    }
-
-    /// bottom-up: a folded child becomes visible as const to parents we visit next
-    for (auto & node : nodes)
-    {
-        if (surviving.contains(&node))
-            continue;
-        if (short_circuit_lazy.contains(&node))
-            continue;
-        if (node.type != ActionType::FUNCTION || !node.function_base || !node.function)
-            continue;
-        if (node.function_base->getName() == "materialize")
-            continue;
-        if (node.column && isColumnConst(*node.column))
-            continue;
-        if (!node.function_base->isSuitableForConstantFolding())
-            continue;
-        if (!node.function_base->isDeterministic())
-            continue;
-
-        IFunctionBase::ShortCircuitSettings sc;
-        if (node.function_base->isShortCircuit(sc, node.children.size()))
-            continue;
-
-        /// execute would throw constructing a non-empty column of Nothing
-        if (!node.result_type || node.result_type->onlyNull() || isNothing(node.result_type))
-            continue;
-
-        auto always_const_indices = node.function_base->getArgumentsThatAreAlwaysConstant();
-        std::unordered_set<size_t> always_const(always_const_indices.begin(), always_const_indices.end());
-
-        ColumnsWithTypeAndName args;
-        args.reserve(node.children.size());
-        bool any_through_materialize = false;
-        bool all_deterministic = true;
-        bool all_resolved = true;
-        for (size_t i = 0; i < node.children.size(); ++i)
-        {
-            auto resolved = resolveConstThroughMaterialize(node.children[i]);
-            if (!resolved)
-            {
-                all_resolved = false;
-                break;
-            }
-            if (resolved->through_materialize && always_const.contains(i))
-            {
-                all_resolved = false;
-                break;
-            }
-            any_through_materialize = any_through_materialize || resolved->through_materialize;
-            all_deterministic = all_deterministic && resolved->deterministic;
-            /// DAG consts are size 0, some functions like `moduloOrNull` need size 1 for `execute`
-            ColumnPtr column = resolved->column;
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()); column_const && column_const->empty())
-                column = ColumnConst::create(column_const->getDataColumnPtr(), 1);
-            args.push_back({column, node.children[i]->result_type, node.children[i]->result_name});
-        }
-        if (!all_resolved)
-            continue;
-        /// without materialize traversal, addFunctionImpl already folded this
-        if (!any_through_materialize)
-            continue;
-
-        /// fold is speculative: a function that would not run at runtime (empty rowset, short-circuit)
-        /// must not crash the query at planning, treat any throw as "leave node alone"
-        ColumnPtr result;
-        try
-        {
-            result = node.function->execute(args, node.result_type, 1, true);
-        }
-        catch (...) // NOLINT(bugprone-empty-catch) Ok: speculative fold, throw means "cannot fold"
-        {
-            continue;
-        }
-        const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr;
-        if (!column_const)
-            continue;
-
-        /// same pattern as `addFunctionImpl`: store the const on the FUNCTION node, keep
-        /// children intact so `subtreeContainsMaterialize` can still find materialize for
-        /// representation-observing ancestors (e.g. `like`'s ESCAPE-const check)
-        if (!column_const->empty())
-            node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
-        else
-            node.column = column_const->getPtr();
-        node.is_deterministic_constant = all_deterministic;
     }
 }
 

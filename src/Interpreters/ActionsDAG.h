@@ -245,14 +245,11 @@ public:
 
     void removeAliasesForFilter(const std::string & filter_name);
 
-    /// Fold f(materialize(c)) into f marked constant via `node.column`
-    /// scoped to the path of `dropped_output_name` so surviving outputs are untouched
-    void pushMaterializeOutwardForConstants(const std::string & dropped_output_name);
-
-    /// If output `name` is `materialize(Const)`, strip the materialize so the output is
-    /// a bare Const COLUMN. Used at filter root when the filter column is removed: it
-    /// lets `FilterTransform` recognize a constant filter and close the source
-    void unwrapMaterializeWrapAtOutput(const std::string & name);
+    /// Fold a filter predicate that reaches a Const through `materialize`/`alias` wrappers.
+    /// Limited to value-only predicate functions (equals/and/or/comparisons) so the result
+    /// is safe to re-emit as a single Const COLUMN at the filter root - other outputs and
+    /// representation-observing parents elsewhere in the DAG are never touched
+    void foldFilterPredicateThroughMaterialize(const std::string & filter_column_name);
 
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned

@@ -51,17 +51,16 @@ SELECT count() FROM numbers(10) WHERE materialize(now()) > toDateTime('1970-01-0
 -- surviving non-filter outputs must not be folded - y must still look non-Const downstream
 SELECT isConstant(y) FROM (SELECT materialize(1) = 1 AS y FROM numbers(1)) WHERE materialize(1) = 1;
 
--- like()'s ESCAPE arg must stay non-Const-foldable through materialize - runtime still raises
-SELECT like('50%off', '50#%off', materialize('#')); -- { serverError ILLEGAL_COLUMN }
+-- predicate function not in the value-only whitelist - filter stays as is, runtime still raises
+SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', materialize('#')); -- { serverError ILLEGAL_COLUMN }
 
--- same guard must catch materialize buried under a function the pass already folded
-SELECT like('50%off', '50#%off', concat(materialize('#'), '')); -- { serverError ILLEGAL_COLUMN }
+-- buried materialize under a non-whitelisted child of a non-whitelisted parent - still no fold
+SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', concat(materialize('#'), '')); -- { serverError ILLEGAL_COLUMN }
 
--- a speculative fold that would throw must leave the query alone, runtime skips it on 0 rows
+-- empty rowset, toFloat64 is not whitelisted so no speculative fold, runtime skips the WHERE
 SELECT count() FROM numbers(0) WHERE toFloat64(materialize('x86_74')) < 50;
 
--- planning must not eagerly evaluate the lazy then-branch of `if` -
--- toFloat64('x86_74') would throw at fold time without the short-circuit guard
+-- `if` not in the whitelist - planning doesn't evaluate the lazy then-branch
 SELECT count() > 0 FROM (
     EXPLAIN PLAN SELECT count() FROM numbers(1)
     WHERE if(equals(materialize('abc'), 'aws.lambda.duration'),

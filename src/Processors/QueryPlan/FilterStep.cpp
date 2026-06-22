@@ -369,8 +369,7 @@ FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std:
             remove_filter_column = true;
             /// the filter column is now dropped, apply the materialize-fold here too (#78166) -
             /// `tryMergeExpressions` skipped this filter back when the column still survived
-            actions_dag.pushMaterializeOutwardForConstants(filter_column_name);
-            actions_dag.unwrapMaterializeWrapAtOutput(filter_column_name);
+            actions_dag.foldFilterPredicateThroughMaterialize(filter_column_name);
         }
     }
 

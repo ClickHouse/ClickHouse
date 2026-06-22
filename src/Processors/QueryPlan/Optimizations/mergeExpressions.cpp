@@ -77,11 +77,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         /// merge can drag materialize wrappers from a UNION child into the filter, fold through them (#78166)
         /// only when the filter column will be removed, otherwise the predicate stays observable
         if (parent_filter->removesFilterColumn())
-        {
-            merged.pushMaterializeOutwardForConstants(parent_filter->getFilterColumnName());
-            /// strip the outer materialize so `FilterTransform` sees a bare Const and short-circuits
-            merged.unwrapMaterializeWrapAtOutput(parent_filter->getFilterColumnName());
-        }
+            merged.foldFilterPredicateThroughMaterialize(parent_filter->getFilterColumnName());
 
         merged.deduplicateSubtrees();
 
