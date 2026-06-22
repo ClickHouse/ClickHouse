@@ -39,3 +39,37 @@ else
         exit 1
     fi
 fi
+
+if output=$(${CLICKHOUSE_CLIENT} --user "${user}" --query "
+    SELECT count() >= 1
+    FROM system.user_query_log
+    SETTINGS allow_experimental_analyzer = 1,
+        additional_result_filter = 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'" 2>&1)
+then
+    echo "UNEXPECTED"
+else
+    if echo "${output}" | grep -Fq "Cannot use \`additional_result_filter\` with security barrier view \`system.user_query_log\`"
+    then
+        echo "additional_result_filter rejected"
+    else
+        echo "${output}"
+        exit 1
+    fi
+fi
+
+if output=$(${CLICKHOUSE_CLIENT} --user "${user}" --query "
+    SELECT count() >= 1
+    FROM system.user_query_log
+    SETTINGS allow_experimental_analyzer = 0,
+        additional_result_filter = 'throwIf(if(initial_user != \\'\\', initial_user, user) != currentUser()) = 0'" 2>&1)
+then
+    echo "UNEXPECTED"
+else
+    if echo "${output}" | grep -Fq "Cannot use \`additional_result_filter\` with security barrier view \`system.user_query_log\`"
+    then
+        echo "additional_result_filter rejected with old analyzer"
+    else
+        echo "${output}"
+        exit 1
+    fi
+fi

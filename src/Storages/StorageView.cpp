@@ -50,6 +50,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSetOperationMode except_default_mode;
@@ -344,11 +345,21 @@ void StorageView::readImpl(
         const size_t /*max_block_size*/,
         const size_t /*num_streams*/)
 {
-    if (security_barrier && !context->getSettingsRef()[Setting::additional_table_filters].value.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot use `additional_table_filters` with security barrier view `{}`",
-            getStorageID().getFullTableName());
+    if (security_barrier)
+    {
+        const auto & settings = context->getSettingsRef();
+        if (!settings[Setting::additional_table_filters].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use `additional_table_filters` with security barrier view `{}`",
+                getStorageID().getFullTableName());
+
+        if (!settings[Setting::additional_result_filter].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use `additional_result_filter` with security barrier view `{}`",
+                getStorageID().getFullTableName());
+    }
 
     ASTPtr current_inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
 
