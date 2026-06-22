@@ -1,6 +1,7 @@
 #include <Storages/StorageMergeTreeCodecBlockCounts.h>
 
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -84,6 +85,11 @@ ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getActualTableStructu
         {"substream",
          std::make_shared<DataTypeString>(),
          "Physical stream of the column the counts are for. Matches `system.parts_columns.substreams`."});
+    auto nullable_uint64 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
+    columns.add(
+        {"data_compressed_bytes", nullable_uint64, "Size of compressed data in the substream, in bytes. NULL for `Compact` parts."});
+    columns.add(
+        {"data_uncompressed_bytes", nullable_uint64, "Size of uncompressed data in the substream, in bytes. NULL for `Compact` parts."});
     columns.add(
         {"codec_block_counts",
          codec_map,

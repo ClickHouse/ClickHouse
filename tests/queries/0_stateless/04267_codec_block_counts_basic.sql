@@ -36,4 +36,8 @@ ORDER BY substream;
 -- A query that selects no codec column stays metadata-only and still returns one row per (part, column, substream).
 SELECT count() FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic);
 
+SELECT substream, data_uncompressed_bytes, data_compressed_bytes > 0 AS compressed_positive
+FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic)
+ORDER BY substream;
+
 DROP TABLE t_basic;

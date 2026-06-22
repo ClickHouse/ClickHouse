@@ -31,6 +31,8 @@ A table object with one row per (active part, column, substream) of the source t
 - `part_name` ([String](/sql-reference/data-types/string)) — The active data part the column belongs to.
 - `column` ([String](/sql-reference/data-types/string)) — The column name.
 - `substream` ([String](/sql-reference/data-types/string)) — The physical stream of the column the counts are for. Matches `system.parts_columns.substreams`.
+- `data_compressed_bytes` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Size of compressed data in the substream, in bytes. `NULL` for `Compact` parts.
+- `data_uncompressed_bytes` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Size of uncompressed data in the substream, in bytes. `NULL` for `Compact` parts.
 - `codec_block_counts` ([Map(String, UInt64)](/sql-reference/data-types/map)) — The number of compressed blocks of this substream grouped by codec. Empty for `Compact` parts, whose columns share one data file and so have no per-stream codec attribution.
 
 ## Usage example {#usage-example}

@@ -15,8 +15,8 @@ INSERT INTO t_compact SELECT number, number FROM numbers(1000);
 SELECT part_type FROM system.parts
 WHERE database = currentDatabase() AND table = 't_compact' AND active;
 
--- Streams are still listed (one row per substream), but the maps are empty: Compact has no per-stream `.bin`.
-SELECT column, substream, codec_block_counts
+-- Streams are still listed (one row per substream), but Compact has no per-stream `.bin`: sizes are NULL and the codec map is empty.
+SELECT column, substream, data_compressed_bytes, data_uncompressed_bytes, codec_block_counts
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_compact)
 ORDER BY column, substream;
 

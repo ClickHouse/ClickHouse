@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace
@@ -27,6 +26,8 @@ namespace
 const String PART_NAME_COLUMN = "part_name";
 const String COLUMN_COLUMN = "column";
 const String SUBSTREAM_COLUMN = "substream";
+const String DATA_COMPRESSED_BYTES_COLUMN = "data_compressed_bytes";
+const String DATA_UNCOMPRESSED_BYTES_COLUMN = "data_uncompressed_bytes";
 const String CODEC_BLOCK_COUNTS_COLUMN = "codec_block_counts";
 
 Map codecCountsToField(const std::map<String, UInt64> & counts)
@@ -38,6 +39,13 @@ Map codecCountsToField(const std::map<String, UInt64> & counts)
     return result;
 }
 
+struct SubstreamInfo
+{
+    std::optional<UInt64> compressed;
+    std::optional<UInt64> uncompressed;
+    Map codecs;
+};
+
 class MergeTreeCodecBlockCountsSource final : public ISource
 {
 public:
@@ -47,7 +55,15 @@ public:
         , data_parts(std::move(data_parts_))
         , read_settings(std::move(read_settings_))
     {
-        need_counts = header->has(CODEC_BLOCK_COUNTS_COLUMN);
+        auto position_of = [&](const String & name) -> std::optional<size_t>
+        { return header->has(name) ? std::optional<size_t>(header->getPositionByName(name)) : std::nullopt; };
+
+        part_name_pos = position_of(PART_NAME_COLUMN);
+        column_pos = position_of(COLUMN_COLUMN);
+        substream_pos = position_of(SUBSTREAM_COLUMN);
+        compressed_pos = position_of(DATA_COMPRESSED_BYTES_COLUMN);
+        uncompressed_pos = position_of(DATA_UNCOMPRESSED_BYTES_COLUMN);
+        codec_counts_pos = position_of(CODEC_BLOCK_COUNTS_COLUMN);
     }
 
     String getName() const override { return "MergeTreeCodecBlockCounts"; }
@@ -73,24 +89,23 @@ protected:
             {
                 for (const auto & substream : columns_substreams.getColumnSubstreams(column_position))
                 {
-                    Map codec_counts;
-                    if (need_counts)
-                        codec_counts = computeForSubstream(part, substream);
+                    SubstreamInfo info = computeForSubstream(part, substream);
 
-                    for (size_t pos = 0; pos < header->columns(); ++pos)
-                    {
-                        const auto & name = header->getByPosition(pos).name;
-                        if (name == PART_NAME_COLUMN)
-                            result[pos]->insert(part->name);
-                        else if (name == COLUMN_COLUMN)
-                            result[pos]->insert(column.name);
-                        else if (name == SUBSTREAM_COLUMN)
-                            result[pos]->insert(substream);
-                        else if (name == CODEC_BLOCK_COUNTS_COLUMN)
-                            result[pos]->insert(codec_counts);
-                        else
-                            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column: {}", name);
-                    }
+                    if (part_name_pos)
+                        result[*part_name_pos]->insert(part->name);
+                    if (column_pos)
+                        result[*column_pos]->insert(column.name);
+                    if (substream_pos)
+                        result[*substream_pos]->insert(substream);
+                    if (codec_counts_pos)
+                        result[*codec_counts_pos]->insert(info.codecs);
+
+                    /// Sizes are Nullable: the value, or a NULL `Field` for Compact / no `.bin`.
+                    if (compressed_pos)
+                        result[*compressed_pos]->insert(info.compressed ? Field(*info.compressed) : Field());
+                    if (uncompressed_pos)
+                        result[*uncompressed_pos]->insert(info.uncompressed ? Field(*info.uncompressed) : Field());
+
                     ++num_rows;
                 }
                 ++column_position;
@@ -106,9 +121,9 @@ protected:
     }
 
 private:
-    /// Counts the codec of every compressed block in the substream's `.bin`. Returns {} for Compact parts.
-    /// Their columns share one `data.bin` (not per substream), and a compressed block can span several substreams.
-    Map computeForSubstream(const MergeTreeDataPartPtr & part, const String & substream)
+    /// Per-substream sizes (metadata only) and, when requested, codec block counts (reads `.bin`).
+    /// Empty for Compact parts: their columns share one `data.bin`, so there is no per-stream `.bin`.
+    SubstreamInfo computeForSubstream(const MergeTreeDataPartPtr & part, const String & substream)
     {
         if (isCompactPart(part))
             return {};
@@ -117,7 +132,24 @@ private:
         if (!filename)
             return {};
 
-        auto read_buffer = part->getDataPartStorage().readFile(*filename + ".bin", read_settings, std::nullopt);
+        SubstreamInfo info;
+        if (auto it = part->checksums.files.find(*filename + ".bin"); it != part->checksums.files.end())
+        {
+            info.compressed = it->second.file_size;
+            info.uncompressed = it->second.uncompressed_size;
+        }
+
+        /// Gate this because the `.bin` walk is expensive.
+        if (codec_counts_pos)
+            info.codecs = walkBin(part, *filename);
+
+        return info;
+    }
+
+    /// Counts the codec of every compressed block in the resolved `.bin` (reads the data file).
+    Map walkBin(const MergeTreeDataPartPtr & part, const String & filename)
+    {
+        auto read_buffer = part->getDataPartStorage().readFile(filename + ".bin", read_settings, std::nullopt);
         std::map<String, UInt64> counts;
         while (!read_buffer->eof())
         {
@@ -133,7 +165,13 @@ private:
     MergeTreeData::DataPartsVector data_parts;
     ReadSettings read_settings;
 
-    bool need_counts = false;
+    std::optional<size_t> part_name_pos;
+    std::optional<size_t> column_pos;
+    std::optional<size_t> substream_pos;
+    std::optional<size_t> compressed_pos;
+    std::optional<size_t> uncompressed_pos;
+    std::optional<size_t> codec_counts_pos;
+
     size_t part_index = 0;
 };
 
