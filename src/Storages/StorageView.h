@@ -24,6 +24,8 @@ public:
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
     bool supportsTruncate() const override { return false; }
+    /// A normal `View` is read-only and cannot be a source for a materialized view.
+    bool supportsInserts() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
 
     /// It is passed inside the query and solved at its level.

@@ -47,6 +47,9 @@ public:
 
     bool isRemote() const override;
 
+    /// `Merge` is read-only: it has no `write` method, so it can never be a source for a materialized view.
+    bool supportsInserts() const override { return false; }
+
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }

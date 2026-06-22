@@ -88,6 +88,8 @@ public:
 
     bool isDictionary() const override { return true; }
     bool supportsTruncate() const override { return false; }
+    /// A `Dictionary` engine table is read-only and cannot be a source for a materialized view.
+    bool supportsInserts() const override { return false; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     void shutdown(bool is_drop) override;
     void startup() override;

@@ -161,6 +161,22 @@ StorageMaterializedView::StorageMaterializedView(
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, mv_db_context);
     if (select.select_table_id)
     {
+        /// Forbid creating a materialized view whose source table can never receive inserts
+        /// (e.g. `Merge`, `Dictionary` or a normal `View`): such a view would never be triggered,
+        /// which is almost always a user mistake. Engines that feed views through background
+        /// consumption (`Kafka`, `RabbitMQ`, ...) are exempt via `noPushingToViewsOnInserts`.
+        /// Only check on a fresh CREATE: on ATTACH, restore or replicated DDL the view already exists.
+        if (mode <= LoadingStrictnessLevel::CREATE)
+        {
+            if (auto source_table = DatabaseCatalog::instance().tryGetTable(select.select_table_id, getContext());
+                source_table && !source_table->supportsInserts() && !source_table->noPushingToViewsOnInserts())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot create materialized view {}: its source table {} has engine {} that does not support inserts, "
+                    "so the view would never receive any data. "
+                    "Use a refreshable materialized view if you need to periodically recompute the query over such a table.",
+                    table_id_.getNameForLogs(), select.select_table_id.getNameForLogs(), source_table->getName());
+        }
+
         auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
 
         auto max_materialized_views_count_for_table = getContext()->getServerSettings()[ServerSetting::max_materialized_views_count_for_table];

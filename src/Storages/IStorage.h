@@ -150,6 +150,14 @@ public:
     /// Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas.
     virtual bool supportsReplication() const { return false; }
 
+    /// Returns true if the storage can accept INSERT queries (it implements `write`).
+    /// The default is permissive; read-only engines (such as `Merge`, `View` or `Dictionary`)
+    /// override it to return false. It is used, in particular, to forbid creating a materialized
+    /// view whose source table can never receive inserts, because such a view would never be
+    /// triggered. Engines that feed materialized views through background consumption (`Kafka`,
+    /// `RabbitMQ`, ...) report this via `noPushingToViewsOnInserts` instead.
+    virtual bool supportsInserts() const { return true; }
+
     /// Returns true if the storage supports parallel insert.
     /// If false, each INSERT query will call write() only once.
     /// Different INSERT queries may write in parallel regardless of this value.

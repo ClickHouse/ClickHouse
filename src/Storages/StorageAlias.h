@@ -122,6 +122,7 @@ public:
     /// Capabilities that validate a user-requested operation resolve the target table and report UNKNOWN_TABLE for a
     /// broken Alias. Advisory capability probes used for optimization, routing, execution strategy, or system-table
     /// metadata fail closed (return false).
+    bool supportsInserts() const override { return getTargetTable()->supportsInserts(); }
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }

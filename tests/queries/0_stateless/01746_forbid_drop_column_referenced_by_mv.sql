@@ -113,27 +113,22 @@ DROP TABLE IF EXISTS `01746_merge`;
 CREATE TABLE `01746_merge` AS `01746_merge_t`
 ENGINE = Merge(currentDatabase(), '01746_merge_t');
 
+-- A materialized view cannot be created on a `Merge` table: it does not support inserts,
+-- so the view would never receive any data (see https://github.com/ClickHouse/ClickHouse/issues/5207).
 DROP TABLE IF EXISTS `01746_merge_mv`;
 CREATE MATERIALIZED VIEW `01746_merge_mv`
 ENGINE = Memory AS
 SELECT
     n1,
     n2
-FROM `01746_merge`;
+FROM `01746_merge`; -- { serverError BAD_ARGUMENTS }
 
-ALTER TABLE `01746_merge`
-    DROP COLUMN n1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-
-ALTER TABLE `01746_merge`
-    DROP COLUMN n2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-
--- ok
+-- ok, no materialized view references these columns
 ALTER TABLE `01746_merge`
     DROP COLUMN n3;
 
 DROP TABLE `01746_merge_t`;
 DROP TABLE `01746_merge`;
-DROP TABLE `01746_merge_mv`;
 
 -- Buffer
 DROP TABLE IF EXISTS `01746_buffer_t`;
