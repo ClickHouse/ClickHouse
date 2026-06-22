@@ -9,6 +9,7 @@
 #include <vector>
 #include <base/StringViewHash.h>
 #include <base/defines.h>
+#include <base/sort.h>
 #include <fmt/ranges.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -224,11 +225,20 @@ struct TokenPolicy
 };
 
 using ClassCountMap = HashMap<UInt32, UInt64, HashCRC32<UInt32>>;
-using ClassCountMaps = VectorWithMemoryTracking<ClassCountMap>;
 
 using NGramIndexMap = HashMap<std::string_view, UInt32, StringViewHash>;
+using ClassIndexMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>;
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 using LogProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
+
+/// One observed `(n-gram, class, count)` row, packed so the whole set can be sorted and grouped cheaply during
+/// finalize: `key = (n-gram index << 32) | class id`. This flat list replaces a per-n-gram count map, which is
+/// what made loading allocate gigabytes (one hash table per distinct n-gram).
+struct NaiveBayesEntry
+{
+    UInt64 key;
+    UInt64 count;
+};
 
 /// How class prior probabilities are determined when finalizing a model.
 enum class PriorsMode : uint8_t
@@ -238,61 +248,15 @@ enum class PriorsMode : uint8_t
     Explicit,       /// Probabilities given explicitly per class.
 };
 
-/// The present `(class, delta)` pairs of one n-gram occupy a contiguous range of the flat slice arrays.
-struct NGramSlice
-{
-    UInt32 offset;
-    UInt32 length;
-};
-
-/// An immutable, query-ready Naive Bayes model in a flat layout. Everything that does not depend on the
-/// input is precomputed at finalize time, so classification is reduced to additions:
+/// Holds all of the state of a Naive Bayes model for one tokenizer policy. It is accumulated by a trainer,
+/// then compiled in place into the query-ready compressed-sparse-row (CSR) form, and finally owned by the
+/// immutable model. It owns an arena and is therefore neither copyable nor movable (the n-gram keys are views
+/// into that arena); it is always held through a smart pointer so the owning trainer/model can move cheaply.
 ///
-///     score[c] = log_prior[c] + K * base[c] + sum over present n-grams of delta[n-gram, c]
-///
-/// where `K` is the number of n-grams in the input (present or absent), `base[c] = log(alpha) - log(denom[c])`
-/// is the contribution of an absent n-gram, and `delta[n-gram, c] = log(count + alpha) - log(alpha)` is the
-/// extra contribution when the n-gram is present. There is no logarithm or division on the query path.
-///
-/// Classes are indexed densely as `0 .. C - 1` in ascending `class_id` order. The present pairs of every
-/// n-gram are stored once in two parallel arrays (structure of arrays); a single hash probe per n-gram maps
-/// it to its slice. The object owns the arena holding the n-gram key bytes, so it is neither copyable nor
-/// movable and is always held through a smart pointer.
-template <Tokenizer Tok>
-struct CompiledNaiveBayes
-{
-    /// N-gram size.
-    UInt32 n;
-
-    /// Start / end padding tokens, kept so the query path pads exactly as the model was built.
-    String start_token;
-    String end_token;
-
-    Tok tokenizer;
-
-    /// Dense class index -> original class id, ascending.
-    PODArray<UInt32> class_id_of;
-    /// Dense class index -> log prior probability.
-    PODArray<Float64> log_prior;
-    /// Dense class index -> contribution of an absent n-gram, `log(alpha) - log(denom[c])`.
-    PODArray<Float32> base;
-
-    /// N-gram -> the slice of `slice_class_index` / `slice_delta` holding its present `(class, delta)` pairs.
-    HashMap<std::string_view, NGramSlice, StringViewHash> ngram_to_slice;
-    /// Parallel arrays of the present pairs of every n-gram (structure of arrays).
-    PODArray<UInt32> slice_class_index;
-    PODArray<Float32> slice_delta;
-
-    /// Owns the n-gram key bytes that the keys of `ngram_to_slice` view into.
-    Arena pool;
-
-    size_t numClasses() const { return class_id_of.size(); }
-};
-
-/// Holds the mutable state accumulated while training a model for one tokenizer policy. It owns an arena and
-/// is therefore neither copyable nor movable, because the n-gram keys stored in the index are views into that
-/// arena. It is transient: a trainer builds it, `finalize` compiles it into a `CompiledNaiveBayes`, and it is
-/// then discarded, reclaiming the bulky per-n-gram count maps.
+/// After compilation, the present `(class, delta)` pairs of the n-gram whose index is `i` occupy
+/// `slice_class_index[slice_offsets[i] .. slice_offsets[i + 1])` and the matching `slice_delta` range, where
+/// the index is the value stored for the n-gram in `ngram_to_index`. The bulky per-n-gram count maps used
+/// during accumulation are freed once the CSR arrays are built.
 template <Tokenizer Tok>
 struct NaiveBayesData
 {
@@ -305,45 +269,55 @@ struct NaiveBayesData
     {
     }
 
-    /// N-gram size
+    /// N-gram size.
     UInt32 n;
-
-    /// Laplace smoothing parameter
+    /// Laplace smoothing parameter.
     double alpha;
-
-    /// Start / end tokens to pad the input string - taken from Tok at compile time
+    /// Start / end padding tokens, kept so the query path pads exactly as the model was built.
     String start_token;
     String end_token;
-
     Tok tokenizer;
 
-    /// Index -> single ngram's class count map
-    ClassCountMaps all_ngram_class_counts;
-
-    /// Ngram -> index of the class count map in all_ngram_class_counts
-    NGramIndexMap ngram_to_class_count_index;
-
-    /// Class -> total count over all ngrams
+    /// Arena owning all the n-gram key bytes that `ngram_to_index` views into.
+    Arena pool;
+    /// N-gram -> its dense index (also the row index of the CSR arrays).
+    NGramIndexMap ngram_to_index;
+    /// One row per observation. Sorted and grouped into the CSR arrays at finalize, then freed.
+    PODArray<NaiveBayesEntry> entries;
+    /// Class -> total count over all n-grams. Used while finalizing.
     ClassCountMap class_totals;
 
-    /// Class -> log prior probability
-    LogProbabilityMap log_class_priors;
+    /// Dense class index -> original class id, ascending.
+    PODArray<UInt32> class_id_of;
+    /// Dense class index -> log prior probability.
+    PODArray<Float64> log_prior;
+    /// Dense class index -> contribution of an absent n-gram, `log(alpha) - log(denom[c])`.
+    PODArray<Float32> base;
 
-    /// Vocabulary size is the number of distinct n-grams in the model across all classes
-    size_t vocabulary_size = 0;
-
-    /// Arena to own all the key strings
-    Arena pool;
+    /// Compressed-sparse-row representation of the present `(class, delta)` pairs, indexed by n-gram index.
+    PODArray<UInt32> slice_offsets;
+    PODArray<UInt32> slice_class_index;
+    PODArray<Float32> slice_delta;
 };
 
-/// An immutable, ready-to-query Naive Bayes model. An instance can only be produced by finalizing a trainer,
-/// which guarantees that a model is always fully built before it can be used for classification.
+/// An immutable, ready-to-query Naive Bayes model. Everything that does not depend on the input is precomputed
+/// at finalize time, so classification is reduced to additions:
+///
+///     score[c] = log_prior[c] + K * base[c] + sum over present n-grams of delta[n-gram, c]
+///
+/// where `K` is the number of n-grams in the input (present or absent), `base[c] = log(alpha) - log(denom[c])`
+/// is the contribution of an absent n-gram, and `delta[n-gram, c] = log(count + alpha) - log(alpha)` is the
+/// extra contribution when the n-gram is present. There is no logarithm or division on the query path: a
+/// single hash probe maps an n-gram to its CSR slice, which is then streamed into the per-class scores.
+///
+/// An instance can only be produced by finalizing a trainer, which guarantees a model is fully built before
+/// it can be used.
 template <Tokenizer Tok>
 class NaiveBayesModel
 {
 public:
-    explicit NaiveBayesModel(std::unique_ptr<CompiledNaiveBayes<Tok>> compiled_)
-        : compiled(std::move(compiled_))
+    explicit NaiveBayesModel(std::unique_ptr<NaiveBayesData<Tok>> data_)
+        : data(std::move(data_))
     {
     }
 
@@ -351,7 +325,7 @@ public:
     UInt32 classify(std::string_view input, NaiveBayesScratch & scratch) const
     {
         computeScores(input, scratch);
-        return compiled->class_id_of[argmax(scratch.scores)];
+        return data->class_id_of[argmax(scratch.scores)];
     }
 
     /// Returns the best class and its normalized probability.
@@ -360,7 +334,7 @@ public:
         computeScores(input, scratch);
         softmaxInto(scratch);
         const size_t best = argmax(scratch.scores);
-        return {compiled->class_id_of[best], scratch.probabilities[best].second};
+        return {data->class_id_of[best], scratch.probabilities[best].second};
     }
 
     /// Computes every class's normalized probability, leaving them in `scratch.probabilities` sorted by
@@ -397,26 +371,23 @@ public:
 
     UInt64 getAllocatedBytes() const
     {
-        UInt64 total = sizeof(*this) + sizeof(CompiledNaiveBayes<Tok>);
-        total += compiled->pool.allocatedBytes();
-        total += compiled->ngram_to_slice.getBufferSizeInBytes();
-        total += compiled->slice_class_index.allocated_bytes();
-        total += compiled->slice_delta.allocated_bytes();
-        total += compiled->class_id_of.allocated_bytes();
-        total += compiled->log_prior.allocated_bytes();
-        total += compiled->base.allocated_bytes();
+        UInt64 total = sizeof(*this) + sizeof(NaiveBayesData<Tok>);
+        total += data->pool.allocatedBytes();
+        total += data->ngram_to_index.getBufferSizeInBytes();
+        total += data->class_id_of.allocated_bytes() + data->log_prior.allocated_bytes() + data->base.allocated_bytes();
+        total += data->slice_offsets.allocated_bytes() + data->slice_class_index.allocated_bytes() + data->slice_delta.allocated_bytes();
         return total;
     }
 
-    size_t getElementCount() const { return compiled->ngram_to_slice.size(); }
+    size_t getElementCount() const { return data->ngram_to_index.size(); }
 
 private:
     /// Fills `scratch.scores` (sized to the number of classes) with the unnormalized log-probability of every
     /// class for the given input.
     void computeScores(std::string_view input, NaiveBayesScratch & scratch) const
     {
-        const auto & model = *compiled;
-        const size_t num_classes = model.numClasses();
+        const auto & model = *data;
+        const size_t num_classes = model.class_id_of.size();
 
         auto & scores = scratch.scores;
         scores.resize(num_classes);
@@ -427,12 +398,14 @@ private:
         auto accumulate = [&](std::string_view ngram)
         {
             ++num_ngrams;
-            const auto it = model.ngram_to_slice.find(ngram);
+            const auto it = model.ngram_to_index.find(ngram);
             if (!it)
                 return;
-            const NGramSlice slice = it->getMapped();
-            for (UInt32 j = 0; j < slice.length; ++j)
-                scores[model.slice_class_index[slice.offset + j]] += static_cast<double>(model.slice_delta[slice.offset + j]);
+            const UInt32 index = it->getMapped();
+            const UInt32 begin = model.slice_offsets[index];
+            const UInt32 end = model.slice_offsets[index + 1];
+            for (UInt32 j = begin; j < end; ++j)
+                scores[model.slice_class_index[j]] += static_cast<double>(model.slice_delta[j]);
         };
         model.tokenizer.enumerateNgrams(input, model.n, model.start_token, model.end_token, scratch, accumulate);
 
@@ -454,8 +427,7 @@ private:
     /// numerically stable log-sum-exp method, pairing each with its class id.
     void softmaxInto(NaiveBayesScratch & scratch) const
     {
-        const auto & model = *compiled;
-        const size_t num_classes = model.numClasses();
+        const size_t num_classes = data->class_id_of.size();
         const auto & scores = scratch.scores;
 
         double max_log = -std::numeric_limits<double>::infinity();
@@ -468,7 +440,7 @@ private:
         for (size_t c = 0; c < num_classes; ++c)
         {
             const double exp_val = std::exp(scores[c] - max_log);
-            probabilities[c] = {model.class_id_of[c], exp_val};
+            probabilities[c] = {data->class_id_of[c], exp_val};
             sum_exp += exp_val;
         }
 
@@ -476,7 +448,7 @@ private:
             entry.second /= sum_exp;
     }
 
-    std::unique_ptr<CompiledNaiveBayes<Tok>> compiled;
+    std::unique_ptr<NaiveBayesData<Tok>> data;
 };
 
 /// Accumulates class, n-gram, and count observations and then compiles them into an immutable model.
@@ -495,52 +467,39 @@ public:
         ArenaKeyHolder key_holder{ngram, data->pool};
         NGramIndexMap::LookupResult it = nullptr;
         bool inserted = false;
-
-        data->ngram_to_class_count_index.emplace(key_holder, it, inserted);
+        data->ngram_to_index.emplace(key_holder, it, inserted);
 
         if (inserted)
-        {
-            it->getMapped() = static_cast<UInt32>(data->all_ngram_class_counts.size());
-            data->all_ngram_class_counts.emplace_back();
-        }
+            it->getMapped() = static_cast<UInt32>(data->ngram_to_index.size() - 1);
 
-        data->all_ngram_class_counts[it->getMapped()][class_id] += count;
+        const UInt32 index = it->getMapped();
+        data->entries.push_back(NaiveBayesEntry{(static_cast<UInt64>(index) << 32) | class_id, count});
         data->class_totals[class_id] += count;
     }
 
-    /// Computes the class priors according to the given mode and compiles the finished model.
-    /// The explicit priors are consulted, and required, only when the mode is explicit.
+    /// Computes the class priors according to the given mode, compiles the accumulated counts into the flat CSR
+    /// arrays (reusing the existing n-gram index and arena), frees the per-n-gram count maps, and returns the
+    /// finished model. The explicit priors are consulted, and required, only when the mode is explicit.
     NaiveBayesModel<Tok> finalize(PriorsMode mode, const ProbabilityMap & explicit_priors = {})
     {
-        if (data->ngram_to_class_count_index.empty())
+        if (data->ngram_to_index.empty())
             throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "No n-grams found in the model");
 
+        LogProbabilityMap log_class_priors;
         switch (mode)
         {
             case PriorsMode::Uniform:
-                computeUniformPriors();
+                computeUniformPriors(log_class_priors);
                 break;
             case PriorsMode::Proportional:
-                computeProportionalPriors();
+                computeProportionalPriors(log_class_priors);
                 break;
             case PriorsMode::Explicit:
-                setExplicitPriors(explicit_priors);
+                setExplicitPriors(explicit_priors, log_class_priors);
                 break;
         }
 
-        data->vocabulary_size = data->ngram_to_class_count_index.size();
-        return compile();
-    }
-
-private:
-    /// Compiles the accumulated counts and priors into the flat, query-ready model.
-    NaiveBayesModel<Tok> compile()
-    {
-        auto compiled = std::make_unique<CompiledNaiveBayes<Tok>>();
-        compiled->n = data->n;
-        compiled->start_token = data->start_token;
-        compiled->end_token = data->end_token;
-        compiled->tokenizer = data->tokenizer;
+        const size_t vocabulary_size = data->ngram_to_index.size();
 
         /// Index the classes densely in ascending order.
         std::vector<UInt32> classes;
@@ -550,69 +509,80 @@ private:
         std::sort(classes.begin(), classes.end());
 
         const size_t num_classes = classes.size();
-        HashMap<UInt32, UInt32, HashCRC32<UInt32>> class_to_index;
-        compiled->class_id_of.resize(num_classes);
-        compiled->log_prior.resize(num_classes);
-        compiled->base.resize(num_classes);
+        ClassIndexMap class_to_index;
+        data->class_id_of.resize(num_classes);
+        data->log_prior.resize(num_classes);
+        data->base.resize(num_classes);
 
         const double log_alpha = std::log(data->alpha);
-        const double smoothing = data->alpha * static_cast<double>(data->vocabulary_size);
+        const double smoothing = data->alpha * static_cast<double>(vocabulary_size);
         for (size_t c = 0; c < num_classes; ++c)
         {
             const UInt32 class_id = classes[c];
             class_to_index[class_id] = static_cast<UInt32>(c);
-            compiled->class_id_of[c] = class_id;
-            compiled->log_prior[c] = data->log_class_priors[class_id];
+            data->class_id_of[c] = class_id;
+            data->log_prior[c] = log_class_priors[class_id];
             const double denom = static_cast<double>(data->class_totals[class_id]) + smoothing;
-            compiled->base[c] = static_cast<Float32>(log_alpha - std::log(denom));
+            data->base[c] = static_cast<Float32>(log_alpha - std::log(denom));
         }
 
-        /// Flatten the present `(class, delta)` pairs of every n-gram, copying each key into the model's arena.
-        size_t total_pairs = 0;
-        for (const auto & class_counts : data->all_ngram_class_counts)
-            total_pairs += class_counts.size();
-        compiled->slice_class_index.reserve(total_pairs);
-        compiled->slice_delta.reserve(total_pairs);
+        /// Sort the observations by `key = (n-gram index << 32) | class`, then group them into the flat CSR
+        /// arrays in a single linear pass. Because the sort orders by n-gram index first, the rows of each
+        /// n-gram are contiguous and appear in ascending index order, so `slice_offsets` is filled directly;
+        /// equal `(n-gram, class)` rows are adjacent and their counts are summed, which folds duplicate source
+        /// rows. The n-gram keys and the arena are left untouched. This replaces a per-n-gram count map and so
+        /// avoids allocating one hash table per distinct n-gram during load.
+        auto & entries = data->entries;
+        ::sort(entries.begin(), entries.end(), [](const NaiveBayesEntry & a, const NaiveBayesEntry & b) { return a.key < b.key; });
 
-        for (const auto & entry : data->ngram_to_class_count_index)
+        data->slice_offsets.resize(vocabulary_size + 1);
+        data->slice_class_index.reserve(entries.size());
+        data->slice_delta.reserve(entries.size());
+
+        const size_t num_entries = entries.size();
+        size_t i = 0;
+        for (size_t index = 0; index < vocabulary_size; ++index)
         {
-            const std::string_view key = entry.getKey();
-            const char * stored = compiled->pool.insert(key.data(), key.size());
-
-            const auto & class_counts = data->all_ngram_class_counts[entry.getMapped()];
-            const auto offset = static_cast<UInt32>(compiled->slice_class_index.size());
-            for (const auto & class_count : class_counts)
+            data->slice_offsets[index] = static_cast<UInt32>(data->slice_class_index.size());
+            while (i < num_entries && static_cast<size_t>(entries[i].key >> 32) == index)
             {
-                const double delta = std::log(static_cast<double>(class_count.getMapped()) + data->alpha) - log_alpha;
-                compiled->slice_class_index.push_back(class_to_index[class_count.getKey()]);
-                compiled->slice_delta.push_back(static_cast<Float32>(delta));
+                const UInt64 key = entries[i].key;
+                const UInt32 class_id = static_cast<UInt32>(key & 0xFFFFFFFFULL);
+                UInt64 summed_count = entries[i].count;
+                for (++i; i < num_entries && entries[i].key == key; ++i)
+                    summed_count += entries[i].count;
+                data->slice_class_index.push_back(class_to_index[class_id]);
+                data->slice_delta.push_back(static_cast<Float32>(std::log(static_cast<double>(summed_count) + data->alpha) - log_alpha));
             }
-            const auto length = static_cast<UInt32>(compiled->slice_class_index.size() - offset);
-
-            compiled->ngram_to_slice[std::string_view(stored, key.size())] = NGramSlice{offset, length};
         }
+        data->slice_offsets[vocabulary_size] = static_cast<UInt32>(data->slice_class_index.size());
 
-        return NaiveBayesModel<Tok>(std::move(compiled));
+        /// Reclaim the observation buffer now that the CSR arrays hold the same information.
+        data->entries = PODArray<NaiveBayesEntry>{};
+        data->class_totals = ClassCountMap{};
+
+        return NaiveBayesModel<Tok>(std::move(data));
     }
 
-    void computeUniformPriors()
+private:
+    void computeUniformPriors(LogProbabilityMap & log_class_priors) const
     {
         const double uniform_log_prob = std::log(1.0 / static_cast<double>(data->class_totals.size()));
         for (const auto & [class_id, _] : data->class_totals)
-            data->log_class_priors[class_id] = uniform_log_prob;
+            log_class_priors[class_id] = uniform_log_prob;
     }
 
-    void computeProportionalPriors()
+    void computeProportionalPriors(LogProbabilityMap & log_class_priors) const
     {
         UInt64 total = 0;
         for (const auto & [_, count] : data->class_totals)
             total += count;
 
         for (const auto & [class_id, count] : data->class_totals)
-            data->log_class_priors[class_id] = std::log(static_cast<double>(count) / static_cast<double>(total));
+            log_class_priors[class_id] = std::log(static_cast<double>(count) / static_cast<double>(total));
     }
 
-    void setExplicitPriors(const ProbabilityMap & priors)
+    void setExplicitPriors(const ProbabilityMap & priors, LogProbabilityMap & log_class_priors) const
     {
         /// Every class in the model must have exactly one prior. Together with the requirement that the
         /// number of priors equals the number of classes, this guarantees that no prior refers to a class
@@ -643,7 +613,7 @@ private:
         }
 
         for (const auto & [class_id, prior] : priors)
-            data->log_class_priors[class_id] = std::log(prior);
+            log_class_priors[class_id] = std::log(prior);
     }
 
     std::unique_ptr<NaiveBayesData<Tok>> data;

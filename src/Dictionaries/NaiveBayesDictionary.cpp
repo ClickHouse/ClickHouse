@@ -129,6 +129,10 @@ void NaiveBayesDictionary::loadData()
             configuration.mode);
     }();
 
+    /// The block places the key columns first and the attribute columns after them. The key is the n-gram
+    /// string, the first attribute is the class id, and the second attribute is the count.
+    const size_t key_size = dict_struct.getKeysSize();
+
     MutableColumnPtr ngram_acc;
     MutableColumnPtr class_id_acc;
     MutableColumnPtr count_acc;
@@ -143,22 +147,16 @@ void NaiveBayesDictionary::loadData()
         Block block;
         while (executor.pull(block))
         {
-            /// The block places the key columns first and the attribute columns after them. The key is the
-            /// n-gram string, the first attribute is the class id, and the second attribute is the count.
-            const size_t key_size = dict_struct.getKeysSize();
-
+            const size_t rows = block.rows();
             const auto & ngram_col = block.safeGetByPosition(0).column;
             const auto & class_id_col = block.safeGetByPosition(key_size).column;
             const auto & count_col = block.safeGetByPosition(key_size + 1).column;
 
-            const size_t rows = block.rows();
             for (size_t i = 0; i < rows; ++i)
             {
                 const std::string_view ngram_sv = ngram_col->getDataAt(i);
-
                 const auto class_id = static_cast<UInt32>(class_id_col->getUInt(i));
                 const UInt64 count = count_col->getUInt(i);
-
                 std::visit([&](auto & t) { t.addNgram(class_id, ngram_sv, count); }, trainer);
             }
 
@@ -181,7 +179,7 @@ void NaiveBayesDictionary::loadData()
     for (const auto & [class_id, prob] : configuration.explicit_priors)
         explicit_priors[class_id] = prob;
 
-    /// Finalizing the trainer computes the priors and moves the trained state into the immutable model.
+    /// Finalizing the trainer computes the priors, compiles the flat model, and yields the immutable model.
     classifier.emplace(std::visit(
         [&](auto & t) -> Classifier { return Classifier{t.finalize(configuration.priors_mode, explicit_priors)}; },
         trainer));
