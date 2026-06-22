@@ -20,6 +20,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -69,6 +70,13 @@ bool hasMaterializedTextIndex(
     }
 
     return false;
+}
+
+NameSet collectRequiredSourceColumns(const ASTPtr & expression)
+{
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(expression);
+    return columns_context.requiredColumns();
 }
 
 /// Columns absent in part may depend on other absent columns so we are
@@ -140,11 +148,10 @@ bool injectRequiredColumnsRecursively(
     if (!column_default || !column_default->expression)
         return false;
 
-    /// collect identifiers required for evaluation
-    IdentifierNameSet identifiers;
+    /// Collect identifiers required for evaluation.
     auto default_expression = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, storage_snapshot->metadata->getColumns(), context);
     validateNoCyclicAliasesAfterExpansion(column_name, default_expression, storage_snapshot->metadata->getColumns(), context);
-    default_expression->collectIdentifierNames(identifiers);
+    auto identifiers = collectRequiredSourceColumns(default_expression);
 
     bool result = false;
     for (const auto & identifier : identifiers)
@@ -217,8 +224,7 @@ void injectRequiredColumnsForNullableDefaultConversions(
         auto default_expression = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, storage_snapshot->metadata->getColumns(), context);
         validateNoCyclicAliasesAfterExpansion(column_name, default_expression, storage_snapshot->metadata->getColumns(), context);
 
-        IdentifierNameSet identifiers;
-        default_expression->collectIdentifierNames(identifiers);
+        auto identifiers = collectRequiredSourceColumns(default_expression);
 
         for (const auto & identifier : identifiers)
         {
