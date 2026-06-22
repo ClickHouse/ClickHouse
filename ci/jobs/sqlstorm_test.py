@@ -3,7 +3,6 @@
 import html
 import json
 import os
-import sys
 from pathlib import Path
 
 from praktika import Secret
@@ -207,7 +206,6 @@ def check_thresholds(stats):
     passed = True
 
     total = stats.get("total", 0)
-    success = stats.get("success", 0)
     success_rate = stats.get("success_rate", 0)
 
     if total < MIN_TOTAL_QUERIES:
@@ -492,7 +490,9 @@ def main():
 
         def run_benchmark():
             nonlocal query_results, stats
-            ok = Shell.check(
+            # Run the benchmark; its exit code is ignored on purpose, the
+            # thresholds are evaluated separately from the loaded results.
+            Shell.check(
                 f"python3 {sqlstorm_dir}/runner.py"
                 f" --query-dir {query_dir}"
                 f" --data-dir {extracted_dir}"
