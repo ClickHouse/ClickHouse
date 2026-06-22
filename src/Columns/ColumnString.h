@@ -10,7 +10,6 @@
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeString.h>
 
 #include <base/defines.h>
 
@@ -220,8 +219,9 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override;
 

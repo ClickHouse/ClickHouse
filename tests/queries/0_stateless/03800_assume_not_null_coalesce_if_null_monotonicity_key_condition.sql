@@ -10,7 +10,6 @@ DROP VIEW IF EXISTS view_assume;
 DROP TABLE IF EXISTS test;
 
 SET session_timezone = 'UTC';
-SET query_plan_merge_expressions = 1; -- pin to avoid EXPLAIN output changes from randomization
 
 CREATE TABLE test
 (

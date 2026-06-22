@@ -2,6 +2,7 @@ SET enable_analyzer=1;
 SET rewrite_in_to_join=1;
 SET allow_experimental_correlated_subqueries=1;
 SET correlated_subqueries_default_join_kind = 'left';
+SET enable_add_distinct_to_in_subqueries = 0; -- prevents DISTINCT addition changing IN→JOIN rewrite plan shape
 
 -- {echoOn}
 -- Check that with these settings the plan contains a join
@@ -42,7 +43,7 @@ EXPLAIN keep_logical_steps=1, description=0
 SELECT *
 FROM numbers(8)
 WHERE number IN (select number from numbers(5))
-SETTINGS enable_join_runtime_filters = 0;
+SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 0, query_plan_merge_filters = 0, query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False; ANY JOIN not converted to SEMI, leaving a separate Filter step above JoinLogical
 
 -- Same subquery as CTE
 EXPLAIN keep_logical_steps=1, description=0
@@ -51,7 +52,7 @@ WITH
 SELECT *
 FROM numbers(8)
 WHERE number IN t
-SETTINGS enable_join_runtime_filters = 0;
+SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 0, query_plan_merge_filters = 0, query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False; ANY JOIN not converted to SEMI, leaving a separate Filter step above JoinLogical
 
 
 WITH

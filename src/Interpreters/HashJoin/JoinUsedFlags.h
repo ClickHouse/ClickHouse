@@ -24,7 +24,7 @@ public:
     /// Index is the offset in FindResult
     UsedFlagsForColumns per_offset_flags;
 
-    bool need_flags;
+    bool need_flags{};
 
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
@@ -34,7 +34,7 @@ public:
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            assert(per_offset_flags.size() <= size);
+            chassert(per_offset_flags.size() <= size);
             need_flags = true;
             // For one disjunct clause case, we don't need to reinit each time we call addBlockToJoin.
             // and there is no value inserted in this JoinUsedFlags before addBlockToJoin finish.
@@ -44,12 +44,24 @@ public:
         }
     }
 
+    /// Update size for vector with flags same as `reinit` but allows the updated size to be smaller.
+    /// Must be called only before using this structure.
+    template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
+    void reinitAllowShrinking(size_t size)
+    {
+        if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
+        {
+            need_flags = true;
+            per_offset_flags = std::vector<std::atomic_bool>(size);
+        }
+    }
+
     template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
     void reinit(const Columns * columns, const ScatteredBlock::Selector & selector)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            assert(per_row_flags[columns].size() <= columns->at(0)->size());
+            chassert(per_row_flags[columns].size() <= columns->at(0)->size());
             need_flags = true;
             per_row_flags[columns] = std::vector<std::atomic_bool>(columns->at(0)->size());
 

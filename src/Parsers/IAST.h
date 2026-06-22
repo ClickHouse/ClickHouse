@@ -51,6 +51,17 @@ private:
 
 public:
 
+    /// Bit 31 of `flags_storage` is reserved for the `parenthesized` flag — see accessors below.
+    /// Derived `BitfieldStruct` definitions must keep `RESERVED_BITS <= 31`.
+    static constexpr UInt32 PARENTHESIZED_BIT_MASK = UInt32{1} << 31;
+
+    /// If the element has extra parentheses around it, e.g., in "a + (b)", b has extra parentheses.
+    bool isParenthesized() const { return (flags_storage & PARENTHESIZED_BIT_MASK) != 0; }
+    void setParenthesized(bool value)
+    {
+        flags_storage = (flags_storage & ~PARENTHESIZED_BIT_MASK) | (value ? PARENTHESIZED_BIT_MASK : 0);
+    }
+
     virtual ~IAST();
     IAST() = default;
     IAST(const IAST & other);
@@ -61,12 +72,13 @@ public:
     ///   - using ParentFlags = <parent's flags struct or void for root>;
     ///   - static constexpr UInt32 RESERVED_BITS = <total bits used including parent>;
     ///   - UInt32 _parent_reserved : ParentFlags::RESERVED_BITS; (if ParentFlags is not void)
+    /// The high bit (31) is reserved for IAST's `parenthesized` flag, so RESERVED_BITS must be <= 31.
     template <typename BitfieldStruct>
     BitfieldStruct & flags()
     {
         static_assert(std::is_standard_layout_v<BitfieldStruct>);
         static_assert(sizeof(BitfieldStruct) == sizeof(flags_storage), "Bitfield struct must be the same size as flags_storage");
-        static_assert(BitfieldStruct::RESERVED_BITS <= 32, "RESERVED_BITS exceeds 32");
+        static_assert(BitfieldStruct::RESERVED_BITS <= 31, "RESERVED_BITS exceeds 31 (bit 31 is reserved for parenthesized)");
 
         if constexpr (!std::is_void_v<typename BitfieldStruct::ParentFlags>)
         {
@@ -84,7 +96,7 @@ public:
     {
         static_assert(std::is_standard_layout_v<BitfieldStruct>);
         static_assert(sizeof(BitfieldStruct) == sizeof(flags_storage), "Bitfield struct must be the same size as flags_storage");
-        static_assert(BitfieldStruct::RESERVED_BITS <= 32, "RESERVED_BITS exceeds 32");
+        static_assert(BitfieldStruct::RESERVED_BITS <= 31, "RESERVED_BITS exceeds 31 (bit 31 is reserved for parenthesized)");
 
         if constexpr (!std::is_void_v<typename BitfieldStruct::ParentFlags>)
         {
@@ -239,6 +251,62 @@ public:
         field = nullptr;
     }
 
+    void reset(ASTPtr & field)
+    {
+        if (!field)
+            return;
+
+        auto child = children.begin();
+        while (child != children.end())
+        {
+            if (child->get() == field.get())
+                break;
+
+            child++;
+        }
+
+        if (child == children.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+
+        children.erase(child);
+        field.reset();
+    }
+
+    void set(ASTPtr & field, ASTPtr child)
+    {
+        if (!child)
+            return;
+
+        children.push_back(child);
+        field = std::move(child);
+    }
+
+    void replace(ASTPtr & field, ASTPtr child)
+    {
+        if (!child)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
+
+        for (ASTPtr & current_child : children)
+        {
+            if (current_child.get() == field.get())
+            {
+                current_child = child;
+                field = std::move(child);
+                return;
+            }
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+    }
+
+    void setOrReplace(ASTPtr & field, ASTPtr child)
+    {
+        if (field)
+            replace(field, std::move(child));
+        else
+            set(field, std::move(child));
+    }
+
     /// After changing one of `children` elements, update the corresponding member pointer if needed.
     void updatePointerToChild(const IAST * old_ptr, const ASTPtr & new_ptr)
     {
@@ -311,18 +379,20 @@ public:
         const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
         bool parent_has_trailing_settings = false; /// A parent ASTQueryWithOutput will append SETTINGS after this node's output.
         bool has_trailing_output_options = false; /// A parent ASTQueryWithOutput has trailing output options (SETTINGS, FORMAT, INTO OUTFILE).
+        bool disable_from_first_syntax = false; /// Disable FROM-first syntax for SELECTs inside INSERT (to avoid parsing ambiguity).
+        /// Set by a parent formatter that has explicitly emitted `(` around this child to indicate
+        /// that the child should not emit its own `parenthesized` parens (which would duplicate the parent's).
+        /// Consumed (cleared) by `IAST::format` so it only applies one level deep.
+        bool wrapped_in_parens = false;
+        /// Set by `IAST::format` when the node has both `isParenthesized()` and a non-empty alias,
+        /// to tell `ASTWithAlias::formatImpl` to emit `(expr) AS alias` instead of `(expr AS alias)`.
+        /// This keeps the format-parse-format round-trip stable: `(expr) AS alias` re-parses with
+        /// `parenthesized=true` on the aliased node, which formats back to `(expr) AS alias`.
+        bool parenthesize_alias_inner_only = false;
     };
 
-    void format(WriteBuffer & ostr, const FormatSettings & settings) const
-    {
-        FormatState state;
-        formatImpl(ostr, settings, state, FormatStateStacked());
-    }
-
-    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-    {
-        formatImpl(ostr, settings, state, std::move(frame));
-    }
+    void format(WriteBuffer & ostr, const FormatSettings & settings) const;
+    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 
     /// TODO: Move more logic into this class (see https://github.com/ClickHouse/ClickHouse/pull/45649).
     struct FormattingBuffer
@@ -333,10 +403,7 @@ public:
         FormatStateStacked frame;
     };
 
-    void format(FormattingBuffer out) const
-    {
-        formatImpl(out.ostr, out.settings, out.state, out.frame);
-    }
+    void format(FormattingBuffer out) const;
 
     /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
     /// You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
@@ -404,15 +471,8 @@ public:
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
 protected:
-    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-    {
-        formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
-    }
-
-    virtual void formatImpl(FormattingBuffer /*out*/) const
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
-    }
+    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    virtual void formatImpl(FormattingBuffer /*out*/) const;
 
     bool childrenHaveSecretParts() const;
 

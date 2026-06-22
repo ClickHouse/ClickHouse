@@ -1,7 +1,6 @@
 #include <Common/ZooKeeper/KeeperSpans.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Interpreters/Context.h>
-#include <optional>
 
 namespace DB
 {
@@ -39,26 +38,40 @@ namespace
 #endif
 }
 
+const SpanDescriptor & ZooKeeperOpentelemetrySpans::getSpanDescriptor(KeeperSpan::Operation operation)
+{
+    static const SpanDescriptor descriptors[] = {
+    #define M(NAME, OP_NAME, KIND, HISTOGRAM) \
+        {OP_NAME, OpenTelemetry::SpanKind::KIND, HistogramMetrics::HISTOGRAM},
+        APPLY_FOR_KEEPER_SPANS(M)
+    #undef M
+    };
+    return descriptors[operation];
+}
+
 void ZooKeeperOpentelemetrySpans::maybeInitialize(
-    MaybeSpan & maybe_span,
-    const std::optional<OpenTelemetry::TracingContext> & parent_context,
+    KeeperSpan::Operation operation,
+    const OpenTelemetry::TracingContext * parent_context,
     UInt64 start_time_us)
 {
+    auto & maybe_span = maybe_spans[operation];
+
     chassert(maybe_span.start_time_us == 0);
-    chassert(maybe_span.span == std::nullopt);
+    chassert(maybe_span.span == nullptr);
 
     maybe_span.start_time_us = start_time_us;
 
     if (!parent_context)
         return;
 
-    maybe_span.span.emplace(OpenTelemetry::Span{
+    const auto & span_descriptor = getSpanDescriptor(operation);
+    maybe_span.span = std::make_unique<OpenTelemetry::Span>(OpenTelemetry::Span{
         .trace_id = parent_context->trace_id,
         .span_id = thread_local_rng(),
         .parent_span_id = parent_context->span_id,
-        .operation_name = String(maybe_span.operation_name),
+        .operation_name = String(span_descriptor.operation_name),
         .start_time_us = start_time_us,
-        .kind = maybe_span.kind,
+        .kind = span_descriptor.kind,
     });
 }
 
@@ -69,13 +82,7 @@ void ZooKeeperOpentelemetrySpans::maybeFinalizeImpl(
     const String & error_message,
     UInt64 finish_time_us)
 {
-    chassert(maybe_span.start_time_us != 0);
-
-    maybe_span.histogram.observe((finish_time_us - maybe_span.start_time_us) / 1000);
-
-    if (!maybe_span.span)
-        return;
-
+    chassert(maybe_span.span != nullptr);
     chassert(maybe_span.span->start_time_us != 0);
     chassert(maybe_span.span->span_id != 0);
     chassert(maybe_span.span->trace_id != UUID());

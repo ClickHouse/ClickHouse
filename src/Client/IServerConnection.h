@@ -37,7 +37,6 @@ struct Packet
     String columns_description;
     Progress progress;
     ProfileInfo profile_info;
-    std::vector<UUID> part_uuids;
 
     /// The part of parallel replicas protocol
     std::optional<InitialAllRangesAnnouncement> announcement;
@@ -152,6 +151,10 @@ public:
     virtual void setThrottler(const ThrottlerPtr & throttler_) = 0;
 
     virtual void setFormatSettings(const FormatSettings &) {}
+
+    /// Set a callback to check for query cancellation (e.g. Ctrl+C).
+    /// Used by LocalConnection to enable cancellation during query analysis.
+    virtual void setCancelCallback(std::function<bool()>) {}
 };
 
 using ServerConnectionPtr = std::unique_ptr<IServerConnection>;

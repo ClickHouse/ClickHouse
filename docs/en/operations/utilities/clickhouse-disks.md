@@ -7,8 +7,6 @@ title: 'Clickhouse-disks'
 doc_type: 'reference'
 ---
 
-# Clickhouse-disks
-
 A utility providing filesystem-like operations for ClickHouse disks. It can work in both interactive and not interactive modes.
 
 ## Program-wide options {#program-wide-options}
@@ -63,6 +61,10 @@ In these documentation file all mandatory positional arguments are referred as `
   Create a directory. Non-recursive by default.
 * `read (r) <path-from> [--path-to path]`
   Read a file from `path-from` to `path` (`stdout` if not supplied).
+* `read-bitmap <path-from> [--values]`
+  Inspect a delete-bitmap (`.rbm`) sidecar at `path-from`. Prints the magic and version, the CRC validity, the cardinality (number of deleted rows) and the row range. With `--values` it also dumps all set bits (the deleted row offsets) in ascending order.
+* `read-checksums <path>`
+  Read a `checksums.txt` file of a `MergeTree` data part on a current disk and print it to `stdout` as a tab-separated, human-readable table with the columns `name`, `file_size`, `file_hash`, `uncompressed_size`, and `uncompressed_hash`. The last two columns are present only for compressed files.
 * `switch-disk [--path path] <disk>`
   Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`).
 * `write (w) [--path-from path] <path-to>`.

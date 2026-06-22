@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <Interpreters/IKeyValueEntity.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBulkSink.h>
 #include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 #include <Storages/RocksDB/RocksDBSettings.h>
@@ -29,11 +29,13 @@ class Context;
 /// Storage supports single or multi-column primary keys. For multi-column keys, all columns are serialized
 /// sequentially in the order they appear in the PRIMARY KEY definition (e.g., PRIMARY KEY(a, b, c) -> serialize a, then b, then c).
 /// Values are serialized into raw strings to store in rocksdb.
-class StorageEmbeddedRocksDB final : public IStorage, public IKeyValueEntity, WithContext
+class StorageEmbeddedRocksDB final : public StorageWithCommonVirtualColumns, public IKeyValueEntity, WithContext
 {
     friend class EmbeddedRocksDBSink;
     friend class EmbeddedRocksDBBulkSink;
     friend class ReadFromEmbeddedRocksDB;
+
+    static VirtualColumnsDescription createVirtuals();
 
 public:
     StorageEmbeddedRocksDB(
@@ -52,7 +54,7 @@ public:
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -98,7 +100,7 @@ public:
     /// If in_out_null_map is passed, it should mark rows to skip on input (0 = skip, 1 = process).
     /// On output, it will be updated with 1/0 depending on key was/wasn't found. Result chunk may contain default values.
     /// If in_out_null_map is not passed, not found rows are excluded from result chunk.
-    Chunk getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map) const;
+    Block getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map, const Block & sample_block) const;
 
     bool supportsDelete() const override { return true; }
 
@@ -133,13 +135,13 @@ private:
     std::vector<size_t> value_column_pos;
 
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
-    RocksDBPtr rocksdb_ptr;
+    RocksDBPtr rocksdb_ptr TSA_GUARDED_BY(rocksdb_ptr_mx);
 
     mutable SharedMutex rocksdb_ptr_mx;
     String rocksdb_dir;
     Int32 ttl;
     bool read_only;
 
-    void initDB();
+    void initDB() TSA_NO_THREAD_SAFETY_ANALYSIS;
 };
 }
