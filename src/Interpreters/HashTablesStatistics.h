@@ -53,7 +53,11 @@ struct AggregationEntry
 
 struct HashJoinEntry
 {
-    bool shouldBeUpdated(const HashJoinEntry & new_entry) const { return new_entry.ht_size < ht_size / 2 || ht_size < new_entry.ht_size; }
+    bool shouldBeUpdated(const HashJoinEntry & new_entry) const
+    { 
+        return new_entry.ht_size < ht_size / 2 || ht_size < new_entry.ht_size
+            || new_entry.source_rows < source_rows / 2 || source_rows < new_entry.source_rows;
+    }
 
     std::string dump() const { return fmt::format("ht_size={}", ht_size); }
 
