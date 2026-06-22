@@ -870,6 +870,13 @@ namespace
     :::
     )", 0) \
     DECLARE(UInt64, concurrent_threads_soft_limit_ratio_to_cores, 2, "Same as [`concurrent_threads_soft_limit_num`](#concurrent_threads_soft_limit_num), but with ratio to cores.", 0) \
+    DECLARE(Bool, concurrent_threads_lazy_allocation, true, R"(
+Controls how CPU slots are allocated to queries.
+
+When `true` (default), a query starts with one CPU slot and requests additional slots from the scheduler only when its pipeline actually pushes more parallelizable work. This avoids the situation where a query reserves up to `max_threads` slots but only ever uses a fraction of them, starving other concurrent queries. Applies both to concurrency control and to the preemptive CPU scheduler for workloads.
+
+When `false`, the query requests all `max_threads` slots up front at start.
+    )", 0) \
     DECLARE(String, concurrent_threads_scheduler, "max_min_fair", R"(
 The policy on how to perform a scheduling of CPU slots specified by `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`. Algorithm used to govern how limited number of CPU slots are distributed among concurrent queries. Scheduler may be changed at runtime without server restart.
 
@@ -1792,6 +1799,24 @@ void ServerSettings::set(std::string_view name, const Field & value)
     impl->set(name, value);
 }
 
+std::vector<std::string_view> ServerSettings::getAllRegisteredNames() const
+{
+    std::vector<std::string_view> setting_names;
+    for (const auto & setting : impl->all())
+        setting_names.emplace_back(setting.getName());
+    return setting_names;
+}
+
+std::string_view ServerSettings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
+}
+
+SettingsTierType ServerSettings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
+}
+
 void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     impl->loadSettingsFromConfig(config);
@@ -1838,6 +1863,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"concurrent_threads_soft_limit_num", {std::to_string(context->getConcurrentThreadsSoftLimitNum()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_soft_limit_ratio_to_cores", {std::to_string(context->getConcurrentThreadsSoftLimitRatioToCores()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_scheduler", {context->getConcurrentThreadsScheduler(), ChangeableWithoutRestart::Yes}},
+            {"concurrent_threads_lazy_allocation", {context->getConcurrentThreadsLazyAllocation() ? "true" : "false", ChangeableWithoutRestart::Yes}},
 
             {"background_buffer_flush_schedule_pool_size",
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundBufferFlushSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},

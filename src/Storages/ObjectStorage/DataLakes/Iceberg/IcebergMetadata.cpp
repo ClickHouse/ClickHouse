@@ -1,3 +1,4 @@
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <base/sleep.h>
@@ -889,6 +890,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         history_record.snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
         history_record.manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(f_manifest_list));
+
         if (const auto summary = snapshot->getObject(f_summary))
         {
             auto snapshot_summary = SnapshotSummary::fromJSON(*summary, /*with_extra_fields=*/true);

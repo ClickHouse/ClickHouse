@@ -33,7 +33,10 @@ struct SnapshotSummaryUpdateOverwrite
     UInt64 added_records = 0;
     UInt64 added_files_size = 0;
     UInt64 added_delete_files = 0;
+    UInt64 added_position_delete_files = 0;
     UInt64 added_position_deletes = 0;
+    UInt64 added_equality_delete_files = 0;
+    UInt64 added_equality_deletes = 0;
     UInt64 deleted_data_files = 0;
     UInt64 removed_records = 0;
     UInt64 removed_files_size = 0;
@@ -47,6 +50,8 @@ struct SnapshotSummaryUpdateDelete
     UInt64 removed_files_size = 0;
     UInt64 removed_position_delete_files = 0;
     UInt64 removed_position_deletes = 0;
+    UInt64 removed_equality_delete_files = 0;
+    UInt64 removed_equality_deletes = 0;
     UInt64 num_partitions = 0;
 };
 
@@ -55,9 +60,19 @@ struct SnapshotSummaryUpdateReplace
     UInt64 added_files = 0;
     UInt64 added_records = 0;
     UInt64 added_files_size = 0;
+    UInt64 added_delete_files = 0;
+    UInt64 added_position_delete_files = 0;
+    UInt64 added_position_deletes = 0;
+    UInt64 added_equality_delete_files = 0;
+    UInt64 added_equality_deletes = 0;
     UInt64 deleted_data_files = 0;
     UInt64 removed_records = 0;
     UInt64 removed_files_size = 0;
+    UInt64 removed_delete_files = 0;
+    UInt64 removed_position_delete_files = 0;
+    UInt64 removed_position_deletes = 0;
+    UInt64 removed_equality_delete_files = 0;
+    UInt64 removed_equality_deletes = 0;
     UInt64 num_partitions = 0;
 };
 

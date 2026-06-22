@@ -316,4 +316,156 @@ TEST(IcebergSnapshotSummary, ReplaceRoundTripThroughJSON)
     EXPECT_EQ(parsed->getTotals().files_size, replace.getTotals().files_size);
 }
 
+TEST(IcebergSnapshotSummary, OverwriteAddsEqualityDeleteCounts)
+{
+    SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 3, .added_records = 5, .added_files_size = 2461, .num_partitions = 3});
+
+    /// Upsert-style overwrite that adds both position and equality delete files.
+    SnapshotSummary ow(
+        DB::Iceberg::SnapshotSummaryUpdateOverwrite{
+            .added_files_size = 100,
+            .added_delete_files = 3, // 1 position + 2 equality
+            .added_position_delete_files = 1,
+            .added_position_deletes = 4,
+            .added_equality_delete_files = 2,
+            .added_equality_deletes = 7,
+            .num_partitions = 1},
+        parent.getTotals());
+
+    EXPECT_EQ(ow.getTotals().delete_files, 3);
+    EXPECT_EQ(ow.getTotals().position_deletes, 4);
+    EXPECT_EQ(ow.getTotals().equality_deletes, 7);
+    EXPECT_EQ(ow.getTotals().data_files, 3); // unchanged: overwrite doesn't touch data file count
+
+    auto obj = ow.toJSON();
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_added_equality_delete_files), "2");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_added_equality_deletes), "7");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_total_equality_deletes), "7");
+}
+
+TEST(IcebergSnapshotSummary, EqualityDeletesRoundTrip)
+{
+    /// Regression: the constructor hardcoded `totals.equality_deletes = 0`, which silently wiped
+    /// any equality-delete total inherited from the parent snapshot.
+    SnapshotSummary grandparent(DB::Iceberg::SnapshotSummaryUpdateAppend{
+        .added_files = 3,
+        .added_records = 50,
+        .added_files_size = 1000,
+        .num_partitions = 1});
+
+    SnapshotSummary parent(
+        DB::Iceberg::SnapshotSummaryUpdateOverwrite{
+            .added_files_size = 100,
+            .added_delete_files = 2,
+            .added_equality_delete_files = 2,
+            .added_equality_deletes = 10,
+            .num_partitions = 1},
+        grandparent.getTotals());
+    EXPECT_EQ(parent.getTotals().equality_deletes, 10);
+    EXPECT_EQ(parent.getTotals().delete_files, 2);
+
+    SnapshotSummary del(
+        DB::Iceberg::SnapshotSummaryUpdateDelete{
+            .removed_files_size = 50,
+            .removed_equality_delete_files = 1,
+            .removed_equality_deletes = 4,
+            .num_partitions = 1},
+        parent.getTotals());
+    EXPECT_EQ(del.getTotals().equality_deletes, 6);
+    EXPECT_EQ(del.getTotals().delete_files, 1);
+
+    auto obj = del.toJSON();
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_removed_equality_delete_files), "1");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_removed_equality_deletes), "4");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_total_equality_deletes), "6");
+
+    auto parsed = SnapshotSummary::fromJSON(*obj);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->getTotals().equality_deletes, 6);
+    const auto & parsed_delete = parsed->getUpdate<DB::Iceberg::SnapshotSummaryUpdateDelete>();
+    EXPECT_EQ(parsed_delete.removed_equality_delete_files, 1);
+    EXPECT_EQ(parsed_delete.removed_equality_deletes, 4);
+}
+
+TEST(IcebergSnapshotSummary, ReplaceRewritesDeleteFiles)
+{
+    /// A replace that compacts delete files: it removes old position + equality delete files and
+    /// writes fewer new ones, while leaving the logical table data unchanged.
+    SnapshotSummary grandparent(DB::Iceberg::SnapshotSummaryUpdateAppend{
+        .added_files = 5, .added_records = 100, .added_files_size = 5000, .num_partitions = 3});
+
+    SnapshotSummary parent(
+        DB::Iceberg::SnapshotSummaryUpdateOverwrite{
+            .added_files_size = 200,
+            .added_delete_files = 5, // 3 position + 2 equality
+            .added_position_delete_files = 3,
+            .added_position_deletes = 30,
+            .added_equality_delete_files = 2,
+            .added_equality_deletes = 20,
+            .num_partitions = 3},
+        grandparent.getTotals());
+    EXPECT_EQ(parent.getTotals().delete_files, 5);
+    EXPECT_EQ(parent.getTotals().position_deletes, 30);
+    EXPECT_EQ(parent.getTotals().equality_deletes, 20);
+
+    SnapshotSummary replace(
+        DB::Iceberg::SnapshotSummaryUpdateReplace{
+            .added_files_size = 80,
+            .added_delete_files = 2, // 1 position + 1 equality
+            .added_position_delete_files = 1,
+            .added_position_deletes = 30,
+            .added_equality_delete_files = 1,
+            .added_equality_deletes = 20,
+            .removed_files_size = 200,
+            .removed_delete_files = 5,
+            .removed_position_delete_files = 3,
+            .removed_position_deletes = 30,
+            .removed_equality_delete_files = 2,
+            .removed_equality_deletes = 20,
+            .num_partitions = 3},
+        parent.getTotals());
+
+    EXPECT_EQ(replace.getTotals().delete_files, 2);     // 5 - 5 + 2
+    EXPECT_EQ(replace.getTotals().position_deletes, 30); // unchanged: same deletes, fewer files
+    EXPECT_EQ(replace.getTotals().equality_deletes, 20); // unchanged: same deletes, fewer files
+
+    auto parsed = SnapshotSummary::fromJSON(*replace.toJSON());
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->getOperation(), Operation::REPLACE);
+    EXPECT_EQ(parsed->getTotals().delete_files, 2);
+    EXPECT_EQ(parsed->getTotals().position_deletes, 30);
+    EXPECT_EQ(parsed->getTotals().equality_deletes, 20);
+    const auto & parsed_replace = parsed->getUpdate<DB::Iceberg::SnapshotSummaryUpdateReplace>();
+    EXPECT_EQ(parsed_replace.added_equality_delete_files, 1);
+    EXPECT_EQ(parsed_replace.added_equality_deletes, 20);
+    EXPECT_EQ(parsed_replace.removed_equality_delete_files, 2);
+    EXPECT_EQ(parsed_replace.removed_equality_deletes, 20);
+}
+
+TEST(IcebergSnapshotSummary, AppendPreservesInheritedEqualityDeletes)
+{
+    /// An append touches no delete files, so it must carry the parent's equality-delete total
+    /// forward instead of resetting it to zero.
+    SnapshotSummary grandparent(DB::Iceberg::SnapshotSummaryUpdateAppend{
+        .added_files = 3, .added_records = 50, .added_files_size = 1000, .num_partitions = 1});
+
+    SnapshotSummary parent(
+        DB::Iceberg::SnapshotSummaryUpdateOverwrite{
+            .added_files_size = 100,
+            .added_delete_files = 2,
+            .added_equality_delete_files = 2,
+            .added_equality_deletes = 10,
+            .num_partitions = 1},
+        grandparent.getTotals());
+    EXPECT_EQ(parent.getTotals().equality_deletes, 10);
+
+    SnapshotSummary append(
+        DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 1, .added_records = 5, .added_files_size = 200, .num_partitions = 1},
+        parent.getTotals());
+
+    EXPECT_EQ(append.getTotals().equality_deletes, 10); // preserved, not reset to 0
+    EXPECT_EQ(append.getTotals().delete_files, 2);       // preserved
+    EXPECT_EQ(append.getTotals().records, 55);
+}
+
 #endif
