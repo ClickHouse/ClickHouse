@@ -73,6 +73,12 @@ node10 = cluster.add_instance(
     user_configs=["configs/config_env_xml_chars.xml"],
     env_variables={"LOG_COMMENT_VALUE": "<a>1</a>"},
 )
+# from_zk value that is a YAML subtree (does not start with '<'): it must be autodetected as YAML
+node11 = cluster.add_instance(
+    "node11",
+    user_configs=["configs/config_zk_yaml.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -99,6 +105,13 @@ def start_cluster():
             zk.create(
                 path="/merge_max_block_size",
                 value=b"<merge_max_block_size>8888</merge_max_block_size>",
+                makepath=True,
+            )
+            # A YAML subtree (does not start with '<') stored in a ZooKeeper node: it must
+            # be autodetected and parsed as YAML, just like a config file.
+            zk.create(
+                path="/profile_settings_yaml",
+                value=b"max_query_size: 99999\n",
                 makepath=True,
             )
 
@@ -390,4 +403,12 @@ def test_config_env_xml_fragment_is_literal_text(start_cluster):
             "SELECT value FROM system.settings WHERE name = 'log_comment'"
         )
         == "<a>1</a>\n"
+    )
+
+
+def test_config_zk_yaml_is_autodetected(start_cluster):
+    """A from_zk value that does not start with '<' is autodetected and parsed as YAML."""
+    assert (
+        node11.query("SELECT value FROM system.settings WHERE name = 'max_query_size'")
+        == "99999\n"
     )

@@ -16,6 +16,9 @@ class YAMLParserImpl
 {
 public:
     static Poco::AutoPtr<Poco::XML::Document> parse(const String& path);
+
+    /// Parse YAML directly from a string (for example, the contents of a ZooKeeper node).
+    static Poco::AutoPtr<Poco::XML::Document> parseString(const String & yaml);
 };
 
 using YAMLParser = YAMLParserImpl;
@@ -32,6 +35,7 @@ class DummyYAMLParser
 {
 public:
     static Poco::AutoPtr<Poco::XML::Document> parse(const String & path);
+    static Poco::AutoPtr<Poco::XML::Document> parseString(const String & yaml);
 };
 
 using YAMLParser = DummyYAMLParser;

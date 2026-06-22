@@ -600,10 +600,17 @@ void ConfigProcessor::doIncludesRecursive(
                 if (!znode.exists)
                     return nullptr;
 
-                /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                /// Unlike `from_env`, the contents of a ZooKeeper node may be an XML fragment
-                /// (an XML subtree), so they are parsed as XML and must be well-formed.
-                zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
+                /// Unlike `from_env` (which is always plain text), the contents of a ZooKeeper
+                /// node may be a whole subtree. The format is autodetected the same way as for
+                /// config files: if the value begins with '<' it is parsed as an XML fragment,
+                /// otherwise it is parsed as YAML. A plain scalar value is a valid YAML scalar,
+                /// so it keeps working as before.
+                const size_t pos = firstNonWhitespacePos(znode.contents);
+                if (pos != std::string::npos && znode.contents[pos] == '<')
+                    /// Enclose the contents into a fake <from_zk> tag to allow pure text substitutions.
+                    zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
+                else
+                    zk_document = YAMLParser::parseString(znode.contents);
                 return getRootNode(zk_document.get());
             };
 

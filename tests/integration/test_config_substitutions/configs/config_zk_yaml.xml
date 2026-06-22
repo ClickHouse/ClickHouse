@@ -1,0 +1,16 @@
+<clickhouse>
+  <profiles>
+    <default>
+        <!-- The ZooKeeper node holds a YAML subtree (it does not start with '<'),
+             so it must be autodetected and parsed as YAML. -->
+        <include from_zk="/profile_settings_yaml" />
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+  </users>
+</clickhouse>

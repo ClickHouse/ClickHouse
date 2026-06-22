@@ -139,7 +139,7 @@ Resulting in the following configuration:
 `from_env` and `from_zk` differ in how the substituted value is interpreted:
 
 - A value substituted via `from_env` is always taken as literal text. XML special characters such as `&`, `<` and `>` are escaped automatically, so an environment variable can contain any value, for example `a&b<c>d`, without breaking the configuration. The value is never interpreted as XML, even if it happens to look like an XML fragment: `<a>1</a>` substitutes the literal text `<a>1</a>`.
-- A value substituted via `from_zk` is parsed as an XML fragment and must be well-formed XML. This allows a ZooKeeper node to hold a whole XML subtree (see [Substitution with file content](#substitution-with-file-content) below). As a consequence, a ZooKeeper value that should be treated as plain text must contain valid XML — special characters like `&` and `<` have to be escaped in the node value itself (for example as `&amp;` and `&lt;`).
+- A value substituted via `from_zk` may hold a whole subtree, so its format is autodetected the same way as for configuration files: if the value begins with `<` it is parsed as an XML fragment, otherwise it is parsed as YAML. This allows a ZooKeeper node to hold an XML or a YAML subtree (see [Substitution with file content](#substitution-with-file-content) below). A plain scalar value (for example a port number) is a valid YAML scalar and is used as-is.
 
 #### Default values {#default-values}
 
