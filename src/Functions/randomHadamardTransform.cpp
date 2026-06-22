@@ -214,13 +214,13 @@ REGISTER_FUNCTION(RandomHadamardTransform)
 {
     FunctionDocumentation::Description description = R"(
 Applies a randomized Hadamard transform to a float vector: `y = (1/sqrt(k)) * (H * D * x)`, where
-`D` is a diagonal matrix of deterministic ±1 signs chosen by `seed`, `H` is the Walsh-Hadamard
+`D` is a diagonal matrix of deterministic +/-1 signs chosen by `seed`, `H` is the Walsh-Hadamard
 matrix, and the input is zero-padded to `m`, the next power of two of its length.
 
 The transform is an orthogonal, **norm-preserving** rotation that spreads a vector's energy evenly
 across coordinates, making the per-coordinate distribution approximately Gaussian and
-data-independent. It is useful as a preprocessing step before scalar quantization, and — when
-truncated — as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) random projection.
+data-independent. It is useful as a preprocessing step before scalar quantization, and -- when
+truncated -- as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) random projection.
 
 - `seed` (optional, default `0`): selects the sign pattern; the same seed always yields the same
   transform.
@@ -231,7 +231,7 @@ truncated — as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT)
     FunctionDocumentation::Syntax syntax = "randomHadamardTransform(vector[, seed[, output_dims]])";
     FunctionDocumentation::Arguments arguments = {
         {"vector", "Vector to transform.", {"Array(BFloat16)", "Array(Float32)", "Array(Float64)"}},
-        {"seed", "Optional. Seed for the deterministic ±1 signs (default 0).", {"UInt*"}},
+        {"seed", "Optional. Seed for the deterministic +/-1 signs (default 0).", {"UInt*"}},
         {"output_dims", "Optional. Truncate the result to this many leading coordinates (default: next power of two of the input length).", {"UInt*"}}};
     FunctionDocumentation::ReturnedValue returned_value = {"The transformed vector, zero-padded to the next power of two and optionally truncated.", {"Array(Float32)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples = {
