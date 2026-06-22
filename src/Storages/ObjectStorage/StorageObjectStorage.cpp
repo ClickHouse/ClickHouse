@@ -731,7 +731,8 @@ void StorageObjectStorage::commitExportPartitionTransaction(
         /// Parse the Iceberg metadata snapshot (stored in ZooKeeper at export-start time) only to
         /// extract the schema-id and partition-spec-id that were current when the export began.
         /// partition_columns and partition_types are derived inside commitExportPartitionTransaction
-        /// from the same JSON, so only partition_values need to be carried here.
+        /// from the same JSON; the representative source partition columns are carried here so the
+        /// partition tuple can be recomputed through the destination transform.
         Poco::JSON::Parser iceberg_parser;
         Poco::JSON::Object::Ptr iceberg_metadata =
             iceberg_parser.parse(iceberg_commit_export_partition_arguments.metadata_json_string).extract<Poco::JSON::Object::Ptr>();
@@ -746,7 +747,7 @@ void StorageObjectStorage::commitExportPartitionTransaction(
             transaction_id,
             original_schema_id,
             partition_spec_id,
-            iceberg_commit_export_partition_arguments.partition_values,
+            iceberg_commit_export_partition_arguments.partition_source_block,
             std::make_shared<const Block>(getInMemoryMetadataPtr()->getSampleBlock()),
             exported_paths,
             configuration,

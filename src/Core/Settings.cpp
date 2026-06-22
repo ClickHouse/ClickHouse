@@ -8082,6 +8082,11 @@ Has no effect on `EXPORT PARTITION <id>` (single-partition export).
     DECLARE(String, export_merge_tree_part_filename_pattern, "{part_name}_{checksum}", R"(
 Pattern for the filename of the exported merge tree part. The `part_name` and `checksum` are calculated and replaced on the fly. Additional macros are supported.
 )", 0) \
+    DECLARE(Bool, export_merge_tree_part_allow_lossy_cast, false, R"(
+Allow `EXPORT PART`/`EXPORT PARTITION` to apply lossy (non-value-preserving) casts when the source and destination column types differ. When disabled, an export that would require a lossy cast throws instead.
+
+When exporting to Apache Iceberg, the partition value written to the metadata is derived from the source partition columns by casting them to the destination partition-field types and applying the destination partition transform — the same computation the exported data files use, so the metadata stays consistent with the data. A lossy cast on a partition column remains semantically truncating: both the data files and the metadata contain the truncated value, and such casts require this setting to be enabled.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \

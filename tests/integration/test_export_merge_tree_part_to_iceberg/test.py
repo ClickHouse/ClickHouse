@@ -69,11 +69,15 @@ def get_part(node, table: str, partition_id: str) -> str:
     ).strip()
 
 
-def export_part(node, table: str, part: str, dest: str) -> None:
+def export_part(node, table: str, part: str, dest: str, extra_settings: str = "") -> None:
+    settings = (
+        "allow_experimental_export_merge_tree_part = 1, "
+        "allow_experimental_insert_into_iceberg = 1"
+    )
+    if extra_settings:
+        settings += ", " + extra_settings
     node.query(
-        f"ALTER TABLE {table} EXPORT PART '{part}' TO TABLE {dest} "
-        f"SETTINGS allow_experimental_export_merge_tree_part = 1, "
-        f"allow_experimental_insert_into_iceberg = 1"
+        f"ALTER TABLE {table} EXPORT PART '{part}' TO TABLE {dest} SETTINGS {settings}"
     )
 
 
@@ -118,6 +122,42 @@ def assert_part_log(node, table: str, part: str) -> None:
     assert log_count >= 1, (
         f"Expected at least one ExportPart entry in system.part_log "
         f"for part {part!r} in table {table!r}, found {log_count}"
+    )
+
+
+def wait_for_failed_export_part(
+    node,
+    table: str,
+    part: str,
+    timeout: int = 60,
+    poll_interval: float = 0.5,
+) -> str:
+    """Poll system.part_log until a failed ExportPart event appears for *part*.
+
+    Returns the exception text recorded on the log entry, which lets callers
+    assert on the specific runtime error that propagated from the export worker.
+    """
+    deadline = time.time() + timeout
+    last_seen = ""
+    while time.time() < deadline:
+        node.query("SYSTEM FLUSH LOGS")
+        row = node.query(
+            f"SELECT error, exception FROM system.part_log "
+            f"WHERE event_type = 'ExportPart' "
+            f"AND database = currentDatabase() "
+            f"AND table = '{table}' "
+            f"AND part_name = '{part}' "
+            f"AND error != 0 "
+            f"ORDER BY event_time DESC LIMIT 1"
+        ).strip()
+        if row:
+            _error, exception = row.split("\t", 1)
+            return exception
+        last_seen = row
+        time.sleep(poll_interval)
+    raise TimeoutError(
+        f"Failed ExportPart event for part {part!r} in table {table!r} "
+        f"did not appear in system.part_log within {timeout}s (last row: {last_seen!r})"
     )
 
 
@@ -349,6 +389,38 @@ def test_export_part_with_year_transform_partition(cluster):
     node.query(f"DROP TABLE IF EXISTS {iceberg}")
 
 
+def test_export_part_partition_column_lossless_widening(cluster):
+    """A lossless widening of a partition column (year Int32 -> Int64) round-trips."""
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_pcol_widening_{sfx}"
+    iceberg = f"iceberg_pcol_widening_{sfx}"
+
+    make_mt(node, mt, "id Int32, year Int32", "year")
+    make_iceberg_s3(node, iceberg, "id Int32, year Int64", "year")
+
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020), (2, 2020), (3, 2020)")
+
+    part_2020 = get_part(node, mt, "2020")
+    export_part(node, mt, part_2020, iceberg)
+    wait_for_export_part(node, mt, part_2020)
+
+    count = int(node.query(f"SELECT count() FROM {iceberg}").strip())
+    assert count == 3, f"Expected 3 rows in Iceberg table after export, got {count}"
+
+    result = node.query(
+        f"SELECT id, toTypeName(year), year FROM {iceberg} ORDER BY id"
+    ).strip()
+    assert result == "1\tInt64\t2020\n2\tInt64\t2020\n3\tInt64\t2020", (
+        f"Unexpected widened partition-column data:\n{result}"
+    )
+
+    assert_part_log(node, mt, part_2020)
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
 def test_export_part_partition_key_mismatch_is_rejected(cluster):
     """
     EXPORT PART must synchronously reject (BAD_ARGUMENTS) when the source
@@ -476,6 +548,208 @@ def test_export_part_writes_column_statistics(cluster):
 
     entries = fetch_manifest_entries(node, query_id)
     assert_exported_stats(entries)
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_column_count_mismatch_source_more_is_rejected(cluster):
+    """
+    Source has 3 columns (id, year, extra), destination has 2 (id, year).
+    The ALTER must be rejected synchronously with NUMBER_OF_COLUMNS_DOESNT_MATCH
+    and the Iceberg table must remain empty.
+    """
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_count_more_{sfx}"
+    iceberg = f"iceberg_count_more_{sfx}"
+
+    make_mt(node, mt, "id Int32, year Int32, extra String", "year")
+    make_iceberg_s3(node, iceberg, "id Int32, year Int32", "year")
+
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020, 'foo'), (2, 2020, 'bar')")
+    part_2020 = get_part(node, mt, "2020")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt} EXPORT PART '{part_2020}' TO TABLE {iceberg} "
+        f"SETTINGS allow_experimental_export_merge_tree_part = 1, "
+        f"allow_experimental_insert_into_iceberg = 1"
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH for source>dest column count, "
+        f"got: {error!r}"
+    )
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_column_count_mismatch_source_fewer_is_rejected(cluster):
+    """
+    Source has 2 columns (id, year), destination has 3 (id, year, extra).
+    Same expected synchronous rejection as the source>dest case.
+    """
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_count_fewer_{sfx}"
+    iceberg = f"iceberg_count_fewer_{sfx}"
+
+    make_mt(node, mt, "id Int32, year Int32", "year")
+    make_iceberg_s3(node, iceberg, "id Int32, year Int32, extra String", "year")
+
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020), (2, 2020)")
+    part_2020 = get_part(node, mt, "2020")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt} EXPORT PART '{part_2020}' TO TABLE {iceberg} "
+        f"SETTINGS allow_experimental_export_merge_tree_part = 1, "
+        f"allow_experimental_insert_into_iceberg = 1"
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH for source<dest column count, "
+        f"got: {error!r}"
+    )
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_with_renamed_destination_column(cluster):
+    """
+    Source has column `id`, destination has the same shape but the column is
+    named `renamed_id`.  Positional matching must accept the export and the
+    data must land in the destination under the new name.
+    """
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_renamed_{sfx}"
+    iceberg = f"iceberg_renamed_{sfx}"
+
+    make_mt(node, mt, "id Int32, year Int32", "year")
+    make_iceberg_s3(node, iceberg, "renamed_id Int32, year Int32", "year")
+
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020), (2, 2020), (3, 2020)")
+    part_2020 = get_part(node, mt, "2020")
+
+    export_part(node, mt, part_2020, iceberg)
+    wait_for_export_part(node, mt, part_2020)
+
+    count = int(node.query(f"SELECT count() FROM {iceberg}").strip())
+    assert count == 3, f"Expected 3 rows in Iceberg table after export, got {count}"
+
+    result = node.query(
+        f"SELECT renamed_id, year FROM {iceberg} ORDER BY renamed_id"
+    ).strip()
+    assert result == "1\t2020\n2\t2020\n3\t2020", (
+        f"Unexpected data under renamed column:\n{result}"
+    )
+
+    assert_part_log(node, mt, part_2020)
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_with_castable_widening(cluster):
+    """
+    Source column is Int32, destination expects Int64.  makeConvertingActions
+    inserts a widening CAST; the export must succeed and the values must land
+    as Int64 in Iceberg.
+    """
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_widen_{sfx}"
+    iceberg = f"iceberg_widen_{sfx}"
+
+    make_mt(node, mt, "id Int32, year Int32", "year")
+    make_iceberg_s3(node, iceberg, "id Int64, year Int32", "year")
+
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020), (2, 2020)")
+    part_2020 = get_part(node, mt, "2020")
+
+    export_part(node, mt, part_2020, iceberg)
+    wait_for_export_part(node, mt, part_2020)
+
+    count = int(node.query(f"SELECT count() FROM {iceberg}").strip())
+    assert count == 2, f"Expected 2 rows in Iceberg table after export, got {count}"
+
+    result = node.query(
+        f"SELECT id, toTypeName(id), year FROM {iceberg} ORDER BY id"
+    ).strip()
+    assert result == "1\tInt64\t2020\n2\tInt64\t2020", (
+        f"Unexpected widened data:\n{result}"
+    )
+
+    assert_part_log(node, mt, part_2020)
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_with_castable_narrowing_values_fit(cluster):
+    """A lossy narrowing (id Int64 -> Int32) succeeds once the user opts in via
+    export_merge_tree_part_allow_lossy_cast."""
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_narrow_fit_{sfx}"
+    iceberg = f"iceberg_narrow_fit_{sfx}"
+
+    make_mt(node, mt, "id Int64, year Int32", "year")
+    make_iceberg_s3(node, iceberg, "id Int32, year Int32", "year")
+
+    node.query(f"INSERT INTO {mt} VALUES (1, 2020), (2, 2020)")
+    part_2020 = get_part(node, mt, "2020")
+
+    export_part(node, mt, part_2020, iceberg, "export_merge_tree_part_allow_lossy_cast = 1")
+    wait_for_export_part(node, mt, part_2020)
+
+    count = int(node.query(f"SELECT count() FROM {iceberg}").strip())
+    assert count == 2, f"Expected 2 rows in Iceberg table after export, got {count}"
+
+    result = node.query(
+        f"SELECT id, toTypeName(id), year FROM {iceberg} ORDER BY id"
+    ).strip()
+    assert result == "1\tInt32\t2020\n2\tInt32\t2020", (
+        f"Unexpected narrowed data:\n{result}"
+    )
+
+    assert_part_log(node, mt, part_2020)
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_runtime_cast_failure_propagates_async(cluster):
+    """A String value that cannot be parsed as the destination Int32 passes the
+    synchronous lossy-cast gate (with export_merge_tree_part_allow_lossy_cast = 1) but
+    fails at runtime in the async worker; the failure surfaces in system.part_log and
+    Iceberg is left empty.
+
+    (Integer overflow is not used because the internal cast uses CastType::nonAccurate,
+    which wraps rather than throwing.)
+    """
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_runtime_cast_fail_{sfx}"
+    iceberg = f"iceberg_runtime_cast_fail_{sfx}"
+
+    make_mt(node, mt, "id String, year Int32", "year")
+    make_iceberg_s3(node, iceberg, "id Int32, year Int32", "year")
+
+    node.query(f"INSERT INTO {mt} VALUES ('not a number', 2020)")
+    part_2020 = get_part(node, mt, "2020")
+
+    export_part(node, mt, part_2020, iceberg, "export_merge_tree_part_allow_lossy_cast = 1")
+
+    exception = wait_for_failed_export_part(node, mt, part_2020)
+    assert exception, (
+        f"Expected non-empty exception text on failed ExportPart entry, got {exception!r}"
+    )
+
+    count = int(node.query(f"SELECT count() FROM {iceberg}").strip())
+    assert count == 0, (
+        f"Expected 0 rows in Iceberg table after failed export, got {count}"
+    )
 
     node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
     node.query(f"DROP TABLE IF EXISTS {iceberg}")

@@ -940,3 +940,661 @@ def test_export_partition_writes_column_statistics(cluster):
 
     entries = fetch_manifest_entries(node, query_id)
     assert_exported_stats(entries)
+
+
+def test_export_partition_column_count_mismatch_source_more_is_rejected(cluster):
+    """
+    Source has 3 columns (id, year, extra), destination has 2 (id, year).
+    The ALTER must be rejected synchronously with NUMBER_OF_COLUMNS_DOESNT_MATCH,
+    nothing must be scheduled in system.replicated_partition_exports, and the
+    Iceberg table must remain empty.
+    """
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_count_more_{uid}"
+    iceberg_table = f"iceberg_count_more_{uid}"
+
+    make_rmt(node, mt_table, "id Int64, year Int32, extra String", "year",
+             replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020, 'foo'), (2, 2020, 'bar')")
+
+    make_iceberg_s3(node, iceberg_table, "id Int64, year Int32", partition_by="year")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH for source>dest column count, "
+        f"got: {error!r}"
+    )
+
+    rows_in_system_view = node.query(
+        f"SELECT count() FROM system.replicated_partition_exports "
+        f"WHERE source_table = '{mt_table}' "
+        f"  AND destination_table = '{iceberg_table}' "
+        f"  AND partition_id = '2020'"
+    ).strip()
+    assert rows_in_system_view == "0", (
+        f"Expected no row in system.replicated_partition_exports after a "
+        f"synchronously-rejected export, got {rows_in_system_view}."
+    )
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 0, (
+        f"Expected 0 rows in Iceberg table after rejected export, got {count}"
+    )
+
+
+def test_export_partition_column_count_mismatch_source_fewer_is_rejected(cluster):
+    """
+    Source has 2 columns (id, year), destination has 3 (id, year, extra).
+    Same expected synchronous rejection as the source>dest case.
+    """
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_count_fewer_{uid}"
+    iceberg_table = f"iceberg_count_fewer_{uid}"
+
+    make_rmt(node, mt_table, "id Int64, year Int32", "year", replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020)")
+
+    make_iceberg_s3(node, iceberg_table, "id Int64, year Int32, extra String",
+                    partition_by="year")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert "NUMBER_OF_COLUMNS_DOESNT_MATCH" in error, (
+        f"Expected NUMBER_OF_COLUMNS_DOESNT_MATCH for source<dest column count, "
+        f"got: {error!r}"
+    )
+
+    rows_in_system_view = node.query(
+        f"SELECT count() FROM system.replicated_partition_exports "
+        f"WHERE source_table = '{mt_table}' "
+        f"  AND destination_table = '{iceberg_table}' "
+        f"  AND partition_id = '2020'"
+    ).strip()
+    assert rows_in_system_view == "0", (
+        f"Expected no row in system.replicated_partition_exports after a "
+        f"synchronously-rejected export, got {rows_in_system_view}."
+    )
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 0, (
+        f"Expected 0 rows in Iceberg table after rejected export, got {count}"
+    )
+
+
+def test_export_partition_with_renamed_destination_column(cluster):
+    """
+    Source has column `id`, destination has the same shape but the column is
+    named `renamed_id`.  Positional matching must accept the export and the
+    data must land in the destination under the new name.
+    """
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_renamed_{uid}"
+    iceberg_table = f"iceberg_renamed_{uid}"
+
+    make_rmt(node, mt_table, "id Int64, year Int32", "year", replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020), (3, 2020)")
+
+    make_iceberg_s3(node, iceberg_table, "renamed_id Int64, year Int32",
+                    partition_by="year")
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 3, f"Expected 3 rows in Iceberg table after export, got {count}"
+
+    result = node.query(
+        f"SELECT renamed_id, year FROM {iceberg_table} ORDER BY renamed_id"
+    ).strip()
+    assert result == "1\t2020\n2\t2020\n3\t2020", (
+        f"Unexpected data under renamed column:\n{result}"
+    )
+
+
+def test_export_partition_with_castable_widening(cluster):
+    """A lossless widening of both a data column (id Int32 -> Int64) and the
+    partition column (year Int32 -> Int64) round-trips."""
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_widen_{uid}"
+    iceberg_table = f"iceberg_widen_{uid}"
+
+    make_rmt(node, mt_table, "id Int32, year Int32", "year", replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020)")
+
+    make_iceberg_s3(node, iceberg_table, "id Int64, year Int64", partition_by="year")
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 2, f"Expected 2 rows in Iceberg table after export, got {count}"
+
+    result = node.query(
+        f"SELECT id, toTypeName(id), year, toTypeName(year) FROM {iceberg_table} ORDER BY id"
+    ).strip()
+    assert result == "1\tInt64\t2020\tInt64\n2\tInt64\t2020\tInt64", (
+        f"Unexpected widened data:\n{result}"
+    )
+
+
+def test_export_partition_with_castable_narrowing_values_fit(cluster):
+    """A lossy narrowing (id Int64 -> Int32) succeeds once the user opts in via
+    export_merge_tree_part_allow_lossy_cast."""
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_narrow_fit_{uid}"
+    iceberg_table = f"iceberg_narrow_fit_{uid}"
+
+    make_rmt(node, mt_table, "id Int64, year Int32", "year", replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020)")
+
+    make_iceberg_s3(node, iceberg_table, "id Int32, year Int32", partition_by="year")
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "export_merge_tree_part_allow_lossy_cast": 1,
+        },
+    )
+    wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 2, f"Expected 2 rows in Iceberg table after export, got {count}"
+
+    result = node.query(
+        f"SELECT id, toTypeName(id), year FROM {iceberg_table} ORDER BY id"
+    ).strip()
+    assert result == "1\tInt32\t2020\n2\tInt32\t2020", (
+        f"Unexpected narrowed data:\n{result}"
+    )
+
+
+def test_export_partition_lossy_cast_rejected_without_optin(cluster):
+    """A lossy narrowing (id Int64 -> Int32) is rejected synchronously with
+    BAD_ARGUMENTS unless export_merge_tree_part_allow_lossy_cast is set."""
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_lossy_reject_{uid}"
+    iceberg_table = f"iceberg_lossy_reject_{uid}"
+
+    make_rmt(node, mt_table, "id Int64, year Int32", "year", replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020)")
+
+    make_iceberg_s3(node, iceberg_table, "id Int32, year Int32", partition_by="year")
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table} "
+        f"SETTINGS allow_insert_into_iceberg = 1"
+    )
+    assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS, got: {error!r}"
+    assert "lossy cast" in error, f"Expected 'lossy cast' in error, got: {error!r}"
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 0, f"Expected no rows after a rejected export, got {count}"
+
+
+def test_export_partition_runtime_cast_failure_propagates_async(cluster):
+    """A String value that cannot be parsed as the destination Int32 passes the
+    synchronous lossy-cast gate (with export_merge_tree_part_allow_lossy_cast = 1) but
+    fails at runtime in the async worker, marking the export FAILED and leaving Iceberg
+    empty.
+
+    (Integer overflow is not used because the internal cast uses CastType::nonAccurate,
+    which wraps rather than throwing.)
+    """
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_runtime_cast_fail_{uid}"
+    iceberg_table = f"iceberg_runtime_cast_fail_{uid}"
+
+    make_rmt(node, mt_table, "id String, year Int32", "year", replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES ('not a number', 2020)")
+
+    make_iceberg_s3(node, iceberg_table, "id Int32, year Int32", partition_by="year")
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table} "
+        f"SETTINGS export_merge_tree_partition_max_retries = 1, allow_insert_into_iceberg = 1, "
+        f"export_merge_tree_part_allow_lossy_cast = 1"
+    )
+
+    wait_for_export_status(node, mt_table, iceberg_table, "2020", "FAILED", timeout=60)
+
+    exception_count = int(node.query(
+        f"SELECT any(exception_count) FROM system.replicated_partition_exports "
+        f"WHERE source_table = '{mt_table}' "
+        f"  AND destination_table = '{iceberg_table}' "
+        f"  AND partition_id = '2020'"
+    ).strip())
+    assert exception_count > 0, (
+        "Expected non-zero exception_count after a failed runtime cast"
+    )
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 0, (
+        f"Expected 0 rows in Iceberg table after failed export, got {count}"
+    )
+
+
+def test_export_partition_all_iceberg_types(cluster):
+    """Every getIcebergType-supported type round-trips through an EXPORT PARTITION:
+    scalars use narrower source types (explicit lossless widening CASTs), plus
+    Array/Map/Tuple nested columns."""
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_all_types_{uid}"
+    iceberg_table = f"iceberg_all_types_{uid}"
+
+    # Scalar source types are strictly narrower than the destination; the export inserts
+    # a positional widening CAST per column (Int8->Int16, UInt32->UInt64, ...). Nested
+    # columns keep the same type on both sides.
+    source_columns = (
+        "i16 Int8, u16 UInt8, u32 UInt16, u64 UInt32, "
+        "id Int16, big Int32, f32 Float32, f64 Float64, "
+        "d Date, d32 Date32, dt DateTime, dt64 DateTime64(6), "
+        "s String, uid UUID, "
+        "arr Array(Int32), m Map(String, Int64), tup Tuple(a Int32, b String), "
+        "year Int32"
+    )
+    dest_columns = (
+        "i16 Int16, u16 UInt16, u32 UInt32, u64 UInt64, "
+        "id Int32, big Int64, f32 Float32, f64 Float64, "
+        "d Date, d32 Date32, dt DateTime, dt64 DateTime64(6), "
+        "s String, uid UUID, "
+        "arr Array(Int32), m Map(String, Int64), tup Tuple(a Int32, b String), "
+        "year Int32"
+    )
+
+    make_rmt(node, mt_table, source_columns, "year", replica_name="replica1")
+    make_iceberg_s3(node, iceberg_table, dest_columns, partition_by="year")
+
+    node.query(
+        f"""
+        INSERT INTO {mt_table}
+            (i16, u16, u32, u64, id, big, f32, f64, d, d32, dt, dt64, s, uid, arr, m, tup, year)
+        VALUES (
+            -100, 200, 50000, 4000000000,
+            12345, 1000000000, 3.14, 2.718281828459045,
+            '2024-01-15', '2024-01-15', '2024-01-15 12:30:45', '2024-01-15 12:30:45.123456',
+            'hello iceberg', '550e8400-e29b-41d4-a716-446655440000',
+            [1, 2, 3], {{'a': 10, 'b': 20}}, (7, 'seven'), 2024
+        )
+        """
+    )
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2024' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    wait_for_export_status(node, mt_table, iceberg_table, "2024", "COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 1, f"Expected 1 row in Iceberg table, got {count}"
+
+    result = node.query(
+        f"""
+        SELECT
+            i16, u16, u32, u64, id, big,
+            toString(d), toString(d32), toString(dt),
+            s, toString(uid),
+            arr, m['a'], m['b'], tup.a, tup.b, year
+        FROM {iceberg_table}
+        """
+    ).strip()
+    expected = "\t".join([
+        "-100", "200", "50000", "4000000000",
+        "12345", "1000000000",
+        "2024-01-15", "2024-01-15", "2024-01-15 12:30:45.000000",
+        "hello iceberg", "550e8400-e29b-41d4-a716-446655440000",
+        "[1,2,3]", "10", "20", "7", "seven", "2024",
+    ])
+    assert result == expected, f"Unexpected round-trip data:\n{result!r}\nexpected:\n{expected!r}"
+
+    # Floats compared with a tolerance to avoid formatting flakiness.
+    floats_ok = node.query(
+        f"SELECT abs(f32 - 3.14) < 1e-4 AND abs(f64 - 2.718281828459045) < 1e-12 FROM {iceberg_table}"
+    ).strip()
+    assert floats_ok == "1", f"Float round-trip outside tolerance: {floats_ok!r}"
+
+    # DateTime64 sub-second component: assert the date part is preserved (exact format varies).
+    ts_result = node.query(f"SELECT dt64 FROM {iceberg_table}").strip()
+    assert "2024-01-15" in ts_result, f"DateTime64 date component missing: {ts_result!r}"
+
+
+def test_export_partition_all_iceberg_types_lossy(cluster):
+    """Lossy narrowing casts across types succeed with the opt-in flag: values that
+    fit round-trip, Float64 -> Float32 loses precision, and Nullable columns carry
+    both NULL and non-NULL (the latter via a lossy Nullable(Int64) -> Nullable(Int32))."""
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_lossy_types_{uid}"
+    iceberg_table = f"iceberg_lossy_types_{uid}"
+
+    # Each source column is wider than the destination, so the export inserts a lossy
+    # narrowing CAST (allowed only because export_merge_tree_part_allow_lossy_cast=1).
+    # Int8/UInt8 are not Iceberg-representable, so the narrowest integer dest is Int16.
+    source_columns = (
+        "big Int64, ubig UInt64, mid Int32, "
+        "f Float64, dt DateTime64(6), d Date32, "
+        "opt_s Nullable(String), opt_i Nullable(Int64), year Int32"
+    )
+    dest_columns = (
+        "big Int32, ubig UInt32, mid Int16, "
+        "f Float32, dt DateTime, d Date, "
+        "opt_s Nullable(String), opt_i Nullable(Int32), year Int32"
+    )
+
+    make_rmt(node, mt_table, source_columns, "year", replica_name="replica1")
+    make_iceberg_s3(node, iceberg_table, dest_columns, partition_by="year")
+
+    # Values chosen to fit the destination types (the async cast wraps on overflow
+    # rather than throwing, so out-of-range values would silently corrupt instead).
+    # opt_s is NULL and opt_i is set, covering both nullable paths in one row.
+    node.query(
+        f"""
+        INSERT INTO {mt_table} (big, ubig, mid, f, dt, d, opt_s, opt_i, year)
+        VALUES (
+            1000000, 2000000000, 30000,
+            2.718281828459045, '2024-01-15 12:30:45.123456', '2024-01-15',
+            NULL, 100, 2024
+        )
+        """
+    )
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2024' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "export_merge_tree_part_allow_lossy_cast": 1,
+        },
+    )
+    wait_for_export_status(node, mt_table, iceberg_table, "2024", "COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 1, f"Expected 1 row in Iceberg table, got {count}"
+
+    result = node.query(
+        f"SELECT big, ubig, mid, toString(d), toString(dt), opt_s, opt_i, year FROM {iceberg_table}"
+    ).strip()
+    expected = "\t".join([
+        "1000000", "2000000000", "30000",
+        "2024-01-15", "2024-01-15 12:30:45.000000", "\\N", "100", "2024",
+    ])
+    assert result == expected, f"Unexpected lossy round-trip data:\n{result!r}\nexpected:\n{expected!r}"
+
+    # Float64 -> Float32 stays within Float32 precision but is no longer exact.
+    f_checks = node.query(
+        f"SELECT abs(f - 2.718281828459045) < 1e-6, abs(f - 2.718281828459045) > 1e-9 FROM {iceberg_table}"
+    ).strip()
+    assert f_checks == "1\t1", f"Expected Float32 precision loss within tolerance, got: {f_checks!r}"
+
+
+def _data_file_partition_records(entries):
+    """Partition dicts of the non-delete data files described by manifest entries."""
+    records = []
+    for entry in entries:
+        data_file = entry.get("data_file") or {}
+        if data_file.get("content", 0) not in (0, None):
+            continue
+        partition = data_file.get("partition")
+        if partition is not None:
+            records.append(partition)
+    return records
+
+
+def _partition_scalar(partition, field):
+    """Read a partition field value, tolerating an Avro-union ``{type: value}`` wrapper."""
+    value = partition.get(field)
+    if isinstance(value, dict):
+        assert len(value) == 1, f"Unexpected partition union shape for {field!r}: {value!r}"
+        value = next(iter(value.values()))
+    return value
+
+
+def test_export_partition_bucket_transform_metadata_matches_data(cluster):
+    """A bucket[N] partition column whose type changes Int64 -> String records the
+    destination murmur(String) bucket in the Iceberg metadata, matching the exported
+    data rather than the source hashLong bucket."""
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_bucket_xform_{uid}"
+    iceberg_table = f"iceberg_bucket_xform_{uid}"
+
+    # N=16, key=42 diverges: icebergBucket(16, 42::Int64)=14 (source/old hashLong) but
+    # icebergBucket(16, '42')=6 (destination/new murmur over the exported String).
+    make_rmt(node, mt_table, "id Int64, key Int64", "icebergBucket(16, key)",
+             replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 42), (2, 42)")
+
+    make_iceberg_s3(node, iceberg_table, "id Int64, key String",
+                    partition_by="icebergBucket(16, key)")
+
+    pid = first_partition_id(node, mt_table)
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    wait_for_export_status(node, mt_table, iceberg_table, pid, "COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 2, f"Expected 2 rows after export, got {count}"
+
+    string_bucket = int(node.query(
+        f"SELECT DISTINCT icebergBucket(16, key) FROM {iceberg_table}"
+    ).strip())
+    long_bucket = int(node.query(
+        f"SELECT DISTINCT icebergBucket(16, toInt64(key)) FROM {iceberg_table}"
+    ).strip())
+    assert string_bucket != long_bucket, (
+        f"Test setup invalid: String and Int64 buckets coincide ({string_bucket}); "
+        f"pick a different N/key so the transform diverges."
+    )
+
+    query_id = f"bucket_xform_{uid}"
+    node.query(
+        f"SELECT * FROM {iceberg_table}",
+        query_id=query_id,
+        settings={"iceberg_metadata_log_level": "manifest_file_entry"},
+    )
+    entries = fetch_manifest_entries(node, query_id)
+    partitions = _data_file_partition_records(entries)
+    assert partitions, "No data-file partition records found in manifest entries"
+    meta_values = {int(_partition_scalar(p, "key")) for p in partitions}
+    assert meta_values == {string_bucket}, (
+        f"Metadata bucket {meta_values} must equal the destination String bucket "
+        f"{string_bucket} (not the source Int64 bucket {long_bucket})."
+    )
+
+
+def test_export_partition_month_transform_metadata_matches_data(cluster):
+    """A month-transform partition records a months-since-epoch value in metadata that
+    matches the value derived from the exported data, and a transform-filtered read
+    returns the rows."""
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_month_xform_{uid}"
+    iceberg_table = f"iceberg_month_xform_{uid}"
+
+    make_rmt(node, mt_table, "id Int64, event_date Date",
+             "toMonthNumSinceEpoch(event_date)", replica_name="replica1")
+    node.query(
+        f"INSERT INTO {mt_table} VALUES "
+        f"(1, '2024-03-05'), (2, '2024-03-20'), (3, '2024-03-31')"
+    )
+
+    make_iceberg_s3(node, iceberg_table, "id Int64, event_date Date",
+                    partition_by="toMonthNumSinceEpoch(event_date)")
+
+    pid = first_partition_id(node, mt_table)
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    wait_for_export_status(node, mt_table, iceberg_table, pid, "COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 3, f"Expected 3 rows after export, got {count}"
+
+    month_num = int(node.query(
+        f"SELECT DISTINCT toMonthNumSinceEpoch(event_date) FROM {iceberg_table}"
+    ).strip())
+
+    query_id = f"month_xform_{uid}"
+    node.query(
+        f"SELECT * FROM {iceberg_table}",
+        query_id=query_id,
+        settings={"iceberg_metadata_log_level": "manifest_file_entry"},
+    )
+    entries = fetch_manifest_entries(node, query_id)
+    partitions = _data_file_partition_records(entries)
+    assert partitions, "No data-file partition records found in manifest entries"
+    meta_values = {int(_partition_scalar(p, "event_date")) for p in partitions}
+    assert meta_values == {month_num}, (
+        f"Metadata month {meta_values} must equal toMonthNumSinceEpoch over the data "
+        f"({month_num})."
+    )
+
+    filtered = int(node.query(
+        f"SELECT count() FROM {iceberg_table} "
+        f"WHERE toMonthNumSinceEpoch(event_date) = {month_num}"
+    ).strip())
+    assert filtered == 3, f"Transform-filtered read expected 3 rows, got {filtered}"
+
+
+def test_export_partition_identity_type_change_metadata_matches_data(cluster):
+    """An identity partition column whose type changes UInt16 -> String records the
+    destination String value in the Iceberg metadata, matching the exported data."""
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_identity_xform_{uid}"
+    iceberg_table = f"iceberg_identity_xform_{uid}"
+
+    make_rmt(node, mt_table, "id Int32, year UInt16", "year", replica_name="replica1")
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2024), (2, 2024)")
+
+    make_iceberg_s3(node, iceberg_table, "id Int32, year String", partition_by="year")
+
+    pid = first_partition_id(node, mt_table)
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    wait_for_export_status(node, mt_table, iceberg_table, pid, "COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 2, f"Expected 2 rows after export, got {count}"
+
+    data_year = node.query(f"SELECT DISTINCT year FROM {iceberg_table}").strip()
+    assert data_year == "2024", f"Expected exported year '2024' (String), got {data_year!r}"
+
+    query_id = f"identity_xform_{uid}"
+    node.query(
+        f"SELECT * FROM {iceberg_table}",
+        query_id=query_id,
+        settings={"iceberg_metadata_log_level": "manifest_file_entry"},
+    )
+    entries = fetch_manifest_entries(node, query_id)
+    partitions = _data_file_partition_records(entries)
+    assert partitions, "No data-file partition records found in manifest entries"
+    meta_values = {str(_partition_scalar(p, "year")) for p in partitions}
+    assert meta_values == {"2024"}, (
+        f"Metadata partition {meta_values} must equal the destination String value "
+        f"'2024' (not the source integer representation)."
+    )
+
+
+def test_export_partition_multicolumn_identity_metadata_matches_data(cluster):
+    """A multi-column identity partition (event_date Date, retention UInt64 -> Int64)
+    records per-column values in the Iceberg metadata that match the exported data."""
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_multicol_{uid}"
+    iceberg_table = f"iceberg_multicol_{uid}"
+
+    # Iceberg has no unsigned types, so retention widens UInt64 -> Int64; the cast is
+    # not value-preserving per canBeSafelyCast, hence the lossy opt-in below.
+    make_rmt(node, mt_table, "id Int64, event_date Date, retention UInt64",
+             "(event_date, retention)", replica_name="replica1")
+    node.query(
+        f"INSERT INTO {mt_table} VALUES "
+        f"(1, '2024-03-05', 30), (2, '2024-03-05', 30), (3, '2024-03-05', 30)"
+    )
+
+    make_iceberg_s3(node, iceberg_table, "id Int64, event_date Date, retention Int64",
+                    partition_by="(event_date, retention)")
+
+    pid = first_partition_id(node, mt_table)
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg_table}",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "export_merge_tree_part_allow_lossy_cast": 1,
+        },
+    )
+    wait_for_export_status(node, mt_table, iceberg_table, pid, "COMPLETED")
+
+    count = int(node.query(f"SELECT count() FROM {iceberg_table}").strip())
+    assert count == 3, f"Expected 3 rows after export, got {count}"
+
+    data_retention = int(node.query(
+        f"SELECT DISTINCT retention FROM {iceberg_table}"
+    ).strip())
+    assert data_retention == 30, f"Expected exported retention 30, got {data_retention}"
+
+    days = int(node.query(
+        f"SELECT DISTINCT toInt64(event_date) FROM {iceberg_table}"
+    ).strip())
+
+    query_id = f"multicol_{uid}"
+    node.query(
+        f"SELECT * FROM {iceberg_table}",
+        query_id=query_id,
+        settings={"iceberg_metadata_log_level": "manifest_file_entry"},
+    )
+    entries = fetch_manifest_entries(node, query_id)
+    partitions = _data_file_partition_records(entries)
+    assert partitions, "No data-file partition records found in manifest entries"
+
+    meta_dates = {int(_partition_scalar(p, "event_date")) for p in partitions}
+    assert meta_dates == {days}, (
+        f"Metadata event_date {meta_dates} must equal days-since-epoch {days}."
+    )
+    meta_retentions = {int(_partition_scalar(p, "retention")) for p in partitions}
+    assert meta_retentions == {30}, (
+        f"Metadata retention {meta_retentions} must equal the exported value 30."
+    )
+
+    filtered = int(node.query(
+        f"SELECT count() FROM {iceberg_table} "
+        f"WHERE event_date = '2024-03-05' AND retention = 30"
+    ).strip())
+    assert filtered == 3, f"Partition-filtered read expected 3 rows, got {filtered}"

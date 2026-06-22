@@ -9,7 +9,12 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <filesystem>
 #include <thread>
+#include <Core/Block.h>
+#include <Core/Settings.h>
+#include <DataTypes/Utils.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
 #if USE_AVRO
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -37,6 +42,11 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
 }
 
+namespace Setting
+{
+    extern const SettingsBool export_merge_tree_part_allow_lossy_cast;
+}
+
 namespace FailPoints
 {
     extern const char iceberg_export_after_commit_before_zk_completed[];
@@ -47,14 +57,13 @@ namespace fs = std::filesystem;
 
 namespace ExportPartitionUtils
 {
-    std::vector<Field> getPartitionValuesForIcebergCommit(
+    Block getPartitionSourceBlockForIcebergCommit(
         MergeTreeData & storage, const String & partition_id)
     {
         auto lock = storage.readLockParts();
         const auto parts = storage.getDataPartsVectorInPartitionForInternalUsage(
             MergeTreeDataPartState::Active, partition_id, lock);
-        
-        /// todo arthur: bad arguments for now, pick a better one
+
         if (parts.empty())
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
                 "Cannot find active part for partition_id '{}' to derive Iceberg partition "
@@ -62,7 +71,7 @@ namespace ExportPartitionUtils
                 "or this replica has not yet received any part for this partition. "
                 "The commit will be retried.",
                 partition_id);
-        return parts.front()->partition.value;
+        return parts.front()->minmax_idx->getBlock(storage);
     }
 
     ContextPtr getContextCopyWithTaskSettings(const ContextPtr & context, const ExportReplicatedMergeTreePartitionManifest & manifest)
@@ -91,6 +100,12 @@ namespace ExportPartitionUtils
         /// able to execute the task regardless of its own profile - otherwise an export silently
         /// stalls when the setting is only set at the query level.
         context_copy->setSetting("allow_insert_into_iceberg", true);
+
+        /// Reapply the initiator's lossy-cast decision (persisted in the manifest) so the
+        /// worker's schema revalidation honors the user's choice. Without this, a task
+        /// scheduled without the opt-in could still apply a lossy cast if the destination
+        /// schema drifts to a lossy target between scheduling and execution.
+        context_copy->setSetting("export_merge_tree_part_allow_lossy_cast", manifest.allow_lossy_cast);
 
 	    return context_copy;
     }
@@ -204,8 +219,8 @@ namespace ExportPartitionUtils
         {
             iceberg_args.metadata_json_string = manifest.iceberg_metadata_json;
             if (source_storage.getInMemoryMetadataPtr()->hasPartitionKey())
-                iceberg_args.partition_values =
-                    getPartitionValuesForIcebergCommit(source_storage, manifest.partition_id);
+                iceberg_args.partition_source_block =
+                    getPartitionSourceBlockForIcebergCommit(source_storage, manifest.partition_id);
         }
 
         destination_storage->commitExportPartitionTransaction(manifest.transaction_id, manifest.partition_id, exported_paths, iceberg_args, context);
@@ -519,6 +534,50 @@ namespace ExportPartitionUtils
         }
     }
 #endif
+
+    void verifyExportSchemaCastable(
+        const StorageMetadataPtr & source_metadata,
+        const StorageMetadataPtr & destination_metadata,
+        const StorageID & destination_storage_id,
+        const ContextPtr & context)
+    {
+        /// Build (and discard) the same converting DAG the export worker will build
+        /// later, to surface structural mismatches (column count, untyped casts) early.
+        Block source_sample_block;
+        for (const auto & column : source_metadata->getColumns().getReadable())
+            source_sample_block.insert({column.type->createColumn(), column.type, column.name});
+
+        const auto destination_sample_block = destination_metadata->getSampleBlockNonMaterialized();
+
+        const auto source_columns = source_sample_block.getColumnsWithTypeAndName();
+        const auto destination_columns = destination_sample_block.getColumnsWithTypeAndName();
+
+        (void) ActionsDAG::makeConvertingActions(
+            source_columns,
+            destination_columns,
+            ActionsDAG::MatchColumnsMode::Position,
+            context);
+
+        /// Lossy casts may silently change values, so reject them unless the user opts in.
+        if (context->getSettingsRef()[Setting::export_merge_tree_part_allow_lossy_cast])
+            return;
+
+        const size_t num_columns = std::min(source_columns.size(), destination_columns.size());
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            const auto & source_column = source_columns[i];
+            const auto & destination_column = destination_columns[i];
+            if (!canBeSafelyCast(source_column.type, destination_column.type))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot export to {}: column '{}' requires a lossy cast from {} to {}, "
+                    "which may change values. Set `export_merge_tree_part_allow_lossy_cast = 1` "
+                    "to allow lossy casts during export.",
+                    destination_storage_id.getFullTableName(),
+                    destination_column.name,
+                    source_column.type->getName(),
+                    destination_column.type->getName());
+        }
+    }
 }
 
 }

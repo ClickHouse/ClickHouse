@@ -23,6 +23,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Storages/MergeTree/ExportPartTask.h>
 #include <Storages/MergeTree/ExportPartitionUtils.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -7162,7 +7163,9 @@ void MergeTreeData::exportPartToTable(
             metadata_object->stringify(oss);
             iceberg_metadata_json = oss.str();
 
-            ExportPartitionUtils::verifyIcebergPartitionCompatibility(metadata_object, source_metadata_ptr->getPartitionKeyAST());
+            ExportPartitionUtils::verifyIcebergPartitionCompatibility(
+                metadata_object,
+                source_metadata_ptr->getPartitionKeyAST());
         }
 #else
         (void)iceberg_metadata_json_;
@@ -7170,17 +7173,12 @@ void MergeTreeData::exportPartToTable(
 #endif
     }
 
-    const auto & source_columns = source_metadata_ptr->getColumns();
+    /// Positional CAST matching, like `INSERT INTO dest SELECT * FROM src`.
+    ExportPartitionUtils::verifyExportSchemaCastable(
+        source_metadata_ptr, destination_metadata_ptr, dest_storage->getStorageID(), query_context);
 
-    const auto & destination_columns = destination_metadata_ptr->getColumns();
-
-    /// compare all source readable columns with all destination insertable columns
-    /// this allows us to skip ephemeral columns
-    if (source_columns.getReadable().sizeOfDifference(destination_columns.getInsertable()))
-        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
-
-    /// for data lakes this check is performed differently. It is a bit more complex as we need to convert the iceberg partition spec
-    /// to the MergeTree partition spec and compare the two.
+    /// Iceberg partition compatibility is checked above; here we only need the
+    /// partition-key ASTs to match (partition-column types follow the lossy-cast gate).
     if (!dest_storage->isDataLake())
     {
         if (query_to_string(source_metadata_ptr->getPartitionKeyAST()) != query_to_string(destination_metadata_ptr->getPartitionKeyAST()))

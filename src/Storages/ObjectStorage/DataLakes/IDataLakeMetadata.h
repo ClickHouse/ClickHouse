@@ -159,7 +159,7 @@ public:
         const String & /* transaction_id */,
         Int64 /* original_schema_id */,
         Int64 /* partition_spec_id */,
-        const std::vector<Field> & /* partition_values */,
+        const Block & /* partition_source_block */,
         SharedHeader /* sample_block */,
         const std::vector<String> & /* data_file_paths */,
         StorageObjectStorageConfigurationPtr /* configuration */,

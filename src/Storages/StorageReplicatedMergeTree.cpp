@@ -85,6 +85,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/ExportPartitionUtils.h>
+#include <Interpreters/ActionsDAG.h>
 
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
@@ -234,6 +235,7 @@ namespace Setting
     extern const SettingsUInt64 export_merge_tree_part_max_rows_per_file;
     extern const SettingsBool export_merge_tree_part_throw_on_pending_mutations;
     extern const SettingsBool export_merge_tree_part_throw_on_pending_patch_parts;
+    extern const SettingsBool export_merge_tree_part_allow_lossy_cast;
     extern const SettingsExportPartitionAllOnError export_merge_tree_partition_all_on_error;
     extern const SettingsString export_merge_tree_part_filename_pattern;
     extern const SettingsBool write_full_path_in_iceberg_metadata;
@@ -8595,19 +8597,17 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     auto src_snapshot = getInMemoryMetadataPtr();
     auto destination_snapshot = dest_storage->getInMemoryMetadataPtr();
 
-    /// compare all source readable columns with all destination insertable columns
-    /// this allows us to skip ephemeral columns
-    if (src_snapshot->getColumns().getReadable().sizeOfDifference(destination_snapshot->getColumns().getInsertable()))
-        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
+    /// Positional CAST matching, like `INSERT INTO dest SELECT * FROM src`.
+    ExportPartitionUtils::verifyExportSchemaCastable(
+        src_snapshot, destination_snapshot, dest_storage->getStorageID(), query_context);
 
-    /// for data lakes this check is performed later. It is a bit more complex as we need to convert the iceberg partition spec
-    /// to the MergeTree partition spec and compare the two.
+    /// Iceberg partition compatibility is checked below; here we only need the
+    /// partition-key ASTs to match (partition-column types follow the lossy-cast gate).
     if (!dest_storage->isDataLake())
     {
         if (query_to_string(src_snapshot->getPartitionKeyAST()) != query_to_string(destination_snapshot->getPartitionKeyAST()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
     }
-    
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
 
@@ -8720,6 +8720,7 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     manifest.file_already_exists_policy = query_context->getSettingsRef()[Setting::export_merge_tree_part_file_already_exists_policy].value;
     manifest.filename_pattern = query_context->getSettingsRef()[Setting::export_merge_tree_part_filename_pattern].value;
     manifest.write_full_path_in_iceberg_metadata = query_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata];
+    manifest.allow_lossy_cast = query_context->getSettingsRef()[Setting::export_merge_tree_part_allow_lossy_cast];
 
     if (dest_storage->isDataLake())
     {
@@ -8753,7 +8754,8 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
         const auto metadata_object = iceberg_metadata->getMetadataJSON(query_context);
 
         ExportPartitionUtils::verifyIcebergPartitionCompatibility(
-            metadata_object, src_snapshot->getPartitionKeyAST());
+            metadata_object,
+            src_snapshot->getPartitionKeyAST());
 
         std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);

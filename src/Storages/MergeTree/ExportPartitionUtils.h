@@ -7,6 +7,7 @@
 #include <Common/Logger.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include "Storages/IStorage.h"
+#include <Storages/StorageInMemoryMetadata.h>
 #include <config.h>
 
 #if USE_AVRO
@@ -26,14 +27,15 @@ namespace ExportPartitionUtils
 
     ContextPtr getContextCopyWithTaskSettings(const ContextPtr & context, const ExportReplicatedMergeTreePartitionManifest & manifest);
 
-    /// Returns the partition key values for the given partition_id by reading from
-    /// the first active local part. Throws LOGICAL_ERROR if no such part is found.
+    /// Returns the representative source partition-key columns (the first active local part's
+    /// minmax block) for the given partition_id. The destination recomputes the Iceberg partition
+    /// tuple from this block by casting to its column types and applying the partition transform.
     ///
     /// Edge case: if the partition was dropped after export started, or this replica
     /// has not yet received any part for this partition (extreme replication lag on a
     /// recovery path), no active part will be found and the commit will fail. The task
     /// will be retried on the next poll cycle or picked up by a different replica.
-    std::vector<Field> getPartitionValuesForIcebergCommit(
+    Block getPartitionSourceBlockForIcebergCommit(
         MergeTreeData & storage, const String & partition_id);
 
     void commit(
@@ -88,10 +90,20 @@ namespace ExportPartitionUtils
         const std::string & exception_message,
         const LoggerPtr & log);
 
+    /// Validates that source columns can be exported into the destination with the
+    /// same positional CAST matching as `INSERT INTO dest SELECT * FROM src`. Lossy
+    /// casts are rejected unless `export_merge_tree_part_allow_lossy_cast` is set.
+    /// Throws BAD_ARGUMENTS on any violation.
+    void verifyExportSchemaCastable(
+        const StorageMetadataPtr & source_metadata,
+        const StorageMetadataPtr & destination_metadata,
+        const StorageID & destination_storage_id,
+        const ContextPtr & context);
+
 #if USE_AVRO
-    /// Verifies that the source MergeTree partition key is compatible with the
-    /// destination Iceberg partition spec by comparing field source-ids and
-    /// transforms in order. Throws BAD_ARGUMENTS if they do not match.
+    /// Verifies the source MergeTree partition key matches the destination Iceberg
+    /// partition spec (source-ids and transforms in order). Throws BAD_ARGUMENTS on
+    /// mismatch.
     void verifyIcebergPartitionCompatibility(
         const Poco::JSON::Object::Ptr & metadata_object,
         const ASTPtr & partition_key_ast);

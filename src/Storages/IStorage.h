@@ -468,11 +468,11 @@ It is currently only implemented in StorageObjectStorage.
     struct IcebergCommitExportPartitionArguments
     {
       std::string metadata_json_string;
-      /// Partition column values (after transforms). Callers are responsible for
-      /// populating this: the partition-export path parses them from the persisted
-      /// JSON string, while the direct EXPORT PART path reads them from the part's
-      /// partition key.
-      std::vector<Field> partition_values;
+      /// Representative source partition-key columns from one exported part (the part's
+      /// minmax block). The destination derives the Iceberg partition tuple from a row of
+      /// this block by casting to the destination column types and applying the partition
+      /// transform, so the metadata partition value matches the exported data files.
+      Block partition_source_block;
     };
 
     virtual void commitExportPartitionTransaction(

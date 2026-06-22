@@ -173,6 +173,7 @@ struct ExportReplicatedMergeTreePartitionManifest
     MergeTreePartExportManifest::FileAlreadyExistsPolicy file_already_exists_policy;
     String filename_pattern;
     bool write_full_path_in_iceberg_metadata = false;
+    bool allow_lossy_cast = false;
     String iceberg_metadata_json;
 
     std::string toJsonString() const
@@ -206,6 +207,7 @@ struct ExportReplicatedMergeTreePartitionManifest
         json.set("max_retries", max_retries);
         json.set("task_timeout_seconds", task_timeout_seconds);
         json.set("write_full_path_in_iceberg_metadata", write_full_path_in_iceberg_metadata);
+        json.set("allow_lossy_cast", allow_lossy_cast);
         std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
         Poco::JSON::Stringifier::stringify(json, oss);
@@ -258,6 +260,11 @@ struct ExportReplicatedMergeTreePartitionManifest
         }
 
         manifest.write_full_path_in_iceberg_metadata = json->getValue<bool>("write_full_path_in_iceberg_metadata");
+
+        /// Default to true for tasks created before this field existed, so an in-flight
+        /// export scheduled with the old permissive worker behavior is not wrongly rejected
+        /// on upgrade. New tasks always persist the initiator's actual choice.
+        manifest.allow_lossy_cast = json->has("allow_lossy_cast") ? json->getValue<bool>("allow_lossy_cast") : true;
 
         return manifest;
     }

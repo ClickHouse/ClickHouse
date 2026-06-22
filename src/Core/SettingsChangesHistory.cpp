@@ -86,6 +86,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+            {"object_storage_cluster_join_mode", "allow", "allow", "New setting"},
+            {"export_merge_tree_partition_task_timeout_seconds", "3600", "86400", "Increase default value to make it more realistic"},
+            {"export_merge_tree_part_allow_lossy_cast", false, false, "New setting to gate lossy casts in EXPORT PART/PARTITION behind explicit acknowledgment"},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",
