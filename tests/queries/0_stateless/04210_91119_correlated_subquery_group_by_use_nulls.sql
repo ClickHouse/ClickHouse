@@ -122,3 +122,23 @@ SELECT (SELECT c0 FROM (SELECT 'inner'::String) t1(c0))
 FROM (SELECT 1::Bool) t0(c0)
 GROUP BY c0 WITH ROLLUP
 ORDER BY c0 NULLS LAST;
+
+-- A constant LowCardinality GROUP BY key (STID 3721-419e). ConstantNode::convertToNullable used
+-- plain makeNullableSafe, which is a no-op on LowCardinality(T) (it cannot be inside Nullable), so
+-- the key stayed non-Nullable while its rollup/grouping-sets rows were NULL at runtime, and an
+-- aggregate reading the subquery's projected type bad-cast ColumnNullable to ColumnString.
+SELECT '-- minSimpleState over LowCardinality constant key ---';
+SELECT minSimpleState(*) FROM (SELECT DISTINCT toLowCardinality('1') GROUP BY GROUPING SETS ((1)));
+
+SELECT '-- projected type is LowCardinality(Nullable) ---';
+SELECT toTypeName(*) FROM (SELECT DISTINCT toLowCardinality('1') GROUP BY GROUPING SETS ((1)));
+
+SELECT '-- min over LowCardinality constant key with ROLLUP ---';
+SELECT min(*) FROM (SELECT DISTINCT toLowCardinality('1') GROUP BY ROLLUP(1));
+
+SELECT '-- max over LowCardinality constant key with GROUPING SETS ---';
+SELECT max(*) FROM (SELECT toLowCardinality('a') GROUP BY GROUPING SETS ((1)));
+
+SELECT '-- original fuzzer query ---';
+SELECT minDistinct(c0 >= (SELECT minSimpleState(*) FROM (SELECT DISTINCT toLowCardinality('1') GROUP BY GROUPING SETS ((1)))))
+FROM (SELECT 1 AS c0 LIMIT 197) AS t0;

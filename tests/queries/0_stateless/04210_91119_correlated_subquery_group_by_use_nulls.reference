@@ -69,3 +69,13 @@ a
 -- non-correlated subquery ---
 inner
 inner
+-- minSimpleState over LowCardinality constant key ---
+1
+-- projected type is LowCardinality(Nullable) ---
+LowCardinality(Nullable(String))
+-- min over LowCardinality constant key with ROLLUP ---
+1
+-- max over LowCardinality constant key with GROUPING SETS ---
+a
+-- original fuzzer query ---
+1

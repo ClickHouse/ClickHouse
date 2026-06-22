@@ -116,7 +116,12 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
 void ConstantNode::convertToNullable()
 {
-    constant_value = { makeNullableSafe(constant_value.getColumn()), makeNullableSafe(constant_value.getType()) };
+    /// LowCardinality(T) cannot be wrapped in Nullable, so makeNullableSafe leaves it unchanged.
+    /// Match ColumnNode::convertToNullable and produce LowCardinality(Nullable(T)) for such keys,
+    /// otherwise a constant LowCardinality GROUP BY key stays non-Nullable while its runtime
+    /// rollup/grouping-sets rows are NULL, and an aggregate reading the key bad-casts ColumnNullable.
+    constant_value = { ConstantValue::wrapToColumnConst(makeNullableOrLowCardinalityNullableSafe(constant_value.getColumn())),
+                       makeNullableOrLowCardinalityNullableSafe(constant_value.getType()) };
 }
 
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
