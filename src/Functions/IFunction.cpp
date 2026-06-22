@@ -855,6 +855,13 @@ namespace
             auto it = cache.find(signature_str);
             if (it == cache.end())
             {
+                /// Parsing a signature resolves its literal type names (e.g. `UInt8`, `Float64`)
+                /// through `DataTypeFactory`, which records them in `query_log.used_data_type_families`
+                /// via `Context::addQueryFactoriesInfo`. These types come from the signature text, not
+                /// from the user's query, so suppress factory-usage tracking while parsing — otherwise
+                /// analyzing a converted function pollutes the user-facing factory attribution
+                /// (`01656_test_query_log_factories_info`).
+                Context::SuppressQueryFactoriesInfoScope suppress_factory_info;
                 sig = std::make_shared<FunctionSignature>(signature_str);
                 cache.emplace(signature_str, sig);
             }
