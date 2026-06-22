@@ -20,7 +20,7 @@
 namespace DB
 {
 
-static const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnumValues()
+const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnumValues()
 {
     static const std::vector<std::pair<String, Int8>> values = []
     {
@@ -171,7 +171,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
                     break;
                 }
                 default:
-                    chassert(false);
+                    assert(false);
             }
 
             column_index.push_back(current_index);
