@@ -52,6 +52,7 @@
 #include <base/isSharedPtrUnique.h>
 
 #include <Poco/Net/HTTPMessage.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
 #include <memory>
@@ -92,7 +93,6 @@ extern const SettingsInt64 zstd_window_log_max;
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int CANNOT_COMPILE_REGEXP;
 
 extern const int NO_ELEMENTS_IN_CONFIG;
 
@@ -1137,14 +1137,14 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const HTTPHandlerConnectionConfig & connection_config,
     const NameSet & receive_params_,
     const std::string & predefined_query_,
-    const CompiledRegexPtr & url_regex_,
-    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
+    const CompiledRegexPtr & url_regexp_,
+    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
     const HTTPResponseHeaderSetup & http_response_headers_override_)
     : HTTPHandler(server_, connection_config, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
-    , url_regex(url_regex_)
-    , header_name_with_capture_regex(header_name_with_regex_)
+    , url_regexp(url_regexp_)
+    , header_name_with_capture_regexp(header_name_with_regexp_)
 {
 }
 
@@ -1192,13 +1192,13 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
         }
     };
 
-    if (url_regex)
+    if (url_regexp)
     {
         const auto & uri = request.getURI();
-        set_query_params(uri.data(), find_first_symbols<'?'>(uri.data(), uri.data() + uri.size()), url_regex);
+        set_query_params(uri.data(), find_first_symbols<'?'>(uri.data(), uri.data() + uri.size()), url_regexp);
     }
 
-    for (const auto & [header_name, regex] : header_name_with_capture_regex)
+    for (const auto & [header_name, regex] : header_name_with_capture_regexp)
     {
         const auto & header_value = request.get(header_name);
         set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
@@ -1252,36 +1252,7 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(
     return factory;
 }
 
-static inline bool capturingNamedQueryParam(NameSet receive_params, const CompiledRegexPtr & compiled_regex)
-{
-    const auto & capturing_names = compiled_regex->NamedCapturingGroups();
-    return std::count_if(
-        capturing_names.begin(),
-        capturing_names.end(),
-        [&](const auto & iterator)
-        {
-            return std::count_if(
-                receive_params.begin(), receive_params.end(), [&](const auto & param_name) { return param_name == iterator.first; });
-        });
-}
-
-static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
-{
-    auto compiled_regex = std::make_shared<const re2::RE2>(expression);
-
-    if (!compiled_regex->ok())
-        throw Exception(
-            ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "Cannot compile re2: {} for http handling rule, error: {}. "
-            "Look at https://github.com/google/re2/wiki/Syntax for reference.",
-            expression,
-            compiled_regex->error());
-
-    return compiled_regex;
-}
-
-HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(
-    IServer & server,
+HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     std::unordered_map<String, String> & common_headers)
@@ -1295,24 +1266,11 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(
     boost::algorithm::trim(predefined_query);
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
-    std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;
-    Poco::Util::AbstractConfiguration::Keys headers_name;
-    config.keys(config_prefix + ".headers", headers_name);
-
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
 
-    for (const auto & header_name : headers_name)
-    {
-        auto expression = config.getString(config_prefix + ".headers." + header_name);
-
-        if (!startsWith(expression, "regex:"))
-            continue;
-
-        expression = expression.substr(6);
-        auto regex = getCompiledRegex(expression);
-        if (capturingNamedQueryParam(analyze_receive_params, regex))
-            headers_name_with_regex.emplace(std::make_pair(header_name, regex));
-    }
+    /// Regular expressions from the rule's url/headers whose named capturing groups are referenced by the query;
+    /// their captured values are passed to the query as parameters by PredefinedQueryHandler::customizeContext.
+    auto regexps = HTTPHandlerRegexpsWithNamedGroups::fromConfig(config, config_prefix, analyze_receive_params);
 
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
     if (!common_headers.empty())
@@ -1322,43 +1280,14 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
     }
 
-    std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
-
-    if (config.has(config_prefix + ".url"))
-    {
-        auto url_expression = config.getString(config_prefix + ".url");
-
-        if (startsWith(url_expression, "regex:"))
-            url_expression = url_expression.substr(6);
-
-        auto regex = getCompiledRegex(url_expression);
-        if (capturingNamedQueryParam(analyze_receive_params, regex))
-        {
-            auto creator = [&server,
-                            analyze_receive_params,
-                            predefined_query,
-                            regex,
-                            headers_name_with_regex,
-                            http_response_headers_override,
-                            connection_config] -> std::unique_ptr<PredefinedQueryHandler>
-            {
-                return std::make_unique<PredefinedQueryHandler>(
-                    server,
-                    connection_config,
-                    analyze_receive_params,
-                    predefined_query,
-                    regex,
-                    headers_name_with_regex,
-                    http_response_headers_override);
-            };
-            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
-            factory->addFiltersFromConfig(config, config_prefix);
-            return factory;
-        }
-    }
-
-    auto creator
-        = [&server, analyze_receive_params, predefined_query, headers_name_with_regex, http_response_headers_override, connection_config]
+    auto creator = [
+        &server,
+        analyze_receive_params,
+        predefined_query,
+        url_regexp = regexps.url_regexp,
+        headers_name_with_regexp = std::move(regexps.headers_name_with_regexp),
+        http_response_headers_override,
+        connection_config]
         -> std::unique_ptr<PredefinedQueryHandler>
     {
         return std::make_unique<PredefinedQueryHandler>(
@@ -1366,11 +1295,11 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(
             connection_config,
             analyze_receive_params,
             predefined_query,
-            CompiledRegexPtr{},
-            headers_name_with_regex,
+            url_regexp,
+            headers_name_with_regexp,
             http_response_headers_override);
     };
-    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
     return factory;
 }

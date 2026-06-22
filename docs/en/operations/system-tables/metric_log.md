@@ -119,7 +119,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_TextIndexHeaderCacheHits` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a header has been found in the cache.
 - `ProfileEvent_TextIndexHeaderCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a header has not been found in the cache.
 - `ProfileEvent_TextIndexPostingsCacheHits` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a text index posting list has been found in the cache.
-- `ProfileEvent_TextIndexPostingsCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a a text index posting list has not been found in the cache.
+- `ProfileEvent_TextIndexPostingsCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a text index posting list has not been found in the cache.
 - `ProfileEvent_TextIndexReadSparseIndexBlocks` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a sparse index block has been read from the text index.
 - `ProfileEvent_TextIndexReaderTotalMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent reading the text index.
 - `ProfileEvent_TextIndexReadGranulesMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent reading and analyzing granules of the text index.
