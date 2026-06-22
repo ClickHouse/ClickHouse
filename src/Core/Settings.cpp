@@ -2478,6 +2478,11 @@ DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
     Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
     Value is the maximum number of tables to optimize.
 )", 0) \
+DECLARE(UInt64, query_plan_optimize_join_order_max_searched_plans, 100000, R"(
+Maximum number of partial plans the join order optimizer may enumerate before giving up and falling back to the next algorithm in `query_plan_optimize_join_order_algorithm`.
+This bounds optimization time deterministically (independent of wall-clock) on dense join graphs such as cliques or stars, where the search space grows exponentially.
+Set to 0 to disable the limit. Has no effect on the default `query_plan_optimize_join_order_limit`, where the search always stays well below this bound.
+)", EXPERIMENTAL) \
 DECLARE(UInt64, query_plan_optimize_join_order_randomize, 0, R"(
 When non-zero, the join order optimizer uses randomly generated cardinalities and NDVs instead of real statistics.
 When set to 1, a random seed is generated, when set to a value > 1, that value is used as the seed directly.
@@ -2724,7 +2729,12 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 )", 0) \
     DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
-Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into the disjunction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are handled: the argument list is normalized like `coalesce` itself (`NULL` literals dropped, arguments after the first non-`Nullable` one dropped), and a trailing non-`NULL` constant, if any, is emitted as the final branch. The rewrite is strictly additive for index pruning; runtime filtering still uses the original predicate.
+Allow the MergeTree primary key and skip indexes to prune granules for `WHERE`/`PREWHERE` predicates that involve `coalesce` or `ifNull`. Without this setting, such predicates are opaque to index analysis and do not prune, so granules that cannot match are still read. This affects only which granules are read; query results are unchanged, because rows are still filtered by the original predicate.
+
+Two predicate shapes are rewritten before index analysis:
+
+- A comparison against a `coalesce`/`ifNull`, such as `coalesce(a, b) = 5`, becomes a disjunction so an index on each argument can prune: `a = 5 OR (a IS NULL AND b = 5)`, extended for more arguments.
+- A `coalesce`/`ifNull` with a falsy (zero) constant default used directly as a condition, such as `ifNull(a = 5, 0)` or `coalesce(a = 5, 0)`, is unwrapped to its inner predicate `a = 5`. Such wrappers collapse the inner predicate's three-valued result into a definite boolean (mapping `NULL` to `false`).
 )", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
@@ -7921,6 +7931,12 @@ instead of glob listing. 0 means disabled.
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_nullable_tuple_type, false, R"(
+Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
+
+This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
+Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
+)", BETA, enable_nullable_tuple_type) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(
@@ -7946,6 +7962,11 @@ Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or 
 )", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
+)", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
+)", 0) \
+    DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
+Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
     \
     /* ####################################################### */ \
@@ -8095,12 +8116,6 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
 Allow to create database with Engine=MaterializedPostgreSQL(...).
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_nullable_tuple_type, false, R"(
-Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
-
-This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
-Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
 
@@ -8108,7 +8123,7 @@ Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Null
 - `true`: Return `Nullable(Tuple(...))` and use `NULL` for rows where the subcolumn is missing.
 
 This setting controls extracted subcolumn behavior only.
-It does not control whether `Nullable(Tuple(...))` columns can be created in tables; that is controlled by `allow_experimental_nullable_tuple_type`.
+It does not control whether `Nullable(Tuple(...))` columns can be created in tables; that is controlled by `enable_nullable_tuple_type`.
 
 ClickHouse uses the value for this setting loaded at server startup.
 Changes made with `SET` or query-level `SETTINGS` do not change extracted subcolumn behavior.
@@ -8269,9 +8284,10 @@ Allow to use hive partitioning with S3Queue/AzureQueue engines
     )", EXPERIMENTAL) \
 DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
- - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
- - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
-Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
+ - `greedy` - basic greedy algorithm - works fast but might not produce the best join order
+ - `dpsize` - implements DPsize algorithm currently only for inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates
+ - `dphyp` - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
+Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
@@ -8293,6 +8309,9 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     /* AI function settings */ \
     DECLARE(Bool, allow_experimental_ai_functions, false, R"(
 Enable experimental AI functions (e.g. `aiGenerateContent`). These functions make external HTTP calls to AI providers.
+)", EXPERIMENTAL) \
+    DECLARE(String, ai_function_credentials, "", R"(
+Name of the named collection that AI functions use for provider credentials and configuration (`provider`, `endpoint`, `model`, optional `api_key`, etc.). When empty, an exception is raised.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
@@ -8650,6 +8669,9 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = SettingsTraits::resolveName(change.name);
 
+            if (getTier(final_name) == SettingsTierType::OBSOLETE)
+                continue;
+
             /// If this setting was changed manually, we don't change it
             if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
                 continue;
@@ -8706,6 +8728,11 @@ bool Settings::isChanged(std::string_view name) const
 SettingsTierType Settings::getTier(std::string_view name) const
 {
     return impl->getTier(name);
+}
+
+std::string_view Settings::getDescription(std::string_view name) const
+{
+    return impl->getDescription(name);
 }
 
 bool Settings::tryGet(std::string_view name, Field & value) const
