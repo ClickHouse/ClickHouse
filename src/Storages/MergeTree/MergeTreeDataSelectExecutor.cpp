@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
+    extern const SettingsBool use_lightweight_primary_key_index_analysis;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -503,7 +504,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         return;
 
     part_offset_condition.emplace(KeyCondition{
-        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context),
+        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context, /* boolean_context */ true),
         context,
         sample.getNames(),
         std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
@@ -550,7 +551,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
 
     auto required_columns = dag->getRequiredColumns();
     total_offset_condition.emplace(KeyCondition{
-        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context),
+        ActionsDAGWithInversionPushDown(dag->getOutputs().front(), context, /* boolean_context */ true),
         context,
         required_columns.getNames(),
         std::make_shared<ExpressionActions>(ActionsDAG(required_columns), ExpressionActionsSettings{}),
@@ -816,6 +817,52 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 }
 
 
+/// The minmax skip index reflects the physical rows of a part as they were written, so it goes
+/// stale when a pending or materialized change is not yet merged into the part:
+///  - a lightweight or ordinary delete hides rows, but the minmax still advertises their values;
+///  - a lightweight update / patch part rewrites the indexed column, but the minmax still
+///    advertises the pre-update values;
+///  - an ALTER MODIFY COLUMN changes the indexed column's type, but the minmax still holds bytes
+///    serialized with the old type, which order differently under the new type.
+/// The top-k granule optimization keeps only the globally extreme granules, so a part whose stale
+/// minmax advertises an extreme value can displace and prune a part that holds the live top rows,
+/// yielding wrong (often empty) results. Exclude such parts from candidate selection; they are then
+/// read in full with mutations and patches applied on read, while the optimization stays active for
+/// parts whose top-k index is up to date.
+static bool partHasStaleTopKIndex(
+    const MergeTreeData::DataPartPtr & part,
+    const MergeTreeIndexPtr & top_k_index,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context)
+{
+    /// Materialized lightweight delete: the part carries a _row_exists column.
+    if (part->hasLightweightDelete())
+        return true;
+
+    /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
+    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    if (mutations_snapshot
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
+    {
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
+
+        /// A pending delete hides rows of any value -> the index is stale. This covers both a
+        /// lightweight DELETE (rewritten as an UPDATE of _row_exists) and an ordinary ALTER DELETE
+        /// (which adds nothing to getAllUpdatedColumns(), so the canUseIndex check below misses it).
+        if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
+            return true;
+
+        /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
+        /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
+        /// top-k path is consistent with it. Changes to other columns leave the index valid.
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+            return true;
+    }
+
+    return false;
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
     auto & metadata_snapshot = filter_context.metadata_snapshot;
@@ -1071,7 +1118,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
-            if (perform_top_k_optimization)
+            if (perform_top_k_optimization
+                && !partHasStaleTopKIndex(ranges.data_part, skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, mutations_snapshot, context))
             {
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
@@ -1627,27 +1675,104 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const auto & sorting_key = metadata_snapshot->getSortingKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     std::vector<bool> reverse_flags;
-    size_t num_key_columns = key_condition.getNumKeyColumns();
+
+    const auto index = part->getIndex();
+    const bool use_sparse_pk_representation
+        = settings[Setting::use_lightweight_primary_key_index_analysis];
+
+    size_t num_key_columns = 0;
+
+    /// Non-sparse representation that includes all columns whether Filter needs or not
     DataTypes key_types;
-    if (num_key_columns > 0)
+    size_t used_key_size = 0;
+    std::vector<FieldRef> index_left;
+    std::vector<FieldRef> index_right;
+
+    /// Sparse representation that includes only columns that Filter needs
+    std::vector<size_t> used_key_indices;
+    size_t sparse_keys_size = 0;
+    std::vector<FieldRef> sparse_key_left;
+    std::vector<FieldRef> sparse_key_right;
+    DataTypes sparse_key_types;
+    std::vector<UInt8> equal_boundaries_mask;
+
+    if (use_sparse_pk_representation)
     {
-        const auto index = part->getIndex();
+        /// If until index 4 of PK key columns is used in the filter, then used_key_prefix_size would be 5.
+        /// There is no need to process later key columns
+        const size_t used_key_prefix_size = key_condition.getUsedKeyPrefixSize();
+
+        /// If earlier columns have high cardinality, then later columns may not be loaded
+        const size_t num_index_columns_loaded = index->size();
+
+        /// Do not process more columns than needed
+        num_key_columns = std::min(used_key_prefix_size, num_index_columns_loaded);
 
         for (size_t i = 0; i < num_key_columns; ++i)
         {
-            if (i < index->size())
-            {
-                index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-                reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
-            }
-            else
-            {
-                index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
-                reverse_flags.push_back(false);
-            }
-
-            key_types.emplace_back(primary_key.data_types[i]);
+            chassert(i < index->size());
+            chassert(index->at(i));
+            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+            reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
         }
+
+        //// Get PK columns potentially used in `KeyCondition` Filter
+        used_key_indices = key_condition.getUsedColumnsInOrder();
+
+        /// Remove used_key_indices entries whose marks not loaded into memory
+        used_key_indices.erase(
+            std::remove_if(used_key_indices.begin(), used_key_indices.end(), [&](size_t idx) { return idx >= num_key_columns; }),
+            used_key_indices.end());
+
+        /// Now we create sparse arrays for efficient processing in `KeyCondition`. The goal is to only send the information
+        /// that is needed and avoid creation of `FieldRef`, `Range` both of which under the hood uses Field which are very slow.
+        /// In the event of long PK, this can become extremely slow.
+        /// So in the sparse form, we only have keys which are used in `KeyCondition` by some RPN element and marks are loaded into memory
+        sparse_keys_size = used_key_indices.size();
+
+        sparse_key_left.resize(sparse_keys_size);
+        sparse_key_right.resize(sparse_keys_size);
+
+        /// Datatypes are always same regardless of `MarkRange`, so we construct it only once.
+        sparse_key_types.reserve(sparse_keys_size);
+        for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+        {
+            size_t key_col = used_key_indices[sparse_pos];
+            sparse_key_types.emplace_back(primary_key.data_types[key_col]);
+        }
+
+        /// Equality bitmap for all key columns (not only sparse): `equal_boundaries_mask[i] = (left_key_i == right_key_i)`
+        /// For intermediate key columns that are not used by KeyCondition, we still need to know if their left and right
+        /// marks are the same or not to properly construct all hyperrectangles. However, this is extremely fast because
+        /// for intermediate columns we never create `Range`, `FieldRef`, or `Field` in `KeyCondition`.
+        equal_boundaries_mask.resize(num_key_columns);
+    }
+    else
+    {
+        num_key_columns = key_condition.getNumKeyColumns();
+        if (num_key_columns > 0)
+        {
+            for (size_t i = 0; i < num_key_columns; ++i)
+            {
+                if (i < index->size())
+                {
+                    index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+                    reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
+                }
+                else
+                {
+                    /// The column of the primary key was not loaded in memory - we'll skip it.
+                    index_columns->emplace_back();
+                    reverse_flags.push_back(false);
+                }
+
+                key_types.emplace_back(primary_key.data_types[i]);
+            }
+        }
+
+        used_key_size = num_key_columns;
+        index_left.resize(used_key_size);
+        index_right.resize(used_key_size);
     }
 
     /// If there are no monotonic functions, there is no need to save block reference.
@@ -1667,17 +1792,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
+            chassert((*index_columns)[column].column);
             (*index_columns)[column].column->get(row, field);
             // NULL_LAST
             if (field.isNull())
                 field = POSITIVE_INFINITY;
         };
     }
-
-    /// NOTE Creating temporary Field objects to pass to KeyCondition.
-    size_t used_key_size = num_key_columns;
-    std::vector<FieldRef> index_left(used_key_size);
-    std::vector<FieldRef> index_right(used_key_size);
 
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
@@ -1687,8 +1808,76 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
-        auto check_key_condition = [&]()
+        auto check_key_condition = [&]() -> BoolMask
         {
+            if (!key_condition_useful)
+                return BoolMask(true, true);
+
+            if (use_sparse_pk_representation)
+            {
+                /// Nothing can be inferred from empty ranges
+                if (sparse_keys_size == 0)
+                    return BoolMask(true, true);
+
+                if (range.end == marks_count)
+                {
+                    /// Last mark: the right boundary of every key column is +inf. The left and right
+                    /// boundaries are equal only when the left boundary value is also +inf, i.e. when the
+                    /// value at range.begin is NULL (create_field_ref maps NULL to +inf for NULL_LAST
+                    /// ordering). A non-nullable column is never NULL, so its boundaries are never equal.
+                    for (size_t i = 0; i < num_key_columns; ++i)
+                    {
+                        const auto & col = (*index_columns)[i].column;
+                        chassert(col);
+                        equal_boundaries_mask[i] = col->isNullAt(range.begin);
+                    }
+
+                    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+                    {
+                        const size_t key_col = used_key_indices[sparse_pos];
+
+                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
+                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
+
+                        create_field_ref(range.begin, key_col, left);
+
+                        right = POSITIVE_INFINITY;
+                    }
+                }
+                else
+                {
+                    /// Non-final mark: compare PK index values at range.begin and range.end for all key columns.
+                    for (size_t i = 0; i < num_key_columns; ++i)
+                    {
+                        const auto & col = (*index_columns)[i].column;
+
+                        chassert(col);
+
+                        equal_boundaries_mask[i] = (col->compareAt(range.begin, range.end, *col, 1) == 0);
+                    }
+
+                    /// Build left/right boundaries only for used key columns.
+                    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+                    {
+                        const size_t key_col = used_key_indices[sparse_pos];
+
+                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
+                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
+
+                        create_field_ref(range.begin, key_col, left);
+                        create_field_ref(range.end, key_col, right);
+                    }
+                }
+
+                return key_condition.checkInRange(
+                    used_key_indices,
+                    sparse_key_left.data(),
+                    sparse_key_right.data(),
+                    sparse_key_types,
+                    equal_boundaries_mask,
+                    initial_mask);
+            }
+
             if (range.end == marks_count)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
@@ -1722,6 +1911,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
             }
+
             return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
         };
 
@@ -1966,7 +2156,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
 {
-    if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName()))
+    if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName(), &part->getDataPartStorage()))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
@@ -2383,7 +2573,7 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache)
 {
-    if (!skip_index_minmax->getDeserializedFormat(part->checksums, skip_index_minmax->getFileName()))
+    if (!skip_index_minmax->getDeserializedFormat(part->checksums, skip_index_minmax->getFileName(), &part->getDataPartStorage()))
     {
         return nullptr;
     }
