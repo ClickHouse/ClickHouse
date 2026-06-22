@@ -21,7 +21,7 @@ if __name__ == "__main__":
     # Note, LSan does not compatible with debugger
     if "asan" not in job_name:
         # With gdb we will capture stacktrace in case of abnormal termination and timeout (45 mins)
-        command_launcher = "timeout -s INT -v 45m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex run -ex bt -ex 'thread apply all bt' -arg"
+        command_launcher = f"timeout -s INT -v 45m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex run -ex bt -ex 'thread apply all bt' -arg"
     else:
         command_launcher = ""
 

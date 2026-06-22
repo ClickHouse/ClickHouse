@@ -1,5 +1,4 @@
 #include <Common/DateLUTImpl.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -116,11 +115,6 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric IsServerShuttingDown;
 }
 
 namespace DB
@@ -547,7 +541,7 @@ QueryLogElement logQueryStart(
     return elem;
 }
 
-static void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
+void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
 {
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
     {
@@ -600,7 +594,7 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
+QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
 {
     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
     /// prevent partial/garbage results in case of exceptions during query execution.
@@ -608,7 +602,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
     query_pipeline.finalizeWriteInQueryResultCache();
 
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
+    std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
     String pipeline_dump;
     {
@@ -637,7 +631,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         .pipeline_dump = std::move(pipeline_dump)};
 }
 
-static void logQueryFinishImpl(
+void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
@@ -993,7 +987,7 @@ void logExceptionBeforeStart(
     }
 }
 
-static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
         return;
@@ -1132,8 +1126,8 @@ static BlockIO executeQueryImpl(
         context->setInitialQueryStartTime(query_start_time);
     }
 
-    chassert(internal || CurrentThread::get().tryGetQueryContext());
-    chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+    assert(internal || CurrentThread::get().tryGetQueryContext());
+    assert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1144,7 +1138,7 @@ static BlockIO executeQueryImpl(
 
     String query;
     String query_for_logging;
-    UInt64 normalized_query_hash = 0;
+    UInt64 normalized_query_hash;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
     /// Parse the query from string.
@@ -1343,20 +1337,29 @@ static BlockIO executeQueryImpl(
         }
 
         const char * query_end = end;
+        bool is_create_parameterized_view = false;
 
         if (out_ast)
         {
             if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 query_end = insert_query->data;
+
+            if (const auto * create_query = out_ast->as<ASTCreateQuery>())
+            {
+                is_create_parameterized_view = create_query->isParameterizedView();
+            }
+            else if (const auto * explain_query = out_ast->as<ASTExplainQuery>())
+            {
+                if (!explain_query->children.empty())
+                    if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
+                        is_create_parameterized_view = create_of_explain_query->isParameterizedView();
+            }
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters.
-        /// The visitor handles parameterized views internally: it substitutes parameters in
-        /// DDL parts (database, table, columns, storage, targets) while preserving placeholders
-        /// in the SELECT body, which form the view's parameterizable interface.
+        /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (out_ast && probably_has_params)
+        if (out_ast && !is_create_parameterized_view && probably_has_params)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);
@@ -1427,9 +1430,9 @@ static BlockIO executeQueryImpl(
         /// If it is used - do the random sampling and "collapse" the settings.
         /// It allows to consistently log queries with all the subqueries in distributed query processing
         /// (subqueries on remote nodes will receive these "collapsed" settings)
-        if (settings[Setting::log_queries] && static_cast<double>(settings[Setting::log_queries_probability]) < 1.0)
+        if (settings[Setting::log_queries] && settings[Setting::log_queries_probability] < 1.0)
         {
-            std::bernoulli_distribution should_write_log{static_cast<double>(settings[Setting::log_queries_probability])};
+            std::bernoulli_distribution should_write_log{settings[Setting::log_queries_probability]};
 
             context->setSetting("log_queries", should_write_log(thread_local_rng));
             context->setSetting("log_queries_probability", 1.0);
@@ -1600,11 +1603,18 @@ static BlockIO executeQueryImpl(
             if (quota)
             {
                 quota_checked = true;
-                /// Each governing quota is accounted appropriately: NORMALIZED_QUERY_HASH quotas
-                /// track against per-hash intervals, the rest against shared session intervals.
-                quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
-                quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
-                quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                if (quota->isKeyedByNormalizedQueryHash())
+                {
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                }
+                else
+                {
+                    quota->used(QuotaType::QUERY_INSERTS, 1);
+                    quota->used(QuotaType::QUERIES, 1);
+                    quota->checkExceeded(QuotaType::ERRORS);
+                }
 
                 /// Track per-normalized-query-hash quota limits (works for all key types).
                 quota->usedPerNormalizedHash(normalized_query_hash);
@@ -1768,15 +1778,26 @@ static BlockIO executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
-                        /// Each governing quota is accounted appropriately: NORMALIZED_QUERY_HASH
-                        /// quotas track against per-hash intervals, the rest against shared session
-                        /// intervals. A user may be governed by several quotas of different key types.
-                        if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
-                            quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
-                        else if (out_ast->as<ASTInsertQuery>())
-                            quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
-                        quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
-                        quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                        if (quota->isKeyedByNormalizedQueryHash())
+                        {
+                            /// For NORMALIZED_QUERY_HASH keyed quotas, track all resources
+                            /// against per-hash intervals instead of shared session intervals.
+                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
+                            else if (out_ast->as<ASTInsertQuery>())
+                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                        }
+                        else
+                        {
+                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                quota->used(QuotaType::QUERY_SELECTS, 1);
+                            else if (out_ast->as<ASTInsertQuery>())
+                                quota->used(QuotaType::QUERY_INSERTS, 1);
+                            quota->used(QuotaType::QUERIES, 1);
+                            quota->checkExceeded(QuotaType::ERRORS);
+                        }
 
                         /// Track per-normalized-query-hash quota limits (works for all key types).
                         quota->usedPerNormalizedHash(normalized_query_hash);
@@ -1999,14 +2020,7 @@ static BlockIO executeQueryImpl(
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer()
 {
     static std::mutex mutex;
-#if WITH_COVERAGE
-    /// Under LLVM coverage builds we use a fixed seed so that the set of AST mutations
-    /// (and therefore the set of branches taken inside `QueryFuzzer`) is stable run-to-run.
-    /// Without this, coverage of `QueryFuzzer.cpp` and friends flickers between coverage runs.
-    static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(pcg64(0xC0FFEEULL));
-#else
     static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(randomSeed());
-#endif
     return {fuzzer, std::unique_lock(mutex)};
 }
 
@@ -2041,32 +2055,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
     auto logger = getLogger("ASTFuzzer");
 
-    /// The fuzzer runs as a query finish callback, after the outer query's pipeline executor
-    /// has stopped enforcing limits. Without these checks the outer query keeps spawning fuzzed
-    /// queries while ignoring its own deadline, a KILL, or server shutdown, so it lingers in the
-    /// processlist and can trip the stress test hung check.
-    /// Some fuzzable queries (e.g. SHOW PROCESSLIST) are not inserted into the ProcessList, so
-    /// the deadline/KILL check via checkTimeLimitSoft is unavailable; the shutdown metric still
-    /// stops the loop in that case.
-    QueryStatusPtr process_list_element = context->getProcessListElement();
-
     ASTPtr base_ast = ast;
 
     for (size_t i = 0; i < num_runs; ++i)
     {
-        if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
-        {
-            LOG_TRACE(logger, "Stopping AST fuzzer: the server is shutting down");
-            break;
-        }
-
-        /// checkTimeLimitSoft returns false without throwing on a KILL or the outer deadline.
-        if (process_list_element && !process_list_element->checkTimeLimitSoft())
-        {
-            LOG_TRACE(logger, "Stopping AST fuzzer: outer query was killed or timed out");
-            break;
-        }
-
         ASTPtr fuzzed_ast;
         NameToNameMap fuzzed_query_params;
         {
@@ -2194,8 +2186,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
 
     ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
-            static_cast<double>(context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw]),
-            static_cast<double>(context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw]),
+            context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
+            context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
 
     ASTPtr ast;
@@ -2251,7 +2243,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
     if (!flags.internal && ast)
     {
-        Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
+        Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
         if (ast_fuzzer_runs_value > 0)
         {
             bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
@@ -2304,8 +2296,8 @@ void executeQuery(
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
 
     PODArray<char> parse_buf;
-    const char * begin = nullptr;
-    const char * end = nullptr;
+    const char * begin;
+    const char * end;
 
     try
     {
@@ -2321,18 +2313,16 @@ void executeQuery(
     size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
 
     ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
-            static_cast<double>(context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw]),
-            static_cast<double>(context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw]),
+            context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
+            context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
 
-    if (istr->available() > max_query_size || http_continue_callback || flags.parse_query_from_initial_buffer)
+    if (istr->available() > max_query_size || http_continue_callback)
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         /// Also, if the HTTP 100 Continue response is deferred (which is the case if http_continue_callback is set),
         /// we should not attempt to read anything from the body. We expect the query (without insert data) to be present
         /// in the buffer already because it should have been extracted from the query parameter.
-        /// The same applies to streaming inserts whose query is already in the initial buffer and whose body must remain
-        /// available for the input format.
         begin = istr->position();
         end = istr->buffer().end();
         istr->position() += end - begin;
@@ -2552,21 +2542,9 @@ void executeQuery(
             /// It's possible to have queries without input and output.
         }
 
-        /// Query with `implicit_transaction` is committed here because:
-        /// 1. `onFinish` is invoked after the transaction is committed.
-        /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
-        /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
-        /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
-        ///
-        /// It must also be committed before the AST fuzzer runs: the fuzzer resets the transaction stored
-        /// in the session and query contexts (see executeASTFuzzerQueries), which would otherwise leave the
-        /// executor's running flag set while `context->getCurrentTransaction()` is already gone.
-        if (implicit_tcl_executor->transactionRunning())
-            implicit_tcl_executor->commit(context);
-
         if (!flags.internal && ast)
         {
-            Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
+            Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
             if (ast_fuzzer_runs_value > 0)
             {
                 bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
@@ -2597,6 +2575,14 @@ void executeQuery(
         }
         throw;
     }
+
+    /// Query with `implicit_transaction` is committed here because:
+    /// 1. `onFinish` is invoked after the transaction is committed.
+    /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
+    /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
+    /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
+    if (implicit_tcl_executor->transactionRunning())
+        implicit_tcl_executor->commit(context);
 
     /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
     context->releaseQuerySlot();

@@ -6,6 +6,7 @@ import random
 import re
 import struct
 import time
+from fnmatch import fnmatch
 
 import pytest
 
@@ -118,7 +119,7 @@ def test_one_time_password(started_cluster):
     )
 
     assert "REQUIRED_SECOND_FACTOR" in node.query_and_get_error(
-        query_text, user="totuser", password="aa+bb"
+        query_text, user="totuser", password=f"aa+bb"
     )
 
     assert "totuser42\n" == node.query(
@@ -176,7 +177,7 @@ def test_interactive_totp_authentication(started_cluster):
     with client(command=f"{client_command}") as c:
         # Enter password when prompted first
         c.expect("Password.*:")
-        c.send("aa+bb", eol="\r")
+        c.send(f"aa+bb", eol="\r")
 
         # Then enter TOTP when prompted
         c.expect("TOTP.*:")
@@ -200,7 +201,7 @@ def test_interactive_totp_authentication(started_cluster):
     ) as c:
         # Enter only password, TOTP is provided in command line arguments
         c.expect("Password.*:")
-        c.send("aa+bb", eol="\r")
+        c.send(f"aa+bb", eol="\r")
         c.expect(prompt)
         c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
         c.expect("totuser42")
@@ -211,11 +212,11 @@ def test_interactive_totp_authentication(started_cluster):
 
     with client(command=f"{client_command}") as c:
         c.expect("Password.*:")
-        c.send("aa+bb", eol="\r")
+        c.send(f"aa+bb", eol="\r")
 
         # Then enter wrong TOTP when prompted
         c.expect("TOTP.*:")
-        c.send("000000", eol="\r")
+        c.send(f"000000", eol="\r")
         c.expect(expected_error)
 
     with client(command=f"{client_command} --password aa+bb+000000") as c:

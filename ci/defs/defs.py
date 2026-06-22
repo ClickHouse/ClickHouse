@@ -339,6 +339,7 @@ class JobNames:
     STYLE_CHECK = "Style check"
     CODE_REVIEW = "Code Review"
     FAST_TEST = "Fast test"
+    SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -355,7 +356,6 @@ class JobNames:
     DOCKER_KEEPER = "Docker keeper image"
     SQL_TEST = "SQLTest"
     SQL_LOGIC_TEST = "SQLLogic test"
-    SQL_STORM_TEST = "SQLStorm test"
     SQLANCER = "SQLancer"
     LLVM_COVERAGE = "LLVM Coverage"
     INSTALL_TEST = "Install packages"
@@ -370,7 +370,6 @@ class JobNames:
     LIBFUZZER_TEST = "libFuzzer tests"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
-    COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
     CI_TESTS = "CI Tests"
 
 
@@ -448,11 +447,6 @@ class ArtifactNames:
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
 
-    CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
-    CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
-    CLICKHOUSE_BOLT_PROFILE_AMD = "CLICKHOUSE_BOLT_PROFILE_AMD"
-    CLICKHOUSE_BOLT_PROFILE_ARM = "CLICKHOUSE_BOLT_PROFILE_ARM"
-
 
 LLVM_FT_NUM_BATCHES = 3
 LLVM_IT_NUM_BATCHES = 5
@@ -465,12 +459,12 @@ LLVM_FT_ARTIFACTS_LIST = [
 
 LLVM_FT_ARTIFACTS_LIST += [
     # default.profdata files for 6 jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential",
 ]
 
 LLVM_IT_ARTIFACTS_LIST = [
@@ -540,7 +534,7 @@ class ArtifactConfigs:
         name="...",
         type=Artifact.Type.S3,
         path=[
-            "./*.profdata",
+            f"./*.profdata",
         ],
     ).parametrize(names=LLVM_ARTIFACTS_LIST)
 
@@ -624,24 +618,4 @@ class ArtifactConfigs:
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
-    )
-    clickhouse_pgo_profile_amd = Artifact.Config(
-        name=ArtifactNames.CLICKHOUSE_PGO_PROFILE_AMD,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/clickhouse-pgo.profdata.zst",
-    )
-    clickhouse_pgo_profile_arm = Artifact.Config(
-        name=ArtifactNames.CLICKHOUSE_PGO_PROFILE_ARM,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/clickhouse-pgo.profdata.zst",
-    )
-    clickhouse_bolt_profile_amd = Artifact.Config(
-        name=ArtifactNames.CLICKHOUSE_BOLT_PROFILE_AMD,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/clickhouse-bolt.fdata.zst",
-    )
-    clickhouse_bolt_profile_arm = Artifact.Config(
-        name=ArtifactNames.CLICKHOUSE_BOLT_PROFILE_ARM,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/clickhouse-bolt.fdata.zst",
     )

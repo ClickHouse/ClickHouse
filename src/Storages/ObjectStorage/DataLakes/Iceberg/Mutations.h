@@ -23,7 +23,6 @@ namespace DB::Iceberg
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,
-    StoragePtr storage_ptr,
     StorageMetadataPtr storage_metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
@@ -36,12 +35,10 @@ void mutate(
 void alter(
     const AlterCommands & params,
     ContextPtr context,
-    StorageID storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
-    const String & write_format,
-    std::shared_ptr<DataLake::ICatalog> catalog);
+    const String & write_format);
 
 }
 
