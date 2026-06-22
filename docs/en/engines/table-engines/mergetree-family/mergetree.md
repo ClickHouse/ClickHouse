@@ -1319,11 +1319,11 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     Syntax: `uniq`
 
-- `uniq_v2`
+- `Uniq_V2`
 
-    A cardinality estimator that provides a distinct-value estimate for numeric types, `String`, and `FixedString` (including `Nullable` and `LowCardinality` wrappers). Internally uses `uniqCombined(12)`.
+    A cardinality estimator that provides a distinct-value estimate for numeric types, `String`, and `FixedString` (including `Nullable` and `LowCardinality` wrappers). Internally uses `uniqCombined64(12)`.
 
-    Syntax: `uniq_v2`
+    Syntax: `Uniq_V2`
 
 - `CountMin`
 
@@ -1340,7 +1340,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 | MinMax        | ✔                                                  | ✔    | ✗                     |
 | TDigest       | ✔                                                  | ✗    | ✗                     |
 | Uniq          | ✔                                                  | ✔    | ✔                     |
-| uniq_v2       | ✔                                                  | ✔    | ✔                     |
+| Uniq_V2       | ✔                                                  | ✔    | ✔                     |
 
 All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
 
@@ -1353,7 +1353,7 @@ All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers 
 | MinMax        | ✗                      | ✔ (numeric columns only)        |
 | TDigest       | ✗                      | ✔ (numeric columns only)        |
 | Uniq          | ✔                      | ✗                               |
-| uniq_v2       | ✔                      | ✗                               |
+| Uniq_V2       | ✔                      | ✗                               |
 
 For `Basic` on `String` / `FixedString` columns the statistic only records the total
 non-NULL byte length (used to estimate average string length) and the null count;
