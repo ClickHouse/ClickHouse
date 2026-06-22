@@ -24,7 +24,24 @@ SELECT toTypeName(randomHadamardTransform([1, 2]::Array(Float32))),
 -- An empty input array yields an empty array (output_dims does not apply).
 SELECT randomHadamardTransform([]::Array(Float32), 0, 5);
 
+-- Dimensions of the form 2^k * m with m in {12, 20} use an exact Kronecker transform
+-- H_(2^k) (x) H_m, so the output keeps the input dimension instead of padding to a power of two.
+SELECT length(randomHadamardTransform(CAST(range(12), 'Array(Float32)'))),
+       length(randomHadamardTransform(CAST(range(20), 'Array(Float32)'))),
+       length(randomHadamardTransform(CAST(range(24), 'Array(Float32)'))),
+       length(randomHadamardTransform(CAST(range(768), 'Array(Float32)'))),
+       length(randomHadamardTransform(CAST(range(2560), 'Array(Float32)')));
+
+-- The Kronecker transform is orthogonal (norm-preserving): ||y||^2 / ||x||^2 == 1.
+SELECT round(abs(arraySum(x -> x * x, randomHadamardTransform(CAST(range(12), 'Array(Float32)'), 5)) / arraySum(x -> x * x, CAST(range(12), 'Array(Float32)')) - 1), 4),
+       round(abs(arraySum(x -> x * x, randomHadamardTransform(CAST(range(20), 'Array(Float32)'), 5)) / arraySum(x -> x * x, CAST(range(20), 'Array(Float32)')) - 1), 4),
+       round(abs(arraySum(x -> x * x, randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 7)) / arraySum(x -> x * x, CAST(range(768), 'Array(Float32)')) - 1), 4);
+
+-- output_dims still truncates a Kronecker transform (it must not exceed the input dimension).
+SELECT length(randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 7, 500));
+
 -- Errors.
 SELECT randomHadamardTransform([1, 2, 3, 4]::Array(Float32), 0, 8); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT randomHadamardTransform(CAST(range(768), 'Array(Float32)'), 0, 800); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT randomHadamardTransform([1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT randomHadamardTransform([1, 2]::Array(Float32), materialize(1)); -- { serverError ILLEGAL_COLUMN }

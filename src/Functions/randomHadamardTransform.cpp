@@ -11,6 +11,7 @@
 
 #include <bit>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <string_view>
 #include <type_traits>
@@ -48,6 +49,9 @@
   *   float32 on AArch64. Both perform exactly the same butterflies in the same stage order, so
   *   they are bit-for-bit identical; the kernel can be selected for testing with the environment
   *   variable CLICKHOUSE_RHT_KERNEL = "scalar" | "neon" (default: neon on AArch64, scalar elsewhere).
+  * - When the length is 2^k * m with m in {12, 20} (orders with a Hadamard matrix), the transform
+  *   is the exact Kronecker product H_(2^k) (x) H_m applied without padding, so the output keeps the
+  *   input dimension. H_m is built once via the Paley construction. See hadamardOrderFor / kronecker*.
   */
 namespace DB
 {
@@ -121,6 +125,146 @@ void fwhtScalar(T * a, size_t m)
             }
 }
 
+/// The largest dense Hadamard block order supported below (must be a multiple of 4 for the NEON path).
+constexpr size_t max_hadamard_block = 64;
+
+/// A dimension d = 2^k * m can be transformed exactly (no zero-padding) as the Kronecker product
+/// H_{2^k} (x) H_m when m has a Hadamard matrix. Hadamard matrices exist for orders that are
+/// multiples of 4; we support m in {12, 20}, which covers the common embedding dimensions
+/// (384, 768, 1536, 3072 = 2^k * 12; 2560 = 2^7 * 20). Returns m and the number of blocks 2^k,
+/// or {0, 0} when d is not of that form (then we fall back to zero-padding to a power of two).
+struct KroneckerFactor
+{
+    size_t m = 0;
+    size_t blocks = 0;
+};
+
+inline KroneckerFactor hadamardOrderFor(size_t length)
+{
+    for (size_t m : {static_cast<size_t>(12), static_cast<size_t>(20)})
+        if (length % m == 0 && std::has_single_bit(length / m))
+            return {m, length / m};
+    return {};
+}
+
+/// Build an m x m Hadamard matrix via the Paley type I construction: m = p + 1 for a prime
+/// p = 3 (mod 4) (here p in {11, 19}). H = I + C where C is the +-1 conference matrix built from the
+/// Legendre symbol. Returns the sign pattern (1 means the entry is -1, 0 means +1).
+inline std::vector<uint8_t> buildHadamardSigns(size_t m)
+{
+    const size_t p = m - 1;
+    std::vector<uint8_t> is_quadratic_residue(p, 0);
+    for (size_t x = 1; x < p; ++x)
+        is_quadratic_residue[(x * x) % p] = 1;
+
+    auto legendre = [&](Int64 v) -> int
+    {
+        const Int64 pp = static_cast<Int64>(p);
+        const Int64 r = ((v % pp) + pp) % pp;
+        if (r == 0)
+            return 0;
+        return is_quadratic_residue[static_cast<size_t>(r)] ? 1 : -1;
+    };
+
+    std::vector<uint8_t> signs(m * m, 0);
+    auto put = [&](size_t i, size_t j, int v) { signs[i * m + j] = (v < 0) ? 1 : 0; };
+
+    put(0, 0, 1);
+    for (size_t b = 0; b < p; ++b)
+    {
+        put(0, 1 + b, 1);
+        put(1 + b, 0, -1);
+    }
+    for (size_t a = 0; a < p; ++a)
+        for (size_t b = 0; b < p; ++b)
+            put(1 + a, 1 + b, (a == b) ? 1 : legendre(static_cast<Int64>(a) - static_cast<Int64>(b)));
+
+    return signs;
+}
+
+/// Cached +-1 sign-bit masks of an m x m Hadamard matrix in both row-major (row[i*m+j]) and
+/// column-major (col[j*m+i]) layouts; the latter lets the NEON kernel load four output rows at once.
+template <typename Compute>
+struct HmMasks
+{
+    size_t m = 0;
+    PaddedPODArray<SignMask<Compute>> row;
+    PaddedPODArray<SignMask<Compute>> col;
+};
+
+template <typename Compute>
+const HmMasks<Compute> & getHmMasks(std::vector<HmMasks<Compute>> & cache, size_t m)
+{
+    using Mask = SignMask<Compute>;
+    for (const auto & entry : cache)
+        if (entry.m == m)
+            return entry;
+
+    static constexpr Mask sign_bit = Mask(1) << (sizeof(Mask) * 8 - 1);
+    const std::vector<uint8_t> signs = buildHadamardSigns(m);
+    HmMasks<Compute> masks;
+    masks.m = m;
+    masks.row.resize(m * m);
+    masks.col.resize(m * m);
+    for (size_t i = 0; i < m; ++i)
+        for (size_t j = 0; j < m; ++j)
+        {
+            const Mask mask = signs[i * m + j] ? sign_bit : Mask(0);
+            masks.row[i * m + j] = mask;
+            masks.col[j * m + i] = mask;
+        }
+    cache.push_back(std::move(masks));
+    return cache.back();
+}
+
+/// Apply a dense m x m Hadamard matrix to one block of m elements (the I (x) H_m part), in place.
+/// The +-1 entries are applied as sign-bit flips and accumulated over j in a fixed order, so the
+/// scalar and NEON variants produce bit-identical results.
+template <typename Compute>
+void applyHmScalar(Compute * block, size_t m, const SignMask<Compute> * row_masks)
+{
+    Compute z[max_hadamard_block];
+    for (size_t i = 0; i < m; ++i)
+    {
+        Compute acc = 0;
+        for (size_t j = 0; j < m; ++j)
+            acc += applySign<Compute>(block[j], row_masks[i * m + j]);
+        z[i] = acc;
+    }
+    for (size_t i = 0; i < m; ++i)
+        block[i] = z[i];
+}
+
+/// Fast Walsh-Hadamard transform over `blocks` (a power of two) groups of m contiguous elements
+/// each (the H_{2^k} (x) I_m part). Each butterfly is an elementwise add/sub of two m-vectors.
+template <typename Compute>
+void fwhtBlocksScalar(Compute * a, size_t blocks, size_t m)
+{
+    for (size_t h = 1; h < blocks; h <<= 1)
+        for (size_t i = 0; i < blocks; i += (h << 1))
+            for (size_t p = i; p < i + h; ++p)
+            {
+                Compute * lo = a + p * m;
+                Compute * hi = a + (p + h) * m;
+                for (size_t lane = 0; lane < m; ++lane)
+                {
+                    const Compute x = lo[lane];
+                    const Compute y = hi[lane];
+                    lo[lane] = x + y;
+                    hi[lane] = x - y;
+                }
+            }
+}
+
+/// Exact Kronecker transform H_{2^k} (x) H_m on `blocks` * m elements (scalar kernel).
+template <typename Compute>
+void kroneckerScalar(Compute * a, size_t blocks, size_t m, const HmMasks<Compute> & hm)
+{
+    for (size_t p = 0; p < blocks; ++p)
+        applyHmScalar<Compute>(a + p * m, m, hm.row.data());
+    fwhtBlocksScalar<Compute>(a, blocks, m);
+}
+
 #if defined(__aarch64__)
 
 /// 4-point Walsh-Hadamard transform (stages h = 1 then h = 2) within one float32x4 lane group.
@@ -188,6 +332,54 @@ void fwhtNeon(float * a, size_t m)
                 vst1q_f32(a + j + h,     vsubq_f32(x0, y0));
                 vst1q_f32(a + j + h + 4, vsubq_f32(x1, y1));
             }
+}
+
+/// NEON version of applyHmScalar: computes four output rows at a time (m is a multiple of 4). Uses
+/// the column-major masks so the four rows for a given column load contiguously, and accumulates
+/// over j in the same order as the scalar version, so the per-row result is bit-identical.
+inline void applyHmNeon(float * block, size_t m, const UInt32 * col_masks)
+{
+    float z[max_hadamard_block];
+    for (size_t i = 0; i < m; i += 4)
+    {
+        float32x4_t acc = vdupq_n_f32(0.0F);
+        for (size_t j = 0; j < m; ++j)
+        {
+            const float32x4_t bj = vdupq_n_f32(block[j]);
+            const uint32x4_t mask = vld1q_u32(col_masks + j * m + i);
+            acc = vaddq_f32(acc, vreinterpretq_f32_u32(veorq_u32(vreinterpretq_u32_f32(bj), mask)));
+        }
+        vst1q_f32(z + i, acc);
+    }
+    for (size_t i = 0; i < m; ++i)
+        block[i] = z[i];
+}
+
+/// NEON version of fwhtBlocksScalar: each butterfly add/sub processes the m lanes four at a time.
+inline void fwhtBlocksNeon(float * a, size_t blocks, size_t m)
+{
+    for (size_t h = 1; h < blocks; h <<= 1)
+        for (size_t i = 0; i < blocks; i += (h << 1))
+            for (size_t p = i; p < i + h; ++p)
+            {
+                float * lo = a + p * m;
+                float * hi = a + (p + h) * m;
+                for (size_t lane = 0; lane < m; lane += 4)
+                {
+                    const float32x4_t x = vld1q_f32(lo + lane);
+                    const float32x4_t y = vld1q_f32(hi + lane);
+                    vst1q_f32(lo + lane, vaddq_f32(x, y));
+                    vst1q_f32(hi + lane, vsubq_f32(x, y));
+                }
+            }
+}
+
+/// Exact Kronecker transform H_{2^k} (x) H_m on `blocks` * m float32 values (NEON kernel).
+inline void kroneckerNeon(float * a, size_t blocks, size_t m, const HmMasks<float> & hm)
+{
+    for (size_t p = 0; p < blocks; ++p)
+        applyHmNeon(a + p * m, m, hm.col.data());
+    fwhtBlocksNeon(a, blocks, m);
 }
 
 enum class FwhtKernel
@@ -314,6 +506,7 @@ private:
 #endif
 
         std::vector<std::pair<size_t, PaddedPODArray<Mask>>> sign_cache;
+        std::vector<HmMasks<Compute>> hm_cache;
         PaddedPODArray<Compute> buffer;
         size_t written = 0;
         size_t start = 0;
@@ -323,41 +516,66 @@ private:
             const size_t length = offsets[row] - start;
             if (length != 0)
             {
-                const size_t m = std::bit_ceil(length);
-                const size_t k = fixed_out_dims ? fixed_out_dims : m;
-                if (k > m)
+                /// Exact Kronecker transform for length = 2^k * m (m in {12, 20}); otherwise zero-pad
+                /// to the next power of two. The working dimension is the input length in the exact
+                /// case and the padded length otherwise.
+                const auto [kron_m, kron_blocks] = hadamardOrderFor(length);
+                const size_t working_dim = kron_m ? length : std::bit_ceil(length);
+                const size_t k = fixed_out_dims ? fixed_out_dims : working_dim;
+                if (k > working_dim)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "output_dims ({}) of function {} exceeds the padded length {} (next power of two of {})",
-                        k, name, m, length);
+                        "output_dims ({}) of function {} exceeds the transform length {}",
+                        k, name, working_dim);
 
-                const PaddedPODArray<Mask> & signs = getSignMasks<Compute>(sign_cache, seed, m);
+                const PaddedPODArray<Mask> & signs = getSignMasks<Compute>(sign_cache, seed, working_dim);
                 const Compute scale = static_cast<Compute>(1.0 / std::sqrt(static_cast<double>(k)));
                 const In * in = input.data() + start;
                 result.resize(written + k);
                 Out * out = result.data() + written;
 
                 /// Populate the working buffer: cast to the compute type and apply the +-1 sign as a
-                /// sign-bit flip (no multiply); zero-pad the tail to the padded length m.
-                buffer.resize(m);
+                /// sign-bit flip (no multiply); zero-pad the tail to the working dimension.
+                buffer.resize(working_dim);
                 for (size_t i = 0; i < length; ++i)
                     buffer[i] = applySign<Compute>(static_cast<Compute>(in[i]), signs[i]);
-                for (size_t i = length; i < m; ++i)
+                for (size_t i = length; i < working_dim; ++i)
                     buffer[i] = 0;
 
-                /// Core (unnormalized) fast Walsh-Hadamard transform via the selected kernel.
-#if defined(__aarch64__)
-                if constexpr (std::is_same_v<Compute, float>)
+                /// Core transform via the selected kernel: an exact Kronecker product for the
+                /// supported non-power-of-two dimensions, or a fast Walsh-Hadamard transform otherwise.
+                if (kron_m)
                 {
-                    if (kernel == FwhtKernel::Neon)
-                        fwhtNeon(buffer.data(), m);
+                    const HmMasks<Compute> & hm = getHmMasks<Compute>(hm_cache, kron_m);
+#if defined(__aarch64__)
+                    if constexpr (std::is_same_v<Compute, float>)
+                    {
+                        if (kernel == FwhtKernel::Neon)
+                            kroneckerNeon(buffer.data(), kron_blocks, kron_m, hm);
+                        else
+                            kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
+                    }
                     else
-                        fwhtScalar(buffer.data(), m);
+                        kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
+#else
+                    kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
+#endif
                 }
                 else
-                    fwhtScalar(buffer.data(), m);
+                {
+#if defined(__aarch64__)
+                    if constexpr (std::is_same_v<Compute, float>)
+                    {
+                        if (kernel == FwhtKernel::Neon)
+                            fwhtNeon(buffer.data(), working_dim);
+                        else
+                            fwhtScalar(buffer.data(), working_dim);
+                    }
+                    else
+                        fwhtScalar(buffer.data(), working_dim);
 #else
-                fwhtScalar(buffer.data(), m);
+                    fwhtScalar(buffer.data(), working_dim);
 #endif
+                }
 
                 /// Scale by 1/sqrt(k) (the only multiply) and cast to the output element type.
                 for (size_t i = 0; i < k; ++i)
@@ -387,13 +605,20 @@ across coordinates, making the per-coordinate distribution approximately Gaussia
 data-independent. It is useful as a preprocessing step before scalar quantization, and -- when
 truncated -- as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) random projection.
 
+When the input length is `2^k * m` with `m` in `{12, 20}` (orders that have a Hadamard matrix, e.g.
+`768 = 64 * 12`, `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`), an exact Kronecker
+transform `H_(2^k) (x) H_m` is used instead of padding, so the output keeps the input dimension
+rather than growing to the next power of two. All other lengths are zero-padded to `m`, the next
+power of two.
+
 The result has the same element type as the input; an empty input array returns an empty array.
 
 - `seed` (optional, default `0`): selects the sign pattern; the same seed always yields the same
   transform.
-- `output_dims` (optional, default `m`): keeps only the first `output_dims` coordinates. The
-  `1/sqrt(output_dims)` scaling keeps the result norm-preserving for the full transform and
-  norm-preserving in expectation when truncated. It must not exceed `m`.
+- `output_dims` (optional, default the transform length): keeps only the first `output_dims`
+  coordinates. The `1/sqrt(output_dims)` scaling keeps the result norm-preserving for the full
+  transform and norm-preserving in expectation when truncated. It must not exceed the transform
+  length (the next power of two, or the input length for the exact Kronecker case).
 )";
     FunctionDocumentation::Syntax syntax = "randomHadamardTransform(vector[, seed[, output_dims]])";
     FunctionDocumentation::Arguments arguments = {
