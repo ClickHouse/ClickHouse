@@ -68,11 +68,18 @@ check_access "$user_upd" "DELETE FROM tab_lw WHERE id = 8 $lw_settings"
 # Only `_row_exists = 0` is the delete form (governed by ALTER DELETE). Setting the marker to any
 # other value edits the deletion mask (e.g. resurrects rows) and is a real update, so it must still
 # require ALTER UPDATE -- otherwise ALTER DELETE alone could modify the mask arbitrarily.
-echo "-- _row_exists = 0 is a delete (ALTER DELETE); _row_exists = <non-zero> is an update (ALTER UPDATE)"
+echo "-- _row_exists = 0 is a delete (ALTER DELETE); _row_exists = <non-zero> is an update (ALTER UPDATE) -- ALTER TABLE path"
 check_access "$user_del" "ALTER TABLE tab UPDATE _row_exists = 0 WHERE id = 9"
 check_access "$user_upd" "ALTER TABLE tab UPDATE _row_exists = 0 WHERE id = 9"
 check_access "$user_del" "ALTER TABLE tab UPDATE _row_exists = 1 WHERE id = 9"
 check_access "$user_upd" "ALTER TABLE tab UPDATE _row_exists = 1 WHERE id = 9"
+
+# The same value-gated split must hold for the direct UPDATE statement (InterpreterUpdateQuery).
+echo "-- same split via the direct UPDATE statement (lightweight update)"
+check_access "$user_del" "UPDATE tab_lw SET _row_exists = 0 WHERE id = 9 SETTINGS enable_lightweight_update = 1"
+check_access "$user_upd" "UPDATE tab_lw SET _row_exists = 0 WHERE id = 9 SETTINGS enable_lightweight_update = 1"
+check_access "$user_del" "UPDATE tab_lw SET _row_exists = 1 WHERE id = 9 SETTINGS enable_lightweight_update = 1"
+check_access "$user_upd" "UPDATE tab_lw SET _row_exists = 1 WHERE id = 9 SETTINGS enable_lightweight_update = 1"
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS tab, tab_lw;

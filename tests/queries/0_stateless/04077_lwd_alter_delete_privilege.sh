@@ -2,9 +2,10 @@
 # Tags: no-fasttest
 # Test: DELETE FROM requires ALTER DELETE privilege; denied without it.
 #
-# Note: DELETE FROM translates to ALTER TABLE UPDATE _row_exists = 0. Assigning the
-# _row_exists lightweight-delete marker is governed by ALTER DELETE (not ALTER UPDATE),
-# so granting only ALTER DELETE is sufficient. This test uses ALTER TABLE (comprehensive).
+# Note: DELETE FROM translates to ALTER TABLE UPDATE _row_exists = 0. Setting the
+# _row_exists lightweight-delete marker to 0 is governed by ALTER DELETE (not ALTER UPDATE),
+# so granting only ALTER DELETE is sufficient (any other _row_exists assignment still needs
+# ALTER UPDATE). This test uses ALTER TABLE (comprehensive).
 # See: https://github.com/ClickHouse/ClickHouse/pull/101792
 #      https://github.com/ClickHouse/ClickHouse/issues/90754
 
