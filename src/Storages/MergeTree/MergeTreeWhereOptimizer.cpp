@@ -314,23 +314,34 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
     return false;
 }
 
-static void collectAndConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBuilderTreeNode> & conjuncts)
+static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBuilderTreeNode> & conjuncts)
 {
     auto fn = node.toFunctionNodeOrNull();
     if (fn.has_value() && fn->getFunctionName() == "and")
     {
         for (size_t i = 0; i < fn->getArgumentsSize(); ++i)
-            collectAndConjuncts(fn->getArgumentAt(i), conjuncts);
+            collectConjuncts(fn->getArgumentAt(i), conjuncts);
     }
     else
         conjuncts.push_back(node);
 }
 
+/// Analyze the WHERE expression and populate `res` with one `Condition` per conjunct group.
+/// Algorithm:
+///   1. Flatten the top-level AND chain into individual conjuncts with `collectConjuncts`.
+///   2. Build a temporary `ConjunctInfo` for each conjunct: collect referenced columns,
+///      check primary-index usability, and determine whether the conjunct is viable
+///      (i.e., eligible to be moved to PREWHERE).
+///   3. Group viable conjuncts by their exact `NameSet` of referenced columns so that
+///      conditions on the same column set are scored together (better selectivity estimate).
+///   4. Emit non-viable conjuncts individually as single-node `Condition` objects (viable=false).
+///   5. Emit each viable group as a single multi-node `Condition`, computing `good`,
+///      `estimated_row_count`, and `min_position_in_primary_key` for the whole group.
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, std::set<Int64> & pk_positions) const
 {
     /// Flatten the top-level AND chain into individual conjuncts.
     std::vector<RPNBuilderTreeNode> conjuncts;
-    collectAndConjuncts(node, conjuncts);
+    collectConjuncts(node, conjuncts);
 
     struct ConjunctInfo
     {
@@ -479,7 +490,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
     if (!where_optimizer_context.allow_reorder_prewhere_conditions)
     {
         std::vector<RPNBuilderTreeNode> conjuncts;
-        collectAndConjuncts(node, conjuncts);
+        collectConjuncts(node, conjuncts);
         for (const auto & conjunct : conjuncts)
         {
             NameSet columns;
