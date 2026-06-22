@@ -620,8 +620,10 @@ namespace ErrorCodes
     - `0` (disable deduplication).
 
     A deduplication mechanism is used, similar to replicated tables (see
-    [replicated_deduplication_window](#replicated_deduplication_window) setting).
-    The hash sums of the created parts are written to a local file on a disk.
+    [replicated_deduplication_window](#replicated_deduplication_window) setting), including the
+    `insert_deduplication_version` granularity (whole inserted block under the default
+    `new_unified_hash`, per created part under the legacy versions). The hash sums are written to
+    a local file on a disk rather than to ClickHouse Keeper.
     )", 0) \
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
     Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
