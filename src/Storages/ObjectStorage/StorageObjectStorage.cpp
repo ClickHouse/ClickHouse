@@ -887,9 +887,9 @@ void StorageObjectStorage::checkAlterPartitionIsPossible(
     const PartitionCommands & commands,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const Settings & /*settings*/,
-    ContextPtr /*context*/) const
+    ContextPtr context) const
 {
-    configuration->checkAlterPartitionIsPossible(commands);
+    configuration->checkAlterPartitionIsPossible(object_storage, context, commands);
 }
 
 }
