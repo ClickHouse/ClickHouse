@@ -1,9 +1,6 @@
--- Verifies that a distributed Cascades plan keeps a hash distribution across a VIEW boundary.
--- A view that aggregates is joined on its grouping key, so the join is a distributed Shuffle
--- join and the view's scan runs in parallel.  The VIEW read inserts a `materialize` node (the
--- "Materialize constants after VIEW subquery" step) which must stay transparent to
--- distribution-key tracking; otherwise the whole view subtree is funnelled onto a single node
--- (a Local HashJoin over a non-parallel read).
+-- Verifies a distributed Cascades plan keeps a hash distribution across a VIEW boundary: the
+-- view aggregates and is joined on its grouping key, so the join is a distributed Shuffle join
+-- and the view's scan runs in parallel, not funnelled onto a single node.
 
 DROP TABLE IF EXISTS facts;
 DROP TABLE IF EXISTS dims;
