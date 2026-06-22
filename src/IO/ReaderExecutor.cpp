@@ -2071,27 +2071,33 @@ std::optional<ReaderExecutor::LongConnection> ReaderExecutor::takeLong(std::opti
     return taken;
 }
 
-void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled)
+void ReaderExecutor::collectFillTargets(FetchMachine & m)
 {
-    /// Record NON-OWNING views of this window's fill-target writers in the shared
-    /// `read_plan.bufs`: the ones the plan SCHEDULE designates as fill targets for a
-    /// retrieve overlapping this window (`buildSchedule`'s `into`). A cell holding the
-    /// request is a target in every missing tier (promotion); a slack-only cell is a
-    /// target ONLY in its owning lower tier - so a faster tier never receives
-    /// un-requested slack bytes. The writers are NOT moved out: the fill runs inline on
-    /// THIS read thread, so the views stay valid in place. Runs AFTER
-    /// `finalizeAssembledWindow`, so the in-flight pin was taken first.
+    /// Record NON-OWNING views of the window's fill-target writers in the shared
+    /// `read_plan.bufs`: the cells the plan SCHEDULE designates as fill targets for a retrieve
+    /// overlapping this window (`buildSchedule`'s `into`). A cell holding the request is a
+    /// target in every missing tier (promotion); a slack-only cell is a target ONLY in its
+    /// owning lower tier - so a faster tier never receives un-requested slack bytes. Done at
+    /// launch so the worker can write the led segments inline during its fetch; the writers
+    /// stay in `read_plan.bufs` (the plan is stable while a machine is in flight).
     for (size_t i = 0; i < read_plan.bufs.size(); ++i)
     {
         auto & buf = read_plan.bufs[i];
         for (auto & w : buf.writers)
         {
-            const bool overlaps_window = w.writer && w.range.offset < m->physical_window.end()
-                && m->physical_window.offset < w.range.end();
-            if (overlaps_window && isScheduledFillTarget(m->physical_window, i, w.range))
-                m->writer_views.push_back({w.writer.get(), w.range});
+            const bool overlaps_window = w.writer && w.range.offset < m.physical_window.end()
+                && m.physical_window.offset < w.range.end();
+            if (overlaps_window && isScheduledFillTarget(m.physical_window, i, w.range))
+                m.writer_views.push_back({w.writer.get(), w.range});
         }
     }
+}
+
+void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled)
+{
+    /// `writer_views` were recorded at LAUNCH (`collectFillTargets`): NON-OWNING views of this
+    /// window's fill-target writers in the shared `read_plan.bufs`, written in place on THIS
+    /// read thread. Runs AFTER `finalizeAssembledWindow`, so the in-flight pin was taken first.
     if (m->writer_views.empty())
         return;  /// nothing to fill for this window
 
@@ -2293,6 +2299,9 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     m->retrieve_index = ri;
     m->geometry = read_plan.geometry();
     m->extent_snapshot = read_extent_end;
+    /// Record the fill-target writers now so the worker can write its led segments inline
+    /// during the fetch step (the collect's `schedulePutStep` reuses these views).
+    collectFillTargets(*m);
 
     /// The foreground is the sole opener; the aligned window's first physical range gives
     /// the object and its object-local offset. A no-op when not warranted / at capacity /

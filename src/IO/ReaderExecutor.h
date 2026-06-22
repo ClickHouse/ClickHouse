@@ -770,9 +770,13 @@ private:
 
     // ─── Deferred puts / promotes ────────────────────────────────────────
 
-    /// Turn a just-collected machine into its cache fill: record NON-OWNING views of the
-    /// overlapping fill-target writers in `read_plan.bufs`, hand it the assembled chain,
-    /// then run the fill INLINE on the read thread (a failed fill logged, never thrown).
+    /// Record the window's fill-target writers (NON-OWNING views into `read_plan.bufs`) on the
+    /// machine at LAUNCH, so the worker can write its led segments inline during the fetch.
+    void collectFillTargets(FetchMachine & m);
+
+    /// Turn a just-collected machine into its cache fill: using the `writer_views` recorded at
+    /// launch, hand it the assembled chain and run the fill INLINE on the read thread (a failed
+    /// fill logged, never thrown).
     void schedulePutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled);
 
     /// After the inline fill: fold the segment pin and stats in, and mark the retrieve
