@@ -301,10 +301,15 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
 
         if (segment.isDetached())
             continue;
-        const auto st = segment.state();
-        if (st != FileSegmentState::EMPTY && st != FileSegmentState::PARTIALLY_DOWNLOADED)
-            continue;
 
+        /// Elect first, then decide. `getOrSetDownloader` returns US for an EMPTY/
+        /// PARTIALLY_DOWNLOADED segment we win here, OR for one this thread already
+        /// pre-elected in `electDownloaders` (state DOWNLOADING, downloader == us); it
+        /// returns a sibling id / `notAllowed:` (DOWNLOADED or sibling-DOWNLOADING)
+        /// otherwise. An `state()==EMPTY||PARTIALLY` pre-guard would wrongly skip a
+        /// segment THIS thread had already moved to DOWNLOADING via `electDownloaders`,
+        /// leaving its fetched bytes unwritten (re-fetched every window) and the segment
+        /// DOWNLOADING (the holder dtor then aborts).
         const auto downloader_id = segment.getOrSetDownloader();
         if (!segment.isDownloader())
         {
@@ -431,6 +436,90 @@ ChainedBuffers DiskCacheWriter::read(ByteRange sub)
             /*anchors=*/nullptr, /*stream_slot=*/nullptr);
     }
     return result;
+}
+
+void DiskCacheWriter::electDownloaders(
+    ByteRange range,
+    VectorWithMemoryTracking<ByteRange> & led,
+    VectorWithMemoryTracking<SiblingLed> & sibling_led)
+{
+    /// `range` is FILE-space, within `range()`. For each held segment overlapping it in
+    /// file space, try to win the downloader role: a DOWNLOADED segment is already cached
+    /// (serve from cache, the later wait returns immediately); for an undownloaded segment,
+    /// `getOrSetDownloader` either makes us the downloader (we lead: fetch+write it on this
+    /// thread later) or a sibling already leads (serve from cache after). The downloader
+    /// role we win is held until `write()` re-acquires it and completes the segment.
+    if (!holder)
+    {
+        led.push_back(range);
+        return;
+    }
+
+    for (const auto & segment_ptr : *holder)
+    {
+        FileSegment & segment = *segment_ptr;
+        const auto & seg_range = segment.range();
+        const size_t seg_file_lo = seg_range.left + object_file_offset;
+        const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
+
+        const size_t lo = std::max(range.offset, seg_file_lo);
+        const size_t hi = std::min(range.end(), seg_file_hi);
+        if (lo >= hi)
+            continue;
+        if (segment.isDetached())
+            continue;
+
+        if (segment.state() == FileSegmentState::DOWNLOADED)
+        {
+            sibling_led.push_back({this, ByteRange{lo, hi - lo}});
+            continue;
+        }
+
+        segment.getOrSetDownloader();
+        if (segment.isDownloader())
+            led.push_back(ByteRange{lo, hi - lo});
+        else
+            sibling_led.push_back({this, ByteRange{lo, hi - lo}});
+    }
+}
+
+ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
+{
+    /// `sub` is FILE-space. Wait until each held segment overlapping it has committed
+    /// through the overlap end, then serve the bytes from our own held segments. The caller
+    /// orders this AFTER its own led writes, so a cross-thread wait cannot deadlock.
+    if (holder)
+    {
+        for (const auto & segment_ptr : *holder)
+        {
+            FileSegment & segment = *segment_ptr;
+            const auto & seg_range = segment.range();
+            const size_t seg_file_lo = seg_range.left + object_file_offset;
+            const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
+
+            const size_t lo = std::max(sub.offset, seg_file_lo);
+            const size_t hi = std::min(sub.end(), seg_file_hi);
+            if (lo >= hi)
+                continue;
+
+            const auto st = segment.state();
+            if (st != FileSegmentState::DOWNLOADED
+                && st != FileSegmentState::PARTIALLY_DOWNLOADED
+                && st != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+                && st != FileSegmentState::DOWNLOADING)
+                continue;
+
+            /// `wait(offset)` blocks until `offset < getCurrentWriteOffset()`, i.e. the
+            /// segment has committed strictly past `offset`. We need bytes through `hi`
+            /// (object-local `want_obj_end`), so wait on `want_obj_end - 1`.
+            chassert(hi >= object_file_offset);
+            const size_t want_obj_end = hi - object_file_offset;
+            if (want_obj_end > 0)
+                segment.wait(want_obj_end - 1);
+        }
+    }
+
+    return read(sub);
 }
 
 CacheWriter::CacheSegmentPin DiskCacheWriter::pin(size_t frontier) const

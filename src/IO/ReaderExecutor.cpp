@@ -1243,91 +1243,170 @@ bool ReaderExecutor::fetchAndBackfillGaps(
 {
     /// Synchronous foreground gap path: serve any grown committed prefix and late cache hit
     /// FIRST (so a concurrently/self-cached gap is served from cache, not re-fetched), then
-    /// read the still-missing gaps of the ALIGNED `fetch_window` from the source - merged
-    /// into fewer requests by `min_bytes_for_seek` - into one `source_bytes` ChainedBuffers, and hand
-    /// it to the shared `assembleAndWriteBack` (append + over-read + cache fill).
+    /// read the still-missing gaps of the ALIGNED `fetch_window` from the source and hand
+    /// them to the shared `assembleAndWriteBack` (append + over-read + cache fill).
     recreditCommittedPrefixes(fetch_window, result, covered, out_stats);
     serveLateHits(fetch_window, result, covered, out_stats);
     VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(fetch_window);
 
-    /// Merge close-together gaps into fewer source requests. A merge may bridge already-
-    /// covered bytes; `assembleAndWriteBack` appends only the still-uncovered sub-ranges.
-    auto fetch_ranges = mergeRanges(remaining, min_bytes_for_seek);
-    if (fetch_ranges.size() < remaining.size())
-        LOG_TRACE(log, "fetchAndBackfillGaps: merged {} gaps into {} fetch ranges (min_gap={})",
-            remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
-
     /// Block size for the source-read tiles, from the per-plan cached pressure level.
     const size_t window_block_size = effectiveBlockSize(pressure_level);
 
-    ChainedBuffers source_bytes;
-    for (const auto & fr : fetch_ranges)
+    /// Read `ranges` from the source into `out_src` (merged by `min_bytes_for_seek` into one
+    /// contiguous physical run each), in sub-spans bounded by a held long connection's
+    /// `read_until`: each held GET drains EXACTLY to its bound (a clean release, not an
+    /// incomplete drop) and the next sub-span reopens a fresh long connection - one GET per
+    /// reach span. The long connection coalesces contiguous sub-spans across windows.
+    auto fetch_into = [&](const VectorWithMemoryTracking<ByteRange> & ranges, ChainedBuffers & out_src)
     {
-        auto physical_ranges = offset_map.map(fr);
-        size_t logical_pos = fr.offset;
-        for (const auto & pr : physical_ranges)
+        for (const auto & fr : ranges)
         {
-            LOG_TRACE(log, "fetchAndBackfillGaps: source read object={}, offset={}, size={}",
-                pr.object.remote_path, pr.object_offset, pr.size);
-
-            /// Read the physical range in sub-spans bounded by a held long connection's
-            /// `read_until`: each held GET then drains EXACTLY to its bound (a clean release,
-            /// not an incomplete drop), and the next sub-span reopens a fresh long connection -
-            /// one GET per reach span, rather than a one-shot at every bound crossing. When the
-            /// channel reaches past this range (or none is held), the whole range is one read.
-            /// The long connection coalesces contiguous sub-spans across windows via its frontier.
-            const size_t pr_obj_end = pr.object_offset + pr.size;
-            size_t sub_obj_off = pr.object_offset;
-            size_t sub_logical = logical_pos;
-            while (sub_obj_off < pr_obj_end)
+            auto physical_ranges = offset_map.map(fr);
+            size_t logical_pos = fr.offset;
+            for (const auto & pr : physical_ranges)
             {
-                /// W3: open/keep a long connection at the sub-span start when the run is long.
-                openLongIfWarranted(pr.object, sub_obj_off, sub_logical, out_stats);
-                size_t sub_end = pr_obj_end;
-                if (long_conn && long_conn->servesObject(pr.object.remote_path)
-                    && long_conn->read_until > sub_obj_off && long_conn->read_until < pr_obj_end)
-                    sub_end = long_conn->read_until;
-                const size_t sub_size = sub_end - sub_obj_off;
+                LOG_TRACE(log, "fetchAndBackfillGaps: source read object={}, offset={}, size={}",
+                    pr.object.remote_path, pr.object_offset, pr.size);
 
-                /// Split at the REQUESTED window edges so user-data bytes and segment-aligned
-                /// head/tail-extension bytes land in separate `OwnedChainedBuffer`s (released
-                /// independently).
-                VectorWithMemoryTracking<size_t> splits;
-                if (requested_window.offset > sub_logical && requested_window.offset < sub_logical + sub_size)
-                    splits.push_back(requested_window.offset - sub_logical);
-                if (requested_window.end() > sub_logical && requested_window.end() < sub_logical + sub_size)
-                    splits.push_back(requested_window.end() - sub_logical);
-                std::sort(splits.begin(), splits.end());
-
-                auto blocks = allocateBlocks(sub_size, window_block_size, splits);
-                StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
-                ChainedBuffers sr = readFromSource(pr.object, sub_obj_off, std::move(blocks), sub_logical,
-                    read_extent_end, &long_conn, /*stop=*/nullptr, out_stats);
-                HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
-                    static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
-                const size_t actual = sr.totalBytes();
-                out_stats.add(Stats::BytesFromSource, actual);
-                source_bytes.append(std::move(sr));
-                /// Size-known short reads are fatal (the map promised those bytes).
-                /// Size-unknown short reads are how EOF is learned - latch it and stop.
-                if (actual != sub_size)
+                const size_t pr_obj_end = pr.object_offset + pr.size;
+                size_t sub_obj_off = pr.object_offset;
+                size_t sub_logical = logical_pos;
+                while (sub_obj_off < pr_obj_end)
                 {
-                    if (!offset_map.hasUnknownSize())
-                        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                            "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
-                            pr.object.remote_path, sub_obj_off, sub_size, actual);
-                    eof_latch = true;
-                    break;
+                    /// W3: open/keep a long connection at the sub-span start when the run is long.
+                    openLongIfWarranted(pr.object, sub_obj_off, sub_logical, out_stats);
+                    size_t sub_end = pr_obj_end;
+                    if (long_conn && long_conn->servesObject(pr.object.remote_path)
+                        && long_conn->read_until > sub_obj_off && long_conn->read_until < pr_obj_end)
+                        sub_end = long_conn->read_until;
+                    const size_t sub_size = sub_end - sub_obj_off;
+
+                    /// Split at the REQUESTED window edges so user-data bytes and segment-aligned
+                    /// head/tail-extension bytes land in separate `OwnedChainedBuffer`s (released
+                    /// independently).
+                    VectorWithMemoryTracking<size_t> splits;
+                    if (requested_window.offset > sub_logical && requested_window.offset < sub_logical + sub_size)
+                        splits.push_back(requested_window.offset - sub_logical);
+                    if (requested_window.end() > sub_logical && requested_window.end() < sub_logical + sub_size)
+                        splits.push_back(requested_window.end() - sub_logical);
+                    std::sort(splits.begin(), splits.end());
+
+                    auto blocks = allocateBlocks(sub_size, window_block_size, splits);
+                    StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
+                    ChainedBuffers sr = readFromSource(pr.object, sub_obj_off, std::move(blocks), sub_logical,
+                        read_extent_end, &long_conn, /*stop=*/nullptr, out_stats);
+                    HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
+                        static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
+                    const size_t actual = sr.totalBytes();
+                    out_stats.add(Stats::BytesFromSource, actual);
+                    out_src.append(std::move(sr));
+                    /// Size-known short reads are fatal (the map promised those bytes).
+                    /// Size-unknown short reads are how EOF is learned - latch it and stop.
+                    if (actual != sub_size)
+                    {
+                        if (!offset_map.hasUnknownSize())
+                            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                                "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
+                                pr.object.remote_path, sub_obj_off, sub_size, actual);
+                        eof_latch = true;
+                        break;
+                    }
+                    sub_obj_off = sub_end;
+                    sub_logical += sub_size;
                 }
-                sub_obj_off = sub_end;
-                sub_logical += sub_size;
+                logical_pos += pr.size;
             }
-            logical_pos += pr.size;
+        }
+    };
+
+    /// Deferred-write path (a cache-filler pool offloads the cache write to another thread):
+    /// no per-segment downloader coordination here - the elected downloader must be the
+    /// thread that writes+completes the segment, which is not this one when the write is
+    /// deferred. Fetch the gaps plainly; the put step writes them later.
+    if (!push_to_writers)
+    {
+        ChainedBuffers source_bytes;
+        fetch_into(mergeRanges(remaining, min_bytes_for_seek), source_bytes);
+        assembleAndWriteBack(fetch_window, requested_window, source_bytes, result, covered, push_to_writers, out_stats);
+        return !remaining.empty();
+    }
+
+    /// Inline-write path: per-segment downloader arbitration. For each still-missing range,
+    /// each overlapping write buffer elects the FileCache downloader of its segments: ones we
+    /// win are fetched+written here, ones a sibling already leads are served from that
+    /// sibling's cache fill instead of re-fetched - which dedups concurrent cold populate.
+    /// Safe because we fetch AND complete each led segment on THIS thread (the downloader).
+    VectorWithMemoryTracking<ByteRange> led_misses;
+    VectorWithMemoryTracking<CacheWriter::SiblingLed> sibling_led;
+    for (const auto & r : remaining)
+    {
+        bool elected = false;
+        for (const auto & buf : read_plan.bufs)
+        {
+            if (!buf.provider)
+                continue;
+            for (const auto & w : buf.writers)
+            {
+                if (!w.writer)
+                    continue;
+                const size_t lo = std::max(r.offset, w.writer->range().offset);
+                const size_t hi = std::min(r.end(), w.writer->range().end());
+                if (lo >= hi)
+                    continue;
+                w.writer->electDownloaders(ByteRange{lo, hi - lo}, led_misses, sibling_led);
+                elected = true;
+            }
+        }
+        if (!elected)
+            led_misses.push_back(r);  /// defensive: no writer → fetch as before
+    }
+
+    /// Coalesce the elected ranges into a DISJOINT set clamped to `fetch_window`: overlapping
+    /// tier writers can elect the same bytes, and `mergeRanges` is a no-op at
+    /// `min_bytes_for_seek == 0`, so without this the bytes would be fetched twice and the
+    /// assembled chain would be non-disjoint. (Round-trip through `IntervalSet`: subtract the
+    /// led set from the window to get the non-led parts, then subtract those to get the led.)
+    IntervalSet led_set;
+    for (const auto & r : led_misses)
+        led_set.add(r);
+    IntervalSet non_led;
+    for (const auto & g : led_set.subtract(fetch_window))
+        non_led.add(g);
+    VectorWithMemoryTracking<ByteRange> led_disjoint = non_led.subtract(fetch_window);
+
+    /// Pass 1: fetch+write the segments WE lead. Committing them unblocks sibling waiters.
+    ChainedBuffers source_bytes;
+    fetch_into(mergeRanges(led_disjoint, min_bytes_for_seek), source_bytes);
+    assembleAndWriteBack(fetch_window, requested_window, source_bytes, result, covered, push_to_writers, out_stats);
+
+    /// Serve sibling-led segments from cache AFTER our led writes (the write-before-wait
+    /// order avoids a cross-thread deadlock); the wait blocks until the sibling commits.
+    for (const auto & sl : sibling_led)
+    {
+        for (const auto & u : covered.subtract(sl.sub))
+        {
+            ChainedBuffers c = sl.writer->waitAndReadSiblingLed(u);
+            if (!c.covers(u))
+                continue;  /// tolerate a short commit; the loser-tail fallback below fetches it
+            result.append(c.extract(u));
+            covered.add(u);
+            out_stats.add(Stats::BytesFromFilesystemCache, u.size);
         }
     }
 
-    assembleAndWriteBack(fetch_window, requested_window, source_bytes, result, covered, push_to_writers, out_stats);
-    return !fetch_ranges.empty();
+    /// Loser-tail fallback: bytes a sibling leader committed short of what we need are still
+    /// uncovered; fetch them from source (the leader reset the segment downloader on its
+    /// `completePart`, so our write re-elects and wins the remainder). Rare when the leader
+    /// fills the whole segment; required for correctness when it does not.
+    auto remaining_tail = covered.subtract(fetch_window);
+    if (!remaining_tail.empty())
+    {
+        ChainedBuffers tail_src;
+        fetch_into(mergeRanges(remaining_tail, min_bytes_for_seek), tail_src);
+        assembleAndWriteBack(fetch_window, requested_window, tail_src, result, covered, push_to_writers, out_stats);
+    }
+
+    return !led_misses.empty() || !remaining_tail.empty();
 }
 
 ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
@@ -1533,14 +1612,29 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, 
     const size_t hi = std::min(writer->range().end(), window.end());
     if (lo >= hi)
         return;
-    auto slice = chain.slice(ByteRange{lo, hi - lo});
-    if (slice.empty())
-        return;
-    out_stats.add(Stats::CachePopulateRequests);
-    StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-    out_stats.add(bytes_counter, writer->write(std::move(slice)));
-    HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
-        static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
+
+    /// Write only the sub-ranges the chain actually COVERS. Under per-segment downloader
+    /// coordination the assembled chain holds only the bytes THIS thread fetched (its led
+    /// segments) plus cache hits - a sibling-led byte is written by the sibling, not by us -
+    /// so the chain can cover `[lo, hi)` only partially. Slicing the whole `[lo, hi)` and
+    /// writing it would hand the writer a non-covering chain (its `copyTo` asserts `covers`).
+    /// A fully-covered window (the deferred/uncoordinated path) has no gaps, yielding the
+    /// single sub-range `[lo, hi)`, so the behaviour is unchanged for it.
+    const ByteRange target{lo, hi - lo};
+    IntervalSet uncovered;
+    for (const auto & gap : chain.gaps(target))
+        uncovered.add(gap);
+    for (const auto & covered_sub : uncovered.subtract(target))
+    {
+        auto slice = chain.slice(covered_sub);
+        if (slice.empty())
+            continue;
+        out_stats.add(Stats::CachePopulateRequests);
+        StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
+        out_stats.add(bytes_counter, writer->write(std::move(slice)));
+        HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
+            static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
+    }
 }
 
 void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,

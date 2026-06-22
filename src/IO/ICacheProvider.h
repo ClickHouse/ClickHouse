@@ -71,6 +71,23 @@ public:
     /// segments/cells, without a source round-trip.
     virtual ChainedBuffers read(ByteRange sub) = 0;
 
+    /// One sibling-led sub-range to serve from cache (the writer that owns it + the sub-range).
+    struct SiblingLed { CacheWriter * writer = nullptr; ByteRange sub; };
+
+    /// Per-segment download arbitration for concurrent populate. For each cache segment
+    /// overlapping `range`, try to become its downloader: segments THIS caller wins are
+    /// appended to `led` (the caller must fetch+write them on this thread); segments a
+    /// sibling already leads (or already downloaded) are appended to `sibling_led`. Does
+    /// NOT wait. Default: treat the whole range as led (no coordination, e.g. page cache).
+    virtual void electDownloaders(ByteRange range,
+        VectorWithMemoryTracking<ByteRange> & led,
+        VectorWithMemoryTracking<SiblingLed> & /*sibling_led*/)
+    { led.push_back(range); }
+
+    /// Wait until `sub`'s bytes are committed by the sibling downloader, then serve them
+    /// from this writer's own held segments (cache file). Default: plain read (no wait).
+    virtual ChainedBuffers waitAndReadSiblingLed(ByteRange sub) { return read(sub); }
+
     /// Opaque token keeping the partial segment under `frontier`
     /// non-evictable while the live source connection streams into it.
     /// Default no-op (e.g. page cache).

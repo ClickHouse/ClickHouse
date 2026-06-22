@@ -102,6 +102,10 @@ public:
     bool complete() const override;
     size_t write(ChainedBuffers data) override;
     ChainedBuffers read(ByteRange sub) override;
+    void electDownloaders(ByteRange range,
+        VectorWithMemoryTracking<ByteRange> & led,
+        VectorWithMemoryTracking<SiblingLed> & sibling_led) override;
+    ChainedBuffers waitAndReadSiblingLed(ByteRange sub) override;
     CacheWriter::CacheSegmentPin pin(size_t frontier) const override;
 
 private:
