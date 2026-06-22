@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
+# Tags: zookeeper, no-replicated-database
 
 # Regression test for PR #107486: ALTER UPDATE/DELETE, lightweight UPDATE and DELETE FROM issued
 # ON CLUSTER must enforce SELECT on the columns read by the WHERE predicate and by UPDATE assignment
 # expressions on the *initiating* server, before the query is enqueued for distributed execution. The
 # remote DDL worker does not run as the initiator unless distributed_ddl_use_initial_user_and_roles is
 # enabled, so without this check the SELECT requirement would be bypassed for ON CLUSTER mutations.
-# no-parallel: uses the shared ON CLUSTER distributed DDL queue.
+# no-replicated-database: ON CLUSTER is disallowed in replicated-database stateless runs.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
