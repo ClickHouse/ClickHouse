@@ -57,7 +57,15 @@ ASTPtr InterpolateNode::toASTImpl(const ConvertToASTOptions & options) const
     /// In case of alias, identifier is replaced to expression, which can't be parsed.
     /// In this case, keep original alias name.
     if (const auto * identifier = getExpression()->as<IdentifierNode>())
+    {
         result->column = identifier->toAST(options)->getColumnName();
+        /// Propagate `INTERPOLATE ("Col" AS ...)` quote so the round-trip format → parse preserves
+        /// case-sensitivity in `standard` mode (otherwise the target would re-parse as unquoted and
+        /// could case-insensitively bind to a differently-cased output column).
+        if (!identifier->getQuoteStyles().empty()
+            && identifier->getQuoteStyles().front() == IdentifierQuoteStyle::DoubleQuote)
+            result->column_is_double_quoted = true;
+    }
     else
         result->column = expression_name;
 

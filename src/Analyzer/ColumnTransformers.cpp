@@ -1,5 +1,7 @@
 #include <Analyzer/ColumnTransformers.h>
 
+#include <limits>
+
 #include <Poco/String.h>
 
 #include <Common/SipHash.h>
@@ -22,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int AMBIGUOUS_IDENTIFIER;
 }
 
 /// IColumnTransformerNode implementation
@@ -320,19 +323,29 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::findReplacementExpression(const s
     }
 
     /// `standard` mode: also match an unquoted REPLACE target case-insensitively. Quoted targets
-    /// (`REPLACE (... AS "Col")`) are skipped from the case-insensitive scan.
+    /// (`REPLACE (... AS "Col")`) are skipped from the case-insensitive scan. Multiple unquoted
+    /// targets that fold to the same lookup are ambiguous — mirror the column/alias rule rather
+    /// than silently picking the first match.
     if (standard_mode)
     {
+        size_t matched_index = std::numeric_limits<size_t>::max();
         for (size_t i = 0, n = replacements_names.size(); i < n; ++i)
         {
             if (i < replacements_are_double_quoted.size() && replacements_are_double_quoted[i])
                 continue;
-            if (Poco::icompare(replacements_names[i], expression_name) == 0)
-            {
-                if (matched_target)
-                    *matched_target = replacements_names[i];
-                return getReplacements().getNodes()[i];
-            }
+            if (Poco::icompare(replacements_names[i], expression_name) != 0)
+                continue;
+            if (matched_index != std::numeric_limits<size_t>::max() && replacements_names[matched_index] != replacements_names[i])
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "REPLACE column transformer target '{}' is ambiguous: matches multiple replacements with different cases: '{}' and '{}'",
+                    expression_name, replacements_names[matched_index], replacements_names[i]);
+            matched_index = i;
+        }
+        if (matched_index != std::numeric_limits<size_t>::max())
+        {
+            if (matched_target)
+                *matched_target = replacements_names[matched_index];
+            return getReplacements().getNodes()[matched_index];
         }
     }
 
@@ -418,6 +431,8 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & optio
     {
         auto replacement_ast = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
         replacement_ast->name = replacements_names[i];
+        if (i < replacements_are_double_quoted.size())
+            replacement_ast->name_is_double_quoted = replacements_are_double_quoted[i];
         replacement_ast->children.push_back(replacement_expressions_nodes[i]->toAST(options));
         ast_replace_transformer->children.push_back(std::move(replacement_ast));
     }

@@ -58,6 +58,21 @@ void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(identifier_name.size());
     state.update(identifier_name);
 
+    /// `quote_styles` participates in `isEqualImpl`, so it must also participate in the hash.
+    /// Otherwise raw-hash users (e.g. CNF ordering compares the stored hash directly without
+    /// re-checking equality) could deduplicate or reorder quoted vs unquoted identifiers as the same
+    /// expression. Only mix in when at least one part was quoted so identifiers with no quotes keep
+    /// their previous hash.
+    bool any_quoted = false;
+    for (auto style : quote_styles)
+        if (style != IdentifierQuoteStyle::None) { any_quoted = true; break; }
+    if (any_quoted)
+    {
+        state.update(quote_styles.size());
+        for (auto style : quote_styles)
+            state.update(static_cast<uint8_t>(style));
+    }
+
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
 }
