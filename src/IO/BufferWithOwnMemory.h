@@ -142,7 +142,7 @@ private:
         if (!m_data)
             return;
 
-        Allocator::free(m_data, m_capacity);
+        Allocator::free(m_data, m_capacity, alignment);
         m_data = nullptr;    /// To avoid double free if next alloc will throw an exception.
     }
 };
@@ -155,7 +155,7 @@ template <typename Base>
 class BufferWithOwnMemory : public Base
 {
 protected:
-    Memory<> memory;
+    Memory<> memory{};
     const bool use_existing_memory;
 
 public:

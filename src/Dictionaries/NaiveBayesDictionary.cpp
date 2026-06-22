@@ -289,6 +289,7 @@ Pipe NaiveBayesDictionary::read(const Names & column_names, size_t /* max_block_
 }
 
 
+void registerDictionaryNaiveBayes(DictionaryFactory & factory);
 void registerDictionaryNaiveBayes(DictionaryFactory & factory)
 {
     auto create_layout = [](

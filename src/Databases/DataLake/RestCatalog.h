@@ -4,6 +4,7 @@
 #if USE_AVRO
 #include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
@@ -73,6 +74,13 @@ public:
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
+    bool updateSchema(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_schema,
+        Int32 previous_schema_id) const override;
+
     bool isTransactional() const override { return true; }
 
     void dropTable(const String & namespace_name, const String & table_name) const override;
@@ -121,7 +129,7 @@ protected:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
-    mutable std::optional<AccessToken> access_token;
+    mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
@@ -143,11 +151,11 @@ protected:
 
     Namespaces getNamespaces(const std::string & base_namespace) const;
 
-    Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace) const;
+    Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace, String & next_page_token) const;
 
     DB::Names getTables(const std::string & base_namespace, size_t limit = 0) const;
 
-    DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const;
+    DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const;
 
     bool getTableMetadataImpl(
         const std::string & namespace_name,
@@ -216,6 +224,10 @@ public:
     }
 
     DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+
+    const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
+    const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
+    const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
 
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).

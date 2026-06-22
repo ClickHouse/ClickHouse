@@ -5,9 +5,13 @@
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <DataTypes/IDataType_fwd.h>
+#include <Interpreters/Context_fwd.h>
 
 #include "config.h"
 
+#include <functional>
 #include <memory>
 
 /// This file contains user interface for functions.
@@ -19,17 +23,18 @@ namespace llvm
     class IRBuilderBase;
 }
 
+struct FunctionsStressTestThread;
 
 namespace DB
 {
 
-class IDataType;
-struct DataTypeWithConstInfo;
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
-
 class Field;
 struct FieldInterval;
 using FieldIntervalPtr = std::shared_ptr<FieldInterval>;
+
+class IFunctionOverloadResolver;
+using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+using FunctionCreator = std::function<FunctionOverloadResolverPtr(ContextPtr)>;
 
 /// The simplest executable object.
 /// Motivation:
@@ -53,6 +58,7 @@ public:
     virtual void cancelExecution() const {}
 
 protected:
+    friend struct ::FunctionsStressTestThread;
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
 
@@ -62,7 +68,8 @@ protected:
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
-      *  if some of arguments are NULL constants then return NULL constant,
+      *  if some of arguments are NULL constants then return NULL constant (the underlying function
+      *   may or may not be executed in this case),
       *  if some of arguments are Nullable, then execute function as usual for columns,
       *   where Nullable columns are substituted with nested columns,
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
@@ -107,10 +114,24 @@ protected:
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
-    /** True if function can be called on default arguments (include Nullable's) and won't throw.
+    /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
+      *
+      * Useful when executing on LowCardinality dictionary, which contains default value even if
+      * none of the rows use it.
+      *
+      * *Not* useful when executing on Nullable columns. The value behind a NULL is
+      * not necessarily default. E.g.:
+      *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
+      *   ┌──x─┐
+      *   │ 42 │
+      *   └────┘
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+
+    /** True if function might throw an exception during execution.
+      */
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
 
 private:
 
@@ -229,6 +250,10 @@ public:
       * Sometimes, functions are "deterministic" in scope of single query
       *  (even for distributed query), but not deterministic it general.
       * Example: now(). Another example: functions that work with periodically updated dictionaries.
+      *
+      * Also means that the function cannot return different values depending on
+      * the constness of arguments (same value, different constness => same result).
+      * Counterexamples: `isConstant`, `toColumnTypeName`.
       */
 
     virtual bool isDeterministic() const { return true; }
@@ -264,7 +289,7 @@ public:
         /// Should we enable lazy execution for the nth argument of short-circuit function?
         /// Example 1st argument: if(cond, then, else), we don't need to execute cond lazily.
         /// Example other arguments: 1st, 2nd, 3rd argument of dictGetOrDefault should always be calculated.
-        std::unordered_set<size_t> arguments_with_disabled_lazy_execution;
+        UnorderedSetWithMemoryTracking<size_t> arguments_with_disabled_lazy_execution;
 
         /// Should we enable lazy execution for functions, that are common descendants of
         /// different short-circuit function arguments?
@@ -272,11 +297,11 @@ public:
         /// to execute expr lazily, because it's used in both branches.
         /// Example 2: and(expr1, expr2(..., expr, ...), expr3(..., expr, ...)), here we
         /// should enable lazy execution for expr, because it must be filtered by expr1.
-        bool enable_lazy_execution_for_common_descendants_of_arguments;
+        bool enable_lazy_execution_for_common_descendants_of_arguments{};
         /// Should we enable lazy execution without checking isSuitableForShortCircuitArgumentsExecution?
         /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
         /// lazy execution (because of their simplicity), we shouldn't execute them at all.
-        bool force_enable_lazy_execution;
+        bool force_enable_lazy_execution{};
     };
 
     /** Function is called "short-circuit" if it's arguments can be evaluated lazily
@@ -297,6 +322,10 @@ public:
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
+    /// True if the result depends only on argument values, not column names. formatRowNoNewline
+    /// and toTypeName are counter examples. Default is conservative
+    virtual bool isNameInsensitive() const { return false; }
+
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
@@ -315,12 +344,25 @@ public:
       * nullptr might be returned if the point (a single value) is invalid for this function.
       */
     virtual FieldIntervalPtr getPreimage(const IDataType & /*type*/, const Field & /*point*/) const;
+
+    /// has same address for all aliases / case variants of a function
+    /// nullptr when the function is constructed outside the factory
+    const FunctionCreator * getFactoryHandle() const { return factory_handle; }
+    void setFactoryHandle(const FunctionCreator * h) const { factory_handle = h; }
+
+private:
+    mutable const FunctionCreator * factory_handle = nullptr;
 };
 
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 
 /** Creates IFunctionBase from argument types list (chooses one function overload).
+  * Warning: One instance of IFunctionOverloadResolver can only be used to resolve one overload.
+  *          To resolve a different overload, get a new IFunctionOverloadResolver from the factory.
+  *          Calling `build` again with different arguments will subtly break things in some cases.
+  *          TODO: Fix this. Known offenders are IFunction implementations with mutable fields,
+  *                e.g. see `mutable bool to_nullable` in FunctionsConversion.h
   */
 class IFunctionOverloadResolver : public std::enable_shared_from_this<IFunctionOverloadResolver>
 {
@@ -346,6 +388,11 @@ public:
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
+    /// Returns true for higher-order functions that accept a lambda expression as an argument
+    /// (e.g. `arrayMap`, `arrayFilter`, `arrayFold`, `mapApply`). Used as a non-throwing
+    /// capability check so callers can avoid invoking `getLambdaArgumentTypes`, which throws
+    /// on non-higher-order functions.
+    virtual bool isHigherOrderFunction() const { return false; }
 
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const { return false; }
@@ -375,6 +422,9 @@ public:
 
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
+    const FunctionCreator * getFactoryHandle() const { return factory_handle; }
+    void setFactoryHandle(const FunctionCreator * h) const { factory_handle = h; }
+
 protected:
 
     virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const;
@@ -398,6 +448,8 @@ protected:
       *   - wrap getReturnType() result in Nullable type and pass to build
       *
       * Otherwise build returns build(arguments, getReturnType(arguments));
+      * Note that the function may be called with garbage input for the null rows (but the output will be masked out),
+      * so this is not suitable for heavy functions or functions with side effects.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
@@ -447,9 +499,10 @@ protected:
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
-};
 
-using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+    /// mutable beacuse it's set after construction by FunctionFactory, resolvers themselves are otherwise immutable
+    mutable const FunctionCreator * factory_handle = nullptr;
+};
 
 /// Old function interface. Check documentation in IFunction.h.
 /// If client do not need stateful properties it can implement this interface.
@@ -525,9 +578,6 @@ public:
 
     virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 
-    /** True if function can be called on default arguments (include Nullable's) and won't throw.
-      * Counterexample: modulo(0, 0)
-      */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /// Properties from IFunctionBase (see IFunction.h)
@@ -542,6 +592,12 @@ public:
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
+
+    /// Higher-order functions accept at least one lambda expression as an argument.
+    virtual bool isHigherOrderFunction() const { return false; }
+
+    /// See `IFunctionBase::isNameInsensitive`
+    virtual bool isNameInsensitive() const { return false; }
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }

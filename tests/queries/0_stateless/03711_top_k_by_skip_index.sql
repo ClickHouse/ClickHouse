@@ -3,6 +3,7 @@
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0; -- for stable max_rows_to_read
 SET read_overflow_mode = 'break';
+SET query_plan_max_limit_for_top_k_optimization = 1000; -- pin to default so LIMIT 10 always qualifies
 
 DROP TABLE IF EXISTS tab;
 

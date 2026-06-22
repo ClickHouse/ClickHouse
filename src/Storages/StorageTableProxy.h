@@ -114,7 +114,8 @@ public:
         size_t num_streams) override
     {
         auto storage = getNested();
-        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+        const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
+        auto nested_snapshot = storage->getStorageSnapshot(nested_metadata, context);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,
                       processed_stage, max_block_size, num_streams);
     }
@@ -126,7 +127,7 @@ public:
         bool async_insert) override
     {
         auto storage = getNested();
-        auto nested_metadata = storage->getInMemoryMetadataPtr();
+        auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
         return storage->write(query, nested_metadata, context, async_insert);
     }
 

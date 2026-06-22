@@ -53,9 +53,8 @@ public:
 
     virtual const String & name() const = 0;
 
-    /// This method can return nullptr if it's Lazy database
-    /// (a database with support for lazy tables loading
-    /// - it maintains a list of tables but tables are loaded lazily).
+    /// This method can return nullptr if table metadata could not be loaded
+    /// (e.g. DataLake database where individual table metadata fetch fails).
     virtual const StoragePtr & table() const = 0;
 
     explicit IDatabaseTablesIterator(const String & database_name_) : database_name(database_name_) { }
@@ -65,7 +64,7 @@ public:
 
     virtual UUID uuid() const { return UUIDHelpers::Nil; }
 
-    const String & databaseName() const { assert(!database_name.empty()); return database_name; }
+    const String & databaseName() const { chassert(!database_name.empty()); return database_name; }
 
 protected:
     String database_name;
@@ -181,14 +180,20 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// External database (i.e. PostgreSQL/Datalake/...) does not support any of ClickHouse internal tables:
+    /// Database engines that do not own ClickHouse table metadata cannot contain arbitrary ClickHouse table engines:
     /// - *MergeTree
     /// - Distributed
     /// - RocksDB
     /// - ...
     virtual bool isExternal() const { return true; }
 
-    virtual bool isDatalakeCatalog() const { return false; }
+    /// True for databases whose contents live on a remote service that we don't
+    /// want to enumerate implicitly in system tables (data lake catalogs, MySQL, PostgreSQL, ...).
+    /// Such databases are hidden from system.tables / system.columns / system.completions
+    /// unless `show_remote_databases_in_system_tables` is enabled.
+    /// This is distinct from `isExternal()` (which classifies whether the engine supports
+    /// ClickHouse internal table types).
+    virtual bool isRemoteDatabase() const { return false; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
@@ -405,6 +410,11 @@ public:
         return database_name;
     }
 
+    virtual void checkDatabase() const
+    {
+        //No-op
+    }
+
     // Alter comment of database.
     virtual void alterDatabaseComment(const AlterCommand &, ContextPtr);
 
@@ -430,7 +440,7 @@ public:
 
     virtual void assertCanBeDetached(bool /*cleanup*/) {}
 
-    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/) { }
+    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/, std::function<void()> /*throw_if_cancelled*/) { }
     virtual void checkDetachedTableNotInUse(const UUID & /*uuid*/) { }
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.

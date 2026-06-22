@@ -3,6 +3,7 @@
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
+SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 
 SET min_table_rows_to_use_projection_index = 0;
 

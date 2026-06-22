@@ -16,20 +16,23 @@ static uint32_t heap_pos = 0;
 static Span spans[MAX_SPANS];
 static uint32_t span_pos = 0;
 
-extern void clickhouse_log(const char * message, uint32_t length);
+extern void clickhouse_log(uint32_t level, const char * message, uint32_t length);
+
+#define LOG_DEBUG 7
 
 Span * clickhouse_create_buffer(uint32_t size) {
+    uint32_t aligned_size = (size + 15u) & ~15u;
     if (span_pos >= MAX_SPANS) return NULL;
-    if (heap_pos + size > HEAP_SIZE) return NULL;
+    if (heap_pos + aligned_size > HEAP_SIZE) return NULL;
     Span * span = &spans[span_pos++];
     span->data = &heap[heap_pos];
     span->size = size;
-    heap_pos += (size + 15) & ~15u;
+    heap_pos += aligned_size;
     return span;
 }
 
 void clickhouse_destroy_buffer(Span * data) {
-    clickhouse_log("XXXX Buffer destroyed", 20);
+    clickhouse_log(LOG_DEBUG, "XXXX Buffer destroyed", 20);
     (void)data;
 }
 
@@ -60,6 +63,24 @@ static uint32_t write_u64(uint64_t val, char * buf) {
         val /= 10;
     }
     return len;
+}
+
+static uint32_t read_le32(const uint8_t * data) {
+    return (uint32_t)data[0]
+        | ((uint32_t)data[1] << 8)
+        | ((uint32_t)data[2] << 16)
+        | ((uint32_t)data[3] << 24);
+}
+
+static uint64_t read_le64(const uint8_t * data) {
+    uint64_t lo = read_le32(data);
+    uint64_t hi = read_le32(data + 4);
+    return lo | (hi << 32);
+}
+
+static void write_le64(uint8_t * data, uint64_t value) {
+    for (uint32_t i = 0; i < 8; ++i)
+        data[i] = (uint8_t)(value >> (8 * i));
 }
 
 /* Digest rows separated by '\n' (CSV or TSV serialization format).
@@ -157,5 +178,68 @@ Span * get_block_size(Span * span, uint32_t n) {
         buf[pos++] = '\n';
     }
     res->size = pos;
+    return res;
+}
+
+Span * sum_buffers_u32_u64(Span * input, uint32_t n) {
+    if (!input || input->size < 32) return NULL;
+
+    const uint8_t * data = input->data;
+    uint32_t pos = 0;
+
+    uint64_t num_columns = read_le64(data + pos);
+    pos += 8;
+    uint64_t num_rows = read_le64(data + pos);
+    pos += 8;
+    if (num_columns != 2 || num_rows != n) return NULL;
+
+    uint64_t first_size = read_le64(data + pos);
+    pos += 8;
+    if (first_size != (uint64_t)n * 4 || pos + first_size > input->size) return NULL;
+    const uint8_t * first = data + pos;
+    pos += (uint32_t)first_size;
+
+    if (pos + 8 > input->size) return NULL;
+    uint64_t second_size = read_le64(data + pos);
+    pos += 8;
+    if (second_size != (uint64_t)n * 8 || pos + second_size != input->size) return NULL;
+    const uint8_t * second = data + pos;
+
+    Span * res = clickhouse_create_buffer(24 + 8 * n);
+    if (!res) return NULL;
+
+    uint8_t * out = res->data;
+    write_le64(out, 1);
+    write_le64(out + 8, n);
+    write_le64(out + 16, (uint64_t)n * 8);
+    for (uint32_t i = 0; i < n; ++i) {
+        uint64_t value = (uint64_t)read_le32(first + i * 4) + read_le64(second + i * 8);
+        write_le64(out + 24 + i * 8, value);
+    }
+    return res;
+}
+
+Span * malformed_buffers_zero_columns(Span * input, uint32_t n) {
+    (void)input;
+    (void)n;
+
+    Span * res = clickhouse_create_buffer(8);
+    if (!res) return NULL;
+
+    write_le64(res->data, 0);
+    return res;
+}
+
+Span * malformed_buffers_wrong_size(Span * input, uint32_t n) {
+    (void)input;
+    (void)n;
+
+    Span * res = clickhouse_create_buffer(32);
+    if (!res) return NULL;
+
+    write_le64(res->data, 1);
+    write_le64(res->data + 8, 1);
+    write_le64(res->data + 16, 0);
+    write_le64(res->data + 24, 42);
     return res;
 }

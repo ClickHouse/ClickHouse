@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS 03457_data;
 DROP TABLE IF EXISTS 03457_filter;
 
 SET parallel_replicas_local_plan = 1;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 CREATE TABLE 03457_filter (key UInt64) ENGINE = Memory
 AS

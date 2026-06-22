@@ -38,6 +38,7 @@ void registerDictionaryDirect(DictionaryFactory & factory);
 void registerDictionaryNaiveBayes(DictionaryFactory & factory);
 
 
+void registerDictionaries();
 void registerDictionaries()
 {
     {

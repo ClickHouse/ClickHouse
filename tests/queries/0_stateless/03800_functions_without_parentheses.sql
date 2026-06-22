@@ -59,8 +59,52 @@ SELECT plus;
 WITH TODAY as plus
 SELECT plus = TODAY();
 
+-- Test all niladic functions
+SELECT DATABASE = currentDatabase();
+SELECT SCHEMA = currentDatabase();
+SELECT USER = currentUser();
+SELECT toTypeName(CURDATE);
+
+-- Test the Default Path resolution
+CREATE TABLE t_niladic_default (ts DateTime DEFAULT CURRENT_TIMESTAMP, x UInt8) ENGINE = Memory;
+INSERT INTO t_niladic_default (x) VALUES (1);
+SELECT toTypeName(ts), ts > '2020-01-01' FROM t_niladic_default;
+DROP TABLE t_niladic_default;
+
+-- Test insert select path
+CREATE TABLE t_niladic_insert (ts DateTime) ENGINE = Memory;
+INSERT INTO t_niladic_insert SELECT CURRENT_TIMESTAMP;
+SELECT count() FROM t_niladic_insert WHERE ts > '2020-01-01';
+DROP TABLE t_niladic_insert;
+
 -- Verify error for functions that don't allow omitting parentheses
 SELECT concat; -- { serverError UNKNOWN_IDENTIFIER }
 
 -- Aggregate functions require parentheses
 SELECT count; -- { serverError UNKNOWN_IDENTIFIER }
+
+-- Niladic function in scalar subquery (PR #98941)
+SELECT (SELECT DATABASE) = currentDatabase();
+
+-- Niladic function in GROUP BY
+SELECT DATABASE = currentDatabase(), count() FROM system.one GROUP BY DATABASE ORDER BY DATABASE;
+
+-- Niladic function in ORDER BY
+SELECT 1 AS x ORDER BY NOW;
+
+-- Niladic function in HAVING
+SELECT 1 AS x HAVING NOW > '2000-01-01';
+
+-- Niladic function directly inside a function alias body: most targeted test for the PR #98941 fix.
+-- Before the fix, allow_niladic_functions was inadvertently false when resolving the FUNCTION-type
+-- alias node at QueryAnalyzer.cpp:1084, so TODAY inside toDate(TODAY) would fail to resolve.
+WITH toDate(TODAY) AS d SELECT d = today();
+
+-- Niladic in CASE expression
+SELECT CASE WHEN DATABASE = currentDatabase() THEN 'ok' ELSE 'fail' END;
+
+-- Niladic in JOIN condition
+SELECT a.x FROM (SELECT 1 AS x, DATABASE AS db) a INNER JOIN (SELECT currentDatabase() AS db) b ON a.db = b.db;
+
+-- Multiple niladic functions in single SELECT
+SELECT DATABASE = currentDatabase(), USER = currentUser(), TODAY = today();

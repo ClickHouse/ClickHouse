@@ -113,7 +113,8 @@ namespace DB
         if (!storage)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
 
-        return storage->getInMemoryMetadataPtr()->getColumns();
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        return metadata_snapshot->getColumns();
     }
 
     StoragePtr TableFunctionLoop::executeImpl(
@@ -149,7 +150,8 @@ namespace DB
         }
         auto res = std::make_shared<StorageLoop>(
                 StorageID(getDatabaseName(), table_name),
-                storage
+                storage,
+                inner_table_function_ast ? inner_table_function_ast->clone() : nullptr
         );
         res->startup();
         return res;

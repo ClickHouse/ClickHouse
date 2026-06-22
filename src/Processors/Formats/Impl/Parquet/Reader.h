@@ -150,9 +150,9 @@ struct Reader
     struct PrimitiveColumnInfo
     {
         /// Primitive column index in parquet file. NOT index in primitive_columns array.
-        size_t column_idx;
+        size_t column_idx{};
         /// Index in parquet `schema` (in FileMetaData).
-        size_t schema_idx;
+        size_t schema_idx{};
         /// Index of the top-level column that contains this primitive column.
         size_t idx_in_output_block = UINT64_MAX;
         String name; // possibly mapped by ColumnMapper (e.g. using iceberg metadata)
@@ -228,7 +228,7 @@ struct Reader
 
     struct BloomFilterBlock
     {
-        size_t block_idx;
+        size_t block_idx{};
         PrefetchHandle prefetch;
     };
 
@@ -263,14 +263,14 @@ struct Reader
         /// PrefetchHandle in ColumnChunk::data_pages or data_pages_prefetch).
         /// Either way the data is padded for simd.
         std::span<const char> data;
-        parq::Encoding::type encoding;
+        parq::Encoding::type encoding{};
 
         std::unique_ptr<PageDecoder> decoder;
         bool is_dictionary_encoded = false;
 
         /// If data_state is still compressed. We always decompress it before calling the decoder.
         /// Decompression is deferred a little to see if we can decompress directly into IColumn.
-        parq::CompressionCodec::type codec;
+        parq::CompressionCodec::type codec{};
         size_t values_uncompressed_size = 0;
 
         /// Empty if the corresponding max rep/def level is 0.
@@ -290,7 +290,7 @@ struct Reader
 
     struct ColumnChunk
     {
-        const parq::ColumnChunk * meta;
+        const parq::ColumnChunk * meta{};
 
         bool use_bloom_filter = false;
         bool use_dictionary_filter = false;
@@ -339,7 +339,7 @@ struct Reader
         /// Index in data_pages up to which we checked which pages need to be read, after applying prewhere.
         size_t data_pages_prefetch_idx = 0;
 
-        ReadStage stage;
+        ReadStage stage{};
     };
 
     struct ColumnSubchunk
@@ -398,9 +398,9 @@ struct Reader
 
     struct RowGroup
     {
-        const parq::RowGroup * meta;
+        const parq::RowGroup * meta{};
 
-        size_t row_group_idx; // in parquet file
+        size_t row_group_idx{}; // in parquet file
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
         bool need_to_process = false;
@@ -433,7 +433,7 @@ struct Reader
     };
 
     ReadOptions options;
-    const Block * sample_block;
+    const Block * sample_block{};
     FormatFilterInfoPtr format_filter_info;
     Prefetcher prefetcher;
 
@@ -474,6 +474,11 @@ struct Reader
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
     std::vector<Step> steps;
+
+    /// Per-column KeyConditions for page-level filter push-down (column index).
+    /// Stored here to keep the shared_ptrs alive, since raw pointers from them
+    /// are referenced by PrimitiveColumnInfo::column_index_condition.
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
 

@@ -9,10 +9,19 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+ContextPtr getQueryOrGlobalContext()
+{
+    if (auto query_context = CurrentThread::tryGetQueryContext(); query_context != nullptr)
+        return query_context;
+    return Context::getGlobalContextInstance();
+}
 
 template <typename Definition, typename Configuration, bool is_data_lake>
 StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_lake>::executeImpl(
@@ -122,6 +131,7 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
 
 
 #if USE_AVRO
+void registerTableFunctionIcebergCluster(TableFunctionFactory & factory);
 void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
 {
     UNUSED(factory);
@@ -178,6 +188,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
 #endif
 }
 
+void registerTableFunctionPaimonCluster(TableFunctionFactory & factory);
 void registerTableFunctionPaimonCluster(TableFunctionFactory & factory)
 {
     UNUSED(factory);
@@ -228,6 +239,7 @@ void registerTableFunctionPaimonCluster(TableFunctionFactory & factory)
 
 
 #if USE_PARQUET
+void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory);
 void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory)
 {
     UNUSED(factory);
@@ -264,6 +276,7 @@ void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory)
 #endif
 
 #if USE_AWS_S3
+void registerTableFunctionHudiCluster(TableFunctionFactory & factory);
 void registerTableFunctionHudiCluster(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHudiCluster>(

@@ -9,8 +9,8 @@ import re
 import signal
 import subprocess
 import sys
+import shutil
 import tempfile
-import textwrap
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -23,7 +23,7 @@ from threading import Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
-T = TypeVar("T", bound="Serializable")
+T = TypeVar("T", bound="Serializable")  # noqa: F821  # forward ref to MetaClasses.Serializable below
 
 
 class MetaClasses:
@@ -174,24 +174,31 @@ class Shell:
         return cls.get_output(command, verbose=verbose, strict=True).strip()
 
     @classmethod
-    def get_output(cls, command, strict=False, verbose=False):
+    def get_output(cls, command, strict=False, verbose=False, retries=1, delay=2):
         if verbose:
             print(f"Run command [{command}]")
-        res = subprocess.run(
-            command,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            executable="/bin/bash",
-            errors="ignore",
-        )
-        if res.stderr:
-            print(f"WARNING: stderr: {res.stderr.strip()}")
-        if strict and res.returncode != 0:
-            raise RuntimeError(
-                f"command failed with, exit_code {res.returncode}, stderr:\n>>>\n{res.stderr.strip()}\n<<<"
+        for attempt in range(retries):
+            res = subprocess.run(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                executable="/bin/bash",
+                errors="ignore",
             )
+            if res.stderr:
+                print(f"WARNING: stderr: {res.stderr.strip()}")
+            if strict and res.returncode != 0:
+                raise RuntimeError(
+                    f"command failed with, exit_code {res.returncode}, stderr:\n>>>\n{res.stderr.strip()}\n<<<"
+                )
+            if res.returncode == 0:
+                return res.stdout.strip()
+            if attempt < retries - 1:
+                print(f"WARNING: command failed (attempt {attempt + 1}/{retries}), retrying in {delay}s...")
+                time.sleep(delay)
+                delay = min(2 * delay, 60)
         return res.stdout.strip()
 
     @classmethod
@@ -297,7 +304,7 @@ class Shell:
 
         # Force kill if still running
         if process.poll() is None:
-            print(f"WARNING: Process still running after SIGTERM, sending SIGKILL")
+            print("WARNING: Process still running after SIGTERM, sending SIGKILL")
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
@@ -328,8 +335,7 @@ class Shell:
             return 0  # Return success for dry-run
 
         if verbose:
-            wrapped = textwrap.fill(f"Run command: [{command}]", width=80)
-            print(wrapped)
+            print(f"Run command: [{command}]")
 
         log_file = log_file or "/dev/null"
         proc = None
@@ -411,7 +417,7 @@ class Shell:
                     err in err_line for err_line in err_output for err in retry_errors
                 ):
                     if verbose:
-                        print(f"No retryable errors found, stopping retries")
+                        print("No retryable errors found, stopping retries")
                     break
 
                 if verbose:
@@ -433,7 +439,7 @@ class Shell:
                     else:
                         print(f"Retry {retry+1}/{retries}: exception {e}")
                         if retry == retries - 1:
-                            print(f"ERROR: Final attempt failed, no more retries left.")
+                            print("ERROR: Final attempt failed, no more retries left.")
                 if proc:
                     proc.kill()
                 if retry == retries - 1:
@@ -625,6 +631,13 @@ class Utils:
         return base64_string
 
     @staticmethod
+    def from_base64(value):
+        assert isinstance(value, str), f"TODO: not supported for {type(value)}"
+        base64_bytes = value.encode("utf-8")
+        string_bytes = base64.b64decode(base64_bytes)
+        return string_bytes.decode("utf-8")
+
+    @staticmethod
     def is_hex(s):
         try:
             int(s, 16)
@@ -784,11 +797,21 @@ class Utils:
                 )
         return path_out
 
+    @staticmethod
+    def fix_ownership_after_docker(path, docker_image: str) -> None:
+        uid = os.getuid()
+        gid = os.getgid()
+        Shell.run(
+            f"docker run --rm --user root --volume {path}:{path} {docker_image} chown -R {uid}:{gid} {path}",
+            verbose=True,
+        )
+
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
+        # -base64: raw bytes can contain \0 which breaks openssl enc -pass file:
         if not Path(f"{aes_key_path}.rsa").exists():
             Shell.run(f"""
-openssl rand 32 >{aes_key_path}
+openssl rand -base64 32 >{aes_key_path}
 openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_key_path}.rsa \
     -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
 """)
@@ -986,6 +1009,17 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             sys.stdout = self.original_stdout
+
+    @staticmethod
+    def link(src: Path, dst: Path) -> None:
+        dst.unlink(missing_ok=True)
+        dst.symlink_to(src)
+
+    @staticmethod
+    def clean_dir(path: Path) -> None:
+        if path.exists():
+            shutil.rmtree(path)
+        path.mkdir(parents=True, exist_ok=True)
 
 
 class TeePopen:

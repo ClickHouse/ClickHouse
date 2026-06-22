@@ -32,6 +32,8 @@
 #include <Utils.h>
 #include <Server/CloudPlacementInfo.h>
 #include <IO/SharedThreadPools.h>
+#include <Common/ThreadPool.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Poco/FileChannel.h>
 
@@ -273,7 +275,6 @@ void DisksApp::runInteractiveReplxx()
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
         .highlighter = {},
-        .on_complete_modify_callback = ReplxxLineReader::OnCompleteModifyCallback(),
     };
     ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
@@ -327,10 +328,12 @@ void DisksApp::registerCommands()
     command_descriptions.emplace("link", makeCommandLink());
     command_descriptions.emplace("write", makeCommandWrite());
     command_descriptions.emplace("read", makeCommandRead());
+    command_descriptions.emplace("read-bitmap", makeCommandReadBitmap());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
+    command_descriptions.emplace("read-checksums", makeCommandReadChecksums());
     command_descriptions.emplace("help", makeCommandHelp(*this));
 #if CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
@@ -625,8 +628,16 @@ void DisksApp::runInteractive()
 }
 }
 
+int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv)
 {
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
+
     try
     {
         DB::DisksApp app;

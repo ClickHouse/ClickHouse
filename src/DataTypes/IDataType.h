@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <Common/COW.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <memory>
@@ -23,27 +24,19 @@ using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 class ReadBuffer;
 class WriteBuffer;
 
-class IDataType;
 struct FormatSettings;
 
 class IColumn;
 using ColumnPtr = COW<IColumn>::Ptr;
 using MutableColumnPtr = COW<IColumn>::MutablePtr;
 
+class ColumnConst;
+using ColumnConstPtr = COW<IColumn>::immutable_ptr<ColumnConst>;
+using MutableColumnConstPtr = COW<IColumn>::mutable_ptr<ColumnConst>;
+
 class Field;
 
-using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
-
 struct NameAndTypePair;
-
-struct DataTypeWithConstInfo
-{
-    DataTypePtr type;
-    bool is_const;
-};
-
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
@@ -137,16 +130,14 @@ public:
 
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
-    SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
-
-    /// Chooses serialization according to serialization kind stack.
-    SerializationPtr getSerialization(
-        ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings, SerializationPtr override_default = {}) const;
+    SerializationPtr getDefaultSerialization() const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 
     SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
+
+    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const;
 
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
@@ -158,7 +149,7 @@ public:
 
 protected:
     virtual String doGetName() const { return getFamilyName(); }
-    virtual SerializationPtr doGetDefaultSerialization() const = 0;
+    virtual SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const = 0;
 
     virtual String doGetPrettyName(size_t /*indent*/) const { return doGetName(); }
 
@@ -179,8 +170,8 @@ public:
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
-    virtual ColumnPtr createColumnConst(size_t size, const Field & field) const;
-    ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
+    virtual MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const;
+    MutableColumnConstPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.
@@ -338,6 +329,9 @@ public:
     virtual bool hasDynamicSubcolumns() const;
     /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnData can be called.
     virtual bool hasDynamicSubcolumnsData() const { return false; }
+
+    /// Checks if this type or any nested type has dynamic internal structure (like JSON or Dynamic).
+    virtual bool hasDynamicStructure() const { return false; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);

@@ -442,6 +442,16 @@ std::string getExtraExceptionInfo(const std::exception & e)
     return msg;
 }
 
+/// Formats the trailing ", Stack trace (...)\n\n<trace>" section of an exception message.
+/// Returns an empty string when there is no stack trace, so that the message never ends with the
+/// "always include the lines below" promise without any lines following it.
+static std::string formatStackTraceSection(const std::string & stack_trace)
+{
+    if (stack_trace.empty())
+        return {};
+    return ", Stack trace (when copying this message, always include the lines below):\n\n" + stack_trace;
+}
+
 std::string getCurrentExceptionMessage(
     bool with_stacktrace,
     bool check_embedded_stacktrace /*= false*/,
@@ -483,12 +493,12 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", " << e.displayText()
-                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
+                << (with_stacktrace ? formatStackTraceSection(getExceptionStackTraceString(e)) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "");
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // Ok: best-effort exception formatting, must not throw
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
     }
     catch (const std::exception & e)
     {
@@ -501,12 +511,12 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
                 name += " (demangling status: " + toString(status) + ")";
 
             stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
-                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
+                << (with_stacktrace ? formatStackTraceSection(getExceptionStackTraceString(e)) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "");
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // Ok: best-effort exception formatting, must not throw
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
 
         if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
         {
@@ -521,7 +531,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
 
                 abortOnFailedAssertion(stream.str());
             }
-            catch (...) {} // Ok: best-effort exception formatting, must not throw
+            catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
         }
     }
     catch (...) // Ok: unknown exception type, format what we can
@@ -538,7 +548,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // Ok: best-effort exception formatting, must not throw
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
     }
 
     return PreformattedMessage{stream.str(), message_format_string, message_format_string_args};
@@ -662,9 +672,9 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
         stream << " (" << ErrorCodes::getName(e.code()) << ")";
 
         if (with_stacktrace && !has_embedded_stack_trace)
-            stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
+            stream << formatStackTraceSection(e.getStackTraceString());
     }
-    catch (...) {} // Ok: best-effort exception formatting, must not throw
+    catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
 
     return PreformattedMessage{stream.str(), e.tryGetMessageFormatString(), e.getMessageFormatStringArgs()};
 }
