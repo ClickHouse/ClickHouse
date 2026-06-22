@@ -59,9 +59,20 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
+/// Accept and discard the fractional part of a Unix timestamp, e.g. `1703363853.5`. `DateTime` has
+/// no sub-second precision, so the fraction is truncated to whole seconds, matching `CAST` and the
+/// `Values` format.
+inline void skipTimestampFraction(ReadBuffer & istr)
+{
+    if (checkChar('.', istr))
+        while (!istr.eof() && isNumericASCII(*istr.position()))
+            ++istr.position();
+}
+
 inline void readAsIntText(time_t & x, ReadBuffer & istr)
 {
     readIntText(x, istr);
+    skipTimestampFraction(istr);
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
@@ -90,6 +101,7 @@ inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
 {
     if (!tryReadIntText(x, istr))
         return false;
+    skipTimestampFraction(istr);
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
     return true;
 }

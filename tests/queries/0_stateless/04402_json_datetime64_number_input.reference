@@ -1,0 +1,33 @@
+-- DateTime64(3): unquoted float (the reported bug)
+2023-12-23 20:37:33.035
+-- DateTime64(3): an unquoted integer is seconds, like Values and CAST
+2023-12-23 20:37:33.000
+2023-12-23 20:37:33.000
+2023-12-23 20:37:33.000
+-- DateTime64(3): JSONEachRow agrees with Values for a fractional timestamp
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33.035
+-- DateTime64(3): quoted forms still work
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33.035
+-- DateTime64: scales 0/6/9, sub-second precision preserved, extra digits truncated
+2023-12-23 20:37:33
+2023-12-23 20:37:33.035123
+2023-12-23 20:37:33.035123456
+2023-12-23 20:37:33.035
+-- DateTime64(3): exponent notation
+2023-12-23 20:37:33.035
+-- DateTime64(3): negative timestamp (before the epoch)
+1969-12-31 23:59:59.500
+-- DateTime64(3): a delimiter after the value is handled (more than one column)
+2023-12-23 20:37:33.035	7
+-- DateTime64(3): try-path via Nullable and Variant
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33.035
+-- DateTime: unquoted float is truncated to whole seconds, like CAST
+2023-12-23 20:37:33
+2023-12-23 20:37:33
+-- DateTime: an unquoted integer is unchanged
+2023-12-23 20:37:33
+-- DateTime: try-path via Nullable
+2023-12-23 20:37:33

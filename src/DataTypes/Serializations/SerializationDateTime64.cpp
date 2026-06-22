@@ -8,7 +8,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
+#include <IO/readDecimalText.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
+
+#include <limits>
 
 namespace DB
 {
@@ -16,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 SerializationDateTime64::SerializationDateTime64(
@@ -118,6 +123,31 @@ static inline bool tryReadText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, 
     }
 }
 
+/// An unquoted number in JSON or the Quoted format is a Unix timestamp (seconds since the epoch)
+/// with optional sub-second precision, e.g. `1703363853.035`. It is parsed as a decimal value at
+/// the column scale, exactly like `CAST`, `toDateTime64`, the `Values` format and the `Decimal`
+/// type (`DateTime64` is a `Decimal` underneath). One more digit than `Decimal`'s precision is
+/// allowed because a `DateTime64` spans the whole `Int64` range, so e.g. a 10-digit second count is
+/// valid even at scale 9. As with the previous `readIntText`, parsing stops at the first character
+/// that is not part of the number (e.g. the `,` or `}` that follows the value in JSON).
+static constexpr UInt32 datetime64_number_precision = std::numeric_limits<DateTime64::NativeType>::digits10 + 1;
+
+static void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
+{
+    UInt32 unread_scale = scale;
+    readDecimalText(istr, x, datetime64_number_precision, unread_scale);
+    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<DateTime64::NativeType>(unread_scale), x.value))
+        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow while parsing DateTime64");
+}
+
+static bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
+{
+    UInt32 unread_scale = scale;
+    if (!readDecimalText<DateTime64, bool>(istr, x, datetime64_number_precision, unread_scale, /*digits_only=*/false))
+        return false;
+    return !common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<DateTime64::NativeType>(unread_scale), x.value);
+}
+
 SerializationPtr SerializationDateTime64::create(UInt32 scale_, const TimezoneMixin & time_zone_)
 {
     return ISerialization::pooled(getHash(scale_, time_zone_), [&] { return new SerializationDateTime64(scale_, time_zone_); });
@@ -164,9 +194,9 @@ void SerializationDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
-    else /// Just 1504193808 or 01504193808
+    else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
     {
-        readIntText(x, istr);
+        readDateTime64AsNumber(x, scale, istr);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
@@ -179,9 +209,9 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
             return false;
     }
-    else /// Just 1504193808 or 01504193808
+    else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
     {
-        if (!tryReadIntText(x, istr))
+        if (!tryReadDateTime64AsNumber(x, scale, istr))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
@@ -205,7 +235,7 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     }
     else
     {
-        readIntText(x, istr);
+        readDateTime64AsNumber(x, scale, istr);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
@@ -220,7 +250,7 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        if (!tryReadDateTime64AsNumber(x, scale, istr))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
