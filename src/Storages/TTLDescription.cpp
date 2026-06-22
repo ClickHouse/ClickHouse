@@ -70,6 +70,44 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
 namespace
 {
 
+/// If the expression reads any column whose type contains an AggregateFunction state (including nested
+/// states inside Tuple/Array/Map/etc.), dry-run the actions to detect functions that cannot consume such
+/// states. Only the resulting type error is translated into a clear message; all other exceptions are
+/// rethrown so that data-independent failures are not silently accepted.
+void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expression, std::string_view expression_kind)
+{
+    bool has_aggregate_function_columns = false;
+    for (const auto & col : expression->getRequiredColumnsWithTypes())
+    {
+        if (hasAggregateFunctionType(col.type))
+        {
+            has_aggregate_function_columns = true;
+            break;
+        }
+    }
+
+    if (!has_aggregate_function_columns)
+        return;
+
+    Block check_block;
+    for (const auto & col : expression->getRequiredColumnsWithTypes())
+        check_block.insert(ColumnWithTypeAndName(
+            col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), col.type, col.name));
+
+    try
+    {
+        expression->execute(check_block, /*dry_run=*/ true);
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+            throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                "TTL {}expression uses AggregateFunction column in a function that cannot handle it. "
+                "Use `finalizeAggregation` to extract the value first: {}", expression_kind, e.message());
+        throw;
+    }
+}
+
 void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
 {
     /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
@@ -91,35 +129,7 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
             }
         }
 
-        bool has_aggregate_function_columns = false;
-        for (const auto & col : ttl_expression->getRequiredColumnsWithTypes())
-        {
-            if (typeid_cast<const DataTypeAggregateFunction *>(col.type.get()))
-            {
-                has_aggregate_function_columns = true;
-                break;
-            }
-        }
-
-        if (has_aggregate_function_columns)
-        {
-            Block check_block;
-            for (const auto & col : ttl_expression->getRequiredColumnsWithTypes())
-                check_block.insert(ColumnWithTypeAndName(
-                    col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), col.type, col.name));
-
-            try
-            {
-                ttl_expression->execute(check_block, /*dry_run=*/ true);
-            }
-            catch (Exception & e)
-            {
-                if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                        "TTL expression uses AggregateFunction column in a function that cannot handle it. "
-                        "Use `finalizeAggregation` to extract the value first: {}", e.message());
-            }
-        }
+        checkTTLExpressionForAggregateFunctions(ttl_expression, /*expression_kind=*/ "");
     }
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
@@ -389,37 +399,7 @@ TTLDescription TTLDescription::getTTLFromAST(
     checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
 
     if (where_expression && !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
-    {
-        bool has_aggregate_function_columns = false;
-        for (const auto & col : where_expression->getRequiredColumnsWithTypes())
-        {
-            if (typeid_cast<const DataTypeAggregateFunction *>(col.type.get()))
-            {
-                has_aggregate_function_columns = true;
-                break;
-            }
-        }
-
-        if (has_aggregate_function_columns)
-        {
-            Block check_block;
-            for (const auto & col : where_expression->getRequiredColumnsWithTypes())
-                check_block.insert(ColumnWithTypeAndName(
-                    col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), col.type, col.name));
-
-            try
-            {
-                where_expression->execute(check_block, /*dry_run=*/ true);
-            }
-            catch (Exception & e)
-            {
-                if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                        "TTL WHERE expression uses AggregateFunction column in a function that cannot handle it. "
-                        "Use finalizeAggregation() to extract the value first: {}", e.message());
-            }
-        }
-    }
+        checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ");
 
     return result;
 }

@@ -62,7 +62,73 @@ ENGINE = MergeTree()
 ORDER BY tuple()
 TTL toDateTime(toUInt32(ts)) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
 
--- Valid usage: finalizeAggregation can operate on AggregateFunction states
+-- Nested state inside a Tuple: the AggregateFunction is not the top-level type, so it must be
+-- found via the recursive type walk 
+CREATE TABLE test_ttl_agg_tuple
+(
+    key1 String,
+    ts Tuple(a UInt32, b AggregateFunction(max, DateTime64(3)))
+)
+ENGINE = MergeTree()
+ORDER BY key1
+TTL toDateTime(ts.2) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+-- Nested state inside an Array.
+CREATE TABLE test_ttl_agg_array
+(
+    key1 String,
+    ts Array(AggregateFunction(max, DateTime64(3)))
+)
+ENGINE = MergeTree()
+ORDER BY key1
+TTL toDateTime(ts[1]) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+-- Nested state inside a Map.
+CREATE TABLE test_ttl_agg_map
+(
+    key1 String,
+    ts Map(String, AggregateFunction(max, DateTime64(3)))
+)
+ENGINE = MergeTree()
+ORDER BY key1
+TTL toDateTime(ts['a']) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+-- Nested state used only in DELETE WHERE: must be caught on the WHERE path too.
+CREATE TABLE test_ttl_agg_tuple_where
+(
+    key1 String,
+    d DateTime,
+    ts Tuple(a UInt32, b AggregateFunction(max, DateTime64(3)))
+)
+ENGINE = MergeTree()
+ORDER BY key1
+TTL d + INTERVAL 1 DAY DELETE WHERE toDateTime(ts.2) > toDateTime(0); -- { serverError BAD_TTL_EXPRESSION }
+
+-- Valid: a nested AggregateFunction state that is not referenced by the TTL must be accepted.
+CREATE TABLE test_ttl_agg_tuple_not_referenced
+(
+    key1 String,
+    d DateTime,
+    ts Tuple(a UInt32, b AggregateFunction(max, DateTime64(3)))
+)
+ENGINE = MergeTree()
+ORDER BY key1
+TTL d + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_tuple_not_referenced;
+
+-- Non-type errors raised while dry-running the AggregateFunction validation must be propagated to
+-- the user, not swallowed: here the synthetic aggregate state finalizes to 0, so intDiv divides by
+-- zero. Only ILLEGAL_TYPE_OF_ARGUMENT is translated to BAD_TTL_EXPRESSION; everything else is rethrown.
+CREATE TABLE test_ttl_agg_divzero
+(
+    ts AggregateFunction(sum, UInt32)
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(intDiv(toUInt32(100), finalizeAggregation(ts))) + INTERVAL 1 DAY; -- { serverError ILLEGAL_DIVISION }
+
+-- Valid: finalizeAggregation can operate on AggregateFunction states
 CREATE TABLE test_ttl_agg_finalize
 (
     key1 String,
