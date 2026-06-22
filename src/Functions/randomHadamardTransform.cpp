@@ -55,21 +55,6 @@ inline UInt64 splitmix64Next(UInt64 & state)
     return z ^ (z >> 31);
 }
 
-/// In-place unnormalized fast Walsh-Hadamard transform on m (a power of two) elements.
-template <typename T>
-void fwht(T * a, size_t m)
-{
-    for (size_t h = 1; h < m; h <<= 1)
-        for (size_t i = 0; i < m; i += (h << 1))
-            for (size_t j = i; j < i + h; ++j)
-            {
-                const T x = a[j];
-                const T y = a[j + h];
-                a[j] = x + y;
-                a[j + h] = x - y;
-            }
-}
-
 /// Deterministic +-1 signs of length m derived from the seed (a splitmix64 stream).
 /// Cached per length m within one function call (the seed is constant for the call). Distinct
 /// lengths are rare (usually one), so a linear lookup is cheaper than a hash map.
@@ -198,17 +183,92 @@ private:
                         k, name, m, length);
 
                 const PaddedPODArray<Compute> & signs = getSigns(sign_cache, seed, m);
-                buffer.resize(m);
-                for (size_t i = 0; i < length; ++i)
-                    buffer[i] = static_cast<Compute>(input[start + i]) * signs[i];
-                for (size_t i = length; i < m; ++i)
-                    buffer[i] = 0;
-                fwht(buffer.data(), m);
-
                 const Compute scale = static_cast<Compute>(1.0 / std::sqrt(static_cast<double>(k)));
+                const In * in = input.data() + start;
                 result.resize(written + k);
-                for (size_t i = 0; i < k; ++i)
-                    result[written + i] = static_cast<Out>(buffer[i] * scale);
+                Out * out = result.data() + written;
+
+                if (m == 1)
+                {
+                    /// A 1-element transform is the identity (times the sign and scale).
+                    out[0] = static_cast<Out>(scale * static_cast<Compute>(in[0]) * signs[0]);
+                }
+                else
+                {
+                    /// First Hadamard stage (h = 1) fused with the input load: cast, apply the sign,
+                    /// zero-pad past the input length, and write the h = 1 butterfly into the buffer.
+                    buffer.resize(m);
+                    /// Pairs fully inside the input: no padding branch in the hot loop.
+                    const size_t even_length = length & ~static_cast<size_t>(1);
+                    for (size_t j = 0; j < even_length; j += 2)
+                    {
+                        const Compute x = static_cast<Compute>(in[j])     * signs[j];
+                        const Compute y = static_cast<Compute>(in[j + 1]) * signs[j + 1];
+                        buffer[j]     = x + y;
+                        buffer[j + 1] = x - y;
+                    }
+                    /// A straddling pair (one real element, one padding zero) when length is odd.
+                    if (even_length < length)
+                    {
+                        const Compute x = static_cast<Compute>(in[even_length]) * signs[even_length];
+                        buffer[even_length]     = x;
+                        buffer[even_length + 1] = x;
+                    }
+                    /// Remaining pairs are pure padding; the h = 1 butterfly of (0, 0) is (0, 0).
+                    for (size_t j = (length + 1) & ~static_cast<size_t>(1); j < m; j += 2)
+                    {
+                        buffer[j]     = 0;
+                        buffer[j + 1] = 0;
+                    }
+
+                    if (m == 2)
+                    {
+                        /// h = 1 was the only stage; scale and cast the kept outputs.
+                        for (size_t i = 0; i < k; ++i)
+                            out[i] = static_cast<Out>(scale * buffer[i]);
+                    }
+                    else
+                    {
+                        /// Middle stages h = 2 .. m/4 (in place on the buffer).
+                        for (size_t h = 2; h < m / 2; h <<= 1)
+                            for (size_t i = 0; i < m; i += (h << 1))
+                                for (size_t j = i; j < i + h; ++j)
+                                {
+                                    const Compute a = buffer[j];
+                                    const Compute b = buffer[j + h];
+                                    buffer[j] = a + b;
+                                    buffer[j + h] = a - b;
+                                }
+
+                        /// Last stage (h = m/2) fused with the scale and output cast: write the kept
+                        /// coordinates straight to the result, skipping the separate buffer round-trip.
+                        const size_t half = m / 2;
+                        if (k == m)
+                        {
+                            /// Full transform (no truncation): branch-free, both halves are kept.
+                            for (size_t j = 0; j < half; ++j)
+                            {
+                                const Compute a = buffer[j];
+                                const Compute b = buffer[j + half];
+                                out[j]        = static_cast<Out>(scale * (a + b));
+                                out[j + half] = static_cast<Out>(scale * (a - b));
+                            }
+                        }
+                        else
+                        {
+                            /// Truncated to the first k coordinates.
+                            for (size_t j = 0; j < half; ++j)
+                            {
+                                const Compute a = buffer[j];
+                                const Compute b = buffer[j + half];
+                                if (j < k)
+                                    out[j] = static_cast<Out>(scale * (a + b));
+                                if (j + half < k)
+                                    out[j + half] = static_cast<Out>(scale * (a - b));
+                            }
+                        }
+                    }
+                }
                 written += k;
             }
             result_offsets[row] = written;
