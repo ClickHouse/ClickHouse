@@ -252,6 +252,13 @@ bool tryBuildPrewhereSteps(
     /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`) are placed into one group
     /// even if they are non-adjacent in the original list (e.g. interleaved with conditions on other columns).
     /// The first occurrence of each storage column set determines the group's position in the PREWHERE chain.
+    ///
+    /// NOTE: This is a trade-off. Grouping benefits column types whose subcolumns share physical substreams
+    /// (e.g. Map — key-value subcolumns share common substreams of the underlying data).
+    /// For types with independent substreams (e.g. Tuple — each element is serialized separately),
+    /// grouping is suboptimal because it prevents early filtering by one element before reading the others.
+    /// In the future, we could consult `ISerialization` to check whether subcolumns actually share
+    /// substreams and only group them when they do or don't group under a setting.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
     for (const auto & node : condition_nodes)
     {
