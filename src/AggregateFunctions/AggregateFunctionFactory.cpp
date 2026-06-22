@@ -11,6 +11,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 
+#include <unordered_set>
+
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
 
@@ -230,11 +232,17 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// recorded in the column metadata; or fail on parallel replicas under serialize_query_plan=1 because the replica's
         /// decodeDataType() would reconstruct a type different from the one the coordinator sent in the plan.)
         ///
-        /// TODO: Some aggregation functions (at least `kolmogorovSmirnovTest`, `mannWhitneyUTest`, `groupArrayMovingSum`, `groupArrayMovingAvg`)
-        /// drop their parameters completely, so the check below has to tolerate `function->getParameters().empty()`.
-        /// They should be fixed to preserve their parameters like every other aggregation function.
-        chassert(function && (function->getParameters().empty() || function->getParameters() == parameters),
-            "function->getParameters() must equal the parameters passed to the factory");
+        /// TODO: The aggregate functions listed in `functions_dropping_parameters` drop their parameters completely
+        /// instead of preserving them as `IAggregateFunction::parameters`. They should be fixed to preserve their
+        /// parameters like every other aggregation function.
+        static const std::unordered_set<std::string_view> functions_dropping_parameters = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            "kolmogorovSmirnovTest",
+            "mannWhitneyUTest",
+            "groupArrayMovingSum",
+            "groupArrayMovingAvg",
+        };
+        chassert(function && (functions_dropping_parameters.contains(function->getName()) ? function->getParameters().empty() : function->getParameters() == parameters),
+                 "function->getParameters() must equal the parameters passed to the factory");
 
         return function;
     }
@@ -277,8 +285,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
         auto combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         /// Same invariant as above.
-        chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
-            "function->getParameters() must equal the parameters passed to the factory");
+        chassert(combined_function && combined_function->getParameters() == parameters,
+                 "function->getParameters() must equal the parameters passed to the factory");
         return combined_function;
     }
 

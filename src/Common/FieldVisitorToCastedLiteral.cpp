@@ -19,7 +19,7 @@ FieldVisitorToCastedLiteral::FieldVisitorToCastedLiteral(bool skip_unambiguous_c
 String FieldVisitorToCastedLiteral::operator() (const Null & x) const
 {
     /// `NULL` already parses unambiguously as a Null Field.
-    /// We don't add anything to it even of skip_unambiguous_cast == false
+    /// We don't add anything to it even if skip_unambiguous_cast == false
     /// because NULL::Nullable(Nothing) looks excessive.
     return FieldVisitorToString()(x);
 }
