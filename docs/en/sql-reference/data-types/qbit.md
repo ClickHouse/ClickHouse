@@ -19,7 +19,7 @@ column_name QBit(element_type, dimension[, stride])
 
 * `element_type` – the type of each vector element. The allowed types are `BFloat16`, `Float32` and `Float64`
 * `dimension` – the number of elements in each vector
-* `stride` – optional. The number of dimensions stored together in one group of streams. When omitted it defaults to `dimension` (a single group). When provided, `dimension` must be a multiple of `stride`, and `stride` must be a multiple of 8. See [Strides](#strides).
+* `stride` – optional. The number of dimensions stored together in one group of streams. When omitted it defaults to `dimension` (a single group). When provided, `dimension` must be a multiple of `stride`, and, when `stride` is smaller than `dimension`, `stride` must be a multiple of 8. See [Strides](#strides).
 
 ## Creating QBit {#creating-qbit}
 

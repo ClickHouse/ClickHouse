@@ -92,6 +92,14 @@ TEST(QBitSerialization, RejectInvalidStride)
     /// Valid: non-strided (any dimension) and strided with stride a multiple of 8 dividing the dimension.
     EXPECT_NO_THROW(DataTypeQBit(float32_type, 5, 5));
     EXPECT_NO_THROW(DataTypeQBit(float32_type, 16, 8));
+
+    /// The number of stride groups (dimension / stride) is bounded so a huge dimension with a tiny stride cannot make the
+    /// nested type materialize an unreasonable number of streams.
+    EXPECT_NO_THROW(DataTypeQBit(float32_type, 8 * DataTypeQBit::MAX_STRIDE_GROUPS, 8)); /// exactly MAX_STRIDE_GROUPS groups
+    EXPECT_THROW_ERROR_CODE(
+        DataTypeQBit(float32_type, 8 * (DataTypeQBit::MAX_STRIDE_GROUPS + 1), 8), Exception, ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    /// A non-strided QBit is unaffected by the bound regardless of how large the dimension is (it always has element_size streams).
+    EXPECT_NO_THROW(DataTypeQBit(float32_type, 8 * (DataTypeQBit::MAX_STRIDE_GROUPS + 1), 8 * (DataTypeQBit::MAX_STRIDE_GROUPS + 1)));
 }
 
 TEST(QBitSerialization, FieldBinarySerializationStridedFloat32)

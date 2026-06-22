@@ -50,6 +50,19 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
             "QBit stride must be a multiple of 8 when it is smaller than the dimension. Got: {}",
             stride);
 
+    /// The nested storage is a Tuple of `element size * (dimension / stride)` FixedString streams. Bound the number of stride groups
+    /// so that a (possibly maliciously crafted) type with a huge dimension and a small stride cannot make `getNestedType` materialize
+    /// an unreasonable number of streams (and exhaust memory). A non-strided QBit always has just `element size` streams regardless of
+    /// the dimension, so this only constrains the strided case.
+    if (getNumStrides() > MAX_STRIDE_GROUPS)
+        throw Exception(
+            ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+            "QBit has too many stride groups: {} (dimension {} / stride {}). The maximum is {}.",
+            getNumStrides(),
+            dimension,
+            stride,
+            MAX_STRIDE_GROUPS);
+
     /// QBit stores data as a Tuple of binary FixedStrings. Setting custom_serialization
     /// ensures that ReplaceQueryParameterVisitor::visitQueryParameter uses the original
     /// string value for query parameters like `SET param_q=[1,2,3,4]; SELECT {q:QBit(Float32,4)};`
@@ -175,7 +188,7 @@ column_name QBit(element_type, dimension[, stride])
 
 * `element_type` – the type of each vector element. The allowed types are `BFloat16`, `Float32` and `Float64`
 * `dimension` – the number of elements in each vector
-* `stride` – optional. The number of dimensions stored together in one group of streams. When omitted it defaults to `dimension` (a single group). When provided, `dimension` must be a multiple of `stride`, and `stride` must be a multiple of 8. The `dimension` dimensions are split into `dimension / stride` contiguous groups, and each group's bit planes are stored in separate streams. This lets a search over the first `D` dimensions (with `D` a multiple of `stride`) read only the streams of the groups that cover those dimensions, which is useful for Matryoshka embeddings.
+* `stride` – optional. The number of dimensions stored together in one group of streams. When omitted it defaults to `dimension` (a single group). When provided, `dimension` must be a multiple of `stride`, and, when `stride` is smaller than `dimension`, `stride` must be a multiple of 8. The `dimension` dimensions are split into `dimension / stride` contiguous groups, and each group's bit planes are stored in separate streams. This lets a search over the first `D` dimensions (with `D` a multiple of `stride`) read only the streams of the groups that cover those dimensions, which is useful for Matryoshka embeddings.
 
 ## Creating QBit {#creating-qbit}
 

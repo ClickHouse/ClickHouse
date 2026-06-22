@@ -38,6 +38,24 @@ WITH [toFloat32(0), 1, 2, 3, 4, 5, 6, 7] AS ref SELECT DISTINCT toTypeName(L2Dis
 WITH [toFloat32(0), 1, 2, 3, 4, 5, 6, 7] AS ref SELECT DISTINCT toTypeName(L2DistanceTransposed(vec, ref, 32, toNullable(8))) FROM qbit_strided;
 WITH [toFloat32(0), 1, 2, 3, 4, 5, 6, 7] AS ref SELECT id, round(L2DistanceTransposed(vec, ref, 32, toNullable(8)), 4) FROM qbit_strided ORDER BY id;
 
+-- Prove the partial-read I/O contract: the DistanceTransposedPartialReadsPass must rewrite a reduced-dimension search to read ONLY the
+-- bit-plane streams of the covered stride groups, not the whole QBit column. We count the distinct `vec.N` subcolumns referenced in the
+-- query plan: a full read of the public QBit (the fallback) references none (it reads `vec` whole), so a non-zero, reduced count proves
+-- the optimization fired and read fewer streams. For QBit(BFloat16, 4096, 1024): element_size = 16 planes, 4 stride groups => 64 streams.
+SELECT 'Partial-read I/O contract: distinct vec.N streams referenced in the plan';
+DROP TABLE IF EXISTS qbit_io;
+CREATE TABLE qbit_io (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO qbit_io SELECT number, arrayMap(i -> toFloat32(i), range(4096)) FROM numbers(2);
+-- 8 bits over the first 2048 of 4096 dims (stride 1024) => 8 planes x 2 groups = 16 streams.
+SELECT 'p=8 dims=2048 (expect 16)', arrayUniq(extractAll(arrayStringConcat((SELECT groupArray(explain) FROM (EXPLAIN actions = 1 WITH arrayMap(i -> toBFloat16(i), range(2048)) AS ref SELECT L2DistanceTransposed(vec, ref, 8, 2048) FROM qbit_io)), ' '), 'vec\\.[0-9]+'));
+-- full precision over all dims => 16 planes x 4 groups = 64 streams.
+SELECT 'p=16 dims=4096 (expect 64)', arrayUniq(extractAll(arrayStringConcat((SELECT groupArray(explain) FROM (EXPLAIN actions = 1 WITH arrayMap(i -> toBFloat16(i), range(4096)) AS ref SELECT L2DistanceTransposed(vec, ref, 16, 4096) FROM qbit_io)), ' '), 'vec\\.[0-9]+'));
+-- With the optimization disabled, the whole `vec` column is read, so no per-stream subcolumns appear in the plan.
+SET optimize_qbit_distance_function_reads = 0;
+SELECT 'optimization off (expect 0)', arrayUniq(extractAll(arrayStringConcat((SELECT groupArray(explain) FROM (EXPLAIN actions = 1 WITH arrayMap(i -> toBFloat16(i), range(2048)) AS ref SELECT L2DistanceTransposed(vec, ref, 8, 2048) FROM qbit_io)), ' '), 'vec\\.[0-9]+'));
+SET optimize_qbit_distance_function_reads = 1;
+DROP TABLE qbit_io;
+
 SELECT 'Validation errors';
 -- dims must be a multiple of the stride (8)
 WITH [toFloat32(0), 1, 2, 3] AS ref SELECT L2DistanceTransposed(vec, ref, 32, 4) FROM qbit_strided; -- { serverError BAD_ARGUMENTS }

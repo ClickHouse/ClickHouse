@@ -59,6 +59,11 @@ public:
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     static ALWAYS_INLINE inline size_t bitsToBytes(size_t n) { return (n + 7) / 8; }
+
+    /// Upper bound on the number of stride groups (`dimension / stride`). The nested storage materializes
+    /// `element size * number of stride groups` FixedString streams, so this caps that to a sane value and
+    /// prevents a huge dimension with a tiny stride from exhausting memory. Generous for real Matryoshka use.
+    static constexpr size_t MAX_STRIDE_GROUPS = 1024;
 };
 
 }
