@@ -249,16 +249,25 @@ bool tryBuildPrewhereSteps(
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
 
     /// 4. Group conditions that read from the same set of physical storage columns into a single read/compute step.
-    /// We compare by storage column names so that subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`)
-    /// are grouped together, avoiding redundant deserialization of the same underlying data.
+    /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`) are placed into one group
+    /// even if they are non-adjacent in the original list (e.g. interleaved with conditions on other columns).
+    /// The first occurrence of each storage column set determines the group's position in the PREWHERE chain.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
     for (const auto & node : condition_nodes)
     {
         const auto & node_info = nodes_info[node];
-        if (!condition_groups.empty() && nodes_info[condition_groups.back().back()].required_storage_columns == node_info.required_storage_columns)
-            condition_groups.back().push_back(node);    /// Add to the last group
-        else
-            condition_groups.push_back({node}); /// Start new group
+        bool found = false;
+        for (auto & group : condition_groups)
+        {
+            if (nodes_info[group.front()].required_storage_columns == node_info.required_storage_columns)
+            {
+                group.push_back(node);
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            condition_groups.push_back({node});
     }
 
     /// 5. Build DAGs for each step
