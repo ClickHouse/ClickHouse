@@ -125,6 +125,9 @@ public:
     static constexpr UInt32 MAGIC = 0x314D4252; /// "RBM1" little-endian
     static constexpr UInt32 VERSION_R32 = 1;
     static constexpr UInt32 VERSION_R64 = 2;
+    /// Fixed 12-byte header (magic | version | body_size); trailing 4-byte CRC.
+    static constexpr size_t HEADER_SIZE = sizeof(UInt32) * 3;
+    static constexpr size_t CRC_SIZE = sizeof(UInt32);
 
 private:
     using R32Ptr = std::unique_ptr<roaring::Roaring>;
@@ -139,5 +142,33 @@ private:
 };
 
 using DeleteBitmapPtr = std::shared_ptr<DeleteBitmap>;
+
+/// Result of a tolerant, non-throwing `.rbm` parse for inspection tooling
+/// (`clickhouse-disk read-bitmap`): a malformed magic / version / CRC / body is
+/// reported via the flags below rather than thrown. A failed stage leaves later
+/// fields at their defaults with the matching `*_ok` / `decoded` flag clear.
+struct DeleteBitmapInspection
+{
+    bool header_read = false; /// the 12-byte header was fully read
+    bool magic_ok = false;
+    UInt32 version = 0;
+    UInt32 body_size = 0;
+    bool body_read = false; /// the declared body bytes were fully present
+    UInt32 crc_stored = 0;
+    UInt32 crc_computed = 0;
+    bool crc_ok = false;
+    bool decoded = false; /// roaring readSafe succeeded
+    std::string decode_error; /// when !decoded because readSafe threw, its message (else empty)
+    UInt64 cardinality = 0; /// number of deleted rows
+    bool has_minmax = false;
+    UInt64 min_row = 0;
+    UInt64 max_row = 0;
+    std::vector<UInt64> sample; /// all set bits (ascending) when collect_values; else empty
+};
+
+/// Tolerantly parse a `.rbm` stream for inspection — never throws; returns what
+/// parsed with the rest of the flags clear. `header_read == false` means too short
+/// for even the 12-byte header. `collect_values` fills `sample` with every set bit.
+DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values);
 
 }
