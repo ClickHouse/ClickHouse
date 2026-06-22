@@ -1107,12 +1107,14 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getFakeColumnSizes();
 }
 
 bool IStorageURLBase::prefersLargeBlocks() const
@@ -1132,6 +1134,7 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
     ReadFromURL(
         const Names & column_names_,
@@ -1215,7 +1218,8 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+        num_streams = clampClusterFunctionNumStreams(
+            local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(

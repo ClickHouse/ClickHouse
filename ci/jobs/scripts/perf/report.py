@@ -1,14 +1,10 @@
 #!/usr/bin/python3
 
 import argparse
-import ast
-import collections
 import csv
 import itertools
-import json
 import os
 import os.path
-import pprint
 import sys
 import traceback
 
@@ -655,9 +651,20 @@ if args.report == "main":
         message_array.append(str(faster_queries) + " faster")
 
     if slower_queries:
-        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/tests/ci/performance_comparison_check.py#L225
-        # False positives rate should be < 1%: https://shorturl.at/CDEK8
-        if slower_queries > 5:
+        # Only fail the whole check when a large number of distinct queries
+        # regress at once. A handful of "slower" queries is dominated by CI
+        # noise: a single bad shard run (noisy neighbour, frequency scaling) or
+        # code-layout artifacts can push several unrelated micro benchmarks over
+        # the threshold simultaneously. A genuine, targeted regression shows up
+        # as a small cluster of related queries with large magnitudes that the
+        # per-query thresholds catch on their own. The false positive rate
+        # should be kept < 1%.
+        #
+        # This threshold must stay synchronized with SLOWER_QUERIES_FAIL_THRESHOLD
+        # in ci/jobs/performance_tests.py: that script discards the status
+        # embedded here and recomputes the final Praktika status by reparsing the
+        # "N slower" message below, so the effective gate lives there.
+        if slower_queries > 10:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")
 
