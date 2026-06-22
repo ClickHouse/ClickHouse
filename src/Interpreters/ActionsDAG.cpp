@@ -1337,11 +1337,16 @@ void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_
         if (!column_const)
             continue;
 
-        /// same pattern as `addFunctionImpl`: store the const on the FUNCTION node, orphan children get pruned later
+        /// convert to COLUMN so `Node::isDeterministic` reads `is_deterministic_constant` -
+        /// keeping FUNCTION would let dedup unite a non-det fold with a deterministic literal const
         if (!column_const->empty())
             node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
         else
             node.column = column_const->getPtr();
+        node.type = ActionType::COLUMN;
+        node.children.clear();
+        node.function_base.reset();
+        node.function.reset();
         node.is_deterministic_constant = all_deterministic;
     }
 }
