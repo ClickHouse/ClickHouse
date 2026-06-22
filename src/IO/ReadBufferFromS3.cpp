@@ -560,12 +560,12 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     req.SetKey(key);
     if (!version_id.empty())
         req.SetVersionId(version_id);
-    /// Phase 1 of overwrite detection: make the GET conditional on the generation observed at read
-    /// setup. The server returns 412 Precondition Failed if the object was replaced in place, so
-    /// torn cross-generation bytes are never transferred (no extra round-trip - just a header). Only
-    /// for non-pinned reads with a known expected_etag (populated when s3_validate_etag_on_read is on);
-    /// pinned ?versionId= reads are immutable and need no condition. The success-path ETag comparison
-    /// below stays as defense-in-depth for backends that silently ignore If-Match.
+    /// Make the GET conditional on the generation observed at read setup: the server returns
+    /// 412 Precondition Failed if the object was replaced in place, so torn cross-generation bytes
+    /// are never transferred (no extra round-trip - just a header). Only for non-pinned reads with a
+    /// known expected_etag (populated when s3_validate_etag_on_read is on); pinned ?versionId= reads
+    /// are immutable and need no condition. The success-path ETag comparison below stays as
+    /// defense-in-depth for backends that silently ignore If-Match.
     else if (!expected_etag.empty())
         req.SetIfMatch(expected_etag);
 
