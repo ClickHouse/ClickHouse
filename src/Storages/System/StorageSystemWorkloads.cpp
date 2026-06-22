@@ -21,8 +21,9 @@ ColumnsDescription StorageSystemWorkloads::getColumnsDescription()
 
 void StorageSystemWorkloads::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & storage = context->getWorkloadEntityStorage();
-    const auto & entities = storage.getAllEntities();
+    /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
+    auto storage = context->getWorkloadEntityStoragePtr();
+    const auto & entities = storage->getAllEntities();
     for (const auto & [name, ast] : entities)
     {
         if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(ast.get()))

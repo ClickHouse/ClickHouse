@@ -78,7 +78,8 @@ public:
     {
         Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
         Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
+        const char * log_level = std::getenv("TEST_LOG_LEVEL"); // NOLINT(concurrency-mt-unsafe)
+        Poco::Logger::root().setLevel(log_level ? log_level : "none");
 
         auto settings = std::make_shared<DB::CoordinationSettings>();
 #if USE_ROCKSDB
@@ -129,6 +130,14 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
             parent.addChild(child_path);
             parent.increaseNumChildren();
         });
+}
+
+template <typename Storage>
+Coordination::ACLs getUncommittedACLs(const Storage & storage, std::string_view path)
+{
+    const auto * node = storage.uncommitted_state.getNode(path).get();
+    Coordination::ACLId acl_id = node ? node->acl_id : 0;
+    return storage.acl_map.convertNumber(acl_id);
 }
 
 using Implementation = testing::Types<TestParam<DB::KeeperMemoryStorage, true>

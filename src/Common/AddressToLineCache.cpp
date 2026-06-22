@@ -46,7 +46,7 @@ std::string_view AddressToLineCache::impl(uintptr_t addr)
             return {};
 
         Dwarf::LocationInfo location;
-        std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
+        VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
         std::string_view result;
         if (dwarf_it->second.findAddress(physical_addr, location, Dwarf::LocationInfoMode::FAST, frames))
         {
@@ -71,8 +71,8 @@ std::string_view AddressToLineCache::implCached(uintptr_t addr)
     std::unique_lock write_lock(mutex);
 
     /// Double-check: another thread may have inserted while we waited
-    typename Map::LookupResult it;
-    bool inserted;
+    typename Map::LookupResult it = nullptr;
+    bool inserted = false;
     map.emplace(addr, it, inserted);
     if (inserted)
         it->getMapped() = impl(addr);

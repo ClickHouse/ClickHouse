@@ -2,7 +2,6 @@ import pytest
 import uuid
 import threading
 import logging
-import warnings
 import time
 import pymysql
 from helpers.config_cluster import mysql_pass
@@ -132,7 +131,7 @@ def test_kill_infinite_query(setup_infinite_query):
 
     # Verify that query was successfully cancelled in ClickHouse server
     result = node1.query(
-        "SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
 
@@ -178,7 +177,7 @@ SETTINGS max_block_size = 10000""",
 
     # Verify that query was successfully cancelled in ClickHouse server
     result = node1.query(
-        "SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
 

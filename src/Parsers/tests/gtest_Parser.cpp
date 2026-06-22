@@ -2,12 +2,17 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
+#include <Parsers/Access/ParserCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -24,18 +29,116 @@ using namespace DB;
 using namespace std::literals;
 }
 
-std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> parser)
+[[maybe_unused]] static std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> parser)
 {
     return ostr << "Parser: " << parser->getName();
 }
 
-std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
+static std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
 {
     // New line characters are removed because at the time of writing this the unit test results are parsed from the
     // command line output, and multi-line string representations are breaking the parsing logic.
     std::string input_text{test_case.input_text};
     boost::replace_all(input_text, "\n", "\\n");
     return ostr << "ParserTestCase input: " << input_text;
+}
+
+TEST(Lexer, NullInputWithMaxQuerySize)
+{
+    Lexer lexer(nullptr, nullptr, 262144);
+    Token token = lexer.nextToken();
+    EXPECT_EQ(TokenType::EndOfStream, token.type);
+}
+
+/// The output-option children (INTO OUTFILE, COMPRESSION, FORMAT, SETTINGS) must end up
+/// in the same canonical order whether the AST is freshly parsed, cloned, or obtained by
+/// a format+reparse roundtrip. Otherwise the tree hash differs across these paths, which
+/// trips the `Inconsistent AST formatting` consistency check. See
+/// `ASTQueryWithOutput::output_option_members`.
+TEST(ParserQueryWithOutput, OutputOptionChildOrderIsCanonical)
+{
+    const std::vector<String> queries = {
+        "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' FORMAT JSONEachRow",
+        "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' FORMAT JSONEachRow SETTINGS max_threads = 1",
+        "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' SETTINGS max_threads = 1 FORMAT JSONEachRow",
+        "SELECT 1 FORMAT JSONEachRow SETTINGS max_threads = 1",
+        "SELECT 1 SETTINGS max_threads = 1 FORMAT JSONEachRow",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQueryWithOutput parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        /// A clone must have the same tree hash as the original.
+        ASTPtr cloned = ast->clone();
+        EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
+
+        /// A format+reparse roundtrip must reproduce the same tree hash.
+        String formatted = ast->formatWithSecretsOneLine();
+        ASTPtr reparsed = parseQuery(parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
+    }
+}
+
+/// `ASTExplainQuery` also carries its own EXPLAIN-level settings, which `ParserExplainQuery`
+/// parses *before* the explained query (so `children = [ast_settings, query]`). The clone must
+/// re-add the children in the same order, otherwise it gets a different `getTreeHash` than a
+/// freshly parsed AST. See `ASTExplainQuery::clone`.
+TEST(ParserExplainQuery, ExplainSettingsChildOrderIsCanonical)
+{
+    const std::vector<String> queries = {
+        "EXPLAIN header = 1 SELECT 1",
+        "EXPLAIN PLAN actions = 1, indexes = 1 SELECT 1",
+        "EXPLAIN AST optimize = 1 SELECT 1",
+        "EXPLAIN header = 1 SELECT 1 FORMAT JSONEachRow",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQueryWithOutput parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        ASTPtr cloned = ast->clone();
+        EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
+
+        String formatted = ast->formatWithSecretsOneLine();
+        ASTPtr reparsed = parseQuery(parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
+    }
+}
+
+/// `ASTExecuteAsQuery` is another `ASTQueryWithOutput` carrier, but it is parsed outside
+/// `ParserQueryWithOutput`: `ParserExecuteAsQuery` hoists the subquery output options to the
+/// outer query. The hoisting appends them to `children` after the subquery and in the canonical
+/// `output_option_members` order, so that a freshly parsed `EXECUTE AS ... <output options>` and
+/// its clone share the same child order (and therefore the same tree hash).
+TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
+{
+    const std::vector<String> queries = {
+        "EXECUTE AS u SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' FORMAT JSONEachRow",
+        "EXECUTE AS u SELECT 1 FORMAT JSONEachRow SETTINGS max_threads = 1",
+        "EXECUTE AS u SELECT 1 INTO OUTFILE 'x' FORMAT JSONEachRow",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        ASTPtr cloned = ast->clone();
+        EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
+
+        String formatted = ast->formatWithSecretsOneLine();
+        ASTPtr reparsed = parseQuery(parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
+    }
 }
 
 TEST_P(ParserTest, parseQuery)
@@ -337,6 +440,33 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         }
 })));
 
+// ATTACH MASKING POLICY (used when RESTORE-ing a backup) must parse without an UPDATE clause,
+// unlike CREATE / ALTER. See ParserCreateMaskingPolicy::parseImpl.
+INSTANTIATE_TEST_SUITE_P(ParserAttachMaskingPolicyQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserCreateMaskingPolicy>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "ATTACH MASKING POLICY p ON db.t TO ALL",
+            "ATTACH MASKING POLICY p ON db.t TO ALL"
+        }
+})));
+
+// In CREATE / ALTER mode the UPDATE clause is still mandatory, so omitting it must fail to parse.
+INSTANTIATE_TEST_SUITE_P(ParserCreateMaskingPolicyQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserCreateMaskingPolicy>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "CREATE MASKING POLICY p ON db.t UPDATE email = '***' TO ALL",
+            "CREATE MASKING POLICY p ON db.t UPDATE email = '***' TO ALL"
+        },
+        {
+            "CREATE MASKING POLICY p ON db.t TO ALL",
+            nullptr  // missing UPDATE clause
+        }
+})));
+
 INSTANTIATE_TEST_SUITE_P(ParserRenameQuery, ParserTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<ParserRenameQuery>()),
@@ -363,6 +493,6 @@ INSTANTIATE_TEST_SUITE_P(
             },
             {
                 "from matches\nfilter start_date > @2023-05-30                 # Some comment here\nderive {\n  some_derived_value_1 = a + (b ?? 0),          # And there\n  some_derived_value_2 = c + some_derived_value\n}\nfilter some_derived_value_2 > 0\ngroup {country, city} (\n  aggregate {\n    average some_derived_value_2,\n    aggr = max some_derived_value_2\n  }\n)\nderive place = f\"{city} in {country}\"\nderive country_code = s\"LEFT(country, 2)\"\nsort {aggr, -country}\ntake 1..20",
-                "WITH\n    table_1 AS\n    (\n        SELECT\n            country,\n            city,\n            c + some_derived_value AS _expr_1\n        FROM matches\n        WHERE start_date > toDate('2023-05-30')\n    ),\n    table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(_expr_1) AS _expr_0,\n            MAX(_expr_1) AS aggr\n        FROM table_1\n        WHERE _expr_1 > 0\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
+                "WITH table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(c + some_derived_value) AS _expr_0,\n            MAX(c + some_derived_value) AS aggr\n        FROM matches\n        WHERE (start_date > toDate('2023-05-30')) AND ((c + some_derived_value) > 0)\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
             },
         })));

@@ -92,6 +92,10 @@ void RemoteInserter::initialize()
             /// Server could attach ColumnsDescription in front of stream for column defaults. There's no need to pass it through cause
             /// client's already got this information for remote table. Ignore.
         }
+        else if (Protocol::Server::Progress == packet.type)
+        {
+            /// Progress packets are ignored
+        }
         else
             throw NetException(
                 ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
@@ -141,6 +145,7 @@ void RemoteInserter::onFinish()
 
         if (Protocol::Server::EndOfStream == packet.type)
             break;
+
         if (Protocol::Server::Exception == packet.type)
             packet.exception->rethrow();
         else if (Protocol::Server::Log == packet.type ||

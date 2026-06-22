@@ -105,7 +105,7 @@ def test_kill_query(setup_mongodb_users):
     query_thread.join()
 
     result = node1.query(
-        "SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
 

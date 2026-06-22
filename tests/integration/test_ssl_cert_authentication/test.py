@@ -1,8 +1,8 @@
-import logging
 import os.path
 import ssl
 import urllib.parse
 import urllib.request
+import uuid
 from os import remove
 
 import pytest
@@ -24,6 +24,7 @@ instance = cluster.add_instance(
     "node",
     main_configs=[
         "configs/ssl_config.xml",
+        "configs/session_log.xml",
         "certs/server-key.pem",
         "certs/server-cert.pem",
         "certs/ca-cert.pem",
@@ -55,7 +56,7 @@ config = """<clickhouse>
 
 
 def execute_query_native(node, query, user, cert_name, password=None):
-    config_path = f"{SCRIPT_DIR}/configs/client.xml"
+    config_path = f"{SCRIPT_DIR}/configs/client_{uuid.uuid4().hex}.xml"
 
     formatted = config.format(
         certificateFile=f"{SCRIPT_DIR}/certs/{cert_name}-cert.pem",
@@ -76,12 +77,9 @@ def execute_query_native(node, query, user, cert_name, password=None):
     )
 
     try:
-        result = client.query(query, user=user, password=password)
+        return client.query(query, user=user, password=password)
+    finally:
         remove(config_path)
-        return result
-    except:
-        remove(config_path)
-        raise
 
 
 def test_native():
@@ -297,6 +295,30 @@ def test_https_non_ssl_auth():
     # TODO: Add non-flaky tests for:
     # - sending wrong cert
 
+def test_mixed_x509_san_password_support():
+    assert (
+        execute_query_https("SELECT currentUser()", user="trurl", cert_name="client4")
+        == "trurl\n"
+    )
+    assert (
+        execute_query_https("SELECT currentUser()", enable_ssl_auth=False, user="trurl", password="mixed_sha_pass")
+        == "trurl\n"
+    )
+
+    # Verify that system.users shows both auth methods (sha256_password + ssl_certificate)
+    # for user 'trurl'. Sort by auth_type name for a deterministic assertion regardless of
+    # config order. Both columns are extracted from a single sorted zip to keep them aligned.
+    assert (
+        instance.query(
+            "SELECT name, "
+            "arrayMap(x -> toString(x.1), s) AS auth_type, "
+            "arrayMap(x -> x.2, s) AS auth_params "
+            "FROM (SELECT name, arraySort(x -> toString(x.1), arrayZip(auth_type, auth_params)) AS s "
+            "FROM system.users WHERE name='trurl')"
+        )
+        == 'trurl\t[\'sha256_password\',\'ssl_certificate\']\t[\'{}\',\'{"subject_alt_names":["URI:spiffe:\\\\/\\\\/foo.com\\\\/bar"]}\']\n'
+    )
+    
 
 def test_create_user():
     instance.query("DROP USER IF EXISTS emma")
@@ -416,3 +438,132 @@ def test_x509_san_wildcard_support():
     )
 
     instance.query("DROP USER brian")
+
+
+def test_session_log_certificate_success():
+    # A successful certificate authentication must record the certificate details
+    # in system.session_log, both for the native (TCP) and the HTTPS interface.
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="john", cert_name="client1"
+        )
+        == "john\n"
+    )
+    assert (
+        execute_query_https("SELECT currentUser()", user="john", cert_name="client1")
+        == "john\n"
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # A fully-populated certificate must be recorded for the successful login on both the native
+    # (TCP) and the HTTPS interface, so the query must find such a LoginSuccess row for each.
+    result = instance.query_with_retry(
+        """
+        SELECT count(DISTINCT interface)
+        FROM system.session_log
+        WHERE user = 'john' AND type = 'LoginSuccess' AND interface IN ('TCP', 'HTTP')
+              AND has(certificate_subjects, 'CN:client1')
+              AND certificate_issuer != '' AND certificate_serial != ''
+              AND certificate_not_before IS NOT NULL AND certificate_not_after IS NOT NULL
+              AND certificate_not_before < certificate_not_after
+        """,
+        check_callback=lambda r: r.strip() == "2",
+    ).strip()
+    assert result == "2", result
+
+
+def test_session_log_certificate_login_failure():
+    # 'john' may only authenticate with the 'client1' certificate. Presenting a different but
+    # CA-valid certificate fails authentication, and the failed attempt must be recorded as a
+    # LoginFailure carrying the presented certificate.
+    instance.query("SYSTEM FLUSH LOGS")
+
+    with pytest.raises(Exception):
+        execute_query_native(instance, "SELECT 1", user="john", cert_name="client2")
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    result = instance.query_with_retry(
+        """
+        SELECT type, certificate_serial != ''
+        FROM system.session_log
+        WHERE user = 'john' AND has(certificate_subjects, 'CN:client2')
+        ORDER BY event_time_microseconds DESC LIMIT 1 FORMAT TSV
+        """,
+        check_callback=lambda r: r.strip() != "",
+    ).strip()
+    assert result == "LoginFailure\t1", result
+
+
+def test_session_log_certificate_https_non_cert_auth():
+    # A client may present a TLS certificate over HTTPS while authenticating by another method
+    # (here 'peter' authenticates without certificate authentication). The presented certificate
+    # must still be recorded in system.session_log, even though it is not used for authentication.
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert (
+        execute_query_https(
+            "SELECT currentUser()",
+            user="peter",
+            enable_ssl_auth=False,
+            cert_name="client1",
+        )
+        == "peter\n"
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # The login succeeded via a non-certificate method, but the presented certificate must still
+    # be recorded with fully-populated metadata on the HTTPS (HTTP interface) LoginSuccess row.
+    result = instance.query_with_retry(
+        """
+        SELECT count()
+        FROM system.session_log
+        WHERE user = 'peter' AND type = 'LoginSuccess' AND interface = 'HTTP'
+              AND has(certificate_subjects, 'CN:client1')
+              AND certificate_issuer != '' AND certificate_serial != ''
+              AND certificate_not_before IS NOT NULL AND certificate_not_after IS NOT NULL
+              AND certificate_not_before < certificate_not_after
+        """,
+        check_callback=lambda r: r.strip() not in ("", "0"),
+    ).strip()
+    assert result not in ("", "0"), result
+
+
+def test_session_log_certificate_far_future_validity():
+    # The 'client_far_future' certificate is valid until the year 2126, which is past the upper bound
+    # of DateTime (UInt32 epoch seconds, ~2106). The validity period must be recorded faithfully and
+    # not silently wrapped around, so the columns are DateTime64 rather than DateTime.
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert (
+        execute_query_https(
+            "SELECT currentUser()",
+            user="peter",
+            enable_ssl_auth=False,
+            cert_name="client_far_future",
+        )
+        == "peter\n"
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    # certificate_not_after must be recorded as a year well beyond 2106 (here 2126); with a DateTime
+    # (UInt32) column the value would have wrapped around to before certificate_not_before instead.
+    result = instance.query_with_retry(
+        """
+        SELECT toYear(certificate_not_after)
+        FROM system.session_log
+        WHERE user = 'peter' AND type = 'LoginSuccess' AND interface = 'HTTP'
+              AND has(certificate_subjects, 'CN:client_far_future')
+              AND certificate_not_before IS NOT NULL AND certificate_not_after IS NOT NULL
+              AND certificate_not_before < certificate_not_after
+              AND toYear(certificate_not_after) > 2106
+        ORDER BY event_time_microseconds DESC LIMIT 1
+        """,
+        check_callback=lambda r: r.strip() not in ("", "0"),
+    ).strip()
+    assert result == "2126", result
