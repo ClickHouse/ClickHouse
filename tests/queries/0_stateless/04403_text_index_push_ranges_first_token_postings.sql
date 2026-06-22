@@ -67,4 +67,20 @@ ORDER BY event_time_microseconds;
 
 SELECT count() FROM tab_multi WHERE id >= 400000 AND id < 500000 AND hasAnyTokens(s, 'alpha beta gamma') SETTINGS use_skip_indexes = 0;
 
+-- Duplicate-token 'Any'. A repeated token must be counted once towards "no contributing tokens remain",
+-- otherwise the query is never failed and the marks are kept. Same gap scenario, so read_rows must be 0.
+SELECT count() FROM tab_multi WHERE id >= 400000 AND id < 500000 AND hasAnyTokens(s, ['alpha', 'alpha']);
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT read_rows
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND current_database = currentDatabase() AND type = 'QueryFinish'
+  AND query LIKE '%hasAnyTokens(s, [''alpha'', ''alpha''])%' AND query LIKE '%FROM tab_multi%'
+  AND query NOT LIKE '%use_skip_indexes%' AND query NOT LIKE '%query_log%'
+ORDER BY event_time_microseconds;
+
+SELECT count() FROM tab_multi WHERE id >= 400000 AND id < 500000 AND hasAnyTokens(s, ['alpha', 'alpha']) SETTINGS use_skip_indexes = 0;
+
 DROP TABLE tab_multi;

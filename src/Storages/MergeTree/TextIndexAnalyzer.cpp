@@ -160,11 +160,14 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
 
     for (const auto & [hash, query] : condition_text.getAllSearchQueries())
     {
-        query_builders[hash].query = query;
-        query_builders[hash].num_live_tokens = query->tokens.size();
+        auto & query_builder = query_builders[hash];
+        query_builder.query = query;
 
         for (const auto & token : query->tokens)
-            queries_by_token[token].insert(hash);
+        {
+            if (queries_by_token[token].insert(hash).second)
+                ++query_builder.num_live_tokens;
+        }
 
         for (const auto & pattern : query->patterns)
             queries_by_pattern[&pattern].insert(hash);
