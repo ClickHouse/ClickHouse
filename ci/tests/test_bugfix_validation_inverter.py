@@ -27,6 +27,21 @@ def _make_leaf(name, status, info=""):
     return Result(name=name, status=status, info=info)
 
 
+def _make_log_check(name, status):
+    """A server-log / runner health-check row, as produced by
+    `check_fatal_messages_in_logs` and labelled `LOG_CHECK`."""
+    leaf = Result(name=name, status=status)
+    leaf.set_label(Result.Label.LOG_CHECK)
+    return leaf
+
+
+def _labels(leaf):
+    return [
+        lbl.get("name") if isinstance(lbl, dict) else lbl
+        for lbl in leaf.ext.get("labels", [])
+    ]
+
+
 def _make_outer(status, results=None, info=""):
     return Result(
         name="Tests",
@@ -168,6 +183,66 @@ def test_empty_results_with_ok_outer_still_reports_failed_to_reproduce():
 
     assert outer.status == Result.Status.FAIL
     assert "Failed to reproduce the bug" in outer.info
+
+
+def test_clean_log_checks_are_not_flipped_to_failures():
+    """Clean health checks ("Lost s3 keys", "OOM in dmesg", ...) are OK and
+    must stay OK: they are not test cases and must not become spurious xfail
+    failures when the bug is not reproduced.
+    """
+    test_ok = _make_leaf("01234_regression_test", Result.Status.OK)
+    log_checks = [
+        _make_log_check("Exception in test runner", Result.Status.OK),
+        _make_log_check("Lost s3 keys", Result.Status.OK),
+        _make_log_check("OOM in dmesg", Result.Status.OK),
+    ]
+    outer = _make_outer(Result.Status.OK, [test_ok, *log_checks])
+
+    invert_bugfix_validation_status(outer)
+
+    # The real test row is flipped (bug not reproduced).
+    assert test_ok.status == Result.Status.FAIL
+    # The health checks stay OK and are not labelled XFAIL.
+    for leaf in log_checks:
+        assert leaf.status == Result.Status.OK
+        assert Result.Label.XFAIL not in _labels(leaf)
+    assert outer.status == Result.Status.FAIL
+    assert "Failed to reproduce the bug" in outer.info
+
+
+def test_clean_log_checks_do_not_mask_a_reproduced_bug():
+    """A reproduced bug (test FAIL on master) is still reported even when
+    health-check rows are present and clean.
+    """
+    test_fail = _make_leaf("01234_regression_test", Result.Status.FAIL)
+    log_check = _make_log_check("Lost s3 keys", Result.Status.OK)
+    outer = _make_outer(Result.Status.FAIL, [test_fail, log_check])
+
+    invert_bugfix_validation_status(outer)
+
+    assert test_fail.status == Result.Status.OK
+    assert log_check.status == Result.Status.OK
+    assert outer.status == Result.Status.OK
+
+
+def test_log_check_failure_counts_as_reproduced_bug():
+    """A fatal / sanitizer assert / lost key on the validated binary is the
+    bug reproducing, so it is flipped to OK and the job passes, even when no
+    plain test row failed.
+    """
+    test_ok = _make_leaf("01234_regression_test", Result.Status.OK)
+    log_fail = _make_log_check(
+        "Sanitizer assert or Fatal messages in server logs", Result.Status.FAIL
+    )
+    outer = _make_outer(Result.Status.FAIL, [test_ok, log_fail])
+
+    invert_bugfix_validation_status(outer)
+
+    # The fatal is treated as a reproduction: flipped to OK and labelled XFAIL.
+    assert log_fail.status == Result.Status.OK
+    assert Result.Label.XFAIL in _labels(log_fail)
+    assert outer.status == Result.Status.OK
+    assert "Failed to reproduce" not in outer.info
 
 
 if __name__ == "__main__":
