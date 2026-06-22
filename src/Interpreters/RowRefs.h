@@ -66,7 +66,6 @@ struct RowRef
     UInt32 rowNo() const { return row_no; }
 
     UInt64 word() const { return std::bit_cast<UInt64>(*this); }
-    static RowRef fromWord(UInt64 word_) { return std::bit_cast<RowRef>(word_); }
 };
 
 static_assert(sizeof(RowRef) == 8, "RowRef must stay 8 bytes: it is the hash map cell payload");
@@ -105,29 +104,35 @@ struct RowRefList
     static constexpr UInt32 COUNT_SAT = 0x7FFFu;
 
     /// A single 64-byte node. The cell word always points at the FIRST ("cell") node of a key.
+    /// `head` and the local slots are one contiguous `refs` array (refs[0] is the head) so the
+    /// iterator can walk them as a single run without out-of-array pointer arithmetic.
     ///
-    /// Cell node, unchained (2..7 rows): `head` holds the first row, `slots[0 .. size-2]` the rest;
+    /// Cell node, unchained (2..7 rows): `refs[0]` holds the first row, `refs[1 .. size-1]` the rest;
     ///   `size == total_rows`; no pointers.
-    /// Cell node, chained (>= 8 rows): `head` + `slots[0..4]` hold the 6 oldest rows; `slots[5]` is a
-    ///   raw pointer to the NEWEST overflow node; `size == 6 != total_rows`.
-    /// Range node (rerange "sorted" path): `is_range == 1`, `head` is the range start ref, `total_rows`
-    ///   is the run length, no slots/chain.
-    /// Overflow node: `head` is repurposed as the raw pointer to the next-older overflow node (0 at the
-    ///   end of the chain); `slots[0 .. size-1]` hold refs; `is_range`/`total_rows` are unused.
+    /// Cell node, chained (>= 8 rows): `refs[0 .. 5]` hold the 6 oldest rows; `refs[SLOTS]` (= refs[6])
+    ///   is a raw pointer to the NEWEST overflow node; `size == 6 != total_rows`.
+    /// Range node (rerange "sorted" path): `is_range == 1`, `refs[0]` is the range start ref,
+    ///   `total_rows` is the run length, no slots/chain.
+    /// Overflow node: `refs[0]` is repurposed as the raw pointer to the next-older overflow node (0 at
+    ///   the end of the chain); `refs[1 .. size]` hold refs; `is_range`/`total_rows` are unused.
     ///
-    /// Iteration order is head, then the cell node's local slots, then the overflow nodes newest-first.
+    /// Iteration order is refs[0], then the cell node's local refs, then the overflow nodes newest-first.
     /// This equals the old RowRefList order for keys with up to 8 rows and deviates (deterministically)
     /// for larger keys; head identity (firstWord) is always the first-inserted row.
     struct Batch
     {
-        /// Number of refs in `slots`: of an overflow node fully, of a cell node besides the head.
+        /// Number of local ref slots besides `refs[0]` (the head): an overflow node uses them all,
+        /// a cell node uses them for the rows after the head (the last doubles as the overflow ptr).
         static constexpr size_t SLOTS = 6;
 
         UInt64 is_range : 1 = 0;
         UInt64 size : 7 = 0;        /// cell node: local rows incl. head; overflow node: local refs
         UInt64 total_rows : 56 = 0; /// whole chain; authoritative in the cell node only
-        UInt64 head = 0;            /// cell node: first ref word; overflow node: next-older Batch *
-        UInt64 slots[SLOTS] {};     /// the occupied prefix is set by insert (Arena::alloc skips ctors)
+        /// One contiguous run: `refs[0]` is the head (cell node: first ref word; overflow node:
+        /// next-older Batch *); `refs[1 .. SLOTS]` are the local slots. The occupied prefix is set
+        /// by insert (Arena::alloc skips ctors). Keeping head and slots in one array lets the
+        /// iterator form `&refs[0] + n` as in-array pointer arithmetic instead of undefined behavior.
+        UInt64 refs[SLOTS + 1] {};
 
         void assertIsRange() const
         {
@@ -136,7 +141,7 @@ struct RowRefList
         }
     };
 
-    /// head + slots: rows a cell node holds before it has to chain (= 7).
+    /// refs[0] + the SLOTS local slots: rows a cell node holds before it has to chain (= 7).
     static constexpr size_t MAX_LOCAL = 1 + Batch::SLOTS;
 
     UInt64 word = 0;
@@ -170,7 +175,7 @@ struct RowRefList
     }
 
     /// Encoded ref word of the first row (any-row semantics, e.g. RightAny on MapsAll).
-    UInt64 firstWord() const { return isSingleton() ? word : asBatch()->head; }
+    UInt64 firstWord() const { return isSingleton() ? word : asBatch()->refs[0]; }
 
     void setRange(UInt64 start_word, size_t rows_, Arena & pool)
     {
@@ -179,7 +184,7 @@ struct RowRefList
         b->is_range = 1;
         b->size = 0;
         b->total_rows = rows_;
-        b->head = start_word;
+        b->refs[0] = start_word;
         setListWord(b, rows_);
     }
 
@@ -202,8 +207,8 @@ struct RowRefList
             b->is_range = 0;
             b->size = 2;
             b->total_rows = 2;
-            b->head = word;
-            b->slots[0] = ref_word;
+            b->refs[0] = word;
+            b->refs[1] = ref_word;
             setListWord(b, 2);
             return;
         }
@@ -216,7 +221,7 @@ struct RowRefList
         {
             if (b->size < MAX_LOCAL) /// room left in slots
             {
-                b->slots[b->size - 1] = ref_word;
+                b->refs[b->size] = ref_word;
                 b->size = b->size + 1;
             }
             else /// full: evict the last local ref into a new overflow node, chaining the key
@@ -225,19 +230,19 @@ struct RowRefList
                 n->is_range = 0;
                 n->size = 2;
                 n->total_rows = 0;
-                n->head = 0; /// no older node yet
-                n->slots[0] = b->slots[Batch::SLOTS - 1]; /// the evicted last local ref
-                n->slots[1] = ref_word;
-                b->slots[Batch::SLOTS - 1] = reinterpret_cast<UInt64>(n);
-                b->size = MAX_LOCAL - 1; /// head + (SLOTS-1) local refs remain
+                n->refs[0] = 0; /// no older node yet
+                n->refs[1] = b->refs[Batch::SLOTS]; /// the evicted last local ref
+                n->refs[2] = ref_word;
+                b->refs[Batch::SLOTS] = reinterpret_cast<UInt64>(n);
+                b->size = MAX_LOCAL - 1; /// refs[0] + (SLOTS-1) local refs remain
             }
         }
         else /// chained cell node: append into the newest overflow node
         {
-            auto * newest = reinterpret_cast<Batch *>(b->slots[Batch::SLOTS - 1]); /// NOLINT(performance-no-int-to-ptr)
+            auto * newest = reinterpret_cast<Batch *>(b->refs[Batch::SLOTS]); /// NOLINT(performance-no-int-to-ptr)
             if (newest->size < Batch::SLOTS)
             {
-                newest->slots[newest->size] = ref_word;
+                newest->refs[newest->size + 1] = ref_word;
                 newest->size = newest->size + 1;
             }
             else
@@ -246,9 +251,9 @@ struct RowRefList
                 n->is_range = 0;
                 n->size = 1;
                 n->total_rows = 0;
-                n->head = reinterpret_cast<UInt64>(newest); /// next-older node
-                n->slots[0] = ref_word;
-                b->slots[Batch::SLOTS - 1] = reinterpret_cast<UInt64>(n);
+                n->refs[0] = reinterpret_cast<UInt64>(newest); /// next-older node
+                n->refs[1] = ref_word;
+                b->refs[Batch::SLOTS] = reinterpret_cast<UInt64>(n);
             }
         }
 
@@ -256,15 +261,15 @@ struct RowRefList
         setListWord(b, new_total);
     }
 
-    /// Iterates encoded ref words: head first, then the cell node's local slots, then the overflow
-    /// nodes newest-first (each in slot order). Handles singleton, list, and range representations.
+    /// Iterates encoded ref words: refs[0] first, then the cell node's local refs, then the overflow
+    /// nodes newest-first (each in ref order). Handles singleton, list, and range representations.
     ///
-    /// The list of duplicates is a sequence of contiguous runs: `head` is immediately followed by
-    /// `slots[]` in `Batch`, so the cell node's [head .. last local slot] is a single run starting at
-    /// `&head`, and each overflow node contributes the run `slots[0 .. size)`. The hot path (the
-    /// overflow walk of a heavily-duplicated key, where emit time concentrates) is then just three
-    /// live pointers - `cur`/`run_end`/`next_node` - which keeps the emit loop off the stack. The
-    /// singleton and range representations take the separate `range_*` path (`cur == nullptr`).
+    /// The list of duplicates is a sequence of contiguous runs: in `Batch` the head and the local
+    /// slots are one `refs` array, so the cell node's [refs[0] .. last local ref] is a single run
+    /// starting at `&refs[0]`, and each overflow node contributes the run `refs[1 .. 1 + size)`. The
+    /// hot path (the overflow walk of a heavily-duplicated key, where emit time concentrates) is then
+    /// just three live pointers - `cur`/`run_end`/`next_node` - which keeps the emit loop off the
+    /// stack. The singleton and range representations take the separate `range_*` path (`cur == nullptr`).
     class ForwardIterator
     {
     public:
@@ -283,18 +288,18 @@ struct RowRefList
             const Batch * b = list.asBatch();
             if (b->is_range)
             {
-                range_word = b->head;
+                range_word = b->refs[0];
                 range_remaining = static_cast<UInt32>(b->total_rows);
                 return;
             }
 
-            /// Run mode. The cell run covers `head` + the local slots, contiguous from `&head`:
-            /// `size` words when unchained, `head` + `SLOTS - 1` slots (= `SLOTS` words, the last slot
-            /// holds the overflow pointer) when chained. The overflow chain follows, newest-first.
+            /// Run mode. The cell run covers refs[0] + the local slots, contiguous from `&refs[0]`:
+            /// `size` words when unchained, refs[0] + `SLOTS - 1` slots (= `SLOTS` words, the last
+            /// slot holds the overflow pointer) when chained. The overflow chain follows, newest-first.
             const bool chained = b->size != b->total_rows;
-            cur = &b->head;
-            run_end = &b->head + (chained ? Batch::SLOTS : static_cast<size_t>(b->size));
-            next_node = chained ? reinterpret_cast<const Batch *>(b->slots[Batch::SLOTS - 1]) : nullptr; /// NOLINT(performance-no-int-to-ptr)
+            cur = &b->refs[0];
+            run_end = &b->refs[0] + (chained ? Batch::SLOTS : static_cast<size_t>(b->size));
+            next_node = chained ? reinterpret_cast<const Batch *>(b->refs[Batch::SLOTS]) : nullptr; /// NOLINT(performance-no-int-to-ptr)
         }
 
         UInt64 operator * () const { return cur ? *cur : range_word; }
@@ -308,9 +313,9 @@ struct RowRefList
                 {
                     if (next_node)
                     {
-                        cur = next_node->slots;
-                        run_end = next_node->slots + next_node->size;
-                        next_node = reinterpret_cast<const Batch *>(next_node->head); /// NOLINT(performance-no-int-to-ptr)
+                        cur = &next_node->refs[1];
+                        run_end = &next_node->refs[1] + next_node->size;
+                        next_node = reinterpret_cast<const Batch *>(next_node->refs[0]); /// NOLINT(performance-no-int-to-ptr)
                     }
                     else
                         cur = nullptr; /// exhausted

@@ -581,21 +581,13 @@ static void fillColumnFromRowRefs(
             ref_list.word = *row_ref;
             if constexpr (row_refs_are_ranges)
             {
-                UInt64 start_word = 0;
-                size_t rows = 0;
-                if (ref_list.isSingleton())
-                {
-                    /// The rerange optimization stores single-row keys as plain inline refs.
-                    start_word = ref_list.word;
-                    rows = 1;
-                }
-                else
-                {
-                    const auto * batch = ref_list.asBatch();
-                    batch->assertIsRange();
-                    start_word = batch->head;
-                    rows = batch->total_rows;
-                }
+                /// A range entry is either a single inline ref (the rerange optimization stores
+                /// single-row keys that way) or a range node; firstWord()/rows() resolve both. The
+                /// chassert keeps the debug-only invariant that a non-range list node never reaches
+                /// this path - it would otherwise be mis-emitted as a run of consecutive rows.
+                chassert(ref_list.isSingleton() || ref_list.asBatch()->is_range);
+                const UInt64 start_word = ref_list.firstWord();
+                const size_t rows = ref_list.rows();
 
                 const UInt32 block_no = refWordBlockNo(start_word);
                 const size_t start_row = refWordRowNo(start_word);

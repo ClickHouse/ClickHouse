@@ -145,15 +145,11 @@ public:
     template <typename Mapped>
     std::atomic_bool & headRowFlag(const Mapped & mapped)
     {
-        if constexpr (std::is_same_v<std::decay_t<Mapped>, RowRefList>)
-        {
-            const UInt64 ref_word = mapped.firstWord();
-            return per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
-        }
-        else
-        {
-            return per_row_flags[mapped.blockNo()][mapped.rowNo()];
-        }
+        /// firstRefWord dispatches on Mapped exactly as needed: RowRefList -> firstWord() (the head
+        /// row of the key), RowRef -> word(). refWordBlockNo/refWordRowNo of that word equal
+        /// blockNo()/rowNo() for a RowRef (same 8-byte layout), so this is one uniform decode.
+        const UInt64 ref_word = firstRefWord(mapped);
+        return per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
