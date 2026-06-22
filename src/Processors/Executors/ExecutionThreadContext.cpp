@@ -1,6 +1,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <Processors/StepWallClock.h>
+#include <Processors/StepMemoryTracker.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <base/defines.h>
 #include <Common/CurrentThread.h>
@@ -93,16 +94,25 @@ bool ExecutionThreadContext::executeTask()
     }
     std::optional<Stopwatch> execution_time_watch;
 
-    if (measure_step_wall_clock)
+    Int64 memory_before_work = 0;
+    StepWallClock * wall_clock_ptr = nullptr;
+    StepMemoryTracker * mem_tracker_ptr = nullptr;
+
+    if (track_step_stats)
     {
-        chassert(node->processor()->getStepWallClock().get());
-        node->processor()->getStepWallClock()->onEnter();
+        wall_clock_ptr = node->processor()->getStepWallClock().get();
+        mem_tracker_ptr = node->processor()->getStepMemoryTracker().get();
+        chassert(wall_clock_ptr);
+        chassert(mem_tracker_ptr);
+
+        wall_clock_ptr->onEnter();
+        memory_before_work = current_thread->memory_tracker.get() + current_thread->untracked_memory;
     }
 
 #ifndef NDEBUG
     execution_time_watch.emplace();
 #else
-    if (profile_processors || measure_step_wall_clock)
+    if (profile_processors || track_step_stats)
         execution_time_watch.emplace();
 #endif
 
@@ -116,7 +126,7 @@ bool ExecutionThreadContext::executeTask()
         node->exception = std::current_exception();
     }
 
-    if (profile_processors || measure_step_wall_clock)
+    if (profile_processors || track_step_stats)
     {
         UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
         node->processor()->elapsed_ns += elapsed_ns;
@@ -124,10 +134,15 @@ bool ExecutionThreadContext::executeTask()
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }
 
-    if (measure_step_wall_clock)
+    if (track_step_stats)
     {
-        chassert(node->processor()->getStepWallClock().get());
-        node->processor()->getStepWallClock()->onLeave();
+        chassert(wall_clock_ptr);
+        chassert(mem_tracker_ptr);
+
+        wall_clock_ptr->onLeave();
+        Int64 memory_after_work = current_thread->memory_tracker.get() + current_thread->untracked_memory;
+        Int64 delta_memory = memory_after_work - memory_before_work;
+        mem_tracker_ptr->addDelta(delta_memory);
     }
 
 #ifndef NDEBUG

@@ -1082,7 +1082,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             planning_ns += watch.elapsed();
 
-            pipeline.setMeasureStepWallClock(true);
+            pipeline.setTrackStepStats(true);
 
             CompletedPipelineExecutor executor(pipeline);
 
