@@ -310,6 +310,53 @@ struct ReplaceRegexpImpl
         }
     }
 
+    /// Process one haystack using the anchored capture-then-truncate fast path (see tryBuildAnchoredExtract).
+    static void processStringAnchoredExtract(
+        const char * hs_data,
+        size_t hs_length,
+        ColumnString::Chars & res_data,
+        ColumnString::Offset & res_offset,
+        const re2::RE2 & searcher,
+        int num_captures,
+        const Instructions & instructions,
+        const AnchoredExtract & opt)
+    {
+        std::string_view matches[max_captures];
+        const std::string_view haystack(hs_data, hs_length);
+
+        if (opt.short_searcher->Match(haystack, 0, hs_length, re2::RE2::Anchor::UNANCHORED, matches, opt.num_captures))
+        {
+            const std::string_view & whole = matches[0];
+            const size_t match_end = static_cast<size_t>(whole.data() - hs_data) + whole.size();
+            const bool tail_ok = !opt.needs_newline_check
+                || memchr(hs_data + match_end, '\n', hs_length - match_end) == nullptr;
+
+            if (tail_ok)
+            {
+                /// The full `.*$` would also match here, so the result is exactly capturing group N.
+                const std::string_view & group = matches[opt.substitution_num];
+                res_data.resize(res_data.size() + group.size());
+                if (!group.empty())
+                    memcpy(&res_data[res_offset], group.data(), group.size());
+                res_offset += group.size();
+            }
+            else
+            {
+                /// A newline in the discarded suffix means the full `.*$` would not match here.
+                /// Fall back to the full regexp for exact semantics.
+                processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
+            }
+        }
+        else
+        {
+            /// Short pattern cannot match => full pattern cannot match => input is returned unchanged.
+            res_data.resize(res_data.size() + hs_length);
+            if (hs_length)
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], hs_data, hs_length);
+            res_offset += hs_length;
+        }
+    }
+
     static void vectorConstantConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
@@ -361,50 +408,12 @@ struct ReplaceRegexpImpl
         /// Fast path for anchored capture-then-truncate patterns, e.g. `^...(\N)....*$` with replacement `\N`.
         if (auto opt = tryBuildAnchoredExtract(searcher, instructions, regexp_options))
         {
-            const re2::RE2 & short_searcher = *opt->short_searcher;
-            const int short_num_captures = opt->num_captures;
-            const int substitution_num = opt->substitution_num;
-            const bool needs_newline_check = opt->needs_newline_check;
-
-            std::string_view matches[max_captures];
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t from = haystack_offsets[i - 1];
                 const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
                 const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
-                const std::string_view haystack(hs_data, hs_length);
-
-                if (short_searcher.Match(haystack, 0, hs_length, re2::RE2::Anchor::UNANCHORED, matches, short_num_captures))
-                {
-                    const std::string_view & whole = matches[0];
-                    const size_t match_end = static_cast<size_t>(whole.data() - hs_data) + whole.size();
-                    const bool tail_ok = !needs_newline_check
-                        || memchr(hs_data + match_end, '\n', hs_length - match_end) == nullptr;
-
-                    if (tail_ok)
-                    {
-                        /// The full `.*$` would also match here, so the result is exactly capturing group N.
-                        const std::string_view & group = matches[substitution_num];
-                        res_data.resize(res_data.size() + group.size());
-                        if (!group.empty())
-                            memcpy(&res_data[res_offset], group.data(), group.size());
-                        res_offset += group.size();
-                    }
-                    else
-                    {
-                        /// A newline in the discarded suffix means the full `.*$` would not match here.
-                        /// Fall back to the full regexp for exact semantics.
-                        processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
-                    }
-                }
-                else
-                {
-                    /// Short pattern cannot match => full pattern cannot match => input is returned unchanged.
-                    res_data.resize(res_data.size() + hs_length);
-                    if (hs_length)
-                        memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], hs_data, hs_length);
-                    res_offset += hs_length;
-                }
+                processStringAnchoredExtract(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, *opt);
                 res_offsets[i] = res_offset;
             }
             return;
@@ -611,6 +620,20 @@ struct ReplaceRegexpImpl
 
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
         Instructions instructions = createInstructions(replacement, num_captures);
+
+        /// Fast path for anchored capture-then-truncate patterns. The trailing `\0` padding of a
+        /// FixedString is an ordinary byte to both `.` and the newline check, so it is treated exactly
+        /// as the full regexp treats it (consumed by `.*$`, or returned verbatim on no match).
+        if (auto opt = tryBuildAnchoredExtract(searcher, instructions, regexp_options))
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + i * n);
+                processStringAnchoredExtract(hs_data, n, res_data, res_offset, searcher, num_captures, instructions, *opt);
+                res_offsets[i] = res_offset;
+            }
+            return;
+        }
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

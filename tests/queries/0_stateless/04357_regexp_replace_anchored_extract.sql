@@ -89,3 +89,26 @@ SELECT 'NOFIRE multiline \\1' AS t, id, s, replaceRegexpAll(s, '(?m)^(\\w+)$', '
 SELECT 'NOFIRE group_is_dotstar' AS t, id, s, replaceRegexpAll(s, '^(.*)$', '\\1') AS all_, replaceRegexpOne(s, '^(.*)$', '\\1') AS one_ FROM t_anchored_extract ORDER BY id;
 
 DROP TABLE t_anchored_extract;
+
+-- Part C: FixedString haystack (fixed width, '\0'-padded). '\0' is an ordinary byte to the
+-- regexp, so results match a String haystack: a match yields the clean capture, a non-match
+-- returns the whole padded value verbatim. hex() keeps the padding visible and the reference
+-- plain text. Columns: label, id, hex(input), hex(replaceRegexpAll), hex(replaceRegexpOne).
+DROP TABLE IF EXISTS t_anchored_extract_fixed;
+CREATE TABLE t_anchored_extract_fixed (id UInt32, s FixedString(40)) ENGINE = Memory;
+INSERT INTO t_anchored_extract_fixed VALUES
+    (1, 'http://www.example.com/p'),
+    (2, 'http://h.com'),
+    (3, 'http://h.com/a\nb'),
+    (4, 'http://x.com:8080/path'),
+    (5, ''),
+    (6, 'http://日本.ex/q'),
+    (7, 'http://h.com/'),
+    (8, 'http://h/a\0b'),
+    (9, 'no-match'),
+    (10, 'a/b/c');
+SELECT 'FS q28 \\1' AS t, id, hex(s) AS s_hex, hex(replaceRegexpAll(s, '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) AS all_hex, hex(replaceRegexpOne(s, '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) AS one_hex FROM t_anchored_extract_fixed ORDER BY id;
+SELECT 'FS host \\2' AS t, id, hex(s) AS s_hex, hex(replaceRegexpAll(s, '^(https?)://([^/]+)/.*$', '\\2')) AS all_hex, hex(replaceRegexpOne(s, '^(https?)://([^/]+)/.*$', '\\2')) AS one_hex FROM t_anchored_extract_fixed ORDER BY id;
+SELECT 'FS dotall \\1' AS t, id, hex(s) AS s_hex, hex(replaceRegexpAll(s, '(?s)^([^/]+)/.*$', '\\1')) AS all_hex, hex(replaceRegexpOne(s, '(?s)^([^/]+)/.*$', '\\1')) AS one_hex FROM t_anchored_extract_fixed ORDER BY id;
+SELECT 'FS noanchor \\1' AS t, id, hex(s) AS s_hex, hex(replaceRegexpAll(s, '(foo).*$', '\\1')) AS all_hex, hex(replaceRegexpOne(s, '(foo).*$', '\\1')) AS one_hex FROM t_anchored_extract_fixed ORDER BY id;
+DROP TABLE t_anchored_extract_fixed;
