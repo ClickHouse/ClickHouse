@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3ToParent : public IFunction
+class FunctionH3ToParent final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToParent";
@@ -110,7 +110,11 @@ public:
 
             UInt64 res = 0;
             if (validator.validateCell(hindex))
-                res = cellToParent(hindex, resolution);
+            {
+                H3Index parent = 0;
+                if (!cellToParent(hindex, resolution, &parent))
+                    res = parent;
+            }
 
             dst_data[row] = res;
         }

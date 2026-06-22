@@ -7,8 +7,6 @@ title: 'Aggregate Functions'
 doc_type: 'reference'
 ---
 
-# Aggregate functions
-
 Aggregate functions work in the [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) way as expected by database experts.
 
 ClickHouse also supports:
@@ -77,7 +75,7 @@ FROM t_null_big
 └────────────────────┴─────────────────────┘
 ```
 
-Also you can use [Tuple](sql-reference/data-types/tuple.md) to work around NULL skipping behavior. A `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value.
+Also you can use [Tuple](/sql-reference/data-types/tuple.md) to work around NULL skipping behavior. A `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value.
 
 ```sql
 SELECT

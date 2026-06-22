@@ -127,7 +127,7 @@ ReadFromSystemPrimesStep::ReadFromSystemPrimesStep(
           context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, {}, context, false).expression}
     , max_block_size{max_block_size_}
     , storage_limits(query_info_.storage_limits)
 {
@@ -279,7 +279,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
 
     /// Filtered path:
     /// Extract ranges/bounds implied by the WHERE clause.
-    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context);
+    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context, /* boolean_context */ true);
     KeyCondition condition(inverted_dag, context, column_names, key_expression);
     const auto extracted_ranges = NumbersLikeUtils::extractRanges(condition);
 

@@ -7,8 +7,6 @@ keywords: ['distance functions', 'norms', 'distances', 'vectors']
 doc_type: 'reference'
 ---
 
-# Distance functions
-
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.

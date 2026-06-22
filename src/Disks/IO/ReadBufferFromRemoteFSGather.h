@@ -3,8 +3,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadSettings.h>
-#include "config.h"
 
 namespace Poco { class Logger; }
 
@@ -26,7 +24,7 @@ public:
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,
         const StoredObjects & blobs_to_read_,
-        const ReadSettings & settings_,
+        size_t min_bytes_for_seek_,
         bool use_external_buffer_,
         size_t buffer_size);
 
@@ -63,12 +61,11 @@ private:
 
     void reset();
 
-    const ReadSettings settings;
+    const size_t min_bytes_for_seek;
     const StoredObjects blobs_to_read;
     const ReadBufferCreator read_buffer_creator;
     const String query_id;
     const bool use_external_buffer;
-    const bool with_file_cache;
 
     size_t read_until_position = 0;
     size_t file_offset_of_buffer_end = 0;

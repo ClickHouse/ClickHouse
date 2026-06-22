@@ -28,7 +28,7 @@ public:
     UUID getUUID() const override { return db_uuid; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
-    bool isDatalakeCatalog() const override { return true; }
+    bool isRemoteDatabase() const override { return true; }
 
     bool empty() const override;
 
@@ -47,6 +47,7 @@ public:
         const FilterByNameFunction & filter_by_table_name,
         bool skip_not_loaded) const override;
 
+    void checkDatabase() const override;
 
     void shutdown() override {}
 
@@ -63,6 +64,7 @@ public:
         const String & name,
         bool /*sync*/) override;
 
+    std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
@@ -79,10 +81,16 @@ private:
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
 
-    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl;
+    std::shared_ptr<DataLake::ICatalog> catalog_impl;
 
     void validateSettings();
-    std::shared_ptr<DataLake::ICatalog> getCatalog() const;
+
+    /// Builds `catalog_impl` based on the configured catalog type.
+    /// Called only from the constructor, so no synchronization is required; `catalog_impl`
+    /// is published when the constructed `DatabaseDataLake` is handed off to other threads.
+    /// If `initialize` is called outside the constructor (e.g. on config reload),
+    /// a mutex must be added to guard `catalog_impl` against concurrent readers in `getCatalog`.
+    void initialize();
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,

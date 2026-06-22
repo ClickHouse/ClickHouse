@@ -4,9 +4,9 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -22,6 +22,12 @@
 #include <Storages/IPartitionStrategy.h>
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class ReadBufferIterator;
 class SchemaCache;
 struct StorageObjectStorageSettings;
@@ -33,7 +39,7 @@ struct IPartitionStrategy;
  * such as StorageS3, StorageAzure, StorageHDFS.
  * Works with an object of IObjectStorage class.
  */
-class StorageObjectStorage : public IStorage
+class StorageObjectStorage : public IStorage, public IBackgroundOperation
 {
 public:
     StorageObjectStorage(
@@ -85,6 +91,12 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    /// Reading a `.null`/`.size0`/... subcolumn does not skip reading the parent column from
+    /// these file formats, and the native readers (e.g. Parquet V3 `PREWHERE`) cannot supply such
+    /// subcolumns as standalone inputs, so `isNotNull(x)` -> `not(x.null)` pushed into `PREWHERE`
+    /// throws `NOT_FOUND_COLUMN_IN_BLOCK`. Disable the optimization, like `StorageFile`/`StorageURL`.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
@@ -92,6 +104,8 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
+
+    bool isIcebergStorage() const { return configuration->isIcebergConfiguration(); }
 
     bool isObjectStorage() const override { return true; }
 
@@ -149,9 +163,9 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
-    bool supportsDelete() const override { return configuration->supportsDelete(); }
+    bool supportsDelete() const override;
 
-    bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
+    bool supportsParallelInsert() const override;
 
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
@@ -161,6 +175,31 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
+    ObjectStoragePtr getObjectStorage() const
+    {
+        return object_storage;
+    }
+
+    StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const
+    {
+        return configuration;
+    }
+
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & /*assignee*/) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "scheduleDataMovingJob is not implemented for object storage");
+    }
+
+    void startup() override;
+    void shutdown(bool is_drop) override;
+
+    Int32 getBiasBackoffSeconds() const override
+    {
+        return configuration->getBiasBackoffSeconds();
+    }
 
 protected:
     /// Get path sample for hive partitioning implementation.
@@ -195,6 +234,7 @@ protected:
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
+    BackgroundJobsAssignee background_operations_assignee;
 };
 
 }

@@ -56,6 +56,7 @@ OPTIMIZE TABLE test_product_catalog FINAL;
 
 SET enable_analyzer = 1;
 SET allow_statistic_optimize = 1;
+SET use_statistics = 1; -- NDV propagation relies on statistics; runner may inject use_statistics=0
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
