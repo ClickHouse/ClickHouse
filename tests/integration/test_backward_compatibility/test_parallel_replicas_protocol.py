@@ -33,8 +33,8 @@ nodes = [
 # replicas" when a newer follower over-announces, and the newer coordinator's
 # snapshot-pin / unknown-stream paths must degrade gracefully when an older follower
 # under-announces. Kept separate from the 24.3 cluster above so each test exercises
-# exactly one version skew. (25.12 has PR=5 and is excluded by the existing
-# `RemoteQueryExecutor` disconnect-at-PR<7 gate, which is why it didn't reproduce.)
+# exactly one version skew. (Older PR<7 peers are filtered out at connection time by
+# `RemoteQueryExecutor`, so they never reach the split-stream code path.)
 split_topology_nodes = [
     cluster.add_instance(
         f"split_node{num}",
@@ -159,7 +159,7 @@ def test_backward_compatability(start_cluster):
 def test_split_topology_rolling_upgrade(start_cluster):
     # With `parallel_replicas_local_plan = 1` and `max_threads > 1`, this branch's
     # initiator (and any new follower) splits the in-order read into multiple
-    # `#split_i` streams. The 25.12 peer doesn't know about the
+    # `#split_i` streams. The 26.5 peer doesn't know about the
     # announcement-response packet that authorises each split — without the
     # version-aware degradation, the older initiator raises
     # `Initiator received more initial requests than there are replicas` when a
