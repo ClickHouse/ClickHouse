@@ -90,7 +90,7 @@ TEST_P(LibdeflateInflateTest, RoundTripFromZlibNg)
     {
         const std::string data = makeData(size, static_cast<unsigned>(size + 1));
         const std::string compressed = zlibCompress(data, method, 6);
-        for (size_t chunk : {size_t(1), size_t(13), size_t(4096), compressed.size() ? compressed.size() : size_t(1)})
+        for (size_t chunk : {size_t(1), size_t(13), size_t(4096), !compressed.empty() ? compressed.size() : size_t(1)})
             for (size_t buf : {size_t(64), size_t(1 << 16)}) /* small buf forces NEED_OUTPUT/grow */
                 EXPECT_EQ(decompressViaBuffer(compressed, method, chunk, buf), data)
                     << "size=" << size << " chunk=" << chunk << " buf=" << buf;
@@ -129,5 +129,34 @@ INSTANTIATE_TEST_SUITE_P(
     GzipAndZlib,
     LibdeflateInflateTest,
     ::testing::Values(CompressionMethod::Gzip, CompressionMethod::Zlib));
+
+/// Malformed headers that the zlib decoder rejects must also be rejected here (validation parity with
+/// ZlibInflatingReadBuffer): such streams must not silently decompress. These are format-specific, so
+/// they are plain tests rather than parameterized over both methods.
+
+TEST(LibdeflateInflateHeaderValidation, RejectsReservedGzipFlags)
+{
+    /// 10-byte gzip header with reserved FLG bits (0xE0) set; rejected before the body is read.
+    const std::string bad = std::string("\x1f\x8b\x08\xe0\x00\x00\x00\x00\x00\xff", 10) + "garbage";
+    EXPECT_ANY_THROW(decompressViaBuffer(bad, CompressionMethod::Gzip, 4, 4096));
+}
+
+TEST(LibdeflateInflateHeaderValidation, RejectsZlibWindowTooLarge)
+{
+    /// zlib header with CINFO = 8 (window > 32 KiB, invalid). CMF=0x88, FLG=0x1c makes the 16-bit
+    /// header a multiple of 31, so the check bits pass and only the CINFO check can reject it.
+    const std::string bad = std::string("\x88\x1c", 2) + "garbage";
+    EXPECT_ANY_THROW(decompressViaBuffer(bad, CompressionMethod::Zlib, 4, 4096));
+}
+
+TEST(LibdeflateInflateHeaderValidation, RejectsBadGzipHeaderCrc)
+{
+    /// gzip header with the FHCRC flag set and a deliberately wrong header CRC16. The correct CRC16 of
+    /// these 10 header bytes is 0xC990, so 0xC991 (little-endian 0x91 0xC9) must be rejected.
+    std::string bad = std::string("\x1f\x8b\x08\x02\x00\x00\x00\x00\x00\xff", 10);
+    bad += std::string("\x91\xc9", 2);
+    bad += "garbage";
+    EXPECT_ANY_THROW(decompressViaBuffer(bad, CompressionMethod::Gzip, 4, 4096));
+}
 
 #endif

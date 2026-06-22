@@ -6,6 +6,8 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ZlibDeflatingWriteBuffer.h>
+#include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 
@@ -25,7 +27,7 @@ std::string makeData(size_t size)
 {
     std::string out;
     out.reserve(size);
-    std::mt19937 rng(12345);
+    std::mt19937 rng(12345); /// NOLINT(cert-msc32-c,cert-msc51-cpp) deterministic test data on purpose
     while (out.size() < size)
     {
         if (rng() % 3 == 0)
@@ -62,7 +64,8 @@ TEST_P(LibdeflateTest, RoundTrip)
 }
 
 /// libdeflate must decode what zlib-ng produced and vice versa (format interchange).
-/// Uses ClickHouse's own zlib-ng-backed buffers as the reference implementation.
+/// Uses ClickHouse's zlib-ng-backed buffers directly (NOT wrap*WithCompressionMethod, which dispatches
+/// back to libdeflate when USE_LIBDEFLATE is on) so the check is against an independent encoder/decoder.
 TEST_P(LibdeflateTest, CrossCompatibleWithZlibNg)
 {
     const CompressionMethod method = GetParam();
@@ -72,9 +75,9 @@ TEST_P(LibdeflateTest, CrossCompatibleWithZlibNg)
     {
         std::string compressed;
         {
-            auto wb = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromString>(compressed), method, 6);
-            wb->write(data.data(), data.size());
-            wb->finalize();
+            ZlibDeflatingWriteBuffer wb(std::make_unique<WriteBufferFromString>(compressed), method, 6);
+            wb.write(data.data(), data.size());
+            wb.finalize();
         }
         std::vector<char> restored(data.size());
         Libdeflate::decompress(method, compressed.data(), compressed.size(), restored.data(), data.size());
@@ -87,9 +90,9 @@ TEST_P(LibdeflateTest, CrossCompatibleWithZlibNg)
         const size_t csize = Libdeflate::compress(method, 6, data.data(), data.size(), buf.data(), buf.size());
         const std::string compressed(buf.data(), csize);
 
-        auto rb = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromString>(compressed), method);
+        ZlibInflatingReadBuffer rb(std::make_unique<ReadBufferFromString>(compressed), method);
         std::string restored;
-        readStringUntilEOF(restored, *rb);
+        readStringUntilEOF(restored, rb);
         ASSERT_EQ(restored, data);
     }
 }

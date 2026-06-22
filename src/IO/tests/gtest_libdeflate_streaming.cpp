@@ -7,6 +7,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
 #include <gtest/gtest.h>
@@ -24,7 +25,7 @@ std::string makeData(size_t size)
 {
     std::string out;
     out.reserve(size);
-    std::mt19937 rng(777);
+    std::mt19937 rng(777); /// NOLINT(cert-msc32-c,cert-msc51-cpp) deterministic test data on purpose
     while (out.size() < size)
     {
         if (rng() % 2)
@@ -66,9 +67,12 @@ TEST_P(LibdeflateStreamingTest, RoundTripViaZlibNg)
             const std::string c2 = compress(data, method, level, 1 << 16, 4096); // bigger buffer
             for (const auto & c : {c1, c2})
             {
-                auto in = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromString>(c), method);
+                /// Decode with the independent zlib-ng decoder directly (not wrapReadBufferWithCompressionMethod,
+                /// which dispatches back to libdeflate when USE_LIBDEFLATE is on), so this verifies the bytes the
+                /// streaming writer produced against a different implementation.
+                ZlibInflatingReadBuffer in(std::make_unique<ReadBufferFromString>(c), method);
                 std::string restored;
-                readStringUntilEOF(restored, *in);
+                readStringUntilEOF(restored, in);
                 EXPECT_EQ(restored, data) << "size=" << size << " level=" << level;
             }
         }
