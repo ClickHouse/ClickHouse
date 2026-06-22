@@ -50,6 +50,21 @@ def wait_for_status(node, table, expected, timeout=60):
     )
 
 
+def count_keeper_errors(node):
+    return int(node.count_in_log("RefreshTask.re.a.*Keeper error").strip())
+
+
+def wait_for_keeper_errors(node, at_least, timeout=60):
+    deadline = time.time() + timeout
+    while count_keeper_errors(node) < at_least:
+        if time.time() >= deadline:
+            raise AssertionError(
+                f"{node.name}: got {count_keeper_errors(node)} RMV keeper errors, "
+                f"expected >= {at_least} within {timeout}s"
+            )
+        time.sleep(0.5)
+
+
 def test_watch_registration_failure_recovers(started_cluster):
     """
     A coordinated RMV relies on keeper watches to wake up when another replica changes the
@@ -94,6 +109,7 @@ def test_watch_registration_failure_recovers(started_cluster):
 
     # Break node1's watch requests. Process-local and only affects watch-carrying reads, so node1's
     # session stays healthy. No DDL is issued on node1 while it is enabled.
+    errors_before = count_keeper_errors(node1)
     node1.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
 
     # node2 starts a refresh and creates the 'running' ephemeral child. That fires node1's existing
@@ -101,11 +117,11 @@ def test_watch_registration_failure_recovers(started_cluster):
     node2.query("SYSTEM REFRESH VIEW re.a")
     wait_for_status(node2, "a", "Running", timeout=30)
 
-    # Wait for two watch-add failures: the exists-watch on the first scheduling iteration and the
-    # children-watch on the second (5s retry apart). Both flags would be left stuck by the bug.
-    node1.wait_for_log_line(
-        "RefreshTask.re.a.*Keeper error", timeout=60, repetitions=2
-    )
+    # Wait for two new watch-add failures: the exists-watch on the first scheduling iteration and
+    # the children-watch on the second (5s retry apart). Both flags would be left stuck by the bug.
+    # Counting the delta (rather than wait_for_log_line, which scans old log lines) keeps this robust
+    # when the module-scoped cluster's log is reused across repeated runs.
+    wait_for_keeper_errors(node1, errors_before + 2)
 
     # Stop injecting faults. With the fix node1 re-adds both watches; with the bug the flags are
     # stuck and it never tries again.
