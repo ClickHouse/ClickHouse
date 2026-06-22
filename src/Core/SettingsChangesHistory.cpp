@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
             {"join_runtime_filter_from_fixed_hash_table", false, true, "New setting."},
+            {"use_lightweight_primary_key_index_analysis", false, true, "New setting to optimize primary key index analysis for tables with long primary keys"},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_nullable_tuple_type", false, false, "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."},
             {"ai_function_credentials", "", "", "New setting"},
