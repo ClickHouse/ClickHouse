@@ -1138,10 +1138,21 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 4. object etag to detect a concurrent in-place overwrite during the read
     /// The s3Cluster skip_object_metadata path yields an empty-etag placeholder; refetch so
     /// read-time ETag validation has an etag.
-    if (!object_info.metadata
-        || (settings[Setting::s3_validate_etag_on_read] && object_info.metadata->etag.empty()
-            && object_storage->getType() == ObjectStorageType::S3))
+    if (!object_info.metadata)
+    {
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
+    }
+    else if (settings[Setting::s3_validate_etag_on_read] && object_info.metadata->etag.empty()
+             && object_storage->getType() == ObjectStorageType::S3)
+    {
+        /// Refresh only to obtain the ETag for read-time validation. A with_tags=false HEAD would
+        /// drop tags already fetched for the _tags virtual column (an S3-compatible store can return
+        /// tags but omit the ETag in the listing), so carry the previously known tags over.
+        auto previous_tags = std::move(object_info.metadata->tags);
+        object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
+        if (object_info.metadata->tags.empty())
+            object_info.metadata->tags = std::move(previous_tags);
+    }
 
     if (use_page_cache && object_info.metadata->etag.empty())
     {
