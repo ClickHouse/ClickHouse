@@ -1,13 +1,15 @@
 -- Test that DROP INDEX removes all index related files.
 -- This can't be tested directly but we can at least check that no bad things happen.
 
+SET allow_experimental_full_text_index = 1;
+
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab
 (
     id UInt64,
     doc String,
-    INDEX text_idx doc TYPE text(tokenizer = 'splitByNonAlpha')
+    INDEX text_idx doc TYPE text(tokenizer = 'default')
 )
 ENGINE = MergeTree
 ORDER BY id

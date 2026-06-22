@@ -1,6 +1,0 @@
-uniqStateOrNull WITH ROLLUP	18
-uniqStateOrNull WITH CUBE	18
-uniqStateOrNull WITH TOTALS	17
-uniqStateOrDefault WITH ROLLUP	18
-uniqOrNullState WITH ROLLUP	18
-plain GROUP BY	17

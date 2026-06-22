@@ -1,6 +1,4 @@
 #include <gtest/gtest.h>
-
-#include <base/defines.h>
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
 #include <Processors/Sources/BlocksListSource.h>
@@ -37,8 +35,7 @@ static Pipe getInputStreams(const std::vector<std::string> & column_names, size_
     return Pipe::unitePipes(std::move(pipes));
 }
 
-[[maybe_unused]] static void
-testSplitResizeTransform(size_t instreams, size_t outstreams, size_t min_outstreams_per_resize_after_split, bool strict)
+static void testSplitResizeTransform(size_t instreams, size_t outstreams, size_t min_outstreams_per_resize_after_split, bool strict)
 {
     constexpr size_t rows_per_stream = 10;
 
@@ -74,9 +71,7 @@ testSplitResizeTransform(size_t instreams, size_t outstreams, size_t min_outstre
     size_t null_sink_count = 0;
     for (auto i = 0; i < resize_procs.size(); ++i)
     {
-        auto it = resize_procs.begin();
-        std::advance(it, i);
-        const auto & resize = *it;
+        const auto & resize = resize_procs[i];
         EXPECT_EQ(resize->getInputs().size(), instreams_per_group);
         EXPECT_EQ(resize->getOutputs().size(), outstreams_per_group);
         if (groups_with_extra_instream != 0 && i >= groups_with_extra_instream)
@@ -111,9 +106,6 @@ testSplitResizeTransform(size_t instreams, size_t outstreams, size_t min_outstre
 
 TEST(ResizeTransformTest, SplitResizeTest)
 {
-#if defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(ADDRESS_SANITIZER)
-    GTEST_SKIP() << "Too slow with heavy sanitizers. Ok in release or UBSan";
-#else
     for (size_t instreams = 2; instreams < 100; ++instreams)
     {
         for (size_t outstreams = 1; outstreams < 100; ++outstreams)
@@ -128,5 +120,4 @@ TEST(ResizeTransformTest, SplitResizeTest)
             }
         }
     }
-#endif
 }

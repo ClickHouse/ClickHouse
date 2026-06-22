@@ -1,5 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: Requires vectorscan
 select match('a key="v" ', 'key="(.*?)"');
 select match(materialize('a key="v" '), 'key="(.*?)"');
 

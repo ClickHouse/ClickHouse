@@ -83,7 +83,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
         }
     }
 
-    auto query = make_intrusive<ASTAlterNamedCollectionQuery>();
+    auto query = std::make_shared<ASTAlterNamedCollectionQuery>();
 
     query->collection_name = getIdentifierName(collection_name);
     query->if_exists = if_exists;

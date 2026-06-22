@@ -22,8 +22,8 @@ namespace ProfileEvents
     using Event = StrongTypedef<size_t, struct EventTag>;
     using Count = size_t;
     using Increment = Int64;
-
-    struct Counter : public std::atomic<Count>
+    /// Avoid false sharing when multiple threads increment different counters close to each other.
+    struct alignas(64) Counter : public std::atomic<Count>
     {
         using std::atomic<Count>::atomic;
     };
@@ -66,13 +66,9 @@ namespace ProfileEvents
         std::unique_ptr<Counter[]> counters_holder;
         /// Used to propagate increments
         std::atomic<Counters *> parent = {};
+        bool trace_profile_events = false;
         Counter prev_cpu_wait_microseconds = 0;
         Counter prev_cpu_virtual_time_microseconds = 0;
-
-        /// Lazily allocated on first setTraceProfileEvent()
-        std::atomic<std::atomic_bool *> should_trace_array = nullptr;
-        std::unique_ptr<std::atomic_bool[]> should_trace_holder;
-        std::atomic_bool trace_all_profile_events = false;
 
     public:
 
@@ -81,9 +77,8 @@ namespace ProfileEvents
         /// By default, any instance have to increment global counters
         explicit Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
 
-        /// Global level static initializer (constexpr to enable constant initialization
-        /// before any dynamic initializer can allocate memory and call ProfileEvents::increment)
-        constexpr explicit Counters(Counter * allocated_counters) noexcept
+        /// Global level static initializer
+        explicit Counters(Counter * allocated_counters) noexcept
             : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
 
         Counters(Counters && src) noexcept;
@@ -134,33 +129,15 @@ namespace ProfileEvents
         }
 
         /// Set parent (thread unsafe)
-        void setUserCounters(Counters * user)
-        {
-            auto * current_val = this;
-            auto * parent_val = this->parent.load(std::memory_order_relaxed);
-
-            while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
-            {
-                current_val = parent_val;
-                parent_val = current_val->parent.load(std::memory_order_relaxed);
-            }
-
-            current_val->parent.store(user, std::memory_order_relaxed);
-        }
-
-        /// Set parent (thread unsafe)
         void setParent(Counters * parent_)
         {
             parent.store(parent_, std::memory_order_relaxed);
         }
 
-        void setTraceAllProfileEvents()
+        void setTraceProfileEvents(bool value)
         {
-            trace_all_profile_events.store(true, std::memory_order_relaxed);
+            trace_profile_events = value;
         }
-
-        void setTraceProfileEvent(ProfileEvents::Event event);
-        void setTraceProfileEvents(const String & events_list);
 
         /// Set all counters to zero
         void resetCounters();
@@ -209,13 +186,10 @@ namespace ProfileEvents
     void incrementLoggerElapsedNanoseconds(UInt64 ns);
 
     /// Get name of event by identifier. Returns statically allocated string.
-    const std::string_view & getName(Event event);
+    const char * getName(Event event);
 
     /// Get description of event by identifier. Returns statically allocated string.
-    const std::string_view & getDocumentation(Event event);
-
-    /// Get ProfileEvent by its name
-    Event getByName(std::string_view name);
+    const char * getDocumentation(Event event);
 
     /// Get value type of event by identifier. Returns enum value.
     ValueType getValueType(Event event);

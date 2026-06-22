@@ -6,8 +6,9 @@ sidebar_label: 'gcs'
 sidebar_position: 70
 slug: /sql-reference/table-functions/gcs
 title: 'gcs'
-doc_type: 'reference'
 ---
+
+# gcs Table Function
 
 Provides a table-like interface to `SELECT` and `INSERT` data from [Google Cloud Storage](https://cloud.google.com/storage/). Requires the [`Storage Object User` IAM role](https://cloud.google.com/storage/docs/access-control/iam-roles).
 
@@ -48,7 +49,7 @@ The GCS path is in this format as the endpoint for the Google XML API is differe
 and not ~~https://storage.cloud.google.com~~.
 :::
 
-Arguments can also be passed using [named collections](/operations/named-collections.md). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
+Arguments can also be passed using [named collections](operations/named-collections.md). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 
 | Parameter                     | Description                                                                                                                                                                                                                       |
 |-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -177,7 +178,7 @@ The below get data from all `test-data.csv.gz` files from any folder inside `my-
 SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
-For production use cases it is recommended to use [named collections](/operations/named-collections.md). Here is the example:
+For production use cases it is recommended to use [named collections](operations/named-collections.md). Here is the example:
 ```sql
 
 CREATE NAMED COLLECTION creds AS
