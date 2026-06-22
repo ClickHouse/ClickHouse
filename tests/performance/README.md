@@ -91,6 +91,8 @@ Notes:
 * Parameter `{substitutions}` are **not** applied to shell scripts, because they use `${var}` and `{a,b}` brace expansion that would collide with the substitution syntax. Use shell loops or environment variables instead.
 * The `<settings>` element is **not** applied to shell scripts; pass settings through the URL or client arguments inside the script.
 * Profiler runs and server-side `ProfileEvents` are not collected for shell scripts (there is no single query to attribute them to); only the timing difference is reported.
+* `CLICKHOUSE_CURL` is `curl -q -sS --fail --max-time 120`. Unlike `tests/queries/shell_config.sh`, it adds `--fail` so that an HTTP 4xx/5xx response makes `curl` exit non-zero and the query fails — a benchmark must never time a server error response as a fast successful sample.
+* On timeout (`--max-query-seconds`, `--prewarm-max-query-seconds`) the whole process group of the script is killed, not just the immediate `bash`, so a script blocked inside a child such as `curl` or `$CLICKHOUSE_LOCAL` cannot keep running and pollute later measurements.
 
 ### How to run performance test
 

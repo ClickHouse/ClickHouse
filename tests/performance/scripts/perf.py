@@ -10,6 +10,7 @@ import os
 import pprint
 import random
 import re
+import signal
 import statistics
 import string
 import subprocess
@@ -487,7 +488,13 @@ def shell_env_for(conn_index):
     env["CLICKHOUSE_DATABASE"] = "default"
     env["CLICKHOUSE_CLIENT"] = f"{binary} client --host {host} --port {tcp_port}"
     env["CLICKHOUSE_LOCAL"] = f"{binary} local"
-    env["CLICKHOUSE_CURL"] = "curl -q -s --max-time 120"
+    # `--fail` makes curl exit non-zero on an HTTP 4xx/5xx response, and `-S`
+    # prints the error even under `-s`. Unlike tests/queries/shell_config.sh
+    # (which omits `--fail` because some stateless tests inspect error bodies),
+    # a performance benchmark must fail closed: otherwise an HTTP error response
+    # would be timed and reported as a fast successful sample, silently
+    # invalidating the comparison.
+    env["CLICKHOUSE_CURL"] = "curl -q -sS --fail --max-time 120"
     env["CLICKHOUSE_URL"] = f"http://{host}:{http_port}/"
     return env
 
@@ -498,27 +505,42 @@ shell_envs = {}
 def run_shell_query(conn_index, script, timeout):
     """Run a shell-script query for one server and return its wall-clock time.
 
-    The script is executed with `bash -e -o pipefail`. Its standard output is
-    discarded (the script itself decides what to read and where to write it);
-    standard error is captured for diagnostics. A non-zero exit code raises an
-    exception, which the caller treats the same way as a failed SQL query."""
+    The script is executed with `bash -e -o pipefail` in its own session
+    (`start_new_session=True`), so the whole process tree it spawns shares one
+    process group. On timeout the entire group is killed: `subprocess` alone
+    would only terminate the immediate `bash`, leaving children such as `curl`
+    or `$CLICKHOUSE_LOCAL` running, which could keep consuming CPU/network or
+    hold a server-side query open and pollute later measurements. Standard
+    output is discarded (the script itself decides what to read and where to
+    write it); standard error is captured for diagnostics. A non-zero exit code
+    raises an exception, which the caller treats the same way as a failed SQL
+    query."""
     env = shell_envs.setdefault(conn_index, shell_env_for(conn_index))
     start = time.perf_counter()
-    completed = subprocess.run(
+    proc = subprocess.Popen(
         ["bash", "-e", "-o", "pipefail", "-c", script],
         env=env,
-        timeout=timeout,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
-        check=False,
+        start_new_session=True,
     )
+    try:
+        _, stderr_bytes = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Kill the whole process group, not just `bash`, then reap it.
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.communicate()
+        raise
     elapsed = time.perf_counter() - start
-    if completed.returncode != 0:
-        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+    if proc.returncode != 0:
+        stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
         raise Exception(
             f"Shell query failed on server {conn_index} with exit code "
-            f"{completed.returncode}:\n{stderr}"
+            f"{proc.returncode}:\n{stderr}"
         )
     return elapsed
 
