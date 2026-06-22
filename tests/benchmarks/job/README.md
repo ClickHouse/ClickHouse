@@ -2,6 +2,8 @@
 
 The Join Order Benchmark (JOB) stresses the query optimizer with 113 analytical queries over a real-world, highly-correlated dataset (a snapshot of IMDB).
 
+Source of the queries: [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark) repository
+
 ## Loading the data
 
 The dataset is available as Parquet files. The bucket is public for reads. Create the schema, then load the tables, for example:
