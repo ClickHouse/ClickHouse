@@ -1,7 +1,22 @@
 """Quick tests, faster than 30 seconds"""
 
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
+import json
+import logging
+import math
+import random
+import threading
+import time
+
+from kafka import KafkaAdminClient, KafkaProducer
+import kafka.errors
+import pytest
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV, assert_eq_with_retry
+from google.protobuf.internal.encoder import _VarintBytes
+from helpers.kafka import message_with_repeated_pb2
 import helpers.kafka.common as k
 
 
@@ -22,6 +37,7 @@ instance = cluster.add_instance(
         "configs/kafka.xml",
         "configs/named_collection.xml",
         "configs/dead_letter_queue.xml",
+        "configs/disable_insertion.xml"
     ],
     user_configs=["configs/users.xml"],
     with_kafka=True,
@@ -586,10 +602,23 @@ def test_kafka_read_consumers_in_parallel(kafka_cluster):
         """
     )
 
+    # Parallel reading of 8 consumers reaches 64 polls in ~8s; sequential reading
+    # is gated by kafka_poll_timeout_ms=1000 to ~1 poll/sec, so it cannot reach 64
+    # polls in under ~64s on any build. Slow builds (sanitizer/coverage/debug)
+    # inflate the parallel path's wall-clock well past 30s under CI batch load, so
+    # use a larger timeout there while staying below the ~64s sequential floor that
+    # would catch a regression to sequential reads.
+    poll_timeout = (
+        60
+        if instance.is_built_with_sanitizer()
+        or instance.is_built_with_llvm_coverage()
+        or instance.is_debug_build()
+        else 30
+    )
     instance.wait_for_log_line(
         f"{kafka_table}.*Polled batch of [0-9]+.*read_consumers_in_parallel",
         repetitions=64,
-        timeout=30,  # we should get 64 polls in ~8 seconds, but when read sequentially it will take more than 64 sec
+        timeout=poll_timeout,
     )
 
     cancel.set()
@@ -1740,7 +1769,7 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
 
             instance.wait_for_log_line(log_line, repetitions=4)
 
-            members = k.describe_consumer_group(kafka_cluster, consumer_group)
+            k.describe_consumer_group(kafka_cluster, consumer_group)
             # pprint.pprint(members)
             # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
             # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
@@ -2437,7 +2466,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
             pm.drop_instance_zk_connections(instance)
             # FIXME: we need to make sure that this happens during writing to RMT
             instance.wait_for_log_line(
-                f"Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
+                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
                 timeout=60,
             )
 
@@ -2961,17 +2990,17 @@ def test_issue26643(kafka_cluster, create_query_generator):
     thread_per_consumer = k.must_use_thread_per_consumer(create_query_generator)
 
     with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
-        msg = k.message_with_repeated_pb2.Message(
+        msg = message_with_repeated_pb2.Message(
             tnow=1629000000,
             server="server1",
             clien="host1",
             sPort=443,
             cPort=50000,
             r=[
-                k.message_with_repeated_pb2.dd(
+                message_with_repeated_pb2.dd(
                     name="1", type=444, ttl=123123, data=b"adsfasd"
                 ),
-                k.message_with_repeated_pb2.dd(name="2"),
+                message_with_repeated_pb2.dd(name="2"),
             ],
             method="GET",
         )
@@ -2980,7 +3009,7 @@ def test_issue26643(kafka_cluster, create_query_generator):
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
 
-        msg = k.message_with_repeated_pb2.Message(tnow=1629000002)
+        msg = message_with_repeated_pb2.Message(tnow=1629000002)
 
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
@@ -3749,10 +3778,10 @@ def test_kafka_json_type(kafka_cluster):
         """
     )
 
-    while int(instance.query(f"SELECT count() FROM test.dst")) < 2:
+    while int(instance.query("SELECT count() FROM test.dst")) < 2:
         time.sleep(1)
 
-    result = instance.query(f"SELECT * FROM test.dst ORDER BY a;")
+    result = instance.query("SELECT * FROM test.dst ORDER BY a;")
 
     instance.query(
         f"""
@@ -3779,7 +3808,7 @@ def test_kafka_assigned_partitions(kafka_cluster):
     k.kafka_create_topic(admin_client, topic_name, num_partitions=num_partitions)
 
     metrics_before = instance.query(
-            f"""
+            """
             SELECT
                 anyIf(value, metric = 'KafkaAssignedPartitions') AS KafkaAssignedPartitions,
                 anyIf(value, metric = 'KafkaConsumersWithAssignment') AS KafkaConsumersWithAssignment
@@ -3868,6 +3897,113 @@ def test_kafka_consumer_reschedule_validation(kafka_cluster, create_query_genera
     instance.query(create_query)
 
 
+def test_message_queue_disable_insertion(kafka_cluster):
+    suffix = k.random_string(6)
+    kafka_table = f"message_queue_disable_insertion_{suffix}"
+    topic_name = f"disable_insertion_{suffix}"
+
+    # Verify the setting defaults to false
+    assert (
+        "false"
+        == instance.query(
+            "SELECT getServerSetting('message_queue_disable_insertion')"
+        ).strip()
+    )
+
+    try:
+        # Enable message_queue_disable_insertion via config replacement + reload
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "0",
+            "1",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+
+        assert (
+            "true"
+            == instance.query(
+                "SELECT getServerSetting('message_queue_disable_insertion')"
+            ).strip()
+        )
+
+        # Create Kafka table, destination MergeTree table, and MV
+        instance.query(
+            f"""
+            CREATE TABLE test.{kafka_table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{topic_name}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 1000;
+            CREATE TABLE test.{kafka_table}_dst (key UInt64, value UInt64)
+                ENGINE = MergeTree()
+                ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{kafka_table}_mv TO test.{kafka_table}_dst AS
+                SELECT * FROM test.{kafka_table};
+        """
+        )
+
+        # Produce messages while insertion is disabled
+        messages = [json.dumps({"key": i, "value": i}) for i in range(10)]
+        k.kafka_produce(kafka_cluster, topic_name, messages)
+
+        # Wait a bit — no rows should appear because insertion is disabled
+        time.sleep(10)
+        assert 0 == int(
+            instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
+        )
+
+        assert instance.contains_in_log("Message queue insertion is disabled")
+
+        # Direct INSERT INTO the Kafka table (producer write) must still work
+        instance.query(
+            f"INSERT INTO test.{kafka_table} FORMAT JSONEachRow"
+            ' {"key": 999, "value": 999}'
+        )
+
+        # Re-enable insertion
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "1",
+            "0",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+
+        assert (
+            "false"
+            == instance.query(
+                "SELECT getServerSetting('message_queue_disable_insertion')"
+            ).strip()
+        )
+
+        # Rows should now flow through (10 original + 1 from direct INSERT)
+        expected_rows = 11
+        for _ in range(100):
+            count = int(
+                instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
+            )
+            if count == expected_rows:
+                break
+            time.sleep(1)
+
+        assert expected_rows == int(
+            instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
+        )
+    finally:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "1",
+            "0",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.{kafka_table}_mv;
+            DROP TABLE IF EXISTS test.{kafka_table}_dst;
+            DROP TABLE IF EXISTS test.{kafka_table};
+        """
+        )
 def test_kafka2_commit_on_select_semantics(kafka_cluster):
     """Test that kafka_commit_on_select controls whether offsets are committed after direct SELECT."""
 

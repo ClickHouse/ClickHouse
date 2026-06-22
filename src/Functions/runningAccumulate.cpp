@@ -122,6 +122,20 @@ public:
         IColumn & result_column = *result_column_ptr;
         result_column.reserve(column_with_states->size());
 
+        /// If the aggregate function returns its own state (i.e. it is wrapped
+        /// in `-State`, possibly through `-OrDefault`/`-OrNull`/`-If`/`-ForEach`/
+        /// etc.), `insertResultInto` would push raw pointers to `place` (a
+        /// stack-local `AlignedBuffer`) into the result `ColumnAggregateFunction`,
+        /// producing a use-after-free at the result column's destruction time
+        /// and aliasing every row to the *final* accumulator. Use
+        /// `insertMergeResultInto` instead — it delegates through the combinator
+        /// chain to `AggregateFunctionState::insertMergeResultInto`, which calls
+        /// `ColumnAggregateFunction::insertFrom(place)` to allocate a fresh
+        /// state in the column's own arena and merge our `place` into it. Each
+        /// row therefore owns its own state independent of `place`. The same
+        /// pattern is used in `initializeAggregation` and `arrayReduce`.
+        const bool returns_state = agg_func.isState();
+
         const auto & states = column_with_states->getData();
 
         bool state_created = false;
@@ -146,7 +160,11 @@ public:
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());
-            agg_func.insertResultInto(place.data(), result_column, arena.get());
+
+            if (returns_state)
+                agg_func.insertMergeResultInto(place.data(), result_column, arena.get());
+            else
+                agg_func.insertResultInto(place.data(), result_column, arena.get());
 
             ++row_number;
         }
