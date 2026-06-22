@@ -285,7 +285,7 @@ public:
         if (!is_uint_size(arguments[arguments.size() - 2]))
             return {};
 
-        InternalArguments res;
+        InternalArguments res{};
 
         /// Strided form has a second UInt size (the stride) right before the dims size.
         const bool strided = arguments.size() >= 4 && is_uint_size(arguments[arguments.size() - 3]);
