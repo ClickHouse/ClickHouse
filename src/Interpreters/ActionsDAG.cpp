@@ -152,6 +152,9 @@ ActionsDAG::Nodes ActionsDAG::detachNodes(ActionsDAG && dag) { return std::move(
 
 bool ActionsDAG::Node::isDeterministic() const
 {
+    /// folded constants honor `is_deterministic_constant` on FUNCTION nodes too
+    if (column && !is_deterministic_constant)
+        return false;
     bool deterministic_if_func = type != ActionType::FUNCTION || function_base->isDeterministic();
     bool deterministic_if_const = type != ActionType::COLUMN || is_deterministic_constant;
     return deterministic_if_func && deterministic_if_const;
@@ -1337,16 +1340,13 @@ void ActionsDAG::pushMaterializeOutwardForConstants(const std::string & dropped_
         if (!column_const)
             continue;
 
-        /// convert to COLUMN so `Node::isDeterministic` reads `is_deterministic_constant` -
-        /// keeping FUNCTION would let dedup unite a non-det fold with a deterministic literal const
+        /// same pattern as `addFunctionImpl`: store the const on the FUNCTION node, keep
+        /// children intact so `subtreeContainsMaterialize` can still find materialize for
+        /// representation-observing ancestors (e.g. `like`'s ESCAPE-const check)
         if (!column_const->empty())
             node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
         else
             node.column = column_const->getPtr();
-        node.type = ActionType::COLUMN;
-        node.children.clear();
-        node.function_base.reset();
-        node.function.reset();
         node.is_deterministic_constant = all_deterministic;
     }
 }
