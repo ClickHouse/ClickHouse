@@ -211,11 +211,10 @@ public:
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
     virtual bool isReadingCompleted() const = 0;
     virtual bool initializedWithEmptyRanges() const { return false; }
-    /// The post-normalization working set of parts for this stream — what the coordinator will
-    /// actually serve in handleRequest. This may be a subset of the first announcement's
-    /// description (e.g. InOrderCoordinator drops parts that are covered/covering existing ones)
-    /// and is what we must echo back to followers as the authoritative set, so they don't
-    /// build phantom consumers for dropped parts.
+    /// The working set of parts for this stream — what the coordinator will actually serve in
+    /// handleRequest. Captured from the first announcement (in the snapshot-pinned topology that
+    /// is the initiator's own pre-split parts list, so this is exactly the per-split assignment)
+    /// and echoed back to followers as the authoritative set they should construct sources for.
     virtual RangesInDataPartsDescription getRegisteredParts() const = 0;
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
@@ -1229,9 +1228,10 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
 
     /// Capture the authoritative parts list AFTER the coordinator has processed the first
-    /// announcement: InOrderCoordinator drops parts that are covered/covering existing ones
-    /// during normalization, so the coordinator's working set may be smaller than the raw
-    /// announcement payload.
+    /// announcement. Within a single MergeTree replica's announcement, parts are non-overlapping
+    /// by construction, so the working set matches the raw payload one-to-one; capturing the
+    /// coordinator's own view (rather than the announcement) just keeps this lookup independent
+    /// of any future per-stream coordinator that may post-process its input.
     if (first_announcement_for_stream)
         stream_to_registered_parts[response.stream_id] = coordinator->getRegisteredParts();
 
