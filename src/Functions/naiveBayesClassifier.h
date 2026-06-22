@@ -1,15 +1,11 @@
 #pragma once
 
-#include <cctype>
 #include <cmath>
 #include <concepts>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <limits>
+#include <memory>
 #include <vector>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 #include <base/StringViewHash.h>
 #include <fmt/ranges.h>
 #include <Common/Arena.h>
@@ -22,11 +18,16 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int CORRUPTED_DATA;
-extern const int FILE_DOESNT_EXIST;
 extern const int RECEIVED_EMPTY_DATA;
 }
 
+
+/// Tests whether a character is ASCII whitespace. This deliberately avoids `std::isspace`, whose behaviour
+/// is locale-dependent and undefined for argument values that are not representable as `unsigned char`.
+inline bool isAsciiWhitespace(char c)
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+}
 
 template <class T>
 concept Tokenizer = requires(
@@ -114,14 +115,14 @@ struct TokenPolicy
         while (pos < size)
         {
             // Skip any leading ASCII whitespace
-            while (pos < size && std::isspace(static_cast<unsigned char>(data[pos])))
+            while (pos < size && isAsciiWhitespace(data[pos]))
                 ++pos;
             if (pos == size)
                 break;
 
             // Find the next whitespace
             size_t start = pos;
-            while (pos < size && !std::isspace(static_cast<unsigned char>(data[pos])))
+            while (pos < size && !isAsciiWhitespace(data[pos]))
                 ++pos;
 
             tokens.emplace_back(data + start, pos - start);
@@ -154,19 +155,39 @@ using NGramIndexMap = HashMap<std::string_view, UInt32, StringViewHash>;
 using ProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 using LogProbabilityMap = HashMap<UInt32, double, HashCRC32<UInt32>>;
 
-template <Tokenizer Tok>
-class NaiveBayesClassifier
+/// How class prior probabilities are determined when finalizing a model.
+enum class PriorsMode : uint8_t
 {
-private:
+    Uniform,        /// Equal probability for every class.
+    Proportional,   /// Probability proportional to each class's total n-gram count.
+    Explicit,       /// Probabilities given explicitly per class.
+};
+
+/// Holds all of the trained state of a Naive Bayes model for one tokenizer policy. It owns an arena and
+/// is therefore neither copyable nor movable, because the n-gram keys stored in the index are views into
+/// that arena and the object must keep the same address. It is always allocated on the heap and referenced
+/// through a smart pointer, which lets the owning model be moved cheaply.
+template <Tokenizer Tok>
+struct NaiveBayesData
+{
+    NaiveBayesData(UInt32 n_, double alpha_, Tok tokenizer_)
+        : n(n_)
+        , alpha(alpha_)
+        , start_token(Tok::start_token)
+        , end_token(Tok::end_token)
+        , tokenizer(std::move(tokenizer_))
+    {
+    }
+
     /// N-gram size
-    const UInt32 n;
+    UInt32 n;
 
     /// Laplace smoothing parameter
-    const double alpha;
+    double alpha;
 
     /// Start / end tokens to pad the input string - taken from Tok at compile time
-    const String start_token;
-    const String end_token;
+    String start_token;
+    String end_token;
 
     Tok tokenizer;
 
@@ -179,196 +200,35 @@ private:
     /// Class -> total count over all ngrams
     ClassCountMap class_totals;
 
-    /// Class -> prior probability
+    /// Class -> log prior probability
     LogProbabilityMap log_class_priors;
 
-    /// Vocabulary size is the number of distinct tokens in the model across all classes
+    /// Vocabulary size is the number of distinct n-grams in the model across all classes
     size_t vocabulary_size = 0;
 
     /// Arena to own all the key strings
     Arena pool;
+};
 
-    static constexpr UInt32 MAX_NGRAM_LENGTH = 1024 * 1024;
-
+/// An immutable, ready-to-query Naive Bayes model. An instance can only be produced by finalizing a
+/// trainer, which guarantees that a model is always fully built before it can be used for classification.
+template <Tokenizer Tok>
+class NaiveBayesModel
+{
 public:
-    ~NaiveBayesClassifier() = default;
-
-    /// The model at model_path is expected to be serialized lines of: <class_id> <ngram> <count>
-    NaiveBayesClassifier(
-        const String & model_name,
-        const String & model_path,
-        ProbabilityMap && priors,
-        const UInt32 given_n,
-        const double given_alpha,
-        Tok given_tokenizer = {})
-        : n(given_n)
-        , alpha(given_alpha)
-        , start_token(Tok::start_token)
-        , end_token(Tok::end_token)
-        , tokenizer(std::move(given_tokenizer))
+    explicit NaiveBayesModel(std::unique_ptr<NaiveBayesData<Tok>> data_)
+        : data(std::move(data_))
     {
-        if (!std::filesystem::exists(model_path))
-        {
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist for model {}", model_path, model_name);
-        }
-
-        DB::ReadBufferFromFile in(model_path);
-
-        String ngram; /// Avoid reallocation
-        while (!in.eof())
-        {
-            UInt32 class_id = 0;
-            UInt32 ngram_length = 0;
-            UInt32 count = 0;
-
-            DB::readBinary(class_id, in); // read the 4-byte class id
-
-            DB::readBinary(ngram_length, in); // read the 4-byte length of the ngram string
-
-            if (ngram_length > MAX_NGRAM_LENGTH)
-                throw Exception(
-                    ErrorCodes::CORRUPTED_DATA,
-                    "Corrupt model {} of model {}: ngram length {} exceeds maximum of {}",
-                    model_path,
-                    model_name,
-                    ngram_length,
-                    MAX_NGRAM_LENGTH);
-
-            if (ngram_length == 0)
-                throw Exception(
-                    ErrorCodes::CORRUPTED_DATA, "Corrupt model {} of model {}: ngram length given is 0", model_path, model_name);
-
-            ngram.resize(ngram_length);
-            in.readStrict(ngram.data(), ngram_length); // read the ngram bytes
-
-            DB::readBinary(count, in); // read the 4-byte count
-
-            ArenaKeyHolder key_holder{std::string_view(ngram.data(), ngram_length), pool};
-            NGramIndexMap::LookupResult it;
-            bool inserted = false;
-
-            ngram_to_class_count_index.emplace(key_holder, it, inserted);
-
-            if (inserted)
-            {
-                it->getMapped() = static_cast<UInt32>(all_ngram_class_counts.size());
-                all_ngram_class_counts.emplace_back();
-            }
-
-            all_ngram_class_counts[it->getMapped()][class_id] += count;
-            class_totals[class_id] += count;
-        }
-
-        if (ngram_to_class_count_index.empty())
-        {
-            throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "No ngrams found in the model at {} of model {}", model_path, model_name);
-        }
-
-        /// If classes are provided in prior, then all classes present in the model must be present in priors.
-        /// If prior is empty, then we assign equal probability to all classes.
-        if (priors.empty())
-        {
-            const double uniform_prob = 1.0 / static_cast<double>(class_totals.size());
-            const double uniform_log_prob = std::log(uniform_prob);
-            for (const auto & [class_id, _] : class_totals)
-                log_class_priors[class_id] = uniform_log_prob;
-        }
-        else /// Priors are provided
-        {
-            if (priors.size() != class_totals.size())
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Number of classes in priors ({}) does not match the number of classes in the model at ({}) of model {}",
-                    priors.size(),
-                    class_totals.size(),
-                    model_name);
-            }
-            for (const auto & prior : priors)
-            {
-                const UInt32 class_id = prior.getKey();
-                if (!class_totals.contains(class_id)) /// Class present in config's <priors> not found in model
-                {
-                    /// class_totals does not have begin() and end() methods; therefore cannot use std::ranges::transform
-                    /// Manually build a vector of available classes
-                    std::vector<UInt32> available_classes;
-                    available_classes.reserve(class_totals.size());
-                    for (const auto & class_entry : class_totals)
-                        available_classes.push_back(class_entry.getKey());
-
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Class {} from <priors> not found in the model at {} of model {}. Available classes: {}",
-                        class_id,
-                        model_path,
-                        model_name,
-                        fmt::join(available_classes, ", "));
-                }
-            }
-
-            for (const auto & [class_id, prior] : priors)
-                log_class_priors[class_id] = std::log(prior);
-        }
-
-        /// Vocabulary size is the number of distinct tokens
-        vocabulary_size = ngram_to_class_count_index.size();
     }
 
-    /// Classify an input string. The function splits the input into tokens (by space)
-    ///  and adds (n - 1) start tokens at the front and (n - 1) end tokens at the back.
-    /// Then, it creates n-grams and computes the log probabilities for each class.
-    /// Finally, it returns the class with the highest log probability.
-    UInt32 classify(const String & input) const
+    /// Returns the class with the highest log probability.
+    UInt32 classify(std::string_view input) const
     {
-        LogProbabilityMap class_log_probabilities;
-        for (const auto & [class_id, prior] : log_class_priors)
-            class_log_probabilities[class_id] = prior;
+        const auto log_probs = computeLogProbabilities(input);
 
-        std::vector<std::string_view> tokens;
-        tokenizer.tokenize(input, tokens);
-
-        /// Add (n - 1) start tokens at the front and (n - 1) end tokens at the back
-        if (n > 1)
-        {
-            tokens.insert(tokens.begin(), n - 1, std::string_view(start_token));
-            tokens.insert(tokens.end(), n - 1, std::string_view(end_token));
-        }
-
-        /// Now, create n-grams and calculate probability on the fly; each n-gram will consist of n consecutive tokens
-        if (tokens.size() >= n)
-        {
-            std::string ngram;
-            for (size_t i = 0; i + n <= tokens.size(); ++i)
-            {
-                tokenizer.join(&tokens[i], n, ngram);
-
-                std::string_view ngram_ref(ngram);
-                const auto * const ref_it = ngram_to_class_count_index.find(ngram_ref);
-                const bool token_exists = (ref_it != ngram_to_class_count_index.end());
-
-                const auto * token_class_map = token_exists ? &all_ngram_class_counts[ref_it->getMapped()] : nullptr;
-
-                for (const auto & class_entry : class_totals)
-                {
-                    UInt32 class_id = class_entry.getKey();
-                    double class_total = static_cast<double>(class_entry.getMapped());
-                    double count = 0.0;
-                    if (token_exists)
-                    {
-                        const auto * it = token_class_map->find(class_id);
-                        if (it != token_class_map->end())
-                            count = static_cast<double>(it->getMapped());
-                    }
-                    const double probability = (count + alpha) / (class_total + alpha * static_cast<double>(vocabulary_size));
-                    class_log_probabilities[class_id] += std::log(probability);
-                }
-            }
-        }
-
-        /// Find the class with the highest log probability
         UInt32 best_class = 0;
         double max_log_prob = -std::numeric_limits<double>::infinity();
-        for (const auto & entry : class_log_probabilities)
+        for (const auto & entry : log_probs)
         {
             if (entry.getMapped() > max_log_prob)
             {
@@ -380,25 +240,234 @@ public:
         return best_class;
     }
 
+    /// Returns the best class and its normalized probability.
+    std::pair<UInt32, double> classifyWithProb(std::string_view input) const
+    {
+        const auto probs = softmax(computeLogProbabilities(input));
+
+        UInt32 best_class = 0;
+        double best_prob = -1.0;
+        for (const auto & [class_id, prob] : probs)
+        {
+            if (prob > best_prob)
+            {
+                best_prob = prob;
+                best_class = class_id;
+            }
+        }
+
+        return {best_class, best_prob};
+    }
+
+    /// Returns all classes with their normalized probabilities, sorted by probability descending.
+    std::vector<std::pair<UInt32, double>> classifyAllProbs(std::string_view input) const
+    {
+        auto result = softmax(computeLogProbabilities(input));
+        std::sort(result.begin(), result.end(), [](const auto & a, const auto & b) { return a.second > b.second; });
+        return result;
+    }
+
     UInt64 getAllocatedBytes() const
     {
-        UInt64 total = 0;
+        UInt64 total = sizeof(*this) + sizeof(NaiveBayesData<Tok>);
 
-        total += pool.allocatedBytes();
+        total += data->pool.allocatedBytes();
 
-        total += ngram_to_class_count_index.getBufferSizeInBytes();
-        total += class_totals.getBufferSizeInBytes();
-        total += log_class_priors.getBufferSizeInBytes();
+        total += data->ngram_to_class_count_index.getBufferSizeInBytes();
+        total += data->class_totals.getBufferSizeInBytes();
+        total += data->log_class_priors.getBufferSizeInBytes();
 
-        total += all_ngram_class_counts.capacity() * sizeof(ClassCountMap);
+        total += data->all_ngram_class_counts.capacity() * sizeof(ClassCountMap);
 
-        for (const auto & m : all_ngram_class_counts)
+        for (const auto & m : data->all_ngram_class_counts)
             total += m.getBufferSizeInBytes();
-
-        total += sizeof(*this);
 
         return total;
     }
+
+    size_t getElementCount() const { return data->ngram_to_class_count_index.size(); }
+
+private:
+    /// Computes the unnormalized log-probability of every class for the given input.
+    LogProbabilityMap computeLogProbabilities(std::string_view input) const
+    {
+        LogProbabilityMap class_log_probabilities;
+        for (const auto & [class_id, prior] : data->log_class_priors)
+            class_log_probabilities[class_id] = prior;
+
+        std::vector<std::string_view> tokens;
+        data->tokenizer.tokenize(input, tokens);
+
+        if (data->n > 1)
+        {
+            tokens.insert(tokens.begin(), data->n - 1, std::string_view(data->start_token));
+            tokens.insert(tokens.end(), data->n - 1, std::string_view(data->end_token));
+        }
+
+        if (tokens.size() >= data->n)
+        {
+            std::string ngram;
+            for (size_t i = 0; i + data->n <= tokens.size(); ++i)
+            {
+                data->tokenizer.join(&tokens[i], data->n, ngram);
+
+                const auto * const ref_it = data->ngram_to_class_count_index.find(std::string_view(ngram));
+                const bool token_exists = (ref_it != data->ngram_to_class_count_index.end());
+
+                const auto * token_class_map = token_exists ? &data->all_ngram_class_counts[ref_it->getMapped()] : nullptr;
+
+                for (const auto & class_entry : data->class_totals)
+                {
+                    UInt32 class_id = class_entry.getKey();
+                    double class_total = static_cast<double>(class_entry.getMapped());
+                    double count = 0.0;
+                    if (token_exists)
+                    {
+                        const auto * it = token_class_map->find(class_id);
+                        if (it != token_class_map->end())
+                            count = static_cast<double>(it->getMapped());
+                    }
+                    const double probability = (count + data->alpha) / (class_total + data->alpha * static_cast<double>(data->vocabulary_size));
+                    class_log_probabilities[class_id] += std::log(probability);
+                }
+            }
+        }
+
+        return class_log_probabilities;
+    }
+
+    /// Converts log-probabilities into normalized probabilities using the numerically stable log-sum-exp method.
+    static std::vector<std::pair<UInt32, double>> softmax(const LogProbabilityMap & log_probs)
+    {
+        double max_log = -std::numeric_limits<double>::infinity();
+        for (const auto & entry : log_probs)
+            max_log = std::max(max_log, entry.getMapped());
+
+        double sum_exp = 0.0;
+        std::vector<std::pair<UInt32, double>> result;
+        result.reserve(log_probs.size());
+        for (const auto & [class_id, log_prob] : log_probs)
+        {
+            double exp_val = std::exp(log_prob - max_log);
+            result.emplace_back(class_id, exp_val);
+            sum_exp += exp_val;
+        }
+
+        for (auto & [_, prob] : result)
+            prob /= sum_exp;
+
+        return result;
+    }
+
+    std::unique_ptr<NaiveBayesData<Tok>> data;
+};
+
+/// Accumulates class, n-gram, and count observations and then produces an immutable model.
+template <Tokenizer Tok>
+class NaiveBayesTrainer
+{
+public:
+    NaiveBayesTrainer(UInt32 n, double alpha, Tok tokenizer = {})
+        : data(std::make_unique<NaiveBayesData<Tok>>(n, alpha, std::move(tokenizer)))
+    {
+    }
+
+    /// Adds a single observation of a class, an n-gram, and its count.
+    void addNgram(UInt32 class_id, std::string_view ngram, UInt64 count)
+    {
+        ArenaKeyHolder key_holder{ngram, data->pool};
+        NGramIndexMap::LookupResult it;
+        bool inserted = false;
+
+        data->ngram_to_class_count_index.emplace(key_holder, it, inserted);
+
+        if (inserted)
+        {
+            it->getMapped() = static_cast<UInt32>(data->all_ngram_class_counts.size());
+            data->all_ngram_class_counts.emplace_back();
+        }
+
+        data->all_ngram_class_counts[it->getMapped()][class_id] += count;
+        data->class_totals[class_id] += count;
+    }
+
+    /// Computes the class priors according to the given mode and returns the finished model.
+    /// The explicit priors are consulted, and required, only when the mode is explicit.
+    NaiveBayesModel<Tok> finalize(PriorsMode mode, const ProbabilityMap & explicit_priors = {})
+    {
+        if (data->ngram_to_class_count_index.empty())
+            throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "No n-grams found in the model");
+
+        switch (mode)
+        {
+            case PriorsMode::Uniform:
+                computeUniformPriors();
+                break;
+            case PriorsMode::Proportional:
+                computeProportionalPriors();
+                break;
+            case PriorsMode::Explicit:
+                setExplicitPriors(explicit_priors);
+                break;
+        }
+
+        data->vocabulary_size = data->ngram_to_class_count_index.size();
+        return NaiveBayesModel<Tok>(std::move(data));
+    }
+
+private:
+    void computeUniformPriors()
+    {
+        const double uniform_log_prob = std::log(1.0 / static_cast<double>(data->class_totals.size()));
+        for (const auto & [class_id, _] : data->class_totals)
+            data->log_class_priors[class_id] = uniform_log_prob;
+    }
+
+    void computeProportionalPriors()
+    {
+        UInt64 total = 0;
+        for (const auto & [_, count] : data->class_totals)
+            total += count;
+
+        for (const auto & [class_id, count] : data->class_totals)
+            data->log_class_priors[class_id] = std::log(static_cast<double>(count) / static_cast<double>(total));
+    }
+
+    void setExplicitPriors(const ProbabilityMap & priors)
+    {
+        /// Every class in the model must have exactly one prior. Together with the requirement that the
+        /// number of priors equals the number of classes, this guarantees that no prior refers to a class
+        /// that is absent from the model.
+        if (priors.size() != data->class_totals.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Number of classes in priors ({}) does not match the number of classes in the model ({})",
+                priors.size(),
+                data->class_totals.size());
+
+        for (const auto & prior : priors)
+        {
+            const UInt32 class_id = prior.getKey();
+            if (!data->class_totals.contains(class_id))
+            {
+                std::vector<UInt32> available_classes;
+                available_classes.reserve(data->class_totals.size());
+                for (const auto & class_entry : data->class_totals)
+                    available_classes.push_back(class_entry.getKey());
+
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Class {} from priors not found in the model. Available classes: {}",
+                    class_id,
+                    fmt::join(available_classes, ", "));
+            }
+        }
+
+        for (const auto & [class_id, prior] : priors)
+            data->log_class_priors[class_id] = std::log(prior);
+    }
+
+    std::unique_ptr<NaiveBayesData<Tok>> data;
 };
 
 }
