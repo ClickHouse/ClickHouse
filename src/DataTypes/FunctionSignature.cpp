@@ -881,11 +881,16 @@ struct AlternativeFunctionSignatureImpl : public IFunctionSignatureImpl
             }
         }
 
+        /// Keep the reason on a single line: it is surfaced as an exception message
+        /// (`Arguments of function ... do not match its signature (...): <reason>`), and
+        /// embedded newlines break single-line consumers — `system.errors`/log parsing and,
+        /// concretely, the `sed 's/^\(Code: [0-9]\+\).*$/\1/g'` filter in shell tests such as
+        /// `00921_datetime64_compatibility_long`, which only collapses the first line.
         WriteBufferFromOwnString out;
-        out << "None of the alternative function signatures matched.\n";
+        out << "None of the alternative function signatures matched.";
         size_t num_alternatives = alternatives.size();
         for (size_t i = 0; i < num_alternatives; ++i)
-            out << "Variant " << alternatives[i]->toString() << " doesn't match because " << reasons[i] << ".\n";
+            out << " Variant " << alternatives[i]->toString() << " doesn't match because " << reasons[i] << ".";
         out_reason = out.str();
 
         return nullptr;
