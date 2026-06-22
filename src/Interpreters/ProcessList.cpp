@@ -189,7 +189,16 @@ ProcessList::EntryPtr ProcessList::insert(
             + std::chrono::milliseconds(effective_wait_ms);
 
         /// --- FIFO admission control (see ProcessList.h for design overview) ---
-        bool needs_admission = !is_unlimited_query && max_size && admission_queue_enabled;
+        /// An `admission_tracked` query holds an admission slot for its whole lifetime whenever the
+        /// feature is enabled, so `admission_running` stays an accurate count of running tracked
+        /// queries even while `max_concurrent_queries == 0` (unlimited). This is what makes a runtime
+        /// `0 -> N` reload of `max_concurrent_queries` behave correctly: the queries admitted while the
+        /// limit was unlimited are already counted, so once the limit becomes finite the next arrivals
+        /// observe the real running count instead of `0` and queue as expected, rather than slipping
+        /// past the limit on the fast path. The FIFO *wait* only happens for a finite limit
+        /// (`needs_admission`, i.e. `max_size > 0`); when unlimited, a slot is always taken immediately.
+        const bool admission_tracked = !is_unlimited_query && admission_queue_enabled;
+        const bool needs_admission = admission_tracked && max_size;
 
         if (needs_admission && admission_running >= max_size)
         {
@@ -277,9 +286,11 @@ ProcessList::EntryPtr ProcessList::insert(
             /// Slot was transferred to us by the releaser (no counter change).
             got_admission_slot = true;
         }
-        else if (needs_admission)
+        else if (admission_tracked)
         {
-            /// Slot available immediately — take it.
+            /// A slot is free under a finite limit, or the limit is unlimited (`max_size == 0`). Either
+            /// way take a slot immediately and keep the running count accurate; it is released through
+            /// the same paths (early release in `executeQuery` or `~ProcessListEntry`) as any admitted query.
             ++admission_running;
             got_admission_slot = true;
         }

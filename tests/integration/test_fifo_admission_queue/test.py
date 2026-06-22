@@ -1143,3 +1143,115 @@ def test_fast_path_slot_not_hoarded_at_secondary_limit(started_cluster):
         pool.close()
         pool.join()
         node.query(f"DROP USER IF EXISTS {other_user}")
+
+
+def test_zero_to_finite_reload_enforces_limit(started_cluster):
+    """
+    Regression test for a runtime `max_concurrent_queries` reload from `0`
+    (unlimited) to a finite value `N`.
+
+    While `max_concurrent_queries == 0` the primary limit is unlimited, so queries
+    are admitted without a FIFO wait. They must still be *counted* as holding
+    admission slots, so that when the limit is later reloaded to a finite `N` the
+    already-running queries are reflected in `admission_running`. Without that, the
+    next `N` arrivals would observe `admission_running == 0`, take the fast path,
+    and run even though more than `N` queries are already running — so the finite
+    limit would not take effect until the pre-limit queries happened to drain.
+
+    With the fix, a tracked (non-internal, non-unlimited) query holds an admission
+    slot for its whole lifetime whenever the feature is enabled, even while
+    unlimited, so the `0 -> N` reload immediately enforces `N` against the queries
+    that were admitted while the limit was unlimited.
+
+    Strategy (server config: max_concurrent_queries = 2):
+    1. Switch to unlimited (`max_concurrent_queries = 0`) at runtime.
+    2. Start 3 long queries (> N = 2). They all run concurrently (none queues).
+    3. Reload back to `max_concurrent_queries = 2`.
+    4. Assert a new query is now rejected (queued, then timed out) rather than
+       running on the fast path — the limit is enforced against the 3 already
+       running queries.
+    5. Drain below the limit (kill all but one). A new query must run again, proving
+       no slot was leaked across the transition.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    blocker_ids = [f"zerofin_blocker_{prefix}_{i}" for i in range(3)]
+
+    pool = Pool(10)
+
+    def run_blocker(qid):
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=qid,
+        )
+
+    try:
+        # 1. Go unlimited at runtime. Slots are free here, so this confirming query
+        #    is not itself subject to admission.
+        set_max_concurrent_queries(node, 0)
+        wait_for_max_concurrent_queries(node, 0)
+
+        # 2. Start 3 concurrent queries while unlimited — more than the finite limit
+        #    we will reload to. All of them run; none enters the queue.
+        for qid in blocker_ids:
+            pool.apply_async(run_blocker, (qid,))
+        for qid in blocker_ids:
+            wait_for_query_start(node, qid)
+        assert get_prometheus_metric(node, "QueryAdmissionQueueLength") == 0
+
+        # 3. Reload to a finite limit below the running count.
+        set_max_concurrent_queries(node, 2)
+
+        # 4. The new limit must be enforced against the already-running queries: a
+        #    fresh query is queued and times out, instead of running on the fast
+        #    path. Poll because the background reloader applies the change
+        #    asynchronously; before it does, a probe simply runs (still unlimited)
+        #    and we retry. Once enforced, every probe is rejected. With the bug the
+        #    pre-limit queries are not counted, so the probe always runs and this
+        #    never becomes true (the test then fails by timeout).
+        deadline = time.monotonic() + 15
+        enforced = False
+        while time.monotonic() < deadline:
+            _, error = node.query_and_get_answer_with_error(
+                "SELECT 1",
+                settings={"queue_max_wait_ms": 1000},
+            )
+            if "TOO_MANY_SIMULTANEOUS_QUERIES" in error:
+                enforced = True
+                break
+            time.sleep(0.2)
+        assert enforced, (
+            "0 -> N reload did not enforce max_concurrent_queries: new queries kept "
+            "running on the fast path even though more than N were already running"
+        )
+
+        # 5. Drain below the limit: with only one of the three queries left running,
+        #    admission_running drops under N and queries are admitted again.
+        for qid in blocker_ids[1:]:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        deadline = time.monotonic() + 15
+        admitted = False
+        while time.monotonic() < deadline:
+            answer, error = node.query_and_get_answer_with_error(
+                "SELECT 42",
+                settings={"queue_max_wait_ms": 2000},
+            )
+            if error == "" and answer.strip() == "42":
+                admitted = True
+                break
+            time.sleep(0.2)
+        assert admitted, (
+            "after draining below the limit, queries were still rejected — a slot was "
+            "leaked across the 0 -> N transition"
+        )
+    finally:
+        for qid in blocker_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        pool.close()
+        pool.join()
+        # Restore the baseline limit for subsequent tests.
+        set_max_concurrent_queries(node, 2)
+        wait_for_max_concurrent_queries(node, 2)

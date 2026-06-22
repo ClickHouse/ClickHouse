@@ -434,7 +434,11 @@ protected:
     ///
     /// `admission_running` tracks queries holding a slot — separate from
     /// `non_internal_processes` because unlimited queries skip admission
-    /// and slots can be released early via `releaseAdmissionSlot`.
+    /// and slots can be released early via `releaseAdmissionSlot`. Whenever the
+    /// feature is enabled a tracked (non-internal, non-unlimited) query holds a
+    /// slot for its whole lifetime, including while `max_concurrent_queries == 0`
+    /// (unlimited), so the count stays accurate across a runtime `0 -> N` reload
+    /// — the wait at `insert` is only entered for a finite limit.
     ///
     /// When all slots are occupied, new queries join a FIFO deque. Each waiter
     /// waits on its own CV. On release, the front waiter receives the slot
