@@ -8,10 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pyarrow as pa
 import pytest
-import urllib3
 import pytz
-from datetime import datetime, timedelta
-from minio import Minio
+from datetime import timedelta
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -30,7 +28,7 @@ from pyiceberg.types import (
     DecimalType,
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
 
 import boto3
@@ -597,7 +595,7 @@ def test_empty_table(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(root_namespace)
 
-    table = create_table(catalog, root_namespace, table_name)
+    create_table(catalog, root_namespace, table_name)
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
@@ -899,7 +897,7 @@ def test_show_tables_optimization(started_cluster):
         f"Get table information for table {root_namespace}.{table_name}"
     )
 
-    node.query(f"SYSTEM ENABLE FAILPOINT lightweight_show_tables")
+    node.query("SYSTEM ENABLE FAILPOINT lightweight_show_tables")
     node.query(f"SHOW TABLES FROM {CATALOG_NAME}", timeout=5)
 
 def test_table_without_metadata_location(started_cluster):
@@ -1029,7 +1027,7 @@ def test_check_database(started_cluster):
 
     try:
         node.query(
-            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
     
         assert "fault when checking database" in node.query_and_get_error(
@@ -1037,7 +1035,7 @@ def test_check_database(started_cluster):
         )
     finally:
         node.query(
-            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
         )
 
 def test_sts_smoke(started_cluster):

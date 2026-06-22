@@ -119,7 +119,7 @@ common_ft_job_config = Job.Config(
 common_unit_test_job_config = Job.Config(
     name=JobNames.UNITTEST,
     runs_on=[],  # from parametrize()
-    command=f"python3 ./ci/jobs/unit_tests_job.py --gtest_filter=-FunctionsStress.*",
+    command="python3 ./ci/jobs/unit_tests_job.py --gtest_filter=-FunctionsStress.*",
     run_in_docker="clickhouse/test-base+--privileged",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
@@ -604,37 +604,37 @@ class JobConfigs:
             parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel"],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_parallel"],
         ),
         Job.ParamSet(
             parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential"],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_sequential"],
         ),
         Job.ParamSet(
             parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel"],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel"],
         ),
         Job.ParamSet(
             parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential"],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential"],
         ),
         Job.ParamSet(
             parameter="amd_llvm_coverage, AsyncInsert, s3 storage, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel"],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel"],
         ),
         Job.ParamSet(
             parameter="amd_llvm_coverage, AsyncInsert, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential"],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential"],
         ),
         Job.ParamSet(
             parameter="amd_debug, parallel",
@@ -944,7 +944,7 @@ class JobConfigs:
     integration_test_asan_flaky_pr_jobs = (
         common_integration_test_job_config.parametrize(
             Job.ParamSet(
-                parameter=f"amd_asan_ubsan, flaky",
+                parameter="amd_asan_ubsan, flaky",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
@@ -1027,7 +1027,7 @@ class JobConfigs:
 
     integration_test_targeted_pr_jobs = common_integration_test_job_config.parametrize(
         Job.ParamSet(
-            parameter=f"amd_asan_ubsan, targeted",
+            parameter="amd_asan_ubsan, targeted",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
         )
@@ -1081,7 +1081,7 @@ class JobConfigs:
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command=f"python3 ./ci/jobs/ast_fuzzer_job.py",
+        command="python3 ./ci/jobs/ast_fuzzer_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",

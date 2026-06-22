@@ -45,7 +45,7 @@ class LogCluster:
             "X-ClickHouse-Key": passwd,
         }
         params = {
-            "query": f"SELECT 1",
+            "query": "SELECT 1",
         }
         try:
             response = requests.post(
@@ -109,7 +109,7 @@ class LogCluster:
                 else:
                     break
             except Exception:
-                print(f"WARNING: LogCluster query failed with exception")
+                print("WARNING: LogCluster query failed with exception")
                 traceback.print_exc()
         if response is not None:
             print(
