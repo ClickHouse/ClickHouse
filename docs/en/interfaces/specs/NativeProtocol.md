@@ -135,7 +135,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | SYSTEM_KEYWORDS_TABLE           | 54468   | system tables          | Server populates `system.keywords` so the canonical `clickhouse-client` can autocomplete keywords. No native-protocol wire change. |
 | ROWS_BEFORE_AGGREGATION         | 54469   | ProfileInfo            | Adds `applied_aggregation` (Bool) and `rows_before_aggregation` (VarUInt) to ProfileInfo, in that order at the tail. |
 | CHUNKED_PROTOCOL                | 54470   | Connection framing     | Per-packet chunk framing wraps every packet body. Negotiated in Addendum. ServerHello carries the server's preference for each direction; Addendum carries the client's final choice. See [chunked framing](#chunked-framing). |
-| VERSIONED_PARALLEL_REPLICAS_PROTOCOL | 54471 | ServerHello, Addendum | Both sides exchange a `VarUInt` parallel-replicas coordination protocol version. ServerHello's field is positioned **immediately after `protocol_version`** (before `timezone`). Addendum's field is appended after the chunked-protocol strings. Current value: `7` (`DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION`). |
+| VERSIONED_PARALLEL_REPLICAS_PROTOCOL | 54471 | ServerHello, Addendum | Both sides exchange a `VarUInt` parallel-replicas coordination protocol version. ServerHello's field is positioned **immediately after `protocol_version`** (before `timezone`). Addendum's field is appended after the chunked-protocol strings. Current value: `8` (`DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION`). Version `8` adds `MergeTreeAllRangesAnnouncementResponse` (client packet `14`, see [Client → Server packet table](#client-to-server)): when the negotiated parallel-replicas version is `≥ 8` the initiator replies to every non-`Default`-mode follower announcement with the authoritative parts list for that stream, and the follower waits for it before issuing read requests. Below `8` the announcement is fire-and-forget. |
 | INTERSERVER_EXTERNALLY_GRANTED_ROLES | 54472 | Query | Adds a `String external_roles` field to the Query body, between the settings terminator and the interserver-secret hash. External clients send an empty role list (a single byte `0x00`, i.e. VarUInt 0 inside a String envelope). |
 | V2_DYNAMIC_AND_JSON_SERIALIZATION | 54473 | Column body | Server may emit V2 serialization for `Dynamic` and `JSON` column types — gates which `state_prefix` version they use. See [versioned types](/interfaces/specs/NativeFormat#versioned-types). |
 | SERVER_SETTINGS                 | 54474   | ServerHello            | Server broadcasts its non-default settings as a list at the tail of ServerHello, after `nonce`. Format: `(key, flags, value)` triples terminated by an empty key — same as the Query packet's settings list. |
@@ -444,7 +444,7 @@ Server → Client. The reply to ClientHello on successful authentication.
 | 2 | version_major    | VarUInt | universal | always                 | Server major version |
 | 3 | version_minor    | VarUInt | universal | always                 | Server minor version |
 | 4 | protocol_version | VarUInt | universal | always                 | Server's protocol version |
-| 4a | parallel_replicas_protocol_version | VarUInt | universal | VERSIONED_PARALLEL_REPLICAS_PROTOCOL (v54471) | Server's parallel-replicas coordination protocol version. **Wire position: immediately after `protocol_version`**, before `timezone`. Current: `7`. |
+| 4a | parallel_replicas_protocol_version | VarUInt | universal | VERSIONED_PARALLEL_REPLICAS_PROTOCOL (v54471) | Server's parallel-replicas coordination protocol version. **Wire position: immediately after `protocol_version`**, before `timezone`. Current: `8`. |
 | 5 | timezone         | String  | universal | TIMEZONE (v54058)      | Server timezone (e.g., `"UTC"`) |
 | 6 | display_name     | String  | universal | DISPLAY_NAME (v54372)  | Human-readable server name |
 | 7 | version_patch    | VarUInt | universal | VERSION_PATCH (v54401) | Server patch version |
@@ -478,7 +478,7 @@ Client → Server, gated by `ADDENDUM` (v54458). Sent immediately after the hand
 | 1 | quota_key         | String | universal    | always                     | Resource quota key for server-side keyed quotas. Clients that do not use a keyed quota send an empty string. |
 | 2 | proto_send_chunked | String | universal   | CHUNKED_PROTOCOL (v54470)  | Client's negotiated outbound chunking: `"chunked"` or `"notchunked"`. Computed against `proto_recv_chunked_srv` from ServerHello. |
 | 3 | proto_recv_chunked | String | universal   | CHUNKED_PROTOCOL (v54470)  | Client's negotiated inbound chunking. Computed against `proto_send_chunked_srv`. |
-| 4 | parallel_replicas_protocol_version | VarUInt | universal | VERSIONED_PARALLEL_REPLICAS_PROTOCOL (v54471) | Client's supported parallel-replicas coordination protocol version. External clients not participating in distributed queries SHOULD still send a valid version (current `7`) so the server's compatibility check succeeds. |
+| 4 | parallel_replicas_protocol_version | VarUInt | universal | VERSIONED_PARALLEL_REPLICAS_PROTOCOL (v54471) | Client's supported parallel-replicas coordination protocol version. External clients not participating in distributed queries SHOULD still send a valid version (current `8`) so the server's compatibility check succeeds. |
 
 The chunked-framing flip applies *after* this Addendum is flushed — the Addendum itself is unframed.
 
@@ -838,6 +838,7 @@ External clients that don't use SSH auth never see packets 11, 12, or 18 — the
 | 11   | SSHChallengeRequest       | [SSH auth](#ssh-authentication) | SSH auth challenge request |
 | 12   | SSHChallengeResponse      | [SSH auth](#ssh-authentication) | SSH auth challenge response |
 | 13   | QueryPlan                 | not specified       | Query plan |
+| 14   | MergeTreeAllRangesAnnouncementResponse | not specified | Initiator's reply to a follower's [`MergeTreeAllRangesAnnouncement`](#packet-type-reference) (gated on `parallel_replicas_protocol_version ≥ 8` — see [VERSIONED_PARALLEL_REPLICAS_PROTOCOL](#feature-table)). Inter-server only — external clients never send. |
 
 ### Server → Client {#server-to-client}
 
