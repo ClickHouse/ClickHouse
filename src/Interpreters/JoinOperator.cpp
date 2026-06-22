@@ -75,6 +75,7 @@ namespace Setting
     extern const SettingsDouble max_bytes_ratio_before_external_join;
 
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
+    extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
 }
 
 namespace QueryPlanSerializationSetting
@@ -125,6 +126,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool use_hash_table_stats_for_join_reordering;
 
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
+    extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
 }
 
 JoinSettings::JoinSettings(const Settings & query_settings)
@@ -183,6 +185,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     use_hash_table_stats_for_join_reordering = query_settings[Setting::use_hash_table_stats_for_join_reordering];
 
     enable_join_fixed_hash_table_conversion = query_settings[Setting::enable_join_fixed_hash_table_conversion];
+    join_runtime_filter_from_fixed_hash_table = query_settings[Setting::join_runtime_filter_from_fixed_hash_table];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -237,6 +240,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     use_hash_table_stats_for_join_reordering = settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering];
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
+    join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -291,6 +295,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering] = use_hash_table_stats_for_join_reordering;
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
+    settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)
