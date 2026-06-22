@@ -631,7 +631,8 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     for (size_t i = 0; i < partition_names.size(); ++i)
         block.getByPosition(i).column->get(0, fields[i]);
 
-    if (prune_level >= PruneLevel::Partition)
+    /// Without a filter there is nothing to prune by, so collect all files of the partition.
+    if (filter_actions_dag && prune_level >= PruneLevel::Partition)
     {
         std::vector<Range> ranges;
         ranges.reserve(partition_names.size());
@@ -705,7 +706,8 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
         LOG_TRACE(log, "Get hive file {} from cache, prune_level {}", file_info.path, pruneLevelToString(prune_level));
     }
 
-    if (prune_level >= PruneLevel::File)
+    /// Without a filter there is nothing to prune by, so keep the file as is.
+    if (filter_actions_dag && prune_level >= PruneLevel::File)
     {
         ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
         const KeyCondition hivefile_key_condition(inverted_dag, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
