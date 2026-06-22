@@ -113,7 +113,8 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
-    DataTypePtr id_data_type = tags_target->getInMemoryMetadataPtr(context, false)->columns.get(TimeSeriesColumnNames::ID).type;
+    auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
+    DataTypePtr id_data_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 

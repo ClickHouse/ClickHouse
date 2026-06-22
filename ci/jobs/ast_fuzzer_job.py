@@ -2,7 +2,6 @@
 import logging
 import os
 import random
-import subprocess
 import sys
 import traceback
 from pathlib import Path
