@@ -48,4 +48,23 @@ ORDER BY event_time_microseconds;
 -- Equivalence: the same predicate returns the same count with skip indexes disabled.
 SELECT count() FROM tab_multi WHERE id >= 400000 AND id < 500000 AND hasAllTokens(s, 'alpha beta gamma') SETTINGS use_skip_indexes = 0;
 
+-- 'Any'-mode counterpart. The same tokens overlap the selected range coarsely but have no readable
+-- occurrence, so once none of them can contribute the 'Any' query is failed and the text index prunes
+-- every selected mark — rather than keeping them on the stale clipped row range. 'Any' does not
+-- short-circuit the dictionary scan (every token is read), so the observable signal is that the main
+-- query reads no rows: read_rows must be 0.
+SELECT count() FROM tab_multi WHERE id >= 400000 AND id < 500000 AND hasAnyTokens(s, 'alpha beta gamma');
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT read_rows
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND current_database = currentDatabase() AND type = 'QueryFinish'
+  AND query LIKE '%hasAnyTokens(s, ''alpha beta gamma'')%' AND query LIKE '%FROM tab_multi%'
+  AND query NOT LIKE '%use_skip_indexes%' AND query NOT LIKE '%query_log%'
+ORDER BY event_time_microseconds;
+
+SELECT count() FROM tab_multi WHERE id >= 400000 AND id < 500000 AND hasAnyTokens(s, 'alpha beta gamma') SETTINGS use_skip_indexes = 0;
+
 DROP TABLE tab_multi;

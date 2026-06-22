@@ -72,6 +72,7 @@ void TextIndexAnalyzer::QueryBuilder::markFailed()
     is_failed = true;
     postings.reset();
     rows_range.reset();
+    num_live_tokens = 0;
 }
 
 void TextIndexAnalyzer::QueryBuilder::markBypassed()
@@ -86,7 +87,21 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
     tokens.erase(token);
 
     if (query->search_mode == TextSearchMode::All)
+    {
         markFailed();
+        return;
+    }
+
+    /// `Any` mode fails once none of its declared tokens can contribute.
+    /// Pattern queries discover tokens dynamically, so the count applies only to pure-token queries.
+    if (query->patterns.empty())
+    {
+        if (num_live_tokens > 0)
+            --num_live_tokens;
+
+        if (num_live_tokens == 0)
+            markFailed();
+    }
 }
 
 void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range)
@@ -146,6 +161,7 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
     for (const auto & [hash, query] : condition_text.getAllSearchQueries())
     {
         query_builders[hash].query = query;
+        query_builders[hash].num_live_tokens = query->tokens.size();
 
         for (const auto & token : query->tokens)
             queries_by_token[token].insert(hash);

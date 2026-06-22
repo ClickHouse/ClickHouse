@@ -44,6 +44,8 @@ public:
         bool is_bypassed = false;
         /// Number of tokens whose posting list has already been folded into `postings`.
         size_t num_read_postings = 0;
+        /// Declared tokens (`query->tokens`) that may still contribute to an `Any` query.
+        size_t num_live_tokens = 0;
 
         void markFailed();
         void markBypassed();
