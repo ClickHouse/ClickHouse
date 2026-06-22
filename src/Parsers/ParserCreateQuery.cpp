@@ -724,13 +724,18 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     auto storage = make_intrusive<ASTStorage>();
+    /// The order of `set()` calls below determines the order of `children`,
+    /// because `set()` appends. It must match `ASTStorage::normalizeChildrenOrder`
+    /// (and therefore `ASTStorage::formatImpl`), otherwise format-and-reparse
+    /// produces a different `children` order, breaking the round-trip check
+    /// in `executeQueryImpl` with `Inconsistent AST formatting`.
     storage->set(storage->engine, engine);
     storage->set(storage->partition_by, partition_by);
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
+    storage->set(storage->unique_key, unique_key);
     storage->set(storage->sample_by, sample_by);
     storage->set(storage->ttl_table, ttl_table);
-    storage->set(storage->unique_key, unique_key);
     storage->set(storage->settings, settings);
 
     node = storage;

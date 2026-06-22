@@ -1090,7 +1090,8 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
         if (to_table)
         {
-            all_output_columns = to_table->getInMemoryMetadataPtr(getContext(), false)->getSampleBlockInsertable().getNamesAndTypesList();
+            auto to_table_metadata = to_table->getInMemoryMetadataPtr(getContext(), false);
+            all_output_columns = to_table_metadata->getSampleBlockInsertable().getNamesAndTypesList();
             check_columns = true;
         }
     }
@@ -1870,7 +1871,8 @@ namespace
 
 void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(storage.getInMemoryMetadataPtr(context, false)->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
+    if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Dynamic or JSON, "
