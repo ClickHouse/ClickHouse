@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-config="$CUR_DIR/04327_disks_app_sed.xml"
+config="$CUR_DIR/04327_clickhouse_disks_sed.xml"
 
 # Established isolated per-test directories.
 local_disk_dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_sed_local"
