@@ -50,5 +50,5 @@ def test_writes_truncate(started_cluster_iceberg_schema_evolution, format_versio
 
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('1000-7');", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1000-7\n'
-    instance.query(f"TRUNCATE TABLE {TABLE_NAME}")
+    instance.query(f"TRUNCATE TABLE {TABLE_NAME}", settings={"allow_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
